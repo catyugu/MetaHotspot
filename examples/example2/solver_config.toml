@@ -1,10 +1,6 @@
 simulation_type = "steady"
 [[power_units]]
 name = "Unit1"
-width = 0.008
-height = 0.008
-left_x = 0.0
-bottom_y = 0.008
 lx = 0.0
 ly = 0.008
 lz = 0.0
@@ -13,13 +9,10 @@ dy = 0.008
 dz = 0.00015
 material = "layer_0_mat"
 layer_id = 0
+domain_id = 1
 
 [[power_units]]
 name = "Unit2"
-width = 0.016
-height = 0.008
-left_x = 0.0
-bottom_y = 0.0
 lx = 0.0
 ly = 0.0
 lz = 0.0
@@ -28,13 +21,10 @@ dy = 0.008
 dz = 0.00015
 material = "layer_0_mat"
 layer_id = 0
+domain_id = 2
 
 [[power_units]]
 name = "Unit3"
-width = 0.008
-height = 0.008
-left_x = 0.008
-bottom_y = 0.008
 lx = 0.008
 ly = 0.008
 lz = 0.0
@@ -43,58 +33,10 @@ dy = 0.008
 dz = 0.00015
 material = "layer_0_mat"
 layer_id = 0
-
-[[power_units]]
-name = "Unit1"
-width = 0.008
-height = 0.008
-left_x = 0.0
-bottom_y = 0.008
-lx = 0.0
-ly = 0.008
-lz = 0.00015
-dx = 0.008
-dy = 0.008
-dz = 2e-5
-material = "layer_1_mat"
-layer_id = 1
-
-[[power_units]]
-name = "Unit2"
-width = 0.016
-height = 0.008
-left_x = 0.0
-bottom_y = 0.0
-lx = 0.0
-ly = 0.0
-lz = 0.00015
-dx = 0.016
-dy = 0.008
-dz = 2e-5
-material = "layer_1_mat"
-layer_id = 1
-
-[[power_units]]
-name = "Unit3"
-width = 0.008
-height = 0.008
-left_x = 0.008
-bottom_y = 0.008
-lx = 0.008
-ly = 0.008
-lz = 0.00015
-dx = 0.008
-dy = 0.008
-dz = 2e-5
-material = "layer_1_mat"
-layer_id = 1
+domain_id = 3
 
 [[power_units]]
 name = "L2_left"
-width = 0.0049
-height = 0.0062
-left_x = 0.0
-bottom_y = 0.0098
 lx = 0.0
 ly = 0.0098
 lz = 0.00016999999999999999
@@ -103,13 +45,10 @@ dy = 0.0062
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 7
 
 [[power_units]]
 name = "L2"
-width = 0.016
-height = 0.0098
-left_x = 0.0
-bottom_y = 0.0
 lx = 0.0
 ly = 0.0
 lz = 0.00016999999999999999
@@ -118,13 +57,10 @@ dy = 0.0098
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 8
 
 [[power_units]]
 name = "L2_right"
-width = 0.0049
-height = 0.0062
-left_x = 0.0111
-bottom_y = 0.0098
 lx = 0.0111
 ly = 0.0098
 lz = 0.00016999999999999999
@@ -133,13 +69,10 @@ dy = 0.0062
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 9
 
 [[power_units]]
 name = "Icache"
-width = 0.0031
-height = 0.0026
-left_x = 0.0049
-bottom_y = 0.0098
 lx = 0.0049
 ly = 0.0098
 lz = 0.00016999999999999999
@@ -148,13 +81,10 @@ dy = 0.0026
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 10
 
 [[power_units]]
 name = "Dcache"
-width = 0.0031
-height = 0.0026
-left_x = 0.008
-bottom_y = 0.0098
 lx = 0.008
 ly = 0.0098
 lz = 0.00016999999999999999
@@ -163,13 +93,10 @@ dy = 0.0026
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 11
 
 [[power_units]]
 name = "Bpred"
-width = 0.0031
-height = 0.0007
-left_x = 0.0049
-bottom_y = 0.0124
 lx = 0.0049
 ly = 0.0124
 lz = 0.00016999999999999999
@@ -178,13 +105,10 @@ dy = 0.0007
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 12
 
 [[power_units]]
 name = "DTB"
-width = 0.0031
-height = 0.0007
-left_x = 0.008
-bottom_y = 0.0124
 lx = 0.008
 ly = 0.0124
 lz = 0.00016999999999999999
@@ -193,13 +117,10 @@ dy = 0.0007
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 13
 
 [[power_units]]
 name = "FPAdd"
-width = 0.0022
-height = 0.0009
-left_x = 0.0049
-bottom_y = 0.0131
 lx = 0.0049
 ly = 0.0131
 lz = 0.00016999999999999999
@@ -208,13 +129,10 @@ dy = 0.0009
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 14
 
 [[power_units]]
 name = "FPReg"
-width = 0.0022
-height = 0.00038
-left_x = 0.0049
-bottom_y = 0.014
 lx = 0.0049
 ly = 0.014
 lz = 0.00016999999999999999
@@ -223,13 +141,10 @@ dy = 0.00038
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 15
 
 [[power_units]]
 name = "FPMul"
-width = 0.0022
-height = 0.00095
-left_x = 0.0049
-bottom_y = 0.01438
 lx = 0.0049
 ly = 0.01438
 lz = 0.00016999999999999999
@@ -238,13 +153,10 @@ dy = 0.00095
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 16
 
 [[power_units]]
 name = "FPMap"
-width = 0.0022
-height = 0.00067
-left_x = 0.0049
-bottom_y = 0.01533
 lx = 0.0049
 ly = 0.01533
 lz = 0.00016999999999999999
@@ -253,13 +165,10 @@ dy = 0.00067
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 17
 
 [[power_units]]
 name = "IntMap"
-width = 0.0009
-height = 0.00135
-left_x = 0.0071
-bottom_y = 0.01465
 lx = 0.0071
 ly = 0.01465
 lz = 0.00016999999999999999
@@ -268,13 +177,10 @@ dy = 0.00135
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 18
 
 [[power_units]]
 name = "IntQ"
-width = 0.0013
-height = 0.00135
-left_x = 0.008
-bottom_y = 0.01465
 lx = 0.008
 ly = 0.01465
 lz = 0.00016999999999999999
@@ -283,13 +189,10 @@ dy = 0.00135
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 19
 
 [[power_units]]
 name = "IntReg"
-width = 0.0018
-height = 0.00067
-left_x = 0.0093
-bottom_y = 0.01533
 lx = 0.0093
 ly = 0.01533
 lz = 0.00016999999999999999
@@ -298,13 +201,10 @@ dy = 0.00067
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 20
 
 [[power_units]]
 name = "IntExec"
-width = 0.0018
-height = 0.00223
-left_x = 0.0093
-bottom_y = 0.0131
 lx = 0.0093
 ly = 0.0131
 lz = 0.00016999999999999999
@@ -313,13 +213,10 @@ dy = 0.00223
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 21
 
 [[power_units]]
 name = "FPQ"
-width = 0.0009
-height = 0.00155
-left_x = 0.0071
-bottom_y = 0.0131
 lx = 0.0071
 ly = 0.0131
 lz = 0.00016999999999999999
@@ -328,13 +225,10 @@ dy = 0.00155
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 22
 
 [[power_units]]
 name = "LdStQ"
-width = 0.0013
-height = 0.00095
-left_x = 0.008
-bottom_y = 0.0137
 lx = 0.008
 ly = 0.0137
 lz = 0.00016999999999999999
@@ -343,13 +237,10 @@ dy = 0.00095
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
+domain_id = 23
 
 [[power_units]]
 name = "ITB"
-width = 0.0013
-height = 0.0006
-left_x = 0.008
-bottom_y = 0.0131
 lx = 0.008
 ly = 0.0131
 lz = 0.00016999999999999999
@@ -358,289 +249,23 @@ dy = 0.0006
 dz = 0.00015
 material = "layer_2_mat"
 layer_id = 2
-
-[[power_units]]
-name = "L2_left"
-width = 0.0049
-height = 0.0062
-left_x = 0.0
-bottom_y = 0.0098
-lx = 0.0
-ly = 0.0098
-lz = 0.00031999999999999997
-dx = 0.0049
-dy = 0.0062
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "L2"
-width = 0.016
-height = 0.0098
-left_x = 0.0
-bottom_y = 0.0
-lx = 0.0
-ly = 0.0
-lz = 0.00031999999999999997
-dx = 0.016
-dy = 0.0098
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "L2_right"
-width = 0.0049
-height = 0.0062
-left_x = 0.0111
-bottom_y = 0.0098
-lx = 0.0111
-ly = 0.0098
-lz = 0.00031999999999999997
-dx = 0.0049
-dy = 0.0062
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "Icache"
-width = 0.0031
-height = 0.0026
-left_x = 0.0049
-bottom_y = 0.0098
-lx = 0.0049
-ly = 0.0098
-lz = 0.00031999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "Dcache"
-width = 0.0031
-height = 0.0026
-left_x = 0.008
-bottom_y = 0.0098
-lx = 0.008
-ly = 0.0098
-lz = 0.00031999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "Bpred"
-width = 0.0031
-height = 0.0007
-left_x = 0.0049
-bottom_y = 0.0124
-lx = 0.0049
-ly = 0.0124
-lz = 0.00031999999999999997
-dx = 0.0031
-dy = 0.0007
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "DTB"
-width = 0.0031
-height = 0.0007
-left_x = 0.008
-bottom_y = 0.0124
-lx = 0.008
-ly = 0.0124
-lz = 0.00031999999999999997
-dx = 0.0031
-dy = 0.0007
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "FPAdd"
-width = 0.0022
-height = 0.0009
-left_x = 0.0049
-bottom_y = 0.0131
-lx = 0.0049
-ly = 0.0131
-lz = 0.00031999999999999997
-dx = 0.0022
-dy = 0.0009
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "FPReg"
-width = 0.0022
-height = 0.00038
-left_x = 0.0049
-bottom_y = 0.014
-lx = 0.0049
-ly = 0.014
-lz = 0.00031999999999999997
-dx = 0.0022
-dy = 0.00038
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "FPMul"
-width = 0.0022
-height = 0.00095
-left_x = 0.0049
-bottom_y = 0.01438
-lx = 0.0049
-ly = 0.01438
-lz = 0.00031999999999999997
-dx = 0.0022
-dy = 0.00095
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "FPMap"
-width = 0.0022
-height = 0.00067
-left_x = 0.0049
-bottom_y = 0.01533
-lx = 0.0049
-ly = 0.01533
-lz = 0.00031999999999999997
-dx = 0.0022
-dy = 0.00067
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "IntMap"
-width = 0.0009
-height = 0.00135
-left_x = 0.0071
-bottom_y = 0.01465
-lx = 0.0071
-ly = 0.01465
-lz = 0.00031999999999999997
-dx = 0.0009
-dy = 0.00135
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "IntQ"
-width = 0.0013
-height = 0.00135
-left_x = 0.008
-bottom_y = 0.01465
-lx = 0.008
-ly = 0.01465
-lz = 0.00031999999999999997
-dx = 0.0013
-dy = 0.00135
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "IntReg"
-width = 0.0018
-height = 0.00067
-left_x = 0.0093
-bottom_y = 0.01533
-lx = 0.0093
-ly = 0.01533
-lz = 0.00031999999999999997
-dx = 0.0018
-dy = 0.00067
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "IntExec"
-width = 0.0018
-height = 0.00223
-left_x = 0.0093
-bottom_y = 0.0131
-lx = 0.0093
-ly = 0.0131
-lz = 0.00031999999999999997
-dx = 0.0018
-dy = 0.00223
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "FPQ"
-width = 0.0009
-height = 0.00155
-left_x = 0.0071
-bottom_y = 0.0131
-lx = 0.0071
-ly = 0.0131
-lz = 0.00031999999999999997
-dx = 0.0009
-dy = 0.00155
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "LdStQ"
-width = 0.0013
-height = 0.00095
-left_x = 0.008
-bottom_y = 0.0137
-lx = 0.008
-ly = 0.0137
-lz = 0.00031999999999999997
-dx = 0.0013
-dy = 0.00095
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
-
-[[power_units]]
-name = "ITB"
-width = 0.0013
-height = 0.0006
-left_x = 0.008
-bottom_y = 0.0131
-lx = 0.008
-ly = 0.0131
-lz = 0.00031999999999999997
-dx = 0.0013
-dy = 0.0006
-dz = 2e-5
-material = "layer_3_mat"
-layer_id = 3
+domain_id = 24
 
 [[boundary_conditions]]
-name = "top_convection"
+name = "sink_convection"
 type = "convection"
-h = 39062.500000000015
+h = 2777.777777777778
 T_inf = 318.15
-selection = [ 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,]
+selection = [ 1002,]
 
 [domain_material_assignment]
 layer_0_mat = [ 1, 2, 3,]
 layer_1_mat = [ 4, 5, 6,]
 layer_2_mat = [ 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,]
 layer_3_mat = [ 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,]
+silicon = [ 1000,]
+copper = [ 1001,]
+aluminum = [ 1002,]
 
 [materials.silicon]
 k = 130.0
