@@ -138,23 +138,26 @@ class Mesher:
     def generate_layer_mesh_unified(
         self, tag, layer_entities, mesh_size, node_id_start, elem_id_start
     ):
-        """Generates a grid for all entities in a single layer to avoid tag conflicts"""
-        # A layer can have multiple flp entities, but for meshing we treat the whole layer as a bounding box
-        x_min = min(u["lx"] for u in layer_entities)
-        x_max = max(u["lx"] + u["dx"] for u in layer_entities)
-        y_min = min(u["ly"] for u in layer_entities)
-        y_max = max(u["ly"] + u["dy"] for u in layer_entities)
-        z_min = min(u["lz"] for u in layer_entities)
-        z_max = max(u["lz"] + u["dz"] for u in layer_entities)
-
-        dx, dy, dz = x_max - x_min, y_max - y_min, z_max - z_min
-        xs = np.linspace(x_min, x_max, max(2, int(round(dx / mesh_size)) + 1))
-        ys = np.linspace(y_min, y_max, max(2, int(round(dy / mesh_size)) + 1))
-        zs = np.linspace(z_min, z_max, max(2, int(round(dz / mesh_size)) + 1))
-
+        x_min, x_max = min(u["lx"] for u in layer_entities), max(
+            u["lx"] + u["dx"] for u in layer_entities
+        )
+        y_min, y_max = min(u["ly"] for u in layer_entities), max(
+            u["ly"] + u["dy"] for u in layer_entities
+        )
+        z_min, z_max = min(u["lz"] for u in layer_entities), max(
+            u["lz"] + u["dz"] for u in layer_entities
+        )
+        xs = np.linspace(
+            x_min, x_max, max(2, int(round((x_max - x_min) / mesh_size)) + 1)
+        )
+        ys = np.linspace(
+            y_min, y_max, max(2, int(round((y_max - y_min) / mesh_size)) + 1)
+        )
+        zs = np.linspace(
+            z_min, z_max, max(2, int(round((z_max - z_min) / mesh_size)) + 1)
+        )
         d_tag = gmsh.model.addDiscreteEntity(3)
         gmsh.model.addPhysicalGroup(3, [d_tag], tag)
-
         node_id = node_id_start
         node_map = {}
         all_nt, all_nc = [], []
@@ -166,7 +169,6 @@ class Mesher:
                     node_map[(i, j, k)] = node_id
                     node_id += 1
         gmsh.model.mesh.addNodes(3, d_tag, all_nt, all_nc)
-
         elem_id = elem_id_start
         el_ids, n_conns = [], []
         for k in range(len(zs) - 1):
@@ -241,7 +243,6 @@ def convert_hotspot_to_metahotspot(example_dir, output_dir):
         ),
         None,
     )
-
     if lcf_path:
         for layer in parser.parse_lcf(lcf_path):
             tag = layer["id"] + 1
@@ -255,7 +256,6 @@ def convert_hotspot_to_metahotspot(example_dir, output_dir):
             if mat not in domain_assignment:
                 domain_assignment[mat] = []
             domain_assignment[mat].append(tag)
-
             m_size = 0.0005 if layer["power"] else 0.001
             layers_entities[tag] = {"mesh_size": m_size, "units": []}
             for u in parser.parse_flp(os.path.join(example_dir, layer["flp_file"])):
@@ -299,7 +299,6 @@ def convert_hotspot_to_metahotspot(example_dir, output_dir):
                 power_units.append(ent)
             z_cursor += t_chip
 
-    # Packaging
     def add_p(name, thick, side, mat, tag, ms):
         nonlocal z_cursor
         lx, ly = (total_w - side) / 2, (total_h - side) / 2
@@ -341,7 +340,11 @@ def convert_hotspot_to_metahotspot(example_dir, output_dir):
     )
 
     toml_data = {
-        "simulation_type": "steady",
+        "simulation_type": config.get("simulation_type", "steady"),
+        "time": config.get("time", 0.1),
+        "timestep": config.get("timestep", 0.01),
+        "sampling_intvl": config.get("sampling_intvl", 0.01),
+        "proc_freq": config.get("proc_freq", 3.0e9),
         "materials": materials,
         "domain_material_assignment": domain_assignment,
         "mesh_file_path": "mesh.msh",
@@ -361,13 +364,12 @@ def convert_hotspot_to_metahotspot(example_dir, output_dir):
     }
     with open(os.path.join(output_dir, "solver_config.toml"), "w") as f:
         toml.dump(toml_data, f)
-
     m = Mesher()
     ni, ei = 1, 1
     for tag, data in layers_entities.items():
-        ni, ei = m.generate_layer_mesh_unified(
+        ni = m.generate_layer_mesh_unified(
             tag, data["units"], data["mesh_size"], ni, ei
-        )
+        )[0]
     m.finalize(os.path.join(output_dir, "mesh.msh"))
 
 
