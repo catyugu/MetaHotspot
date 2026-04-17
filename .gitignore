@@ -2,9 +2,8 @@ build
 outputs
 .vscode
 .idea
-Hotspot
-3d-ice
 *.msh
 *.vtu
 *.steady
 *.ttrace
+__pycache__
