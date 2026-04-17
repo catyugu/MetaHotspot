@@ -1,4 +1,4 @@
-simulation_type = "steady"
+simulation_type = "transient"
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "example.ptrace"
 ambient = 318.15

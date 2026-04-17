@@ -5,144 +5,138 @@ import meshio
 import toml
 import os
 
-def get_intersection_volume(box1, box2):
-    inter_min = np.maximum(box1[:3], box2[:3])
-    inter_max = np.minimum(box1[3:], box2[3:])
-    diff = inter_max - inter_min
-    if np.any(diff <= 0): return 0.0
-    return np.prod(diff)
+def get_overlap_area(b1, b2, axis):
+    """Calculate overlap area between two 3D boxes along a specific axis face"""
+    # Plane indices based on normal axis
+    idx = [i for i in range(3) if i != axis]
+    # Intersect 2D rectangles in the face plane
+    inter_min = np.maximum(b1[idx], b2[idx])
+    inter_max = np.minimum(b1[[i+3 for i in idx]], b2[[i+3 for i in idx]])
+    dims = inter_max - inter_min
+    return np.prod(dims) if np.all(dims > 0) else 0.0
 
 class FVMSolver:
     def __init__(self, config_path):
         self.base_dir = os.path.dirname(config_path)
         self.config = toml.load(config_path)
-        
-        # Load mesh from config path
-        mesh_full_path = os.path.join(self.base_dir, self.config.get('mesh_file_path', 'mesh.msh'))
-        self.mesh = meshio.read(mesh_full_path)
-        
+        self.mesh = meshio.read(os.path.join(self.base_dir, self.config.get('mesh_file_path', 'mesh.msh')))
         self.materials = self.config['materials']
-        self.tag_to_mat = {}
-        for mat_name, tags in self.config.get('domain_material_assignment', {}).items():
-            for tag in tags: self.tag_to_mat[tag] = mat_name
+        self.tag_to_mat = {t: m for m, tags in self.config.get('domain_material_assignment', {}).items() for t in tags}
         self.cells = []
-        self.node_to_cells = {}
         self._prepare_mesh()
 
     def _prepare_mesh(self):
-        print("Preparing mesh data...")
+        print("[INFO] Preparing mesh data...")
         hex_data = self.mesh.cells_dict.get('hexahedron')
         physical_tags = self.mesh.cell_data_dict.get('gmsh:physical', {}).get('hexahedron')
         points = self.mesh.points
-        
-        for i, node_indices in enumerate(hex_data):
-            c_pts = points[node_indices]
-            min_p, max_p = np.min(c_pts, axis=0), np.max(c_pts, axis=0)
-            dims = max_p - min_p
-            if np.any(dims <= 0): dims = np.maximum(dims, 1e-12)
+        for i, nodes in enumerate(hex_data):
+            p = points[nodes]; p_min, p_max = np.min(p, axis=0), np.max(p, axis=0)
             tag = physical_tags[i] if physical_tags is not None else -1
-            mat_name = self.tag_to_mat.get(tag, 'silicon')
-            
-            cell_box = np.concatenate([min_p, max_p])
-            # Material Override check
-            for u in self.config.get('power_units', []):
-                if 'material' in u:
-                    u_box = [u['lx'], u['ly'], u['lz'], u['lx']+u['dx'], u['ly']+u['dy'], u['lz']+u['dz']]
-                    if get_intersection_volume(cell_box, u_box) > 0.5 * np.prod(dims):
-                        mat_name = u['material']; break
+            mat = self.tag_to_mat.get(tag, 'silicon')
+            self.cells.append({
+                'id': i, 'center': (p_min+p_max)/2, 'dims': p_max-p_min, 'box': np.concatenate([p_min, p_max]),
+                'k': self.materials[mat]['k'], 'cp': self.materials[mat]['cp'], 'tag': tag, 'vol': np.prod(p_max-p_min)
+            })
 
-            cell_info = {
-                'id': i, 'center': (min_p + max_p) / 2, 'dims': dims, 'box': cell_box,
-                'k': self.materials[mat_name]['k'], 'tag': tag, 'nodes': set(node_indices)
-            }
-            self.cells.append(cell_info)
-            for nid in node_indices:
-                if nid not in self.node_to_cells: self.node_to_cells[nid] = []
-                self.node_to_cells[nid].append(i)
-
-    def solve_steady(self):
-        # Load Power from config path
-        ptrace_name = self.config.get('ptrace_file_path')
-        power_densities = {}
-        if ptrace_name:
-            ptrace_path = os.path.join(self.base_dir, ptrace_name)
-            with open(ptrace_path, 'r') as f:
-                lines = f.readlines()
-                header = lines[0].strip().split()
-                data = [[float(x) for x in l.strip().split()] for l in lines[1:] if l.strip()]
-                avg_p = np.mean(data, axis=0)
-                p_map = dict(zip(header, avg_p))
-                for u in self.config.get('power_units', []):
-                    vol = u['dx'] * u['dy'] * u['dz']
-                    power_densities[u['name']] = p_map.get(u['name'], 0.0) / vol if vol > 0 else 0.0
-
+    def assemble_g_matrix(self):
         n = len(self.cells)
-        rows, cols, data, b = [], [], [], np.zeros(n)
-        print(f"Assembling matrix for {n} cells...")
-        for i, cell in enumerate(self.cells):
-            # Conduction
-            candidates = set()
-            for nid in cell['nodes']: candidates.update(self.node_to_cells[nid])
-            for j in candidates:
-                if i >= j: continue
-                neighbor = self.cells[j]
-                shared = cell['nodes'].intersection(neighbor['nodes'])
-                if len(shared) >= 4:
-                    dist = neighbor['center'] - cell['center']; axis = np.argmax(np.abs(dist))
-                    area = cell['dims'][(axis+1)%3] * cell['dims'][(axis+2)%3]
-                    G = 1.0 / ((cell['dims'][axis]/2)/(cell['k']*area) + (neighbor['dims'][axis]/2)/(neighbor['k']*area))
-                    rows.extend([i, j, i, j]); cols.extend([i, j, j, i]); data.extend([-G, -G, G, G])
-            # Power
-            for u in self.config.get('power_units', []):
-                u_box = [u['lx'], u['ly'], u['lz'], u['lx']+u['dx'], u['ly']+u['dy'], u['lz']+u['dz']]
-                v_inter = get_intersection_volume(cell['box'], u_box)
-                if v_inter > 0: b[i] -= v_inter * power_densities.get(u['name'], 0.0)
-            
-        # BCs
+        rows, cols, data = [], [], []
+        print(f"[INFO] Building non-conformal G matrix ({n} cells)...")
+        
+        # Optimization: group cells by layers to avoid O(N^2)
+        z_coords = sorted(list(set(c['center'][2] for c in self.cells)))
+        layer_cells = {z: [c for c in self.cells if c['center'][2] == z] for z in z_coords}
+        
+        for idx, z in enumerate(z_coords):
+            cells = layer_cells[z]
+            # 1. Horizontal Neighbors (within layer)
+            for i, c1 in enumerate(cells):
+                for j in range(i+1, len(cells)):
+                    c2 = cells[j]
+                    # Check X-adjacency
+                    if abs(c1['center'][1]-c2['center'][1]) < 1e-7: # Same Y
+                        if abs(abs(c1['center'][0]-c2['center'][0]) - (c1['dims'][0]+c2['dims'][0])/2) < 1e-7:
+                            area = c1['dims'][1] * c1['dims'][2]
+                            G = 1.0 / ((c1['dims'][0]/2)/(c1['k']*area) + (c2['dims'][0]/2)/(c2['k']*area))
+                            rows.extend([c1['id'], c2['id'], c1['id'], c2['id']]); cols.extend([c1['id'], c2['id'], c2['id'], c1['id']]); data.extend([-G, -G, G, G])
+                    # Check Y-adjacency
+                    if abs(c1['center'][0]-c2['center'][0]) < 1e-7: # Same X
+                        if abs(abs(c1['center'][1]-c2['center'][1]) - (c1['dims'][1]+c2['dims'][1])/2) < 1e-7:
+                            area = c1['dims'][0] * c1['dims'][2]
+                            G = 1.0 / ((c1['dims'][1]/2)/(c1['k']*area) + (c2['dims'][1]/2)/(c2['k']*area))
+                            rows.extend([c1['id'], c2['id'], c1['id'], c2['id']]); cols.extend([c1['id'], c2['id'], c2['id'], c1['id']]); data.extend([-G, -G, G, G])
+
+            # 2. Vertical Neighbors (cross layer)
+            if idx < len(z_coords) - 1:
+                next_cells = layer_cells[z_coords[idx+1]]
+                for c1 in cells:
+                    # Check if c1 top touches next layer bottom
+                    if abs(c1['box'][5] - (z_coords[idx+1] - next_cells[0]['dims'][2]/2)) < 1e-8:
+                        for c2 in next_cells:
+                            area = get_overlap_area(c1['box'], c2['box'], 2)
+                            if area > 1e-11:
+                                G = 1.0 / ((c1['dims'][2]/2)/(c1['k']*area) + (c2['dims'][2]/2)/(c2['k']*area))
+                                rows.extend([c1['id'], c2['id'], c1['id'], c2['id']]); cols.extend([c1['id'], c2['id'], c2['id'], c1['id']]); data.extend([-G, -G, G, G])
+        
+        return sp.csr_matrix((data, (rows, cols)), shape=(n, n))
+
+    def solve(self):
+        ptrace_path = os.path.join(self.base_dir, self.config.get('ptrace_file_path', ''))
+        ptrace_steps = []
+        if os.path.exists(ptrace_path):
+            with open(ptrace_path, 'r') as f:
+                header = f.readline().split()
+                ptrace_steps = [dict(zip(header, [float(x) for x in l.split()])) for l in f if l.strip()]
+
+        G = self.assemble_g_matrix(); n = len(self.cells); b_bc = np.zeros(n); r_bc, c_bc, d_bc = [], [], []
+        
+        # Convection BC
         for bc in self.config.get('boundary_conditions', []):
-            if bc.get('type') == 'convection':
-                h, T_inf, sel = bc.get('h', 0.0), bc.get('T_inf', 293.15), bc.get('selection', [])
-                for i in [idx for idx, c in enumerate(self.cells) if c['tag'] in sel]:
-                    cell = self.cells[i]
-                    for axis in range(3):
-                        for direction in [-1, 1]:
-                            is_ext = True; target = cell['center'].copy(); target[axis] += direction * cell['dims'][axis]
-                            for nid in cell['nodes']:
-                                for nj in self.node_to_cells[nid]:
-                                    if nj != i and np.linalg.norm(self.cells[nj]['center']-target) < 1e-7:
-                                        is_ext = False; break
-                                if not is_ext: break
-                            if is_ext:
-                                area = cell['dims'][(axis+1)%3] * cell['dims'][(axis+2)%3]
-                                G_bc = h * area; rows.append(i); cols.append(i); data.append(-G_bc); b[i] -= G_bc * T_inf
+            if bc['type'] == 'convection':
+                h, T_inf, sel = bc['h'], bc['T_inf'], bc['selection']
+                z_max = max(c['box'][5] for c in self.cells)
+                for c in [c for c in self.cells if c['tag'] in sel]:
+                    if abs(c['box'][5] - z_max) < 1e-7:
+                        area = c['dims'][0] * c['dims'][1]; G_bc = h * area
+                        r_bc.append(c['id']); c_bc.append(c['id']); d_bc.append(-G_bc); b_bc[c['id']] += G_bc * T_inf
+        G += sp.csr_matrix((d_bc, (r_bc, c_bc)), shape=(n, n))
 
-        print("Solving...")
-        T = splinalg.spsolve(sp.csr_matrix((data, (rows, cols)), shape=(n, n)), b)
-        return T
+        if self.config.get('simulation_type') == 'steady':
+            print("[SIM] Solving Steady State...")
+            p_avg = {u['name']: np.mean([s[u['name']] for s in ptrace_steps]) for u in self.config['power_units']} if ptrace_steps else {}
+            b = b_bc.copy()
+            for c in self.cells:
+                for u in self.config['power_units']:
+                    inter = np.prod(np.maximum(0, np.minimum(c['box'][3:], [u['lx']+u['dx'],u['ly']+u['dy'],u['lz']+u['dz']]) - np.maximum(c['box'][:3], [u['lx'],u['ly'],u['lz']])))
+                    if inter > 1e-15: b[c['id']] += (inter / (u['dx']*u['dy']*u['dz'])) * p_avg.get(u['name'], 0.0)
+            T = splinalg.spsolve(-G, b)
+            print(f"[RESULT] T_min={np.min(T):.2f} K, T_max={np.max(T):.2f} K")
+            self.save(T, "result.vtu")
+        else:
+            print("[SIM] Solving Transient...")
+            dt = self.config.get('timestep', 0.01)
+            C = sp.diags([c['cp'] * c['vol'] for c in self.cells])
+            # Start from Steady State if not specified
+            T = np.full(n, self.config.get('init_temperature', 318.15))
+            A_mat = C/dt - G
+            for step, p_step in enumerate(ptrace_steps):
+                b = (C/dt) @ T + b_bc
+                for c in self.cells:
+                    for u in self.config['power_units']:
+                        inter = np.prod(np.maximum(0, np.minimum(c['box'][3:], [u['lx']+u['dx'],u['ly']+u['dy'],u['lz']+u['dz']]) - np.maximum(c['box'][:3], [u['lx'],u['ly'],u['lz']])))
+                        if inter > 1e-15: b[c['id']] += (inter / (u['dx']*u['dy']*u['dz'])) * p_step.get(u['name'], 0.0)
+                T = splinalg.spsolve(A_mat, b)
+                if step % 10 == 0 or step == len(ptrace_steps)-1:
+                    print(f"[STEP {step:4d}] T_min={np.min(T):.2f} K, T_max={np.max(T):.2f} K")
+            self.save(T, "transient_result.vtu")
 
-    def save_results(self, T):
-        # Fixed filenames as requested
-        vtu_path = os.path.join(self.base_dir, "result.vtu")
-        steady_path = os.path.join(self.base_dir, "units.steady")
-        
-        self.mesh.cell_data['Temperature'] = [np.array(T)]
-        self.mesh.write(vtu_path)
-        print(f"3D result saved to {vtu_path}")
-        
-        unit_temps = {u['name']: [] for u in self.config.get('power_units', [])}
-        for i, cell in enumerate(self.cells):
-            for u in self.config.get('power_units', []):
-                u_box = [u['lx'], u['ly'], u['lz'], u['lx']+u['dx'], u['ly']+u['dy'], u['lz']+u['dz']]
-                if get_intersection_volume(cell['box'], u_box) > 0.5 * np.prod(cell['dims']):
-                    unit_temps[u['name']].append(T[i])
-        
-        with open(steady_path, 'w') as f:
-            for name, ts in unit_temps.items():
-                f.write(f"{name}\t{np.mean(ts) if ts else 0.0:.2f}\n")
-        print(f"Unit results saved to {steady_path}")
+    def save(self, T, name):
+        self.mesh.cell_sets = {}; self.mesh.cell_data = {'Temperature': [np.array(T)]}
+        self.mesh.write(os.path.join(self.base_dir, name))
+        print(f"[FILE] Results saved to {name}")
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) < 2: print("Usage: python solver.py <config.toml>")
-    else:
-        s = FVMSolver(sys.argv[1]); T = s.solve_steady(); s.save_results(T)
+    else: FVMSolver(sys.argv[1]).solve()
