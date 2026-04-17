@@ -1,4 +1,7 @@
 simulation_type = "steady"
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "example.ptrace"
+ambient = 318.15
 [[power_units]]
 name = "Unit1"
 lx = 0.0
@@ -7,9 +10,6 @@ lz = 0.0
 dx = 0.008
 dy = 0.008
 dz = 0.00015
-material = "layer_0_mat"
-layer_id = 0
-domain_id = 1
 
 [[power_units]]
 name = "Unit2"
@@ -19,9 +19,6 @@ lz = 0.0
 dx = 0.016
 dy = 0.008
 dz = 0.00015
-material = "layer_0_mat"
-layer_id = 0
-domain_id = 2
 
 [[power_units]]
 name = "Unit3"
@@ -31,9 +28,6 @@ lz = 0.0
 dx = 0.008
 dy = 0.008
 dz = 0.00015
-material = "layer_0_mat"
-layer_id = 0
-domain_id = 3
 
 [[power_units]]
 name = "L2_left"
@@ -43,9 +37,6 @@ lz = 0.00016999999999999999
 dx = 0.0049
 dy = 0.0062
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 7
 
 [[power_units]]
 name = "L2"
@@ -55,9 +46,6 @@ lz = 0.00016999999999999999
 dx = 0.016
 dy = 0.0098
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 8
 
 [[power_units]]
 name = "L2_right"
@@ -67,9 +55,6 @@ lz = 0.00016999999999999999
 dx = 0.0049
 dy = 0.0062
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 9
 
 [[power_units]]
 name = "Icache"
@@ -79,9 +64,6 @@ lz = 0.00016999999999999999
 dx = 0.0031
 dy = 0.0026
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 10
 
 [[power_units]]
 name = "Dcache"
@@ -91,9 +73,6 @@ lz = 0.00016999999999999999
 dx = 0.0031
 dy = 0.0026
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 11
 
 [[power_units]]
 name = "Bpred"
@@ -103,9 +82,6 @@ lz = 0.00016999999999999999
 dx = 0.0031
 dy = 0.0007
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 12
 
 [[power_units]]
 name = "DTB"
@@ -115,9 +91,6 @@ lz = 0.00016999999999999999
 dx = 0.0031
 dy = 0.0007
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 13
 
 [[power_units]]
 name = "FPAdd"
@@ -127,9 +100,6 @@ lz = 0.00016999999999999999
 dx = 0.0022
 dy = 0.0009
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 14
 
 [[power_units]]
 name = "FPReg"
@@ -139,9 +109,6 @@ lz = 0.00016999999999999999
 dx = 0.0022
 dy = 0.00038
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 15
 
 [[power_units]]
 name = "FPMul"
@@ -151,9 +118,6 @@ lz = 0.00016999999999999999
 dx = 0.0022
 dy = 0.00095
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 16
 
 [[power_units]]
 name = "FPMap"
@@ -163,9 +127,6 @@ lz = 0.00016999999999999999
 dx = 0.0022
 dy = 0.00067
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 17
 
 [[power_units]]
 name = "IntMap"
@@ -175,9 +136,6 @@ lz = 0.00016999999999999999
 dx = 0.0009
 dy = 0.00135
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 18
 
 [[power_units]]
 name = "IntQ"
@@ -187,9 +145,6 @@ lz = 0.00016999999999999999
 dx = 0.0013
 dy = 0.00135
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 19
 
 [[power_units]]
 name = "IntReg"
@@ -199,9 +154,6 @@ lz = 0.00016999999999999999
 dx = 0.0018
 dy = 0.00067
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 20
 
 [[power_units]]
 name = "IntExec"
@@ -211,9 +163,6 @@ lz = 0.00016999999999999999
 dx = 0.0018
 dy = 0.00223
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 21
 
 [[power_units]]
 name = "FPQ"
@@ -223,9 +172,6 @@ lz = 0.00016999999999999999
 dx = 0.0009
 dy = 0.00155
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 22
 
 [[power_units]]
 name = "LdStQ"
@@ -235,9 +181,6 @@ lz = 0.00016999999999999999
 dx = 0.0013
 dy = 0.00095
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 23
 
 [[power_units]]
 name = "ITB"
@@ -247,23 +190,20 @@ lz = 0.00016999999999999999
 dx = 0.0013
 dy = 0.0006
 dz = 0.00015
-material = "layer_2_mat"
-layer_id = 2
-domain_id = 24
 
 [[boundary_conditions]]
-name = "sink_convection"
+name = "sink_conv"
 type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
 selection = [ 1002,]
 
 [domain_material_assignment]
-layer_0_mat = [ 1, 2, 3,]
-layer_1_mat = [ 4, 5, 6,]
-layer_2_mat = [ 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,]
-layer_3_mat = [ 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,]
-silicon = [ 1000,]
+layer_0_mat = [ 1,]
+layer_1_mat = [ 2,]
+layer_2_mat = [ 3,]
+layer_3_mat = [ 4,]
+tim = [ 1000,]
 copper = [ 1001,]
 aluminum = [ 1002,]
 
@@ -286,6 +226,11 @@ fluid = false
 [materials.copper]
 k = 400.0
 cp = 3550000.0
+fluid = false
+
+[materials.tim]
+k = 4.0
+cp = 4000000.0
 fluid = false
 
 [materials.layer_0_mat]

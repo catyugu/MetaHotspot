@@ -1,4 +1,7 @@
 simulation_type = "steady"
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "gcc.ptrace"
+ambient = 318.15
 [[power_units]]
 name = "L2_left"
 lx = 0.0
@@ -7,9 +10,6 @@ lz = 0.0
 dx = 0.0049
 dy = 0.0062
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 1
 
 [[power_units]]
 name = "L2"
@@ -19,9 +19,6 @@ lz = 0.0
 dx = 0.016
 dy = 0.0098
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 2
 
 [[power_units]]
 name = "L2_right"
@@ -31,9 +28,6 @@ lz = 0.0
 dx = 0.0049
 dy = 0.0062
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 3
 
 [[power_units]]
 name = "Icache"
@@ -43,9 +37,6 @@ lz = 0.0
 dx = 0.0031
 dy = 0.0026
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 4
 
 [[power_units]]
 name = "Dcache"
@@ -55,9 +46,6 @@ lz = 0.0
 dx = 0.0031
 dy = 0.0026
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 5
 
 [[power_units]]
 name = "Bpred_0"
@@ -67,9 +55,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 6
 
 [[power_units]]
 name = "Bpred_1"
@@ -79,9 +64,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 7
 
 [[power_units]]
 name = "Bpred_2"
@@ -91,9 +73,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 8
 
 [[power_units]]
 name = "DTB_0"
@@ -103,9 +82,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 9
 
 [[power_units]]
 name = "DTB_1"
@@ -115,9 +91,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 10
 
 [[power_units]]
 name = "DTB_2"
@@ -127,9 +100,6 @@ lz = 0.0
 dx = 0.001033
 dy = 0.0007
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 11
 
 [[power_units]]
 name = "FPAdd_0"
@@ -139,9 +109,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.0009
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 12
 
 [[power_units]]
 name = "FPAdd_1"
@@ -151,9 +118,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.0009
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 13
 
 [[power_units]]
 name = "FPReg_0"
@@ -163,9 +127,6 @@ lz = 0.0
 dx = 0.00055
 dy = 0.00038
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 14
 
 [[power_units]]
 name = "FPReg_1"
@@ -175,9 +136,6 @@ lz = 0.0
 dx = 0.00055
 dy = 0.00038
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 15
 
 [[power_units]]
 name = "FPReg_2"
@@ -187,9 +145,6 @@ lz = 0.0
 dx = 0.00055
 dy = 0.00038
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 16
 
 [[power_units]]
 name = "FPReg_3"
@@ -199,9 +154,6 @@ lz = 0.0
 dx = 0.00055
 dy = 0.00038
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 17
 
 [[power_units]]
 name = "FPMul_0"
@@ -211,9 +163,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.00095
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 18
 
 [[power_units]]
 name = "FPMul_1"
@@ -223,9 +172,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.00095
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 19
 
 [[power_units]]
 name = "FPMap_0"
@@ -235,9 +181,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.00067
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 20
 
 [[power_units]]
 name = "FPMap_1"
@@ -247,9 +190,6 @@ lz = 0.0
 dx = 0.0011
 dy = 0.00067
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 21
 
 [[power_units]]
 name = "IntMap"
@@ -259,9 +199,6 @@ lz = 0.0
 dx = 0.0009
 dy = 0.00135
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 22
 
 [[power_units]]
 name = "IntQ"
@@ -271,9 +208,6 @@ lz = 0.0
 dx = 0.0013
 dy = 0.00135
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 23
 
 [[power_units]]
 name = "IntReg_0"
@@ -283,9 +217,6 @@ lz = 0.0
 dx = 0.0009
 dy = 0.00067
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 24
 
 [[power_units]]
 name = "IntReg_1"
@@ -295,9 +226,6 @@ lz = 0.0
 dx = 0.0009
 dy = 0.00067
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 25
 
 [[power_units]]
 name = "IntExec"
@@ -307,9 +235,6 @@ lz = 0.0
 dx = 0.0018
 dy = 0.00223
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 26
 
 [[power_units]]
 name = "FPQ"
@@ -319,9 +244,6 @@ lz = 0.0
 dx = 0.0009
 dy = 0.00155
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 27
 
 [[power_units]]
 name = "LdStQ"
@@ -331,9 +253,6 @@ lz = 0.0
 dx = 0.0013
 dy = 0.00095
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 28
 
 [[power_units]]
 name = "ITB_0"
@@ -343,9 +262,6 @@ lz = 0.0
 dx = 0.00065
 dy = 0.0006
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 29
 
 [[power_units]]
 name = "ITB_1"
@@ -355,19 +271,17 @@ lz = 0.0
 dx = 0.00065
 dy = 0.0006
 dz = 0.00015
-material = "silicon"
-layer_id = 0
-domain_id = 30
 
 [[boundary_conditions]]
-name = "sink_convection"
+name = "sink_conv"
 type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
 selection = [ 1002,]
 
 [domain_material_assignment]
-silicon = [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 1000,]
+silicon = [ 1,]
+tim = [ 1000,]
 copper = [ 1001,]
 aluminum = [ 1002,]
 
@@ -390,4 +304,9 @@ fluid = false
 [materials.copper]
 k = 400.0
 cp = 3440000.0
+fluid = false
+
+[materials.tim]
+k = 4.0
+cp = 4000000.0
 fluid = false
