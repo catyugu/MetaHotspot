@@ -1,0 +1,317 @@
+simulation_type = "steady"
+time = 1.0
+timestep = 0.01
+sampling_intvl = 0.01
+proc_freq = 3000000000.0
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "gcc.ptrace"
+ambient = 318.15
+init_temperature = 318.15
+[[power_units]]
+name = "L2_left"
+lx = 0.0
+ly = 0.0098
+lz = 0.0
+dx = 0.0049
+dy = 0.0062
+dz = 0.00015
+
+[[power_units]]
+name = "L2"
+lx = 0.0
+ly = 0.0
+lz = 0.0
+dx = 0.016
+dy = 0.0098
+dz = 0.00015
+
+[[power_units]]
+name = "L2_right"
+lx = 0.0111
+ly = 0.0098
+lz = 0.0
+dx = 0.0049
+dy = 0.0062
+dz = 0.00015
+
+[[power_units]]
+name = "Icache"
+lx = 0.0049
+ly = 0.0098
+lz = 0.0
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+
+[[power_units]]
+name = "Dcache"
+lx = 0.008
+ly = 0.0098
+lz = 0.0
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+
+[[power_units]]
+name = "Bpred_0"
+lx = 0.0049
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "Bpred_1"
+lx = 0.005933
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "Bpred_2"
+lx = 0.006967
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "DTB_0"
+lx = 0.008
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "DTB_1"
+lx = 0.009033
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "DTB_2"
+lx = 0.010067
+ly = 0.0124
+lz = 0.0
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "FPAdd_0"
+lx = 0.0049
+ly = 0.0131
+lz = 0.0
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+
+[[power_units]]
+name = "FPAdd_1"
+lx = 0.006
+ly = 0.0131
+lz = 0.0
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+
+[[power_units]]
+name = "FPReg_0"
+lx = 0.0049
+ly = 0.014
+lz = 0.0
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+
+[[power_units]]
+name = "FPReg_1"
+lx = 0.00545
+ly = 0.014
+lz = 0.0
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+
+[[power_units]]
+name = "FPReg_2"
+lx = 0.006
+ly = 0.014
+lz = 0.0
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+
+[[power_units]]
+name = "FPReg_3"
+lx = 0.00655
+ly = 0.014
+lz = 0.0
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+
+[[power_units]]
+name = "FPMul_0"
+lx = 0.0049
+ly = 0.01438
+lz = 0.0
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+
+[[power_units]]
+name = "FPMul_1"
+lx = 0.006
+ly = 0.01438
+lz = 0.0
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+
+[[power_units]]
+name = "FPMap_0"
+lx = 0.0049
+ly = 0.01533
+lz = 0.0
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "FPMap_1"
+lx = 0.006
+ly = 0.01533
+lz = 0.0
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "IntMap"
+lx = 0.0071
+ly = 0.01465
+lz = 0.0
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+
+[[power_units]]
+name = "IntQ"
+lx = 0.008
+ly = 0.01465
+lz = 0.0
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+
+[[power_units]]
+name = "IntReg_0"
+lx = 0.0093
+ly = 0.01533
+lz = 0.0
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "IntReg_1"
+lx = 0.0102
+ly = 0.01533
+lz = 0.0
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "IntExec"
+lx = 0.0093
+ly = 0.0131
+lz = 0.0
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+
+[[power_units]]
+name = "FPQ"
+lx = 0.0071
+ly = 0.0131
+lz = 0.0
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+
+[[power_units]]
+name = "LdStQ"
+lx = 0.008
+ly = 0.0137
+lz = 0.0
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+
+[[power_units]]
+name = "ITB_0"
+lx = 0.008
+ly = 0.0131
+lz = 0.0
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+
+[[power_units]]
+name = "ITB_1"
+lx = 0.00865
+ly = 0.0131
+lz = 0.0
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+
+[[boundary_conditions]]
+name = "sink_conv"
+type = "convection"
+h = 2777.777777777778
+T_inf = 318.15
+selection = [ 1002,]
+
+[domain_material_assignment]
+silicon = [ 1,]
+tim = [ 1000,]
+copper = [ 1001,]
+aluminum = [ 1002,]
+
+[materials.silicon]
+k = 130.0
+cp = 1630300.0
+fluid = false
+
+[materials.water]
+k = 0.6069
+cp = 4172638.0
+fluid = true
+dynamic_viscosity = 0.000889
+
+[materials.aluminum]
+k = 237.0
+cp = 2422000.0
+fluid = false
+
+[materials.copper]
+k = 400.0
+cp = 3440000.0
+fluid = false
+
+[materials.tim]
+k = 4.0
+cp = 4000000.0
+fluid = false

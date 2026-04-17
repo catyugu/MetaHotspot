@@ -1,0 +1,259 @@
+simulation_type = "steady"
+time = 0.02
+timestep = 0.01
+sampling_intvl = 0.01
+proc_freq = 3000000000.0
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "example.ptrace"
+ambient = 318.15
+init_temperature = 318.15
+[[power_units]]
+name = "Unit1"
+lx = 0.0
+ly = 0.008
+lz = 0.0
+dx = 0.008
+dy = 0.008
+dz = 0.00015
+
+[[power_units]]
+name = "Unit2"
+lx = 0.0
+ly = 0.0
+lz = 0.0
+dx = 0.016
+dy = 0.008
+dz = 0.00015
+
+[[power_units]]
+name = "Unit3"
+lx = 0.008
+ly = 0.008
+lz = 0.0
+dx = 0.008
+dy = 0.008
+dz = 0.00015
+
+[[power_units]]
+name = "L2_left"
+lx = 0.0
+ly = 0.0098
+lz = 0.00016999999999999999
+dx = 0.0049
+dy = 0.0062
+dz = 0.00015
+
+[[power_units]]
+name = "L2"
+lx = 0.0
+ly = 0.0
+lz = 0.00016999999999999999
+dx = 0.016
+dy = 0.0098
+dz = 0.00015
+
+[[power_units]]
+name = "L2_right"
+lx = 0.0111
+ly = 0.0098
+lz = 0.00016999999999999999
+dx = 0.0049
+dy = 0.0062
+dz = 0.00015
+
+[[power_units]]
+name = "Icache"
+lx = 0.0049
+ly = 0.0098
+lz = 0.00016999999999999999
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+
+[[power_units]]
+name = "Dcache"
+lx = 0.008
+ly = 0.0098
+lz = 0.00016999999999999999
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+
+[[power_units]]
+name = "Bpred"
+lx = 0.0049
+ly = 0.0124
+lz = 0.00016999999999999999
+dx = 0.0031
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "DTB"
+lx = 0.008
+ly = 0.0124
+lz = 0.00016999999999999999
+dx = 0.0031
+dy = 0.0007
+dz = 0.00015
+
+[[power_units]]
+name = "FPAdd"
+lx = 0.0049
+ly = 0.0131
+lz = 0.00016999999999999999
+dx = 0.0022
+dy = 0.0009
+dz = 0.00015
+
+[[power_units]]
+name = "FPReg"
+lx = 0.0049
+ly = 0.014
+lz = 0.00016999999999999999
+dx = 0.0022
+dy = 0.00038
+dz = 0.00015
+
+[[power_units]]
+name = "FPMul"
+lx = 0.0049
+ly = 0.01438
+lz = 0.00016999999999999999
+dx = 0.0022
+dy = 0.00095
+dz = 0.00015
+
+[[power_units]]
+name = "FPMap"
+lx = 0.0049
+ly = 0.01533
+lz = 0.00016999999999999999
+dx = 0.0022
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "IntMap"
+lx = 0.0071
+ly = 0.01465
+lz = 0.00016999999999999999
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+
+[[power_units]]
+name = "IntQ"
+lx = 0.008
+ly = 0.01465
+lz = 0.00016999999999999999
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+
+[[power_units]]
+name = "IntReg"
+lx = 0.0093
+ly = 0.01533
+lz = 0.00016999999999999999
+dx = 0.0018
+dy = 0.00067
+dz = 0.00015
+
+[[power_units]]
+name = "IntExec"
+lx = 0.0093
+ly = 0.0131
+lz = 0.00016999999999999999
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+
+[[power_units]]
+name = "FPQ"
+lx = 0.0071
+ly = 0.0131
+lz = 0.00016999999999999999
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+
+[[power_units]]
+name = "LdStQ"
+lx = 0.008
+ly = 0.0137
+lz = 0.00016999999999999999
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+
+[[power_units]]
+name = "ITB"
+lx = 0.008
+ly = 0.0131
+lz = 0.00016999999999999999
+dx = 0.0013
+dy = 0.0006
+dz = 0.00015
+
+[[boundary_conditions]]
+name = "sink_conv"
+type = "convection"
+h = 2777.777777777778
+T_inf = 318.15
+selection = [ 1002,]
+
+[domain_material_assignment]
+layer_0_mat = [ 1,]
+layer_1_mat = [ 2,]
+layer_2_mat = [ 3,]
+layer_3_mat = [ 4,]
+tim = [ 1000,]
+copper = [ 1001,]
+aluminum = [ 1002,]
+
+[materials.silicon]
+k = 130.0
+cp = 1630300.0
+fluid = false
+
+[materials.water]
+k = 0.6069
+cp = 4172638.0
+fluid = true
+dynamic_viscosity = 0.000889
+
+[materials.aluminum]
+k = 237.0
+cp = 2422000.0
+fluid = false
+
+[materials.copper]
+k = 400.0
+cp = 3550000.0
+fluid = false
+
+[materials.tim]
+k = 4.0
+cp = 4000000.0
+fluid = false
+
+[materials.layer_0_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_1_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false
+
+[materials.layer_2_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_3_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false

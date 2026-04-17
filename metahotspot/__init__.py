@@ -1,0 +1,1 @@
+"""MetaHotspot Python package."""

@@ -18,7 +18,7 @@ ptrace_file_path = "gcc.ptrace"
 
 # --- Initial Conditions (transient only) ---
 init_temperature = 293.15               # uniform initial temperature (K)
-init_temperature_file_path = "gcc.init" # overrides init_temperature if present
+init_temperature_file_path = "init.vtu" # overrides init_temperature if present
 
 # --- Material Library (SI units) ---
 [materials.silicon]
