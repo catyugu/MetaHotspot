@@ -1,0 +1,1985 @@
+simulation_type = "steady"
+[[power_units]]
+name = "L2_1_0"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00018
+lx = 0.0
+ly = 0.00018
+lz = 0.0
+dx = 0.0124
+dy = 0.0062
+dz = 0.00015
+material = "layer_0_mat"
+layer_id = 0
+
+[[power_units]]
+name = "L2_1_TSV_0"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.0
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
+material = "layer_0_mat"
+layer_id = 0
+
+[[power_units]]
+name = "L2_1_1"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00656
+lx = 0.0
+ly = 0.00656
+lz = 0.0
+dx = 0.0124
+dy = 0.0062
+dz = 0.00015
+material = "layer_0_mat"
+layer_id = 0
+
+[[power_units]]
+name = "L2_1_TSV_1"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.00638
+lx = 0.0
+ly = 0.00638
+lz = 0.0
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
+material = "layer_0_mat"
+layer_id = 0
+
+[[power_units]]
+name = "TIM_unit_0"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00018
+lx = 0.0
+ly = 0.00018
+lz = 0.00015
+dx = 0.0124
+dy = 0.0062
+dz = 2e-5
+material = "layer_1_mat"
+layer_id = 1
+
+[[power_units]]
+name = "TIM_tsv_0"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.00015
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
+material = "layer_1_mat"
+layer_id = 1
+
+[[power_units]]
+name = "TIM_unit_1"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00656
+lx = 0.0
+ly = 0.00656
+lz = 0.00015
+dx = 0.0124
+dy = 0.0062
+dz = 2e-5
+material = "layer_1_mat"
+layer_id = 1
+
+[[power_units]]
+name = "TIM_tsv_1"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.00638
+lx = 0.0
+ly = 0.00638
+lz = 0.00015
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
+material = "layer_1_mat"
+layer_id = 1
+
+[[power_units]]
+name = "L2_2_0"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00018
+lx = 0.0
+ly = 0.00018
+lz = 0.00016999999999999999
+dx = 0.0124
+dy = 0.0062
+dz = 0.00015
+material = "layer_2_mat"
+layer_id = 2
+
+[[power_units]]
+name = "L2_2_TSV_0"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.00016999999999999999
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
+material = "layer_2_mat"
+layer_id = 2
+
+[[power_units]]
+name = "L2_2_1"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00656
+lx = 0.0
+ly = 0.00656
+lz = 0.00016999999999999999
+dx = 0.0124
+dy = 0.0062
+dz = 0.00015
+material = "layer_2_mat"
+layer_id = 2
+
+[[power_units]]
+name = "L2_2_TSV_1"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.00638
+lx = 0.0
+ly = 0.00638
+lz = 0.00016999999999999999
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
+material = "layer_2_mat"
+layer_id = 2
+
+[[power_units]]
+name = "TIM_unit_0"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00018
+lx = 0.0
+ly = 0.00018
+lz = 0.00031999999999999997
+dx = 0.0124
+dy = 0.0062
+dz = 2e-5
+material = "layer_3_mat"
+layer_id = 3
+
+[[power_units]]
+name = "TIM_tsv_0"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.00031999999999999997
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
+material = "layer_3_mat"
+layer_id = 3
+
+[[power_units]]
+name = "TIM_unit_1"
+width = 0.0124
+height = 0.0062
+left_x = 0.0
+bottom_y = 0.00656
+lx = 0.0
+ly = 0.00656
+lz = 0.00031999999999999997
+dx = 0.0124
+dy = 0.0062
+dz = 2e-5
+material = "layer_3_mat"
+layer_id = 3
+
+[[power_units]]
+name = "TIM_tsv_1"
+width = 0.0124
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.00638
+lx = 0.0
+ly = 0.00638
+lz = 0.00031999999999999997
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
+material = "layer_3_mat"
+layer_id = 3
+
+[[power_units]]
+name = "Icache_0"
+width = 0.0031
+height = 0.0026
+left_x = 0.0
+bottom_y = 0.00018
+lx = 0.0
+ly = 0.00018
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Dcache_0"
+width = 0.0031
+height = 0.0026
+left_x = 0.0031
+bottom_y = 0.00018
+lx = 0.0031
+ly = 0.00018
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_0_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.0
+bottom_y = 0.00278
+lx = 0.0
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_1_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.001033
+bottom_y = 0.00278
+lx = 0.001033
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_2_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.002067
+bottom_y = 0.00278
+lx = 0.002067
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_0_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.0031
+bottom_y = 0.00278
+lx = 0.0031
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_1_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.004133
+bottom_y = 0.00278
+lx = 0.004133
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_2_0"
+width = 0.001033
+height = 0.0007
+left_x = 0.005167
+bottom_y = 0.00278
+lx = 0.005167
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_0_0"
+width = 0.0011
+height = 0.0009
+left_x = 0.0
+bottom_y = 0.00348
+lx = 0.0
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_1_0"
+width = 0.0011
+height = 0.0009
+left_x = 0.0011
+bottom_y = 0.00348
+lx = 0.0011
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_0_0"
+width = 0.00055
+height = 0.00038
+left_x = 0.0
+bottom_y = 0.00438
+lx = 0.0
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_1_0"
+width = 0.00055
+height = 0.00038
+left_x = 0.00055
+bottom_y = 0.00438
+lx = 0.00055
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_2_0"
+width = 0.00055
+height = 0.00038
+left_x = 0.0011
+bottom_y = 0.00438
+lx = 0.0011
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_3_0"
+width = 0.00055
+height = 0.00038
+left_x = 0.00165
+bottom_y = 0.00438
+lx = 0.00165
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_0_0"
+width = 0.0011
+height = 0.00095
+left_x = 0.0
+bottom_y = 0.00476
+lx = 0.0
+ly = 0.00476
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_1_0"
+width = 0.0011
+height = 0.00095
+left_x = 0.0011
+bottom_y = 0.00476
+lx = 0.0011
+ly = 0.00476
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_0_0"
+width = 0.0011
+height = 0.00067
+left_x = 0.0
+bottom_y = 0.00571
+lx = 0.0
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_1_0"
+width = 0.0011
+height = 0.00067
+left_x = 0.0011
+bottom_y = 0.00571
+lx = 0.0011
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntMap_0"
+width = 0.0009
+height = 0.00135
+left_x = 0.0022
+bottom_y = 0.00503
+lx = 0.0022
+ly = 0.00503
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntQ_0"
+width = 0.0013
+height = 0.00135
+left_x = 0.0031
+bottom_y = 0.00503
+lx = 0.0031
+ly = 0.00503
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_0_0"
+width = 0.0009
+height = 0.00067
+left_x = 0.0044
+bottom_y = 0.00571
+lx = 0.0044
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_1_0"
+width = 0.0009
+height = 0.00067
+left_x = 0.0053
+bottom_y = 0.00571
+lx = 0.0053
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntExec_0"
+width = 0.0018
+height = 0.00223
+left_x = 0.0044
+bottom_y = 0.00348
+lx = 0.0044
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPQ_0"
+width = 0.0009
+height = 0.00155
+left_x = 0.0022
+bottom_y = 0.00348
+lx = 0.0022
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "LdStQ_0"
+width = 0.0013
+height = 0.00095
+left_x = 0.0031
+bottom_y = 0.00408
+lx = 0.0031
+ly = 0.00408
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_0_0"
+width = 0.00065
+height = 0.0006
+left_x = 0.0031
+bottom_y = 0.00348
+lx = 0.0031
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_1_0"
+width = 0.00065
+height = 0.0006
+left_x = 0.00375
+bottom_y = 0.00348
+lx = 0.00375
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "TSV_0"
+width = 0.0062
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.00033999999999999997
+dx = 0.0062
+dy = 0.00018
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Icache_1"
+width = 0.0031
+height = 0.0026
+left_x = 0.0062
+bottom_y = 0.00018
+lx = 0.0062
+ly = 0.00018
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Dcache_1"
+width = 0.0031
+height = 0.0026
+left_x = 0.0093
+bottom_y = 0.00018
+lx = 0.0093
+ly = 0.00018
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_0_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.0062
+bottom_y = 0.00278
+lx = 0.0062
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_1_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.007233
+bottom_y = 0.00278
+lx = 0.007233
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_2_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.008267
+bottom_y = 0.00278
+lx = 0.008267
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_0_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.0093
+bottom_y = 0.00278
+lx = 0.0093
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_1_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.010333
+bottom_y = 0.00278
+lx = 0.010333
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_2_1"
+width = 0.001033
+height = 0.0007
+left_x = 0.011367
+bottom_y = 0.00278
+lx = 0.011367
+ly = 0.00278
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_0_1"
+width = 0.0011
+height = 0.0009
+left_x = 0.0062
+bottom_y = 0.00348
+lx = 0.0062
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_1_1"
+width = 0.0011
+height = 0.0009
+left_x = 0.0073
+bottom_y = 0.00348
+lx = 0.0073
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_0_1"
+width = 0.00055
+height = 0.00038
+left_x = 0.0062
+bottom_y = 0.00438
+lx = 0.0062
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_1_1"
+width = 0.00055
+height = 0.00038
+left_x = 0.00675
+bottom_y = 0.00438
+lx = 0.00675
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_2_1"
+width = 0.00055
+height = 0.00038
+left_x = 0.0073
+bottom_y = 0.00438
+lx = 0.0073
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_3_1"
+width = 0.00055
+height = 0.00038
+left_x = 0.00785
+bottom_y = 0.00438
+lx = 0.00785
+ly = 0.00438
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_0_1"
+width = 0.0011
+height = 0.00095
+left_x = 0.0062
+bottom_y = 0.00476
+lx = 0.0062
+ly = 0.00476
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_1_1"
+width = 0.0011
+height = 0.00095
+left_x = 0.0073
+bottom_y = 0.00476
+lx = 0.0073
+ly = 0.00476
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_0_1"
+width = 0.0011
+height = 0.00067
+left_x = 0.0062
+bottom_y = 0.00571
+lx = 0.0062
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_1_1"
+width = 0.0011
+height = 0.00067
+left_x = 0.0073
+bottom_y = 0.00571
+lx = 0.0073
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntMap_1"
+width = 0.0009
+height = 0.00135
+left_x = 0.0084
+bottom_y = 0.00503
+lx = 0.0084
+ly = 0.00503
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntQ_1"
+width = 0.0013
+height = 0.00135
+left_x = 0.0093
+bottom_y = 0.00503
+lx = 0.0093
+ly = 0.00503
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_0_1"
+width = 0.0009
+height = 0.00067
+left_x = 0.0106
+bottom_y = 0.00571
+lx = 0.0106
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_1_1"
+width = 0.0009
+height = 0.00067
+left_x = 0.0115
+bottom_y = 0.00571
+lx = 0.0115
+ly = 0.00571
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntExec_1"
+width = 0.0018
+height = 0.00223
+left_x = 0.0106
+bottom_y = 0.00348
+lx = 0.0106
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPQ_1"
+width = 0.0009
+height = 0.00155
+left_x = 0.0084
+bottom_y = 0.00348
+lx = 0.0084
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "LdStQ_1"
+width = 0.0013
+height = 0.00095
+left_x = 0.0093
+bottom_y = 0.00408
+lx = 0.0093
+ly = 0.00408
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_0_1"
+width = 0.00065
+height = 0.0006
+left_x = 0.0093
+bottom_y = 0.00348
+lx = 0.0093
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_1_1"
+width = 0.00065
+height = 0.0006
+left_x = 0.00995
+bottom_y = 0.00348
+lx = 0.00995
+ly = 0.00348
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "TSV_1"
+width = 0.0062
+height = 0.00018
+left_x = 0.0062
+bottom_y = 0.0
+lx = 0.0062
+ly = 0.0
+lz = 0.00033999999999999997
+dx = 0.0062
+dy = 0.00018
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Icache_2"
+width = 0.0031
+height = 0.0026
+left_x = 0.0
+bottom_y = 0.00656
+lx = 0.0
+ly = 0.00656
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Dcache_2"
+width = 0.0031
+height = 0.0026
+left_x = 0.0031
+bottom_y = 0.00656
+lx = 0.0031
+ly = 0.00656
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_0_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.0
+bottom_y = 0.00916
+lx = 0.0
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_1_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.001033
+bottom_y = 0.00916
+lx = 0.001033
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_2_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.002067
+bottom_y = 0.00916
+lx = 0.002067
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_0_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.0031
+bottom_y = 0.00916
+lx = 0.0031
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_1_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.004133
+bottom_y = 0.00916
+lx = 0.004133
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_2_2"
+width = 0.001033
+height = 0.0007
+left_x = 0.005167
+bottom_y = 0.00916
+lx = 0.005167
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_0_2"
+width = 0.0011
+height = 0.0009
+left_x = 0.0
+bottom_y = 0.00986
+lx = 0.0
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_1_2"
+width = 0.0011
+height = 0.0009
+left_x = 0.0011
+bottom_y = 0.00986
+lx = 0.0011
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_0_2"
+width = 0.00055
+height = 0.00038
+left_x = 0.0
+bottom_y = 0.01076
+lx = 0.0
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_1_2"
+width = 0.00055
+height = 0.00038
+left_x = 0.00055
+bottom_y = 0.01076
+lx = 0.00055
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_2_2"
+width = 0.00055
+height = 0.00038
+left_x = 0.0011
+bottom_y = 0.01076
+lx = 0.0011
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_3_2"
+width = 0.00055
+height = 0.00038
+left_x = 0.00165
+bottom_y = 0.01076
+lx = 0.00165
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_0_2"
+width = 0.0011
+height = 0.00095
+left_x = 0.0
+bottom_y = 0.01114
+lx = 0.0
+ly = 0.01114
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_1_2"
+width = 0.0011
+height = 0.00095
+left_x = 0.0011
+bottom_y = 0.01114
+lx = 0.0011
+ly = 0.01114
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_0_2"
+width = 0.0011
+height = 0.00067
+left_x = 0.0
+bottom_y = 0.01209
+lx = 0.0
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_1_2"
+width = 0.0011
+height = 0.00067
+left_x = 0.0011
+bottom_y = 0.01209
+lx = 0.0011
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntMap_2"
+width = 0.0009
+height = 0.00135
+left_x = 0.0022
+bottom_y = 0.01141
+lx = 0.0022
+ly = 0.01141
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntQ_2"
+width = 0.0013
+height = 0.00135
+left_x = 0.0031
+bottom_y = 0.01141
+lx = 0.0031
+ly = 0.01141
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_0_2"
+width = 0.0009
+height = 0.00067
+left_x = 0.0044
+bottom_y = 0.01209
+lx = 0.0044
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_1_2"
+width = 0.0009
+height = 0.00067
+left_x = 0.0053
+bottom_y = 0.01209
+lx = 0.0053
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntExec_2"
+width = 0.0018
+height = 0.00223
+left_x = 0.0044
+bottom_y = 0.00986
+lx = 0.0044
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPQ_2"
+width = 0.0009
+height = 0.00155
+left_x = 0.0022
+bottom_y = 0.00986
+lx = 0.0022
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "LdStQ_2"
+width = 0.0013
+height = 0.00095
+left_x = 0.0031
+bottom_y = 0.01046
+lx = 0.0031
+ly = 0.01046
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_0_2"
+width = 0.00065
+height = 0.0006
+left_x = 0.0031
+bottom_y = 0.00986
+lx = 0.0031
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_1_2"
+width = 0.00065
+height = 0.0006
+left_x = 0.00375
+bottom_y = 0.00986
+lx = 0.00375
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "TSV_2"
+width = 0.0062
+height = 0.00018
+left_x = 0.0
+bottom_y = 0.00638
+lx = 0.0
+ly = 0.00638
+lz = 0.00033999999999999997
+dx = 0.0062
+dy = 0.00018
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Icache_3"
+width = 0.0031
+height = 0.0026
+left_x = 0.0062
+bottom_y = 0.00656
+lx = 0.0062
+ly = 0.00656
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Dcache_3"
+width = 0.0031
+height = 0.0026
+left_x = 0.0093
+bottom_y = 0.00656
+lx = 0.0093
+ly = 0.00656
+lz = 0.00033999999999999997
+dx = 0.0031
+dy = 0.0026
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_0_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.0062
+bottom_y = 0.00916
+lx = 0.0062
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_1_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.007233
+bottom_y = 0.00916
+lx = 0.007233
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "Bpred_2_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.008267
+bottom_y = 0.00916
+lx = 0.008267
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_0_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.0093
+bottom_y = 0.00916
+lx = 0.0093
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_1_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.010333
+bottom_y = 0.00916
+lx = 0.010333
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "DTB_2_3"
+width = 0.001033
+height = 0.0007
+left_x = 0.011367
+bottom_y = 0.00916
+lx = 0.011367
+ly = 0.00916
+lz = 0.00033999999999999997
+dx = 0.001033
+dy = 0.0007
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_0_3"
+width = 0.0011
+height = 0.0009
+left_x = 0.0062
+bottom_y = 0.00986
+lx = 0.0062
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPAdd_1_3"
+width = 0.0011
+height = 0.0009
+left_x = 0.0073
+bottom_y = 0.00986
+lx = 0.0073
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.0009
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_0_3"
+width = 0.00055
+height = 0.00038
+left_x = 0.0062
+bottom_y = 0.01076
+lx = 0.0062
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_1_3"
+width = 0.00055
+height = 0.00038
+left_x = 0.00675
+bottom_y = 0.01076
+lx = 0.00675
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_2_3"
+width = 0.00055
+height = 0.00038
+left_x = 0.0073
+bottom_y = 0.01076
+lx = 0.0073
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPReg_3_3"
+width = 0.00055
+height = 0.00038
+left_x = 0.00785
+bottom_y = 0.01076
+lx = 0.00785
+ly = 0.01076
+lz = 0.00033999999999999997
+dx = 0.00055
+dy = 0.00038
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_0_3"
+width = 0.0011
+height = 0.00095
+left_x = 0.0062
+bottom_y = 0.01114
+lx = 0.0062
+ly = 0.01114
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMul_1_3"
+width = 0.0011
+height = 0.00095
+left_x = 0.0073
+bottom_y = 0.01114
+lx = 0.0073
+ly = 0.01114
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_0_3"
+width = 0.0011
+height = 0.00067
+left_x = 0.0062
+bottom_y = 0.01209
+lx = 0.0062
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPMap_1_3"
+width = 0.0011
+height = 0.00067
+left_x = 0.0073
+bottom_y = 0.01209
+lx = 0.0073
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0011
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntMap_3"
+width = 0.0009
+height = 0.00135
+left_x = 0.0084
+bottom_y = 0.01141
+lx = 0.0084
+ly = 0.01141
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntQ_3"
+width = 0.0013
+height = 0.00135
+left_x = 0.0093
+bottom_y = 0.01141
+lx = 0.0093
+ly = 0.01141
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00135
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_0_3"
+width = 0.0009
+height = 0.00067
+left_x = 0.0106
+bottom_y = 0.01209
+lx = 0.0106
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntReg_1_3"
+width = 0.0009
+height = 0.00067
+left_x = 0.0115
+bottom_y = 0.01209
+lx = 0.0115
+ly = 0.01209
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00067
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "IntExec_3"
+width = 0.0018
+height = 0.00223
+left_x = 0.0106
+bottom_y = 0.00986
+lx = 0.0106
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0018
+dy = 0.00223
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "FPQ_3"
+width = 0.0009
+height = 0.00155
+left_x = 0.0084
+bottom_y = 0.00986
+lx = 0.0084
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.0009
+dy = 0.00155
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "LdStQ_3"
+width = 0.0013
+height = 0.00095
+left_x = 0.0093
+bottom_y = 0.01046
+lx = 0.0093
+ly = 0.01046
+lz = 0.00033999999999999997
+dx = 0.0013
+dy = 0.00095
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_0_3"
+width = 0.00065
+height = 0.0006
+left_x = 0.0093
+bottom_y = 0.00986
+lx = 0.0093
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "ITB_1_3"
+width = 0.00065
+height = 0.0006
+left_x = 0.00995
+bottom_y = 0.00986
+lx = 0.00995
+ly = 0.00986
+lz = 0.00033999999999999997
+dx = 0.00065
+dy = 0.0006
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "TSV_3"
+width = 0.0062
+height = 0.00018
+left_x = 0.0062
+bottom_y = 0.00638
+lx = 0.0062
+ly = 0.00638
+lz = 0.00033999999999999997
+dx = 0.0062
+dy = 0.00018
+dz = 0.00015
+material = "layer_4_mat"
+layer_id = 4
+
+[[power_units]]
+name = "TIM_1"
+width = 0.0124
+height = 0.01276
+left_x = 0.0
+bottom_y = 0.0
+lx = 0.0
+ly = 0.0
+lz = 0.00049
+dx = 0.0124
+dy = 0.01276
+dz = 2e-5
+material = "layer_5_mat"
+layer_id = 5
+
+[[boundary_conditions]]
+name = "top_convection"
+type = "convection"
+h = 63201.537061381336
+T_inf = 318.15
+selection = [ 129,]
+
+[domain_material_assignment]
+layer_0_mat = [ 1, 2, 3, 4,]
+layer_1_mat = [ 5, 6, 7, 8,]
+layer_2_mat = [ 9, 10, 11, 12,]
+layer_3_mat = [ 13, 14, 15, 16,]
+layer_4_mat = [ 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128,]
+layer_5_mat = [ 129,]
+
+[materials.silicon]
+k = 130.0
+cp = 1630000.0
+fluid = false
+
+[materials.layer_0_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_1_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false
+
+[materials.layer_2_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_3_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false
+
+[materials.layer_4_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_5_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false
