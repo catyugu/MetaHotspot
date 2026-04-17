@@ -194,6 +194,44 @@ class FVMSolver:
 
         return steps
 
+    def _load_temperature_field_from_mesh(self, mesh_path: str) -> np.ndarray:
+        mesh = meshio.read(mesh_path)
+
+        field_name = None
+        for candidate in ("Temperature_K", "Temperature"):
+            if candidate in mesh.cell_data:
+                field_name = candidate
+                break
+
+        if field_name is None:
+            raise KeyError(
+                f"No Temperature_K or Temperature cell data found in {mesh_path}"
+            )
+
+        values: List[float] = []
+        for block, block_values in zip(mesh.cells, mesh.cell_data[field_name]):
+            if block.type != "hexahedron":
+                continue
+            values.extend(np.asarray(block_values, dtype=float).tolist())
+
+        return np.asarray(values, dtype=float)
+
+    def _load_initial_temperature(self, n_cells: int) -> np.ndarray:
+        init_file = str(self.config.get("init_temperature_file_path", "")).strip()
+        if init_file:
+            candidate_path = os.path.join(self.base_dir, init_file)
+            if os.path.exists(candidate_path):
+                loaded = self._load_temperature_field_from_mesh(candidate_path)
+                if loaded.size == n_cells:
+                    print(f"[INFO] Using initial temperature from {init_file}")
+                    return loaded
+                print(
+                    "[WARN] init_temperature_file_path cell count mismatch "
+                    f"({loaded.size} != {n_cells}); fallback to uniform init_temperature."
+                )
+
+        return np.full(n_cells, float(self.config.get("init_temperature", 318.15)))
+
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n_cells = len(self.cells)
         rhs = np.zeros(n_cells)
@@ -217,7 +255,14 @@ class FVMSolver:
                     continue
 
                 area = cell["dims"][0] * cell["dims"][1]
-                conductance = h_coeff * area
+                # FVM ghost-node treatment for Robin BC:
+                # R_eq = (dz/2)/(k*A) + 1/(h*A), G_eq = 1 / R_eq
+                # This avoids over-cooling by accounting for half-cell conduction.
+                half_thickness = 0.5 * cell["dims"][2]
+                conduction_resistance = half_thickness / (cell["k"] * area)
+                convection_resistance = 1.0 / (h_coeff * area)
+                conductance = 1.0 / (conduction_resistance + convection_resistance)
+
                 row_indices.append(cell["id"])
                 col_indices.append(cell["id"])
                 diagonal_values.append(-conductance)
@@ -299,9 +344,7 @@ class FVMSolver:
         capacity_matrix = sp.diags([cell["cp"] * cell["vol"] for cell in self.cells])
         system_matrix = capacity_matrix / dt - g_total
 
-        temperatures = np.full(
-            len(self.cells), float(self.config.get("init_temperature", 318.15))
-        )
+        temperatures = self._load_initial_temperature(len(self.cells))
 
         for step_index, step_power in enumerate(ptrace_steps):
             rhs = (capacity_matrix / dt) @ temperatures

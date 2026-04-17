@@ -7,6 +7,7 @@ mesh_file_path = "mesh.msh"
 ptrace_file_path = "example.ptrace"
 ambient = 318.15
 init_temperature = 318.15
+init_temperature_file_path = "init.vtu"
 [[power_units]]
 name = "Unit1"
 lx = 0.0

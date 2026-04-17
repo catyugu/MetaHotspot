@@ -7,6 +7,7 @@ mesh_file_path = "mesh.msh"
 ptrace_file_path = "gcc.ptrace"
 ambient = 318.15
 init_temperature = 318.15
+init_temperature_file_path = "init.vtu"
 [[power_units]]
 name = "L2_left"
 lx = 0.0
@@ -282,13 +283,13 @@ name = "sink_conv"
 type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
-selection = [1002]
+selection = [ 1002,]
 
 [domain_material_assignment]
-silicon = [1]
-tim = [1000]
-copper = [1001]
-aluminum = [1002]
+silicon = [ 1,]
+tim = [ 1000,]
+copper = [ 1001,]
+aluminum = [ 1002,]
 
 [materials.silicon]
 k = 130.0

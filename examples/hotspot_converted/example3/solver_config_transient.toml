@@ -7,6 +7,7 @@ mesh_file_path = "mesh.msh"
 ptrace_file_path = "ev6_3D.ptrace"
 ambient = 318.15
 init_temperature = 318.15
+init_temperature_file_path = "init.vtu"
 [[power_units]]
 name = "L2_1_0"
 lx = 8.673617379884035e-19
@@ -1092,18 +1093,18 @@ name = "sink_conv"
 type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
-selection = [1002]
+selection = [ 1002,]
 
 [domain_material_assignment]
-layer_0_mat = [1]
-layer_1_mat = [2]
-layer_2_mat = [3]
-layer_3_mat = [4]
-layer_4_mat = [5]
-layer_5_mat = [6]
-tim = [1000]
-copper = [1001]
-aluminum = [1002]
+layer_0_mat = [ 1,]
+layer_1_mat = [ 2,]
+layer_2_mat = [ 3,]
+layer_3_mat = [ 4,]
+layer_4_mat = [ 5,]
+layer_5_mat = [ 6,]
+tim = [ 1000,]
+copper = [ 1001,]
+aluminum = [ 1002,]
 
 [materials.silicon]
 k = 130.0
