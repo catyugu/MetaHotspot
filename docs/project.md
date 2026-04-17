@@ -27,10 +27,12 @@ conda activate numerical
 ## 一、 技术栈选型与链路设计
 
 ### 1. 兼容性前处理模块 (Adapter & Mesher)
-**目标**：将 HotSpot 的私有格式`.config`/`.materials`/`flp`转化为标准几何网格与统一配置文件。
+**目标**：将 HotSpot 的私有格式`.config`/`.materials`/`flp`转化为标准带域/边界选择几何网格与统一配置文件。
 * **开发语言**：`Python 3.10+`（非常适合文本解析和调用外部网格库）。
-* **网格生成工具**：**`PyVista` (Python API)**或者**gmsh**。
-* **网格形式**：纯笛卡尔六面体网格（切割允许不均匀），须带有每个域和边界的id信息。
+* **网格生成工具**：**gmsh(Python API)**。
+* **网格形式**：纯笛卡尔六面体网格（结构化，但允许非共形，因为层和层，单元和单元之间网格边界不一定匹配），须带有每个域和边界的选择组以便分配材料和边界条件。
+* **网格格式**：gmsh v4.
+* **边界/域选择生成**：目前的转换中可以用几何位置辅助进行选择。
 
 ### 2. 核心求解器模块 (The Core FVM Solver)
 **目标**：读取标准网格和配置以及`ptrace`文件，执行纯粹的矩阵组装与求解。
@@ -50,10 +52,9 @@ conda activate numerical
 * 放弃所有散乱的参数，向求解器传递纯粹的物理信息和求解控制信息。
 * 示例：[example.toml](example.toml)
 
-**文件二：标准 FVM 网格文件 `domain.vtu` (VTK Unstructured Grid)**
-* 这是一个二进制/XML混合文件，由前处理模块生成。
-* **核心内容**：包含所有网格节点 (Points) 的坐标，单元 (Cells) 的连接拓扑。
-* **数据域 (Cell Data)**：必须包含每个 Cell 的 `Material_ID`（映射到 toml 中的材料），以及 `Power_Density_W_m3`（体积热源）。求解器直接读取这个数据作为方程的右端项（RHS）。
+**文件二：标准 FVM 网格文件 `mesh.msh` (VTK Unstructured Grid)**
+* gmsh v4标准格式
+* 支持非共形网格定义与物理分组，可通过 Interface 实体描述交接面。
 
 **文件三：格式化结果文件 `result_temp.vtu`**
-* 求解器运行结束后，直接在输入的 `domain.vtu` 基础上，增加一个新的 Cell Data 字段 `Temperature_K`，并另存为该文件。前端拿到这个文件即可无脑渲染。
+* 通过 `meshio` 把gmsh格式转化为vtu格式，增加一个新的 Cell Data 字段 `Temperature_K`，并另存为该文件。前端拿到这个文件即可无脑渲染。
