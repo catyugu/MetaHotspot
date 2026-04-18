@@ -74,13 +74,10 @@ def _load_mesh_temperature(path: str) -> List[float]:
     mesh = meshio.read(path)
 
     field_name = None
-    for candidate in ("Temperature_K", "Temperature"):
-        if candidate in mesh.cell_data:
-            field_name = candidate
-            break
-
-    if field_name is None:
-        raise KeyError("No Temperature_K or Temperature cell data found in mesh")
+    if "Temperature_K" in mesh.cell_data:
+        field_name = "Temperature_K"
+    else:
+        raise KeyError("No Temperature_K cell data found in mesh")
 
     values: List[float] = []
     for block, block_values in zip(mesh.cells, mesh.cell_data[field_name]):

@@ -1,6 +1,5 @@
 import os
 import re
-from csv import reader
 from typing import Dict, List
 
 
@@ -151,22 +150,3 @@ class HotSpotParser:
                 index += 6
 
         return layers
-
-    @staticmethod
-    def parse_csv_grid(file_path: str) -> List[List[int]]:
-        grid: List[List[int]] = []
-        if not os.path.exists(file_path):
-            return grid
-
-        with open(file_path, "r", encoding="utf-8") as handle:
-            csv_reader = reader(handle)
-            for row in csv_reader:
-                cleaned = [cell.strip() for cell in row if cell.strip() != ""]
-                if not cleaned:
-                    continue
-                try:
-                    grid.append([int(cell) for cell in cleaned])
-                except ValueError:
-                    continue
-
-        return grid

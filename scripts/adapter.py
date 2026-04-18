@@ -10,8 +10,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from metahotspot.converter import convert_hotspot_with_modes
 
 
-def _convert_batch_four(hotspot_examples_dir: str, output_root: str, mode: str) -> None:
-    for name in ("example1", "example2", "example3", "example4"):
+def _convert_batch_three(
+    hotspot_examples_dir: str, output_root: str, mode: str
+) -> None:
+    for name in ("example1", "example2", "example3"):
         in_dir = os.path.join(hotspot_examples_dir, name)
         out_dir = os.path.join(output_root, name)
         created = convert_hotspot_with_modes(in_dir, out_dir, mode=mode)
@@ -33,9 +35,9 @@ def main() -> None:
         help="Generate steady, transient, or both solver configs (default: both)",
     )
     parser.add_argument(
-        "--batch-four",
+        "--batch-three",
         action="store_true",
-        help="Convert Hotspot examples example1~example4 in one command",
+        help="Convert Hotspot examples example1~example3 in one command",
     )
     parser.add_argument(
         "--hotspot-examples-dir",
@@ -49,13 +51,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.batch_four:
-        _convert_batch_four(args.hotspot_examples_dir, args.output_root, args.mode)
+    if args.batch_three:
+        _convert_batch_three(args.hotspot_examples_dir, args.output_root, args.mode)
         return
 
     if not args.input_dir or not args.output_dir:
         parser.error(
-            "input_dir and output_dir are required unless --batch-four is used"
+            "input_dir and output_dir are required unless --batch-three is used"
         )
 
     created = convert_hotspot_with_modes(

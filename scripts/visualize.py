@@ -6,9 +6,7 @@ import pyvista as pv
 def _pick_scalar(mesh: pv.DataSet) -> str:
     if "Temperature_K" in mesh.cell_data:
         return "Temperature_K"
-    if "Temperature" in mesh.cell_data:
-        return "Temperature"
-    raise KeyError("No Temperature_K or Temperature cell data found")
+    raise KeyError("No Temperature_K cell data found")
 
 
 def visualize(vtu_path: str) -> None:

@@ -98,14 +98,21 @@ class FVMSolver:
         if area <= 0.0:
             return
 
-        dim_a = cell_a["dims"][axis] / 2.0
-        dim_b = cell_b["dims"][axis] / 2.0
-        resistance = (dim_a / (cell_a["k"] * area)) + (dim_b / (cell_b["k"] * area))
-        if resistance <= 0.0:
+        # Distance from center of cell A to interface in 'axis' direction
+        dist_a = cell_a["dims"][axis] / 2.0
+        # Distance from center of cell B to interface in 'axis' direction
+        dist_b = cell_b["dims"][axis] / 2.0
+
+        resistance = (dist_a / (cell_a["k"] * area)) + (dist_b / (cell_b["k"] * area))
+
+        if resistance <= 1e-20:  # avoid div by zero
             return
 
         conductance = 1.0 / resistance
 
+        # Update sparse matrix data (G is symmetric)
+        # For cell i: sum_j G_ij * (T_j - T_i) => - (sum G_ij) * T_i + sum (G_ij * T_j)
+        # This matches -GT = b where G is the conductance matrix.
         rows.extend([cell_a["id"], cell_b["id"], cell_a["id"], cell_b["id"]])
         cols.extend([cell_a["id"], cell_b["id"], cell_b["id"], cell_a["id"]])
         data.extend([-conductance, -conductance, conductance, conductance])
@@ -198,15 +205,10 @@ class FVMSolver:
         mesh = meshio.read(mesh_path)
 
         field_name = None
-        for candidate in ("Temperature_K", "Temperature"):
-            if candidate in mesh.cell_data:
-                field_name = candidate
-                break
-
-        if field_name is None:
-            raise KeyError(
-                f"No Temperature_K or Temperature cell data found in {mesh_path}"
-            )
+        if "Temperature_K" in mesh.cell_data:
+            field_name = "Temperature_K"
+        else:
+            raise KeyError(f"No Temperature_K cell data found in {mesh_path}")
 
         values: List[float] = []
         for block, block_values in zip(mesh.cells, mesh.cell_data[field_name]):
@@ -366,7 +368,6 @@ class FVMSolver:
         values = np.asarray(temperatures, dtype=float)
         offset = 0
         temperature_chunks: List[np.ndarray] = []
-        legacy_chunks: List[np.ndarray] = []
 
         for block in self.mesh.cells:
             count = len(block.data)
@@ -377,12 +378,10 @@ class FVMSolver:
                 chunk = np.full(count, np.nan, dtype=float)
 
             temperature_chunks.append(chunk)
-            legacy_chunks.append(chunk.copy())
 
         self.mesh.cell_sets = {}
         self.mesh.cell_data = {
             "Temperature_K": temperature_chunks,
-            "Temperature": legacy_chunks,
         }
         self.mesh.write(os.path.join(self.base_dir, output_name))
         print(f"[FILE] Results saved to {output_name}")

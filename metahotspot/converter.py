@@ -20,10 +20,6 @@ def _ensure_dir(path: str) -> None:
         os.makedirs(path)
 
 
-def _is_csv_geometry(path: str) -> bool:
-    return path.lower().endswith(".csv")
-
-
 def _layout_bbox_from_flp_units(units: List[dict]) -> Tuple[float, float, float, float]:
     min_x = min(unit["left_x"] for unit in units)
     min_y = min(unit["bottom_y"] for unit in units)
@@ -40,8 +36,6 @@ def _collect_global_xy_size(
 
     for layer in lcf_layers:
         geometry_file = os.path.join(example_dir, layer["flp_file"])
-        if _is_csv_geometry(geometry_file):
-            continue
 
         units = parser.parse_flp(geometry_file)
         if not units:
@@ -121,13 +115,30 @@ def _build_base_model_data(
 
     layers_entities: Dict[int, dict] = {}
     power_units: List[dict] = []
-    microchannel_cells: List[dict] = []
     boundary_conditions: List[dict] = []
     domain_assignment: Dict[str, List[int]] = {}
-    microchannel_group_map: Dict[str, int] = {}
 
     z_cursor = 0.0
-    next_boundary_group_id = 20000
+
+    def ensure_material(
+        material_name: str,
+        fallback_name: str,
+        k_key: str,
+        cp_key: str,
+    ) -> str:
+        chosen = str(material_name or "").strip().lower()
+        if not chosen:
+            chosen = fallback_name
+
+        if chosen not in materials:
+            fallback = materials.get(fallback_name, {"k": 1.0, "cp": 1.0e6})
+            materials[chosen] = {
+                "k": float(config.get(k_key, fallback["k"])),
+                "cp": float(config.get(cp_key, fallback["cp"])),
+                "fluid": False,
+            }
+
+        return chosen
 
     if lcf_layers:
         for layer in lcf_layers:
@@ -147,103 +158,6 @@ def _build_base_model_data(
                 material_name = str(layer["material"])
 
             domain_assignment.setdefault(material_name, []).append(layer_tag)
-
-            if _is_csv_geometry(geometry_file):
-                codes = parser.parse_csv_grid(geometry_file)
-                rows = len(codes)
-                cols = max((len(row) for row in codes), default=0)
-
-                if rows > 0 and cols > 0:
-                    cell_dx = global_width / cols
-                    cell_dy = global_height / rows
-                    code_counts: Dict[int, int] = {}
-
-                    for row_index, row_values in enumerate(codes):
-                        for col_index, code in enumerate(row_values):
-                            if col_index >= cols:
-                                continue
-
-                            lx = col_index * cell_dx
-                            ly = (rows - 1 - row_index) * cell_dy
-                            cell_name = f"MC_L{layer['id']}_R{row_index}_C{col_index}_code{code}"
-                            microchannel_cells.append(
-                                {
-                                    "name": cell_name,
-                                    "layer_tag": layer_tag,
-                                    "code": int(code),
-                                    "lx": lx,
-                                    "ly": ly,
-                                    "lz": z_cursor,
-                                    "dx": cell_dx,
-                                    "dy": cell_dy,
-                                    "dz": thickness,
-                                }
-                            )
-                            code_counts[int(code)] = code_counts.get(int(code), 0) + 1
-
-                    # Map CSV semantic codes to boundary entity group IDs.
-                    # Typical convention in Hotspot microchannel CSVs:
-                    # 0=solid/wall, 1=fluid interior, 2=outlet, 3=inlet.
-                    for code_value in sorted(code_counts):
-                        group_id = next_boundary_group_id
-                        next_boundary_group_id += 1
-                        key = f"layer_{layer['id']}_code_{code_value}"
-                        microchannel_group_map[key] = group_id
-
-                    inlet_key = f"layer_{layer['id']}_code_3"
-                    outlet_key = f"layer_{layer['id']}_code_2"
-                    fluid_key = f"layer_{layer['id']}_code_1"
-                    inlet_temp = float(
-                        config.get("inlet_temperature", config.get("ambient", 318.15))
-                    )
-
-                    if fluid_key in microchannel_group_map:
-                        boundary_conditions.append(
-                            {
-                                "name": f"fluid_temp_layer_{layer['id']}",
-                                "type": "temperature",
-                                "T": inlet_temp,
-                                "selection": [microchannel_group_map[fluid_key]],
-                            }
-                        )
-
-                    if inlet_key in microchannel_group_map:
-                        boundary_conditions.append(
-                            {
-                                "name": f"inlet_microchannel_layer_{layer['id']}",
-                                "type": "inlet_velocity",
-                                "v": float(config.get("inlet_velocity", 1.0)),
-                                "selection": [microchannel_group_map[inlet_key]],
-                            }
-                        )
-
-                    if outlet_key in microchannel_group_map:
-                        boundary_conditions.append(
-                            {
-                                "name": f"outlet_microchannel_layer_{layer['id']}",
-                                "type": "outlet_pressure",
-                                "p": 0.0,
-                                "selection": [microchannel_group_map[outlet_key]],
-                            }
-                        )
-
-                layers_entities[layer_tag] = {
-                    "mesh_size": mesh_size,
-                    "units": [
-                        {
-                            "name": f"layer_{layer['id']}_extent",
-                            "lx": 0.0,
-                            "ly": 0.0,
-                            "lz": z_cursor,
-                            "dx": global_width,
-                            "dy": global_height,
-                            "dz": thickness,
-                        }
-                    ],
-                }
-
-                z_cursor += thickness
-                continue
 
             flp_units = parser.parse_flp(geometry_file)
             if not flp_units:
@@ -342,21 +256,6 @@ def _build_base_model_data(
                             "dz": chip_thickness,
                         }
                     )
-            else:
-                layers_entities[layer_tag] = {
-                    "mesh_size": 0.0005,
-                    "units": [
-                        {
-                            "name": "chip_extent",
-                            "lx": 0.0,
-                            "ly": 0.0,
-                            "lz": z_cursor,
-                            "dx": global_width,
-                            "dy": global_height,
-                            "dz": chip_thickness,
-                        }
-                    ],
-                }
 
             z_cursor += chip_thickness
 
@@ -389,11 +288,30 @@ def _build_base_model_data(
         domain_assignment.setdefault(material_name, []).append(tag)
         z_cursor += thickness
 
+    interface_material = ensure_material(
+        str(config.get("material_interface", "tim")),
+        "tim",
+        "k_interface",
+        "p_interface",
+    )
+    spreader_material = ensure_material(
+        str(config.get("material_spreader", "copper")),
+        "copper",
+        "k_spreader",
+        "p_spreader",
+    )
+    sink_material = ensure_material(
+        str(config.get("material_sink", "aluminum")),
+        "aluminum",
+        "k_sink",
+        "p_sink",
+    )
+
     add_package_layer(
         "TIM",
         float(config.get("t_interface", config.get("t_tim", 0.00002))),
         global_width,
-        "tim",
+        interface_material,
         1000,
         0.001,
     )
@@ -401,7 +319,7 @@ def _build_base_model_data(
         "Spreader",
         float(config.get("t_spreader", 0.001)),
         float(config.get("s_spreader", max(global_width, global_height))),
-        "copper",
+        spreader_material,
         1001,
         0.003,
     )
@@ -409,28 +327,24 @@ def _build_base_model_data(
         "Sink",
         float(config.get("t_sink", 0.0069)),
         float(config.get("s_sink", max(global_width, global_height))),
-        "aluminum",
+        sink_material,
         1002,
         0.006,
     )
 
-    if not boundary_conditions:
-        boundary_conditions.append(
-            {
-                "name": "sink_conv",
-                "type": "convection",
-                "h": 1.0
-                / (
-                    float(config.get("r_convec", 0.1))
-                    * (
-                        float(config.get("s_sink", max(global_width, global_height)))
-                        ** 2
-                    )
-                ),
-                "T_inf": float(config.get("ambient", 318.15)),
-                "selection": [1002],
-            }
-        )
+    sink_side = float(config.get("s_sink", max(global_width, global_height)))
+    sink_area = sink_side * sink_side
+    r_convec = float(config.get("r_convec", 0.1))
+
+    boundary_conditions.append(
+        {
+            "name": "sink_conv",
+            "type": "convection",
+            "h": 1.0 / (r_convec * sink_area),
+            "T_inf": float(config.get("ambient", 318.15)),
+            "selection": [1002],
+        }
+    )
 
     base_data = {
         "config": config,
@@ -439,8 +353,6 @@ def _build_base_model_data(
         "layers_entities": layers_entities,
         "power_units": power_units,
         "boundary_conditions": boundary_conditions,
-        "microchannel_cells": microchannel_cells,
-        "microchannel_group_map": microchannel_group_map,
         "global_width": global_width,
         "global_height": global_height,
     }
@@ -498,11 +410,6 @@ def convert_hotspot_to_metahotspot(
 
     if init_file:
         toml_data["init_temperature_file_path"] = init_file
-
-    if base_data["microchannel_cells"]:
-        toml_data["microchannel_cells"] = base_data["microchannel_cells"]
-    if base_data["microchannel_group_map"]:
-        toml_data["microchannel_group_map"] = base_data["microchannel_group_map"]
 
     config_path = os.path.join(output_dir, output_config_name)
     with open(config_path, "w", encoding="utf-8") as handle:
@@ -570,9 +477,5 @@ def convert_hotspot_with_modes(
             generate_mesh=False,
         ),
     ]
-
-    legacy_template = os.path.join(output_dir, "solver_config.toml")
-    if os.path.exists(legacy_template):
-        os.remove(legacy_template)
 
     return created
