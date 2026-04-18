@@ -288,8 +288,7 @@ selection = [ 1002,]
 [domain_material_assignment]
 silicon = [ 1,]
 tim = [ 1000,]
-copper = [ 1001,]
-aluminum = [ 1002,]
+aluminum = [ 1001, 1002,]
 
 [materials.silicon]
 k = 130.0

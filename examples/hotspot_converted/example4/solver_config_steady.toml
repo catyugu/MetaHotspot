@@ -16787,8 +16787,7 @@ dz = 0.0001
 silicon = [ 1, 2, 3, 5,]
 layer_3_mat = [ 4,]
 tim = [ 1000,]
-copper = [ 1001,]
-aluminum = [ 1002,]
+none = [ 1001, 1002,]
 
 [microchannel_group_map]
 layer_1_code_0 = 20000

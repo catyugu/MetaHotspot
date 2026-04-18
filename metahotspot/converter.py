@@ -538,7 +538,7 @@ def convert_hotspot_with_modes(
                 example_dir,
                 output_dir,
                 simulation_type="steady",
-                output_config_name="solver_config.toml",
+                output_config_name="solver_config_steady.toml",
                 generate_mesh=True,
             )
         ]
@@ -549,34 +549,30 @@ def convert_hotspot_with_modes(
                 example_dir,
                 output_dir,
                 simulation_type="transient",
-                output_config_name="solver_config.toml",
+                output_config_name="solver_config_transient.toml",
                 generate_mesh=True,
             )
         ]
 
-    created = []
-    created.append(
+    created = [
         convert_hotspot_to_metahotspot(
             example_dir,
             output_dir,
             simulation_type="steady",
-            output_config_name="solver_config.toml",
+            output_config_name="solver_config_steady.toml",
             generate_mesh=True,
-        )
-    )
-
-    steady_alias = os.path.join(output_dir, "solver_config_steady.toml")
-    shutil.copy(created[0], steady_alias)
-    created.append(steady_alias)
-
-    created.append(
+        ),
         convert_hotspot_to_metahotspot(
             example_dir,
             output_dir,
             simulation_type="transient",
             output_config_name="solver_config_transient.toml",
             generate_mesh=False,
-        )
-    )
+        ),
+    ]
+
+    legacy_template = os.path.join(output_dir, "solver_config.toml")
+    if os.path.exists(legacy_template):
+        os.remove(legacy_template)
 
     return created

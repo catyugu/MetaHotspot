@@ -210,8 +210,7 @@ layer_1_mat = [ 2,]
 layer_2_mat = [ 3,]
 layer_3_mat = [ 4,]
 tim = [ 1000,]
-copper = [ 1001,]
-aluminum = [ 1002,]
+copper = [ 1001, 1002,]
 
 [materials.silicon]
 k = 130.0
