@@ -301,8 +301,8 @@ def _build_base_model_data(
         "p_spreader",
     )
     sink_material = ensure_material(
-        str(config.get("material_sink", "aluminum")),
-        "aluminum",
+        str(config.get("material_sink", "copper")),
+        "copper",
         "k_sink",
         "p_sink",
     )
