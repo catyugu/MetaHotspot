@@ -1101,7 +1101,6 @@ layer_2_mat = [ 3,]
 layer_3_mat = [ 4,]
 layer_4_mat = [ 5,]
 layer_5_mat = [ 6,]
-tim = [ 1000,]
 copper = [ 1001,]
 aluminum = [ 1002,]
 

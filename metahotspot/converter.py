@@ -307,14 +307,17 @@ def _build_base_model_data(
         "p_sink",
     )
 
-    add_package_layer(
-        "TIM",
-        float(config.get("t_interface", config.get("t_tim", 0.00002))),
-        global_width,
-        interface_material,
-        1000,
-        0.001,
-    )
+    # If no LCF is provided, Hotspot adds a default TIM layer.
+    if not lcf_layers:
+        add_package_layer(
+            "TIM",
+            float(config.get("t_interface", config.get("t_tim", 0.00002))),
+            global_width,
+            interface_material,
+            1000,
+            0.001,
+        )
+
     add_package_layer(
         "Spreader",
         float(config.get("t_spreader", 0.001)),

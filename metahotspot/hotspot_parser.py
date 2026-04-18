@@ -20,15 +20,28 @@ class HotSpotParser:
                 if len(parts) < 5:
                     continue
 
-                units.append(
-                    {
-                        "name": parts[0],
-                        "width": float(parts[1]),
-                        "height": float(parts[2]),
-                        "left_x": float(parts[3]),
-                        "bottom_y": float(parts[4]),
-                    }
-                )
+                unit = {
+                    "name": parts[0],
+                    "width": float(parts[1]),
+                    "height": float(parts[2]),
+                    "left_x": float(parts[3]),
+                    "bottom_y": float(parts[4]),
+                }
+
+                # Optional extra fields for heterogeneous materials (Hotspot 6.0+)
+                if len(parts) >= 7:
+                    try:
+                        unit["specific_heat"] = float(parts[5])
+                        unit["resistivity"] = float(parts[6])
+                        unit["k"] = (
+                            1.0 / unit["resistivity"]
+                            if unit["resistivity"] != 0
+                            else 0.0
+                        )
+                    except ValueError:
+                        pass
+
+                units.append(unit)
 
         return units
 
