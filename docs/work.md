@@ -17,12 +17,10 @@ conda activate numerical
 
 ## 当前进度
 
-* 当前已经有部分实现，但是实现偏面条代码，性能和可维护性较低，而且没有实现和Hotspot结果的比较等。
-* example3 的稳态温度显著偏低，模型设定可能有待检查和完善。请你先把这部分工作。
-  * example3结果: 364K (MetaHotspot) vs 390K (Hotspot)
-* 瞬态温度趋势好像不太正常……？
-* 即使是稳态求解也存在不可忽视的偏低现象，请仔细比照Hotspot以及ARTSim等仓库的实现，进行模型的进一步细化。
-* 目前我们代码的质量太差，性能低，耦合度高，嵌套多，需要全面重构
+* 先学习Hotspot和ARTSim的实现中的优势，对比差异，再做修改，不要盲目干。
+* 目前我们代码的质量太差，性能低，耦合度高，重复，嵌套多，不必要的检查判断太多，充满了魔法数字，不利于后续优化和扩展，需要全面重构。
+* example3 的稳态温度显著偏低，模型设定可能有待检查和完善。
+  * example3结果: 361K (MetaHotspot) vs 390K (Hotspot)
 
 ## 快速脚本
 
@@ -32,10 +30,10 @@ conda activate numerical
 conda activate numerical; python ./scripts/adapter.py --batch-three --mode both --hotspot-examples-dir ./Hotspot/examples --output-root ./examples/hotspot_converted
 ```
 
-* 快速运行稳态+瞬态（以稳态结果为初始温度）（以example1为例）
+* 快速运行稳态+瞬态（以稳态结果为初始温度）（以example3为例）
 
 ```bash
-conda activate numerical; python ./examples/hotspot_converted/example1/generate_and_run.py       
+conda activate numerical; python ./examples/hotspot_converted/example3/generate_and_run.py       
 ```
 
 ## 工作流程

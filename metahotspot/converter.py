@@ -145,7 +145,7 @@ def _build_base_model_data(
             layer_tag = int(layer["id"]) + 1
             geometry_file = os.path.join(example_dir, layer["flp_file"])
             thickness = float(layer["thickness"])
-            mesh_size = 0.0005 if layer["power"] else 0.001
+            mesh_size = 0.0005
 
             if layer["type"] == "numeric":
                 material_name = f"layer_{layer['id']}_mat"
