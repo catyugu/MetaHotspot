@@ -8,10 +8,6 @@ from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 
-DEFAULT_AMBIENT_TEMPERATURE = 318.15
-DEFAULT_INIT_TEMPERATURE = 318.15
-
-
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
     for entry in os.listdir(directory):
         if entry.endswith(suffix):
@@ -166,7 +162,6 @@ def _build_base_model_data(
             flp_units = parser.parse_flp(geometry_file)
             if not flp_units:
                 layers_entities[layer_tag] = {
-                    "mesh_size": mesh_size,
                     "units": [
                         {
                             "name": f"layer_{layer['id']}_extent",
@@ -189,7 +184,6 @@ def _build_base_model_data(
             offset_y = (global_height - layer_height) / 2.0 - min_y
 
             layers_entities[layer_tag] = {
-                "mesh_size": mesh_size,
                 "units": [
                     {
                         "name": f"layer_{layer['id']}_extent",
@@ -234,7 +228,6 @@ def _build_base_model_data(
                 offset_y = (global_height - layer_height) / 2.0 - min_y
 
                 layers_entities[layer_tag] = {
-                    "mesh_size": 0.0005,
                     "units": [
                         {
                             "name": "chip_extent",
@@ -269,14 +262,12 @@ def _build_base_model_data(
         side_length: float,
         material_name: str,
         tag: int,
-        mesh_size: float,
     ) -> None:
         nonlocal z_cursor
         lx = (global_width - side_length) / 2.0
         ly = (global_height - side_length) / 2.0
 
         layers_entities[tag] = {
-            "mesh_size": mesh_size,
             "units": [
                 {
                     "name": name,
@@ -311,7 +302,6 @@ def _build_base_model_data(
         "p_sink",
     )
 
-    # If no LCF is provided, Hotspot adds a default TIM layer.
     if not lcf_layers:
         add_package_layer(
             "TIM",
@@ -319,7 +309,6 @@ def _build_base_model_data(
             global_width,
             interface_material,
             1000,
-            0.001,
         )
 
     add_package_layer(
@@ -328,7 +317,6 @@ def _build_base_model_data(
         float(config.get("s_spreader", max(global_width, global_height))),
         spreader_material,
         1001,
-        0.003,
     )
     add_package_layer(
         "Sink",
@@ -336,7 +324,6 @@ def _build_base_model_data(
         float(config.get("s_sink", max(global_width, global_height))),
         sink_material,
         1002,
-        0.006,
     )
 
     sink_side = float(config.get("s_sink", max(global_width, global_height)))
@@ -348,7 +335,7 @@ def _build_base_model_data(
             "name": "sink_conv",
             "type": "convection",
             "h": 1.0 / (r_convec * sink_area),
-            "T_inf": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
+            "T_inf": float(config.get("ambient", 318.15)),
             "selection": [1002],
         }
     )
@@ -408,12 +395,9 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": base_data["power_units"],
-        "ambient": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
+        "ambient": float(config.get("ambient", 318.15)),
         "init_temperature": float(
-            config.get(
-                "init_temp",
-                config.get("ambient", DEFAULT_INIT_TEMPERATURE),
-            )
+            config.get("init_temp", config.get("ambient", 318.15))
         ),
         "boundary_conditions": base_data["boundary_conditions"],
     }
@@ -427,16 +411,22 @@ def convert_hotspot_to_metahotspot(
 
     if generate_mesh:
         mesher = GmshMesher()
-        node_id = 1
-        elem_id = 1
-        for tag, layer_data in layers_entities.items():
-            node_id, elem_id = mesher.generate_layer_mesh_unified(
-                tag,
-                layer_data["units"],
-                layer_data["mesh_size"],
-                node_id,
-                elem_id,
-            )
+
+        # 提取网格控制参数
+        base_size = max(float(config.get("s_sink", 0.06)) / 10.0, 0.006)
+        min_size = 0.001
+        # 热扩散半径：影响热源正下方的细化面积，默认 10mm
+        refine_dist = 0.010
+
+        # 使用全新的 2.5D Quadtree 生成器
+        mesher.generate_2_5D_mesh(
+            layers_entities=layers_entities,
+            power_units=base_data["power_units"],
+            base_mesh_size=base_size,
+            min_mesh_size=min_size,
+            refine_distance=refine_dist,
+        )
+
         mesher.finalize(os.path.join(output_dir, "mesh.msh"))
 
     return config_path

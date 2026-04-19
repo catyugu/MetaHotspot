@@ -24,10 +24,6 @@ from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 
-DEFAULT_AMBIENT_TEMPERATURE = 318.15
-DEFAULT_INIT_TEMPERATURE = 318.15
-
-
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
     for entry in os.listdir(directory):
         if entry.endswith(suffix):
@@ -182,7 +178,6 @@ def _build_base_model_data(
             flp_units = parser.parse_flp(geometry_file)
             if not flp_units:
                 layers_entities[layer_tag] = {
-                    "mesh_size": mesh_size,
                     "units": [
                         {
                             "name": f"layer_{layer['id']}_extent",
@@ -205,7 +200,6 @@ def _build_base_model_data(
             offset_y = (global_height - layer_height) / 2.0 - min_y
 
             layers_entities[layer_tag] = {
-                "mesh_size": mesh_size,
                 "units": [
                     {
                         "name": f"layer_{layer['id']}_extent",
@@ -250,7 +244,6 @@ def _build_base_model_data(
                 offset_y = (global_height - layer_height) / 2.0 - min_y
 
                 layers_entities[layer_tag] = {
-                    "mesh_size": 0.0005,
                     "units": [
                         {
                             "name": "chip_extent",
@@ -285,14 +278,12 @@ def _build_base_model_data(
         side_length: float,
         material_name: str,
         tag: int,
-        mesh_size: float,
     ) -> None:
         nonlocal z_cursor
         lx = (global_width - side_length) / 2.0
         ly = (global_height - side_length) / 2.0
 
         layers_entities[tag] = {
-            "mesh_size": mesh_size,
             "units": [
                 {
                     "name": name,
@@ -327,7 +318,6 @@ def _build_base_model_data(
         "p_sink",
     )
 
-    # If no LCF is provided, Hotspot adds a default TIM layer.
     if not lcf_layers:
         add_package_layer(
             "TIM",
@@ -335,7 +325,6 @@ def _build_base_model_data(
             global_width,
             interface_material,
             1000,
-            0.001,
         )
 
     add_package_layer(
@@ -344,7 +333,6 @@ def _build_base_model_data(
         float(config.get("s_spreader", max(global_width, global_height))),
         spreader_material,
         1001,
-        0.003,
     )
     add_package_layer(
         "Sink",
@@ -352,7 +340,6 @@ def _build_base_model_data(
         float(config.get("s_sink", max(global_width, global_height))),
         sink_material,
         1002,
-        0.006,
     )
 
     sink_side = float(config.get("s_sink", max(global_width, global_height)))
@@ -364,7 +351,7 @@ def _build_base_model_data(
             "name": "sink_conv",
             "type": "convection",
             "h": 1.0 / (r_convec * sink_area),
-            "T_inf": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
+            "T_inf": float(config.get("ambient", 318.15)),
             "selection": [1002],
         }
     )
@@ -424,12 +411,9 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": base_data["power_units"],
-        "ambient": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
+        "ambient": float(config.get("ambient", 318.15)),
         "init_temperature": float(
-            config.get(
-                "init_temp",
-                config.get("ambient", DEFAULT_INIT_TEMPERATURE),
-            )
+            config.get("init_temp", config.get("ambient", 318.15))
         ),
         "boundary_conditions": base_data["boundary_conditions"],
     }
@@ -443,16 +427,22 @@ def convert_hotspot_to_metahotspot(
 
     if generate_mesh:
         mesher = GmshMesher()
-        node_id = 1
-        elem_id = 1
-        for tag, layer_data in layers_entities.items():
-            node_id, elem_id = mesher.generate_layer_mesh_unified(
-                tag,
-                layer_data["units"],
-                layer_data["mesh_size"],
-                node_id,
-                elem_id,
-            )
+
+        # 提取网格控制参数
+        base_size = max(float(config.get("s_sink", 0.06)) / 10.0, 0.006)
+        min_size = 0.001
+        # 热扩散半径：影响热源正下方的细化面积，默认 10mm
+        refine_dist = 0.010
+
+        # 使用全新的 2.5D Quadtree 生成器
+        mesher.generate_2_5D_mesh(
+            layers_entities=layers_entities,
+            power_units=base_data["power_units"],
+            base_mesh_size=base_size,
+            min_mesh_size=min_size,
+            refine_distance=refine_dist,
+        )
+
         mesher.finalize(os.path.join(output_dir, "mesh.msh"))
 
     return config_path
@@ -888,7 +878,8 @@ class FVMSolver:
 
 ### File: gmsh_mesher.py
 ```py
-from typing import Dict, List, Tuple
+import math
+from typing import Dict, List
 
 import gmsh
 import numpy as np
@@ -899,76 +890,166 @@ class GmshMesher:
         gmsh.initialize()
         gmsh.model.add(model_name)
 
-    def generate_layer_mesh_unified(
+    def generate_2_5D_mesh(
         self,
-        tag: int,
-        layer_entities: List[dict],
-        mesh_size: float,
-        node_id_start: int,
-        elem_id_start: int,
-    ) -> Tuple[int, int]:
-        x_min = min(unit["lx"] for unit in layer_entities)
-        x_max = max(unit["lx"] + unit["dx"] for unit in layer_entities)
-        y_min = min(unit["ly"] for unit in layer_entities)
-        y_max = max(unit["ly"] + unit["dy"] for unit in layer_entities)
-        z_min = min(unit["lz"] for unit in layer_entities)
-        z_max = max(unit["lz"] + unit["dz"] for unit in layer_entities)
-
-        xs = np.linspace(
-            x_min, x_max, max(2, int(round((x_max - x_min) / mesh_size)) + 1)
+        layers_entities: Dict[int, dict],
+        power_units: List[dict],
+        base_mesh_size: float = 0.006,
+        min_mesh_size: float = 0.0005,
+        refine_distance: float = 0.010,
+    ) -> None:
+        """
+        生成 2.5D 挤压网格：层内 Quadtree 自适应（非共形），层间严格拉伸（共形）
+        """
+        # 1. 计算全局 2D 包围盒
+        x_min = min(u["lx"] for l in layers_entities.values() for u in l["units"])
+        x_max = max(
+            u["lx"] + u["dx"] for l in layers_entities.values() for u in l["units"]
         )
-        ys = np.linspace(
-            y_min, y_max, max(2, int(round((y_max - y_min) / mesh_size)) + 1)
-        )
-        zs = np.linspace(
-            z_min, z_max, max(2, int(round((z_max - z_min) / mesh_size)) + 1)
+        y_min = min(u["ly"] for l in layers_entities.values() for u in l["units"])
+        y_max = max(
+            u["ly"] + u["dy"] for l in layers_entities.values() for u in l["units"]
         )
 
-        discrete_tag = gmsh.model.addDiscreteEntity(3)
-        gmsh.model.addPhysicalGroup(3, [discrete_tag], tag)
+        # 2. 收集所有物理边界和热源边界，用于触发网格细化
+        geometry_boxes = []
+        for l in layers_entities.values():
+            for u in l["units"]:
+                geometry_boxes.append(
+                    (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
+                )
 
-        node_id = node_id_start
-        node_map: Dict[tuple, int] = {}
-        node_tags: List[int] = []
-        node_coords: List[float] = []
+        heat_boxes = []
+        for u in power_units:
+            heat_boxes.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
 
-        for k in range(len(zs)):
-            for j in range(len(ys)):
-                for i in range(len(xs)):
-                    node_tags.append(node_id)
-                    node_coords.extend([xs[i], ys[j], zs[k]])
-                    node_map[(i, j, k)] = node_id
-                    node_id += 1
+        leaves = []
 
-        gmsh.model.mesh.addNodes(3, discrete_tag, node_tags, node_coords)
+        def refine(x0: float, y0: float, x1: float, y1: float) -> None:
+            """递归生成 2D Quadtree"""
+            dx = x1 - x0
+            dy = y1 - y0
 
-        elem_id = elem_id_start
-        element_tags: List[int] = []
-        element_nodes: List[int] = []
+            # 停止条件 1：达到最小网格尺寸
+            if dx <= min_mesh_size * 1.01 and dy <= min_mesh_size * 1.01:
+                leaves.append((x0, y0, x1, y1))
+                return
 
-        for k in range(len(zs) - 1):
-            for j in range(len(ys) - 1):
+            needs_refinement = False
+
+            # 触发条件 1：距离热源较近 (捕捉热流扩散)
+            for hb in heat_boxes:
+                dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
+                dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
+                if math.sqrt(dist_x**2 + dist_y**2) <= refine_distance:
+                    needs_refinement = True
+                    break
+
+            # 触发条件 2：网格跨越了物理边界 (确保网格完美贴合所有层级模块的边缘)
+            if not needs_refinement:
+                for gb in geometry_boxes:
+                    # 如果垂直边界穿过当前网格，并且 Y 方向有交集
+                    if (x0 < gb[0] < x1 or x0 < gb[2] < x1) and (
+                        max(y0, gb[1]) < min(y1, gb[3])
+                    ):
+                        needs_refinement = True
+                        break
+                    # 如果水平边界穿过当前网格，并且 X 方向有交集
+                    if (y0 < gb[1] < y1 or y0 < gb[3] < y1) and (
+                        max(x0, gb[0]) < min(x1, gb[2])
+                    ):
+                        needs_refinement = True
+                        break
+
+            if needs_refinement:
+                mid_x = (x0 + x1) / 2.0
+                mid_y = (y0 + y1) / 2.0
+                split_x = dx > min_mesh_size * 1.01
+                split_y = dy > min_mesh_size * 1.01
+
+                xs = [x0, mid_x, x1] if split_x else [x0, x1]
+                ys = [y0, mid_y, y1] if split_y else [y0, y1]
+
                 for i in range(len(xs) - 1):
-                    nodes = [
-                        node_map[(i, j, k)],
-                        node_map[(i + 1, j, k)],
-                        node_map[(i + 1, j + 1, k)],
-                        node_map[(i, j + 1, k)],
-                        node_map[(i, j, k + 1)],
-                        node_map[(i + 1, j, k + 1)],
-                        node_map[(i + 1, j + 1, k + 1)],
-                        node_map[(i, j + 1, k + 1)],
-                    ]
+                    for j in range(len(ys) - 1):
+                        refine(xs[i], ys[j], xs[i + 1], ys[j + 1])
+            else:
+                leaves.append((x0, y0, x1, y1))
+
+        # 3. 初始化基础粗网格并启动递归划分
+        nx = max(1, int(round((x_max - x_min) / base_mesh_size)))
+        ny = max(1, int(round((y_max - y_min) / base_mesh_size)))
+        xs = np.linspace(x_min, x_max, nx + 1)
+        ys = np.linspace(y_min, y_max, ny + 1)
+
+        for i in range(nx):
+            for j in range(ny):
+                refine(xs[i], ys[j], xs[i + 1], ys[j + 1])
+
+        # 4. 将 2D Quadtree 向上拉伸 (Extrude) 到 3D 的每一层
+        node_id = 1
+        elem_id = 1
+
+        for tag, layer_data in layers_entities.items():
+            discrete_tag = gmsh.model.addDiscreteEntity(3)
+            gmsh.model.addPhysicalGroup(3, [discrete_tag], tag)
+
+            # 提取当前层的 Z 轴高度和厚度
+            lz = layer_data["units"][0]["lz"]
+            dz = layer_data["units"][0]["dz"]
+
+            layer_node_tags = []
+            layer_node_coords = []
+            node_map = {}
+
+            def get_node(x: float, y: float, z: float) -> int:
+                nonlocal node_id
+                key = (round(x, 6), round(y, 6), round(z, 6))
+                if key not in node_map:
+                    node_map[key] = node_id
+                    layer_node_tags.append(node_id)
+                    layer_node_coords.extend([x, y, z])
+                    node_id += 1
+                return node_map[key]
+
+            element_tags = []
+            element_nodes = []
+
+            for leaf in leaves:
+                x0, y0, x1, y1 = leaf
+                cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+
+                # 只有当 2D 叶子节点落在当前物理层的有效区域内时，才生成 3D 实体
+                inside = False
+                for u in layer_data["units"]:
+                    if (
+                        u["lx"] <= cx <= u["lx"] + u["dx"]
+                        and u["ly"] <= cy <= u["ly"] + u["dy"]
+                    ):
+                        inside = True
+                        break
+
+                if inside:
+                    n0 = get_node(x0, y0, lz)
+                    n1 = get_node(x1, y0, lz)
+                    n2 = get_node(x1, y1, lz)
+                    n3 = get_node(x0, y1, lz)
+                    n4 = get_node(x0, y0, lz + dz)
+                    n5 = get_node(x1, y0, lz + dz)
+                    n6 = get_node(x1, y1, lz + dz)
+                    n7 = get_node(x0, y1, lz + dz)
+
                     element_tags.append(elem_id)
-                    element_nodes.extend(nodes)
+                    element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
                     elem_id += 1
 
-        # 5 is Gmsh's hexahedron element type.
-        gmsh.model.mesh.addElements(
-            3, discrete_tag, [5], [element_tags], [element_nodes]
-        )
-
-        return node_id, elem_id
+            if element_tags:
+                gmsh.model.mesh.addNodes(
+                    3, discrete_tag, layer_node_tags, layer_node_coords
+                )
+                gmsh.model.mesh.addElements(
+                    3, discrete_tag, [5], [element_tags], [element_nodes]
+                )
 
     def finalize(self, output_path: str) -> None:
         gmsh.write(output_path)
