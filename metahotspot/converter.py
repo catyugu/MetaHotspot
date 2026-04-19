@@ -117,6 +117,7 @@ def _build_base_model_data(
     power_units: List[dict] = []
     boundary_conditions: List[dict] = []
     domain_assignment: Dict[str, List[int]] = {}
+    heterogeneous_overrides: List[dict] = []
 
     z_cursor = 0.0
 
@@ -145,7 +146,6 @@ def _build_base_model_data(
             layer_tag = int(layer["id"]) + 1
             geometry_file = os.path.join(example_dir, layer["flp_file"])
             thickness = float(layer["thickness"])
-            mesh_size = 0.0005
 
             if layer["type"] == "numeric":
                 material_name = f"layer_{layer['id']}_mat"
@@ -207,6 +207,30 @@ def _build_base_model_data(
                     "dy": unit["height"],
                     "dz": thickness,
                 }
+
+                if layer["type"] == "numeric" and (
+                    "k" in unit or "specific_heat" in unit
+                ):
+                    override_material = (
+                        f"layer_{layer['id']}_unit_{len(heterogeneous_overrides)}_mat"
+                    )
+                    materials[override_material] = {
+                        "k": float(unit.get("k", layer["k"])),
+                        "cp": float(unit.get("specific_heat", layer["cp"])),
+                        "fluid": False,
+                    }
+                    heterogeneous_overrides.append(
+                        {
+                            "material": override_material,
+                            "lx": entity["lx"],
+                            "ly": entity["ly"],
+                            "lz": entity["lz"],
+                            "dx": entity["dx"],
+                            "dy": entity["dy"],
+                            "dz": entity["dz"],
+                        }
+                    )
+
                 if layer["power"]:
                     power_units.append(entity)
 
@@ -344,6 +368,7 @@ def _build_base_model_data(
         "config": config,
         "materials": materials,
         "domain_assignment": domain_assignment,
+        "heterogeneous_material_overrides": heterogeneous_overrides,
         "layers_entities": layers_entities,
         "power_units": power_units,
         "boundary_conditions": boundary_conditions,
@@ -392,6 +417,9 @@ def convert_hotspot_to_metahotspot(
         "proc_freq": float(config.get("base_proc_freq", 3.0e9)),
         "materials": base_data["materials"],
         "domain_material_assignment": base_data["domain_assignment"],
+        "heterogeneous_material_overrides": base_data[
+            "heterogeneous_material_overrides"
+        ],
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": base_data["power_units"],

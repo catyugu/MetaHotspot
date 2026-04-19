@@ -34,6 +34,7 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
     DEFAULT_INITIAL_TEMPERATURE = 318.15
+    MATERIAL_OVERRIDE_TOLERANCE = 1e-12
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -56,6 +57,33 @@ class FVMSolver:
         for mat_name, tags in self.config.get("domain_material_assignment", {}).items():
             for tag in tags:
                 self.tag_to_material[tag] = self.materials[mat_name]
+
+        self.material_overrides = self.config.get(
+            "heterogeneous_material_overrides", []
+        )
+
+    def _resolve_material_for_cell(self, tag: int, center: np.ndarray) -> dict:
+        material = self.tag_to_material.get(tag, self.materials["silicon"])
+        tol = self.MATERIAL_OVERRIDE_TOLERANCE
+
+        for override in self.material_overrides:
+            x0 = float(override["lx"])
+            y0 = float(override["ly"])
+            z0 = float(override["lz"])
+            x1 = x0 + float(override["dx"])
+            y1 = y0 + float(override["dy"])
+            z1 = z0 + float(override["dz"])
+
+            if (
+                (x0 - tol) <= center[0] <= (x1 + tol)
+                and (y0 - tol) <= center[1] <= (y1 + tol)
+                and (z0 - tol) <= center[2] <= (z1 + tol)
+            ):
+                material_name = str(override.get("material", "")).strip()
+                if material_name and material_name in self.materials:
+                    material = self.materials[material_name]
+
+        return material
 
     def _prepare_mesh(self) -> None:
         print("[INFO] Preparing mesh data...")
@@ -90,7 +118,7 @@ class FVMSolver:
         # 依据空间排序构建 Cells
         for new_id, orig_id in enumerate(sorted_indices):
             tag = int(physical_tags[orig_id])
-            mat = self.tag_to_material.get(tag, self.materials["silicon"])
+            mat = self._resolve_material_for_cell(tag, centers[orig_id])
             box = np.array([*lowers[orig_id], *uppers[orig_id]])
 
             self.cells.append(

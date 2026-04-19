@@ -33,7 +33,7 @@ conda activate numerical; python ./scripts/adapter.py --batch-three --mode both 
 * 快速运行稳态+瞬态（以稳态结果为初始温度）（以example3为例）
 
 ```bash
-conda activate numerical; python ./examples/hotspot_converted/example3/generate_and_run.py       
+conda activate numerical; python ./examples/hotspot_converted/example3/run.py       
 ```
 
 ## 工作流程

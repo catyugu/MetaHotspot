@@ -6,40 +6,28 @@
 
 ### 一、 重新诊断：为什么温度依然偏低？
 
-在排除了结构性缺失后，温差通常来源于以下三个底层逻辑问题，建议你在代码中立即加上日志进行排查：
+#### 嫌疑犯一：异构材料 (TSV) 属性被静默丢弃，导致热阻坍塌（最有可能的代码 Bug）
+example3 是多层 3D 架构，其中包含 TIM 层和贯穿硅通孔 (TSV)。在 HotSpot 中，TSV 层是通过“异构材料 FLP (Heterogeneous FLP)”来定义的：即在一个 FLP 文件中，既有极低导热率的绝缘/胶水单元，又有极高导热率的铜柱单元。
 
-#### 1. 能量丢失 (Power Leakage)
-这是非共形网格和包围盒映射最容易出的致命 Bug。
-在 `_precompute_power_matrix` 中，你通过计算发热单元 (`box_b`) 和网格单元 (`box_a`) 的相交体积，除以发热单元的总体积来分配功率：
-```python
-intersect_vol / vol
+你的代码盲点：
+我仔细审查了你的 hotspot_parser.py。你的解析器确实非常聪明地读取了异构材料的属性：
+
+Python
+# Optional extra fields for heterogeneous materials (Hotspot 6.0+)
+if len(parts) >= 7:
+    unit["specific_heat"] = float(parts[5])
+    unit["resistivity"] = float(parts[6])
+    unit["k"] = 1.0 / unit["resistivity"]
+但是！在 converter.py 构建物理模型时，你把这个 k 扔掉了！
+你在分配材质时，强制给整整一层赋予了同一个默认材质：
+
+```Python
+if layer["type"] == "numeric":
+    material_name = f"layer_{layer['id']}_mat"
+    materials[material_name] = {"k": float(layer["k"]), ...}
+# 后续直接把整层所有 unit 都挂在这个 material 下
 ```
-**风险点：** 如果网格的边界由于浮点精度，或者网格划分时的微小错位（非共形网格的常态），导致部分发热单元的体积没有被任何网格单元完全包裹，那么 `sum(intersect_vol) / vol` 就会小于 1.0。
-**后果：** 注入系统的总功率小于 `ptrace` 给定的总功率，温度必然整体偏低。
-**诊断动作：** 在组装完 `power_rhs` 后，立刻打印 `np.sum(power_rhs)` 和原始 `ptrace` 的总功率，看两者是否严格相等。
-
-#### 2. 非共形网格的一维热阻近似误差
-在你的 `_add_pairwise_conductance` 中，你使用的是标准的一维热阻串联公式：
-```python
-res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (c_b.dims[axis] / (2.0 * c_b.k * area))
-```
-**风险点：** 这个公式在**共形网格**（面与面完美对齐，中心连线垂直于界面）中是精确的。但在**非共形网格**中，两个相邻单元的中心往往存在横向错位。此时，热流不仅有垂直穿过界面的阻力，还有在单元内部横向扩散的扩散热阻。
-**后果：** 简单的一维公式忽略了错位带来的额外阻力，相当于高估了界面的有效热导率，这也会让热量更容易传导到散热器，拉低整体芯片温度。
-
----
-
-### 二、 调整后的重构蓝图
-
-既然确认了网格是非共形的，我们就**必须保留几何相交查询机制**，但这不代表我们要忍受目前高耦合和低性能的面条代码。重构计划调整如下：
-
-#### Phase 1: 确保物理精确与能量守恒 (止血)
-* **强制功率归一化：** 修改 `_precompute_power_matrix`，无论几何相交算出的体积比例是多少，对于每一个发热单元，强制将其分配到各个网格的比例之和归一化为 1.0，彻底杜绝能量丢失。
-* **提取常量与默认值：** 消除 `converter.py` 中的所有魔法数字（如环境温度 318.15），建立严谨的默认值字典，确保与 HotSpot 的默认行为完全 1:1 对齐。
-
-#### Phase 2: 引入空间索引替代 Sweep-and-Prune (性能重构)
-虽然不能直接用 Gmsh 的拓扑，但纯 Python 实现的包围盒扫描性能极差。
-* **引入 R-Tree 或 KD-Tree：** 使用 `scipy.spatial.cKDTree` 对所有单元的中心点进行快速临近搜索，或者利用 `rtree` 库进行包围盒快速相交测试。这能将寻找非共形接触面的复杂度从 $O(N^2)$ 的扫掠直接降至 $O(N \log N)$，性能提升极其显著。
-
-#### Phase 3: 架构解耦与数据流规范化 (工程重构)
-* 使用 `dataclass` 定义输入输出契约。切断 `converter.py` 内部 `HotSpotParser`、几何计算和 `GmshMesher` 之间的强耦合。
-* **独立网格模块：** 让网格生成仅仅依赖于一组干净的 Bounding Box 数据结构，而不是直接去读配置文件。
+s
+domain_assignment.setdefault(material_name, []).append(layer_tag)
+物理后果： 如果 ev6_3D.lcf 中定义该 TSV 层的默认 k 是硅或铜，那么你的代码会把原本应该是“绝缘胶水 + 铜柱”的层，直接变成了一整块纯铜或纯硅的超级导热板！
+这彻底抹杀了热量挤入狭窄 TSV 铜柱时产生的收缩热阻 (Constriction Resistance)。热量毫无阻力地大面积穿透该层，导致你的最高温度只有 361K，远远低于真实的 390K。
