@@ -19,8 +19,8 @@ conda activate numerical
 
 * 先学习Hotspot和ARTSim的实现中的优势，对比差异，再做修改，不要盲目干。
 * 目前我们代码的质量太差，性能低，耦合度高，重复，嵌套多，不必要的检查判断太多，充满了魔法数字，不利于后续优化和扩展，需要全面重构。
-* example3 的稳态温度显著偏低，模型设定可能有待检查和完善。
-  * example3结果: 361K (MetaHotspot) vs 390K (Hotspot)
+* example3 的稳态温度显著偏低，但是其余两个案例都没问题，模型设定可能有待检查和完善。
+  * example3结果: 363K (MetaHotspot) vs 390K (Hotspot)
 
 ## 快速脚本
 
