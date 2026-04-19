@@ -8,6 +8,10 @@ from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 
+DEFAULT_AMBIENT_TEMPERATURE = 318.15
+DEFAULT_INIT_TEMPERATURE = 318.15
+
+
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
     for entry in os.listdir(directory):
         if entry.endswith(suffix):
@@ -344,7 +348,7 @@ def _build_base_model_data(
             "name": "sink_conv",
             "type": "convection",
             "h": 1.0 / (r_convec * sink_area),
-            "T_inf": float(config.get("ambient", 318.15)),
+            "T_inf": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
             "selection": [1002],
         }
     )
@@ -404,9 +408,12 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": base_data["power_units"],
-        "ambient": float(config.get("ambient", 318.15)),
+        "ambient": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
         "init_temperature": float(
-            config.get("init_temp", config.get("ambient", 318.15))
+            config.get(
+                "init_temp",
+                config.get("ambient", DEFAULT_INIT_TEMPERATURE),
+            )
         ),
         "boundary_conditions": base_data["boundary_conditions"],
     }

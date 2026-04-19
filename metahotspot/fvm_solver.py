@@ -33,6 +33,7 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
+    DEFAULT_INITIAL_TEMPERATURE = 318.15
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -156,12 +157,28 @@ class FVMSolver:
         """加载初始温度场（支持稳态结果向瞬态的完美继承）"""
         init_file = self.config.get("init_temperature_file_path")
         if not init_file or init_file in {"(null)", "None", ""}:
-            return np.full(n_cells, float(self.config.get("init_temperature", 318.15)))
+            return np.full(
+                n_cells,
+                float(
+                    self.config.get(
+                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
+                    )
+                ),
+            )
 
         init_path = os.path.join(self.base_dir, init_file)
         if not os.path.exists(init_path):
-            print(f"[WARNING] Init file {init_path} not found. Using default 318.15 K.")
-            return np.full(n_cells, float(self.config.get("init_temperature", 318.15)))
+            print(
+                f"[WARNING] Init file {init_path} not found. Using default {self.DEFAULT_INITIAL_TEMPERATURE} K."
+            )
+            return np.full(
+                n_cells,
+                float(
+                    self.config.get(
+                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
+                    )
+                ),
+            )
 
         print(f"[INFO] Loading initial state from {init_path}")
         init_mesh = meshio.read(init_path)

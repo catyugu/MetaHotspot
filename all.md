@@ -24,6 +24,10 @@ from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 
+DEFAULT_AMBIENT_TEMPERATURE = 318.15
+DEFAULT_INIT_TEMPERATURE = 318.15
+
+
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
     for entry in os.listdir(directory):
         if entry.endswith(suffix):
@@ -360,7 +364,7 @@ def _build_base_model_data(
             "name": "sink_conv",
             "type": "convection",
             "h": 1.0 / (r_convec * sink_area),
-            "T_inf": float(config.get("ambient", 318.15)),
+            "T_inf": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
             "selection": [1002],
         }
     )
@@ -420,9 +424,12 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": base_data["power_units"],
-        "ambient": float(config.get("ambient", 318.15)),
+        "ambient": float(config.get("ambient", DEFAULT_AMBIENT_TEMPERATURE)),
         "init_temperature": float(
-            config.get("init_temp", config.get("ambient", 318.15))
+            config.get(
+                "init_temp",
+                config.get("ambient", DEFAULT_INIT_TEMPERATURE),
+            )
         ),
         "boundary_conditions": base_data["boundary_conditions"],
     }
@@ -538,6 +545,7 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
+    DEFAULT_INITIAL_TEMPERATURE = 318.15
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -661,12 +669,28 @@ class FVMSolver:
         """加载初始温度场（支持稳态结果向瞬态的完美继承）"""
         init_file = self.config.get("init_temperature_file_path")
         if not init_file or init_file in {"(null)", "None", ""}:
-            return np.full(n_cells, float(self.config.get("init_temperature", 318.15)))
+            return np.full(
+                n_cells,
+                float(
+                    self.config.get(
+                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
+                    )
+                ),
+            )
 
         init_path = os.path.join(self.base_dir, init_file)
         if not os.path.exists(init_path):
-            print(f"[WARNING] Init file {init_path} not found. Using default 318.15 K.")
-            return np.full(n_cells, float(self.config.get("init_temperature", 318.15)))
+            print(
+                f"[WARNING] Init file {init_path} not found. Using default {self.DEFAULT_INITIAL_TEMPERATURE} K."
+            )
+            return np.full(
+                n_cells,
+                float(
+                    self.config.get(
+                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
+                    )
+                ),
+            )
 
         print(f"[INFO] Loading initial state from {init_path}")
         init_mesh = meshio.read(init_path)
