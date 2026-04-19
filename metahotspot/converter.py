@@ -441,10 +441,10 @@ def convert_hotspot_to_metahotspot(
         mesher = GmshMesher()
 
         # 提取网格控制参数
-        base_size = max(float(config.get("s_sink", 0.06)) / 10.0, 0.006)
-        min_size = 0.001
-        # 热扩散半径：影响热源正下方的细化面积，默认 10mm
-        refine_dist = 0.010
+        base_size = max(float(config.get("s_sink", 0.06)) / 8.0, 0.006)
+        min_size = 0.0005
+        # 热扩散半径：影响热源正下方的细化面积，默认 2mm
+        refine_dist = 0.002
 
         # 使用全新的 2.5D Quadtree 生成器
         mesher.generate_2_5D_mesh(
