@@ -458,7 +458,7 @@ def convert_hotspot_to_metahotspot(
 
         # 提取网格控制参数
         base_size = max(float(config.get("s_sink", 0.06)) / 8.0, 0.006)
-        min_size = 0.0003
+        min_size = 0.0005
         # 热扩散半径：影响热源正下方的细化面积，默认 2mm
         refine_dist = 0.002
 
