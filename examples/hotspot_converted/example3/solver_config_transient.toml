@@ -1,5 +1,5 @@
 simulation_type = "transient"
-time = 2.9997e-5
+time = 0.01
 timestep = 3.333e-6
 sampling_intvl = 3.333e-6
 proc_freq = 3000000000.0
@@ -9,112 +9,124 @@ ambient = 318.15
 init_temperature = 318.15
 init_temperature_file_path = "init.vtu"
 [[heterogeneous_material_overrides]]
+name = "L2_1_TSV_0"
+lx = 8.673617379884035e-19
+ly = 0.0
+lz = 0.0
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
 material = "layer_0_unit_0_mat"
+
+[[heterogeneous_material_overrides]]
+name = "L2_1_TSV_1"
 lx = 8.673617379884035e-19
-ly = 0.0
+ly = 0.00638
 lz = 0.0
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-
-[[heterogeneous_material_overrides]]
 material = "layer_0_unit_1_mat"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.0
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
 
 [[heterogeneous_material_overrides]]
+name = "TIM_tsv_0"
+lx = 8.673617379884035e-19
+ly = 0.0
+lz = 0.00015
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
 material = "layer_1_unit_2_mat"
+
+[[heterogeneous_material_overrides]]
+name = "TIM_tsv_1"
 lx = 8.673617379884035e-19
-ly = 0.0
+ly = 0.00638
 lz = 0.00015
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-
-[[heterogeneous_material_overrides]]
 material = "layer_1_unit_3_mat"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00015
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
 
 [[heterogeneous_material_overrides]]
+name = "L2_2_TSV_0"
+lx = 8.673617379884035e-19
+ly = 0.0
+lz = 0.00016999999999999999
+dx = 0.0124
+dy = 0.00018
+dz = 0.00015
 material = "layer_2_unit_4_mat"
+
+[[heterogeneous_material_overrides]]
+name = "L2_2_TSV_1"
 lx = 8.673617379884035e-19
-ly = 0.0
+ly = 0.00638
 lz = 0.00016999999999999999
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-
-[[heterogeneous_material_overrides]]
 material = "layer_2_unit_5_mat"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
 
 [[heterogeneous_material_overrides]]
+name = "TIM_tsv_0"
+lx = 8.673617379884035e-19
+ly = 0.0
+lz = 0.00031999999999999997
+dx = 0.0124
+dy = 0.00018
+dz = 2e-5
 material = "layer_3_unit_6_mat"
+
+[[heterogeneous_material_overrides]]
+name = "TIM_tsv_1"
 lx = 8.673617379884035e-19
-ly = 0.0
+ly = 0.00638
 lz = 0.00031999999999999997
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-
-[[heterogeneous_material_overrides]]
 material = "layer_3_unit_7_mat"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00031999999999999997
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
 
 [[heterogeneous_material_overrides]]
+name = "TSV_0"
+lx = 0.0
+ly = 0.0
+lz = 0.00033999999999999997
+dx = 0.0062
+dy = 0.00018
+dz = 0.00015
 material = "layer_4_unit_8_mat"
-lx = 0.0
+
+[[heterogeneous_material_overrides]]
+name = "TSV_1"
+lx = 0.0062
 ly = 0.0
 lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
-
-[[heterogeneous_material_overrides]]
 material = "layer_4_unit_9_mat"
-lx = 0.0062
-ly = 0.0
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
 
 [[heterogeneous_material_overrides]]
-material = "layer_4_unit_10_mat"
+name = "TSV_2"
 lx = 0.0
 ly = 0.00638
 lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
+material = "layer_4_unit_10_mat"
 
 [[heterogeneous_material_overrides]]
-material = "layer_4_unit_11_mat"
+name = "TSV_3"
 lx = 0.0062
 ly = 0.00638
 lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
+material = "layer_4_unit_11_mat"
 
 [[power_units]]
 name = "L2_1_0"

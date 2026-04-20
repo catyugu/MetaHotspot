@@ -16,12 +16,36 @@
 ```py
 import os
 import shutil
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 import toml
 
 from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
+
+
+# 常量定义
+DEFAULT_AMBIENT = 318.15
+DEFAULT_T_CHIP = 0.00015
+DEFAULT_T_TIM = 0.00002
+DEFAULT_T_SPREADER = 0.001
+DEFAULT_T_SINK = 0.0069
+DEFAULT_PROC_FREQ = 3.0e9
+DEFAULT_R_CONVEC = 0.1
+DEFAULT_COOLANT_VISC = 8.89e-4
+
+STANDARD_MATERIALS = {
+    "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False},
+    "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False},
+    "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False},
+    "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False},
+    "water": {
+        "k": 0.6,
+        "cp": 4.2e6,
+        "fluid": True,
+        "dynamic_viscosity": DEFAULT_COOLANT_VISC,
+    },
+}
 
 
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
@@ -31,368 +55,276 @@ def _find_first_by_suffix(directory: str, suffix: str) -> str:
     return ""
 
 
-def _ensure_dir(path: str) -> None:
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-
-def _layout_bbox_from_flp_units(units: List[dict]) -> Tuple[float, float, float, float]:
-    min_x = min(unit["left_x"] for unit in units)
-    min_y = min(unit["bottom_y"] for unit in units)
-    max_x = max(unit["left_x"] + unit["width"] for unit in units)
-    max_y = max(unit["bottom_y"] + unit["height"] for unit in units)
+def _layout_bbox_from_flp(units: List[dict]) -> Tuple[float, float, float, float]:
+    if not units:
+        return 0.0, 0.0, 0.01, 0.01
+    min_x = min(u["left_x"] for u in units)
+    min_y = min(u["bottom_y"] for u in units)
+    max_x = max(u["left_x"] + u["width"] for u in units)
+    max_y = max(u["bottom_y"] + u["height"] for u in units)
     return min_x, min_y, max_x - min_x, max_y - min_y
 
 
 def _collect_global_xy_size(
     parser: HotSpotParser, example_dir: str, lcf_layers: List[dict]
 ) -> Tuple[float, float]:
-    widths: List[float] = []
-    heights: List[float] = []
-
+    widths, heights = [], []
     for layer in lcf_layers:
-        geometry_file = os.path.join(example_dir, layer["flp_file"])
+        units = parser.parse_flp(os.path.join(example_dir, layer["flp_file"]))
+        if units:
+            _, _, w, h = _layout_bbox_from_flp(units)
+            widths.append(w)
+            heights.append(h)
 
-        units = parser.parse_flp(geometry_file)
-        if not units:
-            continue
+    if not widths:
+        for file_name in os.listdir(example_dir):
+            if file_name.endswith(".flp"):
+                units = parser.parse_flp(os.path.join(example_dir, file_name))
+                if units:
+                    _, _, w, h = _layout_bbox_from_flp(units)
+                    widths.append(w)
+                    heights.append(h)
 
-        _, _, width, height = _layout_bbox_from_flp_units(units)
-        widths.append(width)
-        heights.append(height)
-
-    if widths and heights:
-        return max(widths), max(heights)
-
-    for _, _, files in os.walk(example_dir):
-        for file_name in files:
-            if not file_name.endswith(".flp"):
-                continue
-            units = parser.parse_flp(os.path.join(example_dir, file_name))
-            if not units:
-                continue
-            _, _, width, height = _layout_bbox_from_flp_units(units)
-            widths.append(width)
-            heights.append(height)
-
-    if widths and heights:
-        return max(widths), max(heights)
-
-    return 0.01, 0.01
+    return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
 
-def _estimate_total_time(ptrace_path: str, sampling_interval: float) -> float:
-    if not ptrace_path or not os.path.exists(ptrace_path):
-        return max(sampling_interval, 0.01)
+def _init_materials(parser: HotSpotParser, example_dir: str, config: dict) -> dict:
+    materials = parser.parse_materials(os.path.join(example_dir, "example.materials"))
+    for name, props in STANDARD_MATERIALS.items():
+        if name not in materials:
+            materials[name] = dict(props)
+            if name == "water" and "coolant_visc" in config:
+                materials[name]["dynamic_viscosity"] = float(config["coolant_visc"])
+    return materials
 
-    count = 0
-    with open(ptrace_path, "r", encoding="utf-8") as handle:
-        _ = handle.readline()
-        for line in handle:
-            if line.strip():
-                count += 1
 
-    if count <= 0:
-        return max(sampling_interval, 0.01)
-    return count * sampling_interval
+def _ensure_material_exists(
+    mat_name: str,
+    fallback_name: str,
+    k_key: str,
+    cp_key: str,
+    materials: dict,
+    config: dict,
+) -> str:
+    chosen = str(mat_name or "").strip().lower() or fallback_name
+    if chosen not in materials:
+        fallback = materials.get(fallback_name, {"k": 1.0, "cp": 1.0e6})
+        materials[chosen] = {
+            "k": float(config.get(k_key, fallback["k"])),
+            "cp": float(config.get(cp_key, fallback["cp"])),
+            "fluid": False,
+        }
+    return chosen
 
 
 def _build_base_model_data(
     parser: HotSpotParser, example_dir: str
-) -> Tuple[dict, Dict[int, dict], str]:
+) -> Tuple[Dict, Dict, str]:
     config = parser.parse_config(os.path.join(example_dir, "example.config"))
-    materials = parser.parse_materials(os.path.join(example_dir, "example.materials"))
+    materials = _init_materials(parser, example_dir, config)
 
-    standard_materials = {
-        "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False},
-        "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False},
-        "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False},
-        "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False},
-        "water": {
-            "k": 0.6,
-            "cp": 4.2e6,
-            "fluid": True,
-            "dynamic_viscosity": float(config.get("coolant_visc", 8.89e-4)),
-        },
-    }
-    for name, props in standard_materials.items():
-        if name not in materials:
-            materials[name] = props
-
-    ptrace_source = _find_first_by_suffix(example_dir, ".ptrace")
-    ptrace_name = os.path.basename(ptrace_source) if ptrace_source else ""
-
+    ptrace_path = _find_first_by_suffix(example_dir, ".ptrace")
     lcf_path = _find_first_by_suffix(example_dir, ".lcf")
     lcf_layers = parser.parse_lcf(lcf_path) if lcf_path else []
 
-    global_width, global_height = _collect_global_xy_size(
-        parser, example_dir, lcf_layers
-    )
+    g_width, g_height = _collect_global_xy_size(parser, example_dir, lcf_layers)
 
-    layers_entities: Dict[int, dict] = {}
-    power_units: List[dict] = []
-    boundary_conditions: List[dict] = []
-    domain_assignment: Dict[str, List[int]] = {}
-    heterogeneous_overrides: List[dict] = []
+    model = {
+        "config": config,
+        "materials": materials,
+        "domain_assignment": {},
+        "heterogeneous_overrides": [],
+        "layers_entities": {},
+        "power_units": [],
+        "boundary_conditions": [],
+        "global_width": g_width,
+        "global_height": g_height,
+    }
 
     z_cursor = 0.0
 
-    def ensure_material(
-        material_name: str,
-        fallback_name: str,
-        k_key: str,
-        cp_key: str,
-    ) -> str:
-        chosen = str(material_name or "").strip().lower()
-        if not chosen:
-            chosen = fallback_name
-
-        if chosen not in materials:
-            fallback = materials.get(fallback_name, {"k": 1.0, "cp": 1.0e6})
-            materials[chosen] = {
-                "k": float(config.get(k_key, fallback["k"])),
-                "cp": float(config.get(cp_key, fallback["cp"])),
-                "fluid": False,
-            }
-
-        return chosen
-
     if lcf_layers:
         for layer in lcf_layers:
-            layer_tag = int(layer["id"]) + 1
-            geometry_file = os.path.join(example_dir, layer["flp_file"])
+            tag = int(layer["id"]) + 1
             thickness = float(layer["thickness"])
+            mat_name = (
+                f"layer_{layer['id']}_mat"
+                if layer["type"] == "numeric"
+                else str(layer["material"])
+            )
 
             if layer["type"] == "numeric":
-                material_name = f"layer_{layer['id']}_mat"
-                materials[material_name] = {
+                materials[mat_name] = {
                     "k": float(layer["k"]),
                     "cp": float(layer["cp"]),
                     "fluid": False,
                 }
-            else:
-                material_name = str(layer["material"])
 
-            domain_assignment.setdefault(material_name, []).append(layer_tag)
+            model["domain_assignment"].setdefault(mat_name, []).append(tag)
 
-            flp_units = parser.parse_flp(geometry_file)
+            flp_units = parser.parse_flp(os.path.join(example_dir, layer["flp_file"]))
+
+            # 重要改动：将所有的 flp 单元都注入到 layers_entities 中，以此作为网格划分的基底
             if not flp_units:
-                layers_entities[layer_tag] = {
+                model["layers_entities"][tag] = {
                     "units": [
                         {
                             "name": f"layer_{layer['id']}_extent",
                             "lx": 0.0,
                             "ly": 0.0,
                             "lz": z_cursor,
-                            "dx": global_width,
-                            "dy": global_height,
+                            "dx": g_width,
+                            "dy": g_height,
                             "dz": thickness,
                         }
-                    ],
+                    ]
                 }
-                z_cursor += thickness
-                continue
+            else:
+                min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
+                ox, oy = (g_width - lw) / 2.0 - min_x, (g_height - lh) / 2.0 - min_y
 
-            min_x, min_y, layer_width, layer_height = _layout_bbox_from_flp_units(
-                flp_units
-            )
-            offset_x = (global_width - layer_width) / 2.0 - min_x
-            offset_y = (global_height - layer_height) / 2.0 - min_y
-
-            layers_entities[layer_tag] = {
-                "units": [
-                    {
-                        "name": f"layer_{layer['id']}_extent",
-                        "lx": min_x + offset_x,
-                        "ly": min_y + offset_y,
+                layer_units = []
+                for u in flp_units:
+                    entity = {
+                        "name": u["name"],
+                        "lx": u["left_x"] + ox,
+                        "ly": u["bottom_y"] + oy,
                         "lz": z_cursor,
-                        "dx": layer_width,
-                        "dy": layer_height,
+                        "dx": u["width"],
+                        "dy": u["height"],
                         "dz": thickness,
                     }
-                ],
-            }
+                    layer_units.append(entity)
 
-            for unit in flp_units:
+                    if layer["type"] == "numeric" and (
+                        "k" in u or "specific_heat" in u
+                    ):
+                        override_mat = f"layer_{layer['id']}_unit_{len(model['heterogeneous_overrides'])}_mat"
+                        materials[override_mat] = {
+                            "k": float(u.get("k", layer["k"])),
+                            "cp": float(u.get("specific_heat", layer["cp"])),
+                            "fluid": False,
+                        }
+                        model["heterogeneous_overrides"].append(
+                            {**entity, "material": override_mat}
+                        )
+
+                    if layer["power"]:
+                        model["power_units"].append(entity)
+
+                model["layers_entities"][tag] = {"units": layer_units}
+            z_cursor += thickness
+    else:
+        # Fallback to single FLP
+        flp_units = parser.parse_flp(_find_first_by_suffix(example_dir, ".flp"))
+        thickness = float(config.get("t_chip", DEFAULT_T_CHIP))
+        tag = 1
+        model["domain_assignment"].setdefault("silicon", []).append(tag)
+
+        if flp_units:
+            min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
+            ox, oy = (g_width - lw) / 2.0 - min_x, (g_height - lh) / 2.0 - min_y
+
+            layer_units = []
+            for u in flp_units:
                 entity = {
-                    "name": unit["name"],
-                    "lx": unit["left_x"] + offset_x,
-                    "ly": unit["bottom_y"] + offset_y,
+                    "name": u["name"],
+                    "lx": u["left_x"] + ox,
+                    "ly": u["bottom_y"] + oy,
                     "lz": z_cursor,
-                    "dx": unit["width"],
-                    "dy": unit["height"],
+                    "dx": u["width"],
+                    "dy": u["height"],
                     "dz": thickness,
                 }
+                layer_units.append(entity)
+                model["power_units"].append(entity)
 
-                if layer["type"] == "numeric" and (
-                    "k" in unit or "specific_heat" in unit
-                ):
-                    override_material = (
-                        f"layer_{layer['id']}_unit_{len(heterogeneous_overrides)}_mat"
-                    )
-                    materials[override_material] = {
-                        "k": float(unit.get("k", layer["k"])),
-                        "cp": float(unit.get("specific_heat", layer["cp"])),
-                        "fluid": False,
-                    }
-                    heterogeneous_overrides.append(
-                        {
-                            "material": override_material,
-                            "lx": entity["lx"],
-                            "ly": entity["ly"],
-                            "lz": entity["lz"],
-                            "dx": entity["dx"],
-                            "dy": entity["dy"],
-                            "dz": entity["dz"],
-                        }
-                    )
+            model["layers_entities"][tag] = {"units": layer_units}
+        z_cursor += thickness
 
-                if layer["power"]:
-                    power_units.append(entity)
-
-            z_cursor += thickness
-
-    else:
-        flp_path = _find_first_by_suffix(example_dir, ".flp")
-        if flp_path:
-            flp_units = parser.parse_flp(flp_path)
-            chip_thickness = float(config.get("t_chip", 0.00015))
-            layer_tag = 1
-            domain_assignment.setdefault("silicon", []).append(layer_tag)
-
-            if flp_units:
-                min_x, min_y, layer_width, layer_height = _layout_bbox_from_flp_units(
-                    flp_units
-                )
-                offset_x = (global_width - layer_width) / 2.0 - min_x
-                offset_y = (global_height - layer_height) / 2.0 - min_y
-
-                layers_entities[layer_tag] = {
-                    "units": [
-                        {
-                            "name": "chip_extent",
-                            "lx": min_x + offset_x,
-                            "ly": min_y + offset_y,
-                            "lz": z_cursor,
-                            "dx": layer_width,
-                            "dy": layer_height,
-                            "dz": chip_thickness,
-                        }
-                    ],
-                }
-
-                for unit in flp_units:
-                    power_units.append(
-                        {
-                            "name": unit["name"],
-                            "lx": unit["left_x"] + offset_x,
-                            "ly": unit["bottom_y"] + offset_y,
-                            "lz": z_cursor,
-                            "dx": unit["width"],
-                            "dy": unit["height"],
-                            "dz": chip_thickness,
-                        }
-                    )
-
-            z_cursor += chip_thickness
-
-    def add_package_layer(
-        name: str,
-        thickness: float,
-        side_length: float,
-        material_name: str,
-        tag: int,
-    ) -> None:
+    def _add_pkg(name: str, thick: float, side: float, mat: str, tag: int) -> None:
         nonlocal z_cursor
-        lx = (global_width - side_length) / 2.0
-        ly = (global_height - side_length) / 2.0
-
-        layers_entities[tag] = {
+        lx, ly = (g_width - side) / 2.0, (g_height - side) / 2.0
+        model["layers_entities"][tag] = {
             "units": [
                 {
                     "name": name,
                     "lx": lx,
                     "ly": ly,
                     "lz": z_cursor,
-                    "dx": side_length,
-                    "dy": side_length,
-                    "dz": thickness,
+                    "dx": side,
+                    "dy": side,
+                    "dz": thick,
                 }
-            ],
+            ]
         }
-        domain_assignment.setdefault(material_name, []).append(tag)
-        z_cursor += thickness
+        model["domain_assignment"].setdefault(mat, []).append(tag)
+        z_cursor += thick
 
-    interface_material = ensure_material(
+    mat_tim = _ensure_material_exists(
         str(config.get("material_interface", "tim")),
         "tim",
         "k_interface",
         "p_interface",
+        materials,
+        config,
     )
-    spreader_material = ensure_material(
+    mat_spread = _ensure_material_exists(
         str(config.get("material_spreader", "copper")),
         "copper",
         "k_spreader",
         "p_spreader",
+        materials,
+        config,
     )
-    sink_material = ensure_material(
+    mat_sink = _ensure_material_exists(
         str(config.get("material_sink", "copper")),
         "copper",
         "k_sink",
         "p_sink",
+        materials,
+        config,
     )
 
     if not lcf_layers:
-        add_package_layer(
+        _add_pkg(
             "TIM",
-            float(config.get("t_interface", config.get("t_tim", 0.00002))),
-            global_width,
-            interface_material,
+            float(config.get("t_interface", config.get("t_tim", DEFAULT_T_TIM))),
+            g_width,
+            mat_tim,
             1000,
         )
 
-    add_package_layer(
+    s_spread = float(config.get("s_spreader", max(g_width, g_height)))
+    _add_pkg(
         "Spreader",
-        float(config.get("t_spreader", 0.001)),
-        float(config.get("s_spreader", max(global_width, global_height))),
-        spreader_material,
+        float(config.get("t_spreader", DEFAULT_T_SPREADER)),
+        s_spread,
+        mat_spread,
         1001,
     )
-    add_package_layer(
-        "Sink",
-        float(config.get("t_sink", 0.0069)),
-        float(config.get("s_sink", max(global_width, global_height))),
-        sink_material,
-        1002,
+
+    s_sink = float(config.get("s_sink", max(g_width, g_height)))
+    _add_pkg(
+        "Sink", float(config.get("t_sink", DEFAULT_T_SINK)), s_sink, mat_sink, 1002
     )
 
-    sink_side = float(config.get("s_sink", max(global_width, global_height)))
-    sink_area = sink_side * sink_side
-    r_convec = float(config.get("r_convec", 0.1))
-
-    boundary_conditions.append(
+    r_convec = float(config.get("r_convec", DEFAULT_R_CONVEC))
+    model["boundary_conditions"].append(
         {
             "name": "sink_conv",
             "type": "convection",
-            "h": 1.0 / (r_convec * sink_area),
-            "T_inf": float(config.get("ambient", 318.15)),
+            "h": 1.0 / (r_convec * s_sink * s_sink),
+            "T_inf": float(config.get("ambient", DEFAULT_AMBIENT)),
             "selection": [1002],
         }
     )
 
-    base_data = {
-        "config": config,
-        "materials": materials,
-        "domain_assignment": domain_assignment,
-        "heterogeneous_material_overrides": heterogeneous_overrides,
-        "layers_entities": layers_entities,
-        "power_units": power_units,
-        "boundary_conditions": boundary_conditions,
-        "global_width": global_width,
-        "global_height": global_height,
-    }
-
-    return base_data, layers_entities, ptrace_name
+    return (
+        model,
+        model["layers_entities"],
+        os.path.basename(ptrace_path) if ptrace_path else "",
+    )
 
 
 def convert_hotspot_to_metahotspot(
@@ -402,51 +334,40 @@ def convert_hotspot_to_metahotspot(
     output_config_name: str = "solver_config.toml",
     generate_mesh: bool = True,
 ) -> str:
-    _ensure_dir(output_dir)
-
+    os.makedirs(output_dir, exist_ok=True)
     parser = HotSpotParser()
-    base_data, layers_entities, ptrace_name = _build_base_model_data(
-        parser, example_dir
-    )
-    config = base_data["config"]
+    model, layers_entities, ptrace_name = _build_base_model_data(parser, example_dir)
+    config = model["config"]
 
-    ptrace_source = _find_first_by_suffix(example_dir, ".ptrace")
-    if ptrace_source:
+    if ptrace_name:
         shutil.copy(
-            ptrace_source, os.path.join(output_dir, os.path.basename(ptrace_source))
+            os.path.join(example_dir, ptrace_name),
+            os.path.join(output_dir, ptrace_name),
         )
 
     sampling_intvl = float(config.get("sampling_intvl", 0.01))
-    timestep = float(config.get("timestep", sampling_intvl))
-    total_time = float(
-        config.get("time", _estimate_total_time(ptrace_source, sampling_intvl))
-    )
-
-    init_file = str(config.get("init_file", "(null)"))
-    init_file = "" if init_file in {"(null)", "null", "None"} else init_file
 
     toml_data = {
         "simulation_type": simulation_type,
-        "time": total_time,
-        "timestep": timestep,
+        "time": float(config.get("time", max(sampling_intvl, 0.01))),
+        "timestep": float(config.get("timestep", sampling_intvl)),
         "sampling_intvl": sampling_intvl,
-        "proc_freq": float(config.get("base_proc_freq", 3.0e9)),
-        "materials": base_data["materials"],
-        "domain_material_assignment": base_data["domain_assignment"],
-        "heterogeneous_material_overrides": base_data[
-            "heterogeneous_material_overrides"
-        ],
+        "proc_freq": float(config.get("base_proc_freq", DEFAULT_PROC_FREQ)),
+        "materials": model["materials"],
+        "domain_material_assignment": model["domain_assignment"],
+        "heterogeneous_material_overrides": model["heterogeneous_overrides"],
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
-        "power_units": base_data["power_units"],
-        "ambient": float(config.get("ambient", 318.15)),
+        "power_units": model["power_units"],
+        "ambient": float(config.get("ambient", DEFAULT_AMBIENT)),
         "init_temperature": float(
-            config.get("init_temp", config.get("ambient", 318.15))
+            config.get("init_temp", config.get("ambient", DEFAULT_AMBIENT))
         ),
-        "boundary_conditions": base_data["boundary_conditions"],
+        "boundary_conditions": model["boundary_conditions"],
     }
 
-    if init_file:
+    init_file = str(config.get("init_file", ""))
+    if init_file and init_file not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = init_file
 
     config_path = os.path.join(output_dir, output_config_name)
@@ -455,22 +376,13 @@ def convert_hotspot_to_metahotspot(
 
     if generate_mesh:
         mesher = GmshMesher()
-
-        # 提取网格控制参数
-        base_size = max(float(config.get("s_sink", 0.06)) / 8.0, 0.006)
-        min_size = 0.0005
-        # 热扩散半径：影响热源正下方的细化面积，默认 2mm
-        refine_dist = 0.002
-
-        # 使用全新的 2.5D Quadtree 生成器
         mesher.generate_2_5D_mesh(
             layers_entities=layers_entities,
-            power_units=base_data["power_units"],
-            base_mesh_size=base_size,
-            min_mesh_size=min_size,
-            refine_distance=refine_dist,
+            power_units=model["power_units"],
+            max_mesh_size=0.003,
+            min_mesh_size=0.0005,
+            refine_distance=0.001,
         )
-
         mesher.finalize(os.path.join(output_dir, "mesh.msh"))
 
     return config_path
@@ -479,50 +391,28 @@ def convert_hotspot_to_metahotspot(
 def convert_hotspot_with_modes(
     example_dir: str, output_dir: str, mode: str = "both"
 ) -> List[str]:
-    normalized_mode = mode.lower().strip()
-    if normalized_mode not in {"steady", "transient", "both"}:
-        raise ValueError("mode must be one of: steady, transient, both")
-
-    if normalized_mode == "steady":
+    mode = mode.lower().strip()
+    if mode == "steady":
         return [
             convert_hotspot_to_metahotspot(
-                example_dir,
-                output_dir,
-                simulation_type="steady",
-                output_config_name="solver_config_steady.toml",
-                generate_mesh=True,
+                example_dir, output_dir, "steady", "solver_config_steady.toml"
+            )
+        ]
+    elif mode == "transient":
+        return [
+            convert_hotspot_to_metahotspot(
+                example_dir, output_dir, "transient", "solver_config_transient.toml"
             )
         ]
 
-    if normalized_mode == "transient":
-        return [
-            convert_hotspot_to_metahotspot(
-                example_dir,
-                output_dir,
-                simulation_type="transient",
-                output_config_name="solver_config_transient.toml",
-                generate_mesh=True,
-            )
-        ]
-
-    created = [
+    return [
         convert_hotspot_to_metahotspot(
-            example_dir,
-            output_dir,
-            simulation_type="steady",
-            output_config_name="solver_config_steady.toml",
-            generate_mesh=True,
+            example_dir, output_dir, "steady", "solver_config_steady.toml", True
         ),
         convert_hotspot_to_metahotspot(
-            example_dir,
-            output_dir,
-            simulation_type="transient",
-            output_config_name="solver_config_transient.toml",
-            generate_mesh=False,
+            example_dir, output_dir, "transient", "solver_config_transient.toml", False
         ),
     ]
-
-    return created
 
 ```
 
@@ -936,9 +826,9 @@ class FVMSolver:
 ```py
 import math
 from typing import Dict, List
+from collections import deque
 
 import gmsh
-import numpy as np
 
 
 class GmshMesher:
@@ -950,99 +840,22 @@ class GmshMesher:
         self,
         layers_entities: Dict[int, dict],
         power_units: List[dict],
-        base_mesh_size: float = 0.006,
+        max_mesh_size: float = 0.006,
         min_mesh_size: float = 0.0005,
         refine_distance: float = 0.010,
     ) -> None:
         """
-        生成 2.5D 挤压网格：层内 Quadtree 自适应（非共形），层间严格拉伸（共形）
+        局部剖分策略：
+        1. 以每一层的实际 functional units 作为初始网格节点（完美贴合 unit 边界，绝不外延拉伸）。
+        2. 若单元过大 (w or h > max_mesh_size)，对其长边进行中点切分。
+        3. 若单元处于热源附近，继续对长边进行细化，直至逼近 min_mesh_size。
         """
-        # 1. 计算全局 2D 包围盒
-        x_min = min(u["lx"] for l in layers_entities.values() for u in l["units"])
-        x_max = max(
-            u["lx"] + u["dx"] for l in layers_entities.values() for u in l["units"]
-        )
-        y_min = min(u["ly"] for l in layers_entities.values() for u in l["units"])
-        y_max = max(
-            u["ly"] + u["dy"] for l in layers_entities.values() for u in l["units"]
-        )
+        # 提前收集热源框，用于局部加密判定
+        heat_boxes = [
+            (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
+            for u in power_units
+        ]
 
-        # 2. 收集所有物理边界和热源边界，用于触发网格细化
-        geometry_boxes = []
-        for l in layers_entities.values():
-            for u in l["units"]:
-                geometry_boxes.append(
-                    (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
-                )
-
-        heat_boxes = []
-        for u in power_units:
-            heat_boxes.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
-
-        leaves = []
-
-        def refine(x0: float, y0: float, x1: float, y1: float) -> None:
-            """递归生成 2D Quadtree"""
-            dx = x1 - x0
-            dy = y1 - y0
-
-            # 停止条件 1：达到最小网格尺寸
-            if dx <= min_mesh_size * 1.01 and dy <= min_mesh_size * 1.01:
-                leaves.append((x0, y0, x1, y1))
-                return
-
-            needs_refinement = False
-
-            # 触发条件 1：距离热源较近 (捕捉热流扩散)
-            for hb in heat_boxes:
-                dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
-                dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
-                if math.sqrt(dist_x**2 + dist_y**2) <= refine_distance:
-                    needs_refinement = True
-                    break
-
-            # 触发条件 2：网格跨越了物理边界 (确保网格完美贴合所有层级模块的边缘)
-            if not needs_refinement:
-                for gb in geometry_boxes:
-                    # 如果垂直边界穿过当前网格，并且 Y 方向有交集
-                    if (x0 < gb[0] < x1 or x0 < gb[2] < x1) and (
-                        max(y0, gb[1]) < min(y1, gb[3])
-                    ):
-                        needs_refinement = True
-                        break
-                    # 如果水平边界穿过当前网格，并且 X 方向有交集
-                    if (y0 < gb[1] < y1 or y0 < gb[3] < y1) and (
-                        max(x0, gb[0]) < min(x1, gb[2])
-                    ):
-                        needs_refinement = True
-                        break
-
-            if needs_refinement:
-                mid_x = (x0 + x1) / 2.0
-                mid_y = (y0 + y1) / 2.0
-                split_x = dx > min_mesh_size * 1.01
-                split_y = dy > min_mesh_size * 1.01
-
-                xs = [x0, mid_x, x1] if split_x else [x0, x1]
-                ys = [y0, mid_y, y1] if split_y else [y0, y1]
-
-                for i in range(len(xs) - 1):
-                    for j in range(len(ys) - 1):
-                        refine(xs[i], ys[j], xs[i + 1], ys[j + 1])
-            else:
-                leaves.append((x0, y0, x1, y1))
-
-        # 3. 初始化基础粗网格并启动递归划分
-        nx = max(1, int(round((x_max - x_min) / base_mesh_size)))
-        ny = max(1, int(round((y_max - y_min) / base_mesh_size)))
-        xs = np.linspace(x_min, x_max, nx + 1)
-        ys = np.linspace(y_min, y_max, ny + 1)
-
-        for i in range(nx):
-            for j in range(ny):
-                refine(xs[i], ys[j], xs[i + 1], ys[j + 1])
-
-        # 4. 将 2D Quadtree 向上拉伸 (Extrude) 到 3D 的每一层
         node_id = 1
         elem_id = 1
 
@@ -1050,58 +863,86 @@ class GmshMesher:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
             gmsh.model.addPhysicalGroup(3, [discrete_tag], tag)
 
-            # 提取当前层的 Z 轴高度和厚度
             lz = layer_data["units"][0]["lz"]
             dz = layer_data["units"][0]["dz"]
 
-            layer_node_tags = []
-            layer_node_coords = []
+            leaves = []
+            queue = deque()
+
+            # 初始化：直接以功能单元的物理边界框作为待细化的基础几何网格
+            for u in layer_data["units"]:
+                queue.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
+
+            # 递归细分
+            while queue:
+                x0, y0, x1, y1 = queue.popleft()
+                w = x1 - x0
+                h = y1 - y0
+
+                needs_split = False
+
+                # 判定条件 1: 网格尺寸大于允许的最大尺寸限制
+                if w > max_mesh_size or h > max_mesh_size:
+                    needs_split = True
+                # 判定条件 2: 网格在热源的影响范围内，且长边仍大于最小尺寸限制
+                elif w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01:
+                    for hb in heat_boxes:
+                        dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
+                        dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
+                        if math.hypot(dist_x, dist_y) <= refine_distance:
+                            needs_split = True
+                            break
+
+                # 执行切分：永远沿着最长的边切分一刀
+                if needs_split:
+                    if w >= h:
+                        mid = (x0 + x1) / 2.0
+                        queue.append((x0, y0, mid, y1))
+                        queue.append((mid, y0, x1, y1))
+                    else:
+                        mid = (y0 + y1) / 2.0
+                        queue.append((x0, y0, x1, mid))
+                        queue.append((x0, mid, x1, y1))
+                else:
+                    leaves.append((x0, y0, x1, y1))
+
+            # 根据最终的 leaves 构建当前层独立的 3D Hexahedrons (完全抛弃全层间的强行共形)
+            layer_nodes_tags = []
+            layer_nodes_coords = []
             node_map = {}
 
             def get_node(x: float, y: float, z: float) -> int:
                 nonlocal node_id
-                key = (round(x, 6), round(y, 6), round(z, 6))
+                # 保持坐标精度位以防止浮点数误差产生冗余节点
+                key = (round(x, 12), round(y, 12), round(z, 12))
                 if key not in node_map:
                     node_map[key] = node_id
-                    layer_node_tags.append(node_id)
-                    layer_node_coords.extend([x, y, z])
+                    layer_nodes_tags.append(node_id)
+                    layer_nodes_coords.extend([x, y, z])
                     node_id += 1
                 return node_map[key]
 
             element_tags = []
             element_nodes = []
 
-            for leaf in leaves:
-                x0, y0, x1, y1 = leaf
-                cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            for x0, y0, x1, y1 in leaves:
+                n0 = get_node(x0, y0, lz)
+                n1 = get_node(x1, y0, lz)
+                n2 = get_node(x1, y1, lz)
+                n3 = get_node(x0, y1, lz)
 
-                # 只有当 2D 叶子节点落在当前物理层的有效区域内时，才生成 3D 实体
-                inside = False
-                for u in layer_data["units"]:
-                    if (
-                        u["lx"] <= cx <= u["lx"] + u["dx"]
-                        and u["ly"] <= cy <= u["ly"] + u["dy"]
-                    ):
-                        inside = True
-                        break
+                n4 = get_node(x0, y0, lz + dz)
+                n5 = get_node(x1, y0, lz + dz)
+                n6 = get_node(x1, y1, lz + dz)
+                n7 = get_node(x0, y1, lz + dz)
 
-                if inside:
-                    n0 = get_node(x0, y0, lz)
-                    n1 = get_node(x1, y0, lz)
-                    n2 = get_node(x1, y1, lz)
-                    n3 = get_node(x0, y1, lz)
-                    n4 = get_node(x0, y0, lz + dz)
-                    n5 = get_node(x1, y0, lz + dz)
-                    n6 = get_node(x1, y1, lz + dz)
-                    n7 = get_node(x0, y1, lz + dz)
-
-                    element_tags.append(elem_id)
-                    element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
-                    elem_id += 1
+                element_tags.append(elem_id)
+                element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
+                elem_id += 1
 
             if element_tags:
                 gmsh.model.mesh.addNodes(
-                    3, discrete_tag, layer_node_tags, layer_node_coords
+                    3, discrete_tag, layer_nodes_tags, layer_nodes_coords
                 )
                 gmsh.model.mesh.addElements(
                     3, discrete_tag, [5], [element_tags], [element_nodes]

@@ -1,5 +1,5 @@
 simulation_type = "transient"
-time = 1.0
+time = 0.01
 timestep = 0.01
 sampling_intvl = 0.01
 proc_freq = 3000000000.0
