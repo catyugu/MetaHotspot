@@ -3,11 +3,11 @@ time = 0.01
 timestep = 0.01
 sampling_intvl = 0.01
 proc_freq = 3000000000.0
-heterogeneous_material_overrides = []
-mesh_file_path = "mesh.msh"
-ptrace_file_path = "gcc.ptrace"
 ambient = 318.15
 init_temperature = 318.15
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "gcc.ptrace"
+heterogeneous_material_overrides = []
 [[power_units]]
 name = "L2_left"
 lx = 0.0

@@ -37,18 +37,36 @@ class FVMSolver:
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
         self.config = toml.load(config_path)
-        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
+        self.mesh_path = os.path.join(
+            self.base_dir, self.config.get("mesh_file_path", "mesh.msh")
+        )
         self.mesh = meshio.read(self.mesh_path)
 
-        self._init_materials()
-        self.cells: List[Cell] = []
-
         self._sanitize_config()
+        self._init_materials()
+
+        self.cells: List[Cell] = []
         self._prepare_mesh()
         self._precompute_power_matrix()
 
+    def _sanitize_config(self) -> None:
+        self.config["init_temperature"] = float(
+            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
+        )
+        self.config["timestep"] = float(self.config.get("timestep", 0.1))
+        self.config["time"] = float(self.config.get("time", 0.0))
+        self.config["simulation_type"] = str(
+            self.config.get("simulation_type", "steady")
+        )
+        self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
+        self.config.setdefault("domain_material_assignment", {})
+        self.config.setdefault("heterogeneous_material_overrides", [])
+        self.config.setdefault("power_units", [])
+        self.config.setdefault("boundary_conditions", [])
+        self.config.setdefault("init_temperature_file_path", None)
+
     def _init_materials(self) -> None:
-        self.materials = self.config["materials"]
+        self.materials = self.config.get("materials", {})
         self.tag_to_material = {}
         for mat_name, tags in self.config["domain_material_assignment"].items():
             for tag in tags:
@@ -83,20 +101,16 @@ class FVMSolver:
 
         sorted_indices = np.argsort(morton_keys)
 
-        mat_k_array = np.zeros(len(centers))
-        mat_cp_array = np.zeros(len(centers))
-
+        mat_k_array, mat_cp_array = np.zeros(len(centers)), np.zeros(len(centers))
         for i, tag in enumerate(physical_tags):
-            mat = self.tag_to_material.get(tag, self.materials["silicon"])
-            mat_k_array[i] = float(mat["k"])
-            mat_cp_array[i] = float(mat["cp"])
+            mat = self.tag_to_material.get(
+                tag, self.materials.get("silicon", {"k": 1, "cp": 1})
+            )
+            mat_k_array[i], mat_cp_array[i] = float(mat["k"]), float(mat["cp"])
 
-        overrides = self.config["heterogeneous_material_overrides"]
-        for ov in overrides:
-            if "k" in ov and "cp" in ov:
-                ov_k = float(ov["k"])
-                ov_cp = float(ov["cp"])
-
+        for ov in self.config["heterogeneous_material_overrides"]:
+            if "k" not in ov or "cp" not in ov:
+                continue
             x0, y0, z0 = float(ov["lx"]), float(ov["ly"]), float(ov["lz"])
             x1, y1, z1 = (
                 x0 + float(ov["dx"]),
@@ -112,31 +126,26 @@ class FVMSolver:
                 & (centers[:, 2] >= z0 - self.GEOMETRY_TOLERANCE)
                 & (centers[:, 2] <= z1 + self.GEOMETRY_TOLERANCE)
             )
-            mat_k_array[mask] = ov_k
-            mat_cp_array[mask] = ov_cp
+            mat_k_array[mask] = float(ov["k"])
+            mat_cp_array[mask] = float(ov["cp"])
 
         self.face_to_cell = {}
-
         for new_id, orig_id in enumerate(sorted_indices):
-            tag = int(physical_tags[orig_id])
-            box = np.array([*lowers[orig_id], *uppers[orig_id]])
-
+            nodes = hex_data[orig_id]
             self.cells.append(
                 Cell(
                     original_id=orig_id,
                     id=new_id,
                     center=centers[orig_id],
                     dims=dims[orig_id],
-                    box=box,
+                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
                     k=mat_k_array[orig_id],
                     cp=mat_cp_array[orig_id],
-                    tag=tag,
+                    tag=int(physical_tags[orig_id]),
                     vol=float(vols[orig_id]),
                 )
             )
 
-            # 为反向边界映射准备：将三维网格六个面的节点元组散列到其关联的新 Cell ID 上
-            nodes = hex_data[orig_id]
             fs = [
                 tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),
                 tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),
@@ -149,31 +158,33 @@ class FVMSolver:
                 self.face_to_cell[f] = new_id
 
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
+        self._extract_boundary_faces()
 
-        # 提取网格中的 2D Physical Group，完成 面片->体元 的挂载映射
+    def _extract_boundary_faces(self) -> None:
         self.boundary_faces = {}
-        if "quad" in self.mesh.cells_dict:
-            quad_data = self.mesh.cells_dict["quad"]
-            quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get(
-                "quad", []
-            )
-            for i, nodes in enumerate(quad_data):
-                f = tuple(sorted(nodes))
-                if f in self.face_to_cell:
-                    cell_id = self.face_to_cell[f]
-                    tag = int(quad_tags[i]) if len(quad_tags) > i else -1
-                    if tag != -1:
-                        # 坐标叉乘计算面片真实物理面积
-                        p = self.mesh.points[nodes]
-                        v1, v2 = p[1] - p[0], p[2] - p[0]
-                        area = np.linalg.norm(np.cross(v1, v2))
-                        if area > self.GEOMETRY_TOLERANCE:
-                            self.boundary_faces.setdefault(tag, []).append(
-                                (cell_id, area)
-                            )
+        if "quad" not in self.mesh.cells_dict:
+            return
+
+        quad_data = self.mesh.cells_dict["quad"]
+        quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get("quad", [])
+
+        for i, nodes in enumerate(quad_data):
+            f = tuple(sorted(nodes))
+            if f not in self.face_to_cell:
+                continue
+
+            tag = int(quad_tags[i]) if len(quad_tags) > i else -1
+            if tag == -1:
+                continue
+
+            p = self.mesh.points[nodes]
+            area = np.linalg.norm(np.cross(p[1] - p[0], p[2] - p[0]))
+            if area > self.GEOMETRY_TOLERANCE:
+                self.boundary_faces.setdefault(tag, []).append(
+                    (self.face_to_cell[f], area)
+                )
 
     def _precompute_power_matrix(self) -> None:
-        """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
         power_units = self.config["power_units"]
         self.unit_names = [u["name"] for u in power_units]
 
@@ -181,10 +192,8 @@ class FVMSolver:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
             return
 
-        # 将所有 cell 的 box 提取为 numpy array: shape (N, 6)
         cell_boxes = np.array([c.box for c in self.cells])
         cell_lowers, cell_uppers = cell_boxes[:, :3], cell_boxes[:, 3:]
-
         rows, cols, data = [], [], []
 
         for unit_idx, unit in enumerate(power_units):
@@ -195,7 +204,6 @@ class FVMSolver:
             u_lower = np.array([unit["lx"], unit["ly"], unit["lz"]])
             u_upper = u_lower + np.array([unit["dx"], unit["dy"], unit["dz"]])
 
-            # 向量化计算所有 Cell 与当前 unit 的相交包围盒
             overlap_lowers = np.maximum(cell_lowers, u_lower)
             overlap_uppers = np.minimum(cell_uppers, u_upper)
             overlap_dims = np.maximum(0, overlap_uppers - overlap_lowers)
@@ -234,12 +242,13 @@ class FVMSolver:
         hex_data = init_mesh.cell_data.get("Temperature_K", [])
 
         for block, block_temps in zip(init_mesh.cells, hex_data):
-            if block.type == "hexahedron":
-                for i, t in enumerate(block_temps):
-                    new_id = self.orig_to_new_id.get(offset + i)
-                    if new_id is not None:
-                        temps[new_id] = t
-                offset += len(block_temps)
+            if block.type != "hexahedron":
+                continue
+            for i, t in enumerate(block_temps):
+                new_id = self.orig_to_new_id.get(offset + i)
+                if new_id is not None:
+                    temps[new_id] = t
+            offset += len(block_temps)
 
         return temps
 
@@ -254,30 +263,36 @@ class FVMSolver:
         active_list: List[Cell] = []
 
         for c_a in sorted_cells:
-            # X轴剪枝
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
 
             for c_b in active_list:
+                # 提前拦截不重合的包围盒，避免不必要的循环运算
                 if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
                     continue
                 if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
                     continue
 
                 for axis in range(3):
-                    if (
+                    if not (
                         abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
                         or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
                     ):
-                        area = _overlap_area(c_a.box, c_b.box, axis)
-                        if area > self.GEOMETRY_TOLERANCE:
-                            res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
-                                c_b.dims[axis] / (2.0 * c_b.k * area)
-                            )
-                            if res > self.GEOMETRY_TOLERANCE:
-                                g = 1.0 / res
-                                rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
-                                cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
-                                data.extend([-g, -g, g, g])
+                        continue
+
+                    area = _overlap_area(c_a.box, c_b.box, axis)
+                    if area <= tol:
+                        continue
+
+                    res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
+                        c_b.dims[axis] / (2.0 * c_b.k * area)
+                    )
+                    if res <= tol:
+                        continue
+
+                    g = 1.0 / res
+                    rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
+                    cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
+                    data.extend([-g, -g, g, g])
 
             active_list.append(c_a)
 
@@ -293,15 +308,11 @@ class FVMSolver:
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
-            selection = bc.get("selection", [])
 
-            for tag in selection:
-                # 完全脱离三维几何逻辑！基于网格标签直接找到暴露的关联体元
+            for tag in bc.get("selection", []):
                 for cell_id, area in self.boundary_faces.get(tag, []):
                     c = self.cells[cell_id]
-                    # 等效距离计算：无论边界在哪个轴，长方体 V/S 恰好是垂直方向深度
                     dist = c.vol / area
-                    # FVM 对流离散： 面积 / ( (体心到面心的半距离/导热系数) + (1/对流系数) )
                     g = area / ((0.5 * dist / c.k) + (1.0 / h))
 
                     rows.append(c.id)
@@ -325,10 +336,8 @@ class FVMSolver:
             ]
 
     def solve(self) -> None:
-        g_matrix = self.assemble_g_matrix()
-        g_bc, boundary_rhs = self._build_boundary_terms()
-        self.g_total = g_matrix + g_bc
-        self.boundary_rhs = boundary_rhs
+        self.g_total = self.assemble_g_matrix() + self._build_boundary_terms()[0]
+        self.boundary_rhs = self._build_boundary_terms()[1]
         self.ptrace_steps = self._load_ptrace()
 
         if self.config["simulation_type"] == "steady":
@@ -359,8 +368,7 @@ class FVMSolver:
 
     def _solve_transient(self) -> None:
         print("[SIM] Solving transient...")
-        dt = self.config["timestep"]
-        total_time = self.config["time"]
+        dt, total_time = self.config["timestep"], self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
 
         ptrace = self.ptrace_steps or [{}] * n_steps
@@ -373,9 +381,11 @@ class FVMSolver:
             power_vec = np.array(
                 [step_power.get(name, 0.0) for name in self.unit_names]
             )
-            power_rhs = self.power_matrix @ power_vec
-
-            rhs = (c_mat @ temperatures) + self.boundary_rhs + power_rhs
+            rhs = (
+                (c_mat @ temperatures)
+                + self.boundary_rhs
+                + (self.power_matrix @ power_vec)
+            )
             temperatures = solve_step(rhs)
 
             if i % 10 == 0 or i == len(ptrace) - 1:
@@ -403,25 +413,3 @@ class FVMSolver:
         self.mesh.cell_data = {"Temperature_K": temp_chunks}
         self.mesh.write(os.path.join(self.base_dir, output_name))
         print(f"[FILE] Results saved to {output_name}")
-
-    def _sanitize_config(self) -> None:
-        """Pre-convert config keys to ensure correct types at initialization."""
-        # Numeric / string keys
-        self.config["init_temperature"] = float(
-            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
-        )
-        self.config["timestep"] = float(self.config.get("timestep", 0.1))
-        self.config["time"] = float(self.config.get("time", 0.0))
-        self.config["simulation_type"] = str(
-            self.config.get("simulation_type", "steady")
-        )
-        self.config["mesh_file_path"] = str(
-            self.config.get("mesh_file_path", "mesh.msh")
-        )
-        self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
-        # Collection keys — ensure defaults exist
-        self.config.setdefault("domain_material_assignment", {})
-        self.config.setdefault("heterogeneous_material_overrides", [])
-        self.config.setdefault("power_units", [])
-        self.config.setdefault("boundary_conditions", [])
-        self.config.setdefault("init_temperature_file_path", None)

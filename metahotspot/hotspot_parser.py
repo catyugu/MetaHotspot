@@ -8,10 +8,10 @@ def _read_valid_lines(file_path: str) -> Generator[str, None, None]:
     if not os.path.exists(file_path):
         return
     with open(file_path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if line and not line.startswith("#"):
-                yield line
+        for line in handle:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                yield stripped
 
 
 class HotSpotParser:
@@ -77,21 +77,16 @@ class HotSpotParser:
             conductivity = float(lines[index + 2])
             heat_capacity = float(lines[index + 3])
 
-            if material_type.lower() == "fluid":
-                dynamic_viscosity = float(lines[index + 4])
-                materials[name] = {
-                    "k": conductivity,
-                    "cp": heat_capacity,
-                    "fluid": True,
-                    "dynamic_viscosity": dynamic_viscosity,
-                }
+            materials[name] = {
+                "k": conductivity,
+                "cp": heat_capacity,
+                "fluid": material_type.lower() == "fluid",
+            }
+
+            if materials[name]["fluid"]:
+                materials[name]["dynamic_viscosity"] = float(lines[index + 4])
                 index += 5
             else:
-                materials[name] = {
-                    "k": conductivity,
-                    "cp": heat_capacity,
-                    "fluid": False,
-                }
                 index += 4
 
         return materials
@@ -110,8 +105,6 @@ class HotSpotParser:
             try:
                 cp = float(field)
                 resistivity = float(lines[index + 4])
-                thickness = float(lines[index + 5])
-                flp_file = lines[index + 6]
 
                 layers.append(
                     {
@@ -119,23 +112,20 @@ class HotSpotParser:
                         "power": has_power,
                         "cp": cp,
                         "k": 1.0 / resistivity if resistivity != 0 else 0.0,
-                        "thickness": thickness,
-                        "flp_file": flp_file,
+                        "thickness": float(lines[index + 5]),
+                        "flp_file": lines[index + 6],
                         "type": "numeric",
                     }
                 )
                 index += 7
             except ValueError:
-                thickness = float(lines[index + 4])
-                flp_file = lines[index + 5]
-
                 layers.append(
                     {
                         "id": layer_id,
                         "power": has_power,
                         "material": field,
-                        "thickness": thickness,
-                        "flp_file": flp_file,
+                        "thickness": float(lines[index + 4]),
+                        "flp_file": lines[index + 5],
                         "type": "named",
                     }
                 )

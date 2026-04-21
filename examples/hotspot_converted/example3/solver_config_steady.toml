@@ -3,10 +3,10 @@ time = 0.01
 timestep = 3.333e-6
 sampling_intvl = 3.333e-6
 proc_freq = 3000000000.0
-mesh_file_path = "mesh.msh"
-ptrace_file_path = "ev6_3D.ptrace"
 ambient = 318.15
 init_temperature = 318.15
+mesh_file_path = "mesh.msh"
+ptrace_file_path = "ev6_3D.ptrace"
 [[heterogeneous_material_overrides]]
 name = "L2_1_TSV_0"
 lx = 8.673617379884035e-19
