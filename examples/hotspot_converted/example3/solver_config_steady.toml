@@ -15,7 +15,7 @@ lz = 0.0
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-material = "layer_0_unit_0_mat"
+material = "layer_1_unit_0_mat"
 
 [[heterogeneous_material_overrides]]
 name = "L2_1_TSV_1"
@@ -25,7 +25,7 @@ lz = 0.0
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-material = "layer_0_unit_1_mat"
+material = "layer_1_unit_1_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TIM_tsv_0"
@@ -35,7 +35,7 @@ lz = 0.00015
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-material = "layer_1_unit_2_mat"
+material = "layer_2_unit_2_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TIM_tsv_1"
@@ -45,7 +45,7 @@ lz = 0.00015
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-material = "layer_1_unit_3_mat"
+material = "layer_2_unit_3_mat"
 
 [[heterogeneous_material_overrides]]
 name = "L2_2_TSV_0"
@@ -55,7 +55,7 @@ lz = 0.00016999999999999999
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-material = "layer_2_unit_4_mat"
+material = "layer_3_unit_4_mat"
 
 [[heterogeneous_material_overrides]]
 name = "L2_2_TSV_1"
@@ -65,7 +65,7 @@ lz = 0.00016999999999999999
 dx = 0.0124
 dy = 0.00018
 dz = 0.00015
-material = "layer_2_unit_5_mat"
+material = "layer_3_unit_5_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TIM_tsv_0"
@@ -75,7 +75,7 @@ lz = 0.00031999999999999997
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-material = "layer_3_unit_6_mat"
+material = "layer_4_unit_6_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TIM_tsv_1"
@@ -85,7 +85,7 @@ lz = 0.00031999999999999997
 dx = 0.0124
 dy = 0.00018
 dz = 2e-5
-material = "layer_3_unit_7_mat"
+material = "layer_4_unit_7_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TSV_0"
@@ -95,7 +95,7 @@ lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
-material = "layer_4_unit_8_mat"
+material = "layer_5_unit_8_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TSV_1"
@@ -105,7 +105,7 @@ lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
-material = "layer_4_unit_9_mat"
+material = "layer_5_unit_9_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TSV_2"
@@ -115,7 +115,7 @@ lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
-material = "layer_4_unit_10_mat"
+material = "layer_5_unit_10_mat"
 
 [[heterogeneous_material_overrides]]
 name = "TSV_3"
@@ -125,7 +125,7 @@ lz = 0.00033999999999999997
 dx = 0.0062
 dy = 0.00018
 dz = 0.00015
-material = "layer_4_unit_11_mat"
+material = "layer_5_unit_11_mat"
 
 [[power_units]]
 name = "L2_1_0"
@@ -1254,12 +1254,12 @@ k = 100.0
 cp = 1750000.0
 fluid = false
 
-[materials.layer_0_unit_0_mat]
+[materials.layer_1_unit_0_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_0_unit_1_mat]
+[materials.layer_1_unit_1_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
@@ -1269,12 +1269,12 @@ k = 4.0
 cp = 4000000.0
 fluid = false
 
-[materials.layer_1_unit_2_mat]
+[materials.layer_2_unit_2_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_1_unit_3_mat]
+[materials.layer_2_unit_3_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
@@ -1284,12 +1284,12 @@ k = 100.0
 cp = 1750000.0
 fluid = false
 
-[materials.layer_2_unit_4_mat]
+[materials.layer_3_unit_4_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_2_unit_5_mat]
+[materials.layer_3_unit_5_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
@@ -1299,12 +1299,12 @@ k = 4.0
 cp = 4000000.0
 fluid = false
 
-[materials.layer_3_unit_6_mat]
+[materials.layer_4_unit_6_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_3_unit_7_mat]
+[materials.layer_4_unit_7_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
@@ -1314,22 +1314,22 @@ k = 100.0
 cp = 1750000.0
 fluid = false
 
-[materials.layer_4_unit_8_mat]
+[materials.layer_5_unit_8_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_4_unit_9_mat]
+[materials.layer_5_unit_9_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_4_unit_10_mat]
+[materials.layer_5_unit_10_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false
 
-[materials.layer_4_unit_11_mat]
+[materials.layer_5_unit_11_mat]
 k = 172.41379310344828
 cp = 4000000.0
 fluid = false

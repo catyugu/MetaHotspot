@@ -24,8 +24,7 @@ class Cell:
 
 
 def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
-    """计算两个 3D 包围盒在指定法向平面上的重叠面积"""
-    axes = [(1, 2, 4, 5), (0, 2, 3, 5), (0, 1, 3, 4)][axis]  # 取另外两个轴的索引
+    axes = [(1, 2, 4, 5), (0, 2, 3, 5), (0, 1, 3, 4)][axis]
     d1 = min(box_a[axes[2]], box_b[axes[2]]) - max(box_a[axes[0]], box_b[axes[0]])
     d2 = min(box_a[axes[3]], box_b[axes[3]]) - max(box_a[axes[1]], box_b[axes[1]])
     return d1 * d2 if d1 > 0.0 and d2 > 0.0 else 0.0
@@ -34,7 +33,6 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
     DEFAULT_INITIAL_TEMPERATURE = 318.15
-    MATERIAL_OVERRIDE_TOLERANCE = 1e-12
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -51,39 +49,11 @@ class FVMSolver:
         self._precompute_power_matrix()
 
     def _init_materials(self) -> None:
-        """解耦材质加载，构建 tag 到材质属性的扁平映射表"""
         self.materials = self.config["materials"]
         self.tag_to_material = {}
         for mat_name, tags in self.config.get("domain_material_assignment", {}).items():
             for tag in tags:
                 self.tag_to_material[tag] = self.materials[mat_name]
-
-        self.material_overrides = self.config.get(
-            "heterogeneous_material_overrides", []
-        )
-
-    def _resolve_material_for_cell(self, tag: int, center: np.ndarray) -> dict:
-        material = self.tag_to_material.get(tag, self.materials["silicon"])
-        tol = self.MATERIAL_OVERRIDE_TOLERANCE
-
-        for override in self.material_overrides:
-            x0 = float(override["lx"])
-            y0 = float(override["ly"])
-            z0 = float(override["lz"])
-            x1 = x0 + float(override["dx"])
-            y1 = y0 + float(override["dy"])
-            z1 = z0 + float(override["dz"])
-
-            if (
-                (x0 - tol) <= center[0] <= (x1 + tol)
-                and (y0 - tol) <= center[1] <= (y1 + tol)
-                and (z0 - tol) <= center[2] <= (z1 + tol)
-            ):
-                material_name = str(override.get("material", "")).strip()
-                if material_name and material_name in self.materials:
-                    material = self.materials[material_name]
-
-        return material
 
     def _prepare_mesh(self) -> None:
         print("[INFO] Preparing mesh data...")
@@ -102,7 +72,7 @@ class FVMSolver:
         dims = uppers - lowers
         vols = np.prod(dims, axis=1)
 
-        # 向量化 Morton Key 排序以加速内存局部性访问
+        # 基于 Morton Key 进行空间排序，加速后续查询与内存局部性
         b_min, b_max = np.min(lowers, axis=0), np.max(uppers, axis=0)
         diff = np.where((b_max - b_min) == 0, 1, b_max - b_min)
         norm_centers = np.clip(((centers - b_min) / diff * 1023).astype(int), 0, 1023)
@@ -115,10 +85,45 @@ class FVMSolver:
 
         sorted_indices = np.argsort(morton_keys)
 
-        # 依据空间排序构建 Cells
+        # [性能优化]: 向量化处理异构材料覆盖映射，替代原有的双层 for 循环
+        mat_k_array = np.zeros(len(centers))
+        mat_cp_array = np.zeros(len(centers))
+
+        # 1. 初始化基础材料
+        for i, tag in enumerate(physical_tags):
+            mat = self.tag_to_material.get(tag, self.materials["silicon"])
+            mat_k_array[i] = float(mat["k"])
+            mat_cp_array[i] = float(mat["cp"])
+
+        # 2. 向量化应用覆盖层 (Overrides)
+        overrides = self.config.get("heterogeneous_material_overrides", [])
+        for ov in overrides:
+            mat_name = str(ov.get("material", "")).strip()
+            if mat_name not in self.materials:
+                continue
+
+            x0, y0, z0 = float(ov["lx"]), float(ov["ly"]), float(ov["lz"])
+            x1, y1, z1 = (
+                x0 + float(ov["dx"]),
+                y0 + float(ov["dy"]),
+                z0 + float(ov["dz"]),
+            )
+
+            # 使用 NumPy boolean mask 快速定位在包围盒内的中心点
+            mask = (
+                (centers[:, 0] >= x0 - self.GEOMETRY_TOLERANCE)
+                & (centers[:, 0] <= x1 + self.GEOMETRY_TOLERANCE)
+                & (centers[:, 1] >= y0 - self.GEOMETRY_TOLERANCE)
+                & (centers[:, 1] <= y1 + self.GEOMETRY_TOLERANCE)
+                & (centers[:, 2] >= z0 - self.GEOMETRY_TOLERANCE)
+                & (centers[:, 2] <= z1 + self.GEOMETRY_TOLERANCE)
+            )
+            mat_k_array[mask] = float(self.materials[mat_name]["k"])
+            mat_cp_array[mask] = float(self.materials[mat_name]["cp"])
+
+        # 构建最终的 Cells 列表
         for new_id, orig_id in enumerate(sorted_indices):
             tag = int(physical_tags[orig_id])
-            mat = self._resolve_material_for_cell(tag, centers[orig_id])
             box = np.array([*lowers[orig_id], *uppers[orig_id]])
 
             self.cells.append(
@@ -128,20 +133,27 @@ class FVMSolver:
                     center=centers[orig_id],
                     dims=dims[orig_id],
                     box=box,
-                    k=float(mat["k"]),
-                    cp=float(mat["cp"]),
+                    k=mat_k_array[orig_id],
+                    cp=mat_cp_array[orig_id],
                     tag=tag,
                     vol=float(vols[orig_id]),
                 )
             )
 
-        # 建立原 ID 到新 ID 的映射表，用于初始温度和结果保存
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
 
     def _precompute_power_matrix(self) -> None:
-        """预计算各热源对网格的映射矩阵 (Cells × PowerUnits)"""
+        """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
         power_units = self.config.get("power_units", [])
         self.unit_names = [u["name"] for u in power_units]
+
+        if not power_units or not self.cells:
+            self.power_matrix = sp.csr_matrix((len(self.cells), 0))
+            return
+
+        # 将所有 cell 的 box 提取为 numpy array: shape (N, 6)
+        cell_boxes = np.array([c.box for c in self.cells])
+        cell_lowers, cell_uppers = cell_boxes[:, :3], cell_boxes[:, 3:]
 
         rows, cols, data = [], [], []
 
@@ -150,107 +162,60 @@ class FVMSolver:
             if vol <= 0:
                 continue
 
-            box_b = np.array(
-                [
-                    unit["lx"],
-                    unit["ly"],
-                    unit["lz"],
-                    unit["lx"] + unit["dx"],
-                    unit["ly"] + unit["dy"],
-                    unit["lz"] + unit["dz"],
-                ]
-            )
+            u_lower = np.array([unit["lx"], unit["ly"], unit["lz"]])
+            u_upper = u_lower + np.array([unit["dx"], unit["dy"], unit["dz"]])
 
-            for cell in self.cells:
-                # 快速包围盒相交体积计算
-                box_a = cell.box
-                overlap = np.maximum(
-                    0,
-                    np.minimum(box_a[3:], box_b[3:]) - np.maximum(box_a[:3], box_b[:3]),
-                )
-                intersect_vol = np.prod(overlap)
+            # 向量化计算所有 Cell 与当前 unit 的相交包围盒
+            overlap_lowers = np.maximum(cell_lowers, u_lower)
+            overlap_uppers = np.minimum(cell_uppers, u_upper)
+            overlap_dims = np.maximum(0, overlap_uppers - overlap_lowers)
 
-                if intersect_vol > 1e-15:
-                    rows.append(cell.id)
-                    cols.append(unit_idx)
-                    data.append(intersect_vol / vol)
+            intersect_vols = np.prod(overlap_dims, axis=1)
+            valid_mask = intersect_vols > self.GEOMETRY_TOLERANCE
 
-        n_cells = len(self.cells)
-        n_units = len(power_units)
+            valid_indices = np.where(valid_mask)[0]
+            if len(valid_indices) > 0:
+                rows.extend(valid_indices)
+                cols.extend([unit_idx] * len(valid_indices))
+                data.extend(intersect_vols[valid_mask] / vol)
+
         self.power_matrix = sp.csr_matrix(
-            (data, (rows, cols)), shape=(n_cells, n_units)
+            (data, (rows, cols)), shape=(len(self.cells), len(power_units))
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
-        """加载初始温度场（支持稳态结果向瞬态的完美继承）"""
+        default_temp = float(
+            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
+        )
         init_file = self.config.get("init_temperature_file_path")
+
         if not init_file or init_file in {"(null)", "None", ""}:
-            return np.full(
-                n_cells,
-                float(
-                    self.config.get(
-                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
-                    )
-                ),
-            )
+            return np.full(n_cells, default_temp)
 
         init_path = os.path.join(self.base_dir, init_file)
         if not os.path.exists(init_path):
             print(
-                f"[WARNING] Init file {init_path} not found. Using default {self.DEFAULT_INITIAL_TEMPERATURE} K."
+                f"[WARNING] Init file {init_path} not found. Using default {default_temp} K."
             )
-            return np.full(
-                n_cells,
-                float(
-                    self.config.get(
-                        "init_temperature", self.DEFAULT_INITIAL_TEMPERATURE
-                    )
-                ),
-            )
+            return np.full(n_cells, default_temp)
 
         print(f"[INFO] Loading initial state from {init_path}")
         init_mesh = meshio.read(init_path)
         temps = np.zeros(n_cells)
-
         offset = 0
         hex_data = init_mesh.cell_data.get("Temperature_K", [])
 
         for block, block_temps in zip(init_mesh.cells, hex_data):
             if block.type == "hexahedron":
                 for i, t in enumerate(block_temps):
-                    orig_id = offset + i
-                    new_id = self.orig_to_new_id.get(orig_id)
+                    new_id = self.orig_to_new_id.get(offset + i)
                     if new_id is not None:
                         temps[new_id] = t
                 offset += len(block_temps)
 
         return temps
 
-    def _add_pairwise_conductance(
-        self,
-        rows: list,
-        cols: list,
-        data: list,
-        c_a: Cell,
-        c_b: Cell,
-        axis: int,
-        area: float,
-    ) -> None:
-        if area <= 1e-15:
-            return
-        res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
-            c_b.dims[axis] / (2.0 * c_b.k * area)
-        )
-        if res <= 1e-20:
-            return
-
-        g = 1.0 / res
-        rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
-        cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
-        data.extend([-g, -g, g, g])
-
     def assemble_g_matrix(self) -> sp.csr_matrix:
-        """利用 Sweep-and-Prune 算法构建三维热导矩阵"""
         print(
             f"[INFO] Building full 3D non-conformal G matrix ({len(self.cells)} cells)..."
         )
@@ -265,22 +230,26 @@ class FVMSolver:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
 
             for c_b in active_list:
-                # 检查 Y 和 Z 轴重叠
                 if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
                     continue
                 if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
                     continue
 
-                # 提取接触面并计算热导
                 for axis in range(3):
                     if (
                         abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
                         or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
                     ):
                         area = _overlap_area(c_a.box, c_b.box, axis)
-                        self._add_pairwise_conductance(
-                            rows, cols, data, c_a, c_b, axis, area
-                        )
+                        if area > self.GEOMETRY_TOLERANCE:
+                            res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
+                                c_b.dims[axis] / (2.0 * c_b.k * area)
+                            )
+                            if res > self.GEOMETRY_TOLERANCE:
+                                g = 1.0 / res
+                                rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
+                                cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
+                                data.extend([-g, -g, g, g])
 
             active_list.append(c_a)
 
@@ -296,12 +265,14 @@ class FVMSolver:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "convection":
                 continue
-            h = float(bc["h"])
-            t_inf = float(bc["T_inf"])
+            h, t_inf = float(bc["h"]), float(bc["T_inf"])
             selection = set(bc.get("selection", []))
 
             for c in self.cells:
-                if c.tag in selection and abs(c.box[5] - z_max) < 1e-6:
+                if (
+                    c.tag in selection
+                    and abs(c.box[5] - z_max) < self.GEOMETRY_TOLERANCE
+                ):
                     area = c.dims[0] * c.dims[1]
                     g = 1.0 / ((0.5 * c.dims[2] / (c.k * area)) + (1.0 / (h * area)))
                     rows.append(c.id)
@@ -311,69 +282,76 @@ class FVMSolver:
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
-    def solve(self) -> None:
+    def _load_ptrace(self) -> List[dict]:
         ptrace_path = os.path.join(
             self.base_dir, self.config.get("ptrace_file_path", "")
         )
-        ptrace_steps = []
-        if os.path.exists(ptrace_path):
-            with open(ptrace_path, "r", encoding="utf-8") as f:
-                headers = f.readline().split()
-                ptrace_steps = [
-                    dict(zip(headers, map(float, line.split())))
-                    for line in f
-                    if line.strip()
-                ]
+        if not os.path.exists(ptrace_path):
+            return []
 
+        with open(ptrace_path, "r", encoding="utf-8") as f:
+            headers = f.readline().split()
+            return [
+                dict(zip(headers, map(float, line.split())))
+                for line in f
+                if line.strip()
+            ]
+
+    def solve(self) -> None:
         g_matrix = self.assemble_g_matrix()
         g_bc, boundary_rhs = self._build_boundary_terms()
-        g_total = g_matrix + g_bc
+        self.g_total = g_matrix + g_bc
+        self.boundary_rhs = boundary_rhs
+        self.ptrace_steps = self._load_ptrace()
 
         if self.config.get("simulation_type", "steady") == "steady":
-            print("[SIM] Solving steady state...")
-            mean_powers = np.array(
-                [
-                    (
-                        np.mean([s.get(name, 0.0) for s in ptrace_steps])
-                        if ptrace_steps
-                        else 0.0
-                    )
-                    for name in self.unit_names
-                ]
-            )
+            self._solve_steady_state()
+        else:
+            self._solve_transient()
 
-            power_rhs = self.power_matrix @ mean_powers
-            temperatures = splinalg.spsolve(-g_total, boundary_rhs + power_rhs)
+    def _solve_steady_state(self) -> None:
+        print("[SIM] Solving steady state...")
+        mean_powers = np.array(
+            [
+                (
+                    np.mean([s.get(name, 0.0) for s in self.ptrace_steps])
+                    if self.ptrace_steps
+                    else 0.0
+                )
+                for name in self.unit_names
+            ]
+        )
 
-            print(
-                f"[RESULT] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
-            )
-            self.save(temperatures, "result.vtu")
-            return
+        power_rhs = self.power_matrix @ mean_powers
+        temperatures = splinalg.spsolve(-self.g_total, self.boundary_rhs + power_rhs)
 
+        print(
+            f"[RESULT] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
+        )
+        self.save(temperatures, "result.vtu")
+
+    def _solve_transient(self) -> None:
         print("[SIM] Solving transient...")
         dt = float(self.config.get("timestep", 0.1))
         total_time = float(self.config.get("time", 0.0))
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
 
-        if not ptrace_steps:
-            ptrace_steps = [{}] * n_steps
-
+        ptrace = self.ptrace_steps or [{}] * n_steps
         c_mat = sp.diags([c.cp * c.vol for c in self.cells]) / dt
-        solve_step = splinalg.factorized((c_mat - g_total).tocsc())
+        solve_step = splinalg.factorized((c_mat - self.g_total).tocsc())
 
         temperatures = self._get_initial_temperatures(len(self.cells))
 
-        for i, step_power in enumerate(ptrace_steps):
+        for i, step_power in enumerate(ptrace):
             power_vec = np.array(
                 [step_power.get(name, 0.0) for name in self.unit_names]
             )
             power_rhs = self.power_matrix @ power_vec
 
-            rhs = (c_mat @ temperatures) + boundary_rhs + power_rhs
+            rhs = (c_mat @ temperatures) + self.boundary_rhs + power_rhs
             temperatures = solve_step(rhs)
 
-            if i % 10 == 0 or i == len(ptrace_steps) - 1:
+            if i % 10 == 0 or i == len(ptrace) - 1:
                 print(
                     f"[STEP {i:4d}] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
                 )
@@ -381,7 +359,6 @@ class FVMSolver:
         self.save(temperatures, "transient_result.vtu")
 
     def save(self, temperatures: np.ndarray, output_name: str) -> None:
-        # 将排序后的结果映射回原始 Mesh 顺序
         mapped = np.zeros(len(self.cells))
         for c in self.cells:
             mapped[c.original_id] = temperatures[c.id]
