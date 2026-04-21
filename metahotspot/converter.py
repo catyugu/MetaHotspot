@@ -289,7 +289,7 @@ class SimulationModelBuilder:
             1002,
         )
 
-        # 添加边界条件
+        # 重点修改：不再硬编码 [1002]，而是使用目标几何语义
         r_convec = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
         self.boundary_conditions.append(
             {
@@ -297,10 +297,10 @@ class SimulationModelBuilder:
                 "type": "convection",
                 "h": 1.0 / (r_convec * s_sink * s_sink),
                 "T_inf": float(self.config.get("ambient", DEFAULT_AMBIENT)),
-                "selection": [1002],
+                "target_geometry": "top_surface",
+                "selection": [],
             }
         )
-
         return self
 
     def get_result(self) -> dict:
@@ -325,7 +325,6 @@ def convert_hotspot_to_metahotspot(
     os.makedirs(output_dir, exist_ok=True)
     parser = HotSpotParser()
 
-    # 使用 Builder 模式构建模型
     builder = SimulationModelBuilder(parser, example_dir)
     model = (
         builder.build_materials()
@@ -365,13 +364,9 @@ def convert_hotspot_to_metahotspot(
     if init_file and init_file not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = init_file
 
-    config_path = os.path.join(output_dir, output_config_name)
-    with open(config_path, "w", encoding="utf-8") as handle:
-        toml.dump(toml_data, handle)
-
     if generate_mesh:
         mesher = GmshMesher()
-        mesher.generate_2_5D_mesh(
+        boundary_info = mesher.generate_2_5D_mesh(
             layers_entities=model["layers_entities"],
             power_units=model["power_units"],
             max_mesh_size=0.003,
@@ -379,6 +374,39 @@ def convert_hotspot_to_metahotspot(
             refine_distance=0.001,
         )
         mesher.finalize(os.path.join(output_dir, "mesh.msh"))
+
+        # 几何过滤匹配：将语义 "top_surface" 转化为具体的网格边界 ID
+        if boundary_info:
+            z_max_val = max(
+                info["val"] for info in boundary_info.values() if info["axis"] == "Z"
+            )
+            top_tags = [
+                tag
+                for tag, info in boundary_info.items()
+                if info["axis"] == "Z" and abs(info["val"] - z_max_val) < 1e-12
+            ]
+
+            for bc in toml_data["boundary_conditions"]:
+                if bc.pop("target_geometry", None) == "top_surface":
+                    bc["selection"] = top_tags
+    else:
+        # 当跳过网格生成(如瞬态继稳态之后运行)，直接继承先前的边界条件 Tags
+        steady_config = os.path.join(output_dir, "solver_config_steady.toml")
+        if os.path.exists(steady_config):
+            try:
+                prev_data = toml.load(steady_config)
+                for bc_new, bc_old in zip(
+                    toml_data["boundary_conditions"],
+                    prev_data.get("boundary_conditions", []),
+                ):
+                    bc_new["selection"] = bc_old.get("selection", [])
+                    bc_new.pop("target_geometry", None)
+            except Exception:
+                pass
+
+    config_path = os.path.join(output_dir, output_config_name)
+    with open(config_path, "w", encoding="utf-8") as handle:
+        toml.dump(toml_data, handle)
 
     return config_path
 

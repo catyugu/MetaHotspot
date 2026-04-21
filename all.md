@@ -305,7 +305,7 @@ class SimulationModelBuilder:
             1002,
         )
 
-        # 添加边界条件
+        # 重点修改：不再硬编码 [1002]，而是使用目标几何语义
         r_convec = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
         self.boundary_conditions.append(
             {
@@ -313,10 +313,10 @@ class SimulationModelBuilder:
                 "type": "convection",
                 "h": 1.0 / (r_convec * s_sink * s_sink),
                 "T_inf": float(self.config.get("ambient", DEFAULT_AMBIENT)),
-                "selection": [1002],
+                "target_geometry": "top_surface",
+                "selection": [],
             }
         )
-
         return self
 
     def get_result(self) -> dict:
@@ -341,7 +341,6 @@ def convert_hotspot_to_metahotspot(
     os.makedirs(output_dir, exist_ok=True)
     parser = HotSpotParser()
 
-    # 使用 Builder 模式构建模型
     builder = SimulationModelBuilder(parser, example_dir)
     model = (
         builder.build_materials()
@@ -381,13 +380,9 @@ def convert_hotspot_to_metahotspot(
     if init_file and init_file not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = init_file
 
-    config_path = os.path.join(output_dir, output_config_name)
-    with open(config_path, "w", encoding="utf-8") as handle:
-        toml.dump(toml_data, handle)
-
     if generate_mesh:
         mesher = GmshMesher()
-        mesher.generate_2_5D_mesh(
+        boundary_info = mesher.generate_2_5D_mesh(
             layers_entities=model["layers_entities"],
             power_units=model["power_units"],
             max_mesh_size=0.003,
@@ -395,6 +390,39 @@ def convert_hotspot_to_metahotspot(
             refine_distance=0.001,
         )
         mesher.finalize(os.path.join(output_dir, "mesh.msh"))
+
+        # 几何过滤匹配：将语义 "top_surface" 转化为具体的网格边界 ID
+        if boundary_info:
+            z_max_val = max(
+                info["val"] for info in boundary_info.values() if info["axis"] == "Z"
+            )
+            top_tags = [
+                tag
+                for tag, info in boundary_info.items()
+                if info["axis"] == "Z" and abs(info["val"] - z_max_val) < 1e-12
+            ]
+
+            for bc in toml_data["boundary_conditions"]:
+                if bc.pop("target_geometry", None) == "top_surface":
+                    bc["selection"] = top_tags
+    else:
+        # 当跳过网格生成(如瞬态继稳态之后运行)，直接继承先前的边界条件 Tags
+        steady_config = os.path.join(output_dir, "solver_config_steady.toml")
+        if os.path.exists(steady_config):
+            try:
+                prev_data = toml.load(steady_config)
+                for bc_new, bc_old in zip(
+                    toml_data["boundary_conditions"],
+                    prev_data.get("boundary_conditions", []),
+                ):
+                    bc_new["selection"] = bc_old.get("selection", [])
+                    bc_new.pop("target_geometry", None)
+            except Exception:
+                pass
+
+    config_path = os.path.join(output_dir, output_config_name)
+    with open(config_path, "w", encoding="utf-8") as handle:
+        toml.dump(toml_data, handle)
 
     return config_path
 
@@ -503,7 +531,6 @@ class FVMSolver:
         dims = uppers - lowers
         vols = np.prod(dims, axis=1)
 
-        # 基于 Morton Key 进行空间排序，加速后续查询与内存局部性
         b_min, b_max = np.min(lowers, axis=0), np.max(uppers, axis=0)
         diff = np.where((b_max - b_min) == 0, 1, b_max - b_min)
         norm_centers = np.clip(((centers - b_min) / diff * 1023).astype(int), 0, 1023)
@@ -516,20 +543,16 @@ class FVMSolver:
 
         sorted_indices = np.argsort(morton_keys)
 
-        # [性能优化]: 向量化处理异构材料覆盖映射，替代原有的双层 for 循环
         mat_k_array = np.zeros(len(centers))
         mat_cp_array = np.zeros(len(centers))
 
-        # 1. 初始化基础材料
         for i, tag in enumerate(physical_tags):
             mat = self.tag_to_material.get(tag, self.materials["silicon"])
             mat_k_array[i] = float(mat["k"])
             mat_cp_array[i] = float(mat["cp"])
 
-        # 2. 向量化应用覆盖层 (Overrides)
         overrides = self.config.get("heterogeneous_material_overrides", [])
         for ov in overrides:
-            # 优先应用内联属性，覆盖材料库中的值
             if "k" in ov and "cp" in ov:
                 ov_k = float(ov["k"])
                 ov_cp = float(ov["cp"])
@@ -551,7 +574,9 @@ class FVMSolver:
             )
             mat_k_array[mask] = ov_k
             mat_cp_array[mask] = ov_cp
-        # 构建最终的 Cells 列表
+
+        self.face_to_cell = {}
+
         for new_id, orig_id in enumerate(sorted_indices):
             tag = int(physical_tags[orig_id])
             box = np.array([*lowers[orig_id], *uppers[orig_id]])
@@ -570,7 +595,42 @@ class FVMSolver:
                 )
             )
 
+            # 为反向边界映射准备：将三维网格六个面的节点元组散列到其关联的新 Cell ID 上
+            nodes = hex_data[orig_id]
+            fs = [
+                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),
+                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),
+                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),
+                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),
+                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),
+                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),
+            ]
+            for f in fs:
+                self.face_to_cell[f] = new_id
+
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
+
+        # 提取网格中的 2D Physical Group，完成 面片->体元 的挂载映射
+        self.boundary_faces = {}
+        if "quad" in self.mesh.cells_dict:
+            quad_data = self.mesh.cells_dict["quad"]
+            quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get(
+                "quad", []
+            )
+            for i, nodes in enumerate(quad_data):
+                f = tuple(sorted(nodes))
+                if f in self.face_to_cell:
+                    cell_id = self.face_to_cell[f]
+                    tag = int(quad_tags[i]) if len(quad_tags) > i else -1
+                    if tag != -1:
+                        # 坐标叉乘计算面片真实物理面积
+                        p = self.mesh.points[nodes]
+                        v1, v2 = p[1] - p[0], p[2] - p[0]
+                        area = np.linalg.norm(np.cross(v1, v2))
+                        if area > self.GEOMETRY_TOLERANCE:
+                            self.boundary_faces.setdefault(tag, []).append(
+                                (cell_id, area)
+                            )
 
     def _precompute_power_matrix(self) -> None:
         """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
@@ -690,21 +750,22 @@ class FVMSolver:
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
-        z_max = max(c.box[5] for c in self.cells)
 
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
-            selection = set(bc.get("selection", []))
+            selection = bc.get("selection", [])
 
-            for c in self.cells:
-                if (
-                    c.tag in selection
-                    and abs(c.box[5] - z_max) < self.GEOMETRY_TOLERANCE
-                ):
-                    area = c.dims[0] * c.dims[1]
-                    g = 1.0 / ((0.5 * c.dims[2] / (c.k * area)) + (1.0 / (h * area)))
+            for tag in selection:
+                # 完全脱离三维几何逻辑！基于网格标签直接找到暴露的关联体元
+                for cell_id, area in self.boundary_faces.get(tag, []):
+                    c = self.cells[cell_id]
+                    # 等效距离计算：无论边界在哪个轴，长方体 V/S 恰好是垂直方向深度
+                    dist = c.vol / area
+                    # FVM 对流离散： 面积 / ( (体心到面心的半距离/导热系数) + (1/对流系数) )
+                    g = area / ((0.5 * dist / c.k) + (1.0 / h))
+
                     rows.append(c.id)
                     cols.append(c.id)
                     data.append(-g)
@@ -830,14 +891,16 @@ class GmshMesher:
         max_mesh_size: float = 0.006,
         min_mesh_size: float = 0.0005,
         refine_distance: float = 0.010,
-    ) -> None:
+    ) -> dict:
         """
         局部剖分策略：
         1. 以每一层的实际 functional units 作为初始网格节点（完美贴合 unit 边界，绝不外延拉伸）。
         2. 若单元过大 (w or h > max_mesh_size)，对其长边进行中点切分。
         3. 若单元处于热源附近，继续对长边进行细化，直至逼近 min_mesh_size。
+
+        返回:
+            boundary_info (dict): 包含所有外表面分组信息的元数据，供 Converter 过滤。
         """
-        # 提前收集热源框，用于局部加密判定
         heat_boxes = [
             (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
             for u in power_units
@@ -845,6 +908,9 @@ class GmshMesher:
 
         node_id = 1
         elem_id = 1
+
+        global_node_coords = {}
+        all_hex_elements = []
 
         for tag, layer_data in layers_entities.items():
             discrete_tag = gmsh.model.addDiscreteEntity(3)
@@ -856,11 +922,9 @@ class GmshMesher:
             leaves = []
             queue = deque()
 
-            # 初始化：直接以功能单元的物理边界框作为待细化的基础几何网格
             for u in layer_data["units"]:
                 queue.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
 
-            # 递归细分
             while queue:
                 x0, y0, x1, y1 = queue.popleft()
                 w = x1 - x0
@@ -868,10 +932,8 @@ class GmshMesher:
 
                 needs_split = False
 
-                # 判定条件 1: 网格尺寸大于允许的最大尺寸限制
                 if w > max_mesh_size or h > max_mesh_size:
                     needs_split = True
-                # 判定条件 2: 网格在热源的影响范围内，且长边仍大于最小尺寸限制
                 elif w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01:
                     for hb in heat_boxes:
                         dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
@@ -880,7 +942,6 @@ class GmshMesher:
                             needs_split = True
                             break
 
-                # 执行切分：永远沿着最长的边切分一刀
                 if needs_split:
                     if w >= h:
                         mid = (x0 + x1) / 2.0
@@ -893,19 +954,18 @@ class GmshMesher:
                 else:
                     leaves.append((x0, y0, x1, y1))
 
-            # 根据最终的 leaves 构建当前层独立的 3D Hexahedrons (完全抛弃全层间的强行共形)
             layer_nodes_tags = []
             layer_nodes_coords = []
             node_map = {}
 
             def get_node(x: float, y: float, z: float) -> int:
                 nonlocal node_id
-                # 保持坐标精度位以防止浮点数误差产生冗余节点
                 key = (round(x, 12), round(y, 12), round(z, 12))
                 if key not in node_map:
                     node_map[key] = node_id
                     layer_nodes_tags.append(node_id)
                     layer_nodes_coords.extend([x, y, z])
+                    global_node_coords[node_id] = (x, y, z)
                     node_id += 1
                 return node_map[key]
 
@@ -934,6 +994,90 @@ class GmshMesher:
                 gmsh.model.mesh.addElements(
                     3, discrete_tag, [5], [element_tags], [element_nodes]
                 )
+                all_hex_elements.extend(element_nodes)
+
+        # ---------------------------------------------------------
+        # 边界自然分组与编号 (拓扑提取)
+        # ---------------------------------------------------------
+        faces_count = {}
+        for i in range(0, len(all_hex_elements), 8):
+            n = all_hex_elements[i : i + 8]
+            # 六面体的六个面 (统一向内或向外的节点顺序并不影响判断重复面)
+            fs = [
+                tuple(sorted([n[0], n[3], n[2], n[1]])),
+                tuple(sorted([n[4], n[5], n[6], n[7]])),
+                tuple(sorted([n[0], n[1], n[5], n[4]])),
+                tuple(sorted([n[3], n[7], n[6], n[2]])),
+                tuple(sorted([n[0], n[4], n[7], n[3]])),
+                tuple(sorted([n[1], n[2], n[6], n[5]])),
+            ]
+            for f in fs:
+                faces_count[f] = faces_count.get(f, 0) + 1
+
+        # 仅出现一次的面为外表面
+        boundary_faces = [f for f, count in faces_count.items() if count == 1]
+
+        # 按照共面性 (平面方程) 分组
+        groups = {}
+        for f in boundary_faces:
+            pts = [global_node_coords[n_tag] for n_tag in f]
+            xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
+
+            # 因为是正交网格，根据坐标恒定值判断平面轴
+            if max(xs) - min(xs) < 1e-9:
+                axis, val = "X", round(xs[0], 6)
+            elif max(ys) - min(ys) < 1e-9:
+                axis, val = "Y", round(ys[0], 6)
+            else:
+                axis, val = "Z", round(zs[0], 6)
+
+            groups.setdefault(f"{axis}_{val}", []).append(f)
+
+        boundary_info = {}
+        base_tag = 2000
+
+        for key, faces in groups.items():
+            base_tag += 1
+            ent_tag = gmsh.model.addDiscreteEntity(2)
+            gmsh.model.addPhysicalGroup(2, [ent_tag], base_tag, name=f"boundary_{key}")
+
+            elem_tags = [elem_id + i for i in range(len(faces))]
+            elem_id += len(faces)
+
+            elem_nodes = []
+            for f in faces:
+                pts_with_id = [(global_node_coords[n_tag], n_tag) for n_tag in f]
+                cx = sum(p[0][0] for p in pts_with_id) / 4.0
+                cy = sum(p[0][1] for p in pts_with_id) / 4.0
+                cz = sum(p[0][2] for p in pts_with_id) / 4.0
+
+                # 为满足 Gmsh 四边形图元定义，将节点按照相对于重心的极角环向排序
+                axis_name, _ = key.split("_")
+                if axis_name == "X":
+                    pts_with_id.sort(
+                        key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
+                    )
+                elif axis_name == "Y":
+                    pts_with_id.sort(
+                        key=lambda item: math.atan2(item[0][2] - cz, item[0][0] - cx)
+                    )
+                else:
+                    pts_with_id.sort(
+                        key=lambda item: math.atan2(item[0][1] - cy, item[0][0] - cx)
+                    )
+
+                elem_nodes.extend([item[1] for item in pts_with_id])
+
+            gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
+
+            axis_name, val_str = key.split("_")
+            boundary_info[base_tag] = {
+                "axis": axis_name,
+                "val": float(val_str),
+                "name": f"boundary_{key}",
+            }
+
+        return boundary_info
 
     def finalize(self, output_path: str) -> None:
         gmsh.write(output_path)

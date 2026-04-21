@@ -72,7 +72,6 @@ class FVMSolver:
         dims = uppers - lowers
         vols = np.prod(dims, axis=1)
 
-        # 基于 Morton Key 进行空间排序，加速后续查询与内存局部性
         b_min, b_max = np.min(lowers, axis=0), np.max(uppers, axis=0)
         diff = np.where((b_max - b_min) == 0, 1, b_max - b_min)
         norm_centers = np.clip(((centers - b_min) / diff * 1023).astype(int), 0, 1023)
@@ -85,20 +84,16 @@ class FVMSolver:
 
         sorted_indices = np.argsort(morton_keys)
 
-        # [性能优化]: 向量化处理异构材料覆盖映射，替代原有的双层 for 循环
         mat_k_array = np.zeros(len(centers))
         mat_cp_array = np.zeros(len(centers))
 
-        # 1. 初始化基础材料
         for i, tag in enumerate(physical_tags):
             mat = self.tag_to_material.get(tag, self.materials["silicon"])
             mat_k_array[i] = float(mat["k"])
             mat_cp_array[i] = float(mat["cp"])
 
-        # 2. 向量化应用覆盖层 (Overrides)
         overrides = self.config.get("heterogeneous_material_overrides", [])
         for ov in overrides:
-            # 优先应用内联属性，覆盖材料库中的值
             if "k" in ov and "cp" in ov:
                 ov_k = float(ov["k"])
                 ov_cp = float(ov["cp"])
@@ -120,7 +115,9 @@ class FVMSolver:
             )
             mat_k_array[mask] = ov_k
             mat_cp_array[mask] = ov_cp
-        # 构建最终的 Cells 列表
+
+        self.face_to_cell = {}
+
         for new_id, orig_id in enumerate(sorted_indices):
             tag = int(physical_tags[orig_id])
             box = np.array([*lowers[orig_id], *uppers[orig_id]])
@@ -139,7 +136,42 @@ class FVMSolver:
                 )
             )
 
+            # 为反向边界映射准备：将三维网格六个面的节点元组散列到其关联的新 Cell ID 上
+            nodes = hex_data[orig_id]
+            fs = [
+                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),
+                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),
+                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),
+                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),
+                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),
+                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),
+            ]
+            for f in fs:
+                self.face_to_cell[f] = new_id
+
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
+
+        # 提取网格中的 2D Physical Group，完成 面片->体元 的挂载映射
+        self.boundary_faces = {}
+        if "quad" in self.mesh.cells_dict:
+            quad_data = self.mesh.cells_dict["quad"]
+            quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get(
+                "quad", []
+            )
+            for i, nodes in enumerate(quad_data):
+                f = tuple(sorted(nodes))
+                if f in self.face_to_cell:
+                    cell_id = self.face_to_cell[f]
+                    tag = int(quad_tags[i]) if len(quad_tags) > i else -1
+                    if tag != -1:
+                        # 坐标叉乘计算面片真实物理面积
+                        p = self.mesh.points[nodes]
+                        v1, v2 = p[1] - p[0], p[2] - p[0]
+                        area = np.linalg.norm(np.cross(v1, v2))
+                        if area > self.GEOMETRY_TOLERANCE:
+                            self.boundary_faces.setdefault(tag, []).append(
+                                (cell_id, area)
+                            )
 
     def _precompute_power_matrix(self) -> None:
         """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
@@ -259,21 +291,22 @@ class FVMSolver:
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
-        z_max = max(c.box[5] for c in self.cells)
 
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
-            selection = set(bc.get("selection", []))
+            selection = bc.get("selection", [])
 
-            for c in self.cells:
-                if (
-                    c.tag in selection
-                    and abs(c.box[5] - z_max) < self.GEOMETRY_TOLERANCE
-                ):
-                    area = c.dims[0] * c.dims[1]
-                    g = 1.0 / ((0.5 * c.dims[2] / (c.k * area)) + (1.0 / (h * area)))
+            for tag in selection:
+                # 完全脱离三维几何逻辑！基于网格标签直接找到暴露的关联体元
+                for cell_id, area in self.boundary_faces.get(tag, []):
+                    c = self.cells[cell_id]
+                    # 等效距离计算：无论边界在哪个轴，长方体 V/S 恰好是垂直方向深度
+                    dist = c.vol / area
+                    # FVM 对流离散： 面积 / ( (体心到面心的半距离/导热系数) + (1/对流系数) )
+                    g = area / ((0.5 * dist / c.k) + (1.0 / h))
+
                     rows.append(c.id)
                     cols.append(c.id)
                     data.append(-g)

@@ -1225,7 +1225,7 @@ name = "sink_conv"
 type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
-selection = [ 1002,]
+selection = [ 2041,]
 
 [domain_material_assignment]
 layer_0_mat = [ 1,]
