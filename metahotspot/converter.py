@@ -155,18 +155,12 @@ class SimulationModelBuilder:
             }
             layer_units.append(entity)
 
-            # 异构材料覆盖逻辑
             if is_numeric and ("k" in u or "specific_heat" in u):
-                override_mat = (
-                    f"layer_{tag}_unit_{len(self.heterogeneous_overrides)}_mat"
-                )
-                self.materials[override_mat] = {
-                    "k": float(u.get("k", layer_k)),
-                    "cp": float(u.get("specific_heat", layer_cp)),
-                    "fluid": False,
-                }
+                k_val = float(u.get("k", layer_k))
+                cp_val = float(u.get("specific_heat", layer_cp))
+
                 self.heterogeneous_overrides.append(
-                    {**entity, "material": override_mat}
+                    {**entity, "k": k_val, "cp": cp_val}
                 )
 
         self.layers_entities[tag] = {"units": layer_units}

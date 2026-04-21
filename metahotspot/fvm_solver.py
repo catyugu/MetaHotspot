@@ -98,9 +98,10 @@ class FVMSolver:
         # 2. 向量化应用覆盖层 (Overrides)
         overrides = self.config.get("heterogeneous_material_overrides", [])
         for ov in overrides:
-            mat_name = str(ov.get("material", "")).strip()
-            if mat_name not in self.materials:
-                continue
+            # 优先应用内联属性，覆盖材料库中的值
+            if "k" in ov and "cp" in ov:
+                ov_k = float(ov["k"])
+                ov_cp = float(ov["cp"])
 
             x0, y0, z0 = float(ov["lx"]), float(ov["ly"]), float(ov["lz"])
             x1, y1, z1 = (
@@ -109,7 +110,6 @@ class FVMSolver:
                 z0 + float(ov["dz"]),
             )
 
-            # 使用 NumPy boolean mask 快速定位在包围盒内的中心点
             mask = (
                 (centers[:, 0] >= x0 - self.GEOMETRY_TOLERANCE)
                 & (centers[:, 0] <= x1 + self.GEOMETRY_TOLERANCE)
@@ -118,9 +118,8 @@ class FVMSolver:
                 & (centers[:, 2] >= z0 - self.GEOMETRY_TOLERANCE)
                 & (centers[:, 2] <= z1 + self.GEOMETRY_TOLERANCE)
             )
-            mat_k_array[mask] = float(self.materials[mat_name]["k"])
-            mat_cp_array[mask] = float(self.materials[mat_name]["cp"])
-
+            mat_k_array[mask] = ov_k
+            mat_cp_array[mask] = ov_cp
         # 构建最终的 Cells 列表
         for new_id, orig_id in enumerate(sorted_indices):
             tag = int(physical_tags[orig_id])
