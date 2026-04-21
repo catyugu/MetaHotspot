@@ -65,6 +65,7 @@ class SimulationModelBuilder:
 
         self.z_cursor = 0.0
         self.global_width, self.global_height = self._calculate_global_size()
+        self._sanitize_config()
 
     def _calculate_global_size(self) -> Tuple[float, float]:
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
@@ -138,9 +139,10 @@ class SimulationModelBuilder:
             return
 
         min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
-        ox, oy = (self.global_width - lw) / 2.0 - min_x, (
-            self.global_height - lh
-        ) / 2.0 - min_y
+        ox, oy = (
+            (self.global_width - lw) / 2.0 - min_x,
+            (self.global_height - lh) / 2.0 - min_y,
+        )
 
         layer_units = []
         for u in flp_units:
@@ -207,7 +209,7 @@ class SimulationModelBuilder:
             flp_units = self.parser.parse_flp(
                 _find_first_by_suffix(self.example_dir, ".flp")
             )
-            thickness = float(self.config.get("t_chip", DEFAULT_T_CHIP))
+            thickness = self.config["t_chip"]
             tag = 1
 
             self.domain_assignment.setdefault("silicon", []).append(tag)
@@ -243,36 +245,35 @@ class SimulationModelBuilder:
         has_lcf = bool(lcf_path)
 
         mat_tim = self._ensure_material(
-            str(self.config.get("material_interface", "tim")),
+            self.config["material_interface"],
             "tim",
             "k_interface",
             "p_interface",
         )
         mat_spread = self._ensure_material(
-            str(self.config.get("material_spreader", "copper")),
+            self.config["material_spreader"],
             "copper",
             "k_spreader",
             "p_spreader",
         )
         mat_sink = self._ensure_material(
-            str(self.config.get("material_sink", "copper")),
+            self.config["material_sink"],
             "copper",
             "k_sink",
             "p_sink",
         )
 
         if not has_lcf:
-            t_tim = float(
-                self.config.get("t_interface", self.config.get("t_tim", DEFAULT_T_TIM))
+            self._add_pkg_layer(
+                "TIM", self.config["t_interface"], self.global_width, mat_tim, 1000
             )
-            self._add_pkg_layer("TIM", t_tim, self.global_width, mat_tim, 1000)
 
         s_spread = float(
             self.config.get("s_spreader", max(self.global_width, self.global_height))
         )
         self._add_pkg_layer(
             "Spreader",
-            float(self.config.get("t_spreader", DEFAULT_T_SPREADER)),
+            self.config["t_spreader"],
             s_spread,
             mat_spread,
             1001,
@@ -283,20 +284,20 @@ class SimulationModelBuilder:
         )
         self._add_pkg_layer(
             "Sink",
-            float(self.config.get("t_sink", DEFAULT_T_SINK)),
+            self.config["t_sink"],
             s_sink,
             mat_sink,
             1002,
         )
 
         # 重点修改：不再硬编码 [1002]，而是使用目标几何语义
-        r_convec = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
+        r_convec = self.config["r_convec"]
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
                 "type": "convection",
                 "h": 1.0 / (r_convec * s_sink * s_sink),
-                "T_inf": float(self.config.get("ambient", DEFAULT_AMBIENT)),
+                "T_inf": self.config["ambient"],
                 "target_geometry": "top_surface",
                 "selection": [],
             }
@@ -313,6 +314,43 @@ class SimulationModelBuilder:
             "power_units": self.power_units,
             "boundary_conditions": self.boundary_conditions,
         }
+
+    def _sanitize_config(self) -> None:
+        """Pre-convert config keys to appropriate types at initialization."""
+        # Float keys with defaults
+        self.config["ambient"] = float(self.config.get("ambient", DEFAULT_AMBIENT))
+        self.config["t_chip"] = float(self.config.get("t_chip", DEFAULT_T_CHIP))
+        # t_interface with chained fallback: check t_interface first, then t_tim
+        self.config["t_interface"] = float(
+            self.config.get("t_interface", self.config.get("t_tim", DEFAULT_T_TIM))
+        )
+        self.config["t_spreader"] = float(
+            self.config.get("t_spreader", DEFAULT_T_SPREADER)
+        )
+        self.config["t_sink"] = float(self.config.get("t_sink", DEFAULT_T_SINK))
+        self.config["base_proc_freq"] = float(
+            self.config.get("base_proc_freq", DEFAULT_PROC_FREQ)
+        )
+        self.config["r_convec"] = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
+
+        # String keys with defaults
+        self.config["material_interface"] = str(
+            self.config.get("material_interface", "tim")
+        )
+        self.config["material_spreader"] = str(
+            self.config.get("material_spreader", "copper")
+        )
+        self.config["material_sink"] = str(self.config.get("material_sink", "copper"))
+        self.config["init_file"] = str(self.config.get("init_file", ""))
+
+        # Simulation params with derived defaults
+        sampling_intvl = float(self.config.get("sampling_intvl", 0.01))
+        self.config["sampling_intvl"] = sampling_intvl
+        self.config["time"] = float(self.config.get("time", max(sampling_intvl, 0.01)))
+        self.config["timestep"] = float(self.config.get("timestep", sampling_intvl))
+        self.config["init_temp"] = float(
+            self.config.get("init_temp", self.config.get("ambient", DEFAULT_AMBIENT))
+        )
 
 
 def convert_hotspot_to_metahotspot(
@@ -339,28 +377,26 @@ def convert_hotspot_to_metahotspot(
     if ptrace_path:
         shutil.copy(ptrace_path, os.path.join(output_dir, ptrace_name))
 
-    sampling_intvl = float(config.get("sampling_intvl", 0.01))
+    sampling_intvl = config["sampling_intvl"]
 
     toml_data = {
         "simulation_type": simulation_type,
-        "time": float(config.get("time", max(sampling_intvl, 0.01))),
-        "timestep": float(config.get("timestep", sampling_intvl)),
+        "time": config["time"],
+        "timestep": config["timestep"],
         "sampling_intvl": sampling_intvl,
-        "proc_freq": float(config.get("base_proc_freq", DEFAULT_PROC_FREQ)),
+        "proc_freq": config["base_proc_freq"],
         "materials": model["materials"],
         "domain_material_assignment": model["domain_assignment"],
         "heterogeneous_material_overrides": model["heterogeneous_overrides"],
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": model["power_units"],
-        "ambient": float(config.get("ambient", DEFAULT_AMBIENT)),
-        "init_temperature": float(
-            config.get("init_temp", config.get("ambient", DEFAULT_AMBIENT))
-        ),
+        "ambient": config["ambient"],
+        "init_temperature": config["init_temp"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
-    init_file = str(config.get("init_file", ""))
+    init_file = config["init_file"]
     if init_file and init_file not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = init_file
 

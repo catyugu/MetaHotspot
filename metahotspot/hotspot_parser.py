@@ -1,87 +1,74 @@
 import os
 import re
-from typing import Dict, List
+from typing import Dict, Generator, List
+
+
+def _read_valid_lines(file_path: str) -> Generator[str, None, None]:
+    """Generator: yields non-empty, non-comment lines from file."""
+    if not os.path.exists(file_path):
+        return
+    with open(file_path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if line and not line.startswith("#"):
+                yield line
 
 
 class HotSpotParser:
     @staticmethod
     def parse_flp(file_path: str) -> List[dict]:
         units: List[dict] = []
-        if not os.path.exists(file_path):
-            return units
 
-        with open(file_path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
+        for line in _read_valid_lines(file_path):
+            parts = re.split(r"\s+", line)
+            if len(parts) < 5:
+                continue
 
-                parts = re.split(r"\s+", line)
-                if len(parts) < 5:
-                    continue
+            unit = {
+                "name": parts[0],
+                "width": float(parts[1]),
+                "height": float(parts[2]),
+                "left_x": float(parts[3]),
+                "bottom_y": float(parts[4]),
+            }
 
-                unit = {
-                    "name": parts[0],
-                    "width": float(parts[1]),
-                    "height": float(parts[2]),
-                    "left_x": float(parts[3]),
-                    "bottom_y": float(parts[4]),
-                }
+            # Optional extra fields for heterogeneous materials (Hotspot 6.0+)
+            if len(parts) >= 7:
+                try:
+                    unit["specific_heat"] = float(parts[5])
+                    unit["resistivity"] = float(parts[6])
+                    unit["k"] = (
+                        1.0 / unit["resistivity"] if unit["resistivity"] != 0 else 0.0
+                    )
+                except ValueError:
+                    pass
 
-                # Optional extra fields for heterogeneous materials (Hotspot 6.0+)
-                if len(parts) >= 7:
-                    try:
-                        unit["specific_heat"] = float(parts[5])
-                        unit["resistivity"] = float(parts[6])
-                        unit["k"] = (
-                            1.0 / unit["resistivity"]
-                            if unit["resistivity"] != 0
-                            else 0.0
-                        )
-                    except ValueError:
-                        pass
-
-                units.append(unit)
+            units.append(unit)
 
         return units
 
     @staticmethod
     def parse_config(file_path: str) -> Dict[str, object]:
         config: Dict[str, object] = {}
-        if not os.path.exists(file_path):
-            return config
 
-        with open(file_path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
+        for line in _read_valid_lines(file_path):
+            match = re.match(r"^-(\w+)\s+([^#]+)", line)
+            if not match:
+                continue
 
-                match = re.match(r"^-(\w+)\s+([^#]+)", line)
-                if not match:
-                    continue
-
-                key, value = match.groups()
-                value = value.strip()
-                try:
-                    config[key] = float(value)
-                except ValueError:
-                    config[key] = value
+            key, value = match.groups()
+            value = value.strip()
+            try:
+                config[key] = float(value)
+            except ValueError:
+                config[key] = value
 
         return config
 
     @staticmethod
     def parse_materials(file_path: str) -> Dict[str, dict]:
         materials: Dict[str, dict] = {}
-        if not os.path.exists(file_path):
-            return materials
-
-        with open(file_path, "r", encoding="utf-8") as handle:
-            lines = [
-                line.strip()
-                for line in handle
-                if line.strip() and not line.strip().startswith("#")
-            ]
+        lines = list(_read_valid_lines(file_path))
 
         index = 0
         while index < len(lines):
@@ -112,15 +99,7 @@ class HotSpotParser:
     @staticmethod
     def parse_lcf(file_path: str) -> List[dict]:
         layers: List[dict] = []
-        if not os.path.exists(file_path):
-            return layers
-
-        with open(file_path, "r", encoding="utf-8") as handle:
-            lines = [
-                line.strip()
-                for line in handle
-                if line.strip() and not line.strip().startswith("#")
-            ]
+        lines = list(_read_valid_lines(file_path))
 
         index = 0
         while index < len(lines):

@@ -37,21 +37,20 @@ class FVMSolver:
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
         self.config = toml.load(config_path)
-        self.mesh_path = os.path.join(
-            self.base_dir, self.config.get("mesh_file_path", "mesh.msh")
-        )
+        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
         self._init_materials()
         self.cells: List[Cell] = []
 
+        self._sanitize_config()
         self._prepare_mesh()
         self._precompute_power_matrix()
 
     def _init_materials(self) -> None:
         self.materials = self.config["materials"]
         self.tag_to_material = {}
-        for mat_name, tags in self.config.get("domain_material_assignment", {}).items():
+        for mat_name, tags in self.config["domain_material_assignment"].items():
             for tag in tags:
                 self.tag_to_material[tag] = self.materials[mat_name]
 
@@ -92,7 +91,7 @@ class FVMSolver:
             mat_k_array[i] = float(mat["k"])
             mat_cp_array[i] = float(mat["cp"])
 
-        overrides = self.config.get("heterogeneous_material_overrides", [])
+        overrides = self.config["heterogeneous_material_overrides"]
         for ov in overrides:
             if "k" in ov and "cp" in ov:
                 ov_k = float(ov["k"])
@@ -175,7 +174,7 @@ class FVMSolver:
 
     def _precompute_power_matrix(self) -> None:
         """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
-        power_units = self.config.get("power_units", [])
+        power_units = self.config["power_units"]
         self.unit_names = [u["name"] for u in power_units]
 
         if not power_units or not self.cells:
@@ -215,10 +214,8 @@ class FVMSolver:
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
-        default_temp = float(
-            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
-        )
-        init_file = self.config.get("init_temperature_file_path")
+        default_temp = self.config["init_temperature"]
+        init_file = self.config["init_temperature_file_path"]
 
         if not init_file or init_file in {"(null)", "None", ""}:
             return np.full(n_cells, default_temp)
@@ -292,7 +289,7 @@ class FVMSolver:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
-        for bc in self.config.get("boundary_conditions", []):
+        for bc in self.config["boundary_conditions"]:
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
@@ -315,9 +312,7 @@ class FVMSolver:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _load_ptrace(self) -> List[dict]:
-        ptrace_path = os.path.join(
-            self.base_dir, self.config.get("ptrace_file_path", "")
-        )
+        ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         if not os.path.exists(ptrace_path):
             return []
 
@@ -336,7 +331,7 @@ class FVMSolver:
         self.boundary_rhs = boundary_rhs
         self.ptrace_steps = self._load_ptrace()
 
-        if self.config.get("simulation_type", "steady") == "steady":
+        if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
@@ -364,8 +359,8 @@ class FVMSolver:
 
     def _solve_transient(self) -> None:
         print("[SIM] Solving transient...")
-        dt = float(self.config.get("timestep", 0.1))
-        total_time = float(self.config.get("time", 0.0))
+        dt = self.config["timestep"]
+        total_time = self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
 
         ptrace = self.ptrace_steps or [{}] * n_steps
@@ -408,3 +403,25 @@ class FVMSolver:
         self.mesh.cell_data = {"Temperature_K": temp_chunks}
         self.mesh.write(os.path.join(self.base_dir, output_name))
         print(f"[FILE] Results saved to {output_name}")
+
+    def _sanitize_config(self) -> None:
+        """Pre-convert config keys to ensure correct types at initialization."""
+        # Numeric / string keys
+        self.config["init_temperature"] = float(
+            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
+        )
+        self.config["timestep"] = float(self.config.get("timestep", 0.1))
+        self.config["time"] = float(self.config.get("time", 0.0))
+        self.config["simulation_type"] = str(
+            self.config.get("simulation_type", "steady")
+        )
+        self.config["mesh_file_path"] = str(
+            self.config.get("mesh_file_path", "mesh.msh")
+        )
+        self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
+        # Collection keys — ensure defaults exist
+        self.config.setdefault("domain_material_assignment", {})
+        self.config.setdefault("heterogeneous_material_overrides", [])
+        self.config.setdefault("power_units", [])
+        self.config.setdefault("boundary_conditions", [])
+        self.config.setdefault("init_temperature_file_path", None)

@@ -157,15 +157,17 @@ class GmshMesher:
             else:
                 axis, val = "Z", round(zs[0], 6)
 
-            groups.setdefault(f"{axis}_{val}", []).append(f)
+            groups.setdefault((axis, val), []).append(f)
 
         boundary_info = {}
         base_tag = 2000
 
-        for key, faces in groups.items():
+        for (axis_name, val), faces in groups.items():
             base_tag += 1
             ent_tag = gmsh.model.addDiscreteEntity(2)
-            gmsh.model.addPhysicalGroup(2, [ent_tag], base_tag, name=f"boundary_{key}")
+            gmsh.model.addPhysicalGroup(
+                2, [ent_tag], base_tag, name=f"boundary_{axis_name}_{val}"
+            )
 
             elem_tags = [elem_id + i for i in range(len(faces))]
             elem_id += len(faces)
@@ -178,7 +180,6 @@ class GmshMesher:
                 cz = sum(p[0][2] for p in pts_with_id) / 4.0
 
                 # 为满足 Gmsh 四边形图元定义，将节点按照相对于重心的极角环向排序
-                axis_name, _ = key.split("_")
                 if axis_name == "X":
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
@@ -196,11 +197,10 @@ class GmshMesher:
 
             gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
 
-            axis_name, val_str = key.split("_")
             boundary_info[base_tag] = {
                 "axis": axis_name,
-                "val": float(val_str),
-                "name": f"boundary_{key}",
+                "val": val,
+                "name": f"boundary_{axis_name}_{val}",
             }
 
         return boundary_info

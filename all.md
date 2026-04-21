@@ -81,6 +81,7 @@ class SimulationModelBuilder:
 
         self.z_cursor = 0.0
         self.global_width, self.global_height = self._calculate_global_size()
+        self._sanitize_config()
 
     def _calculate_global_size(self) -> Tuple[float, float]:
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
@@ -154,9 +155,10 @@ class SimulationModelBuilder:
             return
 
         min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
-        ox, oy = (self.global_width - lw) / 2.0 - min_x, (
-            self.global_height - lh
-        ) / 2.0 - min_y
+        ox, oy = (
+            (self.global_width - lw) / 2.0 - min_x,
+            (self.global_height - lh) / 2.0 - min_y,
+        )
 
         layer_units = []
         for u in flp_units:
@@ -223,7 +225,7 @@ class SimulationModelBuilder:
             flp_units = self.parser.parse_flp(
                 _find_first_by_suffix(self.example_dir, ".flp")
             )
-            thickness = float(self.config.get("t_chip", DEFAULT_T_CHIP))
+            thickness = self.config["t_chip"]
             tag = 1
 
             self.domain_assignment.setdefault("silicon", []).append(tag)
@@ -259,36 +261,35 @@ class SimulationModelBuilder:
         has_lcf = bool(lcf_path)
 
         mat_tim = self._ensure_material(
-            str(self.config.get("material_interface", "tim")),
+            self.config["material_interface"],
             "tim",
             "k_interface",
             "p_interface",
         )
         mat_spread = self._ensure_material(
-            str(self.config.get("material_spreader", "copper")),
+            self.config["material_spreader"],
             "copper",
             "k_spreader",
             "p_spreader",
         )
         mat_sink = self._ensure_material(
-            str(self.config.get("material_sink", "copper")),
+            self.config["material_sink"],
             "copper",
             "k_sink",
             "p_sink",
         )
 
         if not has_lcf:
-            t_tim = float(
-                self.config.get("t_interface", self.config.get("t_tim", DEFAULT_T_TIM))
+            self._add_pkg_layer(
+                "TIM", self.config["t_interface"], self.global_width, mat_tim, 1000
             )
-            self._add_pkg_layer("TIM", t_tim, self.global_width, mat_tim, 1000)
 
         s_spread = float(
             self.config.get("s_spreader", max(self.global_width, self.global_height))
         )
         self._add_pkg_layer(
             "Spreader",
-            float(self.config.get("t_spreader", DEFAULT_T_SPREADER)),
+            self.config["t_spreader"],
             s_spread,
             mat_spread,
             1001,
@@ -299,20 +300,20 @@ class SimulationModelBuilder:
         )
         self._add_pkg_layer(
             "Sink",
-            float(self.config.get("t_sink", DEFAULT_T_SINK)),
+            self.config["t_sink"],
             s_sink,
             mat_sink,
             1002,
         )
 
         # 重点修改：不再硬编码 [1002]，而是使用目标几何语义
-        r_convec = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
+        r_convec = self.config["r_convec"]
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
                 "type": "convection",
                 "h": 1.0 / (r_convec * s_sink * s_sink),
-                "T_inf": float(self.config.get("ambient", DEFAULT_AMBIENT)),
+                "T_inf": self.config["ambient"],
                 "target_geometry": "top_surface",
                 "selection": [],
             }
@@ -329,6 +330,43 @@ class SimulationModelBuilder:
             "power_units": self.power_units,
             "boundary_conditions": self.boundary_conditions,
         }
+
+    def _sanitize_config(self) -> None:
+        """Pre-convert config keys to appropriate types at initialization."""
+        # Float keys with defaults
+        self.config["ambient"] = float(self.config.get("ambient", DEFAULT_AMBIENT))
+        self.config["t_chip"] = float(self.config.get("t_chip", DEFAULT_T_CHIP))
+        # t_interface with chained fallback: check t_interface first, then t_tim
+        self.config["t_interface"] = float(
+            self.config.get("t_interface", self.config.get("t_tim", DEFAULT_T_TIM))
+        )
+        self.config["t_spreader"] = float(
+            self.config.get("t_spreader", DEFAULT_T_SPREADER)
+        )
+        self.config["t_sink"] = float(self.config.get("t_sink", DEFAULT_T_SINK))
+        self.config["base_proc_freq"] = float(
+            self.config.get("base_proc_freq", DEFAULT_PROC_FREQ)
+        )
+        self.config["r_convec"] = float(self.config.get("r_convec", DEFAULT_R_CONVEC))
+
+        # String keys with defaults
+        self.config["material_interface"] = str(
+            self.config.get("material_interface", "tim")
+        )
+        self.config["material_spreader"] = str(
+            self.config.get("material_spreader", "copper")
+        )
+        self.config["material_sink"] = str(self.config.get("material_sink", "copper"))
+        self.config["init_file"] = str(self.config.get("init_file", ""))
+
+        # Simulation params with derived defaults
+        sampling_intvl = float(self.config.get("sampling_intvl", 0.01))
+        self.config["sampling_intvl"] = sampling_intvl
+        self.config["time"] = float(self.config.get("time", max(sampling_intvl, 0.01)))
+        self.config["timestep"] = float(self.config.get("timestep", sampling_intvl))
+        self.config["init_temp"] = float(
+            self.config.get("init_temp", self.config.get("ambient", DEFAULT_AMBIENT))
+        )
 
 
 def convert_hotspot_to_metahotspot(
@@ -355,28 +393,26 @@ def convert_hotspot_to_metahotspot(
     if ptrace_path:
         shutil.copy(ptrace_path, os.path.join(output_dir, ptrace_name))
 
-    sampling_intvl = float(config.get("sampling_intvl", 0.01))
+    sampling_intvl = config["sampling_intvl"]
 
     toml_data = {
         "simulation_type": simulation_type,
-        "time": float(config.get("time", max(sampling_intvl, 0.01))),
-        "timestep": float(config.get("timestep", sampling_intvl)),
+        "time": config["time"],
+        "timestep": config["timestep"],
         "sampling_intvl": sampling_intvl,
-        "proc_freq": float(config.get("base_proc_freq", DEFAULT_PROC_FREQ)),
+        "proc_freq": config["base_proc_freq"],
         "materials": model["materials"],
         "domain_material_assignment": model["domain_assignment"],
         "heterogeneous_material_overrides": model["heterogeneous_overrides"],
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "power_units": model["power_units"],
-        "ambient": float(config.get("ambient", DEFAULT_AMBIENT)),
-        "init_temperature": float(
-            config.get("init_temp", config.get("ambient", DEFAULT_AMBIENT))
-        ),
+        "ambient": config["ambient"],
+        "init_temperature": config["init_temp"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
-    init_file = str(config.get("init_file", ""))
+    init_file = config["init_file"]
     if init_file and init_file not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = init_file
 
@@ -496,21 +532,20 @@ class FVMSolver:
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
         self.config = toml.load(config_path)
-        self.mesh_path = os.path.join(
-            self.base_dir, self.config.get("mesh_file_path", "mesh.msh")
-        )
+        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
         self._init_materials()
         self.cells: List[Cell] = []
 
+        self._sanitize_config()
         self._prepare_mesh()
         self._precompute_power_matrix()
 
     def _init_materials(self) -> None:
         self.materials = self.config["materials"]
         self.tag_to_material = {}
-        for mat_name, tags in self.config.get("domain_material_assignment", {}).items():
+        for mat_name, tags in self.config["domain_material_assignment"].items():
             for tag in tags:
                 self.tag_to_material[tag] = self.materials[mat_name]
 
@@ -551,7 +586,7 @@ class FVMSolver:
             mat_k_array[i] = float(mat["k"])
             mat_cp_array[i] = float(mat["cp"])
 
-        overrides = self.config.get("heterogeneous_material_overrides", [])
+        overrides = self.config["heterogeneous_material_overrides"]
         for ov in overrides:
             if "k" in ov and "cp" in ov:
                 ov_k = float(ov["k"])
@@ -634,7 +669,7 @@ class FVMSolver:
 
     def _precompute_power_matrix(self) -> None:
         """预计算映射矩阵：使用 NumPy 广播加速包围盒相交计算"""
-        power_units = self.config.get("power_units", [])
+        power_units = self.config["power_units"]
         self.unit_names = [u["name"] for u in power_units]
 
         if not power_units or not self.cells:
@@ -674,10 +709,8 @@ class FVMSolver:
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
-        default_temp = float(
-            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
-        )
-        init_file = self.config.get("init_temperature_file_path")
+        default_temp = self.config["init_temperature"]
+        init_file = self.config["init_temperature_file_path"]
 
         if not init_file or init_file in {"(null)", "None", ""}:
             return np.full(n_cells, default_temp)
@@ -751,7 +784,7 @@ class FVMSolver:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
-        for bc in self.config.get("boundary_conditions", []):
+        for bc in self.config["boundary_conditions"]:
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
@@ -774,9 +807,7 @@ class FVMSolver:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _load_ptrace(self) -> List[dict]:
-        ptrace_path = os.path.join(
-            self.base_dir, self.config.get("ptrace_file_path", "")
-        )
+        ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         if not os.path.exists(ptrace_path):
             return []
 
@@ -795,7 +826,7 @@ class FVMSolver:
         self.boundary_rhs = boundary_rhs
         self.ptrace_steps = self._load_ptrace()
 
-        if self.config.get("simulation_type", "steady") == "steady":
+        if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
@@ -823,8 +854,8 @@ class FVMSolver:
 
     def _solve_transient(self) -> None:
         print("[SIM] Solving transient...")
-        dt = float(self.config.get("timestep", 0.1))
-        total_time = float(self.config.get("time", 0.0))
+        dt = self.config["timestep"]
+        total_time = self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
 
         ptrace = self.ptrace_steps or [{}] * n_steps
@@ -867,6 +898,28 @@ class FVMSolver:
         self.mesh.cell_data = {"Temperature_K": temp_chunks}
         self.mesh.write(os.path.join(self.base_dir, output_name))
         print(f"[FILE] Results saved to {output_name}")
+
+    def _sanitize_config(self) -> None:
+        """Pre-convert config keys to ensure correct types at initialization."""
+        # Numeric / string keys
+        self.config["init_temperature"] = float(
+            self.config.get("init_temperature", self.DEFAULT_INITIAL_TEMPERATURE)
+        )
+        self.config["timestep"] = float(self.config.get("timestep", 0.1))
+        self.config["time"] = float(self.config.get("time", 0.0))
+        self.config["simulation_type"] = str(
+            self.config.get("simulation_type", "steady")
+        )
+        self.config["mesh_file_path"] = str(
+            self.config.get("mesh_file_path", "mesh.msh")
+        )
+        self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
+        # Collection keys — ensure defaults exist
+        self.config.setdefault("domain_material_assignment", {})
+        self.config.setdefault("heterogeneous_material_overrides", [])
+        self.config.setdefault("power_units", [])
+        self.config.setdefault("boundary_conditions", [])
+        self.config.setdefault("init_temperature_file_path", None)
 
 ```
 
@@ -1031,15 +1084,17 @@ class GmshMesher:
             else:
                 axis, val = "Z", round(zs[0], 6)
 
-            groups.setdefault(f"{axis}_{val}", []).append(f)
+            groups.setdefault((axis, val), []).append(f)
 
         boundary_info = {}
         base_tag = 2000
 
-        for key, faces in groups.items():
+        for (axis_name, val), faces in groups.items():
             base_tag += 1
             ent_tag = gmsh.model.addDiscreteEntity(2)
-            gmsh.model.addPhysicalGroup(2, [ent_tag], base_tag, name=f"boundary_{key}")
+            gmsh.model.addPhysicalGroup(
+                2, [ent_tag], base_tag, name=f"boundary_{axis_name}_{val}"
+            )
 
             elem_tags = [elem_id + i for i in range(len(faces))]
             elem_id += len(faces)
@@ -1052,7 +1107,6 @@ class GmshMesher:
                 cz = sum(p[0][2] for p in pts_with_id) / 4.0
 
                 # 为满足 Gmsh 四边形图元定义，将节点按照相对于重心的极角环向排序
-                axis_name, _ = key.split("_")
                 if axis_name == "X":
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
@@ -1070,11 +1124,10 @@ class GmshMesher:
 
             gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
 
-            axis_name, val_str = key.split("_")
             boundary_info[base_tag] = {
                 "axis": axis_name,
-                "val": float(val_str),
-                "name": f"boundary_{key}",
+                "val": val,
+                "name": f"boundary_{axis_name}_{val}",
             }
 
         return boundary_info
@@ -1089,88 +1142,75 @@ class GmshMesher:
 ```py
 import os
 import re
-from typing import Dict, List
+from typing import Dict, Generator, List
+
+
+def _read_valid_lines(file_path: str) -> Generator[str, None, None]:
+    """Generator: yields non-empty, non-comment lines from file."""
+    if not os.path.exists(file_path):
+        return
+    with open(file_path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if line and not line.startswith("#"):
+                yield line
 
 
 class HotSpotParser:
     @staticmethod
     def parse_flp(file_path: str) -> List[dict]:
         units: List[dict] = []
-        if not os.path.exists(file_path):
-            return units
 
-        with open(file_path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
+        for line in _read_valid_lines(file_path):
+            parts = re.split(r"\s+", line)
+            if len(parts) < 5:
+                continue
 
-                parts = re.split(r"\s+", line)
-                if len(parts) < 5:
-                    continue
+            unit = {
+                "name": parts[0],
+                "width": float(parts[1]),
+                "height": float(parts[2]),
+                "left_x": float(parts[3]),
+                "bottom_y": float(parts[4]),
+            }
 
-                unit = {
-                    "name": parts[0],
-                    "width": float(parts[1]),
-                    "height": float(parts[2]),
-                    "left_x": float(parts[3]),
-                    "bottom_y": float(parts[4]),
-                }
+            # Optional extra fields for heterogeneous materials (Hotspot 6.0+)
+            if len(parts) >= 7:
+                try:
+                    unit["specific_heat"] = float(parts[5])
+                    unit["resistivity"] = float(parts[6])
+                    unit["k"] = (
+                        1.0 / unit["resistivity"] if unit["resistivity"] != 0 else 0.0
+                    )
+                except ValueError:
+                    pass
 
-                # Optional extra fields for heterogeneous materials (Hotspot 6.0+)
-                if len(parts) >= 7:
-                    try:
-                        unit["specific_heat"] = float(parts[5])
-                        unit["resistivity"] = float(parts[6])
-                        unit["k"] = (
-                            1.0 / unit["resistivity"]
-                            if unit["resistivity"] != 0
-                            else 0.0
-                        )
-                    except ValueError:
-                        pass
-
-                units.append(unit)
+            units.append(unit)
 
         return units
 
     @staticmethod
     def parse_config(file_path: str) -> Dict[str, object]:
         config: Dict[str, object] = {}
-        if not os.path.exists(file_path):
-            return config
 
-        with open(file_path, "r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
+        for line in _read_valid_lines(file_path):
+            match = re.match(r"^-(\w+)\s+([^#]+)", line)
+            if not match:
+                continue
 
-                match = re.match(r"^-(\w+)\s+([^#]+)", line)
-                if not match:
-                    continue
-
-                key, value = match.groups()
-                value = value.strip()
-                try:
-                    config[key] = float(value)
-                except ValueError:
-                    config[key] = value
+            key, value = match.groups()
+            value = value.strip()
+            try:
+                config[key] = float(value)
+            except ValueError:
+                config[key] = value
 
         return config
 
     @staticmethod
     def parse_materials(file_path: str) -> Dict[str, dict]:
         materials: Dict[str, dict] = {}
-        if not os.path.exists(file_path):
-            return materials
-
-        with open(file_path, "r", encoding="utf-8") as handle:
-            lines = [
-                line.strip()
-                for line in handle
-                if line.strip() and not line.strip().startswith("#")
-            ]
+        lines = list(_read_valid_lines(file_path))
 
         index = 0
         while index < len(lines):
@@ -1201,15 +1241,7 @@ class HotSpotParser:
     @staticmethod
     def parse_lcf(file_path: str) -> List[dict]:
         layers: List[dict] = []
-        if not os.path.exists(file_path):
-            return layers
-
-        with open(file_path, "r", encoding="utf-8") as handle:
-            lines = [
-                line.strip()
-                for line in handle
-                if line.strip() and not line.strip().startswith("#")
-            ]
+        lines = list(_read_valid_lines(file_path))
 
         index = 0
         while index < len(lines):
