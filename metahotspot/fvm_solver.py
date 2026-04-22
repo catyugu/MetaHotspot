@@ -61,7 +61,7 @@ class FVMSolver:
         self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
         self.config.setdefault("domain_material_assignment", {})
         self.config.setdefault("heterogeneous_material_overrides", [])
-        self.config.setdefault("power_units", [])
+        self.config.setdefault("active_units", [])
         self.config.setdefault("boundary_conditions", [])
         self.config.setdefault("init_temperature_file_path", None)
 
@@ -185,10 +185,10 @@ class FVMSolver:
                 )
 
     def _precompute_power_matrix(self) -> None:
-        power_units = self.config["power_units"]
-        self.unit_names = [u["name"] for u in power_units]
+        active_units = self.config["active_units"]
+        self.unit_names = [u["name"] for u in active_units]
 
-        if not power_units or not self.cells:
+        if not active_units or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
             return
 
@@ -196,7 +196,7 @@ class FVMSolver:
         cell_lowers, cell_uppers = cell_boxes[:, :3], cell_boxes[:, 3:]
         rows, cols, data = [], [], []
 
-        for unit_idx, unit in enumerate(power_units):
+        for unit_idx, unit in enumerate(active_units):
             vol = unit["dx"] * unit["dy"] * unit["dz"]
             if vol <= 0:
                 continue
@@ -218,7 +218,7 @@ class FVMSolver:
                 data.extend(intersect_vols[valid_mask] / vol)
 
         self.power_matrix = sp.csr_matrix(
-            (data, (rows, cols)), shape=(len(self.cells), len(power_units))
+            (data, (rows, cols)), shape=(len(self.cells), len(active_units))
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
@@ -396,20 +396,31 @@ class FVMSolver:
         self.save(temperatures, "transient_result.vtu")
 
     def save(self, temperatures: np.ndarray, output_name: str) -> None:
+        import meshio
+
         mapped = np.zeros(len(self.cells))
         for c in self.cells:
             mapped[c.original_id] = temperatures[c.id]
 
-        offset, temp_chunks = 0, []
+        hex_blocks = []
+        temp_chunks = []
+        offset = 0
+
+        # 过滤并仅保留六面体单元，彻底抛弃会被渲染为 NaN 且造成面重叠的 2D Quad 单元
         for block in self.mesh.cells:
-            count = len(block.data)
             if block.type == "hexahedron":
+                count = len(block.data)
+                hex_blocks.append(block)
                 temp_chunks.append(mapped[offset : offset + count])
                 offset += count
-            else:
-                temp_chunks.append(np.full(count, np.nan))
 
-        self.mesh.cell_sets.clear()
-        self.mesh.cell_data = {"Temperature_K": temp_chunks}
-        self.mesh.write(os.path.join(self.base_dir, output_name))
+        # 利用剥离后的纯 3D Hex 数据重新构建干净的 Mesh
+        out_mesh = meshio.Mesh(
+            points=self.mesh.points,
+            cells=hex_blocks,
+            cell_data={"Temperature_K": temp_chunks},
+        )
+
+        out_path = os.path.join(self.base_dir, output_name)
+        out_mesh.write(out_path)
         print(f"[FILE] Results saved to {output_name}")

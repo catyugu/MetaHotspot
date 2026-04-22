@@ -96,7 +96,7 @@ selection = [9, 10, 11, 12]
 
 # NOTICE: When converting from the flp format, in which the x,y coordinates are based merely on the .flp layout geometry
 # You shall map the coordinates to the global coordinate system. 
-[[power_units]]
+[[active_units]]
 # Configure power units with geometry and material properties for thermal modeling.
 # The name shall be aligned with the power trace file for automatic mapping.
 name = "ALU"
@@ -108,7 +108,7 @@ dx = 0.002
 dy = 0.001
 dz = 0.001
 
-[[power_units]]
+[[active_units]]
 name = "FPU"
 lx = 0.000
 ly = 0.002

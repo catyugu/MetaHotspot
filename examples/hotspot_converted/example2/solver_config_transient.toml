@@ -8,7 +8,8 @@ init_temperature = 318.15
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "example.ptrace"
 heterogeneous_material_overrides = []
-[[power_units]]
+init_temperature_file_path = "init.vtu"
+[[active_units]]
 name = "Unit1"
 lx = 0.0
 ly = 0.008
@@ -17,7 +18,7 @@ dx = 0.008
 dy = 0.008
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "Unit2"
 lx = 0.0
 ly = 0.0
@@ -26,7 +27,7 @@ dx = 0.016
 dy = 0.008
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "Unit3"
 lx = 0.008
 ly = 0.008
@@ -35,7 +36,7 @@ dx = 0.008
 dy = 0.008
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "L2_left"
 lx = 0.0
 ly = 0.0098
@@ -44,7 +45,7 @@ dx = 0.0049
 dy = 0.0062
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "L2"
 lx = 0.0
 ly = 0.0
@@ -53,7 +54,7 @@ dx = 0.016
 dy = 0.0098
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "L2_right"
 lx = 0.0111
 ly = 0.0098
@@ -62,7 +63,7 @@ dx = 0.0049
 dy = 0.0062
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "Icache"
 lx = 0.0049
 ly = 0.0098
@@ -71,7 +72,7 @@ dx = 0.0031
 dy = 0.0026
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "Dcache"
 lx = 0.008
 ly = 0.0098
@@ -80,7 +81,7 @@ dx = 0.0031
 dy = 0.0026
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "Bpred"
 lx = 0.0049
 ly = 0.0124
@@ -89,7 +90,7 @@ dx = 0.0031
 dy = 0.0007
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "DTB"
 lx = 0.008
 ly = 0.0124
@@ -98,7 +99,7 @@ dx = 0.0031
 dy = 0.0007
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "FPAdd"
 lx = 0.0049
 ly = 0.0131
@@ -107,7 +108,7 @@ dx = 0.0022
 dy = 0.0009
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "FPReg"
 lx = 0.0049
 ly = 0.014
@@ -116,7 +117,7 @@ dx = 0.0022
 dy = 0.00038
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "FPMul"
 lx = 0.0049
 ly = 0.01438
@@ -125,7 +126,7 @@ dx = 0.0022
 dy = 0.00095
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "FPMap"
 lx = 0.0049
 ly = 0.01533
@@ -134,7 +135,7 @@ dx = 0.0022
 dy = 0.00067
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "IntMap"
 lx = 0.0071
 ly = 0.01465
@@ -143,7 +144,7 @@ dx = 0.0009
 dy = 0.00135
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "IntQ"
 lx = 0.008
 ly = 0.01465
@@ -152,7 +153,7 @@ dx = 0.0013
 dy = 0.00135
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "IntReg"
 lx = 0.0093
 ly = 0.01533
@@ -161,7 +162,7 @@ dx = 0.0018
 dy = 0.00067
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "IntExec"
 lx = 0.0093
 ly = 0.0131
@@ -170,7 +171,7 @@ dx = 0.0018
 dy = 0.00223
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "FPQ"
 lx = 0.0071
 ly = 0.0131
@@ -179,7 +180,7 @@ dx = 0.0009
 dy = 0.00155
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "LdStQ"
 lx = 0.008
 ly = 0.0137
@@ -188,7 +189,7 @@ dx = 0.0013
 dy = 0.00095
 dz = 0.00015
 
-[[power_units]]
+[[active_units]]
 name = "ITB"
 lx = 0.008
 ly = 0.0131

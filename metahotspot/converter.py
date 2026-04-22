@@ -63,7 +63,7 @@ class SimulationModelBuilder:
         self.domain_assignment: Dict[str, List[int]] = {}
         self.heterogeneous_overrides: List[dict] = []
         self.layers_entities: Dict[int, dict] = {}
-        self.power_units: List[dict] = []
+        self.active_units: List[dict] = []
         self.boundary_conditions: List[dict] = []
 
         self.z_cursor = 0.0
@@ -223,7 +223,7 @@ class SimulationModelBuilder:
             )
 
             if layer.get("power") and flp_units:
-                self.power_units.extend(self.layers_entities[tag]["units"])
+                self.active_units.extend(self.layers_entities[tag]["units"])
             self.z_cursor += thickness
 
         return self
@@ -237,7 +237,7 @@ class SimulationModelBuilder:
         self.domain_assignment.setdefault("silicon", []).append(tag)
         self._add_layer_entities(tag, thickness, flp_units)
         if flp_units:
-            self.power_units.extend(self.layers_entities[tag]["units"])
+            self.active_units.extend(self.layers_entities[tag]["units"])
         self.z_cursor += thickness
 
     def _add_pkg_layer(
@@ -309,7 +309,7 @@ class SimulationModelBuilder:
             "domain_assignment": self.domain_assignment,
             "heterogeneous_overrides": self.heterogeneous_overrides,
             "layers_entities": self.layers_entities,
-            "power_units": self.power_units,
+            "active_units": self.active_units,
             "boundary_conditions": self.boundary_conditions,
         }
 
@@ -349,7 +349,7 @@ def convert_hotspot_to_metahotspot(
         "materials": model["materials"],
         "domain_material_assignment": model["domain_assignment"],
         "heterogeneous_material_overrides": model["heterogeneous_overrides"],
-        "power_units": model["power_units"],
+        "active_units": model["active_units"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
@@ -360,7 +360,7 @@ def convert_hotspot_to_metahotspot(
         mesher = GmshMesher()
         boundary_info = mesher.generate_2_5D_mesh(
             layers_entities=model["layers_entities"],
-            power_units=model["power_units"],
+            active_units=model["active_units"],
             max_mesh_size=0.003,
             min_mesh_size=0.0005,
             refine_distance=0.001,

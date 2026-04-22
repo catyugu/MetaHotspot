@@ -13,7 +13,7 @@ class GmshMesher:
     def generate_2_5D_mesh(
         self,
         layers_entities: Dict[int, dict],
-        power_units: List[dict],
+        active_units: List[dict],
         max_mesh_size: float = 0.006,
         min_mesh_size: float = 0.0005,
         refine_distance: float = 0.010,
@@ -29,7 +29,7 @@ class GmshMesher:
         """
         heat_boxes = [
             (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
-            for u in power_units
+            for u in active_units
         ]
 
         node_id = 1
