@@ -7,277 +7,50 @@ ambient = 318.15
 init_temperature = 318.15
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "gcc.ptrace"
-heterogeneous_material_overrides = []
-init_temperature_file_path = "init.vtu"
-[[active_units]]
-name = "L2_left"
-lx = 0.0
-ly = 0.0098
-lz = 0.0
-dx = 0.0049
-dy = 0.0062
-dz = 0.00015
-
-[[active_units]]
-name = "L2"
+[[stackup]]
+tag = 1
+name = "layer_1"
+thickness = 0.00015
+material = "silicon"
+active = true
+layout_file = "layouts/layer_1_layout.json"
 lx = 0.0
 ly = 0.0
-lz = 0.0
 dx = 0.016
-dy = 0.0098
-dz = 0.00015
+dy = 0.016
 
-[[active_units]]
-name = "L2_right"
-lx = 0.0111
-ly = 0.0098
-lz = 0.0
-dx = 0.0049
-dy = 0.0062
-dz = 0.00015
+[[stackup]]
+tag = 1000
+name = "TIM"
+thickness = 2e-5
+material = "tim"
+active = false
+lx = 0.0
+ly = 0.0
+dx = 0.016
+dy = 0.016
 
-[[active_units]]
-name = "Icache"
-lx = 0.0049
-ly = 0.0098
-lz = 0.0
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
+[[stackup]]
+tag = 1001
+name = "Spreader"
+thickness = 0.001
+material = "aluminum"
+active = false
+lx = -0.006999999999999999
+ly = -0.006999999999999999
+dx = 0.03
+dy = 0.03
 
-[[active_units]]
-name = "Dcache"
-lx = 0.008
-ly = 0.0098
-lz = 0.0
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_0"
-lx = 0.0049
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_1"
-lx = 0.005933
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_2"
-lx = 0.006967
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_0"
-lx = 0.008
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_1"
-lx = 0.009033
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_2"
-lx = 0.010067
-ly = 0.0124
-lz = 0.0
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_0"
-lx = 0.0049
-ly = 0.0131
-lz = 0.0
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_1"
-lx = 0.006
-ly = 0.0131
-lz = 0.0
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_0"
-lx = 0.0049
-ly = 0.014
-lz = 0.0
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_1"
-lx = 0.00545
-ly = 0.014
-lz = 0.0
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_2"
-lx = 0.006
-ly = 0.014
-lz = 0.0
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_3"
-lx = 0.00655
-ly = 0.014
-lz = 0.0
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_0"
-lx = 0.0049
-ly = 0.01438
-lz = 0.0
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_1"
-lx = 0.006
-ly = 0.01438
-lz = 0.0
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_0"
-lx = 0.0049
-ly = 0.01533
-lz = 0.0
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_1"
-lx = 0.006
-ly = 0.01533
-lz = 0.0
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntMap"
-lx = 0.0071
-ly = 0.01465
-lz = 0.0
-dx = 0.0009
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntQ"
-lx = 0.008
-ly = 0.01465
-lz = 0.0
-dx = 0.0013
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_0"
-lx = 0.0093
-ly = 0.01533
-lz = 0.0
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_1"
-lx = 0.0102
-ly = 0.01533
-lz = 0.0
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntExec"
-lx = 0.0093
-ly = 0.0131
-lz = 0.0
-dx = 0.0018
-dy = 0.00223
-dz = 0.00015
-
-[[active_units]]
-name = "FPQ"
-lx = 0.0071
-ly = 0.0131
-lz = 0.0
-dx = 0.0009
-dy = 0.00155
-dz = 0.00015
-
-[[active_units]]
-name = "LdStQ"
-lx = 0.008
-ly = 0.0137
-lz = 0.0
-dx = 0.0013
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_0"
-lx = 0.008
-ly = 0.0131
-lz = 0.0
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_1"
-lx = 0.00865
-ly = 0.0131
-lz = 0.0
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
+[[stackup]]
+tag = 1002
+name = "Sink"
+thickness = 0.0069
+material = "aluminum"
+active = false
+lx = -0.022
+ly = -0.022
+dx = 0.06
+dy = 0.06
 
 [[boundary_conditions]]
 name = "sink_conv"
@@ -285,11 +58,6 @@ type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
 selection = [ 2032,]
-
-[domain_material_assignment]
-silicon = [ 1,]
-tim = [ 1000,]
-aluminum = [ 1001, 1002,]
 
 [materials.silicon]
 k = 130.0

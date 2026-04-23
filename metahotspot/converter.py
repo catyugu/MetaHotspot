@@ -1,13 +1,13 @@
 import os
+import json
 import shutil
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 import toml
 
 from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
-# 默认参数统一定义，方便统一合入
 DEFAULT_CONFIG_SCHEMA = {
     "ambient": 318.15,
     "t_chip": 0.00015,
@@ -49,32 +49,27 @@ def _layout_bbox_from_flp(units: List[dict]) -> Tuple[float, float, float, float
     return min_x, min_y, max_x - min_x, max_y - min_y
 
 
-class SimulationModelBuilder:
-    def __init__(self, parser: HotSpotParser, example_dir: str):
+class SimulationModelBuilder25D:
+    def __init__(self, parser: HotSpotParser, example_dir: str, output_dir: str):
         self.parser = parser
         self.example_dir = example_dir
+        self.output_dir = output_dir
+        self.layouts_dir = os.path.join(output_dir, "layouts")
+        os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
-        # 使用字典推导式与解包，一次性安全清洗配置
         self.config = {**DEFAULT_CONFIG_SCHEMA, **raw_config}
         self._finalize_config_logic()
 
         self.materials: Dict[str, dict] = {}
-        self.domain_assignment: Dict[str, List[int]] = {}
-        self.heterogeneous_overrides: List[dict] = []
-        self.layers_entities: Dict[int, dict] = {}
-        self.active_units: List[dict] = []
+        self.stackup: List[dict] = []
         self.boundary_conditions: List[dict] = []
 
-        self.z_cursor = 0.0
         self.global_width, self.global_height = self._calculate_global_size()
 
     def _finalize_config_logic(self) -> None:
-        """处理默认值 Schema 之外的互相依赖逻辑"""
-        # 强制类型转换保证安全
         for k, v in DEFAULT_CONFIG_SCHEMA.items():
             self.config[k] = type(v)(self.config.get(k, v))
-
         self.config["t_interface"] = float(
             self.config.get("t_interface", self.config["t_tim"])
         )
@@ -105,10 +100,9 @@ class SimulationModelBuilder:
                 _, _, w, h = _layout_bbox_from_flp(units)
                 widths.append(w)
                 heights.append(h)
-
         return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
-    def build_materials(self) -> "SimulationModelBuilder":
+    def build_materials(self) -> "SimulationModelBuilder25D":
         mat_path = os.path.join(self.example_dir, "example.materials")
         self.materials = self.parser.parse_materials(mat_path)
 
@@ -137,74 +131,73 @@ class SimulationModelBuilder:
             }
         return chosen
 
-    def _add_layer_entities(
+    def _export_layout_json(
         self,
-        tag: int,
-        thickness: float,
+        name: str,
         flp_units: List[dict],
         layer_k: float = None,
         layer_cp: float = None,
         is_numeric: bool = False,
-    ):
+    ) -> str:
         if not flp_units:
-            self.layers_entities[tag] = {
-                "units": [
-                    {
-                        "name": f"layer_{tag}_extent",
-                        "lx": 0.0,
-                        "ly": 0.0,
-                        "lz": self.z_cursor,
-                        "dx": self.global_width,
-                        "dy": self.global_height,
-                        "dz": thickness,
-                    }
-                ]
-            }
-            return
+            return ""
 
         min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
         ox = (self.global_width - lw) / 2.0 - min_x
         oy = (self.global_height - lh) / 2.0 - min_y
 
-        layer_units = []
+        json_units = []
         for u in flp_units:
-            entity = {
+            unit_data = {
                 "name": u["name"],
                 "lx": u["left_x"] + ox,
                 "ly": u["bottom_y"] + oy,
-                "lz": self.z_cursor,
                 "dx": u["width"],
                 "dy": u["height"],
-                "dz": thickness,
             }
-            layer_units.append(entity)
-
             if is_numeric and ("k" in u or "specific_heat" in u):
-                self.heterogeneous_overrides.append(
-                    {
-                        **entity,
-                        "k": float(u.get("k", layer_k)),
-                        "cp": float(u.get("specific_heat", layer_cp)),
-                    }
-                )
+                unit_data["k"] = float(u.get("k", layer_k))
+                unit_data["cp"] = float(u.get("specific_heat", layer_cp))
+            json_units.append(unit_data)
 
-        self.layers_entities[tag] = {"units": layer_units}
+        file_name = f"{name}_layout.json"
+        with open(
+            os.path.join(self.layouts_dir, file_name), "w", encoding="utf-8"
+        ) as f:
+            json.dump(json_units, f, indent=2)
+        return f"layouts/{file_name}"
 
-    def build_chip_layers(self) -> "SimulationModelBuilder":
+    def build_chip_layers(self) -> "SimulationModelBuilder25D":
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
         lcf_layers = self.parser.parse_lcf(lcf_path) if lcf_path else []
 
         if not lcf_layers:
-            self._build_fallback_chip_layer()
+            flp_units = self.parser.parse_flp(
+                _find_first_by_suffix(self.example_dir, ".flp")
+            )
+            layout_ref = self._export_layout_json("layer_1", flp_units)
+            self.stackup.append(
+                {
+                    "tag": 1,
+                    "name": "layer_1",
+                    "thickness": self.config["t_chip"],
+                    "material": "silicon",
+                    "active": bool(flp_units),
+                    "layout_file": layout_ref,
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+            )
             return self
 
         for layer in lcf_layers:
             tag = int(layer["id"]) + 1
+            name = f"layer_{tag}"
             thickness = float(layer["thickness"])
             is_numeric = layer["type"] == "numeric"
-            mat_name = (
-                f"layer_{layer['id']}_mat" if is_numeric else str(layer["material"])
-            )
+            mat_name = f"{name}_mat" if is_numeric else str(layer["material"])
 
             if is_numeric:
                 self.materials[mat_name] = {
@@ -213,54 +206,31 @@ class SimulationModelBuilder:
                     "fluid": False,
                 }
 
-            self.domain_assignment.setdefault(mat_name, []).append(tag)
             flp_units = self.parser.parse_flp(
                 os.path.join(self.example_dir, layer["flp_file"])
             )
-
-            self._add_layer_entities(
-                tag, thickness, flp_units, layer.get("k"), layer.get("cp"), is_numeric
+            layout_ref = self._export_layout_json(
+                name, flp_units, layer.get("k"), layer.get("cp"), is_numeric
             )
 
-            if layer.get("power") and flp_units:
-                self.active_units.extend(self.layers_entities[tag]["units"])
-            self.z_cursor += thickness
+            self.stackup.append(
+                {
+                    "tag": tag,
+                    "name": name,
+                    "thickness": thickness,
+                    "material": mat_name,
+                    "active": bool(layer.get("power") and flp_units),
+                    "layout_file": layout_ref,
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+            )
 
         return self
 
-    def _build_fallback_chip_layer(self):
-        flp_units = self.parser.parse_flp(
-            _find_first_by_suffix(self.example_dir, ".flp")
-        )
-        thickness = self.config["t_chip"]
-        tag = 1
-        self.domain_assignment.setdefault("silicon", []).append(tag)
-        self._add_layer_entities(tag, thickness, flp_units)
-        if flp_units:
-            self.active_units.extend(self.layers_entities[tag]["units"])
-        self.z_cursor += thickness
-
-    def _add_pkg_layer(
-        self, name: str, thick: float, side: float, mat: str, tag: int
-    ) -> None:
-        lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
-        self.layers_entities[tag] = {
-            "units": [
-                {
-                    "name": name,
-                    "lx": lx,
-                    "ly": ly,
-                    "lz": self.z_cursor,
-                    "dx": side,
-                    "dy": side,
-                    "dz": thick,
-                }
-            ]
-        }
-        self.domain_assignment.setdefault(mat, []).append(tag)
-        self.z_cursor += thick
-
-    def build_package_and_cooling(self) -> "SimulationModelBuilder":
+    def build_package_and_cooling(self) -> "SimulationModelBuilder25D":
         has_lcf = bool(_find_first_by_suffix(self.example_dir, ".lcf"))
 
         mat_tim = self._ensure_material(
@@ -273,22 +243,38 @@ class SimulationModelBuilder:
             self.config["material_sink"], "copper", "k_sink", "p_sink"
         )
 
+        def _add_pkg_layer(name, thick, side, mat, tag):
+            lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
+            self.stackup.append(
+                {
+                    "tag": tag,
+                    "name": name,
+                    "thickness": thick,
+                    "material": mat,
+                    "active": False,
+                    "lx": lx,
+                    "ly": ly,
+                    "dx": side,
+                    "dy": side,
+                }
+            )
+
         if not has_lcf:
-            self._add_pkg_layer(
+            _add_pkg_layer(
                 "TIM", self.config["t_interface"], self.global_width, mat_tim, 1000
             )
 
         s_spread = float(
             self.config.get("s_spreader", max(self.global_width, self.global_height))
         )
-        self._add_pkg_layer(
+        _add_pkg_layer(
             "Spreader", self.config["t_spreader"], s_spread, mat_spread, 1001
         )
 
         s_sink = float(
             self.config.get("s_sink", max(self.global_width, self.global_height))
         )
-        self._add_pkg_layer("Sink", self.config["t_sink"], s_sink, mat_sink, 1002)
+        _add_pkg_layer("Sink", self.config["t_sink"], s_sink, mat_sink, 1002)
 
         self.boundary_conditions.append(
             {
@@ -306,10 +292,7 @@ class SimulationModelBuilder:
         return {
             "config": self.config,
             "materials": self.materials,
-            "domain_assignment": self.domain_assignment,
-            "heterogeneous_overrides": self.heterogeneous_overrides,
-            "layers_entities": self.layers_entities,
-            "active_units": self.active_units,
+            "stackup": self.stackup,
             "boundary_conditions": self.boundary_conditions,
         }
 
@@ -322,7 +305,7 @@ def convert_hotspot_to_metahotspot(
     generate_mesh: bool = True,
 ) -> str:
     os.makedirs(output_dir, exist_ok=True)
-    builder = SimulationModelBuilder(HotSpotParser(), example_dir)
+    builder = SimulationModelBuilder25D(HotSpotParser(), example_dir, output_dir)
     model = (
         builder.build_materials()
         .build_chip_layers()
@@ -347,9 +330,7 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "materials": model["materials"],
-        "domain_material_assignment": model["domain_assignment"],
-        "heterogeneous_material_overrides": model["heterogeneous_overrides"],
-        "active_units": model["active_units"],
+        "stackup": model["stackup"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
@@ -357,10 +338,12 @@ def convert_hotspot_to_metahotspot(
         toml_data["init_temperature_file_path"] = config["init_file"]
 
     if generate_mesh:
+        from metahotspot.model25d import load_stackup
+
+        loaded_stackup = load_stackup(toml_data, output_dir)
         mesher = GmshMesher()
         boundary_info = mesher.generate_2_5D_mesh(
-            layers_entities=model["layers_entities"],
-            active_units=model["active_units"],
+            stackup=loaded_stackup,
             max_mesh_size=0.003,
             min_mesh_size=0.0005,
             refine_distance=0.001,
@@ -376,7 +359,6 @@ def convert_hotspot_to_metahotspot(
                 for tag, info in boundary_info.items()
                 if info["axis"] == "Z" and abs(info["val"] - z_max_val) < 1e-12
             ]
-
             for bc in toml_data["boundary_conditions"]:
                 if bc.pop("target_geometry", None) == "top_surface":
                     bc["selection"] = top_tags
@@ -417,7 +399,6 @@ def convert_hotspot_with_modes(
                 example_dir, output_dir, "transient", "solver_config_transient.toml"
             )
         ]
-
     return [
         convert_hotspot_to_metahotspot(
             example_dir, output_dir, "steady", "solver_config_steady.toml", True

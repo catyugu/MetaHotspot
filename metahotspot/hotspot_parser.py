@@ -99,7 +99,7 @@ class HotSpotParser:
         index = 0
         while index < len(lines):
             layer_id = int(lines[index])
-            has_power = lines[index + 2].upper() == "Y"
+            active = lines[index + 2].upper() == "Y"
             field = lines[index + 3]
 
             try:
@@ -109,7 +109,7 @@ class HotSpotParser:
                 layers.append(
                     {
                         "id": layer_id,
-                        "power": has_power,
+                        "power": active,
                         "cp": cp,
                         "k": 1.0 / resistivity if resistivity != 0 else 0.0,
                         "thickness": float(lines[index + 5]),
@@ -122,7 +122,7 @@ class HotSpotParser:
                 layers.append(
                     {
                         "id": layer_id,
-                        "power": has_power,
+                        "power": active,
                         "material": field,
                         "thickness": float(lines[index + 4]),
                         "flp_file": lines[index + 5],

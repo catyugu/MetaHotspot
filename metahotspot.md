@@ -7,7 +7,8 @@
 ├── converter.py
 ├── fvm_solver.py
 ├── gmsh_mesher.py
-└── hotspot_parser.py
+├── hotspot_parser.py
+└── model25d.py
 ```
 
 ## File Contents
@@ -15,15 +16,15 @@
 ### File: converter.py
 ```py
 import os
+import json
 import shutil
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 import toml
 
 from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
-# 默认参数统一定义，方便统一合入
 DEFAULT_CONFIG_SCHEMA = {
     "ambient": 318.15,
     "t_chip": 0.00015,
@@ -65,32 +66,27 @@ def _layout_bbox_from_flp(units: List[dict]) -> Tuple[float, float, float, float
     return min_x, min_y, max_x - min_x, max_y - min_y
 
 
-class SimulationModelBuilder:
-    def __init__(self, parser: HotSpotParser, example_dir: str):
+class SimulationModelBuilder25D:
+    def __init__(self, parser: HotSpotParser, example_dir: str, output_dir: str):
         self.parser = parser
         self.example_dir = example_dir
+        self.output_dir = output_dir
+        self.layouts_dir = os.path.join(output_dir, "layouts")
+        os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
-        # 使用字典推导式与解包，一次性安全清洗配置
         self.config = {**DEFAULT_CONFIG_SCHEMA, **raw_config}
         self._finalize_config_logic()
 
         self.materials: Dict[str, dict] = {}
-        self.domain_assignment: Dict[str, List[int]] = {}
-        self.heterogeneous_overrides: List[dict] = []
-        self.layers_entities: Dict[int, dict] = {}
-        self.active_units: List[dict] = []
+        self.stackup: List[dict] = []
         self.boundary_conditions: List[dict] = []
 
-        self.z_cursor = 0.0
         self.global_width, self.global_height = self._calculate_global_size()
 
     def _finalize_config_logic(self) -> None:
-        """处理默认值 Schema 之外的互相依赖逻辑"""
-        # 强制类型转换保证安全
         for k, v in DEFAULT_CONFIG_SCHEMA.items():
             self.config[k] = type(v)(self.config.get(k, v))
-
         self.config["t_interface"] = float(
             self.config.get("t_interface", self.config["t_tim"])
         )
@@ -121,10 +117,9 @@ class SimulationModelBuilder:
                 _, _, w, h = _layout_bbox_from_flp(units)
                 widths.append(w)
                 heights.append(h)
-
         return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
-    def build_materials(self) -> "SimulationModelBuilder":
+    def build_materials(self) -> "SimulationModelBuilder25D":
         mat_path = os.path.join(self.example_dir, "example.materials")
         self.materials = self.parser.parse_materials(mat_path)
 
@@ -153,74 +148,73 @@ class SimulationModelBuilder:
             }
         return chosen
 
-    def _add_layer_entities(
+    def _export_layout_json(
         self,
-        tag: int,
-        thickness: float,
+        name: str,
         flp_units: List[dict],
         layer_k: float = None,
         layer_cp: float = None,
         is_numeric: bool = False,
-    ):
+    ) -> str:
         if not flp_units:
-            self.layers_entities[tag] = {
-                "units": [
-                    {
-                        "name": f"layer_{tag}_extent",
-                        "lx": 0.0,
-                        "ly": 0.0,
-                        "lz": self.z_cursor,
-                        "dx": self.global_width,
-                        "dy": self.global_height,
-                        "dz": thickness,
-                    }
-                ]
-            }
-            return
+            return ""
 
         min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
         ox = (self.global_width - lw) / 2.0 - min_x
         oy = (self.global_height - lh) / 2.0 - min_y
 
-        layer_units = []
+        json_units = []
         for u in flp_units:
-            entity = {
+            unit_data = {
                 "name": u["name"],
                 "lx": u["left_x"] + ox,
                 "ly": u["bottom_y"] + oy,
-                "lz": self.z_cursor,
                 "dx": u["width"],
                 "dy": u["height"],
-                "dz": thickness,
             }
-            layer_units.append(entity)
-
             if is_numeric and ("k" in u or "specific_heat" in u):
-                self.heterogeneous_overrides.append(
-                    {
-                        **entity,
-                        "k": float(u.get("k", layer_k)),
-                        "cp": float(u.get("specific_heat", layer_cp)),
-                    }
-                )
+                unit_data["k"] = float(u.get("k", layer_k))
+                unit_data["cp"] = float(u.get("specific_heat", layer_cp))
+            json_units.append(unit_data)
 
-        self.layers_entities[tag] = {"units": layer_units}
+        file_name = f"{name}_layout.json"
+        with open(
+            os.path.join(self.layouts_dir, file_name), "w", encoding="utf-8"
+        ) as f:
+            json.dump(json_units, f, indent=2)
+        return f"layouts/{file_name}"
 
-    def build_chip_layers(self) -> "SimulationModelBuilder":
+    def build_chip_layers(self) -> "SimulationModelBuilder25D":
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
         lcf_layers = self.parser.parse_lcf(lcf_path) if lcf_path else []
 
         if not lcf_layers:
-            self._build_fallback_chip_layer()
+            flp_units = self.parser.parse_flp(
+                _find_first_by_suffix(self.example_dir, ".flp")
+            )
+            layout_ref = self._export_layout_json("layer_1", flp_units)
+            self.stackup.append(
+                {
+                    "tag": 1,
+                    "name": "layer_1",
+                    "thickness": self.config["t_chip"],
+                    "material": "silicon",
+                    "active": bool(flp_units),
+                    "layout_file": layout_ref,
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+            )
             return self
 
         for layer in lcf_layers:
             tag = int(layer["id"]) + 1
+            name = f"layer_{tag}"
             thickness = float(layer["thickness"])
             is_numeric = layer["type"] == "numeric"
-            mat_name = (
-                f"layer_{layer['id']}_mat" if is_numeric else str(layer["material"])
-            )
+            mat_name = f"{name}_mat" if is_numeric else str(layer["material"])
 
             if is_numeric:
                 self.materials[mat_name] = {
@@ -229,54 +223,31 @@ class SimulationModelBuilder:
                     "fluid": False,
                 }
 
-            self.domain_assignment.setdefault(mat_name, []).append(tag)
             flp_units = self.parser.parse_flp(
                 os.path.join(self.example_dir, layer["flp_file"])
             )
-
-            self._add_layer_entities(
-                tag, thickness, flp_units, layer.get("k"), layer.get("cp"), is_numeric
+            layout_ref = self._export_layout_json(
+                name, flp_units, layer.get("k"), layer.get("cp"), is_numeric
             )
 
-            if layer.get("power") and flp_units:
-                self.active_units.extend(self.layers_entities[tag]["units"])
-            self.z_cursor += thickness
+            self.stackup.append(
+                {
+                    "tag": tag,
+                    "name": name,
+                    "thickness": thickness,
+                    "material": mat_name,
+                    "active": bool(layer.get("power") and flp_units),
+                    "layout_file": layout_ref,
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+            )
 
         return self
 
-    def _build_fallback_chip_layer(self):
-        flp_units = self.parser.parse_flp(
-            _find_first_by_suffix(self.example_dir, ".flp")
-        )
-        thickness = self.config["t_chip"]
-        tag = 1
-        self.domain_assignment.setdefault("silicon", []).append(tag)
-        self._add_layer_entities(tag, thickness, flp_units)
-        if flp_units:
-            self.active_units.extend(self.layers_entities[tag]["units"])
-        self.z_cursor += thickness
-
-    def _add_pkg_layer(
-        self, name: str, thick: float, side: float, mat: str, tag: int
-    ) -> None:
-        lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
-        self.layers_entities[tag] = {
-            "units": [
-                {
-                    "name": name,
-                    "lx": lx,
-                    "ly": ly,
-                    "lz": self.z_cursor,
-                    "dx": side,
-                    "dy": side,
-                    "dz": thick,
-                }
-            ]
-        }
-        self.domain_assignment.setdefault(mat, []).append(tag)
-        self.z_cursor += thick
-
-    def build_package_and_cooling(self) -> "SimulationModelBuilder":
+    def build_package_and_cooling(self) -> "SimulationModelBuilder25D":
         has_lcf = bool(_find_first_by_suffix(self.example_dir, ".lcf"))
 
         mat_tim = self._ensure_material(
@@ -289,22 +260,38 @@ class SimulationModelBuilder:
             self.config["material_sink"], "copper", "k_sink", "p_sink"
         )
 
+        def _add_pkg_layer(name, thick, side, mat, tag):
+            lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
+            self.stackup.append(
+                {
+                    "tag": tag,
+                    "name": name,
+                    "thickness": thick,
+                    "material": mat,
+                    "active": False,
+                    "lx": lx,
+                    "ly": ly,
+                    "dx": side,
+                    "dy": side,
+                }
+            )
+
         if not has_lcf:
-            self._add_pkg_layer(
+            _add_pkg_layer(
                 "TIM", self.config["t_interface"], self.global_width, mat_tim, 1000
             )
 
         s_spread = float(
             self.config.get("s_spreader", max(self.global_width, self.global_height))
         )
-        self._add_pkg_layer(
+        _add_pkg_layer(
             "Spreader", self.config["t_spreader"], s_spread, mat_spread, 1001
         )
 
         s_sink = float(
             self.config.get("s_sink", max(self.global_width, self.global_height))
         )
-        self._add_pkg_layer("Sink", self.config["t_sink"], s_sink, mat_sink, 1002)
+        _add_pkg_layer("Sink", self.config["t_sink"], s_sink, mat_sink, 1002)
 
         self.boundary_conditions.append(
             {
@@ -322,10 +309,7 @@ class SimulationModelBuilder:
         return {
             "config": self.config,
             "materials": self.materials,
-            "domain_assignment": self.domain_assignment,
-            "heterogeneous_overrides": self.heterogeneous_overrides,
-            "layers_entities": self.layers_entities,
-            "active_units": self.active_units,
+            "stackup": self.stackup,
             "boundary_conditions": self.boundary_conditions,
         }
 
@@ -338,7 +322,7 @@ def convert_hotspot_to_metahotspot(
     generate_mesh: bool = True,
 ) -> str:
     os.makedirs(output_dir, exist_ok=True)
-    builder = SimulationModelBuilder(HotSpotParser(), example_dir)
+    builder = SimulationModelBuilder25D(HotSpotParser(), example_dir, output_dir)
     model = (
         builder.build_materials()
         .build_chip_layers()
@@ -363,9 +347,7 @@ def convert_hotspot_to_metahotspot(
         "mesh_file_path": "mesh.msh",
         "ptrace_file_path": ptrace_name,
         "materials": model["materials"],
-        "domain_material_assignment": model["domain_assignment"],
-        "heterogeneous_material_overrides": model["heterogeneous_overrides"],
-        "active_units": model["active_units"],
+        "stackup": model["stackup"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
@@ -373,10 +355,12 @@ def convert_hotspot_to_metahotspot(
         toml_data["init_temperature_file_path"] = config["init_file"]
 
     if generate_mesh:
+        from metahotspot.model25d import load_stackup
+
+        loaded_stackup = load_stackup(toml_data, output_dir)
         mesher = GmshMesher()
         boundary_info = mesher.generate_2_5D_mesh(
-            layers_entities=model["layers_entities"],
-            active_units=model["active_units"],
+            stackup=loaded_stackup,
             max_mesh_size=0.003,
             min_mesh_size=0.0005,
             refine_distance=0.001,
@@ -392,7 +376,6 @@ def convert_hotspot_to_metahotspot(
                 for tag, info in boundary_info.items()
                 if info["axis"] == "Z" and abs(info["val"] - z_max_val) < 1e-12
             ]
-
             for bc in toml_data["boundary_conditions"]:
                 if bc.pop("target_geometry", None) == "top_surface":
                     bc["selection"] = top_tags
@@ -433,7 +416,6 @@ def convert_hotspot_with_modes(
                 example_dir, output_dir, "transient", "solver_config_transient.toml"
             )
         ]
-
     return [
         convert_hotspot_to_metahotspot(
             example_dir, output_dir, "steady", "solver_config_steady.toml", True
@@ -458,6 +440,8 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 import toml
 
+from metahotspot.model25d import load_stackup
+
 
 @dataclass(slots=True)
 class Cell:
@@ -465,7 +449,7 @@ class Cell:
     id: int
     center: np.ndarray
     dims: np.ndarray
-    box: np.ndarray  # [xmin, ymin, zmin, xmax, ymax, zmax]
+    box: np.ndarray
     k: float
     cp: float
     tag: int
@@ -492,7 +476,7 @@ class FVMSolver:
         self.mesh = meshio.read(self.mesh_path)
 
         self._sanitize_config()
-        self._init_materials()
+        self._init_materials_and_stackup()
 
         self.cells: List[Cell] = []
         self._prepare_mesh()
@@ -508,18 +492,13 @@ class FVMSolver:
             self.config.get("simulation_type", "steady")
         )
         self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
-        self.config.setdefault("domain_material_assignment", {})
-        self.config.setdefault("heterogeneous_material_overrides", [])
-        self.config.setdefault("active_units", [])
+        self.config.setdefault("stackup", [])
         self.config.setdefault("boundary_conditions", [])
         self.config.setdefault("init_temperature_file_path", None)
 
-    def _init_materials(self) -> None:
+    def _init_materials_and_stackup(self) -> None:
         self.materials = self.config.get("materials", {})
-        self.tag_to_material = {}
-        for mat_name, tags in self.config["domain_material_assignment"].items():
-            for tag in tags:
-                self.tag_to_material[tag] = self.materials[mat_name]
+        self.stackup = load_stackup(self.config, self.base_dir)
 
     def _prepare_mesh(self) -> None:
         print("[INFO] Preparing mesh data...")
@@ -551,32 +530,41 @@ class FVMSolver:
         sorted_indices = np.argsort(morton_keys)
 
         mat_k_array, mat_cp_array = np.zeros(len(centers)), np.zeros(len(centers))
-        for i, tag in enumerate(physical_tags):
-            mat = self.tag_to_material.get(
-                tag, self.materials.get("silicon", {"k": 1, "cp": 1})
-            )
-            mat_k_array[i], mat_cp_array[i] = float(mat["k"]), float(mat["cp"])
 
-        for ov in self.config["heterogeneous_material_overrides"]:
-            if "k" not in ov or "cp" not in ov:
+        # 核心改动：利用 2.5D Stackup 为 3D 网格中心点映射材料属性
+        tol = self.GEOMETRY_TOLERANCE
+        z_cursor = 0.0
+        for layer in self.stackup:
+            z_min = z_cursor
+            z_max = z_cursor + layer.thickness
+            z_cursor = z_max
+
+            layer_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
+            if not np.any(layer_mask):
                 continue
-            x0, y0, z0 = float(ov["lx"]), float(ov["ly"]), float(ov["lz"])
-            x1, y1, z1 = (
-                x0 + float(ov["dx"]),
-                y0 + float(ov["dy"]),
-                z0 + float(ov["dz"]),
-            )
 
-            mask = (
-                (centers[:, 0] >= x0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 0] <= x1 + self.GEOMETRY_TOLERANCE)
-                & (centers[:, 1] >= y0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 1] <= y1 + self.GEOMETRY_TOLERANCE)
-                & (centers[:, 2] >= z0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 2] <= z1 + self.GEOMETRY_TOLERANCE)
+            def_mat = self.materials.get(
+                layer.default_material, {"k": 1.0, "cp": 1.0e6}
             )
-            mat_k_array[mask] = float(ov["k"])
-            mat_cp_array[mask] = float(ov["cp"])
+            mat_k_array[layer_mask] = float(def_mat["k"])
+            mat_cp_array[layer_mask] = float(def_mat["cp"])
+
+            # 覆盖异构材料单元
+            for u in layer.units:
+                u_mask = (
+                    layer_mask
+                    & (centers[:, 0] >= u.lx - tol)
+                    & (centers[:, 0] <= u.lx + u.dx + tol)
+                    & (centers[:, 1] >= u.ly - tol)
+                    & (centers[:, 1] <= u.ly + u.dy + tol)
+                )
+                if np.any(u_mask):
+                    if u.k is not None:
+                        mat_k_array[u_mask] = u.k
+                        mat_cp_array[u_mask] = u.cp
+                    elif u.material and u.material in self.materials:
+                        mat_k_array[u_mask] = float(self.materials[u.material]["k"])
+                        mat_cp_array[u_mask] = float(self.materials[u.material]["cp"])
 
         self.face_to_cell = {}
         for new_id, orig_id in enumerate(sorted_indices):
@@ -613,7 +601,6 @@ class FVMSolver:
         self.boundary_faces = {}
         if "quad" not in self.mesh.cells_dict:
             return
-
         quad_data = self.mesh.cells_dict["quad"]
         quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get("quad", [])
 
@@ -621,7 +608,6 @@ class FVMSolver:
             f = tuple(sorted(nodes))
             if f not in self.face_to_cell:
                 continue
-
             tag = int(quad_tags[i]) if len(quad_tags) > i else -1
             if tag == -1:
                 continue
@@ -634,10 +620,28 @@ class FVMSolver:
                 )
 
     def _precompute_power_matrix(self) -> None:
-        active_units = self.config["active_units"]
-        self.unit_names = [u["name"] for u in active_units]
+        # 核心改动：从 2.5D Stackup 收集 active_units 的 3D 信息
+        active_units_3d = []
+        z_cursor = 0.0
+        for layer in self.stackup:
+            if layer.active:
+                for u in layer.units:
+                    active_units_3d.append(
+                        {
+                            "name": u.name,
+                            "lx": u.lx,
+                            "ly": u.ly,
+                            "lz": z_cursor,
+                            "dx": u.dx,
+                            "dy": u.dy,
+                            "dz": layer.thickness,
+                        }
+                    )
+            z_cursor += layer.thickness
 
-        if not active_units or not self.cells:
+        self.unit_names = [u["name"] for u in active_units_3d]
+
+        if not active_units_3d or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
             return
 
@@ -645,7 +649,7 @@ class FVMSolver:
         cell_lowers, cell_uppers = cell_boxes[:, :3], cell_boxes[:, 3:]
         rows, cols, data = [], [], []
 
-        for unit_idx, unit in enumerate(active_units):
+        for unit_idx, unit in enumerate(active_units_3d):
             vol = unit["dx"] * unit["dy"] * unit["dz"]
             if vol <= 0:
                 continue
@@ -667,29 +671,22 @@ class FVMSolver:
                 data.extend(intersect_vols[valid_mask] / vol)
 
         self.power_matrix = sp.csr_matrix(
-            (data, (rows, cols)), shape=(len(self.cells), len(active_units))
+            (data, (rows, cols)), shape=(len(self.cells), len(active_units_3d))
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
         default_temp = self.config["init_temperature"]
         init_file = self.config["init_temperature_file_path"]
-
         if not init_file or init_file in {"(null)", "None", ""}:
             return np.full(n_cells, default_temp)
-
         init_path = os.path.join(self.base_dir, init_file)
         if not os.path.exists(init_path):
-            print(
-                f"[WARNING] Init file {init_path} not found. Using default {default_temp} K."
-            )
             return np.full(n_cells, default_temp)
 
-        print(f"[INFO] Loading initial state from {init_path}")
         init_mesh = meshio.read(init_path)
         temps = np.zeros(n_cells)
         offset = 0
         hex_data = init_mesh.cell_data.get("Temperature_K", [])
-
         for block, block_temps in zip(init_mesh.cells, hex_data):
             if block.type != "hexahedron":
                 continue
@@ -698,53 +695,40 @@ class FVMSolver:
                 if new_id is not None:
                     temps[new_id] = t
             offset += len(block_temps)
-
         return temps
 
     def assemble_g_matrix(self) -> sp.csr_matrix:
-        print(
-            f"[INFO] Building full 3D non-conformal G matrix ({len(self.cells)} cells)..."
-        )
         rows, cols, data = [], [], []
         tol = self.GEOMETRY_TOLERANCE
-
         sorted_cells = sorted(self.cells, key=lambda c: c.box[0])
         active_list: List[Cell] = []
 
         for c_a in sorted_cells:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
-
             for c_b in active_list:
-                # 提前拦截不重合的包围盒，避免不必要的循环运算
                 if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
                     continue
                 if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
                     continue
-
                 for axis in range(3):
                     if not (
                         abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
                         or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
                     ):
                         continue
-
                     area = _overlap_area(c_a.box, c_b.box, axis)
                     if area <= tol:
                         continue
-
                     res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
                         c_b.dims[axis] / (2.0 * c_b.k * area)
                     )
                     if res <= tol:
                         continue
-
                     g = 1.0 / res
                     rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
                     cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
                     data.extend([-g, -g, g, g])
-
             active_list.append(c_a)
-
         return sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(self.cells))
         )
@@ -752,30 +736,25 @@ class FVMSolver:
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
-
         for bc in self.config["boundary_conditions"]:
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
-
             for tag in bc.get("selection", []):
                 for cell_id, area in self.boundary_faces.get(tag, []):
                     c = self.cells[cell_id]
                     dist = c.vol / area
                     g = area / ((0.5 * dist / c.k) + (1.0 / h))
-
                     rows.append(c.id)
                     cols.append(c.id)
                     data.append(-g)
                     rhs[c.id] += g * t_inf
-
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _load_ptrace(self) -> List[dict]:
         ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         if not os.path.exists(ptrace_path):
             return []
-
         with open(ptrace_path, "r", encoding="utf-8") as f:
             headers = f.readline().split()
             return [
@@ -788,14 +767,12 @@ class FVMSolver:
         self.g_total = self.assemble_g_matrix() + self._build_boundary_terms()[0]
         self.boundary_rhs = self._build_boundary_terms()[1]
         self.ptrace_steps = self._load_ptrace()
-
         if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
 
     def _solve_steady_state(self) -> None:
-        print("[SIM] Solving steady state...")
         mean_powers = np.array(
             [
                 (
@@ -806,24 +783,19 @@ class FVMSolver:
                 for name in self.unit_names
             ]
         )
-
         power_rhs = self.power_matrix @ mean_powers
         temperatures = splinalg.spsolve(-self.g_total, self.boundary_rhs + power_rhs)
-
         print(
             f"[RESULT] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
         )
         self.save(temperatures, "result.vtu")
 
     def _solve_transient(self) -> None:
-        print("[SIM] Solving transient...")
         dt, total_time = self.config["timestep"], self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
-
         ptrace = self.ptrace_steps or [{}] * n_steps
         c_mat = sp.diags([c.cp * c.vol for c in self.cells]) / dt
         solve_step = splinalg.factorized((c_mat - self.g_total).tocsc())
-
         temperatures = self._get_initial_temperatures(len(self.cells))
 
         for i, step_power in enumerate(ptrace):
@@ -836,12 +808,10 @@ class FVMSolver:
                 + (self.power_matrix @ power_vec)
             )
             temperatures = solve_step(rhs)
-
             if i % 10 == 0 or i == len(ptrace) - 1:
                 print(
                     f"[STEP {i:4d}] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
                 )
-
         self.save(temperatures, "transient_result.vtu")
 
     def save(self, temperatures: np.ndarray, output_name: str) -> None:
@@ -850,29 +820,19 @@ class FVMSolver:
         mapped = np.zeros(len(self.cells))
         for c in self.cells:
             mapped[c.original_id] = temperatures[c.id]
-
-        hex_blocks = []
-        temp_chunks = []
-        offset = 0
-
-        # 过滤并仅保留六面体单元，彻底抛弃会被渲染为 NaN 且造成面重叠的 2D Quad 单元
+        hex_blocks, temp_chunks, offset = [], [], 0
         for block in self.mesh.cells:
             if block.type == "hexahedron":
                 count = len(block.data)
                 hex_blocks.append(block)
                 temp_chunks.append(mapped[offset : offset + count])
                 offset += count
-
-        # 利用剥离后的纯 3D Hex 数据重新构建干净的 Mesh
         out_mesh = meshio.Mesh(
             points=self.mesh.points,
             cells=hex_blocks,
             cell_data={"Temperature_K": temp_chunks},
         )
-
-        out_path = os.path.join(self.base_dir, output_name)
-        out_mesh.write(out_path)
-        print(f"[FILE] Results saved to {output_name}")
+        out_mesh.write(os.path.join(self.base_dir, output_name))
 
 ```
 
@@ -883,6 +843,7 @@ from typing import Dict, List
 from collections import deque
 
 import gmsh
+from metahotspot.model25d import Layer25D
 
 
 class GmshMesher:
@@ -892,44 +853,39 @@ class GmshMesher:
 
     def generate_2_5D_mesh(
         self,
-        layers_entities: Dict[int, dict],
-        active_units: List[dict],
+        stackup: List[Layer25D],
         max_mesh_size: float = 0.006,
         min_mesh_size: float = 0.0005,
         refine_distance: float = 0.010,
     ) -> dict:
-        """
-        局部剖分策略：
-        1. 以每一层的实际 functional units 作为初始网格节点（完美贴合 unit 边界，绝不外延拉伸）。
-        2. 若单元过大 (w or h > max_mesh_size)，对其长边进行中点切分。
-        3. 若单元处于热源附近，继续对长边进行细化，直至逼近 min_mesh_size。
 
-        返回:
-            boundary_info (dict): 包含所有外表面分组信息的元数据，供 Converter 过滤。
-        """
-        heat_boxes = [
-            (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
-            for u in active_units
-        ]
+        # 收集所有热源层用于局部加密网格
+        heat_boxes = []
+        for layer in stackup:
+            if layer.active:
+                for u in layer.units:
+                    heat_boxes.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
         node_id = 1
         elem_id = 1
-
         global_node_coords = {}
         all_hex_elements = []
 
-        for tag, layer_data in layers_entities.items():
-            discrete_tag = gmsh.model.addDiscreteEntity(3)
-            gmsh.model.addPhysicalGroup(3, [discrete_tag], tag)
+        z_cursor = 0.0  # 核心改动：在运行时动态追踪 Z 轴
 
-            lz = layer_data["units"][0]["lz"]
-            dz = layer_data["units"][0]["dz"]
+        for layer in stackup:
+            discrete_tag = gmsh.model.addDiscreteEntity(3)
+            gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
+
+            lz = z_cursor
+            dz = layer.thickness
+            z_cursor += dz  # 拉伸到下一层
 
             leaves = []
             queue = deque()
 
-            for u in layer_data["units"]:
-                queue.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
+            for u in layer.units:
+                queue.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
             while queue:
                 x0, y0, x1, y1 = queue.popleft()
@@ -979,15 +935,18 @@ class GmshMesher:
             element_nodes = []
 
             for x0, y0, x1, y1 in leaves:
-                n0 = get_node(x0, y0, lz)
-                n1 = get_node(x1, y0, lz)
-                n2 = get_node(x1, y1, lz)
-                n3 = get_node(x0, y1, lz)
-
-                n4 = get_node(x0, y0, lz + dz)
-                n5 = get_node(x1, y0, lz + dz)
-                n6 = get_node(x1, y1, lz + dz)
-                n7 = get_node(x0, y1, lz + dz)
+                n0, n1, n2, n3 = (
+                    get_node(x0, y0, lz),
+                    get_node(x1, y0, lz),
+                    get_node(x1, y1, lz),
+                    get_node(x0, y1, lz),
+                )
+                n4, n5, n6, n7 = (
+                    get_node(x0, y0, lz + dz),
+                    get_node(x1, y0, lz + dz),
+                    get_node(x1, y1, lz + dz),
+                    get_node(x0, y1, lz + dz),
+                )
 
                 element_tags.append(elem_id)
                 element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
@@ -1002,13 +961,10 @@ class GmshMesher:
                 )
                 all_hex_elements.extend(element_nodes)
 
-        # ---------------------------------------------------------
-        # 边界自然分组与编号 (拓扑提取)
-        # ---------------------------------------------------------
+        # ====== 边界自然分组与编号 ======
         faces_count = {}
         for i in range(0, len(all_hex_elements), 8):
             n = all_hex_elements[i : i + 8]
-            # 六面体的六个面 (统一向内或向外的节点顺序并不影响判断重复面)
             fs = [
                 tuple(sorted([n[0], n[3], n[2], n[1]])),
                 tuple(sorted([n[4], n[5], n[6], n[7]])),
@@ -1020,23 +976,18 @@ class GmshMesher:
             for f in fs:
                 faces_count[f] = faces_count.get(f, 0) + 1
 
-        # 仅出现一次的面为外表面
         boundary_faces = [f for f, count in faces_count.items() if count == 1]
 
-        # 按照共面性 (平面方程) 分组
         groups = {}
         for f in boundary_faces:
             pts = [global_node_coords[n_tag] for n_tag in f]
             xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
-
-            # 因为是正交网格，根据坐标恒定值判断平面轴
             if max(xs) - min(xs) < 1e-9:
                 axis, val = "X", round(xs[0], 6)
             elif max(ys) - min(ys) < 1e-9:
                 axis, val = "Y", round(ys[0], 6)
             else:
                 axis, val = "Z", round(zs[0], 6)
-
             groups.setdefault((axis, val), []).append(f)
 
         boundary_info = {}
@@ -1058,8 +1009,6 @@ class GmshMesher:
                 cx = sum(p[0][0] for p in pts_with_id) / 4.0
                 cy = sum(p[0][1] for p in pts_with_id) / 4.0
                 cz = sum(p[0][2] for p in pts_with_id) / 4.0
-
-                # 为满足 Gmsh 四边形图元定义，将节点按照相对于重心的极角环向排序
                 if axis_name == "X":
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
@@ -1072,11 +1021,9 @@ class GmshMesher:
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][1] - cy, item[0][0] - cx)
                     )
-
                 elem_nodes.extend([item[1] for item in pts_with_id])
 
             gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
-
             boundary_info[base_tag] = {
                 "axis": axis_name,
                 "val": val,
@@ -1194,7 +1141,7 @@ class HotSpotParser:
         index = 0
         while index < len(lines):
             layer_id = int(lines[index])
-            has_power = lines[index + 2].upper() == "Y"
+            active = lines[index + 2].upper() == "Y"
             field = lines[index + 3]
 
             try:
@@ -1204,7 +1151,7 @@ class HotSpotParser:
                 layers.append(
                     {
                         "id": layer_id,
-                        "power": has_power,
+                        "power": active,
                         "cp": cp,
                         "k": 1.0 / resistivity if resistivity != 0 else 0.0,
                         "thickness": float(lines[index + 5]),
@@ -1217,7 +1164,7 @@ class HotSpotParser:
                 layers.append(
                     {
                         "id": layer_id,
-                        "power": has_power,
+                        "power": active,
                         "material": field,
                         "thickness": float(lines[index + 4]),
                         "flp_file": lines[index + 5],
@@ -1227,6 +1174,116 @@ class HotSpotParser:
                 index += 6
 
         return layers
+
+```
+
+### File: model25d.py
+```py
+import json
+import os
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
+
+
+@dataclass
+class Unit2D:
+    name: str
+    lx: float
+    ly: float
+    dx: float
+    dy: float
+    material: Optional[str] = None
+    k: Optional[float] = None
+    cp: Optional[float] = None
+
+
+@dataclass
+class Layer25D:
+    name: str
+    tag: int
+    thickness: float
+    default_material: str
+    active: bool
+    units: List[Unit2D] = field(default_factory=list)
+    # 对于没有 layout 文件的层（如封装层），使用全局尺寸
+    lx: float = 0.0
+    ly: float = 0.0
+    dx: float = 0.01
+    dy: float = 0.01
+
+
+def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
+    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
+    layers = []
+    stackup_cfg = config.get("stackup", [])
+
+    for i, layer_cfg in enumerate(stackup_cfg):
+        tag = layer_cfg.get("tag", i + 100)
+        name = layer_cfg.get("name", f"layer_{tag}")
+        thickness = float(layer_cfg["thickness"])
+        default_material = layer_cfg.get("material", "silicon")
+        active = bool(layer_cfg.get("active", False))
+
+        lx = float(layer_cfg.get("lx", 0.0))
+        ly = float(layer_cfg.get("ly", 0.0))
+        dx = float(layer_cfg.get("dx", 0.01))
+        dy = float(layer_cfg.get("dy", 0.01))
+
+        units = []
+        layout_file = layer_cfg.get("layout_file")
+
+        if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
+            full_path = os.path.join(base_dir, layout_file)
+            if os.path.exists(full_path):
+                with open(full_path, "r", encoding="utf-8") as f:
+                    layout_data = json.load(f)
+                    for u in layout_data:
+                        units.append(
+                            Unit2D(
+                                name=u["name"],
+                                lx=float(u["lx"]),
+                                ly=float(u["ly"]),
+                                dx=float(u["dx"]),
+                                dy=float(u["dy"]),
+                                material=u.get("material"),
+                                k=u.get("k"),
+                                cp=u.get("cp"),
+                            )
+                        )
+            else:
+                print(
+                    f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
+                )
+
+        # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层
+        if not units:
+            units.append(
+                Unit2D(
+                    name=f"{name}_bulk",
+                    lx=lx,
+                    ly=ly,
+                    dx=dx,
+                    dy=dy,
+                    material=default_material,
+                )
+            )
+
+        layers.append(
+            Layer25D(
+                name=name,
+                tag=tag,
+                thickness=thickness,
+                default_material=default_material,
+                active=active,
+                units=units,
+                lx=lx,
+                ly=ly,
+                dx=dx,
+                dy=dy,
+            )
+        )
+
+    return layers
 
 ```
 

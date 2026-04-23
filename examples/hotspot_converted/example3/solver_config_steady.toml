@@ -7,1217 +7,99 @@ ambient = 318.15
 init_temperature = 318.15
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "ev6_3D.ptrace"
-[[heterogeneous_material_overrides]]
-name = "L2_1_TSV_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.0
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "L2_1_TSV_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.0
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TIM_tsv_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.00015
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TIM_tsv_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00015
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "L2_2_TSV_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "L2_2_TSV_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TIM_tsv_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.00031999999999999997
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TIM_tsv_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00031999999999999997
-dx = 0.0124
-dy = 0.00018
-dz = 2e-5
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TSV_0"
+[[stackup]]
+tag = 1
+name = "layer_1"
+thickness = 0.00015
+material = "layer_1_mat"
+active = true
+layout_file = "layouts/layer_1_layout.json"
 lx = 0.0
 ly = 0.0
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[heterogeneous_material_overrides]]
-name = "TSV_1"
-lx = 0.0062
-ly = 0.0
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TSV_2"
-lx = 0.0
-ly = 0.00638
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[heterogeneous_material_overrides]]
-name = "TSV_3"
-lx = 0.0062
-ly = 0.00638
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
-k = 172.41379310344828
-cp = 4000000.0
-
-[[active_units]]
-name = "L2_1_0"
-lx = 8.673617379884035e-19
-ly = 0.00018
-lz = 0.0
-dx = 0.0124
-dy = 0.0062
-dz = 0.00015
-
-[[active_units]]
-name = "L2_1_TSV_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.0
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-
-[[active_units]]
-name = "L2_1_1"
-lx = 8.673617379884035e-19
-ly = 0.00656
-lz = 0.0
-dx = 0.0124
-dy = 0.0062
-dz = 0.00015
-
-[[active_units]]
-name = "L2_1_TSV_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.0
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-
-[[active_units]]
-name = "L2_2_0"
-lx = 8.673617379884035e-19
-ly = 0.00018
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.0062
-dz = 0.00015
-
-[[active_units]]
-name = "L2_2_TSV_0"
-lx = 8.673617379884035e-19
-ly = 0.0
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-
-[[active_units]]
-name = "L2_2_1"
-lx = 8.673617379884035e-19
-ly = 0.00656
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.0062
-dz = 0.00015
-
-[[active_units]]
-name = "L2_2_TSV_1"
-lx = 8.673617379884035e-19
-ly = 0.00638
-lz = 0.00016999999999999999
-dx = 0.0124
-dy = 0.00018
-dz = 0.00015
-
-[[active_units]]
-name = "Icache_0"
-lx = 0.0
-ly = 0.00018
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Dcache_0"
-lx = 0.0031
-ly = 0.00018
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_0_0"
-lx = 0.0
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_1_0"
-lx = 0.001033
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_2_0"
-lx = 0.002067
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_0_0"
-lx = 0.0031
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_1_0"
-lx = 0.004133
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_2_0"
-lx = 0.005167
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_0_0"
-lx = 0.0
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_1_0"
-lx = 0.0011
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_0_0"
-lx = 0.0
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_1_0"
-lx = 0.00055
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_2_0"
-lx = 0.0011
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_3_0"
-lx = 0.00165
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_0_0"
-lx = 0.0
-ly = 0.00476
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_1_0"
-lx = 0.0011
-ly = 0.00476
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_0_0"
-lx = 0.0
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_1_0"
-lx = 0.0011
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntMap_0"
-lx = 0.0022
-ly = 0.00503
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntQ_0"
-lx = 0.0031
-ly = 0.00503
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_0_0"
-lx = 0.0044
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_1_0"
-lx = 0.0053
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntExec_0"
-lx = 0.0044
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0018
-dy = 0.00223
-dz = 0.00015
-
-[[active_units]]
-name = "FPQ_0"
-lx = 0.0022
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00155
-dz = 0.00015
-
-[[active_units]]
-name = "LdStQ_0"
-lx = 0.0031
-ly = 0.00408
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_0_0"
-lx = 0.0031
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_1_0"
-lx = 0.00375
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "TSV_0"
+[[stackup]]
+tag = 2
+name = "layer_2"
+thickness = 2e-5
+material = "layer_2_mat"
+active = false
+layout_file = "layouts/layer_2_layout.json"
 lx = 0.0
 ly = 0.0
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[active_units]]
-name = "Icache_1"
-lx = 0.0062
-ly = 0.00018
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Dcache_1"
-lx = 0.0093
-ly = 0.00018
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_0_1"
-lx = 0.0062
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_1_1"
-lx = 0.007233
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_2_1"
-lx = 0.008267
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_0_1"
-lx = 0.0093
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_1_1"
-lx = 0.010333
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_2_1"
-lx = 0.011367
-ly = 0.00278
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_0_1"
-lx = 0.0062
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_1_1"
-lx = 0.0073
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_0_1"
-lx = 0.0062
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_1_1"
-lx = 0.00675
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_2_1"
-lx = 0.0073
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_3_1"
-lx = 0.00785
-ly = 0.00438
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_0_1"
-lx = 0.0062
-ly = 0.00476
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_1_1"
-lx = 0.0073
-ly = 0.00476
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_0_1"
-lx = 0.0062
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_1_1"
-lx = 0.0073
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntMap_1"
-lx = 0.0084
-ly = 0.00503
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntQ_1"
-lx = 0.0093
-ly = 0.00503
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_0_1"
-lx = 0.0106
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_1_1"
-lx = 0.0115
-ly = 0.00571
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntExec_1"
-lx = 0.0106
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0018
-dy = 0.00223
-dz = 0.00015
-
-[[active_units]]
-name = "FPQ_1"
-lx = 0.0084
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00155
-dz = 0.00015
-
-[[active_units]]
-name = "LdStQ_1"
-lx = 0.0093
-ly = 0.00408
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_0_1"
-lx = 0.0093
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_1_1"
-lx = 0.00995
-ly = 0.00348
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "TSV_1"
-lx = 0.0062
+[[stackup]]
+tag = 3
+name = "layer_3"
+thickness = 0.00015
+material = "layer_3_mat"
+active = true
+layout_file = "layouts/layer_3_layout.json"
+lx = 0.0
 ly = 0.0
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[active_units]]
-name = "Icache_2"
+[[stackup]]
+tag = 4
+name = "layer_4"
+thickness = 2e-5
+material = "layer_4_mat"
+active = false
+layout_file = "layouts/layer_4_layout.json"
 lx = 0.0
-ly = 0.00656
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
+ly = 0.0
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[active_units]]
-name = "Dcache_2"
-lx = 0.0031
-ly = 0.00656
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_0_2"
+[[stackup]]
+tag = 5
+name = "layer_5"
+thickness = 0.00015
+material = "layer_5_mat"
+active = true
+layout_file = "layouts/layer_5_layout.json"
 lx = 0.0
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
+ly = 0.0
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[active_units]]
-name = "Bpred_1_2"
-lx = 0.001033
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_2_2"
-lx = 0.002067
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_0_2"
-lx = 0.0031
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_1_2"
-lx = 0.004133
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_2_2"
-lx = 0.005167
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_0_2"
+[[stackup]]
+tag = 6
+name = "layer_6"
+thickness = 2e-5
+material = "layer_6_mat"
+active = false
+layout_file = "layouts/layer_6_layout.json"
 lx = 0.0
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
+ly = 0.0
+dx = 0.012400000000000001
+dy = 0.01276
 
-[[active_units]]
-name = "FPAdd_1_2"
-lx = 0.0011
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
+[[stackup]]
+tag = 1001
+name = "Spreader"
+thickness = 0.001
+material = "copper"
+active = false
+lx = -0.008799999999999999
+ly = -0.00862
+dx = 0.03
+dy = 0.03
 
-[[active_units]]
-name = "FPReg_0_2"
-lx = 0.0
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_1_2"
-lx = 0.00055
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_2_2"
-lx = 0.0011
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_3_2"
-lx = 0.00165
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_0_2"
-lx = 0.0
-ly = 0.01114
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_1_2"
-lx = 0.0011
-ly = 0.01114
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_0_2"
-lx = 0.0
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_1_2"
-lx = 0.0011
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntMap_2"
-lx = 0.0022
-ly = 0.01141
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntQ_2"
-lx = 0.0031
-ly = 0.01141
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_0_2"
-lx = 0.0044
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_1_2"
-lx = 0.0053
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntExec_2"
-lx = 0.0044
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0018
-dy = 0.00223
-dz = 0.00015
-
-[[active_units]]
-name = "FPQ_2"
-lx = 0.0022
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00155
-dz = 0.00015
-
-[[active_units]]
-name = "LdStQ_2"
-lx = 0.0031
-ly = 0.01046
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_0_2"
-lx = 0.0031
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_1_2"
-lx = 0.00375
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "TSV_2"
-lx = 0.0
-ly = 0.00638
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
-
-[[active_units]]
-name = "Icache_3"
-lx = 0.0062
-ly = 0.00656
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Dcache_3"
-lx = 0.0093
-ly = 0.00656
-lz = 0.00033999999999999997
-dx = 0.0031
-dy = 0.0026
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_0_3"
-lx = 0.0062
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_1_3"
-lx = 0.007233
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "Bpred_2_3"
-lx = 0.008267
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_0_3"
-lx = 0.0093
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_1_3"
-lx = 0.010333
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "DTB_2_3"
-lx = 0.011367
-ly = 0.00916
-lz = 0.00033999999999999997
-dx = 0.001033
-dy = 0.0007
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_0_3"
-lx = 0.0062
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPAdd_1_3"
-lx = 0.0073
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.0009
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_0_3"
-lx = 0.0062
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_1_3"
-lx = 0.00675
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_2_3"
-lx = 0.0073
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPReg_3_3"
-lx = 0.00785
-ly = 0.01076
-lz = 0.00033999999999999997
-dx = 0.00055
-dy = 0.00038
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_0_3"
-lx = 0.0062
-ly = 0.01114
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMul_1_3"
-lx = 0.0073
-ly = 0.01114
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_0_3"
-lx = 0.0062
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "FPMap_1_3"
-lx = 0.0073
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0011
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntMap_3"
-lx = 0.0084
-ly = 0.01141
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntQ_3"
-lx = 0.0093
-ly = 0.01141
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00135
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_0_3"
-lx = 0.0106
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntReg_1_3"
-lx = 0.0115
-ly = 0.01209
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00067
-dz = 0.00015
-
-[[active_units]]
-name = "IntExec_3"
-lx = 0.0106
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0018
-dy = 0.00223
-dz = 0.00015
-
-[[active_units]]
-name = "FPQ_3"
-lx = 0.0084
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.0009
-dy = 0.00155
-dz = 0.00015
-
-[[active_units]]
-name = "LdStQ_3"
-lx = 0.0093
-ly = 0.01046
-lz = 0.00033999999999999997
-dx = 0.0013
-dy = 0.00095
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_0_3"
-lx = 0.0093
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "ITB_1_3"
-lx = 0.00995
-ly = 0.00986
-lz = 0.00033999999999999997
-dx = 0.00065
-dy = 0.0006
-dz = 0.00015
-
-[[active_units]]
-name = "TSV_3"
-lx = 0.0062
-ly = 0.00638
-lz = 0.00033999999999999997
-dx = 0.0062
-dy = 0.00018
-dz = 0.00015
+[[stackup]]
+tag = 1002
+name = "Sink"
+thickness = 0.0069
+material = "copper"
+active = false
+lx = -0.023799999999999998
+ly = -0.02362
+dx = 0.06
+dy = 0.06
 
 [[boundary_conditions]]
 name = "sink_conv"
@@ -1225,15 +107,6 @@ type = "convection"
 h = 2777.777777777778
 T_inf = 318.15
 selection = [ 2041,]
-
-[domain_material_assignment]
-layer_0_mat = [ 1,]
-layer_1_mat = [ 2,]
-layer_2_mat = [ 3,]
-layer_3_mat = [ 4,]
-layer_4_mat = [ 5,]
-layer_5_mat = [ 6,]
-copper = [ 1001, 1002,]
 
 [materials.silicon]
 k = 130.0
@@ -1261,32 +134,32 @@ cp = 4200000.0
 fluid = true
 dynamic_viscosity = 0.000889
 
-[materials.layer_0_mat]
+[materials.layer_1_mat]
 k = 100.0
 cp = 1750000.0
-fluid = false
-
-[materials.layer_1_mat]
-k = 4.0
-cp = 4000000.0
 fluid = false
 
 [materials.layer_2_mat]
-k = 100.0
-cp = 1750000.0
-fluid = false
-
-[materials.layer_3_mat]
 k = 4.0
 cp = 4000000.0
 fluid = false
 
-[materials.layer_4_mat]
+[materials.layer_3_mat]
 k = 100.0
 cp = 1750000.0
 fluid = false
 
+[materials.layer_4_mat]
+k = 4.0
+cp = 4000000.0
+fluid = false
+
 [materials.layer_5_mat]
+k = 100.0
+cp = 1750000.0
+fluid = false
+
+[materials.layer_6_mat]
 k = 4.0
 cp = 4000000.0
 fluid = false

@@ -50,11 +50,10 @@ conda activate numerical
 
 **文件一：格式化配置文件 `solver_config.toml`**
 * 放弃所有散乱的参数，向求解器传递纯粹的物理信息和求解控制信息。
-* 示例：[example.toml](example.toml)
 
 **文件二：标准 FVM 网格文件 `mesh.msh` (VTK Unstructured Grid)**
 * gmsh v4标准格式
-* 支持非共形网格定义与物理分组，可通过 Interface 实体描述交接面。
+* 支持非共形网格定义与物理分组。
 
 **文件三：格式化结果文件 `result_temp.vtu`**
 * 通过 `meshio` 把gmsh格式转化为vtu格式，增加一个新的 Cell Data 字段 `Temperature_K`，并另存为该文件。前端拿到这个文件即可无脑渲染。

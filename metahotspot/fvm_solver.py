@@ -9,6 +9,8 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 import toml
 
+from metahotspot.model25d import load_stackup
+
 
 @dataclass(slots=True)
 class Cell:
@@ -16,7 +18,7 @@ class Cell:
     id: int
     center: np.ndarray
     dims: np.ndarray
-    box: np.ndarray  # [xmin, ymin, zmin, xmax, ymax, zmax]
+    box: np.ndarray
     k: float
     cp: float
     tag: int
@@ -43,7 +45,7 @@ class FVMSolver:
         self.mesh = meshio.read(self.mesh_path)
 
         self._sanitize_config()
-        self._init_materials()
+        self._init_materials_and_stackup()
 
         self.cells: List[Cell] = []
         self._prepare_mesh()
@@ -59,18 +61,13 @@ class FVMSolver:
             self.config.get("simulation_type", "steady")
         )
         self.config["ptrace_file_path"] = str(self.config.get("ptrace_file_path", ""))
-        self.config.setdefault("domain_material_assignment", {})
-        self.config.setdefault("heterogeneous_material_overrides", [])
-        self.config.setdefault("active_units", [])
+        self.config.setdefault("stackup", [])
         self.config.setdefault("boundary_conditions", [])
         self.config.setdefault("init_temperature_file_path", None)
 
-    def _init_materials(self) -> None:
+    def _init_materials_and_stackup(self) -> None:
         self.materials = self.config.get("materials", {})
-        self.tag_to_material = {}
-        for mat_name, tags in self.config["domain_material_assignment"].items():
-            for tag in tags:
-                self.tag_to_material[tag] = self.materials[mat_name]
+        self.stackup = load_stackup(self.config, self.base_dir)
 
     def _prepare_mesh(self) -> None:
         print("[INFO] Preparing mesh data...")
@@ -102,32 +99,41 @@ class FVMSolver:
         sorted_indices = np.argsort(morton_keys)
 
         mat_k_array, mat_cp_array = np.zeros(len(centers)), np.zeros(len(centers))
-        for i, tag in enumerate(physical_tags):
-            mat = self.tag_to_material.get(
-                tag, self.materials.get("silicon", {"k": 1, "cp": 1})
-            )
-            mat_k_array[i], mat_cp_array[i] = float(mat["k"]), float(mat["cp"])
 
-        for ov in self.config["heterogeneous_material_overrides"]:
-            if "k" not in ov or "cp" not in ov:
+        # 核心改动：利用 2.5D Stackup 为 3D 网格中心点映射材料属性
+        tol = self.GEOMETRY_TOLERANCE
+        z_cursor = 0.0
+        for layer in self.stackup:
+            z_min = z_cursor
+            z_max = z_cursor + layer.thickness
+            z_cursor = z_max
+
+            layer_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
+            if not np.any(layer_mask):
                 continue
-            x0, y0, z0 = float(ov["lx"]), float(ov["ly"]), float(ov["lz"])
-            x1, y1, z1 = (
-                x0 + float(ov["dx"]),
-                y0 + float(ov["dy"]),
-                z0 + float(ov["dz"]),
-            )
 
-            mask = (
-                (centers[:, 0] >= x0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 0] <= x1 + self.GEOMETRY_TOLERANCE)
-                & (centers[:, 1] >= y0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 1] <= y1 + self.GEOMETRY_TOLERANCE)
-                & (centers[:, 2] >= z0 - self.GEOMETRY_TOLERANCE)
-                & (centers[:, 2] <= z1 + self.GEOMETRY_TOLERANCE)
+            def_mat = self.materials.get(
+                layer.default_material, {"k": 1.0, "cp": 1.0e6}
             )
-            mat_k_array[mask] = float(ov["k"])
-            mat_cp_array[mask] = float(ov["cp"])
+            mat_k_array[layer_mask] = float(def_mat["k"])
+            mat_cp_array[layer_mask] = float(def_mat["cp"])
+
+            # 覆盖异构材料单元
+            for u in layer.units:
+                u_mask = (
+                    layer_mask
+                    & (centers[:, 0] >= u.lx - tol)
+                    & (centers[:, 0] <= u.lx + u.dx + tol)
+                    & (centers[:, 1] >= u.ly - tol)
+                    & (centers[:, 1] <= u.ly + u.dy + tol)
+                )
+                if np.any(u_mask):
+                    if u.k is not None:
+                        mat_k_array[u_mask] = u.k
+                        mat_cp_array[u_mask] = u.cp
+                    elif u.material and u.material in self.materials:
+                        mat_k_array[u_mask] = float(self.materials[u.material]["k"])
+                        mat_cp_array[u_mask] = float(self.materials[u.material]["cp"])
 
         self.face_to_cell = {}
         for new_id, orig_id in enumerate(sorted_indices):
@@ -164,7 +170,6 @@ class FVMSolver:
         self.boundary_faces = {}
         if "quad" not in self.mesh.cells_dict:
             return
-
         quad_data = self.mesh.cells_dict["quad"]
         quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get("quad", [])
 
@@ -172,7 +177,6 @@ class FVMSolver:
             f = tuple(sorted(nodes))
             if f not in self.face_to_cell:
                 continue
-
             tag = int(quad_tags[i]) if len(quad_tags) > i else -1
             if tag == -1:
                 continue
@@ -185,10 +189,28 @@ class FVMSolver:
                 )
 
     def _precompute_power_matrix(self) -> None:
-        active_units = self.config["active_units"]
-        self.unit_names = [u["name"] for u in active_units]
+        # 核心改动：从 2.5D Stackup 收集 active_units 的 3D 信息
+        active_units_3d = []
+        z_cursor = 0.0
+        for layer in self.stackup:
+            if layer.active:
+                for u in layer.units:
+                    active_units_3d.append(
+                        {
+                            "name": u.name,
+                            "lx": u.lx,
+                            "ly": u.ly,
+                            "lz": z_cursor,
+                            "dx": u.dx,
+                            "dy": u.dy,
+                            "dz": layer.thickness,
+                        }
+                    )
+            z_cursor += layer.thickness
 
-        if not active_units or not self.cells:
+        self.unit_names = [u["name"] for u in active_units_3d]
+
+        if not active_units_3d or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
             return
 
@@ -196,7 +218,7 @@ class FVMSolver:
         cell_lowers, cell_uppers = cell_boxes[:, :3], cell_boxes[:, 3:]
         rows, cols, data = [], [], []
 
-        for unit_idx, unit in enumerate(active_units):
+        for unit_idx, unit in enumerate(active_units_3d):
             vol = unit["dx"] * unit["dy"] * unit["dz"]
             if vol <= 0:
                 continue
@@ -218,29 +240,22 @@ class FVMSolver:
                 data.extend(intersect_vols[valid_mask] / vol)
 
         self.power_matrix = sp.csr_matrix(
-            (data, (rows, cols)), shape=(len(self.cells), len(active_units))
+            (data, (rows, cols)), shape=(len(self.cells), len(active_units_3d))
         )
 
     def _get_initial_temperatures(self, n_cells: int) -> np.ndarray:
         default_temp = self.config["init_temperature"]
         init_file = self.config["init_temperature_file_path"]
-
         if not init_file or init_file in {"(null)", "None", ""}:
             return np.full(n_cells, default_temp)
-
         init_path = os.path.join(self.base_dir, init_file)
         if not os.path.exists(init_path):
-            print(
-                f"[WARNING] Init file {init_path} not found. Using default {default_temp} K."
-            )
             return np.full(n_cells, default_temp)
 
-        print(f"[INFO] Loading initial state from {init_path}")
         init_mesh = meshio.read(init_path)
         temps = np.zeros(n_cells)
         offset = 0
         hex_data = init_mesh.cell_data.get("Temperature_K", [])
-
         for block, block_temps in zip(init_mesh.cells, hex_data):
             if block.type != "hexahedron":
                 continue
@@ -249,53 +264,40 @@ class FVMSolver:
                 if new_id is not None:
                     temps[new_id] = t
             offset += len(block_temps)
-
         return temps
 
     def assemble_g_matrix(self) -> sp.csr_matrix:
-        print(
-            f"[INFO] Building full 3D non-conformal G matrix ({len(self.cells)} cells)..."
-        )
         rows, cols, data = [], [], []
         tol = self.GEOMETRY_TOLERANCE
-
         sorted_cells = sorted(self.cells, key=lambda c: c.box[0])
         active_list: List[Cell] = []
 
         for c_a in sorted_cells:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
-
             for c_b in active_list:
-                # 提前拦截不重合的包围盒，避免不必要的循环运算
                 if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
                     continue
                 if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
                     continue
-
                 for axis in range(3):
                     if not (
                         abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
                         or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
                     ):
                         continue
-
                     area = _overlap_area(c_a.box, c_b.box, axis)
                     if area <= tol:
                         continue
-
                     res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
                         c_b.dims[axis] / (2.0 * c_b.k * area)
                     )
                     if res <= tol:
                         continue
-
                     g = 1.0 / res
                     rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
                     cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
                     data.extend([-g, -g, g, g])
-
             active_list.append(c_a)
-
         return sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(self.cells))
         )
@@ -303,30 +305,25 @@ class FVMSolver:
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
-
         for bc in self.config["boundary_conditions"]:
             if bc.get("type") != "convection":
                 continue
             h, t_inf = float(bc["h"]), float(bc["T_inf"])
-
             for tag in bc.get("selection", []):
                 for cell_id, area in self.boundary_faces.get(tag, []):
                     c = self.cells[cell_id]
                     dist = c.vol / area
                     g = area / ((0.5 * dist / c.k) + (1.0 / h))
-
                     rows.append(c.id)
                     cols.append(c.id)
                     data.append(-g)
                     rhs[c.id] += g * t_inf
-
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _load_ptrace(self) -> List[dict]:
         ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         if not os.path.exists(ptrace_path):
             return []
-
         with open(ptrace_path, "r", encoding="utf-8") as f:
             headers = f.readline().split()
             return [
@@ -339,14 +336,12 @@ class FVMSolver:
         self.g_total = self.assemble_g_matrix() + self._build_boundary_terms()[0]
         self.boundary_rhs = self._build_boundary_terms()[1]
         self.ptrace_steps = self._load_ptrace()
-
         if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
 
     def _solve_steady_state(self) -> None:
-        print("[SIM] Solving steady state...")
         mean_powers = np.array(
             [
                 (
@@ -357,24 +352,19 @@ class FVMSolver:
                 for name in self.unit_names
             ]
         )
-
         power_rhs = self.power_matrix @ mean_powers
         temperatures = splinalg.spsolve(-self.g_total, self.boundary_rhs + power_rhs)
-
         print(
             f"[RESULT] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
         )
         self.save(temperatures, "result.vtu")
 
     def _solve_transient(self) -> None:
-        print("[SIM] Solving transient...")
         dt, total_time = self.config["timestep"], self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
-
         ptrace = self.ptrace_steps or [{}] * n_steps
         c_mat = sp.diags([c.cp * c.vol for c in self.cells]) / dt
         solve_step = splinalg.factorized((c_mat - self.g_total).tocsc())
-
         temperatures = self._get_initial_temperatures(len(self.cells))
 
         for i, step_power in enumerate(ptrace):
@@ -387,12 +377,10 @@ class FVMSolver:
                 + (self.power_matrix @ power_vec)
             )
             temperatures = solve_step(rhs)
-
             if i % 10 == 0 or i == len(ptrace) - 1:
                 print(
                     f"[STEP {i:4d}] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
                 )
-
         self.save(temperatures, "transient_result.vtu")
 
     def save(self, temperatures: np.ndarray, output_name: str) -> None:
@@ -401,26 +389,16 @@ class FVMSolver:
         mapped = np.zeros(len(self.cells))
         for c in self.cells:
             mapped[c.original_id] = temperatures[c.id]
-
-        hex_blocks = []
-        temp_chunks = []
-        offset = 0
-
-        # 过滤并仅保留六面体单元，彻底抛弃会被渲染为 NaN 且造成面重叠的 2D Quad 单元
+        hex_blocks, temp_chunks, offset = [], [], 0
         for block in self.mesh.cells:
             if block.type == "hexahedron":
                 count = len(block.data)
                 hex_blocks.append(block)
                 temp_chunks.append(mapped[offset : offset + count])
                 offset += count
-
-        # 利用剥离后的纯 3D Hex 数据重新构建干净的 Mesh
         out_mesh = meshio.Mesh(
             points=self.mesh.points,
             cells=hex_blocks,
             cell_data={"Temperature_K": temp_chunks},
         )
-
-        out_path = os.path.join(self.base_dir, output_name)
-        out_mesh.write(out_path)
-        print(f"[FILE] Results saved to {output_name}")
+        out_mesh.write(os.path.join(self.base_dir, output_name))

@@ -3,6 +3,7 @@ from typing import Dict, List
 from collections import deque
 
 import gmsh
+from metahotspot.model25d import Layer25D
 
 
 class GmshMesher:
@@ -12,44 +13,39 @@ class GmshMesher:
 
     def generate_2_5D_mesh(
         self,
-        layers_entities: Dict[int, dict],
-        active_units: List[dict],
+        stackup: List[Layer25D],
         max_mesh_size: float = 0.006,
         min_mesh_size: float = 0.0005,
         refine_distance: float = 0.010,
     ) -> dict:
-        """
-        局部剖分策略：
-        1. 以每一层的实际 functional units 作为初始网格节点（完美贴合 unit 边界，绝不外延拉伸）。
-        2. 若单元过大 (w or h > max_mesh_size)，对其长边进行中点切分。
-        3. 若单元处于热源附近，继续对长边进行细化，直至逼近 min_mesh_size。
 
-        返回:
-            boundary_info (dict): 包含所有外表面分组信息的元数据，供 Converter 过滤。
-        """
-        heat_boxes = [
-            (u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"])
-            for u in active_units
-        ]
+        # 收集所有热源层用于局部加密网格
+        heat_boxes = []
+        for layer in stackup:
+            if layer.active:
+                for u in layer.units:
+                    heat_boxes.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
         node_id = 1
         elem_id = 1
-
         global_node_coords = {}
         all_hex_elements = []
 
-        for tag, layer_data in layers_entities.items():
-            discrete_tag = gmsh.model.addDiscreteEntity(3)
-            gmsh.model.addPhysicalGroup(3, [discrete_tag], tag)
+        z_cursor = 0.0  # 核心改动：在运行时动态追踪 Z 轴
 
-            lz = layer_data["units"][0]["lz"]
-            dz = layer_data["units"][0]["dz"]
+        for layer in stackup:
+            discrete_tag = gmsh.model.addDiscreteEntity(3)
+            gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
+
+            lz = z_cursor
+            dz = layer.thickness
+            z_cursor += dz  # 拉伸到下一层
 
             leaves = []
             queue = deque()
 
-            for u in layer_data["units"]:
-                queue.append((u["lx"], u["ly"], u["lx"] + u["dx"], u["ly"] + u["dy"]))
+            for u in layer.units:
+                queue.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
             while queue:
                 x0, y0, x1, y1 = queue.popleft()
@@ -99,15 +95,18 @@ class GmshMesher:
             element_nodes = []
 
             for x0, y0, x1, y1 in leaves:
-                n0 = get_node(x0, y0, lz)
-                n1 = get_node(x1, y0, lz)
-                n2 = get_node(x1, y1, lz)
-                n3 = get_node(x0, y1, lz)
-
-                n4 = get_node(x0, y0, lz + dz)
-                n5 = get_node(x1, y0, lz + dz)
-                n6 = get_node(x1, y1, lz + dz)
-                n7 = get_node(x0, y1, lz + dz)
+                n0, n1, n2, n3 = (
+                    get_node(x0, y0, lz),
+                    get_node(x1, y0, lz),
+                    get_node(x1, y1, lz),
+                    get_node(x0, y1, lz),
+                )
+                n4, n5, n6, n7 = (
+                    get_node(x0, y0, lz + dz),
+                    get_node(x1, y0, lz + dz),
+                    get_node(x1, y1, lz + dz),
+                    get_node(x0, y1, lz + dz),
+                )
 
                 element_tags.append(elem_id)
                 element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
@@ -122,13 +121,10 @@ class GmshMesher:
                 )
                 all_hex_elements.extend(element_nodes)
 
-        # ---------------------------------------------------------
-        # 边界自然分组与编号 (拓扑提取)
-        # ---------------------------------------------------------
+        # ====== 边界自然分组与编号 ======
         faces_count = {}
         for i in range(0, len(all_hex_elements), 8):
             n = all_hex_elements[i : i + 8]
-            # 六面体的六个面 (统一向内或向外的节点顺序并不影响判断重复面)
             fs = [
                 tuple(sorted([n[0], n[3], n[2], n[1]])),
                 tuple(sorted([n[4], n[5], n[6], n[7]])),
@@ -140,23 +136,18 @@ class GmshMesher:
             for f in fs:
                 faces_count[f] = faces_count.get(f, 0) + 1
 
-        # 仅出现一次的面为外表面
         boundary_faces = [f for f, count in faces_count.items() if count == 1]
 
-        # 按照共面性 (平面方程) 分组
         groups = {}
         for f in boundary_faces:
             pts = [global_node_coords[n_tag] for n_tag in f]
             xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
-
-            # 因为是正交网格，根据坐标恒定值判断平面轴
             if max(xs) - min(xs) < 1e-9:
                 axis, val = "X", round(xs[0], 6)
             elif max(ys) - min(ys) < 1e-9:
                 axis, val = "Y", round(ys[0], 6)
             else:
                 axis, val = "Z", round(zs[0], 6)
-
             groups.setdefault((axis, val), []).append(f)
 
         boundary_info = {}
@@ -178,8 +169,6 @@ class GmshMesher:
                 cx = sum(p[0][0] for p in pts_with_id) / 4.0
                 cy = sum(p[0][1] for p in pts_with_id) / 4.0
                 cz = sum(p[0][2] for p in pts_with_id) / 4.0
-
-                # 为满足 Gmsh 四边形图元定义，将节点按照相对于重心的极角环向排序
                 if axis_name == "X":
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
@@ -192,11 +181,9 @@ class GmshMesher:
                     pts_with_id.sort(
                         key=lambda item: math.atan2(item[0][1] - cy, item[0][0] - cx)
                     )
-
                 elem_nodes.extend([item[1] for item in pts_with_id])
 
             gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
-
             boundary_info[base_tag] = {
                 "axis": axis_name,
                 "val": val,
