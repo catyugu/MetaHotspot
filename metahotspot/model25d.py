@@ -1,7 +1,8 @@
-import json
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
+
+from metahotspot.hotspot_parser import HotSpotParser
 
 
 @dataclass
@@ -32,9 +33,10 @@ class Layer25D:
 
 
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
+    """Load 2.5D stackup from stackup config with per-layer FLP files."""
     layers = []
     stackup_cfg = config.get("stackup", [])
+    parser = HotSpotParser()
 
     for i, layer_cfg in enumerate(stackup_cfg):
         tag = layer_cfg.get("tag", i + 100)
@@ -49,29 +51,36 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
         dy = float(layer_cfg.get("dy", 0.01))
 
         units = []
-        layout_file = layer_cfg.get("layout_file")
+        flp_file = str(layer_cfg.get("flp_file", "")).strip()
 
-        if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
-            full_path = os.path.join(base_dir, layout_file)
+        if flp_file and flp_file.lower() not in {"none", "(null)", ""}:
+            full_path = os.path.join(base_dir, flp_file)
             if os.path.exists(full_path):
-                with open(full_path, "r", encoding="utf-8") as f:
-                    layout_data = json.load(f)
-                    for u in layout_data:
+                flp_data = parser.parse_flp(full_path)
+                if flp_data:
+                    ox = lx
+                    oy = ly
+
+                    for u in flp_data:
                         units.append(
                             Unit2D(
                                 name=u["name"],
-                                lx=float(u["lx"]),
-                                ly=float(u["ly"]),
-                                dx=float(u["dx"]),
-                                dy=float(u["dy"]),
-                                material=u.get("material"),
-                                k=u.get("k"),
-                                cp=u.get("cp"),
+                                lx=float(u["left_x"]) + ox,
+                                ly=float(u["bottom_y"]) + oy,
+                                dx=float(u["width"]),
+                                dy=float(u["height"]),
+                                material=None,
+                                k=float(u["k"]) if "k" in u else None,
+                                cp=(
+                                    float(u["specific_heat"])
+                                    if "specific_heat" in u
+                                    else None
+                                ),
                             )
                         )
             else:
                 print(
-                    f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
+                    f"[WARNING] FLP file {full_path} not found. Falling back to bulk layer."
                 )
 
         # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层

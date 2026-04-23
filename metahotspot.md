@@ -16,7 +16,6 @@
 ### File: converter.py
 ```py
 import os
-import json
 import shutil
 from typing import Dict, List, Tuple
 
@@ -71,8 +70,6 @@ class SimulationModelBuilder25D:
         self.parser = parser
         self.example_dir = example_dir
         self.output_dir = output_dir
-        self.layouts_dir = os.path.join(output_dir, "layouts")
-        os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
         self.config = {**DEFAULT_CONFIG_SCHEMA, **raw_config}
@@ -148,51 +145,27 @@ class SimulationModelBuilder25D:
             }
         return chosen
 
-    def _export_layout_json(
-        self,
-        name: str,
-        flp_units: List[dict],
-        layer_k: float = None,
-        layer_cp: float = None,
-        is_numeric: bool = False,
-    ) -> str:
-        if not flp_units:
+    def _copy_flp_to_output(self, flp_source_name: str, fallback_name: str) -> str:
+        if not flp_source_name:
+            return ""
+        src_path = os.path.join(self.example_dir, flp_source_name)
+        if not os.path.exists(src_path):
             return ""
 
-        min_x, min_y, lw, lh = _layout_bbox_from_flp(flp_units)
-        ox = (self.global_width - lw) / 2.0 - min_x
-        oy = (self.global_height - lh) / 2.0 - min_y
-
-        json_units = []
-        for u in flp_units:
-            unit_data = {
-                "name": u["name"],
-                "lx": u["left_x"] + ox,
-                "ly": u["bottom_y"] + oy,
-                "dx": u["width"],
-                "dy": u["height"],
-            }
-            if is_numeric and ("k" in u or "specific_heat" in u):
-                unit_data["k"] = float(u.get("k", layer_k))
-                unit_data["cp"] = float(u.get("specific_heat", layer_cp))
-            json_units.append(unit_data)
-
-        file_name = f"{name}_layout.json"
-        with open(
-            os.path.join(self.layouts_dir, file_name), "w", encoding="utf-8"
-        ) as f:
-            json.dump(json_units, f, indent=2)
-        return f"layouts/{file_name}"
+        target_name = os.path.basename(flp_source_name) or f"{fallback_name}.flp"
+        dst_path = os.path.join(self.output_dir, target_name)
+        if os.path.abspath(src_path) != os.path.abspath(dst_path):
+            shutil.copy2(src_path, dst_path)
+        return target_name
 
     def build_chip_layers(self) -> "SimulationModelBuilder25D":
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
         lcf_layers = self.parser.parse_lcf(lcf_path) if lcf_path else []
 
         if not lcf_layers:
-            flp_units = self.parser.parse_flp(
-                _find_first_by_suffix(self.example_dir, ".flp")
-            )
-            layout_ref = self._export_layout_json("layer_1", flp_units)
+            flp_path = _find_first_by_suffix(self.example_dir, ".flp")
+            flp_units = self.parser.parse_flp(flp_path)
+            flp_ref = self._copy_flp_to_output(os.path.basename(flp_path), "layer_1")
             self.stackup.append(
                 {
                     "tag": 1,
@@ -200,7 +173,7 @@ class SimulationModelBuilder25D:
                     "thickness": self.config["t_chip"],
                     "material": "silicon",
                     "active": bool(flp_units),
-                    "layout_file": layout_ref,
+                    "flp_file": flp_ref,
                     "lx": 0.0,
                     "ly": 0.0,
                     "dx": self.global_width,
@@ -223,12 +196,9 @@ class SimulationModelBuilder25D:
                     "fluid": False,
                 }
 
-            flp_units = self.parser.parse_flp(
-                os.path.join(self.example_dir, layer["flp_file"])
-            )
-            layout_ref = self._export_layout_json(
-                name, flp_units, layer.get("k"), layer.get("cp"), is_numeric
-            )
+            flp_name = layer.get("flp_file", "")
+            flp_units = self.parser.parse_flp(os.path.join(self.example_dir, flp_name))
+            flp_ref = self._copy_flp_to_output(flp_name, name)
 
             self.stackup.append(
                 {
@@ -237,7 +207,7 @@ class SimulationModelBuilder25D:
                     "thickness": thickness,
                     "material": mat_name,
                     "active": bool(layer.get("power") and flp_units),
-                    "layout_file": layout_ref,
+                    "flp_file": flp_ref,
                     "lx": 0.0,
                     "ly": 0.0,
                     "dx": self.global_width,
@@ -1179,10 +1149,11 @@ class HotSpotParser:
 
 ### File: model25d.py
 ```py
-import json
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
+
+from metahotspot.hotspot_parser import HotSpotParser
 
 
 @dataclass
@@ -1213,9 +1184,10 @@ class Layer25D:
 
 
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
+    """Load 2.5D stackup from stackup config with per-layer FLP files."""
     layers = []
     stackup_cfg = config.get("stackup", [])
+    parser = HotSpotParser()
 
     for i, layer_cfg in enumerate(stackup_cfg):
         tag = layer_cfg.get("tag", i + 100)
@@ -1230,29 +1202,36 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
         dy = float(layer_cfg.get("dy", 0.01))
 
         units = []
-        layout_file = layer_cfg.get("layout_file")
+        flp_file = str(layer_cfg.get("flp_file", "")).strip()
 
-        if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
-            full_path = os.path.join(base_dir, layout_file)
+        if flp_file and flp_file.lower() not in {"none", "(null)", ""}:
+            full_path = os.path.join(base_dir, flp_file)
             if os.path.exists(full_path):
-                with open(full_path, "r", encoding="utf-8") as f:
-                    layout_data = json.load(f)
-                    for u in layout_data:
+                flp_data = parser.parse_flp(full_path)
+                if flp_data:
+                    ox = lx
+                    oy = ly
+
+                    for u in flp_data:
                         units.append(
                             Unit2D(
                                 name=u["name"],
-                                lx=float(u["lx"]),
-                                ly=float(u["ly"]),
-                                dx=float(u["dx"]),
-                                dy=float(u["dy"]),
-                                material=u.get("material"),
-                                k=u.get("k"),
-                                cp=u.get("cp"),
+                                lx=float(u["left_x"]) + ox,
+                                ly=float(u["bottom_y"]) + oy,
+                                dx=float(u["width"]),
+                                dy=float(u["height"]),
+                                material=None,
+                                k=float(u["k"]) if "k" in u else None,
+                                cp=(
+                                    float(u["specific_heat"])
+                                    if "specific_heat" in u
+                                    else None
+                                ),
                             )
                         )
             else:
                 print(
-                    f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
+                    f"[WARNING] FLP file {full_path} not found. Falling back to bulk layer."
                 )
 
         # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层
