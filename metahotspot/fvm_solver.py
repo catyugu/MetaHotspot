@@ -1,7 +1,7 @@
 import math
 import os
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 import meshio
 import numpy as np
@@ -23,6 +23,10 @@ class Cell:
     cp: float
     tag: int
     vol: float
+    is_fluid: bool = False
+    velocity: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    density: float = 1000.0
+    inlet_temp: Optional[float] = None
 
 
 def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
@@ -135,33 +139,72 @@ class FVMSolver:
                         mat_k_array[u_mask] = float(self.materials[u.material]["k"])
                         mat_cp_array[u_mask] = float(self.materials[u.material]["cp"])
 
-        self.face_to_cell = {}
+        self.face_to_cells: Dict[tuple, List[int]] = {}
         for new_id, orig_id in enumerate(sorted_indices):
             nodes = hex_data[orig_id]
-            self.cells.append(
-                Cell(
-                    original_id=orig_id,
-                    id=new_id,
-                    center=centers[orig_id],
-                    dims=dims[orig_id],
-                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
-                    k=mat_k_array[orig_id],
-                    cp=mat_cp_array[orig_id],
-                    tag=int(physical_tags[orig_id]),
-                    vol=float(vols[orig_id]),
-                )
-            )
 
-            fs = [
-                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),
-                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),
-                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),
-                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),
-                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),
-                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),
+            # Initialize fluid properties to defaults
+            is_fluid = False
+            velocity = np.zeros(3)
+            density = 1000.0
+            inlet_temp = None
+
+            # Find matching Unit2D from stackup to get fluid properties
+            for layer in self.stackup:
+                for u in layer.units:
+                    if (
+                        abs(lowers[orig_id][0] - u.lx) < tol
+                        and abs(lowers[orig_id][1] - u.ly) < tol
+                        and abs(uppers[orig_id][0] - (u.lx + u.dx)) < tol
+                        and abs(uppers[orig_id][1] - (u.ly + u.dy)) < tol
+                    ):
+                        is_fluid = u.is_fluid
+                        velocity = np.array(u.velocity)
+                        density = u.density
+                        inlet_temp = u.inlet_temp
+                        break
+
+            c = Cell(
+                original_id=orig_id,
+                id=new_id,
+                center=centers[orig_id],
+                dims=dims[orig_id],
+                box=np.array([*lowers[orig_id], *uppers[orig_id]]),
+                k=float(mat_k_array[orig_id]),
+                cp=float(mat_cp_array[orig_id]),
+                tag=int(physical_tags[orig_id]),
+                vol=float(vols[orig_id]),
+                is_fluid=is_fluid,
+                velocity=velocity,
+                density=density,
+                inlet_temp=inlet_temp,
+            )
+            self.cells.append(c)
+
+            fs = [  # 6 faces of hexahedron
+                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),  # -Z face
+                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),  # +Z face
+                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),  # -Y face
+                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),  # +Y face
+                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),  # -X face
+                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),  # +X face
             ]
             for f in fs:
-                self.face_to_cell[f] = new_id
+                if f not in self.face_to_cells:
+                    self.face_to_cells[f] = []
+                self.face_to_cells[f].append(new_id)
+
+        # Build internal and boundary face maps
+        self.internal_faces = {
+            f: tuple(c_ids)
+            for f, c_ids in self.face_to_cells.items()
+            if len(c_ids) == 2
+        }
+        self.boundary_faces_all = {
+            f: tuple(c_ids)
+            for f, c_ids in self.face_to_cells.items()
+            if len(c_ids) == 1
+        }
 
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
         self._extract_boundary_faces()
@@ -175,7 +218,7 @@ class FVMSolver:
 
         for i, nodes in enumerate(quad_data):
             f = tuple(sorted(nodes))
-            if f not in self.face_to_cell:
+            if f not in self.face_to_cells:
                 continue
             tag = int(quad_tags[i]) if len(quad_tags) > i else -1
             if tag == -1:
@@ -185,8 +228,120 @@ class FVMSolver:
             area = np.linalg.norm(np.cross(p[1] - p[0], p[2] - p[0]))
             if area > self.GEOMETRY_TOLERANCE:
                 self.boundary_faces.setdefault(tag, []).append(
-                    (self.face_to_cell[f], area)
+                    (self.face_to_cells[f][0], area)
                 )
+
+    def _add_fluid_advection_generic(self) -> Tuple[sp.csr_matrix, np.ndarray]:
+        """Assemble fluid advection matrix using upwind scheme.
+
+        Returns:
+            Tuple of (advection_matrix, advection_rhs)
+        """
+        n = len(self.cells)
+        rows, cols, data = [], [], []
+        rhs = np.zeros(n)
+        tol = self.GEOMETRY_TOLERANCE
+
+        # 1. Compute internal fluid face fluxes
+        for f, (c0_id, c1_id) in self.internal_faces.items():
+            c0, c1 = self.cells[c0_id], self.cells[c1_id]
+
+            # Skip if not both fluid
+            if not (c0.is_fluid and c1.is_fluid):
+                continue
+
+            # Get face points from mesh
+            pts = self.mesh.points[list(f)]
+
+            # Calculate face normal and area
+            # Using first three points to define plane (counterclockwise)
+            v1 = pts[1] - pts[0]
+            v2 = pts[2] - pts[0]
+            cross_prod = np.cross(v1, v2)
+            area = np.linalg.norm(cross_prod)
+
+            if area < tol:
+                continue
+
+            n_vec = cross_prod / area
+
+            # Ensure normal points from c0 to c1 (c1 - c0 direction)
+            vec_c0_c1 = c1.center - c0.center
+            if np.dot(n_vec, vec_c0_c1) < 0:
+                n_vec = -n_vec
+
+            # Average velocity at face (use upwind velocity)
+            v_avg = 0.5 * (c0.velocity + c1.velocity)
+
+            # Volume flux: Q = dot(v_avg, n_vec) * area
+            vol_flux = np.dot(v_avg, n_vec) * area
+
+            # Mass flux: m_dot = vol_flux * density (use upstream density)
+            # Determine upstream cell based on velocity direction
+            if np.dot(v_avg, n_vec) > 0:
+                # Flow from c0 to c1, c0 is upstream
+                upstream, downstream = c0, c1
+                upstream_id, downstream_id = c0_id, c1_id
+            else:
+                # Flow from c1 to c0, c1 is upstream
+                upstream, downstream = c1, c0
+                upstream_id, downstream_id = c1_id, c0_id
+
+            mass_flux = vol_flux * upstream.density
+            cp = upstream.cp
+            advection_term = mass_flux * cp
+
+            # Only add significant terms
+            if abs(advection_term) > tol:
+                # Donor cell loses energy (negative coefficient)
+                rows.append(upstream_id)
+                cols.append(upstream_id)
+                data.append(-advection_term)
+
+                # Receiver cell gains energy (positive coefficient)
+                rows.append(downstream_id)
+                cols.append(downstream_id)
+                data.append(advection_term)
+
+        # 2. Handle fluid boundary faces (inlet/outlet)
+        for f, (c0_id,) in self.boundary_faces_all.items():
+            c0 = self.cells[c0_id]
+
+            # Skip if not fluid or no inlet temperature defined
+            if not c0.is_fluid or c0.inlet_temp is None:
+                continue
+
+            # Get face points
+            pts = self.mesh.points[list(f)]
+
+            # Calculate face area
+            v1 = pts[1] - pts[0]
+            v2 = pts[2] - pts[0]
+            cross_prod = np.cross(v1, v2)
+            area = np.linalg.norm(cross_prod)
+
+            if area < tol:
+                continue
+
+            # Velocity magnitude at boundary
+            vel_mag = np.linalg.norm(c0.velocity)
+            if vel_mag < tol:
+                continue
+
+            # Mass flux at inlet
+            mass_flux = vel_mag * area * c0.density
+
+            # Inlet: energy enters system from inlet_temp
+            # Add source term to RHS: m_dot * cp * T_inlet
+            rhs[c0_id] += mass_flux * c0.cp * c0.inlet_temp
+
+            # Boundary cell loses energy via outflow
+            rows.append(c0_id)
+            cols.append(c0_id)
+            data.append(-mass_flux * c0.cp)
+
+        G_adv = sp.csr_matrix((data, (rows, cols)), shape=(n, n))
+        return G_adv, rhs
 
     def _precompute_power_matrix(self) -> None:
         # 核心改动：从 2.5D Stackup 收集 active_units 的 3D 信息
@@ -335,6 +490,17 @@ class FVMSolver:
     def solve(self) -> None:
         self.g_total = self.assemble_g_matrix() + self._build_boundary_terms()[0]
         self.boundary_rhs = self._build_boundary_terms()[1]
+
+        # Add fluid advection if any fluid cells exist
+        fluid_cells = [c for c in self.cells if c.is_fluid]
+        if fluid_cells:
+            print(
+                f"[INFO] Found {len(fluid_cells)} fluid cells, computing advection..."
+            )
+            advection_mat, advection_rhs = self._add_fluid_advection_generic()
+            self.g_total = self.g_total + advection_mat
+            self.boundary_rhs = self.boundary_rhs + advection_rhs
+
         self.ptrace_steps = self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             self._solve_steady_state()

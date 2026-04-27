@@ -88,7 +88,11 @@ class SimulationModelBuilder25D:
         lcf_layers = self.parser.parse_lcf(lcf_path) if lcf_path else []
 
         files_to_check = (
-            [layer["flp_file"] for layer in lcf_layers]
+            [
+                layer["flp_file"]
+                for layer in lcf_layers
+                if not layer.get("flp_file", "").lower().endswith(".csv")
+            ]
             if lcf_layers
             else [f for f in os.listdir(self.example_dir) if f.endswith(".flp")]
         )
@@ -100,6 +104,25 @@ class SimulationModelBuilder25D:
                 _, _, w, h = _layout_bbox_from_flp(units)
                 widths.append(w)
                 heights.append(h)
+
+        # If no FLP files found (e.g., only CSV), use default or calculate from CSV
+        if not widths and lcf_layers:
+            for layer in lcf_layers:
+                flp_file = layer.get("flp_file", "")
+                if flp_file.lower().endswith(".csv"):
+                    # Calculate size from CSV grid dimensions
+                    csv_path = os.path.join(self.example_dir, flp_file)
+                    if os.path.exists(csv_path):
+                        import csv
+
+                        with open(csv_path, "r", encoding="utf-8") as f:
+                            reader = csv.reader(f)
+                            rows = sum(1 for _ in reader)
+                        # Assuming 0.03m chip
+                        widths.append(0.03)
+                        heights.append(0.03)
+                        break
+
         return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
     def build_materials(self) -> "SimulationModelBuilder25D":
@@ -198,6 +221,7 @@ class SimulationModelBuilder25D:
             thickness = float(layer["thickness"])
             is_numeric = layer["type"] == "numeric"
             mat_name = f"{name}_mat" if is_numeric else str(layer["material"])
+            flp_file = layer.get("flp_file", "")
 
             if is_numeric:
                 self.materials[mat_name] = {
@@ -206,9 +230,48 @@ class SimulationModelBuilder25D:
                     "fluid": False,
                 }
 
-            flp_units = self.parser.parse_flp(
-                os.path.join(self.example_dir, layer["flp_file"])
-            )
+            # Check if floorplan file is actually a microchannel CSV grid
+            if flp_file.lower().endswith(".csv"):
+                # Parse as microchannel grid instead of floorplan
+                csv_path = os.path.join(self.example_dir, flp_file)
+                mc_layer_cfg = {
+                    "dx": self.global_width / 40.0,  # Approximate grid resolution
+                    "dy": self.global_height / 39.0,
+                    "thickness": thickness,
+                }
+                mc_units = self._build_microchannel_layer(csv_path, mc_layer_cfg)
+                if mc_units:
+                    mc_layout_path = os.path.join(
+                        self.layouts_dir, f"{name}_microchannel_layout.json"
+                    )
+                    with open(mc_layout_path, "w", encoding="utf-8") as f:
+                        json.dump(mc_units, f)
+
+                    # Add water material if not exists
+                    if "water" not in self.materials:
+                        self.materials["water"] = {
+                            "k": 0.6,
+                            "cp": 4.17e6,
+                            "fluid": True,
+                        }
+
+                    self.stackup.append(
+                        {
+                            "tag": tag,
+                            "name": name,
+                            "thickness": thickness,
+                            "material": "water",
+                            "active": True,
+                            "layout_file": f"layouts/{name}_microchannel_layout.json",
+                            "lx": 0.0,
+                            "ly": 0.0,
+                            "dx": self.global_width,
+                            "dy": self.global_height,
+                        }
+                    )
+                continue
+
+            flp_units = self.parser.parse_flp(os.path.join(self.example_dir, flp_file))
             layout_ref = self._export_layout_json(
                 name, flp_units, layer.get("k"), layer.get("cp"), is_numeric
             )
@@ -286,7 +349,120 @@ class SimulationModelBuilder25D:
                 "selection": [],
             }
         )
+
+        # Check for microchannel layer (horizontal.csv)
+        mc_csv = os.path.join(self.example_dir, "horizontal.csv")
+        if os.path.exists(mc_csv):
+            mc_units = self._build_microchannel_layer(
+                mc_csv,
+                {
+                    "dx": self.global_width / 100.0,
+                    "dy": self.global_height / 100.0,
+                },
+            )
+            if mc_units:
+                mc_layout_path = os.path.join(
+                    self.layouts_dir, "microchannel_layout.json"
+                )
+                with open(mc_layout_path, "w", encoding="utf-8") as f:
+                    json.dump(mc_units, f)
+
+                mc_layer = {
+                    "tag": 500,
+                    "name": "microchannel",
+                    "thickness": 0.0001,
+                    "material": "water",
+                    "active": True,
+                    "layout_file": "layouts/microchannel_layout.json",
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+                self.stackup.append(mc_layer)
+                if "water" not in self.materials:
+                    self.materials["water"] = {"k": 0.6, "cp": 4.17e6, "fluid": True}
+
         return self
+
+    def _build_microchannel_layer(self, csv_path: str, layer_cfg: dict) -> List[dict]:
+        """Parse horizontal.csv and create microchannel macro-units.
+
+        Args:
+            csv_path: Path to horizontal.csv (0=solid, 1=fluid, 2=inlet_wall, 3=outlet_wall)
+            layer_cfg: Layer configuration dict with dx, dy, thickness, etc.
+
+        Returns:
+            List of unit dicts representing merged microchannel cells.
+        """
+        if not os.path.exists(csv_path):
+            return []
+
+        import csv
+
+        grid = []
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                # Handle both '0, 1, 2' and '0,1,2' formats
+                row_vals = [int(x.strip()) for x in row if x.strip()]
+                if row_vals:
+                    grid.append(row_vals)
+
+        if not grid:
+            return []
+
+        dx = layer_cfg.get("dx", 0.01)
+        dy = layer_cfg.get("dy", 0.01)
+        rows, cols = len(grid), len(grid[0])
+
+        # Recalculate cell size based on actual grid dimensions
+        if rows > 0 and cols > 0:
+            # Assuming chip is 0.03m x 0.03m
+            dx = 0.03 / cols
+            dy = 0.03 / rows
+
+        units = []
+        channel_id = 0
+
+        # Scan rows for contiguous horizontal fluid sequences
+        for row in range(rows):
+            col = 0
+            while col < cols:
+                val = grid[row][col]
+                if val == 1:  # Found fluid pixel
+                    start_col = col
+                    # Extend to end of contiguous fluid region
+                    while col < cols and grid[row][col] == 1:
+                        col += 1
+                    end_col = col - 1
+
+                    # Create macro channel unit
+                    y = (rows - 1 - row) * dy  # Flip Y (CSV row 0 = top)
+                    left_x = start_col * dx
+                    width = (end_col - start_col + 1) * dx
+                    height = dy
+
+                    unit = {
+                        "name": f"microchannel_{channel_id}",
+                        "lx": left_x,
+                        "ly": y,
+                        "dx": width,
+                        "dy": height,
+                        "is_fluid": True,
+                        "material": "water",
+                        "k": 0.6,
+                        "cp": 4.17e6,
+                        "velocity": [0.0, 0.1, 0.0],  # Y-direction flow
+                        "density": 1000.0,
+                        "inlet_temp": 298.15,
+                    }
+                    units.append(unit)
+                    channel_id += 1
+                else:
+                    col += 1
+
+        return units
 
     def get_result(self) -> dict:
         return {

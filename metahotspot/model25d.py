@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 
 @dataclass
@@ -14,6 +14,10 @@ class Unit2D:
     material: Optional[str] = None
     k: Optional[float] = None
     cp: Optional[float] = None
+    is_fluid: bool = False
+    velocity: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    density: float = 1000.0
+    inlet_temp: Optional[float] = None
 
 
 @dataclass
@@ -67,6 +71,10 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 material=u.get("material"),
                                 k=u.get("k"),
                                 cp=u.get("cp"),
+                                is_fluid=u.get("is_fluid", False),
+                                velocity=u.get("velocity", (0.0, 0.0, 0.0)),
+                                density=u.get("density", 1000.0),
+                                inlet_temp=u.get("inlet_temp"),
                             )
                         )
             else:
@@ -84,6 +92,9 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     dx=dx,
                     dy=dy,
                     material=default_material,
+                    is_fluid=False,
+                    velocity=(0.0, 0.0, 0.0),
+                    density=1000.0,
                 )
             )
 
