@@ -105,7 +105,11 @@ class SimulationModelBuilder25D:
         lcf_layers = self.parser.parse_lcf(lcf_path) if lcf_path else []
 
         files_to_check = (
-            [layer["flp_file"] for layer in lcf_layers]
+            [
+                layer["flp_file"]
+                for layer in lcf_layers
+                if not layer.get("flp_file", "").lower().endswith(".csv")
+            ]
             if lcf_layers
             else [f for f in os.listdir(self.example_dir) if f.endswith(".flp")]
         )
@@ -117,6 +121,25 @@ class SimulationModelBuilder25D:
                 _, _, w, h = _layout_bbox_from_flp(units)
                 widths.append(w)
                 heights.append(h)
+
+        # If no FLP files found (e.g., only CSV), use default or calculate from CSV
+        if not widths and lcf_layers:
+            for layer in lcf_layers:
+                flp_file = layer.get("flp_file", "")
+                if flp_file.lower().endswith(".csv"):
+                    # Calculate size from CSV grid dimensions
+                    csv_path = os.path.join(self.example_dir, flp_file)
+                    if os.path.exists(csv_path):
+                        import csv
+
+                        with open(csv_path, "r", encoding="utf-8") as f:
+                            reader = csv.reader(f)
+                            rows = sum(1 for _ in reader)
+                        # Assuming 0.03m chip
+                        widths.append(0.03)
+                        heights.append(0.03)
+                        break
+
         return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
     def build_materials(self) -> "SimulationModelBuilder25D":
@@ -215,6 +238,7 @@ class SimulationModelBuilder25D:
             thickness = float(layer["thickness"])
             is_numeric = layer["type"] == "numeric"
             mat_name = f"{name}_mat" if is_numeric else str(layer["material"])
+            flp_file = layer.get("flp_file", "")
 
             if is_numeric:
                 self.materials[mat_name] = {
@@ -223,9 +247,48 @@ class SimulationModelBuilder25D:
                     "fluid": False,
                 }
 
-            flp_units = self.parser.parse_flp(
-                os.path.join(self.example_dir, layer["flp_file"])
-            )
+            # Check if floorplan file is actually a microchannel CSV grid
+            if flp_file.lower().endswith(".csv"):
+                # Parse as microchannel grid instead of floorplan
+                csv_path = os.path.join(self.example_dir, flp_file)
+                mc_layer_cfg = {
+                    "dx": self.global_width / 40.0,  # Approximate grid resolution
+                    "dy": self.global_height / 39.0,
+                    "thickness": thickness,
+                }
+                mc_units = self._build_microchannel_layer(csv_path, mc_layer_cfg)
+                if mc_units:
+                    mc_layout_path = os.path.join(
+                        self.layouts_dir, f"{name}_microchannel_layout.json"
+                    )
+                    with open(mc_layout_path, "w", encoding="utf-8") as f:
+                        json.dump(mc_units, f)
+
+                    # Add water material if not exists
+                    if "water" not in self.materials:
+                        self.materials["water"] = {
+                            "k": 0.6,
+                            "cp": 4.17e6,
+                            "fluid": True,
+                        }
+
+                    self.stackup.append(
+                        {
+                            "tag": tag,
+                            "name": name,
+                            "thickness": thickness,
+                            "material": "water",
+                            "active": True,
+                            "layout_file": f"layouts/{name}_microchannel_layout.json",
+                            "lx": 0.0,
+                            "ly": 0.0,
+                            "dx": self.global_width,
+                            "dy": self.global_height,
+                        }
+                    )
+                continue
+
+            flp_units = self.parser.parse_flp(os.path.join(self.example_dir, flp_file))
             layout_ref = self._export_layout_json(
                 name, flp_units, layer.get("k"), layer.get("cp"), is_numeric
             )
@@ -297,13 +360,240 @@ class SimulationModelBuilder25D:
             {
                 "name": "sink_conv",
                 "type": "convection",
+                "face": "+Z",  # Top surface of the sink (outer boundary)
+                "target": "Sink",  # Applies only to Sink layer
                 "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
                 "T_inf": self.config["ambient"],
-                "target_geometry": "top_surface",
-                "selection": [],
             }
         )
+
+        # Check for microchannel layer (horizontal.csv) in various locations
+        # Could be at root level or in subdirectory like microchannel_geometries/
+        mc_csv = None
+
+        # Check root level first
+        root_csv = os.path.join(self.example_dir, "horizontal.csv")
+        if os.path.exists(root_csv):
+            mc_csv = root_csv
+
+        # Check subdirectories
+        if mc_csv is None:
+            for entry in os.listdir(self.example_dir):
+                full_path = os.path.join(self.example_dir, entry)
+                if os.path.isdir(full_path):
+                    sub_csv = os.path.join(full_path, "horizontal.csv")
+                    if os.path.exists(sub_csv):
+                        mc_csv = sub_csv
+                        break
+
+        # Check if LCF already created a microchannel layer (water layer with CSV-based layout)
+        mc_layer = None
+        mc_layer_idx = None
+        for i, layer in enumerate(self.stackup):
+            layout_file = layer.get("layout_file", "")
+            if (
+                layer.get("material") == "water"
+                and "microchannel" in layout_file.lower()
+            ):
+                mc_layer = layer
+                mc_layer_idx = i
+                break
+
+        if mc_csv is not None or mc_layer is not None:
+            # Use existing microchannel layer from LCF, or create new one
+            if mc_layer is None:
+                mc_units = self._build_microchannel_layer(
+                    mc_csv,
+                    {
+                        "dx": self.global_width / 100.0,
+                        "dy": self.global_height / 100.0,
+                    },
+                )
+                if mc_units:
+                    mc_layout_path = os.path.join(
+                        self.layouts_dir, "microchannel_layout.json"
+                    )
+                    with open(mc_layout_path, "w", encoding="utf-8") as f:
+                        json.dump(mc_units, f)
+
+                mc_layer = {
+                    "tag": 500,
+                    "name": "microchannel",
+                    "thickness": 0.0001,
+                    "material": "water",
+                    "active": True,
+                    "layout_file": "layouts/microchannel_layout.json",
+                    "lx": 0.0,
+                    "ly": 0.0,
+                    "dx": self.global_width,
+                    "dy": self.global_height,
+                }
+                self.stackup.append(mc_layer)
+                mc_layer_idx = len(self.stackup) - 1
+            else:
+                # Use existing layer, check if we need to build layout from CSV
+                if mc_csv is not None and mc_layer.get("layout_file") == "":
+                    mc_units = self._build_microchannel_layer(
+                        mc_csv,
+                        {
+                            "dx": self.global_width / 100.0,
+                            "dy": self.global_height / 100.0,
+                        },
+                    )
+                    if mc_units:
+                        mc_layout_path = os.path.join(
+                            self.layouts_dir, "microchannel_layout.json"
+                        )
+                        with open(mc_layout_path, "w", encoding="utf-8") as f:
+                            json.dump(mc_units, f)
+                        mc_layer["layout_file"] = "layouts/microchannel_layout.json"
+
+            if "water" not in self.materials:
+                self.materials["water"] = {
+                    "k": 0.6069,
+                    "cp": 4.172638e6,
+                    "fluid": True,
+                }
+
+            # Add microchannel pressure boundary conditions
+            inlet_temp = float(self.config.get("inlet_temperature", 298.15))
+            pumping_pressure = float(self.config.get("pumping_pressure", 52000))
+
+            # Use the actual layer name from the microchannel layer
+            layer_name = mc_layer["name"]
+
+            self.boundary_conditions.append(
+                {
+                    "name": "mc_inlet",
+                    "type": "pressure",
+                    "face": "-X",
+                    "target": layer_name,
+                    "pressure": pumping_pressure,
+                    "temperature": inlet_temp,
+                }
+            )
+
+            self.boundary_conditions.append(
+                {
+                    "name": "mc_outlet",
+                    "type": "pressure",
+                    "face": "+X",
+                    "target": layer_name,
+                    "pressure": 0.0,
+                }
+            )
+
         return self
+
+    def _build_microchannel_layer(self, csv_path: str, layer_cfg: dict) -> List[dict]:
+        """Parse horizontal.csv and create merged microchannel channel entities.
+
+        Merges contiguous fluid cells (value 1) into full channel rectangles.
+        Inlet/outlet walls (values 2/3) are detected geometrically by the solver
+        using boundary face direction matching, so we just mark all as cell_type=1.
+
+        CSV format:
+            0 = solid (skip)
+            1 = fluid (active channel)
+            2 = inlet wall
+            3 = outlet wall
+        """
+        if not os.path.exists(csv_path):
+            return []
+
+        import csv
+
+        grid = []
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                row_vals = [int(x.strip()) for x in row if x.strip()]
+                if row_vals:
+                    grid.append(row_vals)
+
+        if not grid:
+            return []
+
+        rows, cols = len(grid), len(grid[0])
+
+        # Cell size based on chip dimensions
+        dx = 0.03 / cols
+        dy = 0.03 / rows
+
+        # Find all fluid regions (value 1) - merge contiguous cells into channels
+        visited = [[False] * cols for _ in range(rows)]
+        channels = []
+
+        def flood_fill(start_row, start_col):
+            """Find all contiguous fluid cells (value 1) connected to start."""
+            if visited[start_row][start_col]:
+                return None
+            if grid[start_row][start_col] != 1:
+                return None
+
+            queue = [(start_row, start_col)]
+            cells = []
+            while queue:
+                r, c = queue.pop()
+                if visited[r][c]:
+                    continue
+                if grid[r][c] != 1:
+                    continue
+                visited[r][c] = True
+                cells.append((r, c))
+                if r > 0:
+                    queue.append((r - 1, c))
+                if r < rows - 1:
+                    queue.append((r + 1, c))
+                if c > 0:
+                    queue.append((r, c - 1))
+                if c < cols - 1:
+                    queue.append((r, c + 1))
+            return cells
+
+        # Find all fluid regions
+        for row in range(rows):
+            for col in range(cols):
+                if grid[row][col] == 1 and not visited[row][col]:
+                    cells = flood_fill(row, col)
+                    if cells:
+                        min_r = min(r for r, c in cells)
+                        max_r = max(r for r, c in cells)
+                        min_c = min(c for r, c in cells)
+                        max_c = max(c for r, c in cells)
+                        channels.append(
+                            {
+                                "row_range": (min_r, max_r),
+                                "col_range": (min_c, max_c),
+                            }
+                        )
+
+        # Build units from channels - each channel becomes one entity
+        units = []
+        for idx, ch in enumerate(channels):
+            min_r, max_r = ch["row_range"]
+            min_c, max_c = ch["col_range"]
+
+            # Y: flip row index (CSV row 0 = top)
+            ly = (rows - 1 - max_r) * dy
+            lx = min_c * dx
+            unit_dy = (max_r - min_r + 1) * dy
+            unit_dx = (max_c - min_c + 1) * dx
+
+            unit = {
+                "name": f"mc_channel_{idx}",
+                "lx": lx,
+                "ly": ly,
+                "dx": unit_dx,
+                "dy": unit_dy,
+                "cell_type": 1,  # All merged channels are fluid
+                "material": "water",
+                "k": 0.6069,
+                "cp": 4.172638e6,
+            }
+            units.append(unit)
+
+        return units
 
     def get_result(self) -> dict:
         return {
@@ -319,8 +609,11 @@ def convert_hotspot_to_metahotspot(
     output_dir: str,
     simulation_type: str = "steady",
     output_config_name: str = "solver_config.toml",
-    generate_mesh: bool = True,
 ) -> str:
+    """Convert HotSpot example to MetaHotspot config TOML.
+
+    Note: Meshing is decoupled. Use GmshMesher separately with the config path.
+    """
     os.makedirs(output_dir, exist_ok=True)
     builder = SimulationModelBuilder25D(HotSpotParser(), example_dir, output_dir)
     model = (
@@ -354,45 +647,6 @@ def convert_hotspot_to_metahotspot(
     if config["init_file"] and config["init_file"] not in {"(null)", "null", "None"}:
         toml_data["init_temperature_file_path"] = config["init_file"]
 
-    if generate_mesh:
-        from metahotspot.model25d import load_stackup
-
-        loaded_stackup = load_stackup(toml_data, output_dir)
-        mesher = GmshMesher()
-        boundary_info = mesher.generate_2_5D_mesh(
-            stackup=loaded_stackup,
-            max_mesh_size=0.003,
-            min_mesh_size=0.0005,
-            refine_distance=0.001,
-        )
-        mesher.finalize(os.path.join(output_dir, "mesh.msh"))
-
-        if boundary_info:
-            z_max_val = max(
-                info["val"] for info in boundary_info.values() if info["axis"] == "Z"
-            )
-            top_tags = [
-                tag
-                for tag, info in boundary_info.items()
-                if info["axis"] == "Z" and abs(info["val"] - z_max_val) < 1e-12
-            ]
-            for bc in toml_data["boundary_conditions"]:
-                if bc.pop("target_geometry", None) == "top_surface":
-                    bc["selection"] = top_tags
-    else:
-        steady_config = os.path.join(output_dir, "solver_config_steady.toml")
-        if os.path.exists(steady_config):
-            try:
-                prev_data = toml.load(steady_config)
-                for bc_new, bc_old in zip(
-                    toml_data["boundary_conditions"],
-                    prev_data.get("boundary_conditions", []),
-                ):
-                    bc_new["selection"] = bc_old.get("selection", [])
-                    bc_new.pop("target_geometry", None)
-            except Exception:
-                pass
-
     config_path = os.path.join(output_dir, output_config_name)
     with open(config_path, "w", encoding="utf-8") as handle:
         toml.dump(toml_data, handle)
@@ -403,6 +657,10 @@ def convert_hotspot_to_metahotspot(
 def convert_hotspot_with_modes(
     example_dir: str, output_dir: str, mode: str = "both"
 ) -> List[str]:
+    """Convert HotSpot example to MetaHotspot configs (steady + transient).
+
+    Meshing is decoupled - call GmshMesher separately with config path.
+    """
     mode = mode.lower().strip()
     if mode == "steady":
         return [
@@ -418,10 +676,10 @@ def convert_hotspot_with_modes(
         ]
     return [
         convert_hotspot_to_metahotspot(
-            example_dir, output_dir, "steady", "solver_config_steady.toml", True
+            example_dir, output_dir, "steady", "solver_config_steady.toml"
         ),
         convert_hotspot_to_metahotspot(
-            example_dir, output_dir, "transient", "solver_config_transient.toml", False
+            example_dir, output_dir, "transient", "solver_config_transient.toml"
         ),
     ]
 
@@ -431,8 +689,8 @@ def convert_hotspot_with_modes(
 ```py
 import math
 import os
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
 
 import meshio
 import numpy as np
@@ -445,6 +703,15 @@ from metahotspot.model25d import load_stackup
 
 @dataclass(slots=True)
 class Cell:
+    """FVM cell representing a hexahedral mesh element.
+
+    Cell types for microchannel:
+        0 = SOLID (non-fluid)
+        1 = FLUID (active fluid cell)
+        2 = INLET (fluid cell with pressure BC)
+        3 = OUTLET (fluid cell with pressure BC)
+    """
+
     original_id: int
     id: int
     center: np.ndarray
@@ -454,6 +721,14 @@ class Cell:
     cp: float
     tag: int
     vol: float
+    name: str = ""  # Unit name for BC matching
+    layer_name: str = ""  # Layer name for BC matching
+    cell_type: int = 0  # 0=solid, 1=fluid, 2=inlet, 3=outlet
+    # Computed from pressure solve
+    pressure: float = 0.0
+    velocity: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    # Inlet temperature for advective BCs (set from pressure BC config)
+    inlet_temp: float = 298.15
 
 
 def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
@@ -464,8 +739,20 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 
 class FVMSolver:
+    """Finite Volume Method solver for 2.5D thermal simulation.
+
+    Supports microchannel cooling with pressure-driven flow:
+    - Build pressure matrix from hydraulic network
+    - Solve for pressure at each fluid cell
+    - Compute velocity from pressure gradient
+    - Apply upwind advection scheme
+    """
+
     GEOMETRY_TOLERANCE = 1e-12
     DEFAULT_INITIAL_TEMPERATURE = 318.15
+    # Water properties for microchannel
+    WATER_DENSITY = 1000.0  # kg/m^3
+    WATER_VISCOSITY = 8.89e-4  # Pa·s
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -530,6 +817,7 @@ class FVMSolver:
         sorted_indices = np.argsort(morton_keys)
 
         mat_k_array, mat_cp_array = np.zeros(len(centers)), np.zeros(len(centers))
+        cell_layer_names = np.array([""] * len(centers), dtype=object)
 
         # 核心改动：利用 2.5D Stackup 为 3D 网格中心点映射材料属性
         tol = self.GEOMETRY_TOLERANCE
@@ -548,6 +836,7 @@ class FVMSolver:
             )
             mat_k_array[layer_mask] = float(def_mat["k"])
             mat_cp_array[layer_mask] = float(def_mat["cp"])
+            cell_layer_names[layer_mask] = layer.name
 
             # 覆盖异构材料单元
             for u in layer.units:
@@ -566,58 +855,478 @@ class FVMSolver:
                         mat_k_array[u_mask] = float(self.materials[u.material]["k"])
                         mat_cp_array[u_mask] = float(self.materials[u.material]["cp"])
 
-        self.face_to_cell = {}
+        # Pre-compute layer z-bounds for cell matching
+        layer_z_min = {}
+        z_cursor = 0.0
+        for layer in self.stackup:
+            layer_z_min[layer.name] = z_cursor
+            z_cursor += layer.thickness
+
+        self.face_to_cells: Dict[tuple, List[int]] = {}
         for new_id, orig_id in enumerate(sorted_indices):
             nodes = hex_data[orig_id]
-            self.cells.append(
-                Cell(
-                    original_id=orig_id,
-                    id=new_id,
-                    center=centers[orig_id],
-                    dims=dims[orig_id],
-                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
-                    k=mat_k_array[orig_id],
-                    cp=mat_cp_array[orig_id],
-                    tag=int(physical_tags[orig_id]),
-                    vol=float(vols[orig_id]),
-                )
-            )
 
-            fs = [
-                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),
-                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),
-                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),
-                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),
-                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),
-                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),
+            # Initialize cell properties
+            cell_type = 0  # Default: solid
+            unit_name = ""
+            layer_name = cell_layer_names[orig_id]
+
+            # Find matching Unit2D from stackup
+            # Use center-based matching to handle mesh refinement
+            # Only search in the cell's own layer (determined by z-position)
+            c_center = centers[orig_id]
+            for layer in self.stackup:
+                # Check if cell's z-center is within this layer's z-range
+                z_min = layer_z_min[layer.name]
+                z_max = z_min + layer.thickness
+                if c_center[2] >= z_min - tol and c_center[2] <= z_max + tol:
+                    # Cell belongs to this layer, search its units
+                    for u in layer.units:
+                        if (
+                            c_center[0] >= u.lx - tol
+                            and c_center[0] <= u.lx + u.dx + tol
+                            and c_center[1] >= u.ly - tol
+                            and c_center[1] <= u.ly + u.dy + tol
+                        ):
+                            cell_type = getattr(
+                                u, "cell_type", 0
+                            )  # 0=solid, 1=fluid, 2=inlet, 3=outlet
+                            unit_name = u.name
+                            break
+                    break
+
+            c = Cell(
+                original_id=orig_id,
+                id=new_id,
+                center=centers[orig_id],
+                dims=dims[orig_id],
+                box=np.array([*lowers[orig_id], *uppers[orig_id]]),
+                k=float(mat_k_array[orig_id]),
+                cp=float(mat_cp_array[orig_id]),
+                tag=int(physical_tags[orig_id]),
+                vol=float(vols[orig_id]),
+                name=unit_name,
+                layer_name=layer_name,
+                cell_type=cell_type,
+            )
+            self.cells.append(c)
+
+            fs = [  # 6 faces of hexahedron
+                tuple(sorted([nodes[0], nodes[3], nodes[2], nodes[1]])),  # -Z face
+                tuple(sorted([nodes[4], nodes[5], nodes[6], nodes[7]])),  # +Z face
+                tuple(sorted([nodes[0], nodes[1], nodes[5], nodes[4]])),  # -Y face
+                tuple(sorted([nodes[3], nodes[7], nodes[6], nodes[2]])),  # +Y face
+                tuple(sorted([nodes[0], nodes[4], nodes[7], nodes[3]])),  # -X face
+                tuple(sorted([nodes[1], nodes[2], nodes[6], nodes[5]])),  # +X face
             ]
             for f in fs:
-                self.face_to_cell[f] = new_id
+                if f not in self.face_to_cells:
+                    self.face_to_cells[f] = []
+                self.face_to_cells[f].append(new_id)
+
+        # Build internal and boundary face maps
+        self.internal_faces = {
+            f: tuple(c_ids)
+            for f, c_ids in self.face_to_cells.items()
+            if len(c_ids) == 2
+        }
+        self.boundary_faces_all = {
+            f: tuple(c_ids)
+            for f, c_ids in self.face_to_cells.items()
+            if len(c_ids) == 1
+        }
 
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
         self._extract_boundary_faces()
 
     def _extract_boundary_faces(self) -> None:
-        self.boundary_faces = {}
-        if "quad" not in self.mesh.cells_dict:
+        """Extract boundary faces and compute their outward normal direction.
+
+        Creates self.boundary_faces_by_direction:
+            { "+Z": [(cell_id, face_normal, area), ...],
+              "-Z": [...],
+              "+X": [...],
+              "-X": [...],
+              "+Y": [...],
+              "-Y": [...] }
+        """
+        self.boundary_faces_by_direction: Dict[str, List[tuple]] = {
+            "+X": [],
+            "-X": [],
+            "+Y": [],
+            "-Y": [],
+            "+Z": [],
+            "-Z": [],
+        }
+
+        if not self.boundary_faces_all:
             return
-        quad_data = self.mesh.cells_dict["quad"]
-        quad_tags = self.mesh.cell_data_dict.get("gmsh:physical", {}).get("quad", [])
 
-        for i, nodes in enumerate(quad_data):
-            f = tuple(sorted(nodes))
-            if f not in self.face_to_cell:
-                continue
-            tag = int(quad_tags[i]) if len(quad_tags) > i else -1
-            if tag == -1:
+        tol = self.GEOMETRY_TOLERANCE
+
+        for f, (c_id,) in self.boundary_faces_all.items():
+            pts = self.mesh.points[list(f)]
+
+            # Calculate face normal (pointing outward from cell)
+            v1 = pts[1] - pts[0]
+            v2 = pts[2] - pts[0]
+            cross_prod = np.cross(v1, v2)
+            area = np.linalg.norm(cross_prod)
+
+            if area < tol:
                 continue
 
-            p = self.mesh.points[nodes]
-            area = np.linalg.norm(np.cross(p[1] - p[0], p[2] - p[0]))
-            if area > self.GEOMETRY_TOLERANCE:
-                self.boundary_faces.setdefault(tag, []).append(
-                    (self.face_to_cell[f], area)
+            normal = cross_prod / area
+
+            # Get cell center to determine outward direction
+            c = self.cells[c_id]
+            face_center = np.mean(pts, axis=0)
+
+            # Vector from cell center to face center
+            vec = face_center - c.center
+
+            # If vector points same direction as normal, normal is outward
+            # Otherwise flip it
+            if np.dot(vec, normal) < 0:
+                normal = -normal
+
+            # Determine direction label
+            abs_normal = np.abs(normal)
+            if abs_normal[2] >= abs_normal[0] and abs_normal[2] >= abs_normal[1]:
+                direction = "+Z" if normal[2] > 0 else "-Z"
+            elif abs_normal[0] >= abs_normal[1]:
+                direction = "+X" if normal[0] > 0 else "-X"
+            else:
+                direction = "+Y" if normal[1] > 0 else "-Y"
+
+            self.boundary_faces_by_direction[direction].append((c_id, normal, area))
+
+    def _solve_pressure(self) -> None:
+        """Build and solve the hydraulic pressure matrix for microchannel.
+
+        Uses Hagen-Poiseuille equation for hydraulic conductance:
+            hydroC = (1 - 0.63*(min/max)) * min^3 * max / (12 * viscosity * L)
+
+        The pressure matrix is a Laplacian-like system where:
+        - Each fluid cell is a node
+        - Edges between adjacent fluid cells have conductance hydroC
+        - Inlet cells have Dirichlet BC: pressure = pumping_pressure
+        - Outlet cells have Dirichlet BC: pressure = 0
+        """
+        # Get microchannel pressure BCs
+        pressure_bcs = []
+        for bc in self.config.get("boundary_conditions", []):
+            if bc.get("type") == "pressure":
+                pressure_bcs.append(
+                    {
+                        "face": bc.get("face", ""),
+                        "target": bc.get("target", ""),
+                        "pressure": float(bc.get("pressure", 0.0)),
+                        "temperature": bc.get("temperature"),
+                    }
                 )
+
+        if not pressure_bcs:
+            print("[INFO] No pressure BCs found, skipping pressure solve")
+            return
+
+        # Build fluid connectivity graph
+        fluid_cells = [c for c in self.cells if c.cell_type in (1, 2, 3)]
+        if not fluid_cells:
+            print("[INFO] No fluid cells found, skipping pressure solve")
+            return
+
+        # Create mapping from cell id to pressure matrix index
+        cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
+        n_fluid = len(fluid_cells)
+
+        # Compute hydraulic conductance for each cell
+        avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
+        h = avg_dims[2]  # thickness (Z direction - height of channel)
+        w = avg_dims[0]  # width (X direction)
+        L = avg_dims[1]  # length (Y direction)
+
+        viscosity = self.WATER_VISCOSITY
+
+        # Hagen-Poiseuille for rectangular channel
+        if abs(h - w) < 1e-10:  # Square
+            hydroC = (0.42229 * h**4) / (12 * viscosity * L)
+        elif h > w:
+            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * viscosity * L)
+        else:
+            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * viscosity * L)
+
+        print(f"[INFO] Hydraulic conductance: {hydroC:.6e} m^3/(Pa·s)")
+        print(f"[INFO] Fluid cells: {n_fluid}")
+
+        # Build pressure matrix (Laplacian-like)
+        rows, cols, data = [], [], []
+
+        for c in fluid_cells:
+            i = cell_to_idx[c.id]
+
+            # Find neighboring fluid cells
+            neighbors = []
+            for f, (c0_id, c1_id) in self.internal_faces.items():
+                if c0_id == c.id and c1_id in cell_to_idx:
+                    neighbors.append(c1_id)
+                elif c1_id == c.id and c0_id in cell_to_idx:
+                    neighbors.append(c0_id)
+
+            # Diagonal entry: negative sum of all conductances
+            rows.append(i)
+            cols.append(i)
+            data.append(-len(neighbors) * hydroC)
+
+            # Off-diagonal entries
+            for neighbor_id in neighbors:
+                j = cell_to_idx[neighbor_id]
+                rows.append(i)
+                cols.append(j)
+                data.append(hydroC)
+
+        A_pressure = sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid))
+        b_pressure = np.zeros(n_fluid)
+
+        # Apply boundary conditions based on geometric location, not cell_type
+        # For each pressure BC, find cells on the specified face direction
+        for bc in pressure_bcs:
+            face = bc["face"]
+            target = bc["target"]
+            pressure = bc["pressure"]
+            temperature = bc.get("temperature")
+
+            # Find boundary faces matching this BC
+            bc_faces = self.boundary_faces_by_direction.get(face, [])
+            for c_id, normal, area in bc_faces:
+                c = self.cells[c_id]
+                # Only apply to cells in the target layer
+                if c.layer_name != target:
+                    continue
+                # Only apply to fluid cells
+                if c.cell_type not in (1, 2, 3):
+                    continue
+
+                i = cell_to_idx.get(c.id)
+                if i is None:
+                    continue
+
+                # Fix pressure at this cell
+                A_pressure[i, :] = 0
+                A_pressure[i, i] = 1
+                b_pressure[i] = pressure
+
+                # Set inlet temperature if provided
+                if temperature is not None:
+                    c.inlet_temp = temperature
+
+                print(
+                    f"[INFO] Applied {face} BC: pressure={pressure} Pa to cell {c.id} (layer={c.layer_name})"
+                )
+
+        # Solve pressure system
+        try:
+            pressure = splinalg.spsolve(A_pressure, b_pressure)
+
+            # Store pressure in cells
+            for c in fluid_cells:
+                c.pressure = pressure[cell_to_idx[c.id]]
+
+            print(
+                f"[INFO] Pressure solved. Range: {pressure.min():.2f} to {pressure.max():.2f} Pa"
+            )
+
+        except Exception as e:
+            print(f"[WARNING] Pressure solve failed: {e}")
+            # Set zero pressure as fallback
+            for c in fluid_cells:
+                c.pressure = 0.0
+
+    def _compute_face_normal(self, pts: np.ndarray) -> np.ndarray:
+        """Compute outward normal for a face given its points."""
+        v1 = pts[1] - pts[0]
+        v2 = pts[2] - pts[0]
+        cross_prod = np.cross(v1, v2)
+        area = np.linalg.norm(cross_prod)
+        if area > self.GEOMETRY_TOLERANCE:
+            return cross_prod / area
+        return np.array([0.0, 0.0, 1.0])
+
+    def _compute_velocity_from_pressure(self) -> None:
+        """Compute velocity at each fluid cell face from pressure gradient.
+
+        Uses Darcy's law: v = -K * grad(P) / mu
+        For simplicity, assumes velocity is proportional to pressure difference.
+        """
+        viscosity = self.WATER_VISCOSITY
+
+        for c in self.cells:
+            if c.cell_type not in (1, 2, 3):
+                c.velocity = np.zeros(3)
+                continue
+
+            # Find pressure gradient from neighbors
+            pressure_grad = np.zeros(3)
+            count = 0
+
+            for f, (c0_id, c1_id) in self.internal_faces.items():
+                if c0_id == c.id:
+                    c1 = self.cells[c1_id]
+                    if c1.cell_type in (1, 2, 3):
+                        # Vector from c to neighbor
+                        dvec = c1.center - c.center
+                        dist = np.linalg.norm(dvec)
+                        if dist > self.GEOMETRY_TOLERANCE:
+                            # Pressure difference in direction of neighbor
+                            dP = c1.pressure - c.pressure
+                            pressure_grad += dP * dvec / (dist * dist)
+                            count += 1
+                elif c1_id == c.id:
+                    c0 = self.cells[c0_id]
+                    if c0.cell_type in (1, 2, 3):
+                        dvec = c0.center - c.center
+                        dist = np.linalg.norm(dvec)
+                        if dist > self.GEOMETRY_TOLERANCE:
+                            dP = c0.pressure - c.pressure
+                            pressure_grad += dP * dvec / (dist * dist)
+                            count += 1
+
+            if count > 0:
+                pressure_grad /= count
+
+            # Darcy's law: v = -k/mu * grad(P) where k is permeability
+            # For a channel: k = hydroC * L / A
+            # Simplified: velocity proportional to negative pressure gradient
+            perm = 1e-10  # Approximate permeability
+            c.velocity = -perm / viscosity * pressure_grad
+
+            # Also check boundary faces for direction
+            for f, (c_id,) in self.boundary_faces_all.items():
+                if c_id != c.id:
+                    continue
+                pts = self.mesh.points[list(f)]
+                normal = self._compute_face_normal(pts)
+                area = np.linalg.norm(np.cross(pts[1] - pts[0], pts[2] - pts[0]))
+
+                if c.cell_type == 2:  # INLET
+                    # Flow enters from boundary, velocity points inward
+                    c.velocity = -normal * np.abs(c.pressure) * 0.001
+                elif c.cell_type == 3:  # OUTLET
+                    # Flow exits to boundary, velocity points outward
+                    c.velocity = normal * np.abs(c.pressure) * 0.001
+
+    def _add_fluid_advection_generic(self) -> Tuple[sp.csr_matrix, np.ndarray]:
+        """Assemble fluid advection matrix using upwind scheme and computed velocity.
+
+        Returns:
+            Tuple of (advection_matrix, advection_rhs)
+        """
+        n = len(self.cells)
+        rows, cols, data = [], [], []
+        rhs = np.zeros(n)
+        tol = self.GEOMETRY_TOLERANCE
+
+        # 1. Compute internal fluid face fluxes using velocity from pressure
+        for f, (c0_id, c1_id) in self.internal_faces.items():
+            c0, c1 = self.cells[c0_id], self.cells[c1_id]
+
+            # Skip if not both fluid (cell_type 1, 2, or 3)
+            if c0.cell_type == 0 or c1.cell_type == 0:
+                continue
+
+            # Get face points from mesh
+            pts = self.mesh.points[list(f)]
+
+            # Calculate face normal and area
+            v1 = pts[1] - pts[0]
+            v2 = pts[2] - pts[0]
+            cross_prod = np.cross(v1, v2)
+            area = np.linalg.norm(cross_prod)
+
+            if area < tol:
+                continue
+
+            n_vec = cross_prod / area
+
+            # Ensure normal points from c0 to c1 (c1 - c0 direction)
+            vec_c0_c1 = c1.center - c0.center
+            if np.dot(n_vec, vec_c0_c1) < 0:
+                n_vec = -n_vec
+
+            # Use velocity from pressure solve (stored in cell.velocity)
+            v_avg = 0.5 * (c0.velocity + c1.velocity)
+
+            # Volume flux: Q = dot(v_avg, n_vec) * area
+            vol_flux = np.dot(v_avg, n_vec) * area
+
+            # Mass flux: m_dot = vol_flux * density
+            density = self.WATER_DENSITY
+
+            # Determine upstream cell based on velocity direction
+            if np.dot(v_avg, n_vec) > 0:
+                # Flow from c0 to c1, c0 is upstream
+                upstream, downstream = c0, c1
+                upstream_id, downstream_id = c0_id, c1_id
+            else:
+                # Flow from c1 to c0, c1 is upstream
+                upstream, downstream = c1, c0
+                upstream_id, downstream_id = c1_id, c0_id
+
+            mass_flux = vol_flux * density
+            cp = upstream.cp
+            advection_term = mass_flux * cp
+
+            # Only add significant terms
+            if abs(advection_term) > tol:
+                # Donor cell loses energy (negative coefficient)
+                rows.append(upstream_id)
+                cols.append(upstream_id)
+                data.append(-advection_term)
+
+                # Receiver cell gains energy (positive coefficient)
+                rows.append(downstream_id)
+                cols.append(downstream_id)
+                data.append(advection_term)
+
+        # 2. Handle fluid boundary faces (inlet/outlet) with temperature
+        for f, (c0_id,) in self.boundary_faces_all.items():
+            c0 = self.cells[c0_id]
+
+            # Skip if not fluid (cell_type 0 = solid) or no inlet temperature
+            if c0.cell_type == 0 or c0.inlet_temp is None:
+                continue
+
+            # Get face points
+            pts = self.mesh.points[list(f)]
+
+            # Calculate face area
+            v1 = pts[1] - pts[0]
+            v2 = pts[2] - pts[0]
+            cross_prod = np.cross(v1, v2)
+            area = np.linalg.norm(cross_prod)
+
+            if area < tol:
+                continue
+
+            # Velocity at boundary
+            vel_mag = np.linalg.norm(c0.velocity)
+            if vel_mag < tol:
+                continue
+
+            # Mass flux at inlet
+            density = self.WATER_DENSITY
+            mass_flux = vel_mag * area * density
+
+            # Inlet: energy enters system from inlet_temp
+            rhs[c0_id] += mass_flux * c0.cp * c0.inlet_temp
+
+            # Boundary cell loses energy via outflow
+            rows.append(c0_id)
+            cols.append(c0_id)
+            data.append(-mass_flux * c0.cp)
+
+        G_adv = sp.csr_matrix((data, (rows, cols)), shape=(n, n))
+        return G_adv, rhs
 
     def _precompute_power_matrix(self) -> None:
         # 核心改动：从 2.5D Stackup 收集 active_units 的 3D 信息
@@ -734,21 +1443,90 @@ class FVMSolver:
         )
 
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
+        """Build boundary condition terms using direction and target-based selection.
+
+        BC format with layer targeting:
+            [[boundary_conditions]]
+            name = "sink_conv"
+            type = "convection"
+            face = "+Z"
+            target = "Sink"  # Layer name to apply this BC
+            h = 2777.78
+            T_inf = 318.15
+
+        Cell-level override:
+            [[boundary_conditions]]
+            name = "cell_inlet"
+            type = "inlet"
+            unit_name = "microchannel_0"  # Specific unit
+            face = "-X"
+            temperature = 298.15
+        """
         n = len(self.cells)
         rhs, rows, cols, data = np.zeros(n), [], [], []
-        for bc in self.config["boundary_conditions"]:
-            if bc.get("type") != "convection":
+
+        # Group BCs by direction
+        bcs_by_direction: Dict[str, list] = {
+            "+X": [],
+            "-X": [],
+            "+Y": [],
+            "-Y": [],
+            "+Z": [],
+            "-Z": [],
+        }
+
+        for bc in self.config.get("boundary_conditions", []):
+            if bc.get("type") == "convection":
+                face = bc.get("face", "")
+                if face in bcs_by_direction:
+                    bcs_by_direction[face].append(bc)
+
+        # Apply boundary conditions by direction
+        for direction, bcs in bcs_by_direction.items():
+            if not bcs:
                 continue
-            h, t_inf = float(bc["h"]), float(bc["T_inf"])
-            for tag in bc.get("selection", []):
-                for cell_id, area in self.boundary_faces.get(tag, []):
-                    c = self.cells[cell_id]
-                    dist = c.vol / area
-                    g = area / ((0.5 * dist / c.k) + (1.0 / h))
-                    rows.append(c.id)
-                    cols.append(c.id)
-                    data.append(-g)
-                    rhs[c.id] += g * t_inf
+
+            faces = self.boundary_faces_by_direction.get(direction, [])
+            for cell_id, normal, area in faces:
+                c = self.cells[cell_id]
+
+                # Check for cell-level override first (unit_name match)
+                cell_bc = None
+                if c.name:  # Only check if cell has a name
+                    for bc in self.config.get("boundary_conditions", []):
+                        if bc.get("unit_name") and bc.get("unit_name") == c.name:
+                            cell_bc = bc
+                            break
+
+                if cell_bc and cell_bc.get("type") == "convection":
+                    h = float(cell_bc["h"])
+                    t_inf = float(cell_bc["T_inf"])
+                else:
+                    # Find layer-level BC that matches this cell's layer
+                    layer_bc = None
+                    for bc in bcs:
+                        target = bc.get("target", "")  # Layer name
+                        if not target:
+                            # No target specified, applies to all layers
+                            layer_bc = bc
+                        elif target == c.layer_name:
+                            # Target matches this cell's layer
+                            layer_bc = bc
+                            break
+
+                    if layer_bc is None:
+                        continue
+
+                    h = float(layer_bc["h"])
+                    t_inf = float(layer_bc["T_inf"])
+
+                dist = c.vol / area
+                g = area / ((0.5 * dist / c.k) + (1.0 / h))
+                rows.append(c.id)
+                cols.append(c.id)
+                data.append(-g)
+                rhs[c.id] += g * t_inf
+
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _load_ptrace(self) -> List[dict]:
@@ -766,6 +1544,22 @@ class FVMSolver:
     def solve(self) -> None:
         self.g_total = self.assemble_g_matrix() + self._build_boundary_terms()[0]
         self.boundary_rhs = self._build_boundary_terms()[1]
+
+        # Check for fluid cells and solve pressure if present
+        fluid_cells = [c for c in self.cells if c.cell_type in (1, 2, 3)]
+        if fluid_cells:
+            print(
+                f"[INFO] Found {len(fluid_cells)} fluid cells, solving pressure-driven flow..."
+            )
+            # Solve pressure field first, then compute velocities
+            self._solve_pressure()
+            self._compute_velocity_from_pressure()
+
+            # Assemble advection with computed velocities
+            advection_mat, advection_rhs = self._add_fluid_advection_generic()
+            self.g_total = self.g_total + advection_mat
+            self.boundary_rhs = self.boundary_rhs + advection_rhs
+
         self.ptrace_steps = self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
@@ -839,39 +1633,73 @@ class FVMSolver:
 ### File: gmsh_mesher.py
 ```py
 import math
-from typing import Dict, List
 from collections import deque
+from pathlib import Path
+from typing import List
 
 import gmsh
-from metahotspot.model25d import Layer25D
+import toml
+from metahotspot.model25d import load_stackup
 
 
 class GmshMesher:
+    """Mesher that takes a config TOML path and produces a .msh file.
+
+    Decoupled from converter - call with config path after conversion.
+    """
+
+    DEFAULT_MAX_MESH_SIZE = 0.003
+    DEFAULT_MIN_MESH_SIZE = 0.0005
+    DEFAULT_REFINEMENT_DISTANCE = 0.001
+
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
         gmsh.initialize()
         gmsh.model.add(model_name)
+        self._node_id = 1
+        self._elem_id = 1
+        self._node_map: dict = {}
+        self._global_node_coords: dict = {}
 
-    def generate_2_5D_mesh(
+    def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
+        """Generate mesh from config TOML path.
+
+        Args:
+            config_path: Path to solver_config.toml
+            mesh_params: Optional dict with max_mesh_size, min_mesh_size, refine_distance.
+                        Defaults to GmshMesher.DEFAULT_* values.
+        """
+        if mesh_params is None:
+            mesh_params = {}
+
+        base_dir = str(Path(config_path).parent)
+        config = toml.load(config_path)
+
+        max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
+        min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
+        refine_distance = mesh_params.get(
+            "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
+        )
+
+        stackup = load_stackup(config, base_dir)
+        self._generate_2_5D_mesh(stackup, max_mesh_size, min_mesh_size, refine_distance)
+
+    def _generate_2_5D_mesh(
         self,
-        stackup: List[Layer25D],
-        max_mesh_size: float = 0.006,
-        min_mesh_size: float = 0.0005,
-        refine_distance: float = 0.010,
-    ) -> dict:
+        stackup,
+        max_mesh_size: float,
+        min_mesh_size: float,
+        refine_distance: float,
+    ) -> None:
+        """Internal mesh generation logic."""
 
-        # 收集所有热源层用于局部加密网格
+        # Collect heat source boxes for mesh refinement
         heat_boxes = []
         for layer in stackup:
             if layer.active:
                 for u in layer.units:
                     heat_boxes.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
-        node_id = 1
-        elem_id = 1
-        global_node_coords = {}
-        all_hex_elements = []
-
-        z_cursor = 0.0  # 核心改动：在运行时动态追踪 Z 轴
+        z_cursor = 0.0
 
         for layer in stackup:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
@@ -879,160 +1707,104 @@ class GmshMesher:
 
             lz = z_cursor
             dz = layer.thickness
-            z_cursor += dz  # 拉伸到下一层
+            z_cursor += dz
 
-            leaves = []
-            queue = deque()
+            leaves = self._subdivide_layer(
+                layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
+            )
+            self._create_hex_elements(layer, discrete_tag, lz, dz, leaves)
 
-            for u in layer.units:
-                queue.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
+    def _subdivide_layer(
+        self, layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
+    ):
+        """Subdivide layer into quad leaves for hex mesh generation."""
+        leaves = []
+        queue = deque()
 
-            while queue:
-                x0, y0, x1, y1 = queue.popleft()
-                w = x1 - x0
-                h = y1 - y0
+        for u in layer.units:
+            queue.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
 
-                needs_split = False
+        while queue:
+            x0, y0, x1, y1 = queue.popleft()
+            w = x1 - x0
+            h = y1 - y0
 
-                if w > max_mesh_size or h > max_mesh_size:
-                    needs_split = True
-                elif w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01:
-                    for hb in heat_boxes:
-                        dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
-                        dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
-                        if math.hypot(dist_x, dist_y) <= refine_distance:
-                            needs_split = True
-                            break
+            needs_split = False
 
-                if needs_split:
-                    if w >= h:
-                        mid = (x0 + x1) / 2.0
-                        queue.append((x0, y0, mid, y1))
-                        queue.append((mid, y0, x1, y1))
-                    else:
-                        mid = (y0 + y1) / 2.0
-                        queue.append((x0, y0, x1, mid))
-                        queue.append((x0, mid, x1, y1))
+            if w > max_mesh_size or h > max_mesh_size:
+                needs_split = True
+            elif w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01:
+                for hb in heat_boxes:
+                    dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
+                    dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
+                    if math.hypot(dist_x, dist_y) <= refine_distance:
+                        needs_split = True
+                        break
+
+            if needs_split:
+                if w >= h:
+                    mid = (x0 + x1) / 2.0
+                    queue.append((x0, y0, mid, y1))
+                    queue.append((mid, y0, x1, y1))
                 else:
-                    leaves.append((x0, y0, x1, y1))
-
-            layer_nodes_tags = []
-            layer_nodes_coords = []
-            node_map = {}
-
-            def get_node(x: float, y: float, z: float) -> int:
-                nonlocal node_id
-                key = (round(x, 12), round(y, 12), round(z, 12))
-                if key not in node_map:
-                    node_map[key] = node_id
-                    layer_nodes_tags.append(node_id)
-                    layer_nodes_coords.extend([x, y, z])
-                    global_node_coords[node_id] = (x, y, z)
-                    node_id += 1
-                return node_map[key]
-
-            element_tags = []
-            element_nodes = []
-
-            for x0, y0, x1, y1 in leaves:
-                n0, n1, n2, n3 = (
-                    get_node(x0, y0, lz),
-                    get_node(x1, y0, lz),
-                    get_node(x1, y1, lz),
-                    get_node(x0, y1, lz),
-                )
-                n4, n5, n6, n7 = (
-                    get_node(x0, y0, lz + dz),
-                    get_node(x1, y0, lz + dz),
-                    get_node(x1, y1, lz + dz),
-                    get_node(x0, y1, lz + dz),
-                )
-
-                element_tags.append(elem_id)
-                element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
-                elem_id += 1
-
-            if element_tags:
-                gmsh.model.mesh.addNodes(
-                    3, discrete_tag, layer_nodes_tags, layer_nodes_coords
-                )
-                gmsh.model.mesh.addElements(
-                    3, discrete_tag, [5], [element_tags], [element_nodes]
-                )
-                all_hex_elements.extend(element_nodes)
-
-        # ====== 边界自然分组与编号 ======
-        faces_count = {}
-        for i in range(0, len(all_hex_elements), 8):
-            n = all_hex_elements[i : i + 8]
-            fs = [
-                tuple(sorted([n[0], n[3], n[2], n[1]])),
-                tuple(sorted([n[4], n[5], n[6], n[7]])),
-                tuple(sorted([n[0], n[1], n[5], n[4]])),
-                tuple(sorted([n[3], n[7], n[6], n[2]])),
-                tuple(sorted([n[0], n[4], n[7], n[3]])),
-                tuple(sorted([n[1], n[2], n[6], n[5]])),
-            ]
-            for f in fs:
-                faces_count[f] = faces_count.get(f, 0) + 1
-
-        boundary_faces = [f for f, count in faces_count.items() if count == 1]
-
-        groups = {}
-        for f in boundary_faces:
-            pts = [global_node_coords[n_tag] for n_tag in f]
-            xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
-            if max(xs) - min(xs) < 1e-9:
-                axis, val = "X", round(xs[0], 6)
-            elif max(ys) - min(ys) < 1e-9:
-                axis, val = "Y", round(ys[0], 6)
+                    mid = (y0 + y1) / 2.0
+                    queue.append((x0, y0, x1, mid))
+                    queue.append((x0, mid, x1, y1))
             else:
-                axis, val = "Z", round(zs[0], 6)
-            groups.setdefault((axis, val), []).append(f)
+                leaves.append((x0, y0, x1, y1))
 
-        boundary_info = {}
-        base_tag = 2000
+        return leaves
 
-        for (axis_name, val), faces in groups.items():
-            base_tag += 1
-            ent_tag = gmsh.model.addDiscreteEntity(2)
-            gmsh.model.addPhysicalGroup(
-                2, [ent_tag], base_tag, name=f"boundary_{axis_name}_{val}"
+    def _get_node(self, x: float, y: float, z: float) -> int:
+        """Get or create a node at (x, y, z)."""
+        key = (round(x, 12), round(y, 12), round(z, 12))
+        if key not in self._node_map:
+            self._node_map[key] = self._node_id
+            self._global_node_coords[self._node_id] = (x, y, z)
+            self._node_id += 1
+        return self._node_map[key]
+
+    def _create_hex_elements(self, layer, discrete_tag, lz, dz, leaves) -> None:
+        """Create hex elements for a layer's quad leaves."""
+        element_tags: List[int] = []
+        element_nodes: List[int] = []
+        used_node_ids = set()
+
+        for x0, y0, x1, y1 in leaves:
+            # Collect nodes for bottom face (-Z)
+            n0 = self._get_node(x0, y0, lz)
+            n1 = self._get_node(x1, y0, lz)
+            n2 = self._get_node(x1, y1, lz)
+            n3 = self._get_node(x0, y1, lz)
+
+            # Collect nodes for top face (+Z)
+            n4 = self._get_node(x0, y0, lz + dz)
+            n5 = self._get_node(x1, y0, lz + dz)
+            n6 = self._get_node(x1, y1, lz + dz)
+            n7 = self._get_node(x0, y1, lz + dz)
+
+            element_tags.append(self._elem_id)
+            element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
+            used_node_ids.update([n0, n1, n2, n3, n4, n5, n6, n7])
+            self._elem_id += 1
+
+        if element_tags:
+            # Build ordered node lists for addNodes
+            layer_nodes_tags = sorted(used_node_ids)
+            layer_nodes_coords = []
+            for nid in layer_nodes_tags:
+                x, y, z = self._global_node_coords[nid]
+                layer_nodes_coords.extend([x, y, z])
+
+            gmsh.model.mesh.addNodes(
+                3, discrete_tag, layer_nodes_tags, layer_nodes_coords
+            )
+            gmsh.model.mesh.addElements(
+                3, discrete_tag, [5], [element_tags], [element_nodes]
             )
 
-            elem_tags = [elem_id + i for i in range(len(faces))]
-            elem_id += len(faces)
-
-            elem_nodes = []
-            for f in faces:
-                pts_with_id = [(global_node_coords[n_tag], n_tag) for n_tag in f]
-                cx = sum(p[0][0] for p in pts_with_id) / 4.0
-                cy = sum(p[0][1] for p in pts_with_id) / 4.0
-                cz = sum(p[0][2] for p in pts_with_id) / 4.0
-                if axis_name == "X":
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
-                    )
-                elif axis_name == "Y":
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][2] - cz, item[0][0] - cx)
-                    )
-                else:
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][1] - cy, item[0][0] - cx)
-                    )
-                elem_nodes.extend([item[1] for item in pts_with_id])
-
-            gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
-            boundary_info[base_tag] = {
-                "axis": axis_name,
-                "val": val,
-                "name": f"boundary_{axis_name}_{val}",
-            }
-
-        return boundary_info
-
     def finalize(self, output_path: str) -> None:
+        """Write mesh file and cleanup gmsh."""
         gmsh.write(output_path)
         gmsh.finalize()
 
@@ -1182,11 +1954,20 @@ class HotSpotParser:
 import json
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 
 @dataclass
 class Unit2D:
+    """2D layout unit for FVM mesh generation.
+
+    Cell types (from horizontal.csv):
+        0 = SOLID (non-fluid)
+        1 = FLUID (active fluid cell)
+        2 = INLET (fluid cell with pressure BC)
+        3 = OUTLET (fluid cell with pressure BC)
+    """
+
     name: str
     lx: float
     ly: float
@@ -1195,6 +1976,8 @@ class Unit2D:
     material: Optional[str] = None
     k: Optional[float] = None
     cp: Optional[float] = None
+    # Cell type for microchannel: 0=solid, 1=fluid, 2=inlet, 3=outlet
+    cell_type: int = 0  # Default: solid
 
 
 @dataclass
@@ -1205,7 +1988,6 @@ class Layer25D:
     default_material: str
     active: bool
     units: List[Unit2D] = field(default_factory=list)
-    # 对于没有 layout 文件的层（如封装层），使用全局尺寸
     lx: float = 0.0
     ly: float = 0.0
     dx: float = 0.01
@@ -1213,7 +1995,7 @@ class Layer25D:
 
 
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
+    """Load 2.5D stackup model from config and layout files."""
     layers = []
     stackup_cfg = config.get("stackup", [])
 
@@ -1248,6 +2030,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 material=u.get("material"),
                                 k=u.get("k"),
                                 cp=u.get("cp"),
+                                cell_type=u.get("cell_type", 0),
                             )
                         )
             else:
@@ -1255,7 +2038,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
                 )
 
-        # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层
+        # If no valid layout units, create a bulk unit
         if not units:
             units.append(
                 Unit2D(
@@ -1265,6 +2048,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     dx=dx,
                     dy=dy,
                     material=default_material,
+                    cell_type=0,
                 )
             )
 

@@ -7,7 +7,6 @@ ambient = 318.15
 init_temperature = 318.15
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "example.ptrace"
-init_temperature_file_path = "init.vtu"
 [[stackup]]
 tag = 1
 name = "layer_1"
@@ -81,9 +80,10 @@ dy = 0.06
 [[boundary_conditions]]
 name = "sink_conv"
 type = "convection"
+face = "+Z"
+target = "Sink"
 h = 2777.777777777778
 T_inf = 318.15
-selection = [ 2029,]
 
 [materials.silicon]
 k = 130.0

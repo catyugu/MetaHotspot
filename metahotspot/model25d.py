@@ -6,6 +6,15 @@ from typing import List, Optional, Dict, Any, Tuple
 
 @dataclass
 class Unit2D:
+    """2D layout unit for FVM mesh generation.
+
+    Cell types (from horizontal.csv):
+        0 = SOLID (non-fluid)
+        1 = FLUID (active fluid cell)
+        2 = INLET (fluid cell with pressure BC)
+        3 = OUTLET (fluid cell with pressure BC)
+    """
+
     name: str
     lx: float
     ly: float
@@ -14,10 +23,8 @@ class Unit2D:
     material: Optional[str] = None
     k: Optional[float] = None
     cp: Optional[float] = None
-    is_fluid: bool = False
-    velocity: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-    density: float = 1000.0
-    inlet_temp: Optional[float] = None
+    # Cell type for microchannel: 0=solid, 1=fluid, 2=inlet, 3=outlet
+    cell_type: int = 0  # Default: solid
 
 
 @dataclass
@@ -28,7 +35,6 @@ class Layer25D:
     default_material: str
     active: bool
     units: List[Unit2D] = field(default_factory=list)
-    # 对于没有 layout 文件的层（如封装层），使用全局尺寸
     lx: float = 0.0
     ly: float = 0.0
     dx: float = 0.01
@@ -36,7 +42,7 @@ class Layer25D:
 
 
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
+    """Load 2.5D stackup model from config and layout files."""
     layers = []
     stackup_cfg = config.get("stackup", [])
 
@@ -71,10 +77,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 material=u.get("material"),
                                 k=u.get("k"),
                                 cp=u.get("cp"),
-                                is_fluid=u.get("is_fluid", False),
-                                velocity=u.get("velocity", (0.0, 0.0, 0.0)),
-                                density=u.get("density", 1000.0),
-                                inlet_temp=u.get("inlet_temp"),
+                                cell_type=u.get("cell_type", 0),
                             )
                         )
             else:
@@ -82,7 +85,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
                 )
 
-        # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层
+        # If no valid layout units, create a bulk unit
         if not units:
             units.append(
                 Unit2D(
@@ -92,9 +95,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     dx=dx,
                     dy=dy,
                     material=default_material,
-                    is_fluid=False,
-                    velocity=(0.0, 0.0, 0.0),
-                    density=1000.0,
+                    cell_type=0,
                 )
             )
 
