@@ -19,33 +19,11 @@ import os
 import json
 import shutil
 import csv
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 
 import toml
 from metahotspot.hotspot_parser import HotSpotParser
-
-DEFAULT_CONFIG_SCHEMA = {
-    "ambient": 318.15,
-    "t_chip": 0.00015,
-    "t_tim": 0.00002,
-    "t_spreader": 0.001,
-    "t_sink": 0.0069,
-    "base_proc_freq": 3.0e9,
-    "r_convec": 0.1,
-    "material_interface": "tim",
-    "material_spreader": "copper",
-    "material_sink": "copper",
-    "init_file": "",
-    "sampling_intvl": 0.01,
-}
-
-STANDARD_MATERIALS = {
-    "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False},
-    "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False},
-    "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False},
-    "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False},
-    "water": {"k": 0.6069, "cp": 4.17e6, "fluid": True, "dynamic_viscosity": 8.89e-4},
-}
+from metahotspot.model25d import merge_with_defaults, STANDARD_MATERIALS
 
 
 def _find_first_by_suffix(directory: str, suffix: str) -> str:
@@ -72,27 +50,13 @@ class SimulationModelBuilder25D:
         os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
-        self.config = self._normalize_config(raw_config)
+        # 统一注入所有默认值，后续逻辑绝对信任 config
+        self.config = merge_with_defaults(raw_config)
 
-        self.materials: Dict[str, dict] = {}
+        self.materials: Dict[str, dict] = dict(STANDARD_MATERIALS)
         self.stackup: List[dict] = []
         self.boundary_conditions: List[dict] = []
         self.global_width, self.global_height = self._calculate_global_size()
-
-    def _normalize_config(self, raw: Dict[str, Any]) -> Dict[str, Any]:
-        """Boundary validation: clean config once, no fallbacks elsewhere."""
-        cfg = dict(DEFAULT_CONFIG_SCHEMA)
-        for k, v in raw.items():
-            if k in cfg:
-                cfg[k] = type(cfg[k])(v)
-            else:
-                cfg[k] = v
-
-        cfg["t_interface"] = float(cfg.get("t_interface", cfg["t_tim"]))
-        cfg["time"] = float(cfg.get("time", max(cfg["sampling_intvl"], 0.01)))
-        cfg["timestep"] = float(cfg.get("timestep", cfg["sampling_intvl"]))
-        cfg["init_temp"] = float(cfg.get("init_temp", cfg["ambient"]))
-        return cfg
 
     def _calculate_global_size(self) -> Tuple[float, float]:
         lcf_path = _find_first_by_suffix(self.example_dir, ".lcf")
@@ -100,9 +64,9 @@ class SimulationModelBuilder25D:
 
         files_to_check = (
             [
-                layer["flp_file"]
-                for layer in lcf_layers
-                if not layer.get("flp_file", "").lower().endswith(".csv")
+                l["flp_file"]
+                for l in lcf_layers
+                if not l.get("flp_file", "").lower().endswith(".csv")
             ]
             if lcf_layers
             else [f for f in os.listdir(self.example_dir) if f.endswith(".flp")]
@@ -119,27 +83,19 @@ class SimulationModelBuilder25D:
         if not widths and any(
             l.get("flp_file", "").endswith(".csv") for l in lcf_layers
         ):
-            return 0.03, 0.03  # Default fallback for CSV-only microchannel grids
-
+            return 0.03, 0.03
         return (max(widths), max(heights)) if widths else (0.01, 0.01)
 
     def build_materials(self) -> "SimulationModelBuilder25D":
         mat_path = os.path.join(self.example_dir, "example.materials")
-        self.materials = self.parser.parse_materials(mat_path)
-        for name, props in STANDARD_MATERIALS.items():
-            if name not in self.materials:
-                self.materials[name] = dict(props)
-        if "coolant_visc" in self.config and "water" in self.materials:
+        parsed_mats = self.parser.parse_materials(mat_path)
+        self.materials.update(parsed_mats)
+
+        if "coolant_visc" in self.config:
             self.materials["water"]["dynamic_viscosity"] = float(
                 self.config["coolant_visc"]
             )
         return self
-
-    def _get_material_props(self, name: str, default_name: str) -> dict:
-        chosen = str(name or "").strip().lower() or default_name
-        return self.materials.get(
-            chosen, STANDARD_MATERIALS.get(default_name, {"k": 1.0, "cp": 1.0e6})
-        )
 
     def _export_layout_json(
         self,
@@ -151,9 +107,8 @@ class SimulationModelBuilder25D:
         if not flp_units:
             return ""
         min_x, min_y, lw, lh = _layout_bbox(flp_units)
-        ox, oy = (self.global_width - lw) / 2.0 - min_x, (
-            self.global_height - lh
-        ) / 2.0 - min_y
+        ox = (self.global_width - lw) / 2.0 - min_x
+        oy = (self.global_height - lh) / 2.0 - min_y
 
         json_units = []
         for u in flp_units:
@@ -265,6 +220,7 @@ class SimulationModelBuilder25D:
             "Sink", self.config["t_sink"], s_sink, self.config["material_sink"], 1002
         )
 
+        # 边界条件持有多样参数列表（灵活字典）
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
@@ -276,9 +232,15 @@ class SimulationModelBuilder25D:
             }
         )
 
-        if self._has_unprocessed_microchannel():
-            mc_csv = os.path.join(self.example_dir, "horizontal.csv")
-            self._handle_microchannel_layer("microchannel", 500, 0.0001, mc_csv)
+        if os.path.exists(os.path.join(self.example_dir, "horizontal.csv")) and not any(
+            "microchannel" in l["name"] for l in self.stackup
+        ):
+            self._handle_microchannel_layer(
+                "microchannel",
+                500,
+                0.0001,
+                os.path.join(self.example_dir, "horizontal.csv"),
+            )
 
         return self
 
@@ -310,18 +272,11 @@ class SimulationModelBuilder25D:
         lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
         mat_key = mat_candidate.strip().lower()
         if mat_key not in self.materials:
-            self.materials[mat_key] = STANDARD_MATERIALS.get(
-                "copper", {"k": 400.0, "cp": 3.44e6}
-            )
+            self.materials[mat_key] = self.materials["copper"]
 
         layer = self._create_layer_dict(tag, name, thick, mat_key, False)
         layer.update({"lx": lx, "ly": ly, "dx": side, "dy": side})
         self.stackup.append(layer)
-
-    def _has_unprocessed_microchannel(self) -> bool:
-        if os.path.exists(os.path.join(self.example_dir, "horizontal.csv")):
-            return not any("microchannel" in l.get("name", "") for l in self.stackup)
-        return False
 
     def _handle_microchannel_layer(
         self, name: str, tag: int, thickness: float, csv_path: str
@@ -334,18 +289,13 @@ class SimulationModelBuilder25D:
             ) as f:
                 json.dump(mc_units, f, indent=2)
 
-            self.materials.setdefault("silicon", STANDARD_MATERIALS["silicon"])
             self.stackup.append(
                 self._create_layer_dict(
-                    tag,
-                    name,
-                    thickness,
-                    "silicon",
-                    True,
-                    f"layouts/{layout_path}",
+                    tag, name, thickness, "silicon", True, f"layouts/{layout_path}"
                 )
             )
 
+            # 多样化的边界条件参数列表
             self.boundary_conditions.extend(
                 [
                     {
@@ -353,10 +303,8 @@ class SimulationModelBuilder25D:
                         "type": "pressure",
                         "face": "-X",
                         "target": name,
-                        "pressure": float(self.config.get("pumping_pressure", 52000)),
-                        "temperature": float(
-                            self.config.get("inlet_temperature", 298.15)
-                        ),
+                        "pressure": self.config["pumping_pressure"],
+                        "temperature": self.config["inlet_temperature"],
                     },
                     {
                         "name": "mc_outlet",
@@ -369,10 +317,6 @@ class SimulationModelBuilder25D:
             )
 
     def _parse_microchannel_csv(self, csv_path: str) -> List[dict]:
-        """Convert microchannel CSV to a set of solid and fluid rectangular units."""
-        if not os.path.exists(csv_path):
-            return []
-
         with open(csv_path, "r", encoding="utf-8") as f:
             grid = [
                 [1 if int(x.strip()) > 0 else 0 for x in row if x.strip()]
@@ -382,56 +326,38 @@ class SimulationModelBuilder25D:
 
         if not grid:
             return []
-
         rows, cols = len(grid), len(grid[0])
-        # 使用真实的全局芯片尺寸，而非死板的 0.03
         dx, dy = self.global_width / cols, self.global_height / rows
+        visited, units = [[False] * cols for _ in range(rows)], []
 
-        visited = [[False] * cols for _ in range(rows)]
-        units = []
-
-        # 2D 贪心合并算法：将相邻的同类网格合并为最大的矩形单元
         for r in range(rows):
             for c in range(cols):
                 if visited[r][c]:
                     continue
-
-                val = grid[r][c]
-
-                # 步骤 1：向右寻找最大宽度 w
-                w = 0
+                val, w, h = grid[r][c], 0, 1
                 while c + w < cols and grid[r][c + w] == val and not visited[r][c + w]:
                     w += 1
-
-                # 步骤 2：向下寻找在宽度 w 限制下的最大高度 h
-                h = 1
                 while r + h < rows:
-                    valid_row = True
-                    for i in range(w):
-                        if grid[r + h][c + i] != val or visited[r + h][c + i]:
-                            valid_row = False
-                            break
-                    if not valid_row:
+                    if not all(
+                        grid[r + h][c + i] == val and not visited[r + h][c + i]
+                        for i in range(w)
+                    ):
                         break
                     h += 1
-
-                # 标记该矩形块内的所有单元格为已访问
                 for i in range(h):
                     for j in range(w):
                         visited[r + i][c + j] = True
 
                 is_fluid = val == 1
                 mat = "water" if is_fluid else "silicon"
-                # 手动显式赋予物性参数，保障求解器正确映射
-                k = 0.6069 if is_fluid else 130.0
-                cp = 4.17e6 if is_fluid else 1.63e6
+                k = self.materials[mat]["k"]
+                cp = self.materials[mat]["cp"]
 
                 units.append(
                     {
                         "name": f"mc_{'fluid' if is_fluid else 'solid'}_{len(units)}",
                         "lx": c * dx,
-                        "ly": (rows - r - h)
-                        * dy,  # GMSH 坐标原点通常在左下角，这里做倒置转换
+                        "ly": (rows - r - h) * dy,
                         "dx": w * dx,
                         "dy": h * dy,
                         "is_fluid": is_fluid,
@@ -440,7 +366,6 @@ class SimulationModelBuilder25D:
                         "cp": cp,
                     }
                 )
-
         return units
 
     def get_result(self) -> dict:
@@ -467,6 +392,7 @@ def convert_hotspot_to_metahotspot(
         .get_result()
     )
 
+    cfg = model["config"]
     ptrace_path = _find_first_by_suffix(example_dir, ".ptrace")
     ptrace_name = os.path.basename(ptrace_path) if ptrace_path else ""
     if ptrace_path:
@@ -474,25 +400,21 @@ def convert_hotspot_to_metahotspot(
 
     toml_data = {
         "simulation_type": simulation_type,
-        "time": model["config"]["time"],
-        "timestep": model["config"]["timestep"],
-        "sampling_intvl": model["config"]["sampling_intvl"],
-        "proc_freq": model["config"]["base_proc_freq"],
-        "ambient": model["config"]["ambient"],
-        "init_temperature": model["config"]["init_temp"],
-        "mesh_file_path": "mesh.msh",
+        "time": cfg["time"],
+        "timestep": cfg["timestep"],
+        "sampling_intvl": cfg["sampling_intvl"],
+        "proc_freq": cfg["base_proc_freq"],
+        "ambient": cfg["ambient"],
+        "init_temperature": cfg["init_temperature"],
+        "mesh_file_path": cfg["mesh_file_path"],
         "ptrace_file_path": ptrace_name,
         "materials": model["materials"],
         "stackup": model["stackup"],
         "boundary_conditions": model["boundary_conditions"],
     }
 
-    if model["config"]["init_file"] and model["config"]["init_file"] not in {
-        "(null)",
-        "null",
-        "None",
-    }:
-        toml_data["init_temperature_file_path"] = model["config"]["init_file"]
+    if cfg["init_file"]:
+        toml_data["init_temperature_file_path"] = cfg["init_file"]
 
     config_path = os.path.join(output_dir, config_name)
     with open(config_path, "w", encoding="utf-8") as f:
@@ -504,26 +426,20 @@ def convert_hotspot_with_modes(
     example_dir: str, output_dir: str, mode: str = "both"
 ) -> List[str]:
     mode = mode.lower().strip()
-    if mode == "steady":
-        return [
+    res = []
+    if mode in ("steady", "both"):
+        res.append(
             convert_hotspot_to_metahotspot(
                 example_dir, output_dir, "steady", "solver_config_steady.toml"
             )
-        ]
-    if mode == "transient":
-        return [
+        )
+    if mode in ("transient", "both"):
+        res.append(
             convert_hotspot_to_metahotspot(
                 example_dir, output_dir, "transient", "solver_config_transient.toml"
             )
-        ]
-    return [
-        convert_hotspot_to_metahotspot(
-            example_dir, output_dir, "steady", "solver_config_steady.toml"
-        ),
-        convert_hotspot_to_metahotspot(
-            example_dir, output_dir, "transient", "solver_config_transient.toml"
-        ),
-    ]
+        )
+    return res
 
 ```
 
@@ -531,7 +447,7 @@ def convert_hotspot_with_modes(
 ```py
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import meshio
@@ -540,13 +456,11 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 import toml
 
-from metahotspot.model25d import load_stackup
+from metahotspot.model25d import load_stackup, merge_with_defaults
 
 
 @dataclass(slots=True)
 class Cell:
-    """FVM cell representing a hexahedral mesh element."""
-
     original_id: int
     id: int
     center: np.ndarray
@@ -559,8 +473,6 @@ class Cell:
     name: str = ""
     layer_name: str = ""
     is_fluid: bool = False
-
-    # Hydraulic state
     pressure: float = 0.0
 
 
@@ -573,20 +485,23 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
-    WATER_DENSITY = 1000.0  # kg/m^3
-    WATER_VISCOSITY = 8.89e-4  # Pa·s
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
-        self.config = toml.load(config_path)
-        self.mesh_path = os.path.join(
-            self.base_dir, self.config.get("mesh_file_path", "mesh.msh")
-        )
+        # 统一注入默认值并形成绝对信任域
+        self.config = merge_with_defaults(toml.load(config_path))
+        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
-        self.materials = self.config.get("materials", {})
+        self.materials = self.config["materials"]
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
+
+        # 动态抽取流动介质的物性参数（绝对信任存在水，如果不在会从缺省物性补充）
+        self.water_density = 1000.0
+        self.water_visc = self.materials.get("water", {}).get(
+            "dynamic_viscosity", 8.89e-4
+        )
 
         self._prepare_mesh()
         self._precompute_power_matrix()
@@ -630,11 +545,9 @@ class FVMSolver:
     ):
         tol = self.GEOMETRY_TOLERANCE
         z_cursor = 0.0
-        layer_bounds = []
-
-        for layer in self.stackup:
-            layer_bounds.append((layer, z_cursor, z_cursor + layer.thickness))
-            z_cursor += layer.thickness
+        layer_bounds = [
+            (l, z_cursor, (z_cursor := z_cursor + l.thickness)) for l in self.stackup
+        ]
 
         for new_id, orig_id in enumerate(sorted_indices):
             c_center = centers[orig_id]
@@ -644,7 +557,7 @@ class FVMSolver:
                 if z_min - tol <= c_center[2] <= z_max + tol:
                     layer_name = layer.name
                     def_mat = self.materials.get(
-                        layer.default_material, {"k": 1.0, "cp": 1.0e6}
+                        layer.default_material, self.materials["default_solid"]
                     )
                     k, cp = float(def_mat["k"]), float(def_mat["cp"])
 
@@ -653,30 +566,30 @@ class FVMSolver:
                             u.lx - tol <= c_center[0] <= u.lx + u.dx + tol
                             and u.ly - tol <= c_center[1] <= u.ly + u.dy + tol
                         ):
-                            name = u.name
-                            is_fluid = u.is_fluid
+                            name, is_fluid = u.name, u.is_fluid
                             if u.k is not None:
                                 k, cp = u.k, u.cp
-                            elif u.material and u.material in self.materials:
-                                k = float(self.materials[u.material]["k"])
-                                cp = float(self.materials[u.material]["cp"])
+                            elif u.material in self.materials:
+                                k, cp = float(self.materials[u.material]["k"]), float(
+                                    self.materials[u.material]["cp"]
+                                )
                             break
                     break
 
             self.cells.append(
                 Cell(
-                    original_id=orig_id,
-                    id=new_id,
-                    center=c_center,
-                    dims=dims[orig_id],
-                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
-                    k=k,
-                    cp=cp,
-                    tag=int(tags[orig_id]),
-                    vol=float(vols[orig_id]),
-                    name=name,
-                    layer_name=layer_name,
-                    is_fluid=is_fluid,
+                    orig_id,
+                    new_id,
+                    c_center,
+                    dims[orig_id],
+                    np.array([*lowers[orig_id], *uppers[orig_id]]),
+                    k,
+                    cp,
+                    int(tags[orig_id]),
+                    float(vols[orig_id]),
+                    name,
+                    layer_name,
+                    is_fluid,
                 )
             )
 
@@ -698,7 +611,7 @@ class FVMSolver:
         self.internal_faces = {
             f: tuple(c) for f, c in self.face_to_cells.items() if len(c) == 2
         }
-        self.boundary_faces_all = {
+        boundary_faces_all = {
             f: tuple(c) for f, c in self.face_to_cells.items() if len(c) == 1
         }
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
@@ -711,7 +624,7 @@ class FVMSolver:
             "+Z": [],
             "-Z": [],
         }
-        for f, (c_id,) in self.boundary_faces_all.items():
+        for f, (c_id,) in boundary_faces_all.items():
             pts = self.mesh.points[list(f)]
             cross = np.cross(pts[1] - pts[0], pts[2] - pts[0])
             area = np.linalg.norm(cross)
@@ -739,9 +652,7 @@ class FVMSolver:
 
         cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
         n_fluid = len(fluid_cells)
-
-        bc_pressures = {}
-        self.inlet_temps = {}
+        bc_pressures, self.inlet_temps = {}, {}
 
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") == "pressure":
@@ -755,13 +666,13 @@ class FVMSolver:
         avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
         h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
 
+        # 计算流导率
         if abs(h - w) < 1e-10:
-            hydroC = (0.42229 * h**4) / (12 * self.WATER_VISCOSITY * L)
+            hydroC = (0.42229 * h**4) / (12 * self.water_visc * L)
         elif h > w:
-            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * self.WATER_VISCOSITY * L)
+            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * self.water_visc * L)
         else:
-            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * self.WATER_VISCOSITY * L)
-
+            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * self.water_visc * L)
         self.hydroC = hydroC
 
         rows, cols, data = [], [], []
@@ -782,16 +693,17 @@ class FVMSolver:
                 if (c0_id == c.id or c1_id == c.id)
                 and (c1_id in cell_to_idx and c0_id in cell_to_idx)
             ]
-
             rows.extend([i] * (len(neighbors) + 1))
             cols.append(i)
             data.append(-len(neighbors) * hydroC)
             cols.extend([cell_to_idx[n] for n in neighbors])
             data.extend([hydroC] * len(neighbors))
 
-        A_pressure = sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid))
         try:
-            pressure = splinalg.spsolve(A_pressure, b_pressure)
+            pressure = splinalg.spsolve(
+                sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)),
+                b_pressure,
+            )
             for c in fluid_cells:
                 c.pressure = pressure[cell_to_idx[c.id]]
         except Exception as e:
@@ -806,9 +718,10 @@ class FVMSolver:
         for c_a in sorted_cells:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
             for c_b in active_list:
-                if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
-                    continue
-                if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
+                if (
+                    max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol
+                    or max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol
+                ):
                     continue
                 for axis in range(3):
                     if not (
@@ -835,50 +748,37 @@ class FVMSolver:
 
     def _assemble_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
-        rows, cols, data = [], [], []
-        rhs = np.zeros(n)
-
+        rows, cols, data, rhs = [], [], [], np.zeros(n)
         fluid_cells = [c for c in self.cells if c.is_fluid]
         if not fluid_cells or not hasattr(self, "hydroC"):
             return sp.csr_matrix((n, n)), rhs
 
         net_internal_outflux = {c.id: 0.0 for c in fluid_cells}
-
-        # Calculate exactly mass-conservative fluxes bypassing gradients
         for f, (c0_id, c1_id) in self.internal_faces.items():
             c0, c1 = self.cells[c0_id], self.cells[c1_id]
             if not (c0.is_fluid and c1.is_fluid):
                 continue
-
-            # Flow from c0 to c1 driven by pressure solving the same hydroC
-            vol_flux = (c0.pressure - c1.pressure) * self.hydroC
-            mass_flux = vol_flux * self.WATER_DENSITY
-
+            mass_flux = (c0.pressure - c1.pressure) * self.hydroC * self.water_density
             net_internal_outflux[c0_id] += mass_flux
             net_internal_outflux[c1_id] -= mass_flux
 
             if abs(mass_flux) > self.GEOMETRY_TOLERANCE:
                 up_id, dn_id = (c0_id, c1_id) if mass_flux > 0 else (c1_id, c0_id)
                 adv_term = abs(mass_flux) * self.cells[up_id].cp
-
-                # Equation resolves: Energy Out (up) / Energy In (dn) based on T_up
                 rows.extend([up_id, dn_id])
                 cols.extend([up_id, up_id])
                 data.extend([-adv_term, adv_term])
 
-        # Resolve boundary states dynamically via internal flux balancing
         for c in fluid_cells:
             influx = net_internal_outflux[c.id]
-            if influx > self.GEOMETRY_TOLERANCE:
-                # INLET: Brings energy strictly as source term
-                if c.id in getattr(self, "inlet_temps", {}):
-                    rhs[c.id] += influx * c.cp * self.inlet_temps[c.id]
+            if influx > self.GEOMETRY_TOLERANCE and c.id in getattr(
+                self, "inlet_temps", {}
+            ):
+                rhs[c.id] += influx * c.cp * self.inlet_temps[c.id]
             elif influx < -self.GEOMETRY_TOLERANCE:
-                # OUTLET: Takes energy away (matrix diagonal sink)
-                outflux = -influx
                 rows.append(c.id)
                 cols.append(c.id)
-                data.append(-outflux * c.cp)
+                data.append(influx * c.cp)
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
@@ -899,7 +799,6 @@ class FVMSolver:
             if l.active
             for u in l.units
         ]
-
         self.unit_names = [u["name"] for u in active_units]
         if not active_units or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
@@ -907,7 +806,6 @@ class FVMSolver:
 
         c_boxes = np.array([c.box for c in self.cells])
         rows, cols, data = [], [], []
-
         for j, u in enumerate(active_units):
             vol = u["dx"] * u["dy"] * u["dz"]
             if vol <= 0:
@@ -927,7 +825,6 @@ class FVMSolver:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol)
-
         self.power_matrix = sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(active_units))
         )
@@ -940,7 +837,6 @@ class FVMSolver:
             [],
             [],
         )
-
         for bc in [
             b
             for b in self.config.get("boundary_conditions", [])
@@ -952,14 +848,12 @@ class FVMSolver:
                 c = self.cells[c_id]
                 if bc.get("target") and bc.get("target") != c.layer_name:
                     continue
-
                 h, t_inf = float(bc["h"]), float(bc["T_inf"])
                 g = area / ((0.5 * (c.vol / area) / c.k) + (1.0 / h))
                 rows.append(c.id)
                 cols.append(c.id)
                 data.append(-g)
                 rhs[c.id] += g * t_inf
-
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def solve(self) -> None:
@@ -973,9 +867,7 @@ class FVMSolver:
             self.g_total += adv_mat
             self.boundary_rhs += adv_rhs
 
-        ptrace_path = os.path.join(
-            self.base_dir, self.config.get("ptrace_file_path", "")
-        )
+        ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         self.ptrace_steps = []
         if os.path.exists(ptrace_path):
             with open(ptrace_path, "r") as f:
@@ -984,7 +876,7 @@ class FVMSolver:
                     dict(zip(headers, map(float, l.split()))) for l in f if l.strip()
                 ]
 
-        if self.config.get("simulation_type", "steady") == "steady":
+        if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
@@ -1009,23 +901,15 @@ class FVMSolver:
         self.save(temperatures, "result.vtu")
 
     def _solve_transient(self) -> None:
-        dt, total_time = float(self.config.get("timestep", 0.1)), float(
-            self.config.get("time", 0.0)
-        )
+        dt, total_time = self.config["timestep"], self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
         ptrace = self.ptrace_steps or [{}] * n_steps
         c_mat = sp.diags([c.cp * c.vol for c in self.cells]) / dt
         solve_step = splinalg.factorized((c_mat - self.g_total).tocsc())
 
-        temperatures = np.full(
-            len(self.cells), float(self.config.get("init_temperature", 318.15))
-        )
-        init_file = self.config.get("init_temperature_file_path")
-        if (
-            init_file
-            and init_file not in {"(null)", "None", ""}
-            and os.path.exists(os.path.join(self.base_dir, init_file))
-        ):
+        temperatures = np.full(len(self.cells), self.config["init_temperature"])
+        init_file = self.config["init_temperature_file_path"]
+        if init_file and os.path.exists(os.path.join(self.base_dir, init_file)):
             init_mesh = meshio.read(os.path.join(self.base_dir, init_file))
             hex_data = init_mesh.cell_data.get("Temperature_K", [])
             offset = 0
@@ -1062,12 +946,11 @@ class FVMSolver:
                 temp_chunks.append(mapped[offset : offset + count])
                 offset += count
 
-        out_mesh = meshio.Mesh(
+        meshio.Mesh(
             points=self.mesh.points,
             cells=hex_blocks,
             cell_data={"Temperature_K": temp_chunks},
-        )
-        out_mesh.write(os.path.join(self.base_dir, output_name))
+        ).write(os.path.join(self.base_dir, output_name))
 
 ```
 
@@ -1335,6 +1218,42 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
+# ==========================================
+# 单一真相：全局默认配置与标准材料库
+# ==========================================
+DEFAULT_CONFIG = {
+    "simulation_type": "steady",
+    "ambient": 318.15,
+    "init_temperature": 318.15,
+    "t_chip": 0.00015,
+    "t_tim": 0.00002,
+    "t_spreader": 0.001,
+    "t_sink": 0.0069,
+    "base_proc_freq": 3.0e9,
+    "r_convec": 0.1,
+    "material_interface": "tim",
+    "material_spreader": "copper",
+    "material_sink": "copper",
+    "init_file": "",
+    "sampling_intvl": 0.01,
+    "time": 0.01,
+    "timestep": 0.01,
+    "mesh_file_path": "mesh.msh",
+    "ptrace_file_path": "",
+    "init_temperature_file_path": "",
+    "pumping_pressure": 52000.0,
+    "inlet_temperature": 298.15,
+}
+
+STANDARD_MATERIALS = {
+    "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False},
+    "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False},
+    "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False},
+    "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False},
+    "water": {"k": 0.6069, "cp": 4.17e6, "fluid": True, "dynamic_viscosity": 8.89e-4},
+    "default_solid": {"k": 1.0, "cp": 1.0e6, "fluid": False},
+}
+
 
 @dataclass
 class Unit2D:
@@ -1365,18 +1284,44 @@ class Layer25D:
     dy: float = 0.01
 
 
-def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """Load 2.5D stackup model from config and layout files."""
-    layers = []
+def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    """配置关口：将原始配置与默认值合并，保证下游读取时绝对安全。"""
+    config = dict(DEFAULT_CONFIG)
+    for k, v in raw_config.items():
+        if k in config:
+            config[k] = (
+                type(config[k])(v) if v not in {"(null)", "null", "None"} else ""
+            )
+        else:
+            config[k] = v
 
-    for i, layer_cfg in enumerate(config.get("stackup", [])):
-        tag = layer_cfg.get("tag", i + 100)
-        name = layer_cfg.get("name", f"layer_{tag}")
+    # 特殊依赖回退处理 (一处处理，处处有效)
+    if "t_interface" not in raw_config:
+        config["t_interface"] = config["t_tim"]
+    if "time" not in raw_config:
+        config["time"] = max(config["sampling_intvl"], 0.01)
+    if "timestep" not in raw_config:
+        config["timestep"] = config["sampling_intvl"]
+    if "init_temp" in raw_config:
+        config["init_temperature"] = float(raw_config["init_temp"])
+
+    return config
+
+
+def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
+    """Load 2.5D stackup model from strict config."""
+    layers = []
+    stackup_data = config.get("stackup", [])
+
+    for i, layer_cfg in enumerate(stackup_data):
+        tag = int(layer_cfg.get("tag", i + 100))
+        name = str(layer_cfg.get("name", f"layer_{tag}"))
         lx, ly = float(layer_cfg.get("lx", 0.0)), float(layer_cfg.get("ly", 0.0))
         dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
+        material = layer_cfg.get("material", "silicon")
 
         units = []
-        layout_file = layer_cfg.get("layout_file")
+        layout_file = layer_cfg.get("layout_file", "")
 
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
@@ -1405,7 +1350,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     ly=ly,
                     dx=dx,
                     dy=dy,
-                    material=layer_cfg.get("material", "silicon"),
+                    material=material,
                     is_fluid=False,
                 )
             )
@@ -1415,7 +1360,7 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                 name=name,
                 tag=tag,
                 thickness=float(layer_cfg["thickness"]),
-                default_material=layer_cfg.get("material", "silicon"),
+                default_material=material,
                 active=bool(layer_cfg.get("active", False)),
                 units=units,
                 lx=lx,

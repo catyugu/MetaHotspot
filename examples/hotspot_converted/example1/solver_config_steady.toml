@@ -68,23 +68,28 @@ k = 130.0
 cp = 1630300.0
 fluid = false
 
-[materials.water]
-k = 0.6069
-cp = 4172638.0
-fluid = true
-dynamic_viscosity = 0.000889
+[materials.copper]
+k = 400.0
+cp = 3440000.0
+fluid = false
 
 [materials.aluminum]
 k = 237.0
 cp = 2422000.0
 fluid = false
 
-[materials.copper]
-k = 400.0
-cp = 3440000.0
-fluid = false
-
 [materials.tim]
 k = 4.0
 cp = 4000000.0
+fluid = false
+
+[materials.water]
+k = 0.6069
+cp = 4172638.0
+fluid = true
+dynamic_viscosity = 0.000889
+
+[materials.default_solid]
+k = 1.0
+cp = 1000000.0
 fluid = false

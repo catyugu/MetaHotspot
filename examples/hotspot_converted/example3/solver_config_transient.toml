@@ -7,6 +7,7 @@ ambient = 318.15
 init_temperature = 318.15
 mesh_file_path = "mesh.msh"
 ptrace_file_path = "ev6_3D.ptrace"
+init_temperature_file_path = "init.vtu"
 [[stackup]]
 tag = 1
 name = "layer_1"
@@ -136,6 +137,11 @@ k = 0.6069
 cp = 4170000.0
 fluid = true
 dynamic_viscosity = 0.000889
+
+[materials.default_solid]
+k = 1.0
+cp = 1000000.0
+fluid = false
 
 [materials.layer_1_mat]
 k = 100.0

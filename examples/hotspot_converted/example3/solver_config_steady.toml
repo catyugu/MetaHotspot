@@ -137,6 +137,11 @@ cp = 4170000.0
 fluid = true
 dynamic_viscosity = 0.000889
 
+[materials.default_solid]
+k = 1.0
+cp = 1000000.0
+fluid = false
+
 [materials.layer_1_mat]
 k = 100.0
 cp = 1750000.0

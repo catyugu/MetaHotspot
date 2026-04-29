@@ -1,6 +1,6 @@
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import meshio
@@ -9,13 +9,11 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 import toml
 
-from metahotspot.model25d import load_stackup
+from metahotspot.model25d import load_stackup, merge_with_defaults
 
 
 @dataclass(slots=True)
 class Cell:
-    """FVM cell representing a hexahedral mesh element."""
-
     original_id: int
     id: int
     center: np.ndarray
@@ -28,8 +26,6 @@ class Cell:
     name: str = ""
     layer_name: str = ""
     is_fluid: bool = False
-
-    # Hydraulic state
     pressure: float = 0.0
 
 
@@ -42,20 +38,23 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 class FVMSolver:
     GEOMETRY_TOLERANCE = 1e-12
-    WATER_DENSITY = 1000.0  # kg/m^3
-    WATER_VISCOSITY = 8.89e-4  # Pa·s
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
-        self.config = toml.load(config_path)
-        self.mesh_path = os.path.join(
-            self.base_dir, self.config.get("mesh_file_path", "mesh.msh")
-        )
+        # 统一注入默认值并形成绝对信任域
+        self.config = merge_with_defaults(toml.load(config_path))
+        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
-        self.materials = self.config.get("materials", {})
+        self.materials = self.config["materials"]
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
+
+        # 动态抽取流动介质的物性参数（绝对信任存在水，如果不在会从缺省物性补充）
+        self.water_density = 1000.0
+        self.water_visc = self.materials.get("water", {}).get(
+            "dynamic_viscosity", 8.89e-4
+        )
 
         self._prepare_mesh()
         self._precompute_power_matrix()
@@ -99,11 +98,9 @@ class FVMSolver:
     ):
         tol = self.GEOMETRY_TOLERANCE
         z_cursor = 0.0
-        layer_bounds = []
-
-        for layer in self.stackup:
-            layer_bounds.append((layer, z_cursor, z_cursor + layer.thickness))
-            z_cursor += layer.thickness
+        layer_bounds = [
+            (l, z_cursor, (z_cursor := z_cursor + l.thickness)) for l in self.stackup
+        ]
 
         for new_id, orig_id in enumerate(sorted_indices):
             c_center = centers[orig_id]
@@ -113,7 +110,7 @@ class FVMSolver:
                 if z_min - tol <= c_center[2] <= z_max + tol:
                     layer_name = layer.name
                     def_mat = self.materials.get(
-                        layer.default_material, {"k": 1.0, "cp": 1.0e6}
+                        layer.default_material, self.materials["default_solid"]
                     )
                     k, cp = float(def_mat["k"]), float(def_mat["cp"])
 
@@ -122,30 +119,30 @@ class FVMSolver:
                             u.lx - tol <= c_center[0] <= u.lx + u.dx + tol
                             and u.ly - tol <= c_center[1] <= u.ly + u.dy + tol
                         ):
-                            name = u.name
-                            is_fluid = u.is_fluid
+                            name, is_fluid = u.name, u.is_fluid
                             if u.k is not None:
                                 k, cp = u.k, u.cp
-                            elif u.material and u.material in self.materials:
-                                k = float(self.materials[u.material]["k"])
-                                cp = float(self.materials[u.material]["cp"])
+                            elif u.material in self.materials:
+                                k, cp = float(self.materials[u.material]["k"]), float(
+                                    self.materials[u.material]["cp"]
+                                )
                             break
                     break
 
             self.cells.append(
                 Cell(
-                    original_id=orig_id,
-                    id=new_id,
-                    center=c_center,
-                    dims=dims[orig_id],
-                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
-                    k=k,
-                    cp=cp,
-                    tag=int(tags[orig_id]),
-                    vol=float(vols[orig_id]),
-                    name=name,
-                    layer_name=layer_name,
-                    is_fluid=is_fluid,
+                    orig_id,
+                    new_id,
+                    c_center,
+                    dims[orig_id],
+                    np.array([*lowers[orig_id], *uppers[orig_id]]),
+                    k,
+                    cp,
+                    int(tags[orig_id]),
+                    float(vols[orig_id]),
+                    name,
+                    layer_name,
+                    is_fluid,
                 )
             )
 
@@ -167,7 +164,7 @@ class FVMSolver:
         self.internal_faces = {
             f: tuple(c) for f, c in self.face_to_cells.items() if len(c) == 2
         }
-        self.boundary_faces_all = {
+        boundary_faces_all = {
             f: tuple(c) for f, c in self.face_to_cells.items() if len(c) == 1
         }
         self.orig_to_new_id = {c.original_id: c.id for c in self.cells}
@@ -180,7 +177,7 @@ class FVMSolver:
             "+Z": [],
             "-Z": [],
         }
-        for f, (c_id,) in self.boundary_faces_all.items():
+        for f, (c_id,) in boundary_faces_all.items():
             pts = self.mesh.points[list(f)]
             cross = np.cross(pts[1] - pts[0], pts[2] - pts[0])
             area = np.linalg.norm(cross)
@@ -208,9 +205,7 @@ class FVMSolver:
 
         cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
         n_fluid = len(fluid_cells)
-
-        bc_pressures = {}
-        self.inlet_temps = {}
+        bc_pressures, self.inlet_temps = {}, {}
 
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") == "pressure":
@@ -224,13 +219,13 @@ class FVMSolver:
         avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
         h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
 
+        # 计算流导率
         if abs(h - w) < 1e-10:
-            hydroC = (0.42229 * h**4) / (12 * self.WATER_VISCOSITY * L)
+            hydroC = (0.42229 * h**4) / (12 * self.water_visc * L)
         elif h > w:
-            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * self.WATER_VISCOSITY * L)
+            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * self.water_visc * L)
         else:
-            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * self.WATER_VISCOSITY * L)
-
+            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * self.water_visc * L)
         self.hydroC = hydroC
 
         rows, cols, data = [], [], []
@@ -251,16 +246,17 @@ class FVMSolver:
                 if (c0_id == c.id or c1_id == c.id)
                 and (c1_id in cell_to_idx and c0_id in cell_to_idx)
             ]
-
             rows.extend([i] * (len(neighbors) + 1))
             cols.append(i)
             data.append(-len(neighbors) * hydroC)
             cols.extend([cell_to_idx[n] for n in neighbors])
             data.extend([hydroC] * len(neighbors))
 
-        A_pressure = sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid))
         try:
-            pressure = splinalg.spsolve(A_pressure, b_pressure)
+            pressure = splinalg.spsolve(
+                sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)),
+                b_pressure,
+            )
             for c in fluid_cells:
                 c.pressure = pressure[cell_to_idx[c.id]]
         except Exception as e:
@@ -275,9 +271,10 @@ class FVMSolver:
         for c_a in sorted_cells:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
             for c_b in active_list:
-                if max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol:
-                    continue
-                if max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol:
+                if (
+                    max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol
+                    or max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol
+                ):
                     continue
                 for axis in range(3):
                     if not (
@@ -304,50 +301,37 @@ class FVMSolver:
 
     def _assemble_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
-        rows, cols, data = [], [], []
-        rhs = np.zeros(n)
-
+        rows, cols, data, rhs = [], [], [], np.zeros(n)
         fluid_cells = [c for c in self.cells if c.is_fluid]
         if not fluid_cells or not hasattr(self, "hydroC"):
             return sp.csr_matrix((n, n)), rhs
 
         net_internal_outflux = {c.id: 0.0 for c in fluid_cells}
-
-        # Calculate exactly mass-conservative fluxes bypassing gradients
         for f, (c0_id, c1_id) in self.internal_faces.items():
             c0, c1 = self.cells[c0_id], self.cells[c1_id]
             if not (c0.is_fluid and c1.is_fluid):
                 continue
-
-            # Flow from c0 to c1 driven by pressure solving the same hydroC
-            vol_flux = (c0.pressure - c1.pressure) * self.hydroC
-            mass_flux = vol_flux * self.WATER_DENSITY
-
+            mass_flux = (c0.pressure - c1.pressure) * self.hydroC * self.water_density
             net_internal_outflux[c0_id] += mass_flux
             net_internal_outflux[c1_id] -= mass_flux
 
             if abs(mass_flux) > self.GEOMETRY_TOLERANCE:
                 up_id, dn_id = (c0_id, c1_id) if mass_flux > 0 else (c1_id, c0_id)
                 adv_term = abs(mass_flux) * self.cells[up_id].cp
-
-                # Equation resolves: Energy Out (up) / Energy In (dn) based on T_up
                 rows.extend([up_id, dn_id])
                 cols.extend([up_id, up_id])
                 data.extend([-adv_term, adv_term])
 
-        # Resolve boundary states dynamically via internal flux balancing
         for c in fluid_cells:
             influx = net_internal_outflux[c.id]
-            if influx > self.GEOMETRY_TOLERANCE:
-                # INLET: Brings energy strictly as source term
-                if c.id in getattr(self, "inlet_temps", {}):
-                    rhs[c.id] += influx * c.cp * self.inlet_temps[c.id]
+            if influx > self.GEOMETRY_TOLERANCE and c.id in getattr(
+                self, "inlet_temps", {}
+            ):
+                rhs[c.id] += influx * c.cp * self.inlet_temps[c.id]
             elif influx < -self.GEOMETRY_TOLERANCE:
-                # OUTLET: Takes energy away (matrix diagonal sink)
-                outflux = -influx
                 rows.append(c.id)
                 cols.append(c.id)
-                data.append(-outflux * c.cp)
+                data.append(influx * c.cp)
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
@@ -368,7 +352,6 @@ class FVMSolver:
             if l.active
             for u in l.units
         ]
-
         self.unit_names = [u["name"] for u in active_units]
         if not active_units or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
@@ -376,7 +359,6 @@ class FVMSolver:
 
         c_boxes = np.array([c.box for c in self.cells])
         rows, cols, data = [], [], []
-
         for j, u in enumerate(active_units):
             vol = u["dx"] * u["dy"] * u["dz"]
             if vol <= 0:
@@ -396,7 +378,6 @@ class FVMSolver:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol)
-
         self.power_matrix = sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(active_units))
         )
@@ -409,7 +390,6 @@ class FVMSolver:
             [],
             [],
         )
-
         for bc in [
             b
             for b in self.config.get("boundary_conditions", [])
@@ -421,14 +401,12 @@ class FVMSolver:
                 c = self.cells[c_id]
                 if bc.get("target") and bc.get("target") != c.layer_name:
                     continue
-
                 h, t_inf = float(bc["h"]), float(bc["T_inf"])
                 g = area / ((0.5 * (c.vol / area) / c.k) + (1.0 / h))
                 rows.append(c.id)
                 cols.append(c.id)
                 data.append(-g)
                 rhs[c.id] += g * t_inf
-
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def solve(self) -> None:
@@ -442,9 +420,7 @@ class FVMSolver:
             self.g_total += adv_mat
             self.boundary_rhs += adv_rhs
 
-        ptrace_path = os.path.join(
-            self.base_dir, self.config.get("ptrace_file_path", "")
-        )
+        ptrace_path = os.path.join(self.base_dir, self.config["ptrace_file_path"])
         self.ptrace_steps = []
         if os.path.exists(ptrace_path):
             with open(ptrace_path, "r") as f:
@@ -453,7 +429,7 @@ class FVMSolver:
                     dict(zip(headers, map(float, l.split()))) for l in f if l.strip()
                 ]
 
-        if self.config.get("simulation_type", "steady") == "steady":
+        if self.config["simulation_type"] == "steady":
             self._solve_steady_state()
         else:
             self._solve_transient()
@@ -478,23 +454,15 @@ class FVMSolver:
         self.save(temperatures, "result.vtu")
 
     def _solve_transient(self) -> None:
-        dt, total_time = float(self.config.get("timestep", 0.1)), float(
-            self.config.get("time", 0.0)
-        )
+        dt, total_time = self.config["timestep"], self.config["time"]
         n_steps = max(1, math.ceil(total_time / dt) if total_time > 0 else 1)
         ptrace = self.ptrace_steps or [{}] * n_steps
         c_mat = sp.diags([c.cp * c.vol for c in self.cells]) / dt
         solve_step = splinalg.factorized((c_mat - self.g_total).tocsc())
 
-        temperatures = np.full(
-            len(self.cells), float(self.config.get("init_temperature", 318.15))
-        )
-        init_file = self.config.get("init_temperature_file_path")
-        if (
-            init_file
-            and init_file not in {"(null)", "None", ""}
-            and os.path.exists(os.path.join(self.base_dir, init_file))
-        ):
+        temperatures = np.full(len(self.cells), self.config["init_temperature"])
+        init_file = self.config["init_temperature_file_path"]
+        if init_file and os.path.exists(os.path.join(self.base_dir, init_file)):
             init_mesh = meshio.read(os.path.join(self.base_dir, init_file))
             hex_data = init_mesh.cell_data.get("Temperature_K", [])
             offset = 0
@@ -531,9 +499,8 @@ class FVMSolver:
                 temp_chunks.append(mapped[offset : offset + count])
                 offset += count
 
-        out_mesh = meshio.Mesh(
+        meshio.Mesh(
             points=self.mesh.points,
             cells=hex_blocks,
             cell_data={"Temperature_K": temp_chunks},
-        )
-        out_mesh.write(os.path.join(self.base_dir, output_name))
+        ).write(os.path.join(self.base_dir, output_name))
