@@ -732,9 +732,29 @@ class FVMSolver:
                     area = _overlap_area(c_a.box, c_b.box, axis)
                     if area <= tol:
                         continue
-                    res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
-                        c_b.dims[axis] / (2.0 * c_b.k * area)
-                    )
+
+                    is_a_fluid, is_b_fluid = c_a.is_fluid, c_b.is_fluid
+
+                    if is_a_fluid != is_b_fluid:
+                        # 固-液对流换热模型 (Convection)
+                        fluid_c = c_a if is_a_fluid else c_b
+                        solid_c = c_b if is_a_fluid else c_a
+
+                        f_dims = sorted(fluid_c.dims)
+                        w, h = f_dims[0], f_dims[1]
+                        Dh = 2 * w * h / (w + h) if (w + h) > 1e-12 else 1e-6
+                        Nu = 4.0  # 矩形微通道经验努塞尔数
+                        h_tc = (Nu * fluid_c.k) / Dh  # 极大的拉高了固液面的等效换热系数
+
+                        R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
+                        R_conv = 1.0 / (h_tc * area)
+                        res = R_solid + R_conv
+                    else:
+                        # 固-固 或 液-液的纯导热模型 (Conduction)
+                        res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
+                            c_b.dims[axis] / (2.0 * c_b.k * area)
+                        )
+
                     if res > tol:
                         g = 1.0 / res
                         rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
