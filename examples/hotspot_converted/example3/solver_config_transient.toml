@@ -86,6 +86,7 @@ name = "Spreader"
 thickness = 0.001
 material = "copper"
 active = false
+layout_file = ""
 lx = -0.008799999999999999
 ly = -0.00862
 dx = 0.03
@@ -97,6 +98,7 @@ name = "Sink"
 thickness = 0.0069
 material = "copper"
 active = false
+layout_file = ""
 lx = -0.023799999999999998
 ly = -0.02362
 dx = 0.06
@@ -131,8 +133,8 @@ cp = 4000000.0
 fluid = false
 
 [materials.water]
-k = 0.6
-cp = 4200000.0
+k = 0.6069
+cp = 4170000.0
 fluid = true
 dynamic_viscosity = 0.000889
 

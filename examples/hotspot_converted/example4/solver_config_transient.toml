@@ -74,6 +74,7 @@ name = "Spreader"
 thickness = 0.001
 material = "none"
 active = false
+layout_file = ""
 lx = -0.011099999999999999
 ly = -0.011099999999999999
 dx = 0.03
@@ -85,18 +86,11 @@ name = "Sink"
 thickness = 0.0069
 material = "none"
 active = false
+layout_file = ""
 lx = -0.026099999999999998
 ly = -0.026099999999999998
 dx = 0.06
 dy = 0.06
-
-[[boundary_conditions]]
-name = "sink_conv"
-type = "convection"
-face = "+Z"
-target = "Sink"
-h = 2777.777777777778
-T_inf = 318.15
 
 [[boundary_conditions]]
 name = "mc_inlet"
@@ -112,6 +106,14 @@ type = "pressure"
 face = "+X"
 target = "layer_2"
 pressure = 0.0
+
+[[boundary_conditions]]
+name = "sink_conv"
+type = "convection"
+face = "+Z"
+target = "Sink"
+h = 2777.777777777778
+T_inf = 318.15
 
 [materials.silicon]
 k = 130.0
