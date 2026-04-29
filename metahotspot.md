@@ -22,7 +22,6 @@ from typing import Dict, List, Tuple
 
 import toml
 
-from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 DEFAULT_CONFIG_SCHEMA = {
@@ -1026,10 +1025,6 @@ class FVMSolver:
                     }
                 )
 
-        if not pressure_bcs:
-            print("[INFO] No pressure BCs found, skipping pressure solve")
-            return
-
         # Build fluid connectivity graph
         fluid_cells = [c for c in self.cells if c.cell_type in (1, 2, 3)]
         if not fluid_cells:
@@ -1119,10 +1114,6 @@ class FVMSolver:
                 # Set inlet temperature if provided
                 if temperature is not None:
                     c.inlet_temp = temperature
-
-                print(
-                    f"[INFO] Applied {face} BC: pressure={pressure} Pa to cell {c.id} (layer={c.layer_name})"
-                )
 
         # Solve pressure system
         try:

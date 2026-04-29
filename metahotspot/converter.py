@@ -5,7 +5,6 @@ from typing import Dict, List, Tuple
 
 import toml
 
-from metahotspot.gmsh_mesher import GmshMesher
 from metahotspot.hotspot_parser import HotSpotParser
 
 DEFAULT_CONFIG_SCHEMA = {
