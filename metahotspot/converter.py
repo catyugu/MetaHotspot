@@ -360,8 +360,15 @@ class SimulationModelBuilder25D:
 
         if not grid:
             return []
+
         rows, cols = len(grid), len(grid[0])
-        dx, dy = 0.03 / cols, 0.03 / rows
+
+        # [核心修正]: 移除硬编码的 0.03 (30mm)。
+        # 动态使用真实解析出的芯片物理尺寸映射 CSV 网格，
+        # 保证微流道网格节点能与发热层严格共形对齐。
+        dx = self.global_width / cols
+        dy = self.global_height / rows
+
         visited = [[False] * cols for _ in range(rows)]
 
         units = []
