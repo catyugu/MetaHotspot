@@ -9,8 +9,8 @@ from metahotspot.model25d import load_stackup
 
 
 class GmshMesher:
-    DEFAULT_MAX_MESH_SIZE = 0.02
-    DEFAULT_MIN_MESH_SIZE = 0.001
+    DEFAULT_MAX_MESH_SIZE = 0.01
+    DEFAULT_MIN_MESH_SIZE = 0.0005
     DEFAULT_REFINEMENT_DISTANCE = 0.002
 
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:

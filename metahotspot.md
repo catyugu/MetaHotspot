@@ -334,10 +334,15 @@ class SimulationModelBuilder25D:
             ) as f:
                 json.dump(mc_units, f, indent=2)
 
-            self.materials.setdefault("water", STANDARD_MATERIALS["water"])
+            self.materials.setdefault("silicon", STANDARD_MATERIALS["silicon"])
             self.stackup.append(
                 self._create_layer_dict(
-                    tag, name, thickness, "water", True, f"layouts/{layout_path}"
+                    tag,
+                    name,
+                    thickness,
+                    "silicon",
+                    True,
+                    f"layouts/{layout_path}",
                 )
             )
 
@@ -364,55 +369,78 @@ class SimulationModelBuilder25D:
             )
 
     def _parse_microchannel_csv(self, csv_path: str) -> List[dict]:
-        """Merge contiguous fluid cells into unified channels."""
+        """Convert microchannel CSV to a set of solid and fluid rectangular units."""
         if not os.path.exists(csv_path):
             return []
 
         with open(csv_path, "r", encoding="utf-8") as f:
             grid = [
-                [int(x.strip()) for x in row if x.strip()]
+                [1 if int(x.strip()) > 0 else 0 for x in row if x.strip()]
                 for row in csv.reader(f)
                 if row
             ]
 
         if not grid:
             return []
-        rows, cols = len(grid), len(grid[0])
-        dx, dy = 0.03 / cols, 0.03 / rows
-        visited = [[False] * cols for _ in range(rows)]
 
+        rows, cols = len(grid), len(grid[0])
+        # 使用真实的全局芯片尺寸，而非死板的 0.03
+        dx, dy = self.global_width / cols, self.global_height / rows
+
+        visited = [[False] * cols for _ in range(rows)]
         units = []
+
+        # 2D 贪心合并算法：将相邻的同类网格合并为最大的矩形单元
         for r in range(rows):
             for c in range(cols):
-                if grid[r][c] == 1 and not visited[r][c]:
-                    # Flood fill to find channel bounds
-                    q, cells = [(r, c)], []
-                    while q:
-                        cr, cc = q.pop()
-                        if visited[cr][cc] or grid[cr][cc] != 1:
-                            continue
-                        visited[cr][cc] = True
-                        cells.append((cr, cc))
-                        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                            if 0 <= cr + dr < rows and 0 <= cc + dc < cols:
-                                q.append((cr + dr, cc + dc))
+                if visited[r][c]:
+                    continue
 
-                    min_r, max_r = min(x[0] for x in cells), max(x[0] for x in cells)
-                    min_c, max_c = min(x[1] for x in cells), max(x[1] for x in cells)
+                val = grid[r][c]
 
-                    units.append(
-                        {
-                            "name": f"mc_channel_{len(units)}",
-                            "lx": min_c * dx,
-                            "ly": (rows - 1 - max_r) * dy,
-                            "dx": (max_c - min_c + 1) * dx,
-                            "dy": (max_r - min_r + 1) * dy,
-                            "is_fluid": True,
-                            "material": "water",
-                            "k": 0.6069,
-                            "cp": 4.17e6,
-                        }
-                    )
+                # 步骤 1：向右寻找最大宽度 w
+                w = 0
+                while c + w < cols and grid[r][c + w] == val and not visited[r][c + w]:
+                    w += 1
+
+                # 步骤 2：向下寻找在宽度 w 限制下的最大高度 h
+                h = 1
+                while r + h < rows:
+                    valid_row = True
+                    for i in range(w):
+                        if grid[r + h][c + i] != val or visited[r + h][c + i]:
+                            valid_row = False
+                            break
+                    if not valid_row:
+                        break
+                    h += 1
+
+                # 标记该矩形块内的所有单元格为已访问
+                for i in range(h):
+                    for j in range(w):
+                        visited[r + i][c + j] = True
+
+                is_fluid = val == 1
+                mat = "water" if is_fluid else "silicon"
+                # 手动显式赋予物性参数，保障求解器正确映射
+                k = 0.6069 if is_fluid else 130.0
+                cp = 4.17e6 if is_fluid else 1.63e6
+
+                units.append(
+                    {
+                        "name": f"mc_{'fluid' if is_fluid else 'solid'}_{len(units)}",
+                        "lx": c * dx,
+                        "ly": (rows - r - h)
+                        * dy,  # GMSH 坐标原点通常在左下角，这里做倒置转换
+                        "dx": w * dx,
+                        "dy": h * dy,
+                        "is_fluid": is_fluid,
+                        "material": mat,
+                        "k": k,
+                        "cp": cp,
+                    }
+                )
+
         return units
 
     def get_result(self) -> dict:
@@ -1056,8 +1084,8 @@ from metahotspot.model25d import load_stackup
 
 
 class GmshMesher:
-    DEFAULT_MAX_MESH_SIZE = 0.02
-    DEFAULT_MIN_MESH_SIZE = 0.001
+    DEFAULT_MAX_MESH_SIZE = 0.01
+    DEFAULT_MIN_MESH_SIZE = 0.0005
     DEFAULT_REFINEMENT_DISTANCE = 0.002
 
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
