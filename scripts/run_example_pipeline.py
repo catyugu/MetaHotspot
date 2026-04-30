@@ -1,11 +1,10 @@
 import argparse
 import copy
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-import toml
 
 
 def _write_solver_configs_from_template(
@@ -19,37 +18,40 @@ def _write_solver_configs_from_template(
     transient["init_temperature_file_path"] = "init.vtu"
 
     with open(steady_path, "w", encoding="utf-8") as handle:
-        toml.dump(steady, handle)
+        json.dump(steady, handle, indent=4)
     with open(transient_path, "w", encoding="utf-8") as handle:
-        toml.dump(transient, handle)
+        json.dump(transient, handle, indent=4)
 
 
 def _ensure_solver_configs(example_dir: Path) -> tuple[Path, Path]:
-    steady_path = example_dir / "solver_config_steady.toml"
-    transient_path = example_dir / "solver_config_transient.toml"
+    steady_path = example_dir / "solver_config_steady.json"
+    transient_path = example_dir / "solver_config_transient.json"
 
     if steady_path.exists() and transient_path.exists():
         return steady_path, transient_path
 
-    template_path = example_dir / "solver_config.toml"
+    template_path = example_dir / "solver_config.json"
     if template_path.exists():
-        template = toml.load(template_path)
+        with open(template_path, "r", encoding="utf-8") as f:
+            template = json.load(f)
         _write_solver_configs_from_template(template, steady_path, transient_path)
         return steady_path, transient_path
 
     if steady_path.exists() and not transient_path.exists():
-        transient = copy.deepcopy(toml.load(steady_path))
+        with open(steady_path, "r", encoding="utf-8") as f:
+            transient = copy.deepcopy(json.load(f))
         transient["simulation_type"] = "transient"
         transient["init_temperature_file_path"] = "init.vtu"
         with open(transient_path, "w", encoding="utf-8") as handle:
-            toml.dump(transient, handle)
+            json.dump(transient, handle, indent=4)
         return steady_path, transient_path
 
     if transient_path.exists() and not steady_path.exists():
-        steady = copy.deepcopy(toml.load(transient_path))
+        with open(transient_path, "r", encoding="utf-8") as f:
+            steady = copy.deepcopy(json.load(f))
         steady["simulation_type"] = "steady"
         with open(steady_path, "w", encoding="utf-8") as handle:
-            toml.dump(steady, handle)
+            json.dump(steady, handle, indent=4)
         return steady_path, transient_path
 
     raise FileNotFoundError(
@@ -68,11 +70,14 @@ def _run_solver(project_root: Path, config_path: Path) -> None:
 
 
 def _force_transient_init_file(transient_cfg: Path) -> None:
-    data = toml.load(transient_cfg)
+    with open(transient_cfg, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+
     data["simulation_type"] = "transient"
     data["init_temperature_file_path"] = "init.vtu"
+
     with open(transient_cfg, "w", encoding="utf-8") as handle:
-        toml.dump(data, handle)
+        json.dump(data, handle, indent=4)
 
 
 def run_pipeline(example_dir: Path) -> None:

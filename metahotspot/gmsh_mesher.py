@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import List
 
 import gmsh
-import toml
-from metahotspot.model25d import load_stackup
+from metahotspot.model25d import load_config, load_stackup
 
 
 class GmshMesher:
@@ -24,7 +23,9 @@ class GmshMesher:
     def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
         mesh_params = mesh_params or {}
         base_dir = str(Path(config_path).parent)
-        config = toml.load(config_path)
+
+        # 换用统一入口加载JSON
+        config = load_config(config_path)
 
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)

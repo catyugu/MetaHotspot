@@ -21,7 +21,6 @@ import shutil
 import csv
 from typing import Dict, List, Tuple
 
-import toml
 from metahotspot.hotspot_parser import HotSpotParser
 from metahotspot.model25d import merge_with_defaults, STANDARD_MATERIALS
 
@@ -50,7 +49,6 @@ class SimulationModelBuilder25D:
         os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
-        # 统一注入所有默认值，后续逻辑绝对信任 config
         self.config = merge_with_defaults(raw_config)
 
         self.materials: Dict[str, dict] = dict(STANDARD_MATERIALS)
@@ -220,7 +218,7 @@ class SimulationModelBuilder25D:
             "Sink", self.config["t_sink"], s_sink, self.config["material_sink"], 1002
         )
 
-        # 边界条件持有多样参数列表（灵活字典）
+        # JSON 格式中边界条件本身就是灵活字典
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
@@ -295,7 +293,6 @@ class SimulationModelBuilder25D:
                 )
             )
 
-            # 多样化的边界条件参数列表
             self.boundary_conditions.extend(
                 [
                     {
@@ -381,7 +378,7 @@ def convert_hotspot_to_metahotspot(
     example_dir: str,
     output_dir: str,
     simulation_type: str = "steady",
-    config_name: str = "solver_config.toml",
+    config_name: str = "solver_config.json",
 ) -> str:
     os.makedirs(output_dir, exist_ok=True)
     model = (
@@ -398,7 +395,7 @@ def convert_hotspot_to_metahotspot(
     if ptrace_path:
         shutil.copy(ptrace_path, os.path.join(output_dir, ptrace_name))
 
-    toml_data = {
+    json_data = {
         "simulation_type": simulation_type,
         "time": cfg["time"],
         "timestep": cfg["timestep"],
@@ -414,11 +411,11 @@ def convert_hotspot_to_metahotspot(
     }
 
     if cfg["init_file"]:
-        toml_data["init_temperature_file_path"] = cfg["init_file"]
+        json_data["init_temperature_file_path"] = cfg["init_file"]
 
     config_path = os.path.join(output_dir, config_name)
     with open(config_path, "w", encoding="utf-8") as f:
-        toml.dump(toml_data, f)
+        json.dump(json_data, f, indent=4)
     return config_path
 
 
@@ -430,13 +427,13 @@ def convert_hotspot_with_modes(
     if mode in ("steady", "both"):
         res.append(
             convert_hotspot_to_metahotspot(
-                example_dir, output_dir, "steady", "solver_config_steady.toml"
+                example_dir, output_dir, "steady", "solver_config_steady.json"
             )
         )
     if mode in ("transient", "both"):
         res.append(
             convert_hotspot_to_metahotspot(
-                example_dir, output_dir, "transient", "solver_config_transient.toml"
+                example_dir, output_dir, "transient", "solver_config_transient.json"
             )
         )
     return res
@@ -454,9 +451,8 @@ import meshio
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
-import toml
 
-from metahotspot.model25d import load_stackup, merge_with_defaults
+from metahotspot.model25d import load_config, load_stackup
 
 
 @dataclass(slots=True)
@@ -488,8 +484,8 @@ class FVMSolver:
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
-        # 统一注入默认值并形成绝对信任域
-        self.config = merge_with_defaults(toml.load(config_path))
+        # 单一真相入口：加载彻底清洗过的 config
+        self.config = load_config(config_path)
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
@@ -497,11 +493,9 @@ class FVMSolver:
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
 
-        # 动态抽取流动介质的物性参数（绝对信任存在水，如果不在会从缺省物性补充）
+        # 因为全局配置已清洗，这里可以直接取值而不需要Fallback
         self.water_density = 1000.0
-        self.water_visc = self.materials.get("water", {}).get(
-            "dynamic_viscosity", 8.89e-4
-        )
+        self.water_visc = self.materials["water"]["dynamic_viscosity"]
 
         self._prepare_mesh()
         self._precompute_power_matrix()
@@ -569,10 +563,9 @@ class FVMSolver:
                             name, is_fluid = u.name, u.is_fluid
                             if u.k is not None:
                                 k, cp = u.k, u.cp
-                            elif u.material in self.materials:
-                                k, cp = float(self.materials[u.material]["k"]), float(
-                                    self.materials[u.material]["cp"]
-                                )
+                            else:
+                                mat = self.materials.get(u.material, def_mat)
+                                k, cp = float(mat["k"]), float(mat["cp"])
                             break
                     break
 
@@ -654,11 +647,14 @@ class FVMSolver:
         n_fluid = len(fluid_cells)
         bc_pressures, self.inlet_temps = {}, {}
 
-        for bc in self.config.get("boundary_conditions", []):
+        # 动态处理具有不同参数结构的BC
+        for bc in self.config["boundary_conditions"]:
             if bc.get("type") == "pressure":
-                for c_id, _, _ in self.boundary_faces_by_direction.get(bc["face"], []):
+                for c_id, _, _ in self.boundary_faces_by_direction.get(
+                    bc.get("face", ""), []
+                ):
                     c = self.cells[c_id]
-                    if c.is_fluid and c.layer_name == bc["target"]:
+                    if c.is_fluid and c.layer_name == bc.get("target"):
                         bc_pressures[c_id] = float(bc["pressure"])
                         if "temperature" in bc:
                             self.inlet_temps[c_id] = float(bc["temperature"])
@@ -666,7 +662,6 @@ class FVMSolver:
         avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
         h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
 
-        # 计算流导率
         if abs(h - w) < 1e-10:
             hydroC = (0.42229 * h**4) / (12 * self.water_visc * L)
         elif h > w:
@@ -736,21 +731,19 @@ class FVMSolver:
                     is_a_fluid, is_b_fluid = c_a.is_fluid, c_b.is_fluid
 
                     if is_a_fluid != is_b_fluid:
-                        # 固-液对流换热模型 (Convection)
                         fluid_c = c_a if is_a_fluid else c_b
                         solid_c = c_b if is_a_fluid else c_a
 
                         f_dims = sorted(fluid_c.dims)
                         w, h = f_dims[0], f_dims[1]
                         Dh = 2 * w * h / (w + h) if (w + h) > 1e-12 else 1e-6
-                        Nu = 4.0  # 矩形微通道经验努塞尔数
-                        h_tc = (Nu * fluid_c.k) / Dh  # 极大的拉高了固液面的等效换热系数
+                        Nu = 4.0
+                        h_tc = (Nu * fluid_c.k) / Dh
 
                         R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
                         R_conv = 1.0 / (h_tc * area)
                         res = R_solid + R_conv
                     else:
-                        # 固-固 或 液-液的纯导热模型 (Conduction)
                         res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
                             c_b.dims[axis] / (2.0 * c_b.k * area)
                         )
@@ -857,9 +850,10 @@ class FVMSolver:
             [],
             [],
         )
+        # JSON列表可以直接遍历
         for bc in [
             b
-            for b in self.config.get("boundary_conditions", [])
+            for b in self.config["boundary_conditions"]
             if b.get("type") == "convection"
         ]:
             for c_id, _, area in self.boundary_faces_by_direction.get(
@@ -982,8 +976,7 @@ from pathlib import Path
 from typing import List
 
 import gmsh
-import toml
-from metahotspot.model25d import load_stackup
+from metahotspot.model25d import load_config, load_stackup
 
 
 class GmshMesher:
@@ -1002,7 +995,9 @@ class GmshMesher:
     def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
         mesh_params = mesh_params or {}
         base_dir = str(Path(config_path).parent)
-        config = toml.load(config_path)
+
+        # 换用统一入口加载JSON
+        config = load_config(config_path)
 
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
@@ -1263,6 +1258,9 @@ DEFAULT_CONFIG = {
     "init_temperature_file_path": "",
     "pumping_pressure": 52000.0,
     "inlet_temperature": 298.15,
+    "boundary_conditions": [],
+    "stackup": [],
+    "materials": {},
 }
 
 STANDARD_MATERIALS = {
@@ -1304,26 +1302,41 @@ class Layer25D:
     dy: float = 0.01
 
 
+def load_config(config_path: str) -> Dict[str, Any]:
+    """统一配置加载入口：确保下游直接读取到清洗完毕、具有绝对信任度的配置。"""
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw_config = json.load(f)
+    return merge_with_defaults(raw_config)
+
+
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
-    """配置关口：将原始配置与默认值合并，保证下游读取时绝对安全。"""
+    """配置关口：将原始配置与默认值合并。一处更改，处处有效。"""
     config = dict(DEFAULT_CONFIG)
+
+    # 注入用户配置并处理隐式类型转换
     for k, v in raw_config.items():
-        if k in config:
-            config[k] = (
-                type(config[k])(v) if v not in {"(null)", "null", "None"} else ""
-            )
+        if k in config and type(config[k]) is not type(v):
+            try:
+                # 忽略 null 占位符
+                if v not in {"(null)", "null", "None", ""}:
+                    config[k] = type(config[k])(v)
+            except ValueError:
+                config[k] = v
         else:
             config[k] = v
 
-    # 特殊依赖回退处理 (一处处理，处处有效)
-    if "t_interface" not in raw_config:
-        config["t_interface"] = config["t_tim"]
-    if "time" not in raw_config:
-        config["time"] = max(config["sampling_intvl"], 0.01)
-    if "timestep" not in raw_config:
-        config["timestep"] = config["sampling_intvl"]
+    # 消除零散的Fallback逻辑：处理强依赖关系
+    config["t_interface"] = raw_config.get("t_interface", config["t_tim"])
+    config["time"] = raw_config.get("time", max(config["sampling_intvl"], 0.01))
+    config["timestep"] = raw_config.get("timestep", config["sampling_intvl"])
+
     if "init_temp" in raw_config:
         config["init_temperature"] = float(raw_config["init_temp"])
+
+    # 确保基础材料始终存在，防止下游 key error
+    for mat_name, mat_props in STANDARD_MATERIALS.items():
+        if mat_name not in config["materials"]:
+            config["materials"][mat_name] = mat_props
 
     return config
 

@@ -26,7 +26,7 @@ def _convert_and_mesh_batch(
         # Mesh each generated config
         base_dir = out_dir
         if mode == "both":
-            configs_to_mesh = [os.path.join(base_dir, "solver_config_steady.toml")]
+            configs_to_mesh = [os.path.join(base_dir, "solver_config_steady.json")]
         else:
             configs_to_mesh = created
 

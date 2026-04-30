@@ -7,9 +7,8 @@ import meshio
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
-import toml
 
-from metahotspot.model25d import load_stackup, merge_with_defaults
+from metahotspot.model25d import load_config, load_stackup
 
 
 @dataclass(slots=True)
@@ -37,12 +36,12 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 
 class FVMSolver:
-    GEOMETRY_TOLERANCE = 1e-12
+    GEOMETRY_TOLERANCE = 1e-15
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
-        # 统一注入默认值并形成绝对信任域
-        self.config = merge_with_defaults(toml.load(config_path))
+        # 单一真相入口：加载彻底清洗过的 config
+        self.config = load_config(config_path)
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
@@ -50,11 +49,9 @@ class FVMSolver:
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
 
-        # 动态抽取流动介质的物性参数（绝对信任存在水，如果不在会从缺省物性补充）
+        # 因为全局配置已清洗，这里可以直接取值而不需要Fallback
         self.water_density = 1000.0
-        self.water_visc = self.materials.get("water", {}).get(
-            "dynamic_viscosity", 8.89e-4
-        )
+        self.water_visc = self.materials["water"]["dynamic_viscosity"]
 
         self._prepare_mesh()
         self._precompute_power_matrix()
@@ -122,10 +119,9 @@ class FVMSolver:
                             name, is_fluid = u.name, u.is_fluid
                             if u.k is not None:
                                 k, cp = u.k, u.cp
-                            elif u.material in self.materials:
-                                k, cp = float(self.materials[u.material]["k"]), float(
-                                    self.materials[u.material]["cp"]
-                                )
+                            else:
+                                mat = self.materials.get(u.material, def_mat)
+                                k, cp = float(mat["k"]), float(mat["cp"])
                             break
                     break
 
@@ -207,11 +203,14 @@ class FVMSolver:
         n_fluid = len(fluid_cells)
         bc_pressures, self.inlet_temps = {}, {}
 
-        for bc in self.config.get("boundary_conditions", []):
+        # 动态处理具有不同参数结构的BC
+        for bc in self.config["boundary_conditions"]:
             if bc.get("type") == "pressure":
-                for c_id, _, _ in self.boundary_faces_by_direction.get(bc["face"], []):
+                for c_id, _, _ in self.boundary_faces_by_direction.get(
+                    bc.get("face", ""), []
+                ):
                     c = self.cells[c_id]
-                    if c.is_fluid and c.layer_name == bc["target"]:
+                    if c.is_fluid and c.layer_name == bc.get("target"):
                         bc_pressures[c_id] = float(bc["pressure"])
                         if "temperature" in bc:
                             self.inlet_temps[c_id] = float(bc["temperature"])
@@ -219,7 +218,6 @@ class FVMSolver:
         avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
         h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
 
-        # 计算流导率
         if abs(h - w) < 1e-10:
             hydroC = (0.42229 * h**4) / (12 * self.water_visc * L)
         elif h > w:
@@ -289,21 +287,19 @@ class FVMSolver:
                     is_a_fluid, is_b_fluid = c_a.is_fluid, c_b.is_fluid
 
                     if is_a_fluid != is_b_fluid:
-                        # 固-液对流换热模型 (Convection)
                         fluid_c = c_a if is_a_fluid else c_b
                         solid_c = c_b if is_a_fluid else c_a
 
                         f_dims = sorted(fluid_c.dims)
                         w, h = f_dims[0], f_dims[1]
                         Dh = 2 * w * h / (w + h) if (w + h) > 1e-12 else 1e-6
-                        Nu = 4.0  # 矩形微通道经验努塞尔数
-                        h_tc = (Nu * fluid_c.k) / Dh  # 极大的拉高了固液面的等效换热系数
+                        Nu = 4.0
+                        h_tc = (Nu * fluid_c.k) / Dh
 
                         R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
                         R_conv = 1.0 / (h_tc * area)
                         res = R_solid + R_conv
                     else:
-                        # 固-固 或 液-液的纯导热模型 (Conduction)
                         res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
                             c_b.dims[axis] / (2.0 * c_b.k * area)
                         )
@@ -410,9 +406,10 @@ class FVMSolver:
             [],
             [],
         )
+        # JSON列表可以直接遍历
         for bc in [
             b
-            for b in self.config.get("boundary_conditions", [])
+            for b in self.config["boundary_conditions"]
             if b.get("type") == "convection"
         ]:
             for c_id, _, area in self.boundary_faces_by_direction.get(

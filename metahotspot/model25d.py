@@ -28,6 +28,9 @@ DEFAULT_CONFIG = {
     "init_temperature_file_path": "",
     "pumping_pressure": 52000.0,
     "inlet_temperature": 298.15,
+    "boundary_conditions": [],
+    "stackup": [],
+    "materials": {},
 }
 
 STANDARD_MATERIALS = {
@@ -69,26 +72,41 @@ class Layer25D:
     dy: float = 0.01
 
 
+def load_config(config_path: str) -> Dict[str, Any]:
+    """统一配置加载入口：确保下游直接读取到清洗完毕、具有绝对信任度的配置。"""
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw_config = json.load(f)
+    return merge_with_defaults(raw_config)
+
+
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
-    """配置关口：将原始配置与默认值合并，保证下游读取时绝对安全。"""
+    """配置关口：将原始配置与默认值合并。一处更改，处处有效。"""
     config = dict(DEFAULT_CONFIG)
+
+    # 注入用户配置并处理隐式类型转换
     for k, v in raw_config.items():
-        if k in config:
-            config[k] = (
-                type(config[k])(v) if v not in {"(null)", "null", "None"} else ""
-            )
+        if k in config and type(config[k]) is not type(v):
+            try:
+                # 忽略 null 占位符
+                if v not in {"(null)", "null", "None", ""}:
+                    config[k] = type(config[k])(v)
+            except ValueError:
+                config[k] = v
         else:
             config[k] = v
 
-    # 特殊依赖回退处理 (一处处理，处处有效)
-    if "t_interface" not in raw_config:
-        config["t_interface"] = config["t_tim"]
-    if "time" not in raw_config:
-        config["time"] = max(config["sampling_intvl"], 0.01)
-    if "timestep" not in raw_config:
-        config["timestep"] = config["sampling_intvl"]
+    # 消除零散的Fallback逻辑：处理强依赖关系
+    config["t_interface"] = raw_config.get("t_interface", config["t_tim"])
+    config["time"] = raw_config.get("time", max(config["sampling_intvl"], 0.01))
+    config["timestep"] = raw_config.get("timestep", config["sampling_intvl"])
+
     if "init_temp" in raw_config:
         config["init_temperature"] = float(raw_config["init_temp"])
+
+    # 确保基础材料始终存在，防止下游 key error
+    for mat_name, mat_props in STANDARD_MATERIALS.items():
+        if mat_name not in config["materials"]:
+            config["materials"][mat_name] = mat_props
 
     return config
 

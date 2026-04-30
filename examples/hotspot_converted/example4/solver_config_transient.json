@@ -1,0 +1,166 @@
+{
+    "simulation_type": "transient",
+    "time": 0.01,
+    "timestep": 0.01,
+    "sampling_intvl": 0.01,
+    "proc_freq": 3000000000.0,
+    "ambient": 318.15,
+    "init_temperature": 318.15,
+    "mesh_file_path": "mesh.msh",
+    "ptrace_file_path": "example.ptrace",
+    "materials": {
+        "silicon": {
+            "k": 130.0,
+            "cp": 1630300.0,
+            "fluid": false
+        },
+        "copper": {
+            "k": 400.0,
+            "cp": 3440000.0,
+            "fluid": false
+        },
+        "aluminum": {
+            "k": 237.0,
+            "cp": 2422000.0,
+            "fluid": false
+        },
+        "tim": {
+            "k": 4.0,
+            "cp": 4000000.0,
+            "fluid": false
+        },
+        "water": {
+            "k": 0.6069,
+            "cp": 4172638.0,
+            "fluid": true,
+            "dynamic_viscosity": 0.000889
+        },
+        "default_solid": {
+            "k": 1.0,
+            "cp": 1000000.0,
+            "fluid": false
+        },
+        "none": {
+            "k": 1e-05,
+            "cp": 3550000.0,
+            "fluid": false
+        },
+        "layer_4_mat": {
+            "k": 130.00013000013,
+            "cp": 1630300.0,
+            "fluid": false
+        }
+    },
+    "stackup": [
+        {
+            "tag": 1,
+            "name": "layer_1",
+            "thickness": 0.0001,
+            "material": "silicon",
+            "active": false,
+            "layout_file": "layouts/layer_1_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.0078,
+            "dy": 0.0078
+        },
+        {
+            "tag": 2,
+            "name": "layer_2",
+            "thickness": 0.0001,
+            "material": "silicon",
+            "active": true,
+            "layout_file": "layouts/layer_2_microchannel_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.0078,
+            "dy": 0.0078
+        },
+        {
+            "tag": 3,
+            "name": "layer_3",
+            "thickness": 9e-05,
+            "material": "silicon",
+            "active": false,
+            "layout_file": "layouts/layer_3_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.0078,
+            "dy": 0.0078
+        },
+        {
+            "tag": 4,
+            "name": "layer_4",
+            "thickness": 1e-05,
+            "material": "layer_4_mat",
+            "active": true,
+            "layout_file": "layouts/layer_4_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.0078,
+            "dy": 0.0078
+        },
+        {
+            "tag": 5,
+            "name": "layer_5",
+            "thickness": 0.0004,
+            "material": "silicon",
+            "active": true,
+            "layout_file": "layouts/layer_5_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.0078,
+            "dy": 0.0078
+        },
+        {
+            "tag": 1001,
+            "name": "Spreader",
+            "thickness": 0.001,
+            "material": "none",
+            "active": false,
+            "layout_file": "",
+            "lx": -0.011099999999999999,
+            "ly": -0.011099999999999999,
+            "dx": 0.03,
+            "dy": 0.03
+        },
+        {
+            "tag": 1002,
+            "name": "Sink",
+            "thickness": 0.0069,
+            "material": "none",
+            "active": false,
+            "layout_file": "",
+            "lx": -0.026099999999999998,
+            "ly": -0.026099999999999998,
+            "dx": 0.06,
+            "dy": 0.06
+        }
+    ],
+    "boundary_conditions": [
+        {
+            "name": "mc_inlet",
+            "type": "pressure",
+            "face": "-X",
+            "target": "layer_2",
+            "pressure": 52000.0,
+            "temperature": 298.15
+        },
+        {
+            "name": "mc_outlet",
+            "type": "pressure",
+            "face": "+X",
+            "target": "layer_2",
+            "pressure": 0.0
+        },
+        {
+            "name": "sink_conv",
+            "type": "convection",
+            "face": "+Z",
+            "target": "Sink",
+            "h": 2777.777777777778,
+            "T_inf": 318.15
+        }
+    ],
+    "init_temperature_file_path": "init.vtu"
+}

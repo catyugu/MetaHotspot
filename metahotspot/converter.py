@@ -4,7 +4,6 @@ import shutil
 import csv
 from typing import Dict, List, Tuple
 
-import toml
 from metahotspot.hotspot_parser import HotSpotParser
 from metahotspot.model25d import merge_with_defaults, STANDARD_MATERIALS
 
@@ -33,7 +32,6 @@ class SimulationModelBuilder25D:
         os.makedirs(self.layouts_dir, exist_ok=True)
 
         raw_config = parser.parse_config(os.path.join(example_dir, "example.config"))
-        # 统一注入所有默认值，后续逻辑绝对信任 config
         self.config = merge_with_defaults(raw_config)
 
         self.materials: Dict[str, dict] = dict(STANDARD_MATERIALS)
@@ -203,7 +201,7 @@ class SimulationModelBuilder25D:
             "Sink", self.config["t_sink"], s_sink, self.config["material_sink"], 1002
         )
 
-        # 边界条件持有多样参数列表（灵活字典）
+        # JSON 格式中边界条件本身就是灵活字典
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
@@ -278,7 +276,6 @@ class SimulationModelBuilder25D:
                 )
             )
 
-            # 多样化的边界条件参数列表
             self.boundary_conditions.extend(
                 [
                     {
@@ -364,7 +361,7 @@ def convert_hotspot_to_metahotspot(
     example_dir: str,
     output_dir: str,
     simulation_type: str = "steady",
-    config_name: str = "solver_config.toml",
+    config_name: str = "solver_config.json",
 ) -> str:
     os.makedirs(output_dir, exist_ok=True)
     model = (
@@ -381,7 +378,7 @@ def convert_hotspot_to_metahotspot(
     if ptrace_path:
         shutil.copy(ptrace_path, os.path.join(output_dir, ptrace_name))
 
-    toml_data = {
+    json_data = {
         "simulation_type": simulation_type,
         "time": cfg["time"],
         "timestep": cfg["timestep"],
@@ -397,11 +394,11 @@ def convert_hotspot_to_metahotspot(
     }
 
     if cfg["init_file"]:
-        toml_data["init_temperature_file_path"] = cfg["init_file"]
+        json_data["init_temperature_file_path"] = cfg["init_file"]
 
     config_path = os.path.join(output_dir, config_name)
     with open(config_path, "w", encoding="utf-8") as f:
-        toml.dump(toml_data, f)
+        json.dump(json_data, f, indent=4)
     return config_path
 
 
@@ -413,13 +410,13 @@ def convert_hotspot_with_modes(
     if mode in ("steady", "both"):
         res.append(
             convert_hotspot_to_metahotspot(
-                example_dir, output_dir, "steady", "solver_config_steady.toml"
+                example_dir, output_dir, "steady", "solver_config_steady.json"
             )
         )
     if mode in ("transient", "both"):
         res.append(
             convert_hotspot_to_metahotspot(
-                example_dir, output_dir, "transient", "solver_config_transient.toml"
+                example_dir, output_dir, "transient", "solver_config_transient.json"
             )
         )
     return res
