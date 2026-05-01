@@ -480,7 +480,7 @@ def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
 
 
 class FVMSolver:
-    GEOMETRY_TOLERANCE = 1e-12
+    GEOMETRY_TOLERANCE = 1e-15
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
@@ -530,12 +530,12 @@ class FVMSolver:
         sorted_indices = np.argsort(morton_keys)
 
         self._map_materials_and_build_cells(
-            sorted_indices, hex_data, centers, lowers, uppers, dims, vols, physical_tags
+            sorted_indices, centers, lowers, uppers, dims, vols, physical_tags
         )
         self._extract_faces(hex_data, sorted_indices)
 
     def _map_materials_and_build_cells(
-        self, sorted_indices, hex_data, centers, lowers, uppers, dims, vols, tags
+        self, sorted_indices, centers, lowers, uppers, dims, vols, tags
     ):
         tol = self.GEOMETRY_TOLERANCE
         z_cursor = 0.0
@@ -736,12 +736,28 @@ class FVMSolver:
 
                         f_dims = sorted(fluid_c.dims)
                         w, h = f_dims[0], f_dims[1]
-                        Dh = 2 * w * h / (w + h) if (w + h) > 1e-12 else 1e-6
-                        Nu = 4.0
-                        h_tc = (Nu * fluid_c.k) / Dh
 
+                        # 水力直径
+                        d_h = 2 * w * h / (w + h)
+
+                        AR = min(w, h) / max(w, h)
+
+                        # London and Shah Nu 经验公式
+                        Nu = 8.235 * (
+                            1
+                            - 2.0421 * AR
+                            + 3.0853 * AR**2
+                            - 2.4765 * AR**3
+                            + 1.0578 * AR**4
+                            - 0.1861 * AR**5
+                        )
+
+                        # 对流换热系数
+                        h_f = (Nu * fluid_c.k) / d_h
+
+                        # R_total = R_solid + R_conv
                         R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
-                        R_conv = 1.0 / (h_tc * area)
+                        R_conv = 1.0 / (h_f * area)
                         res = R_solid + R_conv
                     else:
                         res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
