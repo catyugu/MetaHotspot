@@ -11,7 +11,7 @@ from metahotspot.fvm_solver import FVMSolver
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run MetaHotspot finite-volume solver")
-    parser.add_argument("config", help="Path to solver_config.toml")
+    parser.add_argument("config", help="Path to solver_config.json")
     args = parser.parse_args()
 
     FVMSolver(args.config).solve()

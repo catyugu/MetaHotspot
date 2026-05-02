@@ -103,7 +103,7 @@ def main() -> None:
 
     # Mesh the steady config (if mode=both, mesh steady only for batch efficiency)
     base_dir = args.output_dir
-    config_to_mesh = os.path.join(base_dir, "solver_config_steady.toml")
+    config_to_mesh = os.path.join(base_dir, "solver_config_steady.json")
     if os.path.exists(config_to_mesh):
         mesher = GmshMesher()
         mesher.generate_mesh(config_to_mesh)
@@ -439,7 +439,7 @@ from metahotspot.fvm_solver import FVMSolver
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run MetaHotspot finite-volume solver")
-    parser.add_argument("config", help="Path to solver_config.toml")
+    parser.add_argument("config", help="Path to solver_config.json")
     args = parser.parse_args()
 
     FVMSolver(args.config).solve()

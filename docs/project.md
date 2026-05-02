@@ -48,7 +48,7 @@ conda activate numerical
 
 ## 二、 接口与文件标准定义
 
-**文件一：格式化配置文件 `solver_config.toml`**
+**文件一：格式化配置文件 `solver_config.json`**
 * 放弃所有散乱的参数，向求解器传递纯粹的物理信息和求解控制信息。
 
 **文件二：标准 FVM 网格文件 `mesh.msh` (VTK Unstructured Grid)**
