@@ -1,212 +1,110 @@
-# 工作清单
+这是一个非常经典且务实的工程重构路径。在几万网格的规模下，使用 Python 处理 IO 和顶层配置，用 C++ 榨干矩阵组装的性能，最后交回给 Python 调用 MKL PARDISO（例如通过 `pypardiso` 或直接使用 `scipy.sparse.linalg.spsolve` 的底层封装）进行求解，这正是工业界最喜欢的“胶水+计算核心”架构。
 
-## 项目背景，约束和说明
+针对你的需求（非共形网格、最大几万单元、数据驱动设计、C++17/20），以下是算法、代码规范与工程组织上的建议：
 
-* 参见[project.md](project.md)
-* 目前我们的项目全面使用Python进行编程。
-* 但是必须保证程序本身的通用性。
-* 拒绝向后兼容性，强制改写所有调用处，让代码更简洁，对以后的扩展更通用。
-* **在进入下一个步骤之前，你必须保证前一个步骤的全部任务得到完成。**
+### 一、 工程组织与架构（Python <-> C++）
 
-## 运行环境
+**1. 绑定工具：首选 `nanobind` (或 `pybind11`)**
+不要尝试在 C++ 里解析 JSON 或读取 `.msh` 文件，这些在 Python 里已经写得很好了[cite: 1, 2]。使用 `nanobind`（比 `pybind11` 更轻量、编译更快）作为 Python 和 C++ 之间的桥梁。
 
-```bash
-conda activate numerical
-```
-这个conda环境中已经安装好了基础的编译器和常用库，如果有其他需要，可在里面安装。
+**2. 零拷贝传递 (Zero-Copy Interop)**
+核心理念：**Python 传递内存指针，C++ 盲打计算**。
+在 Python 侧将 `Cell` 对象列表[cite: 2] 转化为扁平的 NumPy 结构体数组（Structure of Arrays, SoA），然后直接将 NumPy array 的底层指针通过 `std::span` 传给 C++。
 
-## 当前任务
-
-为了将 `metahotspot` 从一个简单的 Python 脚本向真正意义上的工业级（或类似 C++ 求解器）架构演进，我们需要彻底摒弃“基于坐标排序”或“硬编码特定面”等妥协做法。
-
-未来的 C++ 求解器核心应该完全依赖于**非结构化网格的拓扑关系（Topological Connectivity）**。不论微流道怎么弯折，只要我们赋予流体单元正确的速度矢量（Velocity Vector），迎风格式（Upwind Scheme）就可以基于共用面的法向量（Face Normal）自动推导出能量的流动方向和大小。
-
-以下是具体的架构改进方案与代码重构指南：
-
-### 核心演进思路
-
-1. **几何与边界条件彻底解耦**：不再通过 `Z_max` 或 `X_min` 硬编码找边界。将外部对流换热（散热器）、微流道入口（Inlet）和出口（Outlet）统一抽象为网格中的“边界物理面（Boundary Physical Surfaces）”。
-2. **通用的流固共轭传热（FVM Advection）**：抛弃原来的一维 `flow_dir` 排序法。引入速度矢量场（Velocity Field）。利用相邻网格单元的中心连线与公共面法向量进行点乘运算，自动计算质量流量并组装对流矩阵。这天然支持了任意形状、弯折的流道。
-3. **微流道层级抽象（Example 4 适配）**：在转换 `example4` 的 CSV 时，不再将每个像素生成一个极小的 `Unit2D`，而是通过算法将连续的流体网格合并为整条微流道的“几何版图单元（FLP Unit）”，极大降低网格复杂度和求解矩阵维度。
+**3. 输出标准 CSR 格式**
+C++ 求解器不需要包含矩阵求解部分。它的唯一任务是输出三个一维数组：`data`, `indices`, `indptr`（标准 CSR 稀疏矩阵的三元组）。将这三个数组传回 Python 后，直接 `scipy.sparse.csr_matrix((data, indices, indptr))` 包装并送入 PARDISO。
 
 ---
 
-### Phase 1: 数据结构升级 (改进 `model25d.py`)
+### 二、 数据驱动设计 (Data-Oriented Design)
 
-我们需要将原先粗糙的 `flow_dir` 字符串升级为真正的物理场量：**速度矢量**。同时添加边界条件的标记能力。
+抛弃面向对象（OOP）。在目前的 Python 代码中，你使用了 `@dataclass` 的 `Cell`[cite: 2]，这在 C++ 中属于 AoS（Array of Structures），对 CPU 缓存极度不友好。
 
-```python
-# metahotspot/model25d.py
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Tuple
+**1. C++ 侧的数据结构 (SoA 模式)**
+将你的网格数据彻底扁平化。
 
-@dataclass
-class Unit2D:
-    name: str
-    lx: float
-    ly: float
-    dx: float
-    dy: float
-    material: Optional[str] = None
-    k: Optional[float] = None
-    cp: Optional[float] = None
+```cpp
+// C++20 风格的扁平化架构
+struct MeshDataSoA {
+    // 几何数据
+    std::span<const double> box_min_x, box_min_y, box_min_z;
+    std::span<const double> box_max_x, box_max_y, box_max_z;
+    std::span<const double> vol;
     
-    # --- 流体与共轭传热升级 ---
-    is_fluid: bool = False
-    velocity: Tuple[float, float, float] = (0.0, 0.0, 0.0) # 速度矢量 (vx, vy, vz)
-    density: float = 1000.0 # 密度
+    // 物理属性
+    std::span<const double> k;
+    std::span<const double> cp;
+    std::span<const bool> is_fluid;
     
-    # 边界标记，允许转换器动态挂载边界条件
-    inlet_temp: Optional[float] = None 
+    // 拓扑数据 (如果有显式的面-单元关系)
+    std::span<const int> face_left_cells;
+    std::span<const int> face_right_cells;
+    
+    size_t num_cells;
+};
+```
+
+**2. 状态与行为分离**
+C++ 中不需要 `class FVMSolver`。使用纯函数（Pure Functions）构建你的 API，让状态完全由传入的 `MeshDataSoA` 决定。
+```cpp
+// 架构扁平化，暴露给 Python 的接口
+std::tuple<py::array_t<double>, py::array_t<int>, py::array_t<int>> 
+assemble_conduction_matrix(const MeshDataSoA& mesh);
 ```
 
 ---
 
-### Phase 2: 真正的 FVM 对流项组装 (改进 `fvm_solver.py`)
+### 三、 算法优化（针对非共形网格与矩阵组装）
 
-这是向 C++ 求解器迁移的最核心一步。你需要构建网格单元的**面-邻居拓扑图（Face-to-Cells Graph）**。通过面的通量（Flux）来决定能量传递，这使得代码对几何形状完全免疫。
+你目前的 Python 代码在 `_assemble_conduction_matrix` 中使用了一个基于 `c.box[0]` 排序的 Sweep-and-Prune（扫描与裁剪）算法来寻找非共形网格的重叠面[cite: 2]。在几万网格的规模下，C++ 有更好的处理方式：
 
-首先，在 `_prepare_mesh` 中建立面与左右网格的映射关系：
+**1. 空间索引加速 (Bounding Volume Hierarchy - BVH)**
+在 C++ 中，直接写一个轻量级的 BVH 树或使用第三方头文件库（如 `nanoflann` 或 `AABBTree`）。
+*   非共形网格的最大痛点是**寻找相邻重叠单元**。
+*   Python 里的单轴扫描法（Sweep-and-Prune）虽然比 $O(N^2)$ 好，但在极度不均匀的网格（如芯片层与微通道流体层交界）上，单轴扫描可能会退化。
+*   在 C++ 中构建一棵 BVH 树只需要不到 1 毫秒，然后你可以**并行地**为每个 Cell 查询相交的 Box 并计算 `_overlap_area`。
 
-```python
-# fvm_solver.py - 修改 _prepare_mesh 建立完整拓扑
-self.face_to_cells = {}
-for new_id, orig_id in enumerate(sorted_indices):
-    # ... 原有初始化 Cell 的代码 ...
-    
-    # 构建面拓扑
-    fs = [ ... ] # 提取六面体的6个面
-    for f in fs:
-        if f not in self.face_to_cells:
-            self.face_to_cells[f] = []
-        self.face_to_cells[f].append(new_id)
+**2. 两步矩阵组装法 (Two-Pass Assembly)**
+C++ 的 `std::vector` 动态扩容（`push_back`）对性能消耗极大[cite: 2]。对于稀疏矩阵的构建，必须采用两步法：
+*   **Pass 1 (统计):** 并行遍历所有 Cell，计算每个 Cell 对应的非零元个数（NNZ），累加得到 `indptr` 数组。这一步就能确定最终的 CSR 矩阵大小。
+*   **Pass 2 (填充):** 预分配 `data` 和 `indices` 数组的精确内存。再次并行遍历 Cell，根据 `indptr` 直接通过索引进行无锁并行写入（Lock-free Parallel Write）。
 
-# 区分内部面和边界侧面
-self.internal_faces = {f: c_ids for f, c_ids in self.face_to_cells.items() if len(c_ids) == 2}
-self.boundary_faces_all = {f: c_ids for f, c_ids in self.face_to_cells.items() if len(c_ids) == 1}
-```
-
-然后，用真正的**通量迎风格式**重构 `_add_fluid_advection`：
-
-```python
-def _add_fluid_advection_generic(self) -> Tuple[sp.csr_matrix, np.ndarray]:
-    n = len(self.cells)
-    rows, cols, data = [], [], []
-    rhs = np.zeros(n)
-    tol = self.GEOMETRY_TOLERANCE
-
-    # 1. 计算内部流体面通量 (Internal Convection)
-    for f, (c0_id, c1_id) in self.internal_faces.items():
-        c0, c1 = self.cells[c0_id], self.cells[c1_id]
-        if c0.is_fluid and c1.is_fluid:
-            # 计算面面积与法向量 (近似从 c0 指向 c1)
-            pts = self.mesh.points[list(f)]
-            cross_prod = np.cross(pts[1] - pts[0], pts[2] - pts[0])
-            area = np.linalg.norm(cross_prod)
-            n_vec = cross_prod / (area + 1e-16)
-            
-            vec_c0_c1 = c1.center - c0.center
-            if np.dot(n_vec, vec_c0_c1) < 0:
-                n_vec = -n_vec # 确保法向指向 c1
-                
-            # 取迎风侧速度进行通量计算
-            v_avg = 0.5 * (np.array(c0.velocity) + np.array(c1.velocity))
-            vol_flux = np.dot(v_avg, n_vec) * area # 体积流量 m^3/s
-            mass_flux = vol_flux * c0.density # 质量流量 kg/s
-            
-            cp = c0.cp # 近似取上游比热容
-            advection_term = mass_flux * cp
-            
-            if advection_term > tol:
-                # c0 流向 c1
-                rows.extend([c0_id, c1_id])
-                cols.extend([c0_id, c0_id])
-                data.extend([-advection_term, advection_term])
-            elif advection_term < -tol:
-                # c1 流向 c0
-                rows.extend([c1_id, c0_id])
-                cols.extend([c1_id, c1_id])
-                data.extend([-abs(advection_term), abs(advection_term)])
-
-    # 2. 处理流体边界 (Inlet & Outlet)
-    for f, (c0_id,) in self.boundary_faces_all.items():
-        c0 = self.cells[c0_id]
-        if c0.is_fluid and c0.inlet_temp is not None:
-            # 简化：如果定义了 inlet_temp，我们强制将外部焓流注入此单元
-            # 实际 C++ 中会计算边界法向判断是流入还是流出
-            velocity_mag = np.linalg.norm(c0.velocity)
-            area = ... # 计算面面积
-            mass_flux = velocity_mag * area * c0.density
-            
-            # 边界流出（损失能量）
-            rows.append(c0_id)
-            cols.append(c0_id)
-            data.append(-mass_flux * c0.cp)
-            
-            # 边界流入（源项）
-            rhs[c0_id] += mass_flux * c0.cp * c0.inlet_temp
-
-    G_adv = sp.csr_matrix((data, (rows, cols)), shape=(n, n))
-    return G_adv, rhs
-```
-*这种写法的巨大优势在于：不管网格长什么样，只要分配了合法的速度场，系统就会自动推导传热矩阵，这与 OpenFOAM/Fluent 等成熟求解器的内核逻辑完全一致。*
+**3. Morton 码的继续利用**
+你在 Python 里写了极其优秀的 Morton Code (Z-curve) 排序逻辑[cite: 2]。请**务必保留它**！在 Python 中将网格按照 Morton 码重排后，再把一维数组传给 C++。这样 C++ 在进行并行邻居遍历和组装矩阵时，会享受到极致的 L1/L2 Cache 命中率。
 
 ---
 
-### Phase 3: 转换器支持微流道宏单元化 (改进 `converter.py`)
+### 四、 C++ 代码规范建议 (C++17/20)
 
-对应 `example4` 的需求，我们需要在解析 `horizontal.csv` 时，**将连续的像素拼接成真正的流道单元**，而不是生成几万个碎小的 FLP unit。
+**1. 拥抱 `std::execution`**
+在 C++17 之后，你不需要手写复杂的线程池或 OpenMP，直接使用并行算法库：
+```cpp
+#include <execution>
+#include <algorithm>
 
-在 `converter.py` 的 `_build_microchannel_layer` 中引入“寻点生长”或“行列扫描”算法：
-
-```python
-def _build_microchannel_layer(self, csv_path: str, flp_path: str, layer_cfg: dict) -> List[dict]:
-    grid = self.parser.parse_microchannel_csv(csv_path)
-    if not grid: return []
-    
-    # ... 获取 dx, dy ...
-    rows, cols = len(grid), len(grid[0])
-    units = []
-    
-    # 算法：将水平方向相邻的 1 连成一条完整的微流道
-    for row in range(rows):
-        col = 0
-        while col < cols:
-            if grid[row][col] == 1: # 发现流体
-                start_col = col
-                while col < cols and grid[row][col] == 1:
-                    col += 1
-                end_col = col - 1
-                
-                # 构建宏观长条流道单元
-                y = (rows - 1 - row) * dy
-                length = (end_col - start_col + 1) * dx
-                
-                unit = {
-                    "name": f"Channel_row{row}_{start_col}",
-                    "width": length,
-                    "height": dy,
-                    "left_x": start_col * dx,
-                    "bottom_y": y,
-                    "is_fluid": True,
-                    "material": "water",
-                    "k": 0.6,
-                    "cp": 4.17e6,
-                    "velocity": [0.0, 0.1, 0.0],  # 通过外部参数控制整体流向和流速
-                    "density": 1000.0,
-                    "inlet_temp": 298.15 # 可仅赋予起始单元，或者利用 solver 内部判别边界
-                }
-                units.append(unit)
-            else:
-                col += 1
-                
-    # 其余空白区域可以作为一个巨大的 Solid Bulk 填充，或者在转换为 JSON 时依赖 Default Material 自动填充
-    return units
+// 并行填充矩阵数组
+std::for_each(std::execution::par_unseq, 
+              cells.begin(), cells.end(), 
+              [&](int cell_id) {
+    // 处理独立的一行数据并写入 CSR，无锁操作
+});
 ```
 
-### 总结
+**2. 避免宏和指针，使用现代特性**
+对比你们现有的 HotSpot C99 规范，新的求解器应该：
+*   全面弃用宏定义，改用 `constexpr` 定义物理常数和容差（如 `constexpr double GEOMETRY_TOLERANCE = 1e-15;`）。
+*   绝对避免 `new/delete` 或裸指针，甚至连 `std::shared_ptr` 都不需要用到。因为数据生命周期全部由 Python 的 NumPy 数组管理，C++ 只需要接收视图 (`std::span` - C++20 特性)。
 
-通过上述修改，你的 Python Demo 已经具备了工业求解器的数据流向结构：
-1. **GmshMesher** 负责输出纯粹的节点和物理分组（Physical Groups）。
-2. **FVMSolver** 通过读取拓扑面（Face）和单元（Cell）的数组，利用 CSR 稀疏矩阵组装通用微分方程。
-3. **Converter** 负责将各种奇葩的历史格式（如像素 CSV）转化为优雅的几何图元。
+**3. 模块化编译**
+即便目前代码量不大，建议将逻辑拆分：
+*   `geometry.hpp/cpp`: 重叠面积计算、几何求交。
+*   `physics.hpp/cpp`: London-Shah Nusselt 经验公式、水力阻力等物理定律的实现。
+*   `assembly.hpp/cpp`: CSR 矩阵生成核心逻辑。
+*   `bindings.cpp`: `nanobind` 或 `pybind11` 的 Python 接口绑定文件。
+
+### 总结重构路线图
+
+1.  **Python 侧改造：** 修改 `FVMSolver`，把 `self.cells` 列表转换成几个对齐的 Numpy 一维数组。
+2.  **C++ 侧开发：** 编写接收这些一维数组的函数，并在内部实现 AABB 碰撞检测计算 `_overlap_area`。
+3.  **矩阵构建：** 实现 Two-Pass CSR 数组构建，并返回三个 Numpy Array。
+4.  **求解器替换：** Python 拿到 CSR 后，调用 `pypardiso.spsolve()`。由于 PARDISO 对对称性和正定性非常敏感，你的对流扩散矩阵是不对称的（包含了迎风格式的对流项），记得在调用 PARDISO 时正确设置矩阵类型参数（如非对称实数矩阵 `mtype=11`）。
