@@ -17,7 +17,8 @@
         "copper": {
             "k": 400.0,
             "cp": 3440000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 8960.0
         },
         "aluminum": {
             "k": 237.0,
@@ -27,7 +28,8 @@
         "tim": {
             "k": 4.0,
             "cp": 4000000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 1000.0
         },
         "water": {
             "k": 0.6069,
@@ -38,7 +40,8 @@
         "default_solid": {
             "k": 1.0,
             "cp": 1000000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 1000.0
         },
         "none": {
             "k": 1e-05,

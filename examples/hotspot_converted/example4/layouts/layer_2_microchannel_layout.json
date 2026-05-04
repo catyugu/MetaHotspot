@@ -6,9 +6,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_1",
@@ -17,9 +15,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_2",
@@ -28,9 +24,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_3",
@@ -39,9 +33,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_4",
@@ -50,9 +42,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_5",
@@ -61,9 +51,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_6",
@@ -72,9 +60,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_7",
@@ -83,9 +69,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_8",
@@ -94,9 +78,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_9",
@@ -105,9 +87,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_10",
@@ -116,9 +96,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_11",
@@ -127,9 +105,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_12",
@@ -138,9 +114,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_13",
@@ -149,9 +123,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_14",
@@ -160,9 +132,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_15",
@@ -171,9 +141,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_16",
@@ -182,9 +150,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_17",
@@ -193,9 +159,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_18",
@@ -204,9 +168,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_19",
@@ -215,9 +177,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_20",
@@ -226,9 +186,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_21",
@@ -237,9 +195,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_22",
@@ -248,9 +204,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_23",
@@ -259,9 +213,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_24",
@@ -270,9 +222,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_25",
@@ -281,9 +231,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_26",
@@ -292,9 +240,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_27",
@@ -303,9 +249,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_28",
@@ -314,9 +258,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_29",
@@ -325,9 +267,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_30",
@@ -336,9 +276,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_31",
@@ -347,9 +285,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_32",
@@ -358,9 +294,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_33",
@@ -369,9 +303,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_34",
@@ -380,9 +312,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_35",
@@ -391,9 +321,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_36",
@@ -402,9 +330,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   },
   {
     "name": "mc_fluid_37",
@@ -413,9 +339,7 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": true,
-    "material": "water",
-    "k": 0.6069,
-    "cp": 4172638.0
+    "material": "water"
   },
   {
     "name": "mc_solid_38",
@@ -424,8 +348,6 @@
     "dx": 0.0078,
     "dy": 0.00019999999999999998,
     "is_fluid": false,
-    "material": "silicon",
-    "k": 130.0,
-    "cp": 1630300.0
+    "material": "silicon"
   }
 ]

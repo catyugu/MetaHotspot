@@ -201,7 +201,6 @@ class SimulationModelBuilder25D:
             "Sink", self.config["t_sink"], s_sink, self.config["material_sink"], 1002
         )
 
-        # JSON 格式中边界条件本身就是灵活字典
         self.boundary_conditions.append(
             {
                 "name": "sink_conv",
@@ -252,8 +251,6 @@ class SimulationModelBuilder25D:
     ):
         lx, ly = (self.global_width - side) / 2.0, (self.global_height - side) / 2.0
         mat_key = mat_candidate.strip().lower()
-        if mat_key not in self.materials:
-            self.materials[mat_key] = self.materials["copper"]
 
         layer = self._create_layer_dict(tag, name, thick, mat_key, False)
         layer.update({"lx": lx, "ly": ly, "dx": side, "dy": side})
@@ -330,8 +327,6 @@ class SimulationModelBuilder25D:
 
                 is_fluid = val == 1
                 mat = "water" if is_fluid else "silicon"
-                k = self.materials[mat]["k"]
-                cp = self.materials[mat]["cp"]
 
                 units.append(
                     {
@@ -342,8 +337,6 @@ class SimulationModelBuilder25D:
                         "dy": h * dy,
                         "is_fluid": is_fluid,
                         "material": mat,
-                        "k": k,
-                        "cp": cp,
                     }
                 )
         return units

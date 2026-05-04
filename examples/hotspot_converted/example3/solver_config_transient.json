@@ -12,33 +12,39 @@
         "silicon": {
             "k": 130.0,
             "cp": 1630000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 2330.0
         },
         "copper": {
             "k": 400.0,
             "cp": 3440000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 8960.0
         },
         "aluminum": {
             "k": 237.0,
             "cp": 2420000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 2700.0
         },
         "tim": {
             "k": 4.0,
             "cp": 4000000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 1000.0
         },
         "water": {
             "k": 0.6069,
             "cp": 4170000.0,
             "fluid": true,
-            "dynamic_viscosity": 0.000889
+            "dynamic_viscosity": 0.000889,
+            "density": 1000.0
         },
         "default_solid": {
             "k": 1.0,
             "cp": 1000000.0,
-            "fluid": false
+            "fluid": false,
+            "density": 1000.0
         },
         "layer_1_mat": {
             "k": 100.0,

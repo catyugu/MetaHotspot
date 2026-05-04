@@ -25,7 +25,6 @@ class Cell:
     name: str = ""
     layer_name: str = ""
     is_fluid: bool = False
-    pressure: float = 0.0
 
 
 def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
@@ -40,7 +39,6 @@ class FVMSolver:
 
     def __init__(self, config_path: str) -> None:
         self.base_dir = os.path.dirname(config_path)
-        # 单一真相入口：加载彻底清洗过的 config
         self.config = load_config(config_path)
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
@@ -48,10 +46,6 @@ class FVMSolver:
         self.materials = self.config["materials"]
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
-
-        # 因为全局配置已清洗，这里可以直接取值而不需要Fallback
-        self.water_density = 1000.0
-        self.water_visc = self.materials["water"]["dynamic_viscosity"]
 
         self._prepare_mesh()
         self._precompute_power_matrix()
@@ -106,22 +100,14 @@ class FVMSolver:
             for layer, z_min, z_max in layer_bounds:
                 if z_min - tol <= c_center[2] <= z_max + tol:
                     layer_name = layer.name
-                    def_mat = self.materials.get(
-                        layer.default_material, self.materials["default_solid"]
-                    )
-                    k, cp = float(def_mat["k"]), float(def_mat["cp"])
+                    k, cp, is_fluid = layer.k, layer.cp, layer.is_fluid
 
                     for u in layer.units:
                         if (
                             u.lx - tol <= c_center[0] <= u.lx + u.dx + tol
                             and u.ly - tol <= c_center[1] <= u.ly + u.dy + tol
                         ):
-                            name, is_fluid = u.name, u.is_fluid
-                            if u.k is not None:
-                                k, cp = u.k, u.cp
-                            else:
-                                mat = self.materials.get(u.material, def_mat)
-                                k, cp = float(mat["k"]), float(mat["cp"])
+                            name, is_fluid, k, cp = u.name, u.is_fluid, u.k, u.cp
                             break
                     break
 
@@ -194,16 +180,16 @@ class FVMSolver:
 
             self.boundary_faces_by_direction[dir_key].append((c_id, normal, area))
 
-    def _solve_pressure_field(self) -> None:
+    def _solve_pressure_field(self) -> Tuple[np.ndarray, float, Dict[int, float]]:
         fluid_cells = [c for c in self.cells if c.is_fluid]
+        pressures = np.zeros(len(self.cells))
         if not fluid_cells:
-            return
+            return pressures, 0.0, {}
 
         cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
         n_fluid = len(fluid_cells)
-        bc_pressures, self.inlet_temps = {}, {}
+        bc_pressures, inlet_temps = {}, {}
 
-        # 动态处理具有不同参数结构的BC
         for bc in self.config["boundary_conditions"]:
             if bc.get("type") == "pressure":
                 for c_id, _, _ in self.boundary_faces_by_direction.get(
@@ -213,18 +199,21 @@ class FVMSolver:
                     if c.is_fluid and c.layer_name == bc.get("target"):
                         bc_pressures[c_id] = float(bc["pressure"])
                         if "temperature" in bc:
-                            self.inlet_temps[c_id] = float(bc["temperature"])
+                            inlet_temps[c_id] = float(bc["temperature"])
 
         avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
         h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
 
+        water_visc = float(
+            self.materials.get("water", {}).get("dynamic_viscosity", 8.89e-4)
+        )
+
         if abs(h - w) < 1e-10:
-            hydroC = (0.42229 * h**4) / (12 * self.water_visc * L)
+            hydroC = (0.42229 * h**4) / (12 * water_visc * L)
         elif h > w:
-            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * self.water_visc * L)
+            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * water_visc * L)
         else:
-            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * self.water_visc * L)
-        self.hydroC = hydroC
+            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * water_visc * L)
 
         rows, cols, data = [], [], []
         b_pressure = np.zeros(n_fluid)
@@ -251,14 +240,16 @@ class FVMSolver:
             data.extend([hydroC] * len(neighbors))
 
         try:
-            pressure = splinalg.spsolve(
+            solved_p = splinalg.spsolve(
                 sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)),
                 b_pressure,
             )
-            for c in fluid_cells:
-                c.pressure = pressure[cell_to_idx[c.id]]
+            for i, c in enumerate(fluid_cells):
+                pressures[c.id] = solved_p[i]
         except Exception as e:
             print(f"[WARNING] Pressure solve failed: {e}")
+
+        return pressures, hydroC, inlet_temps
 
     def _assemble_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = [], [], []
@@ -292,13 +283,9 @@ class FVMSolver:
 
                         f_dims = sorted(fluid_c.dims)
                         w, h = f_dims[0], f_dims[1]
-
-                        # 水力直径
                         d_h = 2 * w * h / (w + h)
-
                         AR = min(w, h) / max(w, h)
 
-                        # London and Shah Nu 经验公式
                         Nu = 8.235 * (
                             1
                             - 2.0421 * AR
@@ -307,11 +294,8 @@ class FVMSolver:
                             + 1.0578 * AR**4
                             - 0.1861 * AR**5
                         )
-
-                        # 对流换热系数
                         h_f = (Nu * fluid_c.k) / d_h
 
-                        # R_total = R_solid + R_conv
                         R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
                         R_conv = 1.0 / (h_f * area)
                         res = R_solid + R_conv
@@ -331,19 +315,25 @@ class FVMSolver:
             (data, (rows, cols)), shape=(len(self.cells), len(self.cells))
         )
 
-    def _assemble_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
+    def _assemble_advection_matrix(
+        self, pressures: np.ndarray, hydroC: float, inlet_temps: Dict[int, float]
+    ) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rows, cols, data, rhs = [], [], [], np.zeros(n)
         fluid_cells = [c for c in self.cells if c.is_fluid]
-        if not fluid_cells or not hasattr(self, "hydroC"):
+
+        if not fluid_cells or hydroC == 0.0:
             return sp.csr_matrix((n, n)), rhs
 
+        water_density = float(self.materials.get("water", {}).get("density", 1000.0))
         net_internal_outflux = {c.id: 0.0 for c in fluid_cells}
+
         for f, (c0_id, c1_id) in self.internal_faces.items():
             c0, c1 = self.cells[c0_id], self.cells[c1_id]
             if not (c0.is_fluid and c1.is_fluid):
                 continue
-            mass_flux = (c0.pressure - c1.pressure) * self.hydroC * self.water_density
+
+            mass_flux = (pressures[c0_id] - pressures[c1_id]) * hydroC * water_density
             net_internal_outflux[c0_id] += mass_flux
             net_internal_outflux[c1_id] -= mass_flux
 
@@ -356,10 +346,8 @@ class FVMSolver:
 
         for c in fluid_cells:
             influx = net_internal_outflux[c.id]
-            if influx > self.GEOMETRY_TOLERANCE and c.id in getattr(
-                self, "inlet_temps", {}
-            ):
-                rhs[c.id] += influx * c.cp * self.inlet_temps[c.id]
+            if influx > self.GEOMETRY_TOLERANCE and c.id in inlet_temps:
+                rhs[c.id] += influx * c.cp * inlet_temps[c.id]
             elif influx < -self.GEOMETRY_TOLERANCE:
                 rows.append(c.id)
                 cols.append(c.id)
@@ -410,6 +398,7 @@ class FVMSolver:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol)
+
         self.power_matrix = sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(active_units))
         )
@@ -422,7 +411,6 @@ class FVMSolver:
             [],
             [],
         )
-        # JSON列表可以直接遍历
         for bc in [
             b
             for b in self.config["boundary_conditions"]
@@ -448,8 +436,10 @@ class FVMSolver:
         self.g_total += bc_mat
 
         if any(c.is_fluid for c in self.cells):
-            self._solve_pressure_field()
-            adv_mat, adv_rhs = self._assemble_advection_matrix()
+            pressures, hydroC, inlet_temps = self._solve_pressure_field()
+            adv_mat, adv_rhs = self._assemble_advection_matrix(
+                pressures, hydroC, inlet_temps
+            )
             self.g_total += adv_mat
             self.boundary_rhs += adv_rhs
 
