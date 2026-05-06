@@ -438,7 +438,7 @@ def convert_hotspot_with_modes(
 import math
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import meshio
 import numpy as np
@@ -455,13 +455,24 @@ class Cell:
     center: np.ndarray
     dims: np.ndarray
     box: np.ndarray
-    k: float
-    cp: float
     tag: int
     vol: float
     name: str = ""
     layer_name: str = ""
+
+    # Material / Physical Properties
+    k: float = 1.0
+    cp: float = 1.0e6
+    density: float = 1000.0
+    dynamic_viscosity: float = 0.0
     is_fluid: bool = False
+
+    # Computed / Transient State Properties
+    hydroC: float = 0.0
+    pressure: float = 0.0
+    temperature: float = 0.0
+    inlet_temperature: Optional[float] = None
+    is_pressure_boundary: bool = False
 
 
 def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
@@ -480,12 +491,41 @@ class FVMSolver:
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
         self.mesh = meshio.read(self.mesh_path)
 
-        self.materials = self.config["materials"]
         self.stackup = load_stackup(self.config, self.base_dir)
         self.cells: List[Cell] = []
 
         self._prepare_mesh()
         self._precompute_power_matrix()
+
+    def _get_cell_properties(self, center: np.ndarray) -> tuple:
+        tol = self.GEOMETRY_TOLERANCE
+        for layer, z_min, z_max in self.layer_bounds:
+            if not (z_min - tol <= center[2] <= z_max + tol):
+                continue
+            for u in layer.units:
+                if (
+                    u.lx - tol <= center[0] <= u.lx + u.dx + tol
+                    and u.ly - tol <= center[1] <= u.ly + u.dy + tol
+                ):
+                    return (
+                        u.name,
+                        layer.name,
+                        u.k,
+                        u.cp,
+                        u.density,
+                        u.dynamic_viscosity,
+                        u.is_fluid,
+                    )
+            return (
+                "",
+                layer.name,
+                layer.k,
+                layer.cp,
+                layer.density,
+                layer.dynamic_viscosity,
+                layer.is_fluid,
+            )
+        return "", "", 1.0, 1e6, 1000.0, 0.0, False
 
     def _prepare_mesh(self) -> None:
         print("[INFO] Preparing mesh data...")
@@ -503,9 +543,8 @@ class FVMSolver:
         centers = (lowers + uppers) * 0.5
         dims, vols = uppers - lowers, np.prod(uppers - lowers, axis=1)
 
-        b_min, diff = np.min(lowers, axis=0), np.max(uppers, axis=0) - np.min(
-            lowers, axis=0
-        )
+        b_min = np.min(lowers, axis=0)
+        diff = np.max(uppers, axis=0) - b_min
         diff = np.where(diff == 0, 1, diff)
         norm_centers = np.clip(((centers - b_min) / diff * 1023).astype(int), 0, 1023)
 
@@ -516,54 +555,36 @@ class FVMSolver:
             morton_keys |= ((norm_centers[:, 2] >> i) & 1) << (3 * i + 2)
         sorted_indices = np.argsort(morton_keys)
 
-        self._map_materials_and_build_cells(
-            sorted_indices, centers, lowers, uppers, dims, vols, physical_tags
-        )
-        self._extract_faces(hex_data, sorted_indices)
-
-    def _map_materials_and_build_cells(
-        self, sorted_indices, centers, lowers, uppers, dims, vols, tags
-    ):
-        tol = self.GEOMETRY_TOLERANCE
         z_cursor = 0.0
-        layer_bounds = [
-            (l, z_cursor, (z_cursor := z_cursor + l.thickness)) for l in self.stackup
-        ]
+        self.layer_bounds = []
+        for l in self.stackup:
+            self.layer_bounds.append((l, z_cursor, z_cursor + l.thickness))
+            z_cursor += l.thickness
 
         for new_id, orig_id in enumerate(sorted_indices):
-            c_center = centers[orig_id]
-            k, cp, name, layer_name, is_fluid = 1.0, 1.0e6, "", "", False
-
-            for layer, z_min, z_max in layer_bounds:
-                if z_min - tol <= c_center[2] <= z_max + tol:
-                    layer_name = layer.name
-                    k, cp, is_fluid = layer.k, layer.cp, layer.is_fluid
-
-                    for u in layer.units:
-                        if (
-                            u.lx - tol <= c_center[0] <= u.lx + u.dx + tol
-                            and u.ly - tol <= c_center[1] <= u.ly + u.dy + tol
-                        ):
-                            name, is_fluid, k, cp = u.name, u.is_fluid, u.k, u.cp
-                            break
-                    break
-
+            name, layer_name, k, cp, den, visc, is_fluid = self._get_cell_properties(
+                centers[orig_id]
+            )
             self.cells.append(
                 Cell(
-                    orig_id,
-                    new_id,
-                    c_center,
-                    dims[orig_id],
-                    np.array([*lowers[orig_id], *uppers[orig_id]]),
-                    k,
-                    cp,
-                    int(tags[orig_id]),
-                    float(vols[orig_id]),
-                    name,
-                    layer_name,
-                    is_fluid,
+                    original_id=orig_id,
+                    id=new_id,
+                    center=centers[orig_id],
+                    dims=dims[orig_id],
+                    box=np.array([*lowers[orig_id], *uppers[orig_id]]),
+                    tag=int(physical_tags[orig_id]),
+                    vol=float(vols[orig_id]),
+                    name=name,
+                    layer_name=layer_name,
+                    k=k,
+                    cp=cp,
+                    density=den,
+                    dynamic_viscosity=visc,
+                    is_fluid=is_fluid,
                 )
             )
+
+        self._extract_faces(hex_data, sorted_indices)
 
     def _extract_faces(self, hex_data, sorted_indices):
         self.face_to_cells = {}
@@ -617,16 +638,20 @@ class FVMSolver:
 
             self.boundary_faces_by_direction[dir_key].append((c_id, normal, area))
 
-    def _solve_pressure_field(self) -> Tuple[np.ndarray, float, Dict[int, float]]:
-        fluid_cells = [c for c in self.cells if c.is_fluid]
-        pressures = np.zeros(len(self.cells))
-        if not fluid_cells:
-            return pressures, 0.0, {}
+    def _init_cell_hydro_properties(self):
+        for c in self.cells:
+            if not c.is_fluid or c.dynamic_viscosity <= 0:
+                continue
+            w, L, h = c.dims[0], c.dims[1], c.dims[2]
+            v = c.dynamic_viscosity
+            if abs(h - w) < 1e-10:
+                c.hydroC = (0.42229 * h**4) / (12 * v * L)
+            elif h > w:
+                c.hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * v * L)
+            else:
+                c.hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * v * L)
 
-        cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
-        n_fluid = len(fluid_cells)
-        bc_pressures, inlet_temps = {}, {}
-
+    def _apply_boundary_conditions(self):
         for bc in self.config["boundary_conditions"]:
             if bc.get("type") == "pressure":
                 for c_id, _, _ in self.boundary_faces_by_direction.get(
@@ -634,47 +659,48 @@ class FVMSolver:
                 ):
                     c = self.cells[c_id]
                     if c.is_fluid and c.layer_name == bc.get("target"):
-                        bc_pressures[c_id] = float(bc["pressure"])
+                        c.is_pressure_boundary = True
+                        c.pressure = float(bc["pressure"])
                         if "temperature" in bc:
-                            inlet_temps[c_id] = float(bc["temperature"])
+                            c.inlet_temperature = float(bc["temperature"])
 
-        avg_dims = np.mean([c.dims for c in fluid_cells], axis=0)
-        h, w, L = avg_dims[2], avg_dims[0], avg_dims[1]
+    def _solve_pressure_field(self) -> None:
+        fluid_cells = [c for c in self.cells if c.is_fluid]
+        if not fluid_cells:
+            return
 
-        water_visc = float(
-            self.materials.get("water", {}).get("dynamic_viscosity", 8.89e-4)
-        )
-
-        if abs(h - w) < 1e-10:
-            hydroC = (0.42229 * h**4) / (12 * water_visc * L)
-        elif h > w:
-            hydroC = ((1 - 0.63 * (w / h)) * w**3 * h) / (12 * water_visc * L)
-        else:
-            hydroC = ((1 - 0.63 * (h / w)) * h**3 * w) / (12 * water_visc * L)
-
+        n_fluid = len(fluid_cells)
+        cell_to_idx = {c.id: i for i, c in enumerate(fluid_cells)}
         rows, cols, data = [], [], []
         b_pressure = np.zeros(n_fluid)
+        diag_C = np.zeros(n_fluid)
 
-        for c in fluid_cells:
-            i = cell_to_idx[c.id]
-            if c.id in bc_pressures:
-                rows.append(i)
-                cols.append(i)
-                data.append(1.0)
-                b_pressure[i] = bc_pressures[c.id]
+        for i, c in enumerate(fluid_cells):
+            if c.is_pressure_boundary:
+                rows.append(i), cols.append(i), data.append(1.0)
+                b_pressure[i] = c.pressure
+
+        for f, (c0_id, c1_id) in self.internal_faces.items():
+            if c0_id not in cell_to_idx or c1_id not in cell_to_idx:
                 continue
+            c0, c1 = self.cells[c0_id], self.cells[c1_id]
+            i0, i1 = cell_to_idx[c0_id], cell_to_idx[c1_id]
+            C_eff = (
+                2.0 * c0.hydroC * c1.hydroC / (c0.hydroC + c1.hydroC)
+                if (c0.hydroC + c1.hydroC) > 0
+                else 0.0
+            )
 
-            neighbors = [
-                c1_id if c0_id == c.id else c0_id
-                for f, (c0_id, c1_id) in self.internal_faces.items()
-                if (c0_id == c.id or c1_id == c.id)
-                and (c1_id in cell_to_idx and c0_id in cell_to_idx)
-            ]
-            rows.extend([i] * (len(neighbors) + 1))
-            cols.append(i)
-            data.append(-len(neighbors) * hydroC)
-            cols.extend([cell_to_idx[n] for n in neighbors])
-            data.extend([hydroC] * len(neighbors))
+            if not c0.is_pressure_boundary:
+                rows.extend([i0]), cols.extend([i1]), data.extend([C_eff])
+                diag_C[i0] += C_eff
+            if not c1.is_pressure_boundary:
+                rows.extend([i1]), cols.extend([i0]), data.extend([C_eff])
+                diag_C[i1] += C_eff
+
+        for i, c in enumerate(fluid_cells):
+            if not c.is_pressure_boundary:
+                rows.append(i), cols.append(i), data.append(-diag_C[i])
 
         try:
             solved_p = splinalg.spsolve(
@@ -682,11 +708,59 @@ class FVMSolver:
                 b_pressure,
             )
             for i, c in enumerate(fluid_cells):
-                pressures[c.id] = solved_p[i]
+                c.pressure = solved_p[i]
         except Exception as e:
             print(f"[WARNING] Pressure solve failed: {e}")
 
-        return pressures, hydroC, inlet_temps
+    def _compute_nusselt(self, fluid_c: Cell) -> float:
+        w, h = sorted([fluid_c.dims[0], fluid_c.dims[1]])
+        AR = w / h if h > 0 else 1.0
+        return 8.235 * (
+            1
+            - 2.0421 * AR
+            + 3.0853 * AR**2
+            - 2.4765 * AR**3
+            + 1.0578 * AR**4
+            - 0.1861 * AR**5
+        )
+
+    def _get_face_conduction(self, c_a: Cell, c_b: Cell, tol: float) -> list:
+        if (
+            max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol
+            or max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol
+        ):
+            return []
+
+        res_list = []
+        for axis in range(3):
+            if not (
+                abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
+                or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
+            ):
+                continue
+            area = _overlap_area(c_a.box, c_b.box, axis)
+            if area <= tol:
+                continue
+
+            if c_a.is_fluid != c_b.is_fluid:
+                fluid_c, solid_c = (c_a, c_b) if c_a.is_fluid else (c_b, c_a)
+                Nu = self._compute_nusselt(fluid_c)
+                d_h = (
+                    2
+                    * fluid_c.dims[0]
+                    * fluid_c.dims[1]
+                    / (fluid_c.dims[0] + fluid_c.dims[1])
+                )
+                h_f = (Nu * fluid_c.k) / d_h if d_h > 0 else 1e-6
+                res = solid_c.dims[axis] / (2.0 * solid_c.k * area) + 1.0 / (h_f * area)
+            else:
+                res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
+                    c_b.dims[axis] / (2.0 * c_b.k * area)
+                )
+
+            if res > tol:
+                res_list.append(1.0 / res)
+        return res_list
 
     def _assemble_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = [], [], []
@@ -697,72 +771,24 @@ class FVMSolver:
         for c_a in sorted_cells:
             active_list = [c for c in active_list if c.box[3] >= c_a.box[0] - tol]
             for c_b in active_list:
-                if (
-                    max(c_a.box[1], c_b.box[1]) > min(c_a.box[4], c_b.box[4]) + tol
-                    or max(c_a.box[2], c_b.box[2]) > min(c_a.box[5], c_b.box[5]) + tol
-                ):
-                    continue
-                for axis in range(3):
-                    if not (
-                        abs(c_a.box[axis + 3] - c_b.box[axis]) < tol
-                        or abs(c_a.box[axis] - c_b.box[axis + 3]) < tol
-                    ):
-                        continue
-                    area = _overlap_area(c_a.box, c_b.box, axis)
-                    if area <= tol:
-                        continue
-
-                    is_a_fluid, is_b_fluid = c_a.is_fluid, c_b.is_fluid
-
-                    if is_a_fluid != is_b_fluid:
-                        fluid_c = c_a if is_a_fluid else c_b
-                        solid_c = c_b if is_a_fluid else c_a
-
-                        f_dims = sorted(fluid_c.dims)
-                        w, h = f_dims[0], f_dims[1]
-                        d_h = 2 * w * h / (w + h)
-                        AR = min(w, h) / max(w, h)
-
-                        Nu = 8.235 * (
-                            1
-                            - 2.0421 * AR
-                            + 3.0853 * AR**2
-                            - 2.4765 * AR**3
-                            + 1.0578 * AR**4
-                            - 0.1861 * AR**5
-                        )
-                        h_f = (Nu * fluid_c.k) / d_h
-
-                        R_solid = solid_c.dims[axis] / (2.0 * solid_c.k * area)
-                        R_conv = 1.0 / (h_f * area)
-                        res = R_solid + R_conv
-                    else:
-                        res = (c_a.dims[axis] / (2.0 * c_a.k * area)) + (
-                            c_b.dims[axis] / (2.0 * c_b.k * area)
-                        )
-
-                    if res > tol:
-                        g = 1.0 / res
-                        rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
-                        cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
-                        data.extend([-g, -g, g, g])
+                for g in self._get_face_conduction(c_a, c_b, tol):
+                    rows.extend([c_a.id, c_b.id, c_a.id, c_b.id])
+                    cols.extend([c_a.id, c_b.id, c_b.id, c_a.id])
+                    data.extend([-g, -g, g, g])
             active_list.append(c_a)
 
         return sp.csr_matrix(
             (data, (rows, cols)), shape=(len(self.cells), len(self.cells))
         )
 
-    def _assemble_advection_matrix(
-        self, pressures: np.ndarray, hydroC: float, inlet_temps: Dict[int, float]
-    ) -> Tuple[sp.csr_matrix, np.ndarray]:
+    def _assemble_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = len(self.cells)
         rows, cols, data, rhs = [], [], [], np.zeros(n)
         fluid_cells = [c for c in self.cells if c.is_fluid]
 
-        if not fluid_cells or hydroC == 0.0:
+        if not fluid_cells:
             return sp.csr_matrix((n, n)), rhs
 
-        water_density = float(self.materials.get("water", {}).get("density", 1000.0))
         net_internal_outflux = {c.id: 0.0 for c in fluid_cells}
 
         for f, (c0_id, c1_id) in self.internal_faces.items():
@@ -770,45 +796,52 @@ class FVMSolver:
             if not (c0.is_fluid and c1.is_fluid):
                 continue
 
-            mass_flux = (pressures[c0_id] - pressures[c1_id]) * hydroC * water_density
+            C_eff = (
+                2.0 * c0.hydroC * c1.hydroC / (c0.hydroC + c1.hydroC)
+                if (c0.hydroC + c1.hydroC) > 0
+                else 0.0
+            )
+            density_eff = (c0.density + c1.density) / 2.0
+            mass_flux = (c0.pressure - c1.pressure) * C_eff * density_eff
+
             net_internal_outflux[c0_id] += mass_flux
             net_internal_outflux[c1_id] -= mass_flux
 
             if abs(mass_flux) > self.GEOMETRY_TOLERANCE:
                 up_id, dn_id = (c0_id, c1_id) if mass_flux > 0 else (c1_id, c0_id)
                 adv_term = abs(mass_flux) * self.cells[up_id].cp
-                rows.extend([up_id, dn_id])
-                cols.extend([up_id, up_id])
-                data.extend([-adv_term, adv_term])
+                rows.extend([up_id, dn_id]), cols.extend([up_id, up_id]), data.extend(
+                    [-adv_term, adv_term]
+                )
 
         for c in fluid_cells:
             influx = net_internal_outflux[c.id]
-            if influx > self.GEOMETRY_TOLERANCE and c.id in inlet_temps:
-                rhs[c.id] += influx * c.cp * inlet_temps[c.id]
+            if influx > self.GEOMETRY_TOLERANCE and c.inlet_temperature is not None:
+                rhs[c.id] += influx * c.cp * c.inlet_temperature
             elif influx < -self.GEOMETRY_TOLERANCE:
-                rows.append(c.id)
-                cols.append(c.id)
-                data.append(influx * c.cp)
+                rows.append(c.id), cols.append(c.id), data.append(influx * c.cp)
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _precompute_power_matrix(self) -> None:
-        active_units = [
-            {
-                "name": u.name,
-                "lx": u.lx,
-                "ly": u.ly,
-                "lz": z_cursor,
-                "dx": u.dx,
-                "dy": u.dy,
-                "dz": l.thickness,
-            }
-            for z_cursor, l in zip(
-                np.cumsum([0] + [l.thickness for l in self.stackup[:-1]]), self.stackup
-            )
-            if l.active
-            for u in l.units
-        ]
+        z_cursor = 0.0
+        active_units = []
+        for l in self.stackup:
+            if l.active:
+                for u in l.units:
+                    active_units.append(
+                        {
+                            "name": u.name,
+                            "lx": u.lx,
+                            "ly": u.ly,
+                            "lz": z_cursor,
+                            "dx": u.dx,
+                            "dy": u.dy,
+                            "dz": l.thickness,
+                        }
+                    )
+            z_cursor += l.thickness
+
         self.unit_names = [u["name"] for u in active_units]
         if not active_units or not self.cells:
             self.power_matrix = sp.csr_matrix((len(self.cells), 0))
@@ -861,22 +894,21 @@ class FVMSolver:
                     continue
                 h, t_inf = float(bc["h"]), float(bc["T_inf"])
                 g = area / ((0.5 * (c.vol / area) / c.k) + (1.0 / h))
-                rows.append(c.id)
-                cols.append(c.id)
-                data.append(-g)
+                rows.extend([c.id]), cols.extend([c.id]), data.append(-g)
                 rhs[c.id] += g * t_inf
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def solve(self) -> None:
+        self._init_cell_hydro_properties()
+        self._apply_boundary_conditions()
+
         self.g_total = self._assemble_conduction_matrix()
         bc_mat, self.boundary_rhs = self._build_boundary_terms()
         self.g_total += bc_mat
 
         if any(c.is_fluid for c in self.cells):
-            pressures, hydroC, inlet_temps = self._solve_pressure_field()
-            adv_mat, adv_rhs = self._assemble_advection_matrix(
-                pressures, hydroC, inlet_temps
-            )
+            self._solve_pressure_field()
+            adv_mat, adv_rhs = self._assemble_advection_matrix()
             self.g_total += adv_mat
             self.boundary_rhs += adv_rhs
 
@@ -908,10 +940,14 @@ class FVMSolver:
         temperatures = splinalg.spsolve(
             -self.g_total, self.boundary_rhs + (self.power_matrix @ mean_powers)
         )
+
+        for c in self.cells:
+            c.temperature = temperatures[c.id]
+
         print(
             f"[RESULT] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
         )
-        self.save(temperatures, "result.vtu")
+        self.save("result.vtu")
 
     def _solve_transient(self) -> None:
         dt, total_time = self.config["timestep"], self.config["time"]
@@ -944,12 +980,16 @@ class FVMSolver:
                 print(
                     f"[STEP {i:4d}] T_min={np.min(temperatures):.2f} K, T_max={np.max(temperatures):.2f} K"
                 )
-        self.save(temperatures, "transient_result.vtu")
 
-    def save(self, temperatures: np.ndarray, output_name: str) -> None:
+        for c in self.cells:
+            c.temperature = temperatures[c.id]
+
+        self.save("transient_result.vtu")
+
+    def save(self, output_name: str) -> None:
         mapped = np.zeros(len(self.cells))
         for c in self.cells:
-            mapped[c.original_id] = temperatures[c.id]
+            mapped[c.original_id] = c.temperature
 
         hex_blocks, temp_chunks, offset = [], [], 0
         for block in self.mesh.cells:
@@ -1263,24 +1303,54 @@ DEFAULT_CONFIG = {
 }
 
 STANDARD_MATERIALS = {
-    "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False, "density": 2330.0},
-    "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False, "density": 8960.0},
-    "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False, "density": 2700.0},
-    "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False, "density": 1000.0},
+    "silicon": {
+        "k": 130.0,
+        "cp": 1.63e6,
+        "fluid": False,
+        "density": 2330.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "copper": {
+        "k": 400.0,
+        "cp": 3.44e6,
+        "fluid": False,
+        "density": 8960.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "aluminum": {
+        "k": 237.0,
+        "cp": 2.42e6,
+        "fluid": False,
+        "density": 2700.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "tim": {
+        "k": 4.0,
+        "cp": 4.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
     "water": {
         "k": 0.6069,
         "cp": 4.17e6,
         "fluid": True,
-        "dynamic_viscosity": 8.89e-4,
         "density": 1000.0,
+        "dynamic_viscosity": 8.89e-4,
     },
-    "default_solid": {"k": 1.0, "cp": 1.0e6, "fluid": False, "density": 1000.0},
+    "default_solid": {
+        "k": 1.0,
+        "cp": 1.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class Unit2D:
-    """2D layout unit for FVM mesh generation."""
+    """2D layout unit for FVM mesh generation with full property resolution."""
 
     name: str
     lx: float
@@ -1290,10 +1360,12 @@ class Unit2D:
     material: str
     k: float
     cp: float
+    density: float
+    dynamic_viscosity: float
     is_fluid: bool
 
 
-@dataclass
+@dataclass(slots=True)
 class Layer25D:
     """2.5D layer definition with fully resolved properties."""
 
@@ -1303,6 +1375,8 @@ class Layer25D:
     material: str
     k: float
     cp: float
+    density: float
+    dynamic_viscosity: float
     is_fluid: bool
     active: bool
     units: List[Unit2D] = field(default_factory=list)
@@ -1313,14 +1387,12 @@ class Layer25D:
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """统一配置加载入口：确保下游直接读取到清洗完毕、具有绝对信任度的配置。"""
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
     return merge_with_defaults(raw_config)
 
 
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
-    """配置关口：将原始配置与默认值合并。一处更改，处处有效。"""
     config = dict(DEFAULT_CONFIG)
 
     for k, v in raw_config.items():
@@ -1347,12 +1419,24 @@ def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def _resolve_prop(
+    key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
+) -> Any:
+    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
+    if key in unit_data and unit_data[key] is not None:
+        return unit_data[key]
+    if key in unit_mat and unit_mat[key] is not None:
+        return unit_mat[key]
+    if key in layer_mat and layer_mat[key] is not None:
+        return layer_mat[key]
+    return default_mat.get(key)
+
+
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """Load 2.5D stackup model and resolve all properties according to priority rules."""
     layers = []
     stackup_data = config.get("stackup", [])
     materials = config.get("materials", {})
-    default_solid = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
+    def_mat = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
 
     for i, layer_cfg in enumerate(stackup_data):
         tag = int(layer_cfg.get("tag", i + 100))
@@ -1361,40 +1445,17 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
         dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
 
         layer_mat_name = layer_cfg.get("material", "silicon")
-        layer_mat = materials.get(layer_mat_name, default_solid)
-        layer_k = float(layer_mat.get("k", default_solid["k"]))
-        layer_cp = float(layer_mat.get("cp", default_solid["cp"]))
-        layer_is_fluid = bool(layer_mat.get("fluid", False))
-
-        units = []
+        layer_mat = materials.get(layer_mat_name, def_mat)
         layout_file = layer_cfg.get("layout_file", "")
+        units = []
 
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
             if os.path.exists(full_path):
                 with open(full_path, "r", encoding="utf-8") as f:
                     for u in json.load(f):
-                        unit_mat_name = u.get("material", layer_mat_name)
-                        unit_mat = materials.get(unit_mat_name, layer_mat)
-
-                        # Priority: Unit direct > Unit Material > Layer Material
-                        u_k = u.get("k")
-                        u_k = (
-                            float(u_k)
-                            if u_k is not None
-                            else float(unit_mat.get("k", layer_k))
-                        )
-
-                        u_cp = u.get("cp")
-                        u_cp = (
-                            float(u_cp)
-                            if u_cp is not None
-                            else float(unit_mat.get("cp", layer_cp))
-                        )
-
-                        u_is_fluid = bool(
-                            u.get("is_fluid", unit_mat.get("fluid", layer_is_fluid))
-                        )
+                        umat_name = u.get("material", layer_mat_name)
+                        umat = materials.get(umat_name, layer_mat)
 
                         units.append(
                             Unit2D(
@@ -1403,10 +1464,26 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 ly=float(u["ly"]),
                                 dx=float(u["dx"]),
                                 dy=float(u["dy"]),
-                                material=unit_mat_name,
-                                k=u_k,
-                                cp=u_cp,
-                                is_fluid=u_is_fluid,
+                                material=umat_name,
+                                k=float(
+                                    _resolve_prop("k", u, umat, layer_mat, def_mat)
+                                ),
+                                cp=float(
+                                    _resolve_prop("cp", u, umat, layer_mat, def_mat)
+                                ),
+                                density=float(
+                                    _resolve_prop(
+                                        "density", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                dynamic_viscosity=float(
+                                    _resolve_prop(
+                                        "dynamic_viscosity", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                is_fluid=bool(
+                                    _resolve_prop("fluid", u, umat, layer_mat, def_mat)
+                                ),
                             )
                         )
 
@@ -1419,9 +1496,13 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     dx=dx,
                     dy=dy,
                     material=layer_mat_name,
-                    k=layer_k,
-                    cp=layer_cp,
-                    is_fluid=layer_is_fluid,
+                    k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                    cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                    density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                    dynamic_viscosity=float(
+                        _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                    ),
+                    is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 )
             )
 
@@ -1431,9 +1512,13 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                 tag=tag,
                 thickness=float(layer_cfg["thickness"]),
                 material=layer_mat_name,
-                k=layer_k,
-                cp=layer_cp,
-                is_fluid=layer_is_fluid,
+                k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                dynamic_viscosity=float(
+                    _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                ),
+                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 active=bool(layer_cfg.get("active", False)),
                 units=units,
                 lx=lx,

@@ -34,24 +34,54 @@ DEFAULT_CONFIG = {
 }
 
 STANDARD_MATERIALS = {
-    "silicon": {"k": 130.0, "cp": 1.63e6, "fluid": False, "density": 2330.0},
-    "copper": {"k": 400.0, "cp": 3.44e6, "fluid": False, "density": 8960.0},
-    "aluminum": {"k": 237.0, "cp": 2.42e6, "fluid": False, "density": 2700.0},
-    "tim": {"k": 4.0, "cp": 4.0e6, "fluid": False, "density": 1000.0},
+    "silicon": {
+        "k": 130.0,
+        "cp": 1.63e6,
+        "fluid": False,
+        "density": 2330.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "copper": {
+        "k": 400.0,
+        "cp": 3.44e6,
+        "fluid": False,
+        "density": 8960.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "aluminum": {
+        "k": 237.0,
+        "cp": 2.42e6,
+        "fluid": False,
+        "density": 2700.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "tim": {
+        "k": 4.0,
+        "cp": 4.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
     "water": {
         "k": 0.6069,
         "cp": 4.17e6,
         "fluid": True,
-        "dynamic_viscosity": 8.89e-4,
         "density": 1000.0,
+        "dynamic_viscosity": 8.89e-4,
     },
-    "default_solid": {"k": 1.0, "cp": 1.0e6, "fluid": False, "density": 1000.0},
+    "default_solid": {
+        "k": 1.0,
+        "cp": 1.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class Unit2D:
-    """2D layout unit for FVM mesh generation."""
+    """2D layout unit for FVM mesh generation with full property resolution."""
 
     name: str
     lx: float
@@ -61,10 +91,12 @@ class Unit2D:
     material: str
     k: float
     cp: float
+    density: float
+    dynamic_viscosity: float
     is_fluid: bool
 
 
-@dataclass
+@dataclass(slots=True)
 class Layer25D:
     """2.5D layer definition with fully resolved properties."""
 
@@ -74,6 +106,8 @@ class Layer25D:
     material: str
     k: float
     cp: float
+    density: float
+    dynamic_viscosity: float
     is_fluid: bool
     active: bool
     units: List[Unit2D] = field(default_factory=list)
@@ -84,14 +118,12 @@ class Layer25D:
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """统一配置加载入口：确保下游直接读取到清洗完毕、具有绝对信任度的配置。"""
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
     return merge_with_defaults(raw_config)
 
 
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
-    """配置关口：将原始配置与默认值合并。一处更改，处处有效。"""
     config = dict(DEFAULT_CONFIG)
 
     for k, v in raw_config.items():
@@ -118,12 +150,24 @@ def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
     return config
 
 
+def _resolve_prop(
+    key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
+) -> Any:
+    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
+    if key in unit_data and unit_data[key] is not None:
+        return unit_data[key]
+    if key in unit_mat and unit_mat[key] is not None:
+        return unit_mat[key]
+    if key in layer_mat and layer_mat[key] is not None:
+        return layer_mat[key]
+    return default_mat.get(key)
+
+
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """Load 2.5D stackup model and resolve all properties according to priority rules."""
     layers = []
     stackup_data = config.get("stackup", [])
     materials = config.get("materials", {})
-    default_solid = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
+    def_mat = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
 
     for i, layer_cfg in enumerate(stackup_data):
         tag = int(layer_cfg.get("tag", i + 100))
@@ -132,40 +176,17 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
         dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
 
         layer_mat_name = layer_cfg.get("material", "silicon")
-        layer_mat = materials.get(layer_mat_name, default_solid)
-        layer_k = float(layer_mat.get("k", default_solid["k"]))
-        layer_cp = float(layer_mat.get("cp", default_solid["cp"]))
-        layer_is_fluid = bool(layer_mat.get("fluid", False))
-
-        units = []
+        layer_mat = materials.get(layer_mat_name, def_mat)
         layout_file = layer_cfg.get("layout_file", "")
+        units = []
 
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
             if os.path.exists(full_path):
                 with open(full_path, "r", encoding="utf-8") as f:
                     for u in json.load(f):
-                        unit_mat_name = u.get("material", layer_mat_name)
-                        unit_mat = materials.get(unit_mat_name, layer_mat)
-
-                        # Priority: Unit direct > Unit Material > Layer Material
-                        u_k = u.get("k")
-                        u_k = (
-                            float(u_k)
-                            if u_k is not None
-                            else float(unit_mat.get("k", layer_k))
-                        )
-
-                        u_cp = u.get("cp")
-                        u_cp = (
-                            float(u_cp)
-                            if u_cp is not None
-                            else float(unit_mat.get("cp", layer_cp))
-                        )
-
-                        u_is_fluid = bool(
-                            u.get("is_fluid", unit_mat.get("fluid", layer_is_fluid))
-                        )
+                        umat_name = u.get("material", layer_mat_name)
+                        umat = materials.get(umat_name, layer_mat)
 
                         units.append(
                             Unit2D(
@@ -174,10 +195,26 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 ly=float(u["ly"]),
                                 dx=float(u["dx"]),
                                 dy=float(u["dy"]),
-                                material=unit_mat_name,
-                                k=u_k,
-                                cp=u_cp,
-                                is_fluid=u_is_fluid,
+                                material=umat_name,
+                                k=float(
+                                    _resolve_prop("k", u, umat, layer_mat, def_mat)
+                                ),
+                                cp=float(
+                                    _resolve_prop("cp", u, umat, layer_mat, def_mat)
+                                ),
+                                density=float(
+                                    _resolve_prop(
+                                        "density", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                dynamic_viscosity=float(
+                                    _resolve_prop(
+                                        "dynamic_viscosity", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                is_fluid=bool(
+                                    _resolve_prop("fluid", u, umat, layer_mat, def_mat)
+                                ),
                             )
                         )
 
@@ -190,9 +227,13 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     dx=dx,
                     dy=dy,
                     material=layer_mat_name,
-                    k=layer_k,
-                    cp=layer_cp,
-                    is_fluid=layer_is_fluid,
+                    k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                    cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                    density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                    dynamic_viscosity=float(
+                        _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                    ),
+                    is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 )
             )
 
@@ -202,9 +243,13 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                 tag=tag,
                 thickness=float(layer_cfg["thickness"]),
                 material=layer_mat_name,
-                k=layer_k,
-                cp=layer_cp,
-                is_fluid=layer_is_fluid,
+                k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                dynamic_viscosity=float(
+                    _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                ),
+                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 active=bool(layer_cfg.get("active", False)),
                 units=units,
                 lx=lx,
