@@ -1,0 +1,1 @@
+"""metahotspot.legacy submodule"""

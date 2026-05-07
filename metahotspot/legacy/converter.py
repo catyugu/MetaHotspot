@@ -4,7 +4,7 @@ import shutil
 import csv
 from typing import Dict, List, Tuple
 
-from metahotspot.hotspot_parser import HotSpotParser
+from metahotspot.legacy.hotspot_parser import HotSpotParser
 from metahotspot.model25d import merge_with_defaults, STANDARD_MATERIALS
 
 

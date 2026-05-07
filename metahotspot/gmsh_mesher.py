@@ -1,7 +1,6 @@
 import math
 from collections import deque
 from pathlib import Path
-from typing import List
 
 import gmsh
 from metahotspot.model25d import load_config, load_stackup
