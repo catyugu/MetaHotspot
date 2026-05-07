@@ -1,62 +1,193 @@
 import json
 import os
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
+
+# ==========================================
+# 单一真相：全局默认配置与标准材料库
+# ==========================================
+DEFAULT_CONFIG = {
+    "simulation_type": "steady",
+    "ambient": 318.15,
+    "init_temperature": 318.15,
+    "t_chip": 0.00015,
+    "t_tim": 0.00002,
+    "t_spreader": 0.001,
+    "t_sink": 0.0069,
+    "base_proc_freq": 3.0e9,
+    "r_convec": 0.1,
+    "material_interface": "tim",
+    "material_spreader": "copper",
+    "material_sink": "copper",
+    "init_file": "",
+    "sampling_intvl": 0.01,
+    "time": 0.01,
+    "timestep": 0.01,
+    "mesh_file_path": "mesh.msh",
+    "ptrace_file_path": "",
+    "init_temperature_file_path": "",
+    "pumping_pressure": 52000.0,
+    "inlet_temperature": 298.15,
+    "boundary_conditions": [],
+    "stackup": [],
+    "materials": {},
+}
+
+STANDARD_MATERIALS = {
+    "silicon": {
+        "k": 130.0,
+        "cp": 1.63e6,
+        "fluid": False,
+        "density": 2330.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "copper": {
+        "k": 400.0,
+        "cp": 3.44e6,
+        "fluid": False,
+        "density": 8960.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "aluminum": {
+        "k": 237.0,
+        "cp": 2.42e6,
+        "fluid": False,
+        "density": 2700.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "tim": {
+        "k": 4.0,
+        "cp": 4.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
+    "water": {
+        "k": 0.6069,
+        "cp": 4.17e6,
+        "fluid": True,
+        "density": 1000.0,
+        "dynamic_viscosity": 8.89e-4,
+    },
+    "default_solid": {
+        "k": 1.0,
+        "cp": 1.0e6,
+        "fluid": False,
+        "density": 1000.0,
+        "dynamic_viscosity": 0.0,
+    },
+}
 
 
-@dataclass
+@dataclass(slots=True)
 class Unit2D:
+    """2D layout unit for FVM mesh generation with full property resolution."""
+
     name: str
     lx: float
     ly: float
     dx: float
     dy: float
-    material: Optional[str] = None
-    k: Optional[float] = None
-    cp: Optional[float] = None
+    material: str
+    k: float
+    cp: float
+    density: float
+    dynamic_viscosity: float
+    is_fluid: bool
 
 
-@dataclass
+@dataclass(slots=True)
 class Layer25D:
+    """2.5D layer definition with fully resolved properties."""
+
     name: str
     tag: int
     thickness: float
-    default_material: str
+    material: str
+    k: float
+    cp: float
+    density: float
+    dynamic_viscosity: float
+    is_fluid: bool
     active: bool
     units: List[Unit2D] = field(default_factory=list)
-    # 对于没有 layout 文件的层（如封装层），使用全局尺寸
     lx: float = 0.0
     ly: float = 0.0
     dx: float = 0.01
     dy: float = 0.01
 
 
+def load_config(config_path: str) -> Dict[str, Any]:
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw_config = json.load(f)
+    return merge_with_defaults(raw_config)
+
+
+def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    config = dict(DEFAULT_CONFIG)
+
+    for k, v in raw_config.items():
+        if k in config and type(config[k]) is not type(v):
+            try:
+                if v not in {"(null)", "null", "None", ""}:
+                    config[k] = type(config[k])(v)
+            except ValueError:
+                config[k] = v
+        else:
+            config[k] = v
+
+    config["t_interface"] = raw_config.get("t_interface", config["t_tim"])
+    config["time"] = raw_config.get("time", max(config["sampling_intvl"], 0.01))
+    config["timestep"] = raw_config.get("timestep", config["sampling_intvl"])
+
+    if "init_temp" in raw_config:
+        config["init_temperature"] = float(raw_config["init_temp"])
+
+    for mat_name, mat_props in STANDARD_MATERIALS.items():
+        if mat_name not in config["materials"]:
+            config["materials"][mat_name] = dict(mat_props)
+
+    return config
+
+
+def _resolve_prop(
+    key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
+) -> Any:
+    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
+    if key in unit_data and unit_data[key] is not None:
+        return unit_data[key]
+    if key in unit_mat and unit_mat[key] is not None:
+        return unit_mat[key]
+    if key in layer_mat and layer_mat[key] is not None:
+        return layer_mat[key]
+    return default_mat.get(key)
+
+
 def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    """从配置和拆分的独立版图文件中动态加载 2.5D 堆叠模型"""
     layers = []
-    stackup_cfg = config.get("stackup", [])
+    stackup_data = config.get("stackup", [])
+    materials = config.get("materials", {})
+    def_mat = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
 
-    for i, layer_cfg in enumerate(stackup_cfg):
-        tag = layer_cfg.get("tag", i + 100)
-        name = layer_cfg.get("name", f"layer_{tag}")
-        thickness = float(layer_cfg["thickness"])
-        default_material = layer_cfg.get("material", "silicon")
-        active = bool(layer_cfg.get("active", False))
+    for i, layer_cfg in enumerate(stackup_data):
+        tag = int(layer_cfg.get("tag", i + 100))
+        name = str(layer_cfg.get("name", f"layer_{tag}"))
+        lx, ly = float(layer_cfg.get("lx", 0.0)), float(layer_cfg.get("ly", 0.0))
+        dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
 
-        lx = float(layer_cfg.get("lx", 0.0))
-        ly = float(layer_cfg.get("ly", 0.0))
-        dx = float(layer_cfg.get("dx", 0.01))
-        dy = float(layer_cfg.get("dy", 0.01))
-
+        layer_mat_name = layer_cfg.get("material", "silicon")
+        layer_mat = materials.get(layer_mat_name, def_mat)
+        layout_file = layer_cfg.get("layout_file", "")
         units = []
-        layout_file = layer_cfg.get("layout_file")
 
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
             if os.path.exists(full_path):
                 with open(full_path, "r", encoding="utf-8") as f:
-                    layout_data = json.load(f)
-                    for u in layout_data:
+                    for u in json.load(f):
+                        umat_name = u.get("material", layer_mat_name)
+                        umat = materials.get(umat_name, layer_mat)
+
                         units.append(
                             Unit2D(
                                 name=u["name"],
@@ -64,17 +195,29 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                                 ly=float(u["ly"]),
                                 dx=float(u["dx"]),
                                 dy=float(u["dy"]),
-                                material=u.get("material"),
-                                k=u.get("k"),
-                                cp=u.get("cp"),
+                                material=umat_name,
+                                k=float(
+                                    _resolve_prop("k", u, umat, layer_mat, def_mat)
+                                ),
+                                cp=float(
+                                    _resolve_prop("cp", u, umat, layer_mat, def_mat)
+                                ),
+                                density=float(
+                                    _resolve_prop(
+                                        "density", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                dynamic_viscosity=float(
+                                    _resolve_prop(
+                                        "dynamic_viscosity", u, umat, layer_mat, def_mat
+                                    )
+                                ),
+                                is_fluid=bool(
+                                    _resolve_prop("fluid", u, umat, layer_mat, def_mat)
+                                ),
                             )
                         )
-            else:
-                print(
-                    f"[WARNING] Layout file {full_path} not found. Falling back to bulk layer."
-                )
 
-        # 如果没有有效的版图单元，则用一个完整的 Bulk Unit 代表这一层
         if not units:
             units.append(
                 Unit2D(
@@ -83,7 +226,14 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                     ly=ly,
                     dx=dx,
                     dy=dy,
-                    material=default_material,
+                    material=layer_mat_name,
+                    k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                    cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                    density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                    dynamic_viscosity=float(
+                        _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                    ),
+                    is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 )
             )
 
@@ -91,9 +241,16 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
             Layer25D(
                 name=name,
                 tag=tag,
-                thickness=thickness,
-                default_material=default_material,
-                active=active,
+                thickness=float(layer_cfg["thickness"]),
+                material=layer_mat_name,
+                k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+                cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+                density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                dynamic_viscosity=float(
+                    _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+                ),
+                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
+                active=bool(layer_cfg.get("active", False)),
                 units=units,
                 lx=lx,
                 ly=ly,

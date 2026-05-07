@@ -1,196 +1,134 @@
 import math
-from typing import Dict, List
 from collections import deque
+from pathlib import Path
 
 import gmsh
-from metahotspot.model25d import Layer25D
+from metahotspot.model25d import load_config, load_stackup
 
 
 class GmshMesher:
+    DEFAULT_MAX_MESH_SIZE = 0.01
+    DEFAULT_MIN_MESH_SIZE = 0.0005
+    DEFAULT_REFINEMENT_DISTANCE = 0.002
+
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
         gmsh.initialize()
         gmsh.model.add(model_name)
+        self._node_id = 1
+        self._elem_id = 1
+        self._node_map: dict = {}
+        self._global_node_coords: dict = {}
 
-    def generate_2_5D_mesh(
-        self,
-        stackup: List[Layer25D],
-        max_mesh_size: float = 0.006,
-        min_mesh_size: float = 0.0005,
-        refine_distance: float = 0.010,
-    ) -> dict:
+    def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
+        mesh_params = mesh_params or {}
+        base_dir = str(Path(config_path).parent)
 
-        # 收集所有热源层用于局部加密网格
-        heat_boxes = []
-        for layer in stackup:
-            if layer.active:
-                for u in layer.units:
-                    heat_boxes.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
+        # 换用统一入口加载JSON
+        config = load_config(config_path)
 
-        node_id = 1
-        elem_id = 1
-        global_node_coords = {}
-        all_hex_elements = []
+        max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
+        min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
+        refine_distance = mesh_params.get(
+            "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
+        )
 
-        z_cursor = 0.0  # 核心改动：在运行时动态追踪 Z 轴
+        stackup = load_stackup(config, base_dir)
+
+        heat_boxes = [
+            (u.lx, u.ly, u.lx + u.dx, u.ly + u.dy)
+            for l in stackup
+            if l.active
+            for u in l.units
+        ]
+        z_cursor = 0.0
 
         for layer in stackup:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
             gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
 
-            lz = z_cursor
-            dz = layer.thickness
-            z_cursor += dz  # 拉伸到下一层
+            lz, dz = z_cursor, layer.thickness
+            z_cursor += dz
 
-            leaves = []
-            queue = deque()
-
-            for u in layer.units:
-                queue.append((u.lx, u.ly, u.lx + u.dx, u.ly + u.dy))
-
-            while queue:
-                x0, y0, x1, y1 = queue.popleft()
-                w = x1 - x0
-                h = y1 - y0
-
-                needs_split = False
-
-                if w > max_mesh_size or h > max_mesh_size:
-                    needs_split = True
-                elif w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01:
-                    for hb in heat_boxes:
-                        dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
-                        dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
-                        if math.hypot(dist_x, dist_y) <= refine_distance:
-                            needs_split = True
-                            break
-
-                if needs_split:
-                    if w >= h:
-                        mid = (x0 + x1) / 2.0
-                        queue.append((x0, y0, mid, y1))
-                        queue.append((mid, y0, x1, y1))
-                    else:
-                        mid = (y0 + y1) / 2.0
-                        queue.append((x0, y0, x1, mid))
-                        queue.append((x0, mid, x1, y1))
-                else:
-                    leaves.append((x0, y0, x1, y1))
-
-            layer_nodes_tags = []
-            layer_nodes_coords = []
-            node_map = {}
-
-            def get_node(x: float, y: float, z: float) -> int:
-                nonlocal node_id
-                key = (round(x, 12), round(y, 12), round(z, 12))
-                if key not in node_map:
-                    node_map[key] = node_id
-                    layer_nodes_tags.append(node_id)
-                    layer_nodes_coords.extend([x, y, z])
-                    global_node_coords[node_id] = (x, y, z)
-                    node_id += 1
-                return node_map[key]
-
-            element_tags = []
-            element_nodes = []
-
-            for x0, y0, x1, y1 in leaves:
-                n0, n1, n2, n3 = (
-                    get_node(x0, y0, lz),
-                    get_node(x1, y0, lz),
-                    get_node(x1, y1, lz),
-                    get_node(x0, y1, lz),
-                )
-                n4, n5, n6, n7 = (
-                    get_node(x0, y0, lz + dz),
-                    get_node(x1, y0, lz + dz),
-                    get_node(x1, y1, lz + dz),
-                    get_node(x0, y1, lz + dz),
-                )
-
-                element_tags.append(elem_id)
-                element_nodes.extend([n0, n1, n2, n3, n4, n5, n6, n7])
-                elem_id += 1
-
-            if element_tags:
-                gmsh.model.mesh.addNodes(
-                    3, discrete_tag, layer_nodes_tags, layer_nodes_coords
-                )
-                gmsh.model.mesh.addElements(
-                    3, discrete_tag, [5], [element_tags], [element_nodes]
-                )
-                all_hex_elements.extend(element_nodes)
-
-        # ====== 边界自然分组与编号 ======
-        faces_count = {}
-        for i in range(0, len(all_hex_elements), 8):
-            n = all_hex_elements[i : i + 8]
-            fs = [
-                tuple(sorted([n[0], n[3], n[2], n[1]])),
-                tuple(sorted([n[4], n[5], n[6], n[7]])),
-                tuple(sorted([n[0], n[1], n[5], n[4]])),
-                tuple(sorted([n[3], n[7], n[6], n[2]])),
-                tuple(sorted([n[0], n[4], n[7], n[3]])),
-                tuple(sorted([n[1], n[2], n[6], n[5]])),
-            ]
-            for f in fs:
-                faces_count[f] = faces_count.get(f, 0) + 1
-
-        boundary_faces = [f for f, count in faces_count.items() if count == 1]
-
-        groups = {}
-        for f in boundary_faces:
-            pts = [global_node_coords[n_tag] for n_tag in f]
-            xs, ys, zs = [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
-            if max(xs) - min(xs) < 1e-9:
-                axis, val = "X", round(xs[0], 6)
-            elif max(ys) - min(ys) < 1e-9:
-                axis, val = "Y", round(ys[0], 6)
-            else:
-                axis, val = "Z", round(zs[0], 6)
-            groups.setdefault((axis, val), []).append(f)
-
-        boundary_info = {}
-        base_tag = 2000
-
-        for (axis_name, val), faces in groups.items():
-            base_tag += 1
-            ent_tag = gmsh.model.addDiscreteEntity(2)
-            gmsh.model.addPhysicalGroup(
-                2, [ent_tag], base_tag, name=f"boundary_{axis_name}_{val}"
+            leaves = self._subdivide_layer(
+                layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
             )
+            self._create_hex_elements(discrete_tag, lz, dz, leaves)
 
-            elem_tags = [elem_id + i for i in range(len(faces))]
-            elem_id += len(faces)
+    def _subdivide_layer(
+        self, layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
+    ):
+        leaves, queue = [], deque(
+            [(u.lx, u.ly, u.lx + u.dx, u.ly + u.dy) for u in layer.units]
+        )
 
-            elem_nodes = []
-            for f in faces:
-                pts_with_id = [(global_node_coords[n_tag], n_tag) for n_tag in f]
-                cx = sum(p[0][0] for p in pts_with_id) / 4.0
-                cy = sum(p[0][1] for p in pts_with_id) / 4.0
-                cz = sum(p[0][2] for p in pts_with_id) / 4.0
-                if axis_name == "X":
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][2] - cz, item[0][1] - cy)
+        while queue:
+            x0, y0, x1, y1 = queue.popleft()
+            w, h = x1 - x0, y1 - y0
+            needs_split = w > max_mesh_size or h > max_mesh_size
+
+            if not needs_split and (
+                w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01
+            ):
+                for hb in heat_boxes:
+                    dist_x, dist_y = max(0.0, x0 - hb[2], hb[0] - x1), max(
+                        0.0, y0 - hb[3], hb[1] - y1
                     )
-                elif axis_name == "Y":
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][2] - cz, item[0][0] - cx)
-                    )
+                    if math.hypot(dist_x, dist_y) <= refine_distance:
+                        needs_split = True
+                        break
+
+            if needs_split:
+                if w >= h:
+                    mid = (x0 + x1) / 2.0
+                    queue.extend([(x0, y0, mid, y1), (mid, y0, x1, y1)])
                 else:
-                    pts_with_id.sort(
-                        key=lambda item: math.atan2(item[0][1] - cy, item[0][0] - cx)
-                    )
-                elem_nodes.extend([item[1] for item in pts_with_id])
+                    mid = (y0 + y1) / 2.0
+                    queue.extend([(x0, y0, x1, mid), (x0, mid, x1, y1)])
+            else:
+                leaves.append((x0, y0, x1, y1))
 
-            gmsh.model.mesh.addElements(2, ent_tag, [3], [elem_tags], [elem_nodes])
-            boundary_info[base_tag] = {
-                "axis": axis_name,
-                "val": val,
-                "name": f"boundary_{axis_name}_{val}",
-            }
+        return leaves
 
-        return boundary_info
+    def _get_node(self, x: float, y: float, z: float) -> int:
+        key = (round(x, 12), round(y, 12), round(z, 12))
+        if key not in self._node_map:
+            self._node_map[key] = self._node_id
+            self._global_node_coords[self._node_id] = (x, y, z)
+            self._node_id += 1
+        return self._node_map[key]
+
+    def _create_hex_elements(self, discrete_tag, lz, dz, leaves) -> None:
+        element_tags, element_nodes, used_node_ids = [], [], set()
+
+        for x0, y0, x1, y1 in leaves:
+            nodes = [
+                self._get_node(x0, y0, lz),
+                self._get_node(x1, y0, lz),
+                self._get_node(x1, y1, lz),
+                self._get_node(x0, y1, lz),
+                self._get_node(x0, y0, lz + dz),
+                self._get_node(x1, y0, lz + dz),
+                self._get_node(x1, y1, lz + dz),
+                self._get_node(x0, y1, lz + dz),
+            ]
+            element_tags.append(self._elem_id)
+            element_nodes.extend(nodes)
+            used_node_ids.update(nodes)
+            self._elem_id += 1
+
+        if element_tags:
+            layer_nodes_tags = sorted(used_node_ids)
+            layer_nodes_coords = [
+                coord
+                for nid in layer_nodes_tags
+                for coord in self._global_node_coords[nid]
+            ]
+            gmsh.model.mesh.addNodes(
+                3, discrete_tag, layer_nodes_tags, layer_nodes_coords
+            )
+            gmsh.model.mesh.addElements(
+                3, discrete_tag, [5], [element_tags], [element_nodes]
+            )
 
     def finalize(self, output_path: str) -> None:
         gmsh.write(output_path)

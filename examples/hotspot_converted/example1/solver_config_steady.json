@@ -1,0 +1,111 @@
+{
+    "simulation_type": "steady",
+    "time": 0.01,
+    "timestep": 0.01,
+    "sampling_intvl": 0.01,
+    "proc_freq": 3000000000.0,
+    "ambient": 318.15,
+    "init_temperature": 318.15,
+    "mesh_file_path": "mesh.msh",
+    "ptrace_file_path": "gcc.ptrace",
+    "materials": {
+        "silicon": {
+            "k": 130.0,
+            "cp": 1630300.0,
+            "fluid": false
+        },
+        "copper": {
+            "k": 400.0,
+            "cp": 3440000.0,
+            "fluid": false,
+            "density": 8960.0,
+            "dynamic_viscosity": 0.0
+        },
+        "aluminum": {
+            "k": 237.0,
+            "cp": 2422000.0,
+            "fluid": false
+        },
+        "tim": {
+            "k": 4.0,
+            "cp": 4000000.0,
+            "fluid": false,
+            "density": 1000.0,
+            "dynamic_viscosity": 0.0
+        },
+        "water": {
+            "k": 0.6069,
+            "cp": 4172638.0,
+            "fluid": true,
+            "dynamic_viscosity": 0.000889
+        },
+        "default_solid": {
+            "k": 1.0,
+            "cp": 1000000.0,
+            "fluid": false,
+            "density": 1000.0,
+            "dynamic_viscosity": 0.0
+        }
+    },
+    "stackup": [
+        {
+            "tag": 1,
+            "name": "layer_1",
+            "thickness": 0.00015,
+            "material": "silicon",
+            "active": true,
+            "layout_file": "layouts/layer_1_layout.json",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.016,
+            "dy": 0.016
+        },
+        {
+            "tag": 1000,
+            "name": "TIM",
+            "thickness": 2e-05,
+            "material": "tim",
+            "active": false,
+            "layout_file": "",
+            "lx": 0.0,
+            "ly": 0.0,
+            "dx": 0.016,
+            "dy": 0.016
+        },
+        {
+            "tag": 1001,
+            "name": "Spreader",
+            "thickness": 0.001,
+            "material": "aluminum",
+            "active": false,
+            "layout_file": "",
+            "lx": -0.006999999999999999,
+            "ly": -0.006999999999999999,
+            "dx": 0.03,
+            "dy": 0.03
+        },
+        {
+            "tag": 1002,
+            "name": "Sink",
+            "thickness": 0.0069,
+            "material": "aluminum",
+            "active": false,
+            "layout_file": "",
+            "lx": -0.022,
+            "ly": -0.022,
+            "dx": 0.06,
+            "dy": 0.06
+        }
+    ],
+    "boundary_conditions": [
+        {
+            "name": "sink_conv",
+            "type": "convection",
+            "face": "+Z",
+            "target": "Sink",
+            "h": 2777.777777777778,
+            "T_inf": 318.15
+        }
+    ],
+    "init_temperature_file_path": "(null)"
+}
