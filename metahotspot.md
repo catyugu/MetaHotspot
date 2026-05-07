@@ -63,39 +63,49 @@ class FVMAssembler:
             A_cond + A_bc + A_adv, b_bc + b_adv, power_mat, unit_names
         )
 
-    def _build_conduction_matrix(self) -> sp.csr_matrix:
-        rows, cols, data, tol, n, boxes = (
-            [],
-            [],
-            [],
-            self.GEOMETRY_TOLERANCE,
-            self.topo.n_cells,
-            self.topo.boxes,
-        )
-        sorted_ids, active_list = np.argsort(boxes[:, 0]), []
+    def _find_adjacent_pairs(self):
+        """Generator that yields adjacent cell pairs with their overlap area and normal axis."""
+        tol = self.GEOMETRY_TOLERANCE
+        boxes = self.topo.boxes
+        sorted_ids = np.argsort(boxes[:, 0])
+        active_list = []
+
         for c_a in sorted_ids:
+            # Sweep and Prune: maintain active list based on X-axis overlap
             active_list = [c for c in active_list if boxes[c, 3] >= boxes[c_a, 0] - tol]
             for c_b in active_list:
                 b_a, b_b = boxes[c_a], boxes[c_b]
+                # Quick BBox exclusion for Y and Z axes
                 if (
                     max(b_a[1], b_b[1]) > min(b_a[4], b_b[4]) + tol
                     or max(b_a[2], b_b[2]) > min(b_a[5], b_b[5]) + tol
                 ):
                     continue
+
+                # Check for face contact along each axis
                 for axis in range(3):
-                    if not (
-                        abs(b_a[axis + 3] - b_b[axis]) < tol
-                        or abs(b_a[axis] - b_b[axis + 3]) < tol
-                    ):
+                    if not self._is_coplanar(b_a, b_b, axis, tol):
                         continue
                     area = _overlap_area(b_a, b_b, axis)
-                    if area <= tol:
-                        continue
-                    g = 1.0 / self._calc_resistance(c_a, c_b, axis, area)
-                    rows.extend([c_a, c_b, c_a, c_b])
-                    cols.extend([c_a, c_b, c_b, c_a])
-                    data.extend([-g, -g, g, g])
+                    if area > tol:
+                        yield c_a, c_b, axis, area
             active_list.append(c_a)
+
+    def _is_coplanar(
+        self, b_a: np.ndarray, b_b: np.ndarray, axis: int, tol: float
+    ) -> bool:
+        """Check if two boxes are coplanar along a specific axis normal."""
+        return (
+            abs(b_a[axis + 3] - b_b[axis]) < tol or abs(b_a[axis] - b_b[axis + 3]) < tol
+        )
+
+    def _build_conduction_matrix(self) -> sp.csr_matrix:
+        rows, cols, data, n = [], [], [], self.topo.n_cells
+        for c_a, c_b, axis, area in self._find_adjacent_pairs():
+            g = 1.0 / self._calc_resistance(c_a, c_b, axis, area)
+            rows.extend([c_a, c_b, c_a, c_b])
+            cols.extend([c_a, c_b, c_b, c_a])
+            data.extend([-g, -g, g, g])
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n))
 
     def _calc_resistance(self, c_a: int, c_b: int, axis: int, area: float) -> float:
@@ -160,62 +170,46 @@ class FVMAssembler:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
-        n, rows, cols, data, rhs, tol, boxes = (
+        n, rows, cols, data, rhs, tol = (
             self.topo.n_cells,
             [],
             [],
             [],
             np.zeros(self.topo.n_cells),
             self.GEOMETRY_TOLERANCE,
-            self.topo.boxes,
         )
-        fluid_ids = np.where(self.fields.is_fluid)[0]
-        if len(fluid_ids) == 0:
+        if not np.any(self.fields.is_fluid):
             return sp.csr_matrix((n, n)), rhs
-        net_outflux, sorted_ids, active_list = np.zeros(n), np.argsort(boxes[:, 0]), []
-        for c_a in sorted_ids:
-            active_list = [c for c in active_list if boxes[c, 3] >= boxes[c_a, 0] - tol]
-            for c_b in active_list:
-                if not (self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]):
-                    continue
-                b_a, b_b = boxes[c_a], boxes[c_b]
-                if (
-                    max(b_a[1], b_b[1]) > min(b_a[4], b_b[4]) + tol
-                    or max(b_a[2], b_b[2]) > min(b_a[5], b_b[5]) + tol
-                ):
-                    continue
-                for axis in range(3):
-                    if not (
-                        abs(b_a[axis + 3] - b_b[axis]) < tol
-                        or abs(b_a[axis] - b_b[axis + 3]) < tol
-                    ):
-                        continue
-                    area = _overlap_area(b_a, b_b, axis)
-                    if area <= tol:
-                        continue
-                    sum_hc = self.fields.hydroC[c_a] + self.fields.hydroC[c_b]
-                    C_eff = (
-                        2.0 * self.fields.hydroC[c_a] * self.fields.hydroC[c_b] / sum_hc
-                        if sum_hc > 0
-                        else 0.0
-                    )
-                    mass_flux = (
-                        (self.fields.pressure[c_a] - self.fields.pressure[c_b])
-                        * C_eff
-                        * (self.fields.density[c_a] + self.fields.density[c_b])
-                        * 0.5
-                    )
-                    net_outflux[c_a], net_outflux[c_b] = (
-                        net_outflux[c_a] + mass_flux,
-                        net_outflux[c_b] - mass_flux,
-                    )
-                    if abs(mass_flux) > tol:
-                        up, dn = (c_a, c_b) if mass_flux > 0 else (c_b, c_a)
-                        adv = abs(mass_flux) * self.fields.cp[up]
-                        rows.extend([up, dn])
-                        cols.extend([up, up])
-                        data.extend([-adv, adv])
-            active_list.append(c_a)
+
+        net_outflux = np.zeros(n)
+        for c_a, c_b, axis, area in self._find_adjacent_pairs():
+            if not (self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]):
+                continue
+
+            sum_hc = self.fields.hydroC[c_a] + self.fields.hydroC[c_b]
+            C_eff = (
+                2.0 * self.fields.hydroC[c_a] * self.fields.hydroC[c_b] / sum_hc
+                if sum_hc > 0
+                else 0.0
+            )
+            mass_flux = (
+                (self.fields.pressure[c_a] - self.fields.pressure[c_b])
+                * C_eff
+                * (self.fields.density[c_a] + self.fields.density[c_b])
+                * 0.5
+            )
+            net_outflux[c_a], net_outflux[c_b] = (
+                net_outflux[c_a] + mass_flux,
+                net_outflux[c_b] - mass_flux,
+            )
+            if abs(mass_flux) > tol:
+                up, dn = (c_a, c_b) if mass_flux > 0 else (c_b, c_a)
+                adv = abs(mass_flux) * self.fields.cp[up]
+                rows.extend([up, dn])
+                cols.extend([up, up])
+                data.extend([-adv, adv])
+
+        fluid_ids = np.where(self.fields.is_fluid)[0]
         for c_id in fluid_ids:
             influx = net_outflux[c_id]
             if influx > tol and not np.isnan(self.fields.inlet_temperature[c_id]):
