@@ -5,8 +5,7 @@
 .
 ├── adapter.py
 ├── collect_context.py
-├── run_example_pipeline.py
-└── solver.py
+└── run_example_pipeline.py
 ```
 
 ## File Contents
@@ -295,9 +294,14 @@ import argparse
 import copy
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from metahotspot.fvm_solver import FVMSolver
 
 
 def _write_solver_configs_from_template(
@@ -353,13 +357,8 @@ def _ensure_solver_configs(example_dir: Path) -> tuple[Path, Path]:
     )
 
 
-def _run_solver(project_root: Path, config_path: Path) -> None:
-    solver_script = project_root / "scripts" / "solver.py"
-    subprocess.run(
-        [sys.executable, str(solver_script), str(config_path)],
-        check=True,
-        cwd=str(project_root),
-    )
+def _run_solver(config_path: Path) -> None:
+    FVMSolver(str(config_path)).solve()
 
 
 def _force_transient_init_file(transient_cfg: Path) -> None:
@@ -374,7 +373,6 @@ def _force_transient_init_file(transient_cfg: Path) -> None:
 
 
 def run_pipeline(example_dir: Path) -> None:
-    project_root = Path(__file__).resolve().parents[1]
     outputs_dir = example_dir / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -383,7 +381,7 @@ def run_pipeline(example_dir: Path) -> None:
     shutil.copy2(transient_cfg, outputs_dir / transient_cfg.name)
 
     print(f"[PIPELINE] steady solve: {steady_cfg}")
-    _run_solver(project_root, steady_cfg)
+    _run_solver(steady_cfg)
 
     steady_result = example_dir / "result.vtu"
     if not steady_result.exists():
@@ -398,7 +396,7 @@ def run_pipeline(example_dir: Path) -> None:
     _force_transient_init_file(transient_cfg)
 
     print(f"[PIPELINE] transient solve: {transient_cfg}")
-    _run_solver(project_root, transient_cfg)
+    _run_solver(transient_cfg)
 
     transient_result = example_dir / "transient_result.vtu"
     if not transient_result.exists():
@@ -416,32 +414,6 @@ def main() -> None:
     args = parser.parse_args()
 
     run_pipeline(Path(args.example_dir).resolve())
-
-
-if __name__ == "__main__":
-    main()
-
-```
-
-### File: solver.py
-```py
-import argparse
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from metahotspot.fvm_solver import FVMSolver
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run MetaHotspot finite-volume solver")
-    parser.add_argument("config", help="Path to solver_config.json")
-    args = parser.parse_args()
-
-    FVMSolver(args.config).solve()
 
 
 if __name__ == "__main__":
