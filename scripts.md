@@ -301,7 +301,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from metahotspot.fvm_solver import FVMSolver
+from metahotspot.metahotspot_solver import MetaHotspotSolver
 
 
 def _write_solver_configs_from_template(
@@ -358,7 +358,7 @@ def _ensure_solver_configs(example_dir: Path) -> tuple[Path, Path]:
 
 
 def _run_solver(config_path: Path) -> None:
-    FVMSolver(str(config_path)).solve()
+    MetaHotspotSolver(str(config_path)).run()
 
 
 def _force_transient_init_file(transient_cfg: Path) -> None:

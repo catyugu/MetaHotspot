@@ -172,7 +172,7 @@ class ThermalSolver:
 最后，原先的 `solver.py` 脚本或 `FVMSolver` 类的主干，将变成一个清晰的 Pipeline 调度器。
 
 ```python
-class MetaHotspotPipeline:
+class MetaHotspotSolver:
     def __init__(self, config_path: str):
         self.config = load_config(config_path)
         self.stackup = load_stackup(self.config, os.path.dirname(config_path))
