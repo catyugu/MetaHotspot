@@ -14,7 +14,6 @@ class MeshPreprocessor:
         self.stackup = stackup
 
     def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
-        print(f"[INFO] Processing mesh: {mesh_path}")
         mesh = meshio.read(mesh_path)
         topo = self._extract_geometry(mesh)
         fields = self._map_physical_properties(topo)

@@ -3,33 +3,37 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
 
+
 class FluidPreprocessor:
     """
     Specialized for calculating and solidifying fluid dynamic fields (pressure, convection coefficients)
     before thermal assembly.
     """
+
     def __init__(self, config: dict):
         self.config = config
 
     def solve_flow(self, topo: MeshTopology, fields: PhysicalFields) -> None:
         if not np.any(fields.is_fluid):
             return
-        
+
         # Temporary state for boundary condition tracking during flow solve
         is_pressure_boundary = np.zeros(topo.n_cells, dtype=bool)
-        
+
         self._init_cell_hydro_properties(topo, fields)
         self._apply_pressure_boundary_conditions(topo, fields, is_pressure_boundary)
         self._solve_pressure(topo, fields, is_pressure_boundary)
 
-    def _init_cell_hydro_properties(self, topo: MeshTopology, fields: PhysicalFields) -> None:
+    def _init_cell_hydro_properties(
+        self, topo: MeshTopology, fields: PhysicalFields
+    ) -> None:
         m = fields.is_fluid & (fields.dynamic_viscosity > 0)
         if not np.any(m):
             return
         w, L, h, v = (
-            topo.dims[m, 0],
-            topo.dims[m, 1],
-            topo.dims[m, 2],
+            topo.dims[m, 1],  # 横截面宽度为 Y 轴尺寸
+            topo.dims[m, 0],  # 流动方向为 +X 轴
+            topo.dims[m, 2],  # 横截面高度为 Z 轴尺寸
             fields.dynamic_viscosity[m],
         )
         hydroC = np.zeros(np.sum(m))
@@ -45,7 +49,10 @@ class FluidPreprocessor:
         fields.hydroC[m] = hydroC
 
     def _apply_pressure_boundary_conditions(
-        self, topo: MeshTopology, fields: PhysicalFields, is_pressure_boundary: np.ndarray
+        self,
+        topo: MeshTopology,
+        fields: PhysicalFields,
+        is_pressure_boundary: np.ndarray,
     ) -> None:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "pressure":
@@ -67,14 +74,15 @@ class FluidPreprocessor:
                     ) = (True, pressure, temp)
 
     def _solve_pressure(
-        self, topo: MeshTopology, fields: PhysicalFields, is_pressure_boundary: np.ndarray
+        self,
+        topo: MeshTopology,
+        fields: PhysicalFields,
+        is_pressure_boundary: np.ndarray,
     ) -> None:
         fluid_ids = np.where(fields.is_fluid)[0]
         if len(fluid_ids) == 0:
             return
-        n_fluid, global_to_fluid = len(fluid_ids), np.full(
-            topo.n_cells, -1, dtype=int
-        )
+        n_fluid, global_to_fluid = len(fluid_ids), np.full(topo.n_cells, -1, dtype=int)
         global_to_fluid[fluid_ids] = np.arange(n_fluid)
         rows, cols, data, b_p, diag_C, is_p_bound = (
             [],
