@@ -190,7 +190,7 @@ class MeshPreprocessor:
             density,
             is_fluid,
             dynamic_viscosity,
-            np.zeros(n),
+            np.zeros((n, 3)),
             np.zeros(n),
             np.full(n, np.nan),
             layer_names,

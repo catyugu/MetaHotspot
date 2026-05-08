@@ -51,8 +51,10 @@ class FVMAssembler:
             config,
             stackup,
         )
+        self.flow_axes = np.zeros(self.topo.n_cells, dtype=int)
 
     def assemble(self) -> SystemMatrices:
+        self._precompute_flow_axes()  # Compute flow axes from pressure gradient
         A_cond = self._build_conduction_matrix()
         A_bc, b_bc = self._build_boundary_terms()
         A_adv, b_adv = self._build_advection_matrix()
@@ -60,6 +62,20 @@ class FVMAssembler:
         return SystemMatrices(
             A_cond + A_bc + A_adv, b_bc + b_adv, power_mat, unit_names
         )
+
+    def _precompute_flow_axes(self) -> None:
+        """Based on solved pressure field, infer dominant flow axis for each fluid cell (axis with largest pressure drop)"""
+        if not np.any(self.fields.is_fluid):
+            return
+        p_drops = np.zeros((self.topo.n_cells, 3))
+        for c_a, c_b, axis, _ in self._find_adjacent_pairs():
+            if self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]:
+                dp = abs(self.fields.pressure[c_a] - self.fields.pressure[c_b])
+                p_drops[c_a, axis] = max(p_drops[c_a, axis], dp)
+                p_drops[c_b, axis] = max(p_drops[c_b, axis], dp)
+
+        fluid_mask = self.fields.is_fluid
+        self.flow_axes[fluid_mask] = np.argmax(p_drops[fluid_mask], axis=1)
 
     def _find_adjacent_pairs(self):
         """Generator that yields adjacent cell pairs with their overlap area and normal axis."""
@@ -86,12 +102,13 @@ class FVMAssembler:
         fluid_a, fluid_b = self.fields.is_fluid[c_a], self.fields.is_fluid[c_b]
         if fluid_a != fluid_b:
             f_id, s_id = (c_a, c_b) if fluid_a else (c_b, c_a)
-            Nu = self._compute_nusselt(f_id)
+            flow_axis = self.flow_axes[f_id]
+            ax_w = (flow_axis + 1) % 3
+            ax_h = (flow_axis + 2) % 3
+            Nu = self._compute_nusselt(f_id, flow_axis)
             d_h = (
-                2
-                * self.topo.dims[f_id, 0]
-                * self.topo.dims[f_id, 1]
-                / (self.topo.dims[f_id, 0] + self.topo.dims[f_id, 1])
+                2 * self.topo.dims[f_id, ax_w] * self.topo.dims[f_id, ax_h]
+                / (self.topo.dims[f_id, ax_w] + self.topo.dims[f_id, ax_h])
             )
             h_f = (Nu * self.fields.k[f_id]) / d_h if d_h > 0 else 1e-6
             return self.topo.dims[s_id, axis] / (
@@ -101,8 +118,10 @@ class FVMAssembler:
             self.topo.dims[c_b, axis] / (2.0 * self.fields.k[c_b] * area)
         )
 
-    def _compute_nusselt(self, c_id: int) -> float:
-        w, h = sorted([self.topo.dims[c_id, 0], self.topo.dims[c_id, 1]])
+    def _compute_nusselt(self, c_id: int, flow_axis: int) -> float:
+        ax_w = (flow_axis + 1) % 3
+        ax_h = (flow_axis + 2) % 3
+        w, h = sorted([self.topo.dims[c_id, ax_w], self.topo.dims[c_id, ax_h]])
         AR = w / h if h > 0 else 1.0
         return 8.235 * (
             1
@@ -160,9 +179,12 @@ class FVMAssembler:
             if not (self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]):
                 continue
 
-            sum_hc = self.fields.hydroC[c_a] + self.fields.hydroC[c_b]
+            # Use axis-specific hydroC for fluid-fluid pairs
+            hc_a = self.fields.hydroC[c_a, axis]
+            hc_b = self.fields.hydroC[c_b, axis]
+            sum_hc = hc_a + hc_b
             C_eff = (
-                2.0 * self.fields.hydroC[c_a] * self.fields.hydroC[c_b] / sum_hc
+                2.0 * hc_a * hc_b / sum_hc
                 if sum_hc > 0
                 else 0.0
             )
@@ -423,23 +445,32 @@ class FluidPreprocessor:
         m = fields.is_fluid & (fields.dynamic_viscosity > 0)
         if not np.any(m):
             return
-        w, L, h, v = (
-            topo.dims[m, 0],
-            topo.dims[m, 1],
-            topo.dims[m, 2],
-            fields.dynamic_viscosity[m],
-        )
-        hydroC = np.zeros(np.sum(m))
-        cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
-        cond_lt = ~(cond_eq | cond_gt)
-        hydroC[cond_eq] = (0.42229 * h[cond_eq] ** 4) / (12 * v[cond_eq] * L[cond_eq])
-        hydroC[cond_gt] = (
-            (1 - 0.63 * (w[cond_gt] / h[cond_gt])) * w[cond_gt] ** 3 * h[cond_gt]
-        ) / (12 * v[cond_gt] * L[cond_gt])
-        hydroC[cond_lt] = (
-            (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
-        ) / (12 * v[cond_lt] * L[cond_lt])
-        fields.hydroC[m] = hydroC
+        v = fields.dynamic_viscosity[m]
+
+        # Compute anisotropic hydroC for X(0), Y(1), Z(2) axes
+        for axis in range(3):
+            ax_w = (axis + 1) % 3
+            ax_h = (axis + 2) % 3
+
+            L = topo.dims[m, axis]
+            w = topo.dims[m, ax_w]
+            h = topo.dims[m, ax_h]
+
+            hydroC_axis = np.zeros(np.sum(m))
+            cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
+            cond_lt = ~(cond_eq | cond_gt)
+
+            hydroC_axis[cond_eq] = (0.42229 * h[cond_eq] ** 4) / (
+                12 * v[cond_eq] * L[cond_eq]
+            )
+            hydroC_axis[cond_gt] = (
+                (1 - 0.63 * (w[cond_gt] / h[cond_gt])) * w[cond_gt] ** 3 * h[cond_gt]
+            ) / (12 * v[cond_gt] * L[cond_gt])
+            hydroC_axis[cond_lt] = (
+                (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
+            ) / (12 * v[cond_lt] * L[cond_lt])
+
+            fields.hydroC[m, axis] = hydroC_axis
 
     def _apply_pressure_boundary_conditions(
         self,
@@ -485,21 +516,26 @@ class FluidPreprocessor:
             np.zeros(n_fluid),
             is_pressure_boundary[fluid_ids],
         )
+
         bound_idx = np.where(is_p_bound)[0]
         rows.extend(bound_idx)
         cols.extend(bound_idx)
         data.extend(np.ones(len(bound_idx)))
         b_p[bound_idx] = fields.pressure[fluid_ids][bound_idx]
+
         for c0, c1 in topo.internal_faces:
             i0, i1 = global_to_fluid[c0], global_to_fluid[c1]
             if i0 == -1 or i1 == -1:
                 continue
-            sum_hc = fields.hydroC[c0] + fields.hydroC[c1]
-            C_eff = (
-                2.0 * fields.hydroC[c0] * fields.hydroC[c1] / sum_hc
-                if sum_hc > 0
-                else 0.0
-            )
+
+            # Dynamically infer axis from cell center difference
+            axis = np.argmax(np.abs(topo.centers[c1] - topo.centers[c0]))
+            hc0 = fields.hydroC[c0, axis]
+            hc1 = fields.hydroC[c1, axis]
+
+            sum_hc = hc0 + hc1
+            C_eff = (2.0 * hc0 * hc1 / sum_hc) if sum_hc > 0 else 0.0
+
             if not is_pressure_boundary[c0]:
                 rows.append(i0)
                 cols.append(i1)
@@ -510,11 +546,13 @@ class FluidPreprocessor:
                 cols.append(i0)
                 data.append(C_eff)
                 diag_C[i1] += C_eff
+
         for i in range(n_fluid):
             if not is_p_bound[i]:
                 rows.append(i)
                 cols.append(i)
                 data.append(-diag_C[i])
+
         try:
             fields.pressure[fluid_ids] = splinalg.spsolve(
                 sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
@@ -858,7 +896,7 @@ class MeshPreprocessor:
             density,
             is_fluid,
             dynamic_viscosity,
-            np.zeros(n),
+            np.zeros((n, 3)),
             np.zeros(n),
             np.full(n, np.nan),
             layer_names,
@@ -1007,7 +1045,9 @@ class PhysicalFields:
     density: np.ndarray
     is_fluid: np.ndarray
     dynamic_viscosity: np.ndarray
-    hydroC: np.ndarray
+    hydroC: (
+        np.ndarray
+    )  # hydrodynamic coefficient, shape (n_cells, 3) — anisotropic conductance along [X, Y, Z] axes
     pressure: np.ndarray
     inlet_temperature: np.ndarray
     layer_names: np.ndarray
