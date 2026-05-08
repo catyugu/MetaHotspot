@@ -30,23 +30,32 @@ class FluidPreprocessor:
         m = fields.is_fluid & (fields.dynamic_viscosity > 0)
         if not np.any(m):
             return
-        w, L, h, v = (
-            topo.dims[m, 1],  # 横截面宽度为 Y 轴尺寸
-            topo.dims[m, 0],  # 流动方向为 +X 轴
-            topo.dims[m, 2],  # 横截面高度为 Z 轴尺寸
-            fields.dynamic_viscosity[m],
-        )
-        hydroC = np.zeros(np.sum(m))
-        cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
-        cond_lt = ~(cond_eq | cond_gt)
-        hydroC[cond_eq] = (0.42229 * h[cond_eq] ** 4) / (12 * v[cond_eq] * L[cond_eq])
-        hydroC[cond_gt] = (
-            (1 - 0.63 * (w[cond_gt] / h[cond_gt])) * w[cond_gt] ** 3 * h[cond_gt]
-        ) / (12 * v[cond_gt] * L[cond_gt])
-        hydroC[cond_lt] = (
-            (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
-        ) / (12 * v[cond_lt] * L[cond_lt])
-        fields.hydroC[m] = hydroC
+        v = fields.dynamic_viscosity[m]
+
+        # Compute anisotropic hydroC for X(0), Y(1), Z(2) axes
+        for axis in range(3):
+            ax_w = (axis + 1) % 3
+            ax_h = (axis + 2) % 3
+
+            L = topo.dims[m, axis]
+            w = topo.dims[m, ax_w]
+            h = topo.dims[m, ax_h]
+
+            hydroC_axis = np.zeros(np.sum(m))
+            cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
+            cond_lt = ~(cond_eq | cond_gt)
+
+            hydroC_axis[cond_eq] = (0.42229 * h[cond_eq] ** 4) / (
+                12 * v[cond_eq] * L[cond_eq]
+            )
+            hydroC_axis[cond_gt] = (
+                (1 - 0.63 * (w[cond_gt] / h[cond_gt])) * w[cond_gt] ** 3 * h[cond_gt]
+            ) / (12 * v[cond_gt] * L[cond_gt])
+            hydroC_axis[cond_lt] = (
+                (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
+            ) / (12 * v[cond_lt] * L[cond_lt])
+
+            fields.hydroC[m, axis] = hydroC_axis
 
     def _apply_pressure_boundary_conditions(
         self,
@@ -92,21 +101,26 @@ class FluidPreprocessor:
             np.zeros(n_fluid),
             is_pressure_boundary[fluid_ids],
         )
+
         bound_idx = np.where(is_p_bound)[0]
         rows.extend(bound_idx)
         cols.extend(bound_idx)
         data.extend(np.ones(len(bound_idx)))
         b_p[bound_idx] = fields.pressure[fluid_ids][bound_idx]
+
         for c0, c1 in topo.internal_faces:
             i0, i1 = global_to_fluid[c0], global_to_fluid[c1]
             if i0 == -1 or i1 == -1:
                 continue
-            sum_hc = fields.hydroC[c0] + fields.hydroC[c1]
-            C_eff = (
-                2.0 * fields.hydroC[c0] * fields.hydroC[c1] / sum_hc
-                if sum_hc > 0
-                else 0.0
-            )
+
+            # Dynamically infer axis from cell center difference
+            axis = np.argmax(np.abs(topo.centers[c1] - topo.centers[c0]))
+            hc0 = fields.hydroC[c0, axis]
+            hc1 = fields.hydroC[c1, axis]
+
+            sum_hc = hc0 + hc1
+            C_eff = (2.0 * hc0 * hc1 / sum_hc) if sum_hc > 0 else 0.0
+
             if not is_pressure_boundary[c0]:
                 rows.append(i0)
                 cols.append(i1)
@@ -117,11 +131,13 @@ class FluidPreprocessor:
                 cols.append(i0)
                 data.append(C_eff)
                 diag_C[i1] += C_eff
+
         for i in range(n_fluid):
             if not is_p_bound[i]:
                 rows.append(i)
                 cols.append(i)
                 data.append(-diag_C[i])
+
         try:
             fields.pressure[fluid_ids] = splinalg.spsolve(
                 sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p

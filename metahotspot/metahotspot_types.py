@@ -27,7 +27,9 @@ class PhysicalFields:
     density: np.ndarray
     is_fluid: np.ndarray
     dynamic_viscosity: np.ndarray
-    hydroC: np.ndarray
+    hydroC: (
+        np.ndarray
+    )  # hydrodynamic coefficient, shape (n_cells, 3) — anisotropic conductance along [X, Y, Z] axes
     pressure: np.ndarray
     inlet_temperature: np.ndarray
     layer_names: np.ndarray

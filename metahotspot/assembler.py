@@ -26,8 +26,10 @@ class FVMAssembler:
             config,
             stackup,
         )
+        self.flow_axes = np.zeros(self.topo.n_cells, dtype=int)
 
     def assemble(self) -> SystemMatrices:
+        self._precompute_flow_axes()  # Compute flow axes from pressure gradient
         A_cond = self._build_conduction_matrix()
         A_bc, b_bc = self._build_boundary_terms()
         A_adv, b_adv = self._build_advection_matrix()
@@ -35,6 +37,20 @@ class FVMAssembler:
         return SystemMatrices(
             A_cond + A_bc + A_adv, b_bc + b_adv, power_mat, unit_names
         )
+
+    def _precompute_flow_axes(self) -> None:
+        """Based on solved pressure field, infer dominant flow axis for each fluid cell (axis with largest pressure drop)"""
+        if not np.any(self.fields.is_fluid):
+            return
+        p_drops = np.zeros((self.topo.n_cells, 3))
+        for c_a, c_b, axis, _ in self._find_adjacent_pairs():
+            if self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]:
+                dp = abs(self.fields.pressure[c_a] - self.fields.pressure[c_b])
+                p_drops[c_a, axis] = max(p_drops[c_a, axis], dp)
+                p_drops[c_b, axis] = max(p_drops[c_b, axis], dp)
+
+        fluid_mask = self.fields.is_fluid
+        self.flow_axes[fluid_mask] = np.argmax(p_drops[fluid_mask], axis=1)
 
     def _find_adjacent_pairs(self):
         """Generator that yields adjacent cell pairs with their overlap area and normal axis."""
@@ -61,12 +77,13 @@ class FVMAssembler:
         fluid_a, fluid_b = self.fields.is_fluid[c_a], self.fields.is_fluid[c_b]
         if fluid_a != fluid_b:
             f_id, s_id = (c_a, c_b) if fluid_a else (c_b, c_a)
-            Nu = self._compute_nusselt(f_id)
+            flow_axis = self.flow_axes[f_id]
+            ax_w = (flow_axis + 1) % 3
+            ax_h = (flow_axis + 2) % 3
+            Nu = self._compute_nusselt(f_id, flow_axis)
             d_h = (
-                2
-                * self.topo.dims[f_id, 1]  # 使用 Y 方向 (宽度)
-                * self.topo.dims[f_id, 2]  # 使用 Z 方向 (高度)
-                / (self.topo.dims[f_id, 1] + self.topo.dims[f_id, 2])
+                2 * self.topo.dims[f_id, ax_w] * self.topo.dims[f_id, ax_h]
+                / (self.topo.dims[f_id, ax_w] + self.topo.dims[f_id, ax_h])
             )
             h_f = (Nu * self.fields.k[f_id]) / d_h if d_h > 0 else 1e-6
             return self.topo.dims[s_id, axis] / (
@@ -76,10 +93,10 @@ class FVMAssembler:
             self.topo.dims[c_b, axis] / (2.0 * self.fields.k[c_b] * area)
         )
 
-    def _compute_nusselt(self, c_id: int) -> float:
-        w, h = sorted(
-            [self.topo.dims[c_id, 1], self.topo.dims[c_id, 2]]
-        )  # 使用 Y 和 Z 方向的尺寸
+    def _compute_nusselt(self, c_id: int, flow_axis: int) -> float:
+        ax_w = (flow_axis + 1) % 3
+        ax_h = (flow_axis + 2) % 3
+        w, h = sorted([self.topo.dims[c_id, ax_w], self.topo.dims[c_id, ax_h]])
         AR = w / h if h > 0 else 1.0
         return 8.235 * (
             1
@@ -137,9 +154,12 @@ class FVMAssembler:
             if not (self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]):
                 continue
 
-            sum_hc = self.fields.hydroC[c_a] + self.fields.hydroC[c_b]
+            # Use axis-specific hydroC for fluid-fluid pairs
+            hc_a = self.fields.hydroC[c_a, axis]
+            hc_b = self.fields.hydroC[c_b, axis]
+            sum_hc = hc_a + hc_b
             C_eff = (
-                2.0 * self.fields.hydroC[c_a] * self.fields.hydroC[c_b] / sum_hc
+                2.0 * hc_a * hc_b / sum_hc
                 if sum_hc > 0
                 else 0.0
             )
