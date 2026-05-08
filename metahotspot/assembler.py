@@ -1,22 +1,17 @@
-from typing import Any, Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as splinalg
 
 from metahotspot.metahotspot_types import (
     MeshTopology,
     PhysicalFields,
     SystemMatrices,
 )
-
-
-def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
-    """Calculate the overlap area of two boxes along a given axis normal."""
-    axes = [(1, 2, 4, 5), (0, 2, 3, 5), (0, 1, 3, 4)][axis]
-    d1 = min(box_a[axes[2]], box_b[axes[2]]) - max(box_a[axes[0]], box_b[axes[0]])
-    d2 = min(box_a[axes[3]], box_b[axes[3]]) - max(box_a[axes[1]], box_b[axes[1]])
-    return d1 * d2 if d1 > 0.0 and d2 > 0.0 else 0.0
+from metahotspot.assembler_kernels import (
+    overlap_area_kernel,
+    find_adjacent_pairs_kernel,
+)
 
 
 class FVMAssembler:
@@ -43,39 +38,15 @@ class FVMAssembler:
 
     def _find_adjacent_pairs(self):
         """Generator that yields adjacent cell pairs with their overlap area and normal axis."""
-        tol = self.GEOMETRY_TOLERANCE
-        boxes = self.topo.boxes
-        sorted_ids = np.argsort(boxes[:, 0])
-        active_list = []
-
-        for c_a in sorted_ids:
-            # Sweep and Prune: maintain active list based on X-axis overlap
-            active_list = [c for c in active_list if boxes[c, 3] >= boxes[c_a, 0] - tol]
-            for c_b in active_list:
-                b_a, b_b = boxes[c_a], boxes[c_b]
-                # Quick BBox exclusion for Y and Z axes
-                if (
-                    max(b_a[1], b_b[1]) > min(b_a[4], b_b[4]) + tol
-                    or max(b_a[2], b_b[2]) > min(b_a[5], b_b[5]) + tol
-                ):
-                    continue
-
-                # Check for face contact along each axis
-                for axis in range(3):
-                    if not self._is_coplanar(b_a, b_b, axis, tol):
-                        continue
-                    area = _overlap_area(b_a, b_b, axis)
-                    if area > tol:
-                        yield c_a, c_b, axis, area
-            active_list.append(c_a)
-
-    def _is_coplanar(
-        self, b_a: np.ndarray, b_b: np.ndarray, axis: int, tol: float
-    ) -> bool:
-        """Check if two boxes are coplanar along a specific axis normal."""
-        return (
-            abs(b_a[axis + 3] - b_b[axis]) < tol or abs(b_a[axis] - b_b[axis + 3]) < tol
+        c_a_arr, c_b_arr, axis_arr, area_arr, count = find_adjacent_pairs_kernel(
+            self.topo.boxes
         )
+        for i in range(count):
+            yield c_a_arr[i], c_b_arr[i], axis_arr[i], area_arr[i]
+
+    @staticmethod
+    def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
+        return overlap_area_kernel(box_a, box_b, axis)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data, n = [], [], [], self.topo.n_cells
@@ -93,9 +64,9 @@ class FVMAssembler:
             Nu = self._compute_nusselt(f_id)
             d_h = (
                 2
-                * self.topo.dims[f_id, 0]
-                * self.topo.dims[f_id, 1]
-                / (self.topo.dims[f_id, 0] + self.topo.dims[f_id, 1])
+                * self.topo.dims[f_id, 1]  # 使用 Y 方向 (宽度)
+                * self.topo.dims[f_id, 2]  # 使用 Z 方向 (高度)
+                / (self.topo.dims[f_id, 1] + self.topo.dims[f_id, 2])
             )
             h_f = (Nu * self.fields.k[f_id]) / d_h if d_h > 0 else 1e-6
             return self.topo.dims[s_id, axis] / (
@@ -106,7 +77,9 @@ class FVMAssembler:
         )
 
     def _compute_nusselt(self, c_id: int) -> float:
-        w, h = sorted([self.topo.dims[c_id, 0], self.topo.dims[c_id, 1]])
+        w, h = sorted(
+            [self.topo.dims[c_id, 1], self.topo.dims[c_id, 2]]
+        )  # 使用 Y 和 Z 方向的尺寸
         AR = w / h if h > 0 else 1.0
         return 8.235 * (
             1

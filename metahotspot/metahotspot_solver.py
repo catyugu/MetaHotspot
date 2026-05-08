@@ -2,6 +2,7 @@ import os
 
 import meshio
 import numpy as np
+import time
 
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
@@ -20,6 +21,7 @@ class MetaHotspotSolver:
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
 
     def run(self):
+        start = time.perf_counter()
         print("[INFO] Preprocessing mesh and properties...")
         topo, fields = MeshPreprocessor(self.config, self.stackup).process(
             self.mesh_path
@@ -53,6 +55,8 @@ class MetaHotspotSolver:
             )
             print("[INFO] Exporting results...")
             self._export_vtu(topo, temperatures, "transient_result.vtu")
+        end = time.perf_counter()
+        print(f"[INFO] Simulation completed in {end - start:.2f} seconds\n\n")
 
     def _load_ptrace(self) -> list[dict]:
         path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
