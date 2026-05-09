@@ -22,15 +22,24 @@ class MetaHotspotSolver:
 
     def run(self):
         start = time.perf_counter()
-        print("[INFO] Preprocessing mesh and properties...")
         topo, fields = MeshPreprocessor(self.config, self.stackup).process(
             self.mesh_path
         )
-        print("[INFO] Solving fluid flow (if applicable)...")
+        mesh_finished = time.perf_counter()
+        print(
+            f"[INFO] Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+        )
         FluidPreprocessor(self.config).solve_flow(topo, fields)
-        print("[INFO] Assembling system matrices...")
+        pressure_solve_finished = time.perf_counter()
+        print(
+            f"[INFO] Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+        )
         matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
-        print("[INFO] Solving equations...")
+        assembly_finished = time.perf_counter()
+        print(
+            f"[INFO] System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
+        )
+        print()
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             temperatures = solver.solve_steady(
@@ -56,6 +65,9 @@ class MetaHotspotSolver:
             print("[INFO] Exporting results...")
             self._export_vtu(topo, temperatures, "transient_result.vtu")
         end = time.perf_counter()
+        print(
+            f"[INFO] Thermal solving completed in {end - assembly_finished:.2f} seconds"
+        )
         print(f"[INFO] Simulation completed in {end - start:.2f} seconds\n\n")
 
     def _load_ptrace(self) -> list[dict]:
