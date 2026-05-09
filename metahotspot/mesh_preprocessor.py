@@ -1,5 +1,4 @@
 from typing import Any, Dict, List, Tuple
-
 import meshio
 import numpy as np
 
@@ -7,7 +6,7 @@ from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
 
 
 class MeshPreprocessor:
-    GEOMETRY_TOLERANCE = 1e-15
+    GEOMETRY_TOLERANCE = 1e-12
 
     def __init__(self, config: Dict[str, Any], stackup: List[Any]) -> None:
         self.config = config
@@ -23,11 +22,13 @@ class MeshPreprocessor:
         hex_blocks = [b.data for b in mesh.cells if b.type == "hexahedron"]
         if not hex_blocks:
             raise ValueError("No hexahedron cells found in mesh")
+
         hex_data = np.vstack(hex_blocks)
         coords = mesh.points[hex_data]
         lowers, uppers = np.min(coords, axis=1), np.max(coords, axis=1)
         centers, dims = (lowers + uppers) * 0.5, uppers - lowers
         vols = np.prod(dims, axis=1)
+
         sorted_indices = self._compute_morton_sort(lowers, uppers, centers)
         n_cells = len(centers)
         c_centers, c_dims, c_boxes, c_vols = (
@@ -36,11 +37,14 @@ class MeshPreprocessor:
             np.hstack([lowers[sorted_indices], uppers[sorted_indices]]),
             vols[sorted_indices],
         )
+
         orig_to_new_id = np.empty(n_cells, dtype=int)
         orig_to_new_id[sorted_indices] = np.arange(n_cells)
-        internal_faces, boundary_faces = self._build_topology(
+
+        internal_faces, boundary_faces = self._build_topology_vectorized(
             mesh, hex_data, sorted_indices, c_centers
         )
+
         return MeshTopology(
             n_cells,
             c_centers,
@@ -68,98 +72,147 @@ class MeshPreprocessor:
             )
         return np.argsort(morton_keys)
 
-    def _build_topology(
+    def _build_topology_vectorized(
         self,
         mesh: meshio.Mesh,
         hex_data: np.ndarray,
         sorted_indices: np.ndarray,
         c_centers: np.ndarray,
-    ) -> Tuple[list, dict]:
-        face_to_cells = {}
-        for new_id, orig_id in enumerate(sorted_indices):
-            nodes = hex_data[orig_id]
-            faces = [
-                (nodes[0], nodes[3], nodes[2], nodes[1]),
-                (nodes[4], nodes[5], nodes[6], nodes[7]),
-                (nodes[0], nodes[1], nodes[5], nodes[4]),
-                (nodes[3], nodes[7], nodes[6], nodes[2]),
-                (nodes[0], nodes[4], nodes[7], nodes[3]),
-                (nodes[1], nodes[2], nodes[6], nodes[5]),
+    ) -> Tuple[np.ndarray, dict]:
+        """使用 lexsort 替代慢速的 Python Dict 解析面连通性"""
+        n_cells = len(sorted_indices)
+
+        # 6 个面的局部节点定义
+        faces_def = np.array(
+            [
+                [0, 3, 2, 1],
+                [4, 5, 6, 7],
+                [0, 1, 5, 4],
+                [3, 7, 6, 2],
+                [0, 4, 7, 3],
+                [1, 2, 6, 5],
             ]
-            for f in faces:
-                face_to_cells.setdefault(tuple(sorted(f)), []).append(new_id)
-        internal_faces = [tuple(c) for c in face_to_cells.values() if len(c) == 2]
-        boundary_faces_raw = {f: c[0] for f, c in face_to_cells.items() if len(c) == 1}
+        )
+
+        cell_ids = np.repeat(np.arange(n_cells), 6)
+        all_faces_nodes = hex_data[sorted_indices][:, faces_def].reshape(-1, 4)
+
+        # 排序面节点用于统一签名
+        sorted_faces = np.sort(all_faces_nodes, axis=1)
+        sort_order = np.lexsort(
+            (
+                sorted_faces[:, 3],
+                sorted_faces[:, 2],
+                sorted_faces[:, 1],
+                sorted_faces[:, 0],
+            )
+        )
+        sorted_faces_lex = sorted_faces[sort_order]
+        cell_ids_lex = cell_ids[sort_order]
+
+        # 查找内部面
+        is_same = np.all(sorted_faces_lex[:-1] == sorted_faces_lex[1:], axis=1)
+        internal_idx = np.where(is_same)[0]
+        internal_faces = np.column_stack(
+            (cell_ids_lex[internal_idx], cell_ids_lex[internal_idx + 1])
+        )
+
+        # 提取边界面
+        bound_mask = np.ones(len(sorted_faces_lex), dtype=bool)
+        bound_mask[internal_idx] = False
+        bound_mask[internal_idx + 1] = False
+
+        bound_indices = np.where(bound_mask)[0]
+        orig_bound_idx = sort_order[bound_indices]
+        bound_c_ids = cell_ids[orig_bound_idx]
+        bound_face_nodes = all_faces_nodes[orig_bound_idx]
+
         boundary_faces = {"+X": [], "-X": [], "+Y": [], "-Y": [], "+Z": [], "-Z": []}
-        for f, c_id in boundary_faces_raw.items():
-            pts = mesh.points[list(f)]
-            cross = np.cross(pts[1] - pts[0], pts[2] - pts[0])
-            area = np.linalg.norm(cross)
-            if area < self.GEOMETRY_TOLERANCE:
-                continue
-            normal = cross / area
-            if np.dot(np.mean(pts, axis=0) - c_centers[c_id], normal) < 0:
-                normal = -normal
-            abs_n = np.abs(normal)
-            if abs_n[2] >= abs_n[0] and abs_n[2] >= abs_n[1]:
-                dir_key = "+Z" if normal[2] > 0 else "-Z"
-            elif abs_n[0] >= abs_n[1]:
-                dir_key = "+X" if normal[0] > 0 else "-X"
+
+        pts = mesh.points[bound_face_nodes]
+        cross = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
+        areas = np.linalg.norm(cross, axis=1)
+
+        valid = areas > self.GEOMETRY_TOLERANCE
+        normals = cross[valid] / areas[valid, None]
+        b_c_ids = bound_c_ids[valid]
+        b_areas = areas[valid]
+
+        # 法向校正
+        centers_dir = np.mean(pts[valid], axis=1) - c_centers[b_c_ids]
+        flip_mask = np.sum(centers_dir * normals, axis=1) < 0
+        normals[flip_mask] *= -1
+
+        # 方向分类
+        abs_n = np.abs(normals)
+        for i in range(len(b_c_ids)):
+            n, a_n = normals[i], abs_n[i]
+            if a_n[2] >= a_n[0] and a_n[2] >= a_n[1]:
+                dir_key = "+Z" if n[2] > 0 else "-Z"
+            elif a_n[0] >= a_n[1]:
+                dir_key = "+X" if n[0] > 0 else "-X"
             else:
-                dir_key = "+Y" if normal[1] > 0 else "-Y"
-            boundary_faces[dir_key].append((c_id, normal, area))
-        return internal_faces, boundary_faces
+                dir_key = "+Y" if n[1] > 0 else "-Y"
+            boundary_faces[dir_key].append((b_c_ids[i], n, b_areas[i]))
+
+        return internal_faces, {
+            k: (
+                np.array([x[0] for x in v]),
+                np.array([x[1] for x in v]),
+                np.array([x[2] for x in v]),
+            )
+            for k, v in boundary_faces.items()
+            if v
+        }
 
     def _map_physical_properties(self, topo: MeshTopology) -> PhysicalFields:
+        """纯 SoA 数组映射，解决 TypeError 报错"""
         n, centers, tol = topo.n_cells, topo.centers, self.GEOMETRY_TOLERANCE
-        k, cp, density, is_fluid, dynamic_viscosity = (
-            np.zeros(n),
-            np.zeros(n),
-            np.zeros(n),
-            np.zeros(n, dtype=bool),
-            np.zeros(n),
-        )
-        layer_names, unit_names = np.empty(n, dtype=object), np.empty(n, dtype=object)
-        def_mat = self.config["materials"]["default_solid"]
-        (
-            k[:],
-            cp[:],
-            density[:],
-            is_fluid[:],
-            dynamic_viscosity[:],
-            layer_names[:],
-            unit_names[:],
-        ) = (
-            def_mat["k"],
-            def_mat["cp"],
-            def_mat["density"],
-            def_mat.get("fluid", False),
-            def_mat.get("dynamic_viscosity", 0.0),
-            "default_layer",
-            "",
-        )
+
+        # 初始化基础属性数组
+        k = np.zeros(n)
+        cp = np.zeros(n)
+        density = np.zeros(n)
+        is_fluid = np.zeros(n, dtype=bool)
+        dynamic_viscosity = np.zeros(n)
+
+        # 【修改点】使用整数数组（int16）替代字符串（object）
+        layer_ids = np.zeros(n, dtype=np.int16)
+        unit_ids = np.zeros(n, dtype=np.int16)
+
+        # 维护一个双向映射表
+        layer_name_map = ["default_layer"]
+        unit_name_map = [""]
+
+        # 兼容 dict 模式配置读取
+        def_mat = self.config.get("materials", {}).get("default_solid", {})
+        k[:] = def_mat.get("k", 1.0)
+        cp[:] = def_mat.get("cp", 1.0e6)
+        density[:] = def_mat.get("density", 1000.0)
+        is_fluid[:] = def_mat.get("fluid", False)
+        dynamic_viscosity[:] = def_mat.get("dynamic_viscosity", 0.0)
+
         z_cursor = 0.0
         for layer in self.stackup:
             z_min, z_max = z_cursor, z_cursor + layer.thickness
             z_cursor = z_max
             l_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
+
             if not np.any(l_mask):
                 continue
-            (
-                k[l_mask],
-                cp[l_mask],
-                density[l_mask],
-                is_fluid[l_mask],
-                dynamic_viscosity[l_mask],
-                layer_names[l_mask],
-            ) = (
-                layer.k,
-                layer.cp,
-                layer.density,
-                layer.is_fluid,
-                layer.dynamic_viscosity,
-                layer.name,
-            )
+
+            # 【查表/建表】注册 Layer 的整型 ID
+            if layer.name not in layer_name_map:
+                layer_name_map.append(layer.name)
+            l_id = layer_name_map.index(layer.name)
+
+            k[l_mask] = layer.k
+            cp[l_mask] = layer.cp
+            density[l_mask] = layer.density
+            is_fluid[l_mask] = layer.is_fluid
+            dynamic_viscosity[l_mask] = layer.dynamic_viscosity
+            layer_ids[l_mask] = l_id  # 写入整数
+
             for unit in layer.units:
                 u_mask = (
                     l_mask
@@ -169,30 +222,30 @@ class MeshPreprocessor:
                     & (centers[:, 1] <= unit.ly + unit.dy + tol)
                 )
                 if np.any(u_mask):
-                    (
-                        k[u_mask],
-                        cp[u_mask],
-                        density[u_mask],
-                        is_fluid[u_mask],
-                        dynamic_viscosity[u_mask],
-                        unit_names[u_mask],
-                    ) = (
-                        unit.k,
-                        unit.cp,
-                        unit.density,
-                        unit.is_fluid,
-                        unit.dynamic_viscosity,
-                        unit.name,
-                    )
+                    # 【查表/建表】注册 Unit 的整型 ID
+                    if unit.name not in unit_name_map:
+                        unit_name_map.append(unit.name)
+                    u_id = unit_name_map.index(unit.name)
+
+                    k[u_mask] = unit.k
+                    cp[u_mask] = unit.cp
+                    density[u_mask] = unit.density
+                    is_fluid[u_mask] = unit.is_fluid
+                    dynamic_viscosity[u_mask] = unit.dynamic_viscosity
+                    unit_ids[u_mask] = u_id  # 写入整数
+
+        # 组装完整的 PhysicalFields (SoA 布局)
         return PhysicalFields(
-            k,
-            cp,
-            density,
-            is_fluid,
-            dynamic_viscosity,
-            np.zeros((n, 3)),
-            np.zeros(n),
-            np.full(n, np.nan),
-            layer_names,
-            unit_names,
+            k=k,
+            cp=cp,
+            density=density,
+            is_fluid=is_fluid,
+            dynamic_viscosity=dynamic_viscosity,
+            hydroC=np.zeros((n, 3)),
+            pressure=np.zeros(n),
+            inlet_temperature=np.full(n, np.nan),
+            layer_ids=layer_ids,
+            unit_ids=unit_ids,
+            layer_name_map=layer_name_map,
+            unit_name_map=unit_name_map,
         )
