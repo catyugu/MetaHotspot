@@ -145,8 +145,10 @@
             "type": "convection",
             "face": "+Z",
             "target": "Sink",
-            "h": 2777.777777777778,
-            "T_inf": 318.15
+            "parameters": {
+                "h": 2777.777777777778,
+                "T_inf": 318.15
+            }
         }
     ],
     "init_temperature_file_path": "(null)"

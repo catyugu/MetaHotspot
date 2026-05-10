@@ -1,19 +1,30 @@
 import numpy as np
 import scipy.sparse as sp
+import time
+
+from metahotspot.logging_config import get_logger
+from metahotspot.metahotspot_types import SystemMatrices
+
 import scipy.sparse.linalg as splinalg
 
-from metahotspot.metahotspot_types import SystemMatrices
+_logger = get_logger(__name__)
 
 
 class ThermalSolver:
     def __init__(self, matrices: SystemMatrices, config: dict):
-        self.mat, self.config = matrices, config
+        self.mat = matrices
+        self.config = config
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:
-        temp = splinalg.spsolve(
-            -self.mat.A_total, self.mat.b_total + (self.mat.power_matrix @ mean_powers)
+        rhs = self.mat.b_total + (self.mat.power_matrix @ mean_powers)
+        A = -self.mat.A_total.tocsr()
+
+        t0 = time.perf_counter()
+        temp = splinalg.spsolve(A, rhs)
+
+        _logger.info(
+            f"Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
         )
-        print(f"[RESULT] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K")
         return temp
 
     def solve_transient(
@@ -24,19 +35,25 @@ class ThermalSolver:
         vols: np.ndarray,
         cp: np.ndarray,
     ) -> np.ndarray:
-        c_mat, temp = sp.diags(cp * vols) / dt, init_temp.copy()
-        solve_step = splinalg.factorized((c_mat - self.mat.A_total).tocsc())
+        c_mat = sp.diags(cp * vols) / dt
+        A_step = c_mat - self.mat.A_total
+        temp = init_temp.copy()
+        solve_func = splinalg.factorized(A_step.tocsc())
+
+        t0 = time.perf_counter()
+
         for i, step_power in enumerate(ptrace):
-            temp = solve_step(
-                (c_mat @ temp)
-                + self.mat.b_total
-                + (
-                    self.mat.power_matrix
-                    @ np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
-                )
+            power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
+            rhs = (
+                (c_mat @ temp) + self.mat.b_total + (self.mat.power_matrix @ power_vec)
             )
+
+            temp = solve_func(rhs)
+
             if i % 10 == 0 or i == len(ptrace) - 1:
-                print(
-                    f"[STEP {i:4d}] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+                _logger.info(
+                    f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
+
+        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp

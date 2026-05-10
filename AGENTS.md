@@ -4,7 +4,7 @@
 
 MetaHotspot is a multi-language thermal simulation platform for VLSI/heterogeneous integration. It converts HotSpot-format inputs into structured mesh + JSON configs, then solves steady-state and transient thermal problems using a Finite Volume Method (FVM) solver.
 
-**Architecture**: Adapter (Python) -> Mesher (Gmsh) -> FVM Solver (Python/SciPy)
+**Architecture**: Adapter (Python) → Mesher (Gmsh) → FVM Solver (Python/SciPy)
 **Long-term goal**: Migrate the solver core to C++17/20 with Eigen/PARDISO.
 
 ### Subprojects
@@ -13,10 +13,10 @@ MetaHotspot is a multi-language thermal simulation platform for VLSI/heterogeneo
 | -------------- | ------------ | --------------------------------------------------------------- |
 | `metahotspot/` | Python 3.10+ | Core library: parser, converter, mesher, FVM solver, data model |
 | `scripts/`     | Python 3.10+ | CLI entry points: adapter, solver, pipeline runner              |
-| `Hotspot/`     | C (C99)      | Reference HotSpot thermal simulator                             |
-| `examples/`    | -            | Converted HotSpot example data (example1-example4)              |
+| `Hotspot/`     | C (C99)      | Reference HotSpot thermal simulator (submodule)                 |
+| `examples/`    | —            | Converted HotSpot example data (example1–example4)              |
 | `docs/`        | Markdown     | Project documentation (Chinese)                                 |
-| `cpp/`         | C++20        | Future C++ solver (empty, planned)                              |
+| `cpp/`         | C++20        | Future C++ solver (planned, empty)                              |
 
 ---
 
@@ -26,26 +26,44 @@ MetaHotspot is a multi-language thermal simulation platform for VLSI/heterogeneo
 conda activate numerical
 ```
 
-All Python dependencies (numpy, scipy, meshio, gmsh) and C/C++ tools (clang, clang-cl, cmake) are in this conda environment.
+All Python dependencies (numpy, scipy, meshio, gmsh, numba) and C/C++ tools (clang, clang-cl, cmake, ninja) are in this conda environment.
 
 ---
 
-## Python Workflow (Full Pipeline)
+## Python Workflow
 
-**Convert HotSpot examples → mesh → run steady + transient:**
+### Convert + Mesh examples 1–4
 
 ```bash
-# One-shot: convert example1-example4 and mesh them
 python scripts/adapter.py --batch-four
+```
 
-# Run steady→init→transient on one converted example
+Converts `Hotspot/examples/example{1,2,3,4}` → `examples/hotspot_converted/example{1,2,3,4}/`. Produces `solver_config_steady.json`, `solver_config_transient.json`, and `mesh.msh` per example.
+
+### Run steady → init → transient pipeline
+
+```bash
 python scripts/run_example_pipeline.py examples/hotspot_converted/example1
 ```
 
-**Single example (manual step-by-step):**
+Each converted example also has a `run.py` shortcut:
+```bash
+python examples/hotspot_converted/example1/run.py
+```
+
+**Pipeline flow:**
+1. Steady solve → writes `result.vtu`
+2. Copies `result.vtu` → `init.vtu` (initial field for transient)
+3. Transient solve → writes `transient_result.vtu`
+4. Copies all outputs to `outputs/`
+
+### Manual single-example workflow
 
 ```bash
+# Convert and mesh
 python scripts/adapter.py Hotspot/examples/example1 examples/output --mode both
+
+# Run pipeline
 python scripts/run_example_pipeline.py examples/output
 ```
 
@@ -70,55 +88,69 @@ ninja
 
 ### Python (metahotspot/, scripts/)
 
-**Naming Conventions:**
-- Classes: `PascalCase` - e.g., `FVMSolver`, `GmshMesher`, `SimulationModelBuilder25D`
-- Functions/methods: `snake_case` - e.g., `solve_steady()`, `parse_flp()`
-- Private methods: `_leading_underscore` - e.g., `_prepare_mesh()`, `_extract_faces()`
-- Constants: `UPPER_SNAKE_CASE` - e.g., `DEFAULT_CONFIG`, `STANDARD_MATERIALS`
-- Variables: `snake_case` - e.g., `hex_data`, `boundary_faces`
+| Element           | Convention            | Example                                |
+| ----------------- | --------------------- | -------------------------------------- |
+| Classes           | `PascalCase`          | `FVMSolver`, `GmshMesher`              |
+| Functions/methods | `snake_case`          | `solve_steady()`, `parse_flp()`        |
+| Private methods   | `_leading_underscore` | `_prepare_mesh()`                      |
+| Constants         | `UPPER_SNAKE_CASE`    | `DEFAULT_CONFIG`, `STANDARD_MATERIALS` |
+| Variables         | `snake_case`          | `hex_data`, `boundary_faces`           |
 
-**Type Annotations:** Required on all function signatures.
-- Use `from typing import Dict, List, Tuple, Optional, Any`
+- **Type annotations** required on all function signatures
 - Use `@dataclass(slots=True)` for data structures
-
-**Imports:** Standard library → third-party → local (absolute imports)
-
-**Error Handling:**
-- `ValueError` for invalid data; `FileNotFoundError` for missing files
+- Imports: standard library → third-party → local (absolute imports)
 - Log prefix: `[INFO]`, `[WARNING]`, `[RESULT]`
+- No assertions or fallbacks in production code
 - Non-critical failures print warning, don't crash (e.g., pressure solve)
-- No assertions in production code
 
-**Data Model:** `model25d.py` is single source of truth for config/materials/stackup.
-- Use `load_config()` + `load_stackup()` as entry points
+### Data Model
+
+`model25d.py` is the **single source of truth** for defaults—never duplicate fallback logic.
+
+- Always use `load_config()` + `load_stackup()` as entry points
 - Config always merged with defaults via `merge_with_defaults()`
+- Property resolution priority: unit > unit material > layer material > default material
 
----
 
 ## Key Modules
 
-| Module                  | Class/Functions                                                                                                          | Purpose                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `model25d.py`           | `DEFAULT_CONFIG`, `STANDARD_MATERIALS`, `Unit2D`, `Layer25D`, `load_config()`, `merge_with_defaults()`, `load_stackup()` | Single source of truth for defaults                              |
-| `assembler.py`          | `FVMAssembler`                                                                                                           | Face-to-cell extraction, conduction/advection matrix assembly    |
-| `thermal_solver.py`     | `ThermalSolver`                                                                                                          | Steady-state (direct sparse solve) or transient (implicit Euler) |
-| `hotspot_parser.py`     | `HotSpotParser` (static methods)                                                                                         | `.flp`, `.config`, `.materials`, `.lcf` parsing                  |
-| `converter.py`          | `SimulationModelBuilder25D`, `convert_hotspot_to_metahotspot()`                                                          | HotSpot → MetaHotspot JSON                                       |
-| `gmsh_mesher.py`        | `GmshMesher`                                                                                                             | Hexahedral mesh generation via gmsh API (**non-conformal mesh**) |
-| `mesh_preprocessor.py`  | `MeshPreprocessor`                                                                                                       | .msh → `MeshTopology` + `PhysicalFields`                         |
-| `fluid_preprocessor.py` | `FluidPreprocessor`                                                                                                      | Solve pressure and calculate hydro properties before thermal assembly         |
-| `metahotspot_solver.py` | `MetaHotspotSolver`                                                                                                      | End-to-end: preprocess → fluid flow → assemble → solve → export VTU |
+| Module                     | Class/Functions                                                                                                          | Purpose                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `model25d.py`              | `DEFAULT_CONFIG`, `STANDARD_MATERIALS`, `Unit2D`, `Layer25D`, `load_config()`, `merge_with_defaults()`, `load_stackup()` | Single source of truth for defaults                                 |
+| `legacy/converter.py`      | `SimulationModelBuilder25D`, `convert_hotspot_with_modes()`                                                              | HotSpot → MetaHotspot JSON + layout files                           |
+| `legacy/hotspot_parser.py` | `HotSpotParser` (static methods)                                                                                         | `.flp`, `.config`, `.materials`, `.lcf` parsing                     |
+| `assembler.py`             | `FVMAssembler`                                                                                                           | Face-to-cell extraction, conduction/advection matrix assembly       |
+| `assembler_kernels.py`     | `overlap_area_kernel`, `find_adjacent_pairs_kernel`                                                                      | Numba JIT compute kernels                                           |
+| `thermal_solver.py`        | `ThermalSolver`                                                                                                          | Steady-state (direct sparse) or transient (implicit Euler)          |
+| `gmsh_mesher.py`           | `GmshMesher`                                                                                                             | Hexahedral mesh generation via gmsh API (non-conformal mesh)        |
+| `mesh_preprocessor.py`     | `MeshPreprocessor`                                                                                                       | `.msh` → `MeshTopology` + `PhysicalFields`                          |
+| `fluid_preprocessor.py`    | `FluidPreprocessor`                                                                                                      | Solve pressure, calculate hydro properties before thermal assembly  |
+| `metahotspot_solver.py`    | `MetaHotspotSolver`                                                                                                      | End-to-end: preprocess → fluid flow → assemble → solve → export VTU |
 
 ---
 
-## File Formats
+## File Formats (output)
 
-- **`solver_config.json`**: Solver config (JSON, 4-space indent)
-- **`mesh.msh`**: Gmsh v4 mesh with physical groups
-- **`result.vtu`** / **`transient_result.vtu`**: VTK Unstructured Grid with `Temperature_K`
-- **`*_layout.json`**: Per-layer layout units (in `layouts/`)
+- **`solver_config_steady.json`** / **`solver_config_transient.json`**: Solver config (JSON, 4-space indent)
+  - `simulation_type`: `"steady"` or `"transient"`
+  - `mesh_file_path`: path to `mesh.msh` (relative to config dir)
+  - `ptrace_file_path`: power trace file (`.ptrace`)
+  - `init_temperature_file_path`: used by transient (set to `"init.vtu"` after steady run)
+- **`mesh.msh`**: Gmsh v4 mesh with physical groups (hexahedral, non-conformal)
+- **`result.vtu`** / **`transient_result.vtu`**: VTK Unstructured Grid with `Temperature_K` cell data
+- **`init.vtu`**: Steady result reused as transient initial field
+- **`layouts/*_layout.json`**: Per-layer unit definitions (name, lx, ly, dx, dy, k, cp, is_fluid...)
 
 ---
+
+## Example Summary
+
+| Example  | Description          | Key feature                                     |
+| -------- | -------------------- | ----------------------------------------------- |
+| example1 | 2D EV6 processor     | Simple steady + transient                       |
+| example2 | 3D heterogeneous     | 4-layer stackup                                 |
+| example3 | 3D cache stacking    | 6-layer stackup                                 |
+| example4 | Microfluidic cooling | Water fluid + pressure BCs (mc_inlet/mc_outlet) |
 
 ## Architecture Principles
 

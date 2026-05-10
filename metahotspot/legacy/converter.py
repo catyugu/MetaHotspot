@@ -207,8 +207,10 @@ class SimulationModelBuilder25D:
                 "type": "convection",
                 "face": "+Z",
                 "target": "Sink",
-                "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
-                "T_inf": self.config["ambient"],
+                "parameters": {
+                    "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
+                    "T_inf": self.config["ambient"],
+                },
             }
         )
 
@@ -273,22 +275,29 @@ class SimulationModelBuilder25D:
                 )
             )
 
+            # 通过正则表达式精确匹配流体单元名称前缀 "mc_fluid_"
             self.boundary_conditions.extend(
                 [
                     {
-                        "name": "mc_inlet",
+                        "name": "mc_inlet_pressure",
                         "type": "pressure",
                         "face": "-X",
-                        "target": name,
-                        "pressure": self.config["pumping_pressure"],
-                        "temperature": self.config["inlet_temperature"],
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"pressure": self.config["pumping_pressure"]},
                     },
                     {
-                        "name": "mc_outlet",
+                        "name": "mc_inlet_temperature",
+                        "type": "temperature",
+                        "face": "-X",
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"temperature": self.config["inlet_temperature"]},
+                    },
+                    {
+                        "name": "mc_outlet_pressure",
                         "type": "pressure",
                         "face": "+X",
-                        "target": name,
-                        "pressure": 0.0,
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"pressure": 0.0},
                     },
                 ]
             )

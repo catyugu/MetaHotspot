@@ -10,8 +10,10 @@
 ├── __init__.py
 ├── assembler.py
 ├── assembler_kernels.py
+├── boundary_conditions.py
 ├── fluid_preprocessor.py
 ├── gmsh_mesher.py
+├── logging_config.py
 ├── mesh_preprocessor.py
 ├── metahotspot_solver.py
 ├── metahotspot_types.py
@@ -24,23 +26,25 @@
 ### File: assembler.py
 ```py
 from typing import List, Tuple
-
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.metahotspot_types import (
-    MeshTopology,
-    PhysicalFields,
-    SystemMatrices,
-)
+from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, SystemMatrices
 from metahotspot.assembler_kernels import (
-    overlap_area_kernel,
     find_adjacent_pairs_kernel,
+    build_cond_coo_kernel,
+    build_adv_coo_kernel,
+)
+from metahotspot.boundary_conditions import (
+    resolve_boundary_cells,
+    apply_temperature_state_bc,
+    apply_convection_matrix_bc,
+    apply_temperature_matrix_bc,
 )
 
 
 class FVMAssembler:
-    GEOMETRY_TOLERANCE = 1e-15
+    GEOMETRY_TOLERANCE = 1e-12
 
     def __init__(
         self, topo: MeshTopology, fields: PhysicalFields, config: dict, stackup: list
@@ -51,171 +55,145 @@ class FVMAssembler:
             config,
             stackup,
         )
-        self.flow_axes = np.zeros(self.topo.n_cells, dtype=int)
+        self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
+        self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
+            find_adjacent_pairs_kernel(self.topo.boxes)
+        )
 
     def assemble(self) -> SystemMatrices:
-        self._precompute_flow_axes()  # Compute flow axes from pressure gradient
+        self._precompute_flow_axes()
+        self._apply_temperature_boundaries()
         A_cond = self._build_conduction_matrix()
         A_bc, b_bc = self._build_boundary_terms()
         A_adv, b_adv = self._build_advection_matrix()
         power_mat, unit_names = self._build_power_matrix()
+
         return SystemMatrices(
-            A_cond + A_bc + A_adv, b_bc + b_adv, power_mat, unit_names
+            A_total=A_cond + A_bc + A_adv,
+            b_total=b_bc + b_adv,
+            power_matrix=power_mat,
+            unit_names=unit_names,
         )
 
     def _precompute_flow_axes(self) -> None:
-        """Based on solved pressure field, infer dominant flow axis for each fluid cell (axis with largest pressure drop)"""
         if not np.any(self.fields.is_fluid):
             return
         p_drops = np.zeros((self.topo.n_cells, 3))
-        for c_a, c_b, axis, _ in self._find_adjacent_pairs():
-            if self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]:
-                dp = abs(self.fields.pressure[c_a] - self.fields.pressure[c_b])
-                p_drops[c_a, axis] = max(p_drops[c_a, axis], dp)
-                p_drops[c_b, axis] = max(p_drops[c_b, axis], dp)
-
-        fluid_mask = self.fields.is_fluid
-        self.flow_axes[fluid_mask] = np.argmax(p_drops[fluid_mask], axis=1)
-
-    def _find_adjacent_pairs(self):
-        """Generator that yields adjacent cell pairs with their overlap area and normal axis."""
-        c_a_arr, c_b_arr, axis_arr, area_arr, count = find_adjacent_pairs_kernel(
-            self.topo.boxes
+        valid = self.fields.is_fluid[self._c_a] & self.fields.is_fluid[self._c_b]
+        v_ca, v_axes = self._c_a[valid], self._axes[valid]
+        dps = np.abs(
+            self.fields.pressure[v_ca] - self.fields.pressure[self._c_b[valid]]
         )
-        for i in range(count):
-            yield c_a_arr[i], c_b_arr[i], axis_arr[i], area_arr[i]
 
-    @staticmethod
-    def _overlap_area(box_a: np.ndarray, box_b: np.ndarray, axis: int) -> float:
-        return overlap_area_kernel(box_a, box_b, axis)
+        for ax in range(3):
+            np.maximum.at(p_drops[:, ax], v_ca[v_axes == ax], dps[v_axes == ax])
+        self.flow_axes[self.fields.is_fluid] = np.argmax(
+            p_drops[self.fields.is_fluid], axis=1
+        )
+
+    def _apply_temperature_boundaries(self) -> None:
+        """记录所有 Dirichlet 边界温度状态"""
+        for bc in self.config.get("boundary_conditions", []):
+            if bc.get("type") == "temperature":
+                c_ids, _ = resolve_boundary_cells(
+                    self.topo, self.fields, bc["face"], bc.get("target", "")
+                )
+                apply_temperature_state_bc(c_ids, bc["parameters"], self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
-        rows, cols, data, n = [], [], [], self.topo.n_cells
-        for c_a, c_b, axis, area in self._find_adjacent_pairs():
-            g = 1.0 / self._calc_resistance(c_a, c_b, axis, area)
-            rows.extend([c_a, c_b, c_a, c_b])
-            cols.extend([c_a, c_b, c_b, c_a])
-            data.extend([-g, -g, g, g])
-        return sp.csr_matrix((data, (rows, cols)), shape=(n, n))
-
-    def _calc_resistance(self, c_a: int, c_b: int, axis: int, area: float) -> float:
-        fluid_a, fluid_b = self.fields.is_fluid[c_a], self.fields.is_fluid[c_b]
-        if fluid_a != fluid_b:
-            f_id, s_id = (c_a, c_b) if fluid_a else (c_b, c_a)
-            flow_axis = self.flow_axes[f_id]
-            ax_w = (flow_axis + 1) % 3
-            ax_h = (flow_axis + 2) % 3
-            Nu = self._compute_nusselt(f_id, flow_axis)
-            d_h = (
-                2 * self.topo.dims[f_id, ax_w] * self.topo.dims[f_id, ax_h]
-                / (self.topo.dims[f_id, ax_w] + self.topo.dims[f_id, ax_h])
-            )
-            h_f = (Nu * self.fields.k[f_id]) / d_h if d_h > 0 else 1e-6
-            return self.topo.dims[s_id, axis] / (
-                2.0 * self.fields.k[s_id] * area
-            ) + 1.0 / (h_f * area)
-        return (self.topo.dims[c_a, axis] / (2.0 * self.fields.k[c_a] * area)) + (
-            self.topo.dims[c_b, axis] / (2.0 * self.fields.k[c_b] * area)
+        rows, cols, data = build_cond_coo_kernel(
+            self._c_a,
+            self._c_b,
+            self._axes,
+            self._areas,
+            self._pair_count,
+            self.topo.dims,
+            self.fields.k,
+            self.fields.is_fluid,
+            self.flow_axes,
         )
-
-    def _compute_nusselt(self, c_id: int, flow_axis: int) -> float:
-        ax_w = (flow_axis + 1) % 3
-        ax_h = (flow_axis + 2) % 3
-        w, h = sorted([self.topo.dims[c_id, ax_w], self.topo.dims[c_id, ax_h]])
-        AR = w / h if h > 0 else 1.0
-        return 8.235 * (
-            1
-            - 2.0421 * AR
-            + 3.0853 * AR**2
-            - 2.4765 * AR**3
-            + 1.0578 * AR**4
-            - 0.1861 * AR**5
+        return sp.csr_matrix(
+            (data, (rows, cols)), shape=(self.topo.n_cells, self.topo.n_cells)
         )
 
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
-        n, rhs, rows, cols, data = (
-            self.topo.n_cells,
-            np.zeros(self.topo.n_cells),
-            [],
-            [],
-            [],
-        )
+        n = self.topo.n_cells
+        rhs, rows, cols, data = np.zeros(n), [], [], []
+
         for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") != "convection":
+            bc_type = bc.get("type")
+            if bc_type not in ["convection", "temperature"]:
                 continue
-            h, t_inf, target, face_key = (
-                float(bc["h"]),
-                float(bc["T_inf"]),
-                bc.get("target"),
-                bc.get("face", ""),
+            c_ids, areas = resolve_boundary_cells(
+                self.topo, self.fields, bc["face"], bc.get("target", "")
             )
-            for c_id, _, area in self.topo.boundary_faces.get(face_key, []):
-                if target and target != self.fields.layer_names[c_id]:
-                    continue
-                g = area / (
-                    (0.5 * (self.topo.volumes[c_id] / area) / self.fields.k[c_id])
-                    + (1.0 / h)
+
+            if bc_type == "convection":
+                apply_convection_matrix_bc(
+                    c_ids,
+                    areas,
+                    bc["parameters"],
+                    self.topo,
+                    self.fields,
+                    rows,
+                    cols,
+                    data,
+                    rhs,
                 )
-                rows.append(c_id)
-                cols.append(c_id)
-                data.append(-g)
-                rhs[c_id] += g * t_inf
+            elif bc_type == "temperature":
+                apply_temperature_matrix_bc(
+                    c_ids,
+                    areas,
+                    bc["parameters"],
+                    self.topo,
+                    self.fields,
+                    rows,
+                    cols,
+                    data,
+                    rhs,
+                )
+
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_advection_matrix(self) -> Tuple[sp.csr_matrix, np.ndarray]:
-        n, rows, cols, data, rhs, tol = (
-            self.topo.n_cells,
-            [],
-            [],
-            [],
-            np.zeros(self.topo.n_cells),
-            self.GEOMETRY_TOLERANCE,
-        )
+        n = self.topo.n_cells
+        rhs = np.zeros(n)
         if not np.any(self.fields.is_fluid):
             return sp.csr_matrix((n, n)), rhs
 
-        net_outflux = np.zeros(n)
-        for c_a, c_b, axis, area in self._find_adjacent_pairs():
-            if not (self.fields.is_fluid[c_a] and self.fields.is_fluid[c_b]):
-                continue
-
-            # Use axis-specific hydroC for fluid-fluid pairs
-            hc_a = self.fields.hydroC[c_a, axis]
-            hc_b = self.fields.hydroC[c_b, axis]
-            sum_hc = hc_a + hc_b
-            C_eff = (
-                2.0 * hc_a * hc_b / sum_hc
-                if sum_hc > 0
-                else 0.0
-            )
-            mass_flux = (
-                (self.fields.pressure[c_a] - self.fields.pressure[c_b])
-                * C_eff
-                * (self.fields.density[c_a] + self.fields.density[c_b])
-                * 0.5
-            )
-            net_outflux[c_a], net_outflux[c_b] = (
-                net_outflux[c_a] + mass_flux,
-                net_outflux[c_b] - mass_flux,
-            )
-            if abs(mass_flux) > tol:
-                up, dn = (c_a, c_b) if mass_flux > 0 else (c_b, c_a)
-                adv = abs(mass_flux) * self.fields.cp[up]
-                rows.extend([up, dn])
-                cols.extend([up, up])
-                data.extend([-adv, adv])
+        rows, cols, data, net_outflux = build_adv_coo_kernel(
+            self._c_a,
+            self._c_b,
+            self._axes,
+            self._pair_count,
+            self.fields.is_fluid,
+            self.fields.pressure,
+            self.fields.density,
+            self.fields.hydroC,
+            self.fields.cp,
+        )
 
         fluid_ids = np.where(self.fields.is_fluid)[0]
-        for c_id in fluid_ids:
-            influx = net_outflux[c_id]
-            if influx > tol and not np.isnan(self.fields.inlet_temperature[c_id]):
-                rhs[c_id] += (
-                    influx * self.fields.cp[c_id] * self.fields.inlet_temperature[c_id]
-                )
-            elif influx < -tol:
-                rows.append(c_id)
-                cols.append(c_id)
-                data.append(influx * self.fields.cp[c_id])
+        influxes = net_outflux[fluid_ids]
+        in_mask = influxes > self.GEOMETRY_TOLERANCE
+        v_in_ids = fluid_ids[in_mask]
+        # 使用重构后的 boundary_temperature 字段
+        v_temps = self.fields.boundary_temperature[v_in_ids]
+        temp_mask = ~np.isnan(v_temps)
+        rhs[v_in_ids[temp_mask]] += (
+            influxes[in_mask][temp_mask]
+            * self.fields.cp[v_in_ids[temp_mask]]
+            * v_temps[temp_mask]
+        )
+
+        out_mask = influxes < -self.GEOMETRY_TOLERANCE
+        o_ids = fluid_ids[out_mask]
+        if len(o_ids) > 0:
+            o_vals = influxes[out_mask] * self.fields.cp[o_ids]
+            rows = np.concatenate([rows, o_ids])
+            cols = np.concatenate([cols, o_ids])
+            data = np.concatenate([data, o_vals])
+
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
@@ -235,9 +213,9 @@ class FVMAssembler:
                         }
                     )
             z_cursor += l.thickness
-        n_cells = self.topo.n_cells
+        n = self.topo.n_cells
         if not active_units:
-            return sp.csr_matrix((n_cells, 0)), []
+            return sp.csr_matrix((n, 0)), []
         rows, cols, data, boxes = [], [], [], self.topo.boxes
         for j, u in enumerate(active_units):
             vol_u = u["dx"] * u["dy"] * u["dz"]
@@ -256,9 +234,9 @@ class FVMAssembler:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
-        return sp.csr_matrix(
-            (data, (rows, cols)), shape=(n_cells, len(active_units))
-        ), [u["name"] for u in active_units]
+        return sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))), [
+            u["name"] for u in active_units
+        ]
 
 ```
 
@@ -272,98 +250,40 @@ Numba compute kernels for FVM assembly.
 from numba import njit
 import numpy as np
 
-# ==========================================
-# 类型别名 - 确保类型稳定性
-# ==========================================
 FLOAT_DTYPE = np.float64
 INT_DTYPE = np.int32
 
 
-# ==========================================
-# Numba 装饰器工厂 - 统一配置
-# ==========================================
 def _jit_kernel(func):
-    """工业标准装饰器: cache + fastmath + nogil"""
     return njit(cache=True, fastmath=True, nogil=True)(func)
 
 
 @_jit_kernel
-def overlap_area_kernel(
-    box_a: FLOAT_DTYPE,
-    box_b: FLOAT_DTYPE,
-    axis: INT_DTYPE,
-) -> FLOAT_DTYPE:
-    """
-    计算两个包围盒在指定轴法向上的重叠面积。
-
-    Parameters
-    ----------
-    box_a : np.ndarray, shape=(6,)
-        [x_min, y_min, z_min, x_max, y_max, z_max]
-    box_b : np.ndarray, shape=(6,)
-        同上
-    axis : int
-        0=X, 1=Y, 2=Z（取垂直于该轴的两个面）
-
-    Returns
-    -------
-    float
-        重叠面积 [m^2]
-    """
-    # 三个轴对应的面索引
-    # axes 格式: (排除轴的最小坐标索引, 排除轴的次小坐标索引, 排除轴的最大坐标索引, 排除轴的最大坐标索引)
+def overlap_area_kernel(box_a, box_b, axis):
     if axis == 0:
-        # Y-Z plane: 排除 X 轴
         d1 = min(box_a[4], box_b[4]) - max(box_a[1], box_b[1])
         d2 = min(box_a[5], box_b[5]) - max(box_a[2], box_b[2])
     elif axis == 1:
-        # X-Z plane: 排除 Y 轴
         d1 = min(box_a[3], box_b[3]) - max(box_a[0], box_b[0])
         d2 = min(box_a[5], box_b[5]) - max(box_a[2], box_b[2])
     else:
-        # X-Y plane: 排除 Z 轴
         d1 = min(box_a[3], box_b[3]) - max(box_a[0], box_b[0])
         d2 = min(box_a[4], box_b[4]) - max(box_a[1], box_b[1])
     return d1 * d2 if d1 > 0.0 and d2 > 0.0 else 0.0
 
 
-# ==========================================
-# 数组 Kernel（邻近单元查找 - Sweep and Prune）
-# ==========================================
-
-
 @_jit_kernel
 def find_adjacent_pairs_kernel(boxes):
-    """
-    Sweep-and-prune 邻近单元查找。
-
-    预分配策略：每个单元最多 6 个相邻面
-    max_pairs = n_cells * 6
-
-    Parameters
-    ----------
-    boxes : np.ndarray, shape=(n_cells, 6)
-        [x_min, y_min, z_min, x_max, y_max, z_max]
-
-    Returns
-    -------
-    c_a_arr : np.ndarray
-    c_b_arr : np.ndarray
-    axis_arr : np.ndarray
-    area_arr : np.ndarray
-    count : int
-    """
     n_cells = boxes.shape[0]
     max_pairs = n_cells * 6
 
-    c_a_arr = np.empty(max_pairs, dtype=np.int32)
-    c_b_arr = np.empty(max_pairs, dtype=np.int32)
-    axis_arr = np.empty(max_pairs, dtype=np.int32)
-    area_arr = np.empty(max_pairs, dtype=np.float64)
+    c_a_arr = np.empty(max_pairs, dtype=INT_DTYPE)
+    c_b_arr = np.empty(max_pairs, dtype=INT_DTYPE)
+    axis_arr = np.empty(max_pairs, dtype=INT_DTYPE)
+    area_arr = np.empty(max_pairs, dtype=FLOAT_DTYPE)
 
     ptr = 0
-    tol = 1e-15
-
+    tol = 1e-12  # 工业常用容差
     sorted_ids = np.argsort(boxes[:, 0])
 
     for i in range(len(sorted_ids)):
@@ -376,30 +296,18 @@ def find_adjacent_pairs_kernel(boxes):
             b_a = boxes[c_a]
             b_b = boxes[c_b]
 
-            # BBox Y/Z 排斥校验
             if (
                 max(b_a[1], b_b[1]) > min(b_a[4], b_b[4]) + tol
                 or max(b_a[2], b_b[2]) > min(b_a[5], b_b[5]) + tol
             ):
                 continue
 
-            # 面接触检查
             for axis in range(3):
                 if (
                     abs(b_a[axis + 3] - b_b[axis]) < tol
                     or abs(b_a[axis] - b_b[axis + 3]) < tol
                 ):
-                    # 计算重叠面积
-                    if axis == 0:
-                        d1 = min(b_a[4], b_b[4]) - max(b_a[1], b_b[1])
-                        d2 = min(b_a[5], b_b[5]) - max(b_a[2], b_b[2])
-                    elif axis == 1:
-                        d1 = min(b_a[3], b_b[3]) - max(b_a[0], b_b[0])
-                        d2 = min(b_a[5], b_b[5]) - max(b_a[2], b_b[2])
-                    else:
-                        d1 = min(b_a[3], b_b[3]) - max(b_a[0], b_b[0])
-                        d2 = min(b_a[4], b_b[4]) - max(b_a[1], b_b[1])
-                    area = d1 * d2 if d1 > 0.0 and d2 > 0.0 else 0.0
+                    area = overlap_area_kernel(b_a, b_b, axis)
                     if area > tol:
                         c_a_arr[ptr] = c_a
                         c_b_arr[ptr] = c_b
@@ -409,6 +317,229 @@ def find_adjacent_pairs_kernel(boxes):
 
     return c_a_arr[:ptr], c_b_arr[:ptr], axis_arr[:ptr], area_arr[:ptr], ptr
 
+
+@_jit_kernel
+def compute_nusselt_kernel(dim_w, dim_h):
+    w, h = min(dim_w, dim_h), max(dim_w, dim_h)
+    AR = w / h if h > 0 else 1.0
+    return 8.235 * (
+        1
+        - 2.0421 * AR
+        + 3.0853 * AR**2
+        - 2.4765 * AR**3
+        + 1.0578 * AR**4
+        - 0.1861 * AR**5
+    )
+
+
+@_jit_kernel
+def build_cond_coo_kernel(
+    c_a_arr, c_b_arr, axis_arr, area_arr, count, dims, k_arr, is_fluid, flow_axes
+):
+    rows = np.empty(count * 4, dtype=INT_DTYPE)
+    cols = np.empty(count * 4, dtype=INT_DTYPE)
+    data = np.empty(count * 4, dtype=FLOAT_DTYPE)
+    ptr = 0
+
+    for i in range(count):
+        c_a, c_b, axis, area = c_a_arr[i], c_b_arr[i], axis_arr[i], area_arr[i]
+        fluid_a, fluid_b = is_fluid[c_a], is_fluid[c_b]
+
+        if fluid_a != fluid_b:
+            f_id, s_id = (c_a, c_b) if fluid_a else (c_b, c_a)
+            f_ax = flow_axes[f_id]
+            ax_w, ax_h = (f_ax + 1) % 3, (f_ax + 2) % 3
+            Nu = compute_nusselt_kernel(dims[f_id, ax_w], dims[f_id, ax_h])
+            d_h = (
+                2
+                * dims[f_id, ax_w]
+                * dims[f_id, ax_h]
+                / (dims[f_id, ax_w] + dims[f_id, ax_h])
+                if (dims[f_id, ax_w] + dims[f_id, ax_h]) > 0
+                else 1.0
+            )
+            h_f = (Nu * k_arr[f_id]) / d_h if d_h > 0 else 1e-6
+            r = dims[s_id, axis] / (2.0 * k_arr[s_id] * area) + 1.0 / (h_f * area)
+        else:
+            r = (dims[c_a, axis] / (2.0 * k_arr[c_a] * area)) + (
+                dims[c_b, axis] / (2.0 * k_arr[c_b] * area)
+            )
+
+        g = 1.0 / r if r > 0 else 0.0
+
+        rows[ptr : ptr + 4] = (c_a, c_b, c_a, c_b)
+        cols[ptr : ptr + 4] = (c_a, c_b, c_b, c_a)
+        data[ptr : ptr + 4] = (-g, -g, g, g)
+        ptr += 4
+
+    return rows[:ptr], cols[:ptr], data[:ptr]
+
+
+@_jit_kernel
+def build_adv_coo_kernel(
+    c_a_arr, c_b_arr, axis_arr, count, is_fluid, pressure, density, hydroC, cp
+):
+    rows = np.empty(count * 2, dtype=INT_DTYPE)
+    cols = np.empty(count * 2, dtype=INT_DTYPE)
+    data = np.empty(count * 2, dtype=FLOAT_DTYPE)
+    net_outflux = np.zeros(pressure.shape[0], dtype=FLOAT_DTYPE)
+    ptr = 0
+    tol = 1e-12
+
+    for i in range(count):
+        c_a, c_b, axis = c_a_arr[i], c_b_arr[i], axis_arr[i]
+        if not (is_fluid[c_a] and is_fluid[c_b]):
+            continue
+
+        hc_a, hc_b = hydroC[c_a, axis], hydroC[c_b, axis]
+        sum_hc = hc_a + hc_b
+        C_eff = (2.0 * hc_a * hc_b / sum_hc) if sum_hc > 0 else 0.0
+
+        mass_flux = (
+            (pressure[c_a] - pressure[c_b])
+            * C_eff
+            * (density[c_a] + density[c_b])
+            * 0.5
+        )
+        net_outflux[c_a] += mass_flux
+        net_outflux[c_b] -= mass_flux
+
+        if abs(mass_flux) > tol:
+            up, dn = (c_a, c_b) if mass_flux > 0 else (c_b, c_a)
+            adv = abs(mass_flux) * cp[up]
+            rows[ptr : ptr + 2] = (up, dn)
+            cols[ptr : ptr + 2] = (up, up)
+            data[ptr : ptr + 2] = (-adv, adv)
+            ptr += 2
+
+    return rows[:ptr], cols[:ptr], data[:ptr], net_outflux
+
+```
+
+### File: boundary_conditions.py
+```py
+import re
+import numpy as np
+from typing import Tuple, List
+
+from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+
+
+def resolve_boundary_cells(
+    topo: MeshTopology, fields: PhysicalFields, face_key: str, target_regex: str
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    通用边界单元解析器。
+    根据指定的面 (face_key) 和 目标正则 (target_regex) 过滤边界单元。
+    支持对 layer_name 或 unit_name 的双向匹配。
+    """
+    if face_key not in topo.boundary_faces:
+        return np.array([], dtype=int), np.array([], dtype=float)
+
+    c_ids, _, areas = topo.boundary_faces[face_key]
+
+    if not target_regex:
+        return c_ids, areas
+
+    pattern = re.compile(target_regex)
+
+    # 提取边界单元对应的 层名称 和 单元名称
+    layer_names = [fields.layer_name_map[fields.layer_ids[cid]] for cid in c_ids]
+    unit_names = [fields.unit_name_map[fields.unit_ids[cid]] for cid in c_ids]
+
+    # 如果层名称或单元名称任意一个匹配正则，则保留该单元
+    mask = np.array(
+        [
+            bool(pattern.match(l_name)) or bool(pattern.match(u_name))
+            for l_name, u_name in zip(layer_names, unit_names)
+        ]
+    )
+
+    return c_ids[mask], areas[mask]
+
+
+# ==========================================
+# 状态修改算子 (State Modification Operators)
+# ==========================================
+
+
+def apply_pressure_bc(
+    c_ids: np.ndarray,
+    params: dict,
+    fields: PhysicalFields,
+    is_pressure_boundary: np.ndarray,
+) -> None:
+    """流体压力边界算子"""
+    fluid_mask = fields.is_fluid[c_ids]
+    valid_c_ids = c_ids[fluid_mask]
+
+    if len(valid_c_ids) > 0:
+        is_pressure_boundary[valid_c_ids] = True
+        fields.pressure[valid_c_ids] = float(params["pressure"])
+
+
+def apply_temperature_state_bc(
+    c_ids: np.ndarray, params: dict, fields: PhysicalFields
+) -> None:
+    """通用温度状态设定算子（记录 Dirichlet 边界值）"""
+    fields.boundary_temperature[c_ids] = float(params["temperature"])
+
+
+# ==========================================
+# 矩阵装配算子 (Matrix Assembly Operators)
+# ==========================================
+
+
+def apply_convection_matrix_bc(
+    c_ids: np.ndarray,
+    areas: np.ndarray,
+    params: dict,
+    topo: MeshTopology,
+    fields: PhysicalFields,
+    rows: List[int],
+    cols: List[int],
+    data: List[float],
+    rhs: np.ndarray,
+) -> None:
+    """对流边界(Robin)矩阵算子 (完全向量化)"""
+    h, t_inf = float(params["h"]), float(params["T_inf"])
+    vols, k = topo.volumes[c_ids], fields.k[c_ids]
+
+    # 向量化计算传热系数
+    g = areas / ((0.5 * (vols / areas) / k) + (1.0 / h))
+
+    rows.extend(c_ids.tolist())
+    cols.extend(c_ids.tolist())
+    data.extend((-g).tolist())
+    rhs[c_ids] += g * t_inf
+
+
+def apply_temperature_matrix_bc(
+    c_ids: np.ndarray,
+    areas: np.ndarray,
+    params: dict,
+    topo: MeshTopology,
+    fields: PhysicalFields,
+    rows: List[int],
+    cols: List[int],
+    data: List[float],
+    rhs: np.ndarray,
+) -> None:
+    """恒温边界(Dirichlet)矩阵算子 - 罚函数法 (完全向量化)"""
+    if len(c_ids) == 0:
+        return
+
+    temp = float(params["temperature"])
+    h_inf = 1e20  # 使用巨大对流换热系数锁定表面温度
+    vols, k = topo.volumes[c_ids], fields.k[c_ids]
+
+    g = areas / ((0.5 * (vols / areas) / k) + (1.0 / h_inf))
+
+    rows.extend(c_ids.tolist())
+    cols.extend(c_ids.tolist())
+    data.extend((-g).tolist())
+    rhs[c_ids] += g * temp
+
 ```
 
 ### File: fluid_preprocessor.py
@@ -416,15 +547,14 @@ def find_adjacent_pairs_kernel(boxes):
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
+from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+
+_logger = get_logger(__name__)
 
 
 class FluidPreprocessor:
-    """
-    Specialized for calculating and solidifying fluid dynamic fields (pressure, convection coefficients)
-    before thermal assembly.
-    """
-
     def __init__(self, config: dict):
         self.config = config
 
@@ -432,9 +562,7 @@ class FluidPreprocessor:
         if not np.any(fields.is_fluid):
             return
 
-        # Temporary state for boundary condition tracking during flow solve
         is_pressure_boundary = np.zeros(topo.n_cells, dtype=bool)
-
         self._init_cell_hydro_properties(topo, fields)
         self._apply_pressure_boundary_conditions(topo, fields, is_pressure_boundary)
         self._solve_pressure(topo, fields, is_pressure_boundary)
@@ -447,15 +575,9 @@ class FluidPreprocessor:
             return
         v = fields.dynamic_viscosity[m]
 
-        # Compute anisotropic hydroC for X(0), Y(1), Z(2) axes
         for axis in range(3):
-            ax_w = (axis + 1) % 3
-            ax_h = (axis + 2) % 3
-
-            L = topo.dims[m, axis]
-            w = topo.dims[m, ax_w]
-            h = topo.dims[m, ax_h]
-
+            ax_w, ax_h = (axis + 1) % 3, (axis + 2) % 3
+            L, w, h = topo.dims[m, axis], topo.dims[m, ax_w], topo.dims[m, ax_h]
             hydroC_axis = np.zeros(np.sum(m))
             cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
             cond_lt = ~(cond_eq | cond_gt)
@@ -469,96 +591,69 @@ class FluidPreprocessor:
             hydroC_axis[cond_lt] = (
                 (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
             ) / (12 * v[cond_lt] * L[cond_lt])
-
             fields.hydroC[m, axis] = hydroC_axis
 
     def _apply_pressure_boundary_conditions(
-        self,
-        topo: MeshTopology,
-        fields: PhysicalFields,
-        is_pressure_boundary: np.ndarray,
+        self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
         for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") != "pressure":
-                continue
-            pressure, temp, face, target = (
-                float(bc["pressure"]),
-                float(bc.get("temperature", np.nan)),
-                bc.get("face", ""),
-                bc.get("target"),
-            )
-            for c_id, _, _ in topo.boundary_faces.get(face, []):
-                if fields.is_fluid[c_id] and (
-                    not target or fields.layer_names[c_id] == target
-                ):
-                    (
-                        is_pressure_boundary[c_id],
-                        fields.pressure[c_id],
-                        fields.inlet_temperature[c_id],
-                    ) = (True, pressure, temp)
+            if bc.get("type") == "pressure":
+                c_ids, _ = resolve_boundary_cells(
+                    topo, fields, bc["face"], bc.get("target", "")
+                )
+                apply_pressure_bc(c_ids, bc["parameters"], fields, is_p_bound)
 
     def _solve_pressure(
-        self,
-        topo: MeshTopology,
-        fields: PhysicalFields,
-        is_pressure_boundary: np.ndarray,
+        self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
         fluid_ids = np.where(fields.is_fluid)[0]
         if len(fluid_ids) == 0:
             return
-        n_fluid, global_to_fluid = len(fluid_ids), np.full(topo.n_cells, -1, dtype=int)
-        global_to_fluid[fluid_ids] = np.arange(n_fluid)
-        rows, cols, data, b_p, diag_C, is_p_bound = (
+        n_fluid, g2f = len(fluid_ids), np.full(topo.n_cells, -1, dtype=int)
+        g2f[fluid_ids] = np.arange(n_fluid)
+        rows, cols, data, b_p, diag_C, is_p_f = (
             [],
             [],
             [],
             np.zeros(n_fluid),
             np.zeros(n_fluid),
-            is_pressure_boundary[fluid_ids],
+            is_p_bound[fluid_ids],
         )
 
-        bound_idx = np.where(is_p_bound)[0]
-        rows.extend(bound_idx)
-        cols.extend(bound_idx)
-        data.extend(np.ones(len(bound_idx)))
-        b_p[bound_idx] = fields.pressure[fluid_ids][bound_idx]
+        b_idx = np.where(is_p_f)[0]
+        rows.extend(b_idx)
+        cols.extend(b_idx)
+        data.extend(np.ones(len(b_idx)))
+        b_p[b_idx] = fields.pressure[fluid_ids][b_idx]
 
         for c0, c1 in topo.internal_faces:
-            i0, i1 = global_to_fluid[c0], global_to_fluid[c1]
+            i0, i1 = g2f[c0], g2f[c1]
             if i0 == -1 or i1 == -1:
                 continue
-
-            # Dynamically infer axis from cell center difference
             axis = np.argmax(np.abs(topo.centers[c1] - topo.centers[c0]))
-            hc0 = fields.hydroC[c0, axis]
-            hc1 = fields.hydroC[c1, axis]
-
+            hc0, hc1 = fields.hydroC[c0, axis], fields.hydroC[c1, axis]
             sum_hc = hc0 + hc1
             C_eff = (2.0 * hc0 * hc1 / sum_hc) if sum_hc > 0 else 0.0
-
-            if not is_pressure_boundary[c0]:
+            if not is_p_bound[c0]:
                 rows.append(i0)
                 cols.append(i1)
                 data.append(C_eff)
                 diag_C[i0] += C_eff
-            if not is_pressure_boundary[c1]:
+            if not is_p_bound[c1]:
                 rows.append(i1)
                 cols.append(i0)
                 data.append(C_eff)
                 diag_C[i1] += C_eff
 
         for i in range(n_fluid):
-            if not is_p_bound[i]:
+            if not is_p_f[i]:
                 rows.append(i)
                 cols.append(i)
                 data.append(-diag_C[i])
 
-        try:
-            fields.pressure[fluid_ids] = splinalg.spsolve(
-                sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
-            )
-        except Exception as e:
-            print(f"[WARNING] Pressure solve failed: {e}")
+        fields.pressure[fluid_ids] = splinalg.spsolve(
+            sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
+        )
 
 ```
 
@@ -702,10 +797,73 @@ class GmshMesher:
 
 ```
 
+### File: logging_config.py
+```py
+"""
+Logging configuration for MetaHotspot.
+
+Usage:
+    from metahotspot.logging_config import get_logger
+    logger = get_logger(__name__)
+
+Log format: [LEVEL] message
+Handlers: console only (stderr)
+"""
+
+import logging
+import sys
+
+# Module-level log level - can be overridden via set_level()
+_log_level = logging.INFO
+
+
+def set_level(level: int) -> None:
+    """Set global log level (e.g., logging.DEBUG, logging.INFO)."""
+    global _log_level
+    _log_level = level
+
+
+def get_logger(name: str, level: int | None = None) -> logging.Logger:
+    """
+    Get or create a logger with consistent formatting.
+
+    Args:
+        name: Logger name (typically __name__ from the calling module)
+        level: Optional override for this logger's level
+
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger(name)
+
+    if level is not None:
+        logger.setLevel(level)
+    else:
+        logger.setLevel(_log_level)
+
+    # Only add handler if logger doesn't already have one
+    # (prevents duplicate handlers on repeated calls)
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(level if level is not None else _log_level)
+
+        formatter = logging.Formatter(
+            fmt="[%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    # Prevent propagation to root logger (avoids duplicate output)
+    logger.propagate = False
+
+    return logger
+
+```
+
 ### File: mesh_preprocessor.py
 ```py
 from typing import Any, Dict, List, Tuple
-
 import meshio
 import numpy as np
 
@@ -713,7 +871,7 @@ from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
 
 
 class MeshPreprocessor:
-    GEOMETRY_TOLERANCE = 1e-15
+    GEOMETRY_TOLERANCE = 1e-12
 
     def __init__(self, config: Dict[str, Any], stackup: List[Any]) -> None:
         self.config = config
@@ -729,11 +887,13 @@ class MeshPreprocessor:
         hex_blocks = [b.data for b in mesh.cells if b.type == "hexahedron"]
         if not hex_blocks:
             raise ValueError("No hexahedron cells found in mesh")
+
         hex_data = np.vstack(hex_blocks)
         coords = mesh.points[hex_data]
         lowers, uppers = np.min(coords, axis=1), np.max(coords, axis=1)
         centers, dims = (lowers + uppers) * 0.5, uppers - lowers
         vols = np.prod(dims, axis=1)
+
         sorted_indices = self._compute_morton_sort(lowers, uppers, centers)
         n_cells = len(centers)
         c_centers, c_dims, c_boxes, c_vols = (
@@ -742,11 +902,14 @@ class MeshPreprocessor:
             np.hstack([lowers[sorted_indices], uppers[sorted_indices]]),
             vols[sorted_indices],
         )
+
         orig_to_new_id = np.empty(n_cells, dtype=int)
         orig_to_new_id[sorted_indices] = np.arange(n_cells)
-        internal_faces, boundary_faces = self._build_topology(
+
+        internal_faces, boundary_faces = self._build_topology_vectorized(
             mesh, hex_data, sorted_indices, c_centers
         )
+
         return MeshTopology(
             n_cells,
             c_centers,
@@ -774,98 +937,147 @@ class MeshPreprocessor:
             )
         return np.argsort(morton_keys)
 
-    def _build_topology(
+    def _build_topology_vectorized(
         self,
         mesh: meshio.Mesh,
         hex_data: np.ndarray,
         sorted_indices: np.ndarray,
         c_centers: np.ndarray,
-    ) -> Tuple[list, dict]:
-        face_to_cells = {}
-        for new_id, orig_id in enumerate(sorted_indices):
-            nodes = hex_data[orig_id]
-            faces = [
-                (nodes[0], nodes[3], nodes[2], nodes[1]),
-                (nodes[4], nodes[5], nodes[6], nodes[7]),
-                (nodes[0], nodes[1], nodes[5], nodes[4]),
-                (nodes[3], nodes[7], nodes[6], nodes[2]),
-                (nodes[0], nodes[4], nodes[7], nodes[3]),
-                (nodes[1], nodes[2], nodes[6], nodes[5]),
+    ) -> Tuple[np.ndarray, dict]:
+        """使用 lexsort 替代慢速的 Python Dict 解析面连通性"""
+        n_cells = len(sorted_indices)
+
+        # 6 个面的局部节点定义
+        faces_def = np.array(
+            [
+                [0, 3, 2, 1],
+                [4, 5, 6, 7],
+                [0, 1, 5, 4],
+                [3, 7, 6, 2],
+                [0, 4, 7, 3],
+                [1, 2, 6, 5],
             ]
-            for f in faces:
-                face_to_cells.setdefault(tuple(sorted(f)), []).append(new_id)
-        internal_faces = [tuple(c) for c in face_to_cells.values() if len(c) == 2]
-        boundary_faces_raw = {f: c[0] for f, c in face_to_cells.items() if len(c) == 1}
+        )
+
+        cell_ids = np.repeat(np.arange(n_cells), 6)
+        all_faces_nodes = hex_data[sorted_indices][:, faces_def].reshape(-1, 4)
+
+        # 排序面节点用于统一签名
+        sorted_faces = np.sort(all_faces_nodes, axis=1)
+        sort_order = np.lexsort(
+            (
+                sorted_faces[:, 3],
+                sorted_faces[:, 2],
+                sorted_faces[:, 1],
+                sorted_faces[:, 0],
+            )
+        )
+        sorted_faces_lex = sorted_faces[sort_order]
+        cell_ids_lex = cell_ids[sort_order]
+
+        # 查找内部面
+        is_same = np.all(sorted_faces_lex[:-1] == sorted_faces_lex[1:], axis=1)
+        internal_idx = np.where(is_same)[0]
+        internal_faces = np.column_stack(
+            (cell_ids_lex[internal_idx], cell_ids_lex[internal_idx + 1])
+        )
+
+        # 提取边界面
+        bound_mask = np.ones(len(sorted_faces_lex), dtype=bool)
+        bound_mask[internal_idx] = False
+        bound_mask[internal_idx + 1] = False
+
+        bound_indices = np.where(bound_mask)[0]
+        orig_bound_idx = sort_order[bound_indices]
+        bound_c_ids = cell_ids[orig_bound_idx]
+        bound_face_nodes = all_faces_nodes[orig_bound_idx]
+
         boundary_faces = {"+X": [], "-X": [], "+Y": [], "-Y": [], "+Z": [], "-Z": []}
-        for f, c_id in boundary_faces_raw.items():
-            pts = mesh.points[list(f)]
-            cross = np.cross(pts[1] - pts[0], pts[2] - pts[0])
-            area = np.linalg.norm(cross)
-            if area < self.GEOMETRY_TOLERANCE:
-                continue
-            normal = cross / area
-            if np.dot(np.mean(pts, axis=0) - c_centers[c_id], normal) < 0:
-                normal = -normal
-            abs_n = np.abs(normal)
-            if abs_n[2] >= abs_n[0] and abs_n[2] >= abs_n[1]:
-                dir_key = "+Z" if normal[2] > 0 else "-Z"
-            elif abs_n[0] >= abs_n[1]:
-                dir_key = "+X" if normal[0] > 0 else "-X"
+
+        pts = mesh.points[bound_face_nodes]
+        cross = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
+        areas = np.linalg.norm(cross, axis=1)
+
+        valid = areas > self.GEOMETRY_TOLERANCE
+        normals = cross[valid] / areas[valid, None]
+        b_c_ids = bound_c_ids[valid]
+        b_areas = areas[valid]
+
+        # 法向校正
+        centers_dir = np.mean(pts[valid], axis=1) - c_centers[b_c_ids]
+        flip_mask = np.sum(centers_dir * normals, axis=1) < 0
+        normals[flip_mask] *= -1
+
+        # 方向分类
+        abs_n = np.abs(normals)
+        for i in range(len(b_c_ids)):
+            n, a_n = normals[i], abs_n[i]
+            if a_n[2] >= a_n[0] and a_n[2] >= a_n[1]:
+                dir_key = "+Z" if n[2] > 0 else "-Z"
+            elif a_n[0] >= a_n[1]:
+                dir_key = "+X" if n[0] > 0 else "-X"
             else:
-                dir_key = "+Y" if normal[1] > 0 else "-Y"
-            boundary_faces[dir_key].append((c_id, normal, area))
-        return internal_faces, boundary_faces
+                dir_key = "+Y" if n[1] > 0 else "-Y"
+            boundary_faces[dir_key].append((b_c_ids[i], n, b_areas[i]))
+
+        return internal_faces, {
+            k: (
+                np.array([x[0] for x in v]),
+                np.array([x[1] for x in v]),
+                np.array([x[2] for x in v]),
+            )
+            for k, v in boundary_faces.items()
+            if v
+        }
 
     def _map_physical_properties(self, topo: MeshTopology) -> PhysicalFields:
+        """纯 SoA 数组映射，解决 TypeError 报错"""
         n, centers, tol = topo.n_cells, topo.centers, self.GEOMETRY_TOLERANCE
-        k, cp, density, is_fluid, dynamic_viscosity = (
-            np.zeros(n),
-            np.zeros(n),
-            np.zeros(n),
-            np.zeros(n, dtype=bool),
-            np.zeros(n),
-        )
-        layer_names, unit_names = np.empty(n, dtype=object), np.empty(n, dtype=object)
-        def_mat = self.config["materials"]["default_solid"]
-        (
-            k[:],
-            cp[:],
-            density[:],
-            is_fluid[:],
-            dynamic_viscosity[:],
-            layer_names[:],
-            unit_names[:],
-        ) = (
-            def_mat["k"],
-            def_mat["cp"],
-            def_mat["density"],
-            def_mat.get("fluid", False),
-            def_mat.get("dynamic_viscosity", 0.0),
-            "default_layer",
-            "",
-        )
+
+        # 初始化基础属性数组
+        k = np.zeros(n)
+        cp = np.zeros(n)
+        density = np.zeros(n)
+        is_fluid = np.zeros(n, dtype=bool)
+        dynamic_viscosity = np.zeros(n)
+
+        # 【修改点】使用整数数组（int16）替代字符串（object）
+        layer_ids = np.zeros(n, dtype=np.int16)
+        unit_ids = np.zeros(n, dtype=np.int16)
+
+        # 维护一个双向映射表
+        layer_name_map = ["default_layer"]
+        unit_name_map = [""]
+
+        # 兼容 dict 模式配置读取
+        def_mat = self.config.get("materials", {}).get("default_solid", {})
+        k[:] = def_mat.get("k", 1.0)
+        cp[:] = def_mat.get("cp", 1.0e6)
+        density[:] = def_mat.get("density", 1000.0)
+        is_fluid[:] = def_mat.get("fluid", False)
+        dynamic_viscosity[:] = def_mat.get("dynamic_viscosity", 0.0)
+
         z_cursor = 0.0
         for layer in self.stackup:
             z_min, z_max = z_cursor, z_cursor + layer.thickness
             z_cursor = z_max
             l_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
+
             if not np.any(l_mask):
                 continue
-            (
-                k[l_mask],
-                cp[l_mask],
-                density[l_mask],
-                is_fluid[l_mask],
-                dynamic_viscosity[l_mask],
-                layer_names[l_mask],
-            ) = (
-                layer.k,
-                layer.cp,
-                layer.density,
-                layer.is_fluid,
-                layer.dynamic_viscosity,
-                layer.name,
-            )
+
+            # 【查表/建表】注册 Layer 的整型 ID
+            if layer.name not in layer_name_map:
+                layer_name_map.append(layer.name)
+            l_id = layer_name_map.index(layer.name)
+
+            k[l_mask] = layer.k
+            cp[l_mask] = layer.cp
+            density[l_mask] = layer.density
+            is_fluid[l_mask] = layer.is_fluid
+            dynamic_viscosity[l_mask] = layer.dynamic_viscosity
+            layer_ids[l_mask] = l_id  # 写入整数
+
             for unit in layer.units:
                 u_mask = (
                     l_mask
@@ -875,32 +1087,32 @@ class MeshPreprocessor:
                     & (centers[:, 1] <= unit.ly + unit.dy + tol)
                 )
                 if np.any(u_mask):
-                    (
-                        k[u_mask],
-                        cp[u_mask],
-                        density[u_mask],
-                        is_fluid[u_mask],
-                        dynamic_viscosity[u_mask],
-                        unit_names[u_mask],
-                    ) = (
-                        unit.k,
-                        unit.cp,
-                        unit.density,
-                        unit.is_fluid,
-                        unit.dynamic_viscosity,
-                        unit.name,
-                    )
+                    # 【查表/建表】注册 Unit 的整型 ID
+                    if unit.name not in unit_name_map:
+                        unit_name_map.append(unit.name)
+                    u_id = unit_name_map.index(unit.name)
+
+                    k[u_mask] = unit.k
+                    cp[u_mask] = unit.cp
+                    density[u_mask] = unit.density
+                    is_fluid[u_mask] = unit.is_fluid
+                    dynamic_viscosity[u_mask] = unit.dynamic_viscosity
+                    unit_ids[u_mask] = u_id  # 写入整数
+
+        # 组装完整的 PhysicalFields (SoA 布局)
         return PhysicalFields(
-            k,
-            cp,
-            density,
-            is_fluid,
-            dynamic_viscosity,
-            np.zeros((n, 3)),
-            np.zeros(n),
-            np.full(n, np.nan),
-            layer_names,
-            unit_names,
+            k=k,
+            cp=cp,
+            density=density,
+            is_fluid=is_fluid,
+            dynamic_viscosity=dynamic_viscosity,
+            hydroC=np.zeros((n, 3)),
+            pressure=np.zeros(n),
+            boundary_temperature=np.full(n, np.nan),
+            layer_ids=layer_ids,
+            unit_ids=unit_ids,
+            layer_name_map=layer_name_map,
+            unit_name_map=unit_name_map,
         )
 
 ```
@@ -913,12 +1125,15 @@ import meshio
 import numpy as np
 import time
 
+from metahotspot.logging_config import get_logger
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import load_config, load_stackup
+
+_logger = get_logger(__name__)
 
 
 class MetaHotspotSolver:
@@ -931,15 +1146,23 @@ class MetaHotspotSolver:
 
     def run(self):
         start = time.perf_counter()
-        print("[INFO] Preprocessing mesh and properties...")
         topo, fields = MeshPreprocessor(self.config, self.stackup).process(
             self.mesh_path
         )
-        print("[INFO] Solving fluid flow (if applicable)...")
+        mesh_finished = time.perf_counter()
+        _logger.info(
+            f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+        )
         FluidPreprocessor(self.config).solve_flow(topo, fields)
-        print("[INFO] Assembling system matrices...")
+        pressure_solve_finished = time.perf_counter()
+        _logger.info(
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+        )
         matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
-        print("[INFO] Solving equations...")
+        assembly_finished = time.perf_counter()
+        _logger.info(
+            f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
+        )
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             temperatures = solver.solve_steady(
@@ -952,8 +1175,7 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "result.vtu")
+
         else:
             temperatures = solver.solve_transient(
                 self.config["timestep"],
@@ -962,10 +1184,13 @@ class MetaHotspotSolver:
                 topo.volumes,
                 fields.cp,
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "transient_result.vtu")
         end = time.perf_counter()
-        print(f"[INFO] Simulation completed in {end - start:.2f} seconds\n\n")
+        _logger.info(
+            f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
+        )
+        _logger.info(f"Simulation completed in {end - start:.2f} seconds")
+        _logger.info("Exporting results...")
+        self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
         path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
@@ -1018,50 +1243,52 @@ class MetaHotspotSolver:
 ```py
 import numpy as np
 import scipy.sparse as sp
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
 class MeshTopology:
-    """Pure geometric and topological data (SoA layout)"""
+    """纯几何与拓扑数据 (SoA 布局)"""
 
     n_cells: int
     centers: np.ndarray
     dims: np.ndarray
     boxes: np.ndarray
     volumes: np.ndarray
-    internal_faces: list[tuple[int, int]]
-    boundary_faces: dict[str, list[tuple[int, np.ndarray, float]]]
+    internal_faces: np.ndarray
+    boundary_faces: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
     sorted_indices: np.ndarray
     orig_to_new_id: np.ndarray
 
 
 @dataclass(slots=True)
 class PhysicalFields:
-    """Physical properties and state fields (SoA layout)"""
+    """物理属性与状态场 (SoA 布局)"""
 
     k: np.ndarray
     cp: np.ndarray
     density: np.ndarray
     is_fluid: np.ndarray
     dynamic_viscosity: np.ndarray
-    hydroC: (
-        np.ndarray
-    )  # hydrodynamic coefficient, shape (n_cells, 3) — anisotropic conductance along [X, Y, Z] axes
+    hydroC: np.ndarray
     pressure: np.ndarray
-    inlet_temperature: np.ndarray
-    layer_names: np.ndarray
-    unit_names: np.ndarray
+    boundary_temperature: np.ndarray
+
+    layer_ids: np.ndarray
+    unit_ids: np.ndarray
+    layer_name_map: List[str] = field(default_factory=list)
+    unit_name_map: List[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class SystemMatrices:
-    """Assembled algebraic equations A * T = b"""
+    """装配后的代数方程 A * T = b"""
 
     A_total: sp.csr_matrix
     b_total: np.ndarray
     power_matrix: sp.csr_matrix
-    unit_names: list[str]
+    unit_names: List[str]
 
 ```
 
@@ -1336,20 +1563,31 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
 ```py
 import numpy as np
 import scipy.sparse as sp
+import time
+
+from metahotspot.logging_config import get_logger
+from metahotspot.metahotspot_types import SystemMatrices
+
 import scipy.sparse.linalg as splinalg
 
-from metahotspot.metahotspot_types import SystemMatrices
+_logger = get_logger(__name__)
 
 
 class ThermalSolver:
     def __init__(self, matrices: SystemMatrices, config: dict):
-        self.mat, self.config = matrices, config
+        self.mat = matrices
+        self.config = config
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:
-        temp = splinalg.spsolve(
-            -self.mat.A_total, self.mat.b_total + (self.mat.power_matrix @ mean_powers)
+        rhs = self.mat.b_total + (self.mat.power_matrix @ mean_powers)
+        A = -self.mat.A_total.tocsr()
+
+        t0 = time.perf_counter()
+        temp = splinalg.spsolve(A, rhs)
+
+        _logger.info(
+            f"Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
         )
-        print(f"[RESULT] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K")
         return temp
 
     def solve_transient(
@@ -1360,21 +1598,27 @@ class ThermalSolver:
         vols: np.ndarray,
         cp: np.ndarray,
     ) -> np.ndarray:
-        c_mat, temp = sp.diags(cp * vols) / dt, init_temp.copy()
-        solve_step = splinalg.factorized((c_mat - self.mat.A_total).tocsc())
+        c_mat = sp.diags(cp * vols) / dt
+        A_step = c_mat - self.mat.A_total
+        temp = init_temp.copy()
+        solve_func = splinalg.factorized(A_step.tocsc())
+
+        t0 = time.perf_counter()
+
         for i, step_power in enumerate(ptrace):
-            temp = solve_step(
-                (c_mat @ temp)
-                + self.mat.b_total
-                + (
-                    self.mat.power_matrix
-                    @ np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
-                )
+            power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
+            rhs = (
+                (c_mat @ temp) + self.mat.b_total + (self.mat.power_matrix @ power_vec)
             )
+
+            temp = solve_func(rhs)
+
             if i % 10 == 0 or i == len(ptrace) - 1:
-                print(
-                    f"[STEP {i:4d}] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+                _logger.info(
+                    f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
+
+        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp
 
 ```
@@ -1596,8 +1840,10 @@ class SimulationModelBuilder25D:
                 "type": "convection",
                 "face": "+Z",
                 "target": "Sink",
-                "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
-                "T_inf": self.config["ambient"],
+                "parameters": {
+                    "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
+                    "T_inf": self.config["ambient"],
+                },
             }
         )
 
@@ -1662,22 +1908,29 @@ class SimulationModelBuilder25D:
                 )
             )
 
+            # 通过正则表达式精确匹配流体单元名称前缀 "mc_fluid_"
             self.boundary_conditions.extend(
                 [
                     {
-                        "name": "mc_inlet",
+                        "name": "mc_inlet_pressure",
                         "type": "pressure",
                         "face": "-X",
-                        "target": name,
-                        "pressure": self.config["pumping_pressure"],
-                        "temperature": self.config["inlet_temperature"],
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"pressure": self.config["pumping_pressure"]},
                     },
                     {
-                        "name": "mc_outlet",
+                        "name": "mc_inlet_temperature",
+                        "type": "temperature",
+                        "face": "-X",
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"temperature": self.config["inlet_temperature"]},
+                    },
+                    {
+                        "name": "mc_outlet_pressure",
                         "type": "pressure",
                         "face": "+X",
-                        "target": name,
-                        "pressure": 0.0,
+                        "target": "^mc_fluid_.*$",
+                        "parameters": {"pressure": 0.0},
                     },
                 ]
             )

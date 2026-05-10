@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -10,6 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from metahotspot.legacy.converter import convert_hotspot_with_modes
 from metahotspot.gmsh_mesher import GmshMesher
 
+_logger = logging.getLogger(__name__)
+
 
 def _convert_and_mesh_batch(
     hotspot_examples_dir: str, output_root: str, mode: str
@@ -19,9 +22,9 @@ def _convert_and_mesh_batch(
         in_dir = os.path.join(hotspot_examples_dir, name)
         out_dir = os.path.join(output_root, name)
         created = convert_hotspot_with_modes(in_dir, out_dir, mode=mode)
-        print(f"[CONVERT] {name} -> {out_dir}")
+        _logger.info(f"{name} -> {out_dir}")
         for config_path in created:
-            print(f"[CONVERT]   wrote {config_path}")
+            _logger.info(f"  wrote {config_path}")
 
         # Mesh each generated config
         base_dir = out_dir
@@ -37,7 +40,7 @@ def _convert_and_mesh_batch(
             mesher.generate_mesh(config_path)
             mesh_path = os.path.join(base_dir, "mesh.msh")
             mesher.finalize(mesh_path)
-            print(f"[MESH] {name} -> {mesh_path}")
+            _logger.info(f"{name} -> {mesh_path}")
 
 
 def main() -> None:
@@ -83,7 +86,7 @@ def main() -> None:
         args.input_dir, args.output_dir, mode=args.mode
     )
     for config_path in created:
-        print(f"[CONVERT] wrote {config_path}")
+        _logger.info(f"wrote {config_path}")
 
     # Mesh the steady config (if mode=both, mesh steady only for batch efficiency)
     base_dir = args.output_dir
@@ -93,7 +96,7 @@ def main() -> None:
         mesher.generate_mesh(config_to_mesh)
         mesh_path = os.path.join(base_dir, "mesh.msh")
         mesher.finalize(mesh_path)
-        print(f"[MESH] wrote {mesh_path}")
+        _logger.info(f"wrote {mesh_path}")
 
 
 if __name__ == "__main__":
