@@ -1,13 +1,18 @@
-import re
 from typing import List, Tuple
-
 import numpy as np
 import scipy.sparse as sp
+
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, SystemMatrices
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
     build_cond_coo_kernel,
     build_adv_coo_kernel,
+)
+from metahotspot.boundary_operators import (
+    resolve_boundary_cells,
+    apply_temperature_state_bc,
+    apply_convection_matrix_bc,
+    apply_temperature_matrix_bc,
 )
 
 
@@ -24,8 +29,6 @@ class FVMAssembler:
             stackup,
         )
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
-
-        # 【关键优化】只执行一次 O(N log N) 的邻居查找并缓存 SoA 数组
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
         )
@@ -48,41 +51,27 @@ class FVMAssembler:
     def _precompute_flow_axes(self) -> None:
         if not np.any(self.fields.is_fluid):
             return
-
         p_drops = np.zeros((self.topo.n_cells, 3))
-        # 向量化处理预计算的数据
-        fluid_mask_a = self.fields.is_fluid[self._c_a]
-        fluid_mask_b = self.fields.is_fluid[self._c_b]
-        valid = fluid_mask_a & fluid_mask_b
+        valid = self.fields.is_fluid[self._c_a] & self.fields.is_fluid[self._c_b]
+        v_ca, v_axes = self._c_a[valid], self._axes[valid]
+        dps = np.abs(
+            self.fields.pressure[v_ca] - self.fields.pressure[self._c_b[valid]]
+        )
 
-        v_ca = self._c_a[valid]
-        v_cb = self._c_b[valid]
-        v_axes = self._axes[valid]
-        dps = np.abs(self.fields.pressure[v_ca] - self.fields.pressure[v_cb])
-
-        np.maximum.at(p_drops[:, 0], v_ca[v_axes == 0], dps[v_axes == 0])
-        np.maximum.at(p_drops[:, 1], v_ca[v_axes == 1], dps[v_axes == 1])
-        np.maximum.at(p_drops[:, 2], v_ca[v_axes == 2], dps[v_axes == 2])
-
-        fluid_mask = self.fields.is_fluid
-        self.flow_axes[fluid_mask] = np.argmax(p_drops[fluid_mask], axis=1)
+        for ax in range(3):
+            np.maximum.at(p_drops[:, ax], v_ca[v_axes == ax], dps[v_axes == ax])
+        self.flow_axes[self.fields.is_fluid] = np.argmax(
+            p_drops[self.fields.is_fluid], axis=1
+        )
 
     def _apply_temperature_boundaries(self) -> None:
-        """解析并应用解耦后的温度边界条件 (作用于流体的对流入口)"""
+        """记录所有 Dirichlet 边界温度状态"""
         for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") != "temperature":
-                continue
-            params = bc["parameters"]
-            temp = float(params["temperature"])
-            face = bc["face"]
-            target = bc.get("target", "")
-
-            if face in self.topo.boundary_faces:
-                c_ids, _, _ = self.topo.boundary_faces[face]
-                for c_id in c_ids:
-                    layer_name = self.fields.layer_name_map[self.fields.layer_ids[c_id]]
-                    if not target or re.match(target, layer_name):
-                        self.fields.inlet_temperature[c_id] = temp
+            if bc.get("type") == "temperature":
+                c_ids, _ = resolve_boundary_cells(
+                    self.topo, self.fields, bc["face"], bc.get("target", "")
+                )
+                apply_temperature_state_bc(c_ids, bc["parameters"], self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -102,69 +91,40 @@ class FVMAssembler:
 
     def _build_boundary_terms(self) -> Tuple[sp.csr_matrix, np.ndarray]:
         n = self.topo.n_cells
-        rhs = np.zeros(n)
-        rows, cols, data = [], [], []
+        rhs, rows, cols, data = np.zeros(n), [], [], []
 
         for bc in self.config.get("boundary_conditions", []):
             bc_type = bc.get("type")
             if bc_type not in ["convection", "temperature"]:
                 continue
+            c_ids, areas = resolve_boundary_cells(
+                self.topo, self.fields, bc["face"], bc.get("target", "")
+            )
 
-            target = bc.get("target", "")
-            face_key = bc["face"]
-            params = bc["parameters"]
-
-            if face_key in self.topo.boundary_faces:
-                c_ids, normals, areas = self.topo.boundary_faces[face_key]
-
-                if bc_type == "convection":
-                    h, t_inf = float(params["h"]), float(params["T_inf"])
-                    for i, c_id in enumerate(c_ids):
-                        layer_name = self.fields.layer_name_map[
-                            self.fields.layer_ids[c_id]
-                        ]
-                        if target and not re.match(target, layer_name):
-                            continue
-                        area = areas[i]
-                        g = area / (
-                            (
-                                0.5
-                                * (self.topo.volumes[c_id] / area)
-                                / self.fields.k[c_id]
-                            )
-                            + (1.0 / h)
-                        )
-                        rows.append(c_id)
-                        cols.append(c_id)
-                        data.append(-g)
-                        rhs[c_id] += g * t_inf
-
-                elif bc_type == "temperature":
-                    # 纯 Dirichlet 温度边界（通过大系数罚函数实现）
-                    temp = float(params["temperature"])
-                    for i, c_id in enumerate(c_ids):
-                        if self.fields.is_fluid[c_id]:
-                            continue  # 流体的边界温度控制在 _apply_temperature_boundaries 中交给对流矩阵解决
-
-                        layer_name = self.fields.layer_name_map[
-                            self.fields.layer_ids[c_id]
-                        ]
-                        if target and not re.match(target, layer_name):
-                            continue
-                        area = areas[i]
-                        h_inf = 1e20  # 使用巨大对流换热系数锁定表面温度
-                        g = area / (
-                            (
-                                0.5
-                                * (self.topo.volumes[c_id] / area)
-                                / self.fields.k[c_id]
-                            )
-                            + (1.0 / h_inf)
-                        )
-                        rows.append(c_id)
-                        cols.append(c_id)
-                        data.append(-g)
-                        rhs[c_id] += g * temp
+            if bc_type == "convection":
+                apply_convection_matrix_bc(
+                    c_ids,
+                    areas,
+                    bc["parameters"],
+                    self.topo,
+                    self.fields,
+                    rows,
+                    cols,
+                    data,
+                    rhs,
+                )
+            elif bc_type == "temperature":
+                apply_temperature_matrix_bc(
+                    c_ids,
+                    areas,
+                    bc["parameters"],
+                    self.topo,
+                    self.fields,
+                    rows,
+                    cols,
+                    data,
+                    rhs,
+                )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
@@ -186,31 +146,26 @@ class FVMAssembler:
             self.fields.cp,
         )
 
-        # 处理进出口边界条件
         fluid_ids = np.where(self.fields.is_fluid)[0]
         influxes = net_outflux[fluid_ids]
-
-        # 边界入流 (Influx > 0)
         in_mask = influxes > self.GEOMETRY_TOLERANCE
-        valid_in_ids = fluid_ids[in_mask]
-        valid_influxes = influxes[in_mask]
-        valid_temps = self.fields.inlet_temperature[valid_in_ids]
-        temp_mask = ~np.isnan(valid_temps)
-        rhs[valid_in_ids[temp_mask]] += (
-            valid_influxes[temp_mask]
-            * self.fields.cp[valid_in_ids[temp_mask]]
-            * valid_temps[temp_mask]
+        v_in_ids = fluid_ids[in_mask]
+        # 使用重构后的 boundary_temperature 字段
+        v_temps = self.fields.boundary_temperature[v_in_ids]
+        temp_mask = ~np.isnan(v_temps)
+        rhs[v_in_ids[temp_mask]] += (
+            influxes[in_mask][temp_mask]
+            * self.fields.cp[v_in_ids[temp_mask]]
+            * v_temps[temp_mask]
         )
 
-        # 边界出流 (Influx < 0)
         out_mask = influxes < -self.GEOMETRY_TOLERANCE
-        out_ids = fluid_ids[out_mask]
-        out_vals = influxes[out_mask] * self.fields.cp[out_ids]
-
-        if len(out_ids) > 0:
-            rows = np.concatenate([rows, out_ids])
-            cols = np.concatenate([cols, out_ids])
-            data = np.concatenate([data, out_vals])
+        o_ids = fluid_ids[out_mask]
+        if len(o_ids) > 0:
+            o_vals = influxes[out_mask] * self.fields.cp[o_ids]
+            rows = np.concatenate([rows, o_ids])
+            cols = np.concatenate([cols, o_ids])
+            data = np.concatenate([data, o_vals])
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
@@ -231,9 +186,9 @@ class FVMAssembler:
                         }
                     )
             z_cursor += l.thickness
-        n_cells = self.topo.n_cells
+        n = self.topo.n_cells
         if not active_units:
-            return sp.csr_matrix((n_cells, 0)), []
+            return sp.csr_matrix((n, 0)), []
         rows, cols, data, boxes = [], [], [], self.topo.boxes
         for j, u in enumerate(active_units):
             vol_u = u["dx"] * u["dy"] * u["dz"]
@@ -252,6 +207,6 @@ class FVMAssembler:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
-        return sp.csr_matrix(
-            (data, (rows, cols)), shape=(n_cells, len(active_units))
-        ), [u["name"] for u in active_units]
+        return sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))), [
+            u["name"] for u in active_units
+        ]

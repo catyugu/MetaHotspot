@@ -243,7 +243,7 @@ class MeshPreprocessor:
             dynamic_viscosity=dynamic_viscosity,
             hydroC=np.zeros((n, 3)),
             pressure=np.zeros(n),
-            inlet_temperature=np.full(n, np.nan),
+            boundary_temperature=np.full(n, np.nan),
             layer_ids=layer_ids,
             unit_ids=unit_ids,
             layer_name_map=layer_name_map,

@@ -1,16 +1,11 @@
-import re
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.boundary_operators import resolve_boundary_cells, apply_pressure_bc
 
 
 class FluidPreprocessor:
-    """
-    Specialized for calculating and solidifying fluid dynamic fields (pressure, convection coefficients)
-    before thermal assembly.
-    """
-
     def __init__(self, config: dict):
         self.config = config
 
@@ -18,9 +13,7 @@ class FluidPreprocessor:
         if not np.any(fields.is_fluid):
             return
 
-        # Temporary state for boundary condition tracking during flow solve
         is_pressure_boundary = np.zeros(topo.n_cells, dtype=bool)
-
         self._init_cell_hydro_properties(topo, fields)
         self._apply_pressure_boundary_conditions(topo, fields, is_pressure_boundary)
         self._solve_pressure(topo, fields, is_pressure_boundary)
@@ -33,15 +26,9 @@ class FluidPreprocessor:
             return
         v = fields.dynamic_viscosity[m]
 
-        # Compute anisotropic hydroC for X(0), Y(1), Z(2) axes
         for axis in range(3):
-            ax_w = (axis + 1) % 3
-            ax_h = (axis + 2) % 3
-
-            L = topo.dims[m, axis]
-            w = topo.dims[m, ax_w]
-            h = topo.dims[m, ax_h]
-
+            ax_w, ax_h = (axis + 1) % 3, (axis + 2) % 3
+            L, w, h = topo.dims[m, axis], topo.dims[m, ax_w], topo.dims[m, ax_h]
             hydroC_axis = np.zeros(np.sum(m))
             cond_eq, cond_gt = np.abs(h - w) < 1e-10, h > w
             cond_lt = ~(cond_eq | cond_gt)
@@ -55,86 +42,62 @@ class FluidPreprocessor:
             hydroC_axis[cond_lt] = (
                 (1 - 0.63 * (h[cond_lt] / w[cond_lt])) * h[cond_lt] ** 3 * w[cond_lt]
             ) / (12 * v[cond_lt] * L[cond_lt])
-
             fields.hydroC[m, axis] = hydroC_axis
 
     def _apply_pressure_boundary_conditions(
-        self,
-        topo: MeshTopology,
-        fields: PhysicalFields,
-        is_pressure_boundary: np.ndarray,
+        self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
         for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") != "pressure":
-                continue
-            params = bc["parameters"]
-            pressure, face, target = (
-                float(params["pressure"]),
-                bc["face"],
-                bc.get("target", ""),
-            )
-            if face in topo.boundary_faces:
-                c_ids, _, _ = topo.boundary_faces[face]
-                for c_id in c_ids:
-                    layer_name = fields.layer_name_map[fields.layer_ids[c_id]]
-                    if fields.is_fluid[c_id] and (
-                        not target or re.match(target, layer_name)
-                    ):
-                        is_pressure_boundary[c_id] = True
-                        fields.pressure[c_id] = pressure
+            if bc.get("type") == "pressure":
+                c_ids, _ = resolve_boundary_cells(
+                    topo, fields, bc["face"], bc.get("target", "")
+                )
+                apply_pressure_bc(c_ids, bc["parameters"], fields, is_p_bound)
 
     def _solve_pressure(
-        self,
-        topo: MeshTopology,
-        fields: PhysicalFields,
-        is_pressure_boundary: np.ndarray,
+        self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
         fluid_ids = np.where(fields.is_fluid)[0]
         if len(fluid_ids) == 0:
             return
-        n_fluid, global_to_fluid = len(fluid_ids), np.full(topo.n_cells, -1, dtype=int)
-        global_to_fluid[fluid_ids] = np.arange(n_fluid)
-        rows, cols, data, b_p, diag_C, is_p_bound = (
+        n_fluid, g2f = len(fluid_ids), np.full(topo.n_cells, -1, dtype=int)
+        g2f[fluid_ids] = np.arange(n_fluid)
+        rows, cols, data, b_p, diag_C, is_p_f = (
             [],
             [],
             [],
             np.zeros(n_fluid),
             np.zeros(n_fluid),
-            is_pressure_boundary[fluid_ids],
+            is_p_bound[fluid_ids],
         )
 
-        bound_idx = np.where(is_p_bound)[0]
-        rows.extend(bound_idx)
-        cols.extend(bound_idx)
-        data.extend(np.ones(len(bound_idx)))
-        b_p[bound_idx] = fields.pressure[fluid_ids][bound_idx]
+        b_idx = np.where(is_p_f)[0]
+        rows.extend(b_idx)
+        cols.extend(b_idx)
+        data.extend(np.ones(len(b_idx)))
+        b_p[b_idx] = fields.pressure[fluid_ids][b_idx]
 
         for c0, c1 in topo.internal_faces:
-            i0, i1 = global_to_fluid[c0], global_to_fluid[c1]
+            i0, i1 = g2f[c0], g2f[c1]
             if i0 == -1 or i1 == -1:
                 continue
-
-            # Dynamically infer axis from cell center difference
             axis = np.argmax(np.abs(topo.centers[c1] - topo.centers[c0]))
-            hc0 = fields.hydroC[c0, axis]
-            hc1 = fields.hydroC[c1, axis]
-
+            hc0, hc1 = fields.hydroC[c0, axis], fields.hydroC[c1, axis]
             sum_hc = hc0 + hc1
             C_eff = (2.0 * hc0 * hc1 / sum_hc) if sum_hc > 0 else 0.0
-
-            if not is_pressure_boundary[c0]:
+            if not is_p_bound[c0]:
                 rows.append(i0)
                 cols.append(i1)
                 data.append(C_eff)
                 diag_C[i0] += C_eff
-            if not is_pressure_boundary[c1]:
+            if not is_p_bound[c1]:
                 rows.append(i1)
                 cols.append(i0)
                 data.append(C_eff)
                 diag_C[i1] += C_eff
 
         for i in range(n_fluid):
-            if not is_p_bound[i]:
+            if not is_p_f[i]:
                 rows.append(i)
                 cols.append(i)
                 data.append(-diag_C[i])
