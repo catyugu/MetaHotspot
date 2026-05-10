@@ -10,7 +10,7 @@
 ├── __init__.py
 ├── assembler.py
 ├── assembler_kernels.py
-├── boundary_operators.py
+├── boundary_conditions.py
 ├── fluid_preprocessor.py
 ├── gmsh_mesher.py
 ├── mesh_preprocessor.py
@@ -34,7 +34,7 @@ from metahotspot.assembler_kernels import (
     build_cond_coo_kernel,
     build_adv_coo_kernel,
 )
-from metahotspot.boundary_operators import (
+from metahotspot.boundary_conditions import (
     resolve_boundary_cells,
     apply_temperature_state_bc,
     apply_convection_matrix_bc,
@@ -415,7 +415,7 @@ def build_adv_coo_kernel(
 
 ```
 
-### File: boundary_operators.py
+### File: boundary_conditions.py
 ```py
 import re
 import numpy as np
@@ -547,7 +547,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
-from metahotspot.boundary_operators import resolve_boundary_cells, apply_pressure_bc
+from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
 
 class FluidPreprocessor:

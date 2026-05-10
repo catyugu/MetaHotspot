@@ -8,7 +8,7 @@ from metahotspot.assembler_kernels import (
     build_cond_coo_kernel,
     build_adv_coo_kernel,
 )
-from metahotspot.boundary_operators import (
+from metahotspot.boundary_conditions import (
     resolve_boundary_cells,
     apply_temperature_state_bc,
     apply_convection_matrix_bc,

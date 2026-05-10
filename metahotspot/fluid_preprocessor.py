@@ -2,7 +2,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
-from metahotspot.boundary_operators import resolve_boundary_cells, apply_pressure_bc
+from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
 
 class FluidPreprocessor:
