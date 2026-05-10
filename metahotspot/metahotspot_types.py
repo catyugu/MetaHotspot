@@ -13,10 +13,7 @@ class BoundaryConditionConfig:
     type: str  # "convection", "pressure"
     face: str
     target: str = ""
-    h: float = 0.0
-    T_inf: float = 0.0
-    pressure: float = 0.0
-    temperature: float = np.nan
+    parameters: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

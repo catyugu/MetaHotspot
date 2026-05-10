@@ -149,23 +149,29 @@
             "type": "pressure",
             "face": "-X",
             "target": "layer_2",
-            "pressure": 52000.0,
-            "temperature": 298.15
+            "parameters": {
+                "pressure": 52000.0,
+                "temperature": 298.15
+            }
         },
         {
             "name": "mc_outlet",
             "type": "pressure",
             "face": "+X",
             "target": "layer_2",
-            "pressure": 0.0
+            "parameters": {
+                "pressure": 0.0
+            }
         },
         {
             "name": "sink_conv",
             "type": "convection",
             "face": "+Z",
             "target": "Sink",
-            "h": 2777.777777777778,
-            "T_inf": 318.15
+            "parameters": {
+                "h": 2777.777777777778,
+                "T_inf": 318.15
+            }
         }
     ],
     "init_temperature_file_path": "init.vtu"

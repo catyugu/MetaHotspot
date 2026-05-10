@@ -66,21 +66,25 @@ class FluidPreprocessor:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "pressure":
                 continue
+            params = bc["parameters"]
             pressure, temp, face, target = (
-                float(bc["pressure"]),
-                float(bc.get("temperature", np.nan)),
-                bc.get("face", ""),
-                bc.get("target"),
+                float(params["pressure"]),
+                float(params["temperature"]),
+                bc["face"],
+                bc["target"],
             )
-            for c_id, _, _ in topo.boundary_faces.get(face, []):
-                if fields.is_fluid[c_id] and (
-                    not target or fields.layer_names[c_id] == target
-                ):
-                    (
-                        is_pressure_boundary[c_id],
-                        fields.pressure[c_id],
-                        fields.inlet_temperature[c_id],
-                    ) = (True, pressure, temp)
+            if face in topo.boundary_faces:
+                c_ids, _, _ = topo.boundary_faces[face]
+                for c_id in c_ids:
+                    if fields.is_fluid[c_id] and (
+                        not target
+                        or fields.layer_name_map[fields.layer_ids[c_id]] == target
+                    ):
+                        (
+                            is_pressure_boundary[c_id],
+                            fields.pressure[c_id],
+                            fields.inlet_temperature[c_id],
+                        ) = (True, pressure, temp)
 
     def _solve_pressure(
         self,

@@ -114,11 +114,12 @@ class FVMAssembler:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "convection":
                 continue
+            params = bc["parameters"]
             h, t_inf, target, face_key = (
-                float(bc["h"]),
-                float(bc["T_inf"]),
-                bc.get("target"),
-                bc.get("face", ""),
+                float(params["h"]),
+                float(params["T_inf"]),
+                bc["target"],
+                bc["face"],
             )
 
             if face_key in self.topo.boundary_faces:
@@ -479,21 +480,25 @@ class FluidPreprocessor:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "pressure":
                 continue
+            params = bc["parameters"]
             pressure, temp, face, target = (
-                float(bc["pressure"]),
-                float(bc.get("temperature", np.nan)),
-                bc.get("face", ""),
-                bc.get("target"),
+                float(params["pressure"]),
+                float(params["temperature"]),
+                bc["face"],
+                bc["target"],
             )
-            for c_id, _, _ in topo.boundary_faces.get(face, []):
-                if fields.is_fluid[c_id] and (
-                    not target or fields.layer_names[c_id] == target
-                ):
-                    (
-                        is_pressure_boundary[c_id],
-                        fields.pressure[c_id],
-                        fields.inlet_temperature[c_id],
-                    ) = (True, pressure, temp)
+            if face in topo.boundary_faces:
+                c_ids, _, _ = topo.boundary_faces[face]
+                for c_id in c_ids:
+                    if fields.is_fluid[c_id] and (
+                        not target
+                        or fields.layer_name_map[fields.layer_ids[c_id]] == target
+                    ):
+                        (
+                            is_pressure_boundary[c_id],
+                            fields.pressure[c_id],
+                            fields.inlet_temperature[c_id],
+                        ) = (True, pressure, temp)
 
     def _solve_pressure(
         self,
@@ -999,7 +1004,6 @@ class MetaHotspotSolver:
         print(
             f"[INFO] System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
-        print()
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             temperatures = solver.solve_steady(
@@ -1012,8 +1016,7 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "result.vtu")
+
         else:
             temperatures = solver.solve_transient(
                 self.config["timestep"],
@@ -1022,13 +1025,13 @@ class MetaHotspotSolver:
                 topo.volumes,
                 fields.cp,
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "transient_result.vtu")
         end = time.perf_counter()
         print(
             f"[INFO] Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
-        print(f"[INFO] Simulation completed in {end - start:.2f} seconds\n\n")
+        print(f"[INFO] Simulation completed in {end - start:.2f} seconds")
+        print("[INFO] Exporting results...")
+        self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
         path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
@@ -1094,10 +1097,7 @@ class BoundaryConditionConfig:
     type: str  # "convection", "pressure"
     face: str
     target: str = ""
-    h: float = 0.0
-    T_inf: float = 0.0
-    pressure: float = 0.0
-    temperature: float = np.nan
+    parameters: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -1712,8 +1712,10 @@ class SimulationModelBuilder25D:
                 "type": "convection",
                 "face": "+Z",
                 "target": "Sink",
-                "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
-                "T_inf": self.config["ambient"],
+                "parameters": {
+                    "h": 1.0 / (self.config["r_convec"] * s_sink * s_sink),
+                    "T_inf": self.config["ambient"],
+                },
             }
         )
 
@@ -1785,15 +1787,19 @@ class SimulationModelBuilder25D:
                         "type": "pressure",
                         "face": "-X",
                         "target": name,
-                        "pressure": self.config["pumping_pressure"],
-                        "temperature": self.config["inlet_temperature"],
+                        "parameters": {
+                            "pressure": self.config["pumping_pressure"],
+                            "temperature": self.config["inlet_temperature"],
+                        },
                     },
                     {
                         "name": "mc_outlet",
                         "type": "pressure",
                         "face": "+X",
                         "target": name,
-                        "pressure": 0.0,
+                        "parameters": {
+                            "pressure": 0.0,
+                        },
                     },
                 ]
             )

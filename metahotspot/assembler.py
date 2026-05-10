@@ -89,11 +89,12 @@ class FVMAssembler:
         for bc in self.config.get("boundary_conditions", []):
             if bc.get("type") != "convection":
                 continue
+            params = bc["parameters"]
             h, t_inf, target, face_key = (
-                float(bc["h"]),
-                float(bc["T_inf"]),
-                bc.get("target"),
-                bc.get("face", ""),
+                float(params["h"]),
+                float(params["T_inf"]),
+                bc["target"],
+                bc["face"],
             )
 
             if face_key in self.topo.boundary_faces:

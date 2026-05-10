@@ -39,7 +39,6 @@ class MetaHotspotSolver:
         print(
             f"[INFO] System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
-        print()
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
             temperatures = solver.solve_steady(
@@ -52,8 +51,7 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "result.vtu")
+
         else:
             temperatures = solver.solve_transient(
                 self.config["timestep"],
@@ -62,13 +60,13 @@ class MetaHotspotSolver:
                 topo.volumes,
                 fields.cp,
             )
-            print("[INFO] Exporting results...")
-            self._export_vtu(topo, temperatures, "transient_result.vtu")
         end = time.perf_counter()
         print(
             f"[INFO] Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
-        print(f"[INFO] Simulation completed in {end - start:.2f} seconds\n\n")
+        print(f"[INFO] Simulation completed in {end - start:.2f} seconds")
+        print("[INFO] Exporting results...")
+        self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
         path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
