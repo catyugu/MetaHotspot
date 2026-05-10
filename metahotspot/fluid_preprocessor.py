@@ -1,8 +1,11 @@
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
+from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
 from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+
+_logger = get_logger(__name__)
 
 
 class FluidPreprocessor:
@@ -102,9 +105,6 @@ class FluidPreprocessor:
                 cols.append(i)
                 data.append(-diag_C[i])
 
-        try:
-            fields.pressure[fluid_ids] = splinalg.spsolve(
-                sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
-            )
-        except Exception as e:
-            print(f"[WARNING] Pressure solve failed: {e}")
+        fields.pressure[fluid_ids] = splinalg.spsolve(
+            sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
+        )

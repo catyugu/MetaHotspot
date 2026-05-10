@@ -1,7 +1,10 @@
+import logging
 import os
 import re
 import argparse
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 # ===================== 配置区 =====================
 # 1. 目录忽略正则（匹配文件夹名）
@@ -150,7 +153,7 @@ def process_repository(repo_path: str, output_file: str):
 
                     f.write("\n```\n\n")
 
-    print(f"✅ 处理完成！输出文件已保存至: {output_file}")
+    _logger.info(f"处理完成！输出文件已保存至: {output_file}")
 
 
 if __name__ == "__main__":
@@ -163,6 +166,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not os.path.isdir(args.input_folder):
-        print(f"❌ 错误: 文件夹 '{args.input_folder}' 不存在")
+        _logger.error(f"错误: 文件夹 '{args.input_folder}' 不存在")
     else:
         process_repository(args.input_folder, args.output_file)

@@ -4,12 +4,15 @@ import meshio
 import numpy as np
 import time
 
+from metahotspot.logging_config import get_logger
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import load_config, load_stackup
+
+_logger = get_logger(__name__)
 
 
 class MetaHotspotSolver:
@@ -26,18 +29,18 @@ class MetaHotspotSolver:
             self.mesh_path
         )
         mesh_finished = time.perf_counter()
-        print(
-            f"[INFO] Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+        _logger.info(
+            f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
         )
         FluidPreprocessor(self.config).solve_flow(topo, fields)
         pressure_solve_finished = time.perf_counter()
-        print(
-            f"[INFO] Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+        _logger.info(
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
         matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
         assembly_finished = time.perf_counter()
-        print(
-            f"[INFO] System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
+        _logger.info(
+            f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
@@ -61,11 +64,11 @@ class MetaHotspotSolver:
                 fields.cp,
             )
         end = time.perf_counter()
-        print(
-            f"[INFO] Thermal solving completed in {end - assembly_finished:.2f} seconds"
+        _logger.info(
+            f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
-        print(f"[INFO] Simulation completed in {end - start:.2f} seconds")
-        print("[INFO] Exporting results...")
+        _logger.info(f"Simulation completed in {end - start:.2f} seconds")
+        _logger.info("Exporting results...")
         self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:

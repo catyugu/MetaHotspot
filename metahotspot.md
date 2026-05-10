@@ -13,6 +13,7 @@
 ├── boundary_conditions.py
 ├── fluid_preprocessor.py
 ├── gmsh_mesher.py
+├── logging_config.py
 ├── mesh_preprocessor.py
 ├── metahotspot_solver.py
 ├── metahotspot_types.py
@@ -546,8 +547,11 @@ def apply_temperature_matrix_bc(
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
+from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
 from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+
+_logger = get_logger(__name__)
 
 
 class FluidPreprocessor:
@@ -647,12 +651,9 @@ class FluidPreprocessor:
                 cols.append(i)
                 data.append(-diag_C[i])
 
-        try:
-            fields.pressure[fluid_ids] = splinalg.spsolve(
-                sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
-            )
-        except Exception as e:
-            print(f"[WARNING] Pressure solve failed: {e}")
+        fields.pressure[fluid_ids] = splinalg.spsolve(
+            sp.csr_matrix((data, (rows, cols)), shape=(n_fluid, n_fluid)), b_p
+        )
 
 ```
 
@@ -793,6 +794,70 @@ class GmshMesher:
     def finalize(self, output_path: str) -> None:
         gmsh.write(output_path)
         gmsh.finalize()
+
+```
+
+### File: logging_config.py
+```py
+"""
+Logging configuration for MetaHotspot.
+
+Usage:
+    from metahotspot.logging_config import get_logger
+    logger = get_logger(__name__)
+
+Log format: [LEVEL] message
+Handlers: console only (stderr)
+"""
+
+import logging
+import sys
+
+# Module-level log level - can be overridden via set_level()
+_log_level = logging.INFO
+
+
+def set_level(level: int) -> None:
+    """Set global log level (e.g., logging.DEBUG, logging.INFO)."""
+    global _log_level
+    _log_level = level
+
+
+def get_logger(name: str, level: int | None = None) -> logging.Logger:
+    """
+    Get or create a logger with consistent formatting.
+
+    Args:
+        name: Logger name (typically __name__ from the calling module)
+        level: Optional override for this logger's level
+
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger(name)
+
+    if level is not None:
+        logger.setLevel(level)
+    else:
+        logger.setLevel(_log_level)
+
+    # Only add handler if logger doesn't already have one
+    # (prevents duplicate handlers on repeated calls)
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(level if level is not None else _log_level)
+
+        formatter = logging.Formatter(
+            fmt="[%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    # Prevent propagation to root logger (avoids duplicate output)
+    logger.propagate = False
+
+    return logger
 
 ```
 
@@ -1060,12 +1125,15 @@ import meshio
 import numpy as np
 import time
 
+from metahotspot.logging_config import get_logger
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import load_config, load_stackup
+
+_logger = get_logger(__name__)
 
 
 class MetaHotspotSolver:
@@ -1082,18 +1150,18 @@ class MetaHotspotSolver:
             self.mesh_path
         )
         mesh_finished = time.perf_counter()
-        print(
-            f"[INFO] Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+        _logger.info(
+            f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
         )
         FluidPreprocessor(self.config).solve_flow(topo, fields)
         pressure_solve_finished = time.perf_counter()
-        print(
-            f"[INFO] Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+        _logger.info(
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
         matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
         assembly_finished = time.perf_counter()
-        print(
-            f"[INFO] System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
+        _logger.info(
+            f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
         solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
         if self.config["simulation_type"] == "steady":
@@ -1117,11 +1185,11 @@ class MetaHotspotSolver:
                 fields.cp,
             )
         end = time.perf_counter()
-        print(
-            f"[INFO] Thermal solving completed in {end - assembly_finished:.2f} seconds"
+        _logger.info(
+            f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
-        print(f"[INFO] Simulation completed in {end - start:.2f} seconds")
-        print("[INFO] Exporting results...")
+        _logger.info(f"Simulation completed in {end - start:.2f} seconds")
+        _logger.info("Exporting results...")
         self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
@@ -1497,9 +1565,12 @@ import numpy as np
 import scipy.sparse as sp
 import time
 
+from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import SystemMatrices
 
 import scipy.sparse.linalg as splinalg
+
+_logger = get_logger(__name__)
 
 
 class ThermalSolver:
@@ -1514,8 +1585,8 @@ class ThermalSolver:
         t0 = time.perf_counter()
         temp = splinalg.spsolve(A, rhs)
 
-        print(
-            f"[RESULT] Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+        _logger.info(
+            f"Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
         )
         return temp
 
@@ -1543,11 +1614,11 @@ class ThermalSolver:
             temp = solve_func(rhs)
 
             if i % 10 == 0 or i == len(ptrace) - 1:
-                print(
-                    f"[STEP {i:4d}] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+                _logger.info(
+                    f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
 
-        print(f"[RESULT] Transient loop took {time.perf_counter() - t0:.3f}s.")
+        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp
 
 ```

@@ -88,7 +88,6 @@ def run_pipeline(example_dir: Path) -> None:
     shutil.copy2(steady_cfg, outputs_dir / steady_cfg.name)
     shutil.copy2(transient_cfg, outputs_dir / transient_cfg.name)
 
-    print(f"[PIPELINE] steady solve: {steady_cfg}")
     _run_solver(steady_cfg)
 
     steady_result = example_dir / "result.vtu"
@@ -102,8 +101,6 @@ def run_pipeline(example_dir: Path) -> None:
 
     # Always run transient with the latest steady result as initial field.
     _force_transient_init_file(transient_cfg)
-
-    print(f"[PIPELINE] transient solve: {transient_cfg}")
     _run_solver(transient_cfg)
 
     transient_result = example_dir / "transient_result.vtu"
@@ -111,7 +108,6 @@ def run_pipeline(example_dir: Path) -> None:
         raise FileNotFoundError(f"Transient result not found: {transient_result}")
 
     shutil.copy2(transient_result, outputs_dir / "transient_result.vtu")
-    print(f"[PIPELINE] outputs saved to {outputs_dir}")
 
 
 def main() -> None:

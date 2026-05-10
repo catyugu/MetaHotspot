@@ -2,9 +2,12 @@ import numpy as np
 import scipy.sparse as sp
 import time
 
+from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import SystemMatrices
 
 import scipy.sparse.linalg as splinalg
+
+_logger = get_logger(__name__)
 
 
 class ThermalSolver:
@@ -19,8 +22,8 @@ class ThermalSolver:
         t0 = time.perf_counter()
         temp = splinalg.spsolve(A, rhs)
 
-        print(
-            f"[RESULT] Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+        _logger.info(
+            f"Steady solve took {time.perf_counter() - t0:.3f}s. T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
         )
         return temp
 
@@ -48,9 +51,9 @@ class ThermalSolver:
             temp = solve_func(rhs)
 
             if i % 10 == 0 or i == len(ptrace) - 1:
-                print(
-                    f"[STEP {i:4d}] T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
+                _logger.info(
+                    f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
 
-        print(f"[RESULT] Transient loop took {time.perf_counter() - t0:.3f}s.")
+        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp
