@@ -23,6 +23,7 @@
 
 ### File: assembler.py
 ```py
+import re
 from typing import List, Tuple
 
 import numpy as np
@@ -56,6 +57,7 @@ class FVMAssembler:
 
     def assemble(self) -> SystemMatrices:
         self._precompute_flow_axes()
+        self._apply_temperature_boundaries()
         A_cond = self._build_conduction_matrix()
         A_bc, b_bc = self._build_boundary_terms()
         A_adv, b_adv = self._build_advection_matrix()
@@ -90,6 +92,23 @@ class FVMAssembler:
         fluid_mask = self.fields.is_fluid
         self.flow_axes[fluid_mask] = np.argmax(p_drops[fluid_mask], axis=1)
 
+    def _apply_temperature_boundaries(self) -> None:
+        """解析并应用解耦后的温度边界条件 (作用于流体的对流入口)"""
+        for bc in self.config.get("boundary_conditions", []):
+            if bc.get("type") != "temperature":
+                continue
+            params = bc["parameters"]
+            temp = float(params["temperature"])
+            face = bc["face"]
+            target = bc.get("target", "")
+
+            if face in self.topo.boundary_faces:
+                c_ids, _, _ = self.topo.boundary_faces[face]
+                for c_id in c_ids:
+                    layer_name = self.fields.layer_name_map[self.fields.layer_ids[c_id]]
+                    if not target or re.match(target, layer_name):
+                        self.fields.inlet_temperature[c_id] = temp
+
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
             self._c_a,
@@ -112,35 +131,65 @@ class FVMAssembler:
         rows, cols, data = [], [], []
 
         for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") != "convection":
+            bc_type = bc.get("type")
+            if bc_type not in ["convection", "temperature"]:
                 continue
+
+            target = bc.get("target", "")
+            face_key = bc["face"]
             params = bc["parameters"]
-            h, t_inf, target, face_key = (
-                float(params["h"]),
-                float(params["T_inf"]),
-                bc["target"],
-                bc["face"],
-            )
 
             if face_key in self.topo.boundary_faces:
                 c_ids, normals, areas = self.topo.boundary_faces[face_key]
-                for i, c_id in enumerate(c_ids):
-                    # 检查 target
-                    if (
-                        target
-                        and target
-                        != self.fields.layer_name_map[self.fields.layer_ids[c_id]]
-                    ):
-                        continue
-                    area = areas[i]
-                    g = area / (
-                        (0.5 * (self.topo.volumes[c_id] / area) / self.fields.k[c_id])
-                        + (1.0 / h)
-                    )
-                    rows.append(c_id)
-                    cols.append(c_id)
-                    data.append(-g)
-                    rhs[c_id] += g * t_inf
+
+                if bc_type == "convection":
+                    h, t_inf = float(params["h"]), float(params["T_inf"])
+                    for i, c_id in enumerate(c_ids):
+                        layer_name = self.fields.layer_name_map[
+                            self.fields.layer_ids[c_id]
+                        ]
+                        if target and not re.match(target, layer_name):
+                            continue
+                        area = areas[i]
+                        g = area / (
+                            (
+                                0.5
+                                * (self.topo.volumes[c_id] / area)
+                                / self.fields.k[c_id]
+                            )
+                            + (1.0 / h)
+                        )
+                        rows.append(c_id)
+                        cols.append(c_id)
+                        data.append(-g)
+                        rhs[c_id] += g * t_inf
+
+                elif bc_type == "temperature":
+                    # 纯 Dirichlet 温度边界（通过大系数罚函数实现）
+                    temp = float(params["temperature"])
+                    for i, c_id in enumerate(c_ids):
+                        if self.fields.is_fluid[c_id]:
+                            continue  # 流体的边界温度控制在 _apply_temperature_boundaries 中交给对流矩阵解决
+
+                        layer_name = self.fields.layer_name_map[
+                            self.fields.layer_ids[c_id]
+                        ]
+                        if target and not re.match(target, layer_name):
+                            continue
+                        area = areas[i]
+                        h_inf = 1e20  # 使用巨大对流换热系数锁定表面温度
+                        g = area / (
+                            (
+                                0.5
+                                * (self.topo.volumes[c_id] / area)
+                                / self.fields.k[c_id]
+                            )
+                            + (1.0 / h_inf)
+                        )
+                        rows.append(c_id)
+                        cols.append(c_id)
+                        data.append(-g)
+                        rhs[c_id] += g * temp
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
@@ -412,6 +461,7 @@ def build_adv_coo_kernel(
 
 ### File: fluid_preprocessor.py
 ```py
+import re
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
@@ -481,24 +531,20 @@ class FluidPreprocessor:
             if bc.get("type") != "pressure":
                 continue
             params = bc["parameters"]
-            pressure, temp, face, target = (
+            pressure, face, target = (
                 float(params["pressure"]),
-                float(params["temperature"]),
                 bc["face"],
-                bc["target"],
+                bc.get("target", ""),
             )
             if face in topo.boundary_faces:
                 c_ids, _, _ = topo.boundary_faces[face]
                 for c_id in c_ids:
+                    layer_name = fields.layer_name_map[fields.layer_ids[c_id]]
                     if fields.is_fluid[c_id] and (
-                        not target
-                        or fields.layer_name_map[fields.layer_ids[c_id]] == target
+                        not target or re.match(target, layer_name)
                     ):
-                        (
-                            is_pressure_boundary[c_id],
-                            fields.pressure[c_id],
-                            fields.inlet_temperature[c_id],
-                        ) = (True, pressure, temp)
+                        is_pressure_boundary[c_id] = True
+                        fields.pressure[c_id] = pressure
 
     def _solve_pressure(
         self,
@@ -1094,7 +1140,7 @@ from typing import List, Dict, Any, Tuple, Optional
 @dataclass(slots=True)
 class BoundaryConditionConfig:
     name: str
-    type: str  # "convection", "pressure"
+    type: str  # "convection", "pressure", "temperature"
     face: str
     target: str = ""
     parameters: Dict[str, Any] = field(default_factory=dict)
@@ -1780,26 +1826,29 @@ class SimulationModelBuilder25D:
                 )
             )
 
+            # 拆分压力和温度边界条件，且 target 预设为精确匹配正则表达式，预留批处理可能
             self.boundary_conditions.extend(
                 [
                     {
-                        "name": "mc_inlet",
+                        "name": "mc_inlet_pressure",
                         "type": "pressure",
                         "face": "-X",
-                        "target": name,
-                        "parameters": {
-                            "pressure": self.config["pumping_pressure"],
-                            "temperature": self.config["inlet_temperature"],
-                        },
+                        "target": f"^{name}$",
+                        "parameters": {"pressure": self.config["pumping_pressure"]},
                     },
                     {
-                        "name": "mc_outlet",
+                        "name": "mc_inlet_temperature",
+                        "type": "temperature",
+                        "face": "-X",
+                        "target": f"^{name}$",
+                        "parameters": {"temperature": self.config["inlet_temperature"]},
+                    },
+                    {
+                        "name": "mc_outlet_pressure",
                         "type": "pressure",
                         "face": "+X",
-                        "target": name,
-                        "parameters": {
-                            "pressure": 0.0,
-                        },
+                        "target": f"^{name}$",
+                        "parameters": {"pressure": 0.0},
                     },
                 ]
             )

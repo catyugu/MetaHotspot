@@ -275,26 +275,29 @@ class SimulationModelBuilder25D:
                 )
             )
 
+            # 拆分压力和温度边界条件，且 target 预设为精确匹配正则表达式，预留批处理可能
             self.boundary_conditions.extend(
                 [
                     {
-                        "name": "mc_inlet",
+                        "name": "mc_inlet_pressure",
                         "type": "pressure",
                         "face": "-X",
-                        "target": name,
-                        "parameters": {
-                            "pressure": self.config["pumping_pressure"],
-                            "temperature": self.config["inlet_temperature"],
-                        },
+                        "target": f"^{name}$",
+                        "parameters": {"pressure": self.config["pumping_pressure"]},
                     },
                     {
-                        "name": "mc_outlet",
+                        "name": "mc_inlet_temperature",
+                        "type": "temperature",
+                        "face": "-X",
+                        "target": f"^{name}$",
+                        "parameters": {"temperature": self.config["inlet_temperature"]},
+                    },
+                    {
+                        "name": "mc_outlet_pressure",
                         "type": "pressure",
                         "face": "+X",
-                        "target": name,
-                        "parameters": {
-                            "pressure": 0.0,
-                        },
+                        "target": f"^{name}$",
+                        "parameters": {"pressure": 0.0},
                     },
                 ]
             )

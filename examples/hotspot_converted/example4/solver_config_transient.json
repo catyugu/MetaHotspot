@@ -145,20 +145,28 @@
     ],
     "boundary_conditions": [
         {
-            "name": "mc_inlet",
+            "name": "mc_inlet_pressure",
             "type": "pressure",
             "face": "-X",
-            "target": "layer_2",
+            "target": "^layer_2$",
             "parameters": {
-                "pressure": 52000.0,
+                "pressure": 52000.0
+            }
+        },
+        {
+            "name": "mc_inlet_temperature",
+            "type": "temperature",
+            "face": "-X",
+            "target": "^layer_2$",
+            "parameters": {
                 "temperature": 298.15
             }
         },
         {
-            "name": "mc_outlet",
+            "name": "mc_outlet_pressure",
             "type": "pressure",
             "face": "+X",
-            "target": "layer_2",
+            "target": "^layer_2$",
             "parameters": {
                 "pressure": 0.0
             }

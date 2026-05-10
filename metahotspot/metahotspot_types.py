@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional
 @dataclass(slots=True)
 class BoundaryConditionConfig:
     name: str
-    type: str  # "convection", "pressure"
+    type: str  # "convection", "pressure", "temperature"
     face: str
     target: str = ""
     parameters: Dict[str, Any] = field(default_factory=dict)

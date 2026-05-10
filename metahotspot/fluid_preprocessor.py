@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
@@ -67,24 +68,20 @@ class FluidPreprocessor:
             if bc.get("type") != "pressure":
                 continue
             params = bc["parameters"]
-            pressure, temp, face, target = (
+            pressure, face, target = (
                 float(params["pressure"]),
-                float(params["temperature"]),
                 bc["face"],
-                bc["target"],
+                bc.get("target", ""),
             )
             if face in topo.boundary_faces:
                 c_ids, _, _ = topo.boundary_faces[face]
                 for c_id in c_ids:
+                    layer_name = fields.layer_name_map[fields.layer_ids[c_id]]
                     if fields.is_fluid[c_id] and (
-                        not target
-                        or fields.layer_name_map[fields.layer_ids[c_id]] == target
+                        not target or re.match(target, layer_name)
                     ):
-                        (
-                            is_pressure_boundary[c_id],
-                            fields.pressure[c_id],
-                            fields.inlet_temperature[c_id],
-                        ) = (True, pressure, temp)
+                        is_pressure_boundary[c_id] = True
+                        fields.pressure[c_id] = pressure
 
     def _solve_pressure(
         self,

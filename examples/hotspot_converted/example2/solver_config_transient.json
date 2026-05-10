@@ -151,5 +151,5 @@
             }
         }
     ],
-    "init_temperature_file_path": "(null)"
+    "init_temperature_file_path": "init.vtu"
 }
