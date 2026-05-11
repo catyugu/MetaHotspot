@@ -19,8 +19,7 @@ class MeshPreprocessor:
         self.default_solid = default_solid
         self.layer_regions = layer_regions
 
-    def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
-        mesh = meshio.read(mesh_path)
+    def process(self, mesh: meshio.Mesh) -> Tuple[MeshTopology, PhysicalFields]:
         topo = self._extract_geometry(mesh)
         fields = self._map_physical_properties(topo)
         return topo, fields
@@ -180,7 +179,6 @@ class MeshPreprocessor:
         layer_name_map = ["default_layer"]
         unit_name_map = [""]
 
-        # 直接读取强类型 default_solid 属性
         k[:] = self.default_solid.k
         cp[:] = self.default_solid.cp
         density[:] = self.default_solid.density

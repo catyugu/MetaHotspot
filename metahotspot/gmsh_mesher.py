@@ -1,7 +1,11 @@
 import math
 from collections import deque
 import gmsh
-from metahotspot.model25d import parse_computational_model
+import meshio
+import numpy as np
+from typing import List
+
+from metahotspot.metahotspot_types import LayerRegion, ActiveRegion
 
 
 class GmshMesher:
@@ -10,33 +14,35 @@ class GmshMesher:
     DEFAULT_REFINEMENT_DISTANCE = 0.002
 
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
-        gmsh.initialize()
-        gmsh.model.add(model_name)
+        self.model_name = model_name
         self._node_id = 1
         self._elem_id = 1
         self._node_map: dict = {}
         self._global_node_coords: dict = {}
 
-    def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
+    def generate_mesh(
+        self,
+        layer_regions: List[LayerRegion],
+        active_regions: List[ActiveRegion],
+        mesh_params: dict = None,
+    ) -> meshio.Mesh:
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 0)  # Mute stdout warnings optionally
+        gmsh.model.add(self.model_name)
+
         mesh_params = mesh_params or {}
-
-        # 换用统一解析器：直接获取组装后的强类型 LayerRegion 与 PowerSource
-        _, layer_regions, power_sources = parse_computational_model(config_path)
-
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
         refine_distance = mesh_params.get(
             "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
         )
 
-        # 完美映射：PowerSource 本身就准确代表了所有的有源区域（即原本的 active 过滤）
         heat_boxes = [
-            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in power_sources
+            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in active_regions
         ]
 
         for layer in layer_regions:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
-            # 通过加入到实体模型的 tag 来解绑原有字典中 index 概念依赖
             gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
 
             lz, dz = layer.lz, layer.dz
@@ -45,6 +51,14 @@ class GmshMesher:
                 layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
             )
             self._create_hex_elements(discrete_tag, lz, dz, leaves)
+
+        mesh = self._extract_meshio_mesh()
+
+        gmsh.finalize()
+        self._node_map.clear()
+        self._global_node_coords.clear()
+
+        return mesh
 
     def _subdivide_layer(
         self, layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
@@ -122,6 +136,21 @@ class GmshMesher:
                 3, discrete_tag, [5], [element_tags], [element_nodes]
             )
 
-    def finalize(self, output_path: str) -> None:
-        gmsh.write(output_path)
-        gmsh.finalize()
+    def _extract_meshio_mesh(self) -> meshio.Mesh:
+        node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
+        points = np.array(node_coords).reshape(-1, 3)
+        tag2idx = {tag: i for i, tag in enumerate(node_tags)}
+
+        hex_data = []
+        elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(dim=3)
+
+        for etype, etags, enodes in zip(elem_types, elem_tags, elem_node_tags):
+            if etype == 5:
+                # Ensure elements strictly match the order they were generated/tagged
+                sort_idx = np.argsort(etags)
+                sorted_enodes = np.array(enodes).reshape(-1, 8)[sort_idx]
+                arr = np.array([tag2idx[t] for t in sorted_enodes.flat]).reshape(-1, 8)
+                hex_data.append(arr)
+
+        cells = [("hexahedron", np.vstack(hex_data))] if hex_data else []
+        return meshio.Mesh(points=points, cells=cells)

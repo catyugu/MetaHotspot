@@ -35,7 +35,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     SystemMatrices,
     BoundaryCondition,
-    PowerSource,
+    ActiveRegion,
 )
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
@@ -58,12 +58,12 @@ class FVMAssembler:
         topo: MeshTopology,
         fields: PhysicalFields,
         boundary_conditions: List[BoundaryCondition],
-        power_sources: List[PowerSource],
+        active_regions: List[ActiveRegion],
     ):
         self.topo = topo
         self.fields = fields
         self.boundary_conditions = boundary_conditions
-        self.power_sources = power_sources
+        self.active_regions = active_regions
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -189,11 +189,11 @@ class FVMAssembler:
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
         n = self.topo.n_cells
-        if not self.power_sources:
+        if not self.active_regions:
             return sp.csr_matrix((n, 0)), []
 
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, ps in enumerate(self.power_sources):
+        for j, ps in enumerate(self.active_regions):
             vol_u = ps.dx * ps.dy * ps.dz
             if vol_u <= 0:
                 continue
@@ -213,8 +213,8 @@ class FVMAssembler:
             data.extend(intersect[valid] / vol_u)
 
         return sp.csr_matrix(
-            (data, (rows, cols)), shape=(n, len(self.power_sources))
-        ), [ps.name for ps in self.power_sources]
+            (data, (rows, cols)), shape=(n, len(self.active_regions))
+        ), [ps.name for ps in self.active_regions]
 
 ```
 
@@ -624,7 +624,11 @@ class FluidPreprocessor:
 import math
 from collections import deque
 import gmsh
-from metahotspot.model25d import parse_computational_model
+import meshio
+import numpy as np
+from typing import List
+
+from metahotspot.metahotspot_types import LayerRegion, ActiveRegion
 
 
 class GmshMesher:
@@ -633,33 +637,35 @@ class GmshMesher:
     DEFAULT_REFINEMENT_DISTANCE = 0.002
 
     def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
-        gmsh.initialize()
-        gmsh.model.add(model_name)
+        self.model_name = model_name
         self._node_id = 1
         self._elem_id = 1
         self._node_map: dict = {}
         self._global_node_coords: dict = {}
 
-    def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
+    def generate_mesh(
+        self,
+        layer_regions: List[LayerRegion],
+        active_regions: List[ActiveRegion],
+        mesh_params: dict = None,
+    ) -> meshio.Mesh:
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 0)  # Mute stdout warnings optionally
+        gmsh.model.add(self.model_name)
+
         mesh_params = mesh_params or {}
-
-        # 换用统一解析器：直接获取组装后的强类型 LayerRegion 与 PowerSource
-        _, layer_regions, power_sources = parse_computational_model(config_path)
-
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
         refine_distance = mesh_params.get(
             "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
         )
 
-        # 完美映射：PowerSource 本身就准确代表了所有的有源区域（即原本的 active 过滤）
         heat_boxes = [
-            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in power_sources
+            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in active_regions
         ]
 
         for layer in layer_regions:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
-            # 通过加入到实体模型的 tag 来解绑原有字典中 index 概念依赖
             gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
 
             lz, dz = layer.lz, layer.dz
@@ -668,6 +674,14 @@ class GmshMesher:
                 layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
             )
             self._create_hex_elements(discrete_tag, lz, dz, leaves)
+
+        mesh = self._extract_meshio_mesh()
+
+        gmsh.finalize()
+        self._node_map.clear()
+        self._global_node_coords.clear()
+
+        return mesh
 
     def _subdivide_layer(
         self, layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
@@ -745,9 +759,24 @@ class GmshMesher:
                 3, discrete_tag, [5], [element_tags], [element_nodes]
             )
 
-    def finalize(self, output_path: str) -> None:
-        gmsh.write(output_path)
-        gmsh.finalize()
+    def _extract_meshio_mesh(self) -> meshio.Mesh:
+        node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
+        points = np.array(node_coords).reshape(-1, 3)
+        tag2idx = {tag: i for i, tag in enumerate(node_tags)}
+
+        hex_data = []
+        elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(dim=3)
+
+        for etype, etags, enodes in zip(elem_types, elem_tags, elem_node_tags):
+            if etype == 5:
+                # Ensure elements strictly match the order they were generated/tagged
+                sort_idx = np.argsort(etags)
+                sorted_enodes = np.array(enodes).reshape(-1, 8)[sort_idx]
+                arr = np.array([tag2idx[t] for t in sorted_enodes.flat]).reshape(-1, 8)
+                hex_data.append(arr)
+
+        cells = [("hexahedron", np.vstack(hex_data))] if hex_data else []
+        return meshio.Mesh(points=points, cells=cells)
 
 ```
 
@@ -837,8 +866,7 @@ class MeshPreprocessor:
         self.default_solid = default_solid
         self.layer_regions = layer_regions
 
-    def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
-        mesh = meshio.read(mesh_path)
+    def process(self, mesh: meshio.Mesh) -> Tuple[MeshTopology, PhysicalFields]:
         topo = self._extract_geometry(mesh)
         fields = self._map_physical_properties(topo)
         return topo, fields
@@ -998,7 +1026,6 @@ class MeshPreprocessor:
         layer_name_map = ["default_layer"]
         unit_name_map = [""]
 
-        # 直接读取强类型 default_solid 属性
         k[:] = self.default_solid.k
         cp[:] = self.default_solid.cp
         density[:] = self.default_solid.density
@@ -1075,6 +1102,7 @@ from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
+from metahotspot.gmsh_mesher import GmshMesher
 
 _logger = get_logger(__name__)
 
@@ -1084,14 +1112,13 @@ class MetaHotspotSolver:
         self.config_path = config_path
         self.base_dir = os.path.dirname(config_path)
 
-        # 唯一的数据入口：强类型计算原语获取，彻底屏蔽 IO 和 Weakly-Typed Dict 细节
         (
             self.solver_config,
             self.layer_regions,
-            self.power_sources,
+            self.active_regions,
         ) = parse_computational_model(config_path)
 
-        self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
+        self.mesh: meshio.Mesh = None
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -1102,35 +1129,37 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-
-        # 传递完全解耦的强类型几何层
-        topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.layer_regions
-        ).process(self.mesh_path)
-        mesh_finished = time.perf_counter()
+        mesher = GmshMesher()
+        self.mesh = mesher.generate_mesh(self.layer_regions, self.active_regions)
+        mesh_gen_finished = time.perf_counter()
         _logger.info(
-            f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+            f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
         )
 
-        # 传递强类型的 boundary_conditions
+        topo, fields = MeshPreprocessor(
+            self.solver_config.default_solid, self.layer_regions
+        ).process(self.mesh)
+        mesh_pre_finished = time.perf_counter()
+        _logger.info(
+            f"Mesh preprocessing completed in {mesh_pre_finished - mesh_gen_finished:.2f} seconds"
+        )
+
         FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
             topo, fields
         )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
-            f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_pre_finished:.2f} seconds"
         )
 
-        # 传递完全解耦的强类型热源区域
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.power_sources
+            topo, fields, self.solver_config.boundary_conditions, self.active_regions
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
             f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
 
-        # ThermalSolver 已完全剥离冗余信息，仅依赖装配完成的 matrices
         solver = ThermalSolver(matrices)
         ptrace = self._load_ptrace()
 
@@ -1145,6 +1174,7 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
+            out_filename = "result.vtu"
         else:
             temperatures = solver.solve_transient(
                 self.solver_config.timestep,
@@ -1153,14 +1183,15 @@ class MetaHotspotSolver:
                 topo.volumes,
                 fields.cp,
             )
+            out_filename = "transient_result.vtu"
 
         end = time.perf_counter()
         _logger.info(
             f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
         _logger.info(f"Simulation completed in {end - start:.2f} seconds")
-        _logger.info("Exporting results...")
-        self._export_vtu(topo, temperatures, "transient_result.vtu")
+        _logger.info(f"Exporting results to {out_filename}...")
+        self._export_vtu(topo, temperatures, out_filename, self.mesh)
 
     def _load_ptrace(self) -> list[dict]:
         if not self.solver_config.ptrace_file_path:
@@ -1191,9 +1222,14 @@ class MetaHotspotSolver:
                     offset += count
         return temp
 
-    def _export_vtu(self, topo: MeshTopology, temperatures: np.ndarray, filename: str):
+    def _export_vtu(
+        self,
+        topo: MeshTopology,
+        temperatures: np.ndarray,
+        filename: str,
+        orig_mesh: meshio.Mesh,
+    ):
         mapped = np.empty(topo.n_cells)
-        orig_mesh = meshio.read(self.mesh_path)
         hex_blocks, temp_chunks = [], []
         offset = 0
         mapped[topo.sorted_indices] = temperatures
@@ -1219,8 +1255,6 @@ from typing import List, Dict, Tuple
 
 @dataclass(slots=True)
 class BoundaryCondition:
-    """强类型边界条件定义"""
-
     name: str
     type: str
     face: str
@@ -1230,8 +1264,6 @@ class BoundaryCondition:
 
 @dataclass(slots=True)
 class MaterialProps:
-    """强类型材料属性定义"""
-
     k: float
     cp: float
     density: float
@@ -1241,8 +1273,6 @@ class MaterialProps:
 
 @dataclass(slots=True)
 class UnitRegion:
-    """数值计算单元几何区域"""
-
     name: str
     lx: float
     ly: float
@@ -1253,10 +1283,8 @@ class UnitRegion:
 
 @dataclass(slots=True)
 class LayerRegion:
-    """数值计算层几何区域"""
-
     name: str
-    tag: int  # 用于 Gmsh 标记 Physical Group
+    tag: int
     lz: float
     dz: float
     props: MaterialProps
@@ -1264,9 +1292,7 @@ class LayerRegion:
 
 
 @dataclass(slots=True)
-class PowerSource:
-    """强类型热源区域"""
-
+class ActiveRegion:
     name: str
     lx: float
     ly: float
@@ -1278,12 +1304,9 @@ class PowerSource:
 
 @dataclass(slots=True)
 class SolverConfig:
-    """强类型求解器配置 (解耦IO与计算)"""
-
     simulation_type: str
     timestep: float
     init_temperature: float
-    mesh_file_path: str
     ptrace_file_path: str
     init_temperature_file_path: str
     default_solid: MaterialProps
@@ -1292,8 +1315,6 @@ class SolverConfig:
 
 @dataclass(slots=True)
 class MeshTopology:
-    """纯几何与拓扑数据 (SoA 布局)"""
-
     n_cells: int
     centers: np.ndarray
     dims: np.ndarray
@@ -1307,8 +1328,6 @@ class MeshTopology:
 
 @dataclass(slots=True)
 class PhysicalFields:
-    """物理属性与状态场 (SoA 布局)"""
-
     k: np.ndarray
     cp: np.ndarray
     density: np.ndarray
@@ -1326,8 +1345,6 @@ class PhysicalFields:
 
 @dataclass(slots=True)
 class SystemMatrices:
-    """装配后的代数方程 A * T = b"""
-
     A_total: sp.csr_matrix
     b_total: np.ndarray
     power_matrix: sp.csr_matrix
@@ -1347,12 +1364,9 @@ from metahotspot.metahotspot_types import (
     MaterialProps,
     LayerRegion,
     UnitRegion,
-    PowerSource,
+    ActiveRegion,
 )
 
-# ==========================================
-# 单一真相：全局默认配置与标准材料库
-# ==========================================
 DEFAULT_CONFIG = {
     "simulation_type": "steady",
     "ambient": 318.15,
@@ -1370,7 +1384,6 @@ DEFAULT_CONFIG = {
     "sampling_intvl": 0.01,
     "time": 0.01,
     "timestep": 0.01,
-    "mesh_file_path": "mesh.msh",
     "ptrace_file_path": "",
     "init_temperature_file_path": "",
     "pumping_pressure": 52000.0,
@@ -1467,17 +1480,13 @@ def _resolve_prop(
 
 def parse_computational_model(
     config_path: str,
-) -> Tuple[SolverConfig, List[LayerRegion], List[PowerSource]]:
-    """唯一入口：将弱类型的 JSON 转换解耦，直接输出强类型的代数/网格计算原语。"""
+) -> Tuple[SolverConfig, List[LayerRegion], List[ActiveRegion]]:
     base_dir = os.path.dirname(config_path)
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
 
     config = merge_with_defaults(raw_config)
 
-    # ==========================
-    # 1. 组装强类型 SolverConfig
-    # ==========================
     def_mat = config.get("materials", {}).get(
         "default_solid", STANDARD_MATERIALS["default_solid"]
     )
@@ -1508,18 +1517,14 @@ def parse_computational_model(
         simulation_type=str(config.get("simulation_type", "steady")),
         timestep=float(config.get("timestep", 0.01)),
         init_temperature=float(config.get("init_temperature", 318.15)),
-        mesh_file_path=str(config.get("mesh_file_path", "mesh.msh")),
         ptrace_file_path=str(config.get("ptrace_file_path", "")),
         init_temperature_file_path=str(config.get("init_temperature_file_path", "")),
         default_solid=default_solid,
         boundary_conditions=boundary_conditions,
     )
 
-    # ==========================
-    # 2. 组装强类型 Geometry/Power
-    # ==========================
     layer_regions: List[LayerRegion] = []
-    power_sources: List[PowerSource] = []
+    active_regions: List[ActiveRegion] = []
 
     materials = config.get("materials", {})
     stackup_data = config.get("stackup", [])
@@ -1573,7 +1578,6 @@ def parse_computational_model(
                             )
                         )
 
-        # 默认 Bulk 逻辑兜底
         if not units:
             l_props = MaterialProps(
                 k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
@@ -1613,8 +1617,8 @@ def parse_computational_model(
 
         if active:
             for u in units:
-                power_sources.append(
-                    PowerSource(
+                active_regions.append(
+                    ActiveRegion(
                         name=u.name,
                         lx=u.lx,
                         ly=u.ly,
@@ -1627,7 +1631,7 @@ def parse_computational_model(
 
         z_cursor += thickness
 
-    return solver_config, layer_regions, power_sources
+    return solver_config, layer_regions, active_regions
 
 ```
 
@@ -2113,7 +2117,6 @@ def convert_hotspot_to_metahotspot(
         "proc_freq": cfg["base_proc_freq"],
         "ambient": cfg["ambient"],
         "init_temperature": cfg["init_temperature"],
-        "mesh_file_path": cfg["mesh_file_path"],
         "ptrace_file_path": ptrace_name,
         "materials": model["materials"],
         "stackup": model["stackup"],

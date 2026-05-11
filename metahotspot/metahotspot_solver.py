@@ -11,6 +11,7 @@ from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
+from metahotspot.gmsh_mesher import GmshMesher
 
 _logger = get_logger(__name__)
 
@@ -20,14 +21,13 @@ class MetaHotspotSolver:
         self.config_path = config_path
         self.base_dir = os.path.dirname(config_path)
 
-        # 唯一的数据入口：强类型计算原语获取，彻底屏蔽 IO 和 Weakly-Typed Dict 细节
         (
             self.solver_config,
             self.layer_regions,
-            self.power_sources,
+            self.active_regions,
         ) = parse_computational_model(config_path)
 
-        self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
+        self.mesh: meshio.Mesh = None
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -38,35 +38,37 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-
-        # 传递完全解耦的强类型几何层
-        topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.layer_regions
-        ).process(self.mesh_path)
-        mesh_finished = time.perf_counter()
+        mesher = GmshMesher()
+        self.mesh = mesher.generate_mesh(self.layer_regions, self.active_regions)
+        mesh_gen_finished = time.perf_counter()
         _logger.info(
-            f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
+            f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
         )
 
-        # 传递强类型的 boundary_conditions
+        topo, fields = MeshPreprocessor(
+            self.solver_config.default_solid, self.layer_regions
+        ).process(self.mesh)
+        mesh_pre_finished = time.perf_counter()
+        _logger.info(
+            f"Mesh preprocessing completed in {mesh_pre_finished - mesh_gen_finished:.2f} seconds"
+        )
+
         FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
             topo, fields
         )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
-            f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_pre_finished:.2f} seconds"
         )
 
-        # 传递完全解耦的强类型热源区域
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.power_sources
+            topo, fields, self.solver_config.boundary_conditions, self.active_regions
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
             f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
 
-        # ThermalSolver 已完全剥离冗余信息，仅依赖装配完成的 matrices
         solver = ThermalSolver(matrices)
         ptrace = self._load_ptrace()
 
@@ -81,6 +83,7 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
+            out_filename = "result.vtu"
         else:
             temperatures = solver.solve_transient(
                 self.solver_config.timestep,
@@ -89,14 +92,15 @@ class MetaHotspotSolver:
                 topo.volumes,
                 fields.cp,
             )
+            out_filename = "transient_result.vtu"
 
         end = time.perf_counter()
         _logger.info(
             f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
         )
         _logger.info(f"Simulation completed in {end - start:.2f} seconds")
-        _logger.info("Exporting results...")
-        self._export_vtu(topo, temperatures, "transient_result.vtu")
+        _logger.info(f"Exporting results to {out_filename}...")
+        self._export_vtu(topo, temperatures, out_filename, self.mesh)
 
     def _load_ptrace(self) -> list[dict]:
         if not self.solver_config.ptrace_file_path:
@@ -127,9 +131,14 @@ class MetaHotspotSolver:
                     offset += count
         return temp
 
-    def _export_vtu(self, topo: MeshTopology, temperatures: np.ndarray, filename: str):
+    def _export_vtu(
+        self,
+        topo: MeshTopology,
+        temperatures: np.ndarray,
+        filename: str,
+        orig_mesh: meshio.Mesh,
+    ):
         mapped = np.empty(topo.n_cells)
-        orig_mesh = meshio.read(self.mesh_path)
         hex_blocks, temp_chunks = [], []
         offset = 0
         mapped[topo.sorted_indices] = temperatures

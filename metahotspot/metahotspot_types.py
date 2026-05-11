@@ -6,8 +6,6 @@ from typing import List, Dict, Tuple
 
 @dataclass(slots=True)
 class BoundaryCondition:
-    """强类型边界条件定义"""
-
     name: str
     type: str
     face: str
@@ -17,8 +15,6 @@ class BoundaryCondition:
 
 @dataclass(slots=True)
 class MaterialProps:
-    """强类型材料属性定义"""
-
     k: float
     cp: float
     density: float
@@ -28,8 +24,6 @@ class MaterialProps:
 
 @dataclass(slots=True)
 class UnitRegion:
-    """数值计算单元几何区域"""
-
     name: str
     lx: float
     ly: float
@@ -40,10 +34,8 @@ class UnitRegion:
 
 @dataclass(slots=True)
 class LayerRegion:
-    """数值计算层几何区域"""
-
     name: str
-    tag: int  # 用于 Gmsh 标记 Physical Group
+    tag: int
     lz: float
     dz: float
     props: MaterialProps
@@ -51,9 +43,7 @@ class LayerRegion:
 
 
 @dataclass(slots=True)
-class PowerSource:
-    """强类型热源区域"""
-
+class ActiveRegion:
     name: str
     lx: float
     ly: float
@@ -65,12 +55,9 @@ class PowerSource:
 
 @dataclass(slots=True)
 class SolverConfig:
-    """强类型求解器配置 (解耦IO与计算)"""
-
     simulation_type: str
     timestep: float
     init_temperature: float
-    mesh_file_path: str
     ptrace_file_path: str
     init_temperature_file_path: str
     default_solid: MaterialProps
@@ -79,8 +66,6 @@ class SolverConfig:
 
 @dataclass(slots=True)
 class MeshTopology:
-    """纯几何与拓扑数据 (SoA 布局)"""
-
     n_cells: int
     centers: np.ndarray
     dims: np.ndarray
@@ -94,8 +79,6 @@ class MeshTopology:
 
 @dataclass(slots=True)
 class PhysicalFields:
-    """物理属性与状态场 (SoA 布局)"""
-
     k: np.ndarray
     cp: np.ndarray
     density: np.ndarray
@@ -113,8 +96,6 @@ class PhysicalFields:
 
 @dataclass(slots=True)
 class SystemMatrices:
-    """装配后的代数方程 A * T = b"""
-
     A_total: sp.csr_matrix
     b_total: np.ndarray
     power_matrix: sp.csr_matrix

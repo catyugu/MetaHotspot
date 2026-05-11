@@ -6,7 +6,6 @@
     "proc_freq": 3000000000.0,
     "ambient": 318.15,
     "init_temperature": 318.15,
-    "mesh_file_path": "mesh.msh",
     "ptrace_file_path": "gcc.ptrace",
     "materials": {
         "silicon": {

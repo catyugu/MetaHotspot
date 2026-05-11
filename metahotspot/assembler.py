@@ -7,7 +7,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     SystemMatrices,
     BoundaryCondition,
-    PowerSource,
+    ActiveRegion,
 )
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
@@ -30,12 +30,12 @@ class FVMAssembler:
         topo: MeshTopology,
         fields: PhysicalFields,
         boundary_conditions: List[BoundaryCondition],
-        power_sources: List[PowerSource],
+        active_regions: List[ActiveRegion],
     ):
         self.topo = topo
         self.fields = fields
         self.boundary_conditions = boundary_conditions
-        self.power_sources = power_sources
+        self.active_regions = active_regions
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -161,11 +161,11 @@ class FVMAssembler:
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
         n = self.topo.n_cells
-        if not self.power_sources:
+        if not self.active_regions:
             return sp.csr_matrix((n, 0)), []
 
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, ps in enumerate(self.power_sources):
+        for j, ps in enumerate(self.active_regions):
             vol_u = ps.dx * ps.dy * ps.dz
             if vol_u <= 0:
                 continue
@@ -185,5 +185,5 @@ class FVMAssembler:
             data.extend(intersect[valid] / vol_u)
 
         return sp.csr_matrix(
-            (data, (rows, cols)), shape=(n, len(self.power_sources))
-        ), [ps.name for ps in self.power_sources]
+            (data, (rows, cols)), shape=(n, len(self.active_regions))
+        ), [ps.name for ps in self.active_regions]

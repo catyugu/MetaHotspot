@@ -388,7 +388,6 @@ def convert_hotspot_to_metahotspot(
         "proc_freq": cfg["base_proc_freq"],
         "ambient": cfg["ambient"],
         "init_temperature": cfg["init_temperature"],
-        "mesh_file_path": cfg["mesh_file_path"],
         "ptrace_file_path": ptrace_name,
         "materials": model["materials"],
         "stackup": model["stackup"],

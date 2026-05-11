@@ -8,12 +8,9 @@ from metahotspot.metahotspot_types import (
     MaterialProps,
     LayerRegion,
     UnitRegion,
-    PowerSource,
+    ActiveRegion,
 )
 
-# ==========================================
-# 单一真相：全局默认配置与标准材料库
-# ==========================================
 DEFAULT_CONFIG = {
     "simulation_type": "steady",
     "ambient": 318.15,
@@ -31,7 +28,6 @@ DEFAULT_CONFIG = {
     "sampling_intvl": 0.01,
     "time": 0.01,
     "timestep": 0.01,
-    "mesh_file_path": "mesh.msh",
     "ptrace_file_path": "",
     "init_temperature_file_path": "",
     "pumping_pressure": 52000.0,
@@ -128,17 +124,13 @@ def _resolve_prop(
 
 def parse_computational_model(
     config_path: str,
-) -> Tuple[SolverConfig, List[LayerRegion], List[PowerSource]]:
-    """唯一入口：将弱类型的 JSON 转换解耦，直接输出强类型的代数/网格计算原语。"""
+) -> Tuple[SolverConfig, List[LayerRegion], List[ActiveRegion]]:
     base_dir = os.path.dirname(config_path)
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
 
     config = merge_with_defaults(raw_config)
 
-    # ==========================
-    # 1. 组装强类型 SolverConfig
-    # ==========================
     def_mat = config.get("materials", {}).get(
         "default_solid", STANDARD_MATERIALS["default_solid"]
     )
@@ -169,18 +161,14 @@ def parse_computational_model(
         simulation_type=str(config.get("simulation_type", "steady")),
         timestep=float(config.get("timestep", 0.01)),
         init_temperature=float(config.get("init_temperature", 318.15)),
-        mesh_file_path=str(config.get("mesh_file_path", "mesh.msh")),
         ptrace_file_path=str(config.get("ptrace_file_path", "")),
         init_temperature_file_path=str(config.get("init_temperature_file_path", "")),
         default_solid=default_solid,
         boundary_conditions=boundary_conditions,
     )
 
-    # ==========================
-    # 2. 组装强类型 Geometry/Power
-    # ==========================
     layer_regions: List[LayerRegion] = []
-    power_sources: List[PowerSource] = []
+    active_regions: List[ActiveRegion] = []
 
     materials = config.get("materials", {})
     stackup_data = config.get("stackup", [])
@@ -234,7 +222,6 @@ def parse_computational_model(
                             )
                         )
 
-        # 默认 Bulk 逻辑兜底
         if not units:
             l_props = MaterialProps(
                 k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
@@ -274,8 +261,8 @@ def parse_computational_model(
 
         if active:
             for u in units:
-                power_sources.append(
-                    PowerSource(
+                active_regions.append(
+                    ActiveRegion(
                         name=u.name,
                         lx=u.lx,
                         ly=u.ly,
@@ -288,4 +275,4 @@ def parse_computational_model(
 
         z_cursor += thickness
 
-    return solver_config, layer_regions, power_sources
+    return solver_config, layer_regions, active_regions
