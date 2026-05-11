@@ -12,7 +12,6 @@ _logger = get_logger(__name__)
 
 class ThermalSolver:
     def __init__(self, matrices: SystemMatrices):
-        # 移除弱类型字典 config 的传入，强依赖于装配阶段的 SystemMatrices
         self.mat = matrices
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:

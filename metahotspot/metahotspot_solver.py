@@ -8,7 +8,13 @@ from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
-from metahotspot.metahotspot_types import MeshTopology
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    LayerRegion,
+    UnitRegion,
+    PowerSource,
+    MaterialProps,
+)
 from metahotspot.model25d import load_config, load_stackup, build_solver_config
 from metahotspot.numba_warmup import warmup_numba_kernels
 
@@ -22,11 +28,65 @@ class MetaHotspotSolver:
 
         # IO 读取弱类型配置
         raw_config = load_config(config_path)
-        self.stackup = load_stackup(raw_config, self.base_dir)
+        stackup = load_stackup(raw_config, self.base_dir)
 
         # 生成强类型对象，内部解耦抛弃弱类型 raw_config
         self.solver_config = build_solver_config(raw_config)
         self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
+
+        # 将弱类型IO热学栈翻译为强类型几何运算原语
+        self.layer_regions = []
+        self.power_sources = []
+
+        z_cursor = 0.0
+        for layer in stackup:
+            units = []
+            for u in layer.units:
+                units.append(
+                    UnitRegion(
+                        name=u.name,
+                        lx=u.lx,
+                        ly=u.ly,
+                        dx=u.dx,
+                        dy=u.dy,
+                        props=MaterialProps(
+                            k=u.k,
+                            cp=u.cp,
+                            density=u.density,
+                            is_fluid=u.is_fluid,
+                            dynamic_viscosity=u.dynamic_viscosity,
+                        ),
+                    )
+                )
+                if layer.active:
+                    self.power_sources.append(
+                        PowerSource(
+                            name=u.name,
+                            lx=u.lx,
+                            ly=u.ly,
+                            lz=z_cursor,
+                            dx=u.dx,
+                            dy=u.dy,
+                            dz=layer.thickness,
+                        )
+                    )
+
+            self.layer_regions.append(
+                LayerRegion(
+                    name=layer.name,
+                    lz=z_cursor,
+                    dz=layer.thickness,
+                    props=MaterialProps(
+                        k=layer.k,
+                        cp=layer.cp,
+                        density=layer.density,
+                        is_fluid=layer.is_fluid,
+                        dynamic_viscosity=layer.dynamic_viscosity,
+                    ),
+                    units=units,
+                )
+            )
+            z_cursor += layer.thickness
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -37,9 +97,9 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-        # 传递强类型的 default_solid 和 stackup
+        # 传递完全解耦的强类型几何层
         topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.stackup
+            self.solver_config.default_solid, self.layer_regions
         ).process(self.mesh_path)
         mesh_finished = time.perf_counter()
         _logger.info(
@@ -55,9 +115,9 @@ class MetaHotspotSolver:
             f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
 
-        # 传递强类型的 boundary_conditions 和 stackup
+        # 传递完全解耦的强类型热源区域
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.stackup
+            topo, fields, self.solver_config.boundary_conditions, self.power_sources
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(

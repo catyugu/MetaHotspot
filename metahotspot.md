@@ -35,6 +35,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     SystemMatrices,
     BoundaryCondition,
+    PowerSource,
 )
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
@@ -57,12 +58,12 @@ class FVMAssembler:
         topo: MeshTopology,
         fields: PhysicalFields,
         boundary_conditions: List[BoundaryCondition],
-        stackup: list,
+        power_sources: List[PowerSource],
     ):
         self.topo = topo
         self.fields = fields
         self.boundary_conditions = boundary_conditions
-        self.stackup = stackup
+        self.power_sources = power_sources
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -187,33 +188,19 @@ class FVMAssembler:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
-        active_units, z_cursor = [], 0.0
-        for l in self.stackup:
-            if l.active:
-                for u in l.units:
-                    active_units.append(
-                        {
-                            "name": u.name,
-                            "lx": u.lx,
-                            "ly": u.ly,
-                            "lz": z_cursor,
-                            "dx": u.dx,
-                            "dy": u.dy,
-                            "dz": l.thickness,
-                        }
-                    )
-            z_cursor += l.thickness
         n = self.topo.n_cells
-        if not active_units:
+        if not self.power_sources:
             return sp.csr_matrix((n, 0)), []
+
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, u in enumerate(active_units):
-            vol_u = u["dx"] * u["dy"] * u["dz"]
+        for j, ps in enumerate(self.power_sources):
+            vol_u = ps.dx * ps.dy * ps.dz
             if vol_u <= 0:
                 continue
-            u_min, u_max = np.array([u["lx"], u["ly"], u["lz"]]), np.array(
-                [u["lx"], u["ly"], u["lz"]]
-            ) + np.array([u["dx"], u["dy"], u["dz"]])
+
+            u_min = np.array([ps.lx, ps.ly, ps.lz])
+            u_max = u_min + np.array([ps.dx, ps.dy, ps.dz])
+
             intersect = np.prod(
                 np.maximum(
                     0, np.minimum(boxes[:, 3:], u_max) - np.maximum(boxes[:, :3], u_min)
@@ -224,9 +211,10 @@ class FVMAssembler:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
-        return sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))), [
-            u["name"] for u in active_units
-        ]
+
+        return sp.csr_matrix(
+            (data, (rows, cols)), shape=(n, len(self.power_sources))
+        ), [ps.name for ps in self.power_sources]
 
 ```
 
@@ -529,8 +517,6 @@ from metahotspot.metahotspot_types import (
 )
 from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
-_logger = get_logger(__name__)
-
 
 class FluidPreprocessor:
     def __init__(self, boundary_conditions: List[BoundaryCondition]):
@@ -818,7 +804,6 @@ def get_logger(name: str, level: int | None = None) -> logging.Logger:
         logger.setLevel(_log_level)
 
     # Only add handler if logger doesn't already have one
-    # (prevents duplicate handlers on repeated calls)
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(level if level is not None else _log_level)
@@ -839,19 +824,26 @@ def get_logger(name: str, level: int | None = None) -> logging.Logger:
 
 ### File: mesh_preprocessor.py
 ```py
-from typing import Any, List, Tuple
+from typing import List, Tuple
 import meshio
 import numpy as np
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, MaterialProps
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    MaterialProps,
+    LayerRegion,
+)
 
 
 class MeshPreprocessor:
     GEOMETRY_TOLERANCE = 1e-12
 
-    def __init__(self, default_solid: MaterialProps, stackup: List[Any]) -> None:
+    def __init__(
+        self, default_solid: MaterialProps, layer_regions: List[LayerRegion]
+    ) -> None:
         self.default_solid = default_solid
-        self.stackup = stackup
+        self.layer_regions = layer_regions
 
     def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
         mesh = meshio.read(mesh_path)
@@ -1021,10 +1013,8 @@ class MeshPreprocessor:
         is_fluid[:] = self.default_solid.is_fluid
         dynamic_viscosity[:] = self.default_solid.dynamic_viscosity
 
-        z_cursor = 0.0
-        for layer in self.stackup:
-            z_min, z_max = z_cursor, z_cursor + layer.thickness
-            z_cursor = z_max
+        for layer in self.layer_regions:
+            z_min, z_max = layer.lz, layer.lz + layer.dz
             l_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
 
             if not np.any(l_mask):
@@ -1034,11 +1024,11 @@ class MeshPreprocessor:
                 layer_name_map.append(layer.name)
             l_id = layer_name_map.index(layer.name)
 
-            k[l_mask] = layer.k
-            cp[l_mask] = layer.cp
-            density[l_mask] = layer.density
-            is_fluid[l_mask] = layer.is_fluid
-            dynamic_viscosity[l_mask] = layer.dynamic_viscosity
+            k[l_mask] = layer.props.k
+            cp[l_mask] = layer.props.cp
+            density[l_mask] = layer.props.density
+            is_fluid[l_mask] = layer.props.is_fluid
+            dynamic_viscosity[l_mask] = layer.props.dynamic_viscosity
             layer_ids[l_mask] = l_id
 
             for unit in layer.units:
@@ -1054,11 +1044,11 @@ class MeshPreprocessor:
                         unit_name_map.append(unit.name)
                     u_id = unit_name_map.index(unit.name)
 
-                    k[u_mask] = unit.k
-                    cp[u_mask] = unit.cp
-                    density[u_mask] = unit.density
-                    is_fluid[u_mask] = unit.is_fluid
-                    dynamic_viscosity[u_mask] = unit.dynamic_viscosity
+                    k[u_mask] = unit.props.k
+                    cp[u_mask] = unit.props.cp
+                    density[u_mask] = unit.props.density
+                    is_fluid[u_mask] = unit.props.is_fluid
+                    dynamic_viscosity[u_mask] = unit.props.dynamic_viscosity
                     unit_ids[u_mask] = u_id
 
         return PhysicalFields(
@@ -1090,7 +1080,13 @@ from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
-from metahotspot.metahotspot_types import MeshTopology
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    LayerRegion,
+    UnitRegion,
+    PowerSource,
+    MaterialProps,
+)
 from metahotspot.model25d import load_config, load_stackup, build_solver_config
 from metahotspot.numba_warmup import warmup_numba_kernels
 
@@ -1104,11 +1100,65 @@ class MetaHotspotSolver:
 
         # IO 读取弱类型配置
         raw_config = load_config(config_path)
-        self.stackup = load_stackup(raw_config, self.base_dir)
+        stackup = load_stackup(raw_config, self.base_dir)
 
         # 生成强类型对象，内部解耦抛弃弱类型 raw_config
         self.solver_config = build_solver_config(raw_config)
         self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
+
+        # 将弱类型IO热学栈翻译为强类型几何运算原语
+        self.layer_regions = []
+        self.power_sources = []
+
+        z_cursor = 0.0
+        for layer in stackup:
+            units = []
+            for u in layer.units:
+                units.append(
+                    UnitRegion(
+                        name=u.name,
+                        lx=u.lx,
+                        ly=u.ly,
+                        dx=u.dx,
+                        dy=u.dy,
+                        props=MaterialProps(
+                            k=u.k,
+                            cp=u.cp,
+                            density=u.density,
+                            is_fluid=u.is_fluid,
+                            dynamic_viscosity=u.dynamic_viscosity,
+                        ),
+                    )
+                )
+                if layer.active:
+                    self.power_sources.append(
+                        PowerSource(
+                            name=u.name,
+                            lx=u.lx,
+                            ly=u.ly,
+                            lz=z_cursor,
+                            dx=u.dx,
+                            dy=u.dy,
+                            dz=layer.thickness,
+                        )
+                    )
+
+            self.layer_regions.append(
+                LayerRegion(
+                    name=layer.name,
+                    lz=z_cursor,
+                    dz=layer.thickness,
+                    props=MaterialProps(
+                        k=layer.k,
+                        cp=layer.cp,
+                        density=layer.density,
+                        is_fluid=layer.is_fluid,
+                        dynamic_viscosity=layer.dynamic_viscosity,
+                    ),
+                    units=units,
+                )
+            )
+            z_cursor += layer.thickness
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -1119,9 +1169,9 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-        # 传递强类型的 default_solid 和 stackup
+        # 传递完全解耦的强类型几何层
         topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.stackup
+            self.solver_config.default_solid, self.layer_regions
         ).process(self.mesh_path)
         mesh_finished = time.perf_counter()
         _logger.info(
@@ -1137,9 +1187,9 @@ class MetaHotspotSolver:
             f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
 
-        # 传递强类型的 boundary_conditions 和 stackup
+        # 传递完全解耦的强类型热源区域
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.stackup
+            topo, fields, self.solver_config.boundary_conditions, self.power_sources
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
@@ -1254,6 +1304,42 @@ class MaterialProps:
     density: float
     is_fluid: bool
     dynamic_viscosity: float
+
+
+@dataclass(slots=True)
+class UnitRegion:
+    """数值计算单元几何区域"""
+
+    name: str
+    lx: float
+    ly: float
+    dx: float
+    dy: float
+    props: MaterialProps
+
+
+@dataclass(slots=True)
+class LayerRegion:
+    """数值计算层几何区域"""
+
+    name: str
+    lz: float
+    dz: float
+    props: MaterialProps
+    units: List[UnitRegion]
+
+
+@dataclass(slots=True)
+class PowerSource:
+    """强类型热源区域"""
+
+    name: str
+    lx: float
+    ly: float
+    lz: float
+    dx: float
+    dy: float
+    dz: float
 
 
 @dataclass(slots=True)
@@ -1667,7 +1753,6 @@ _logger = get_logger(__name__)
 
 class ThermalSolver:
     def __init__(self, matrices: SystemMatrices):
-        # 移除弱类型字典 config 的传入，强依赖于装配阶段的 SystemMatrices
         self.mat = matrices
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:

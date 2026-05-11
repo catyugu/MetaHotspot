@@ -27,6 +27,42 @@ class MaterialProps:
 
 
 @dataclass(slots=True)
+class UnitRegion:
+    """数值计算单元几何区域"""
+
+    name: str
+    lx: float
+    ly: float
+    dx: float
+    dy: float
+    props: MaterialProps
+
+
+@dataclass(slots=True)
+class LayerRegion:
+    """数值计算层几何区域"""
+
+    name: str
+    lz: float
+    dz: float
+    props: MaterialProps
+    units: List[UnitRegion]
+
+
+@dataclass(slots=True)
+class PowerSource:
+    """强类型热源区域"""
+
+    name: str
+    lx: float
+    ly: float
+    lz: float
+    dx: float
+    dy: float
+    dz: float
+
+
+@dataclass(slots=True)
 class SolverConfig:
     """强类型求解器配置 (解耦IO与计算)"""
 

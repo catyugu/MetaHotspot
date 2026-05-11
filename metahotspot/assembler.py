@@ -7,6 +7,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     SystemMatrices,
     BoundaryCondition,
+    PowerSource,
 )
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
@@ -29,12 +30,12 @@ class FVMAssembler:
         topo: MeshTopology,
         fields: PhysicalFields,
         boundary_conditions: List[BoundaryCondition],
-        stackup: list,
+        power_sources: List[PowerSource],
     ):
         self.topo = topo
         self.fields = fields
         self.boundary_conditions = boundary_conditions
-        self.stackup = stackup
+        self.power_sources = power_sources
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -159,33 +160,19 @@ class FVMAssembler:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
-        active_units, z_cursor = [], 0.0
-        for l in self.stackup:
-            if l.active:
-                for u in l.units:
-                    active_units.append(
-                        {
-                            "name": u.name,
-                            "lx": u.lx,
-                            "ly": u.ly,
-                            "lz": z_cursor,
-                            "dx": u.dx,
-                            "dy": u.dy,
-                            "dz": l.thickness,
-                        }
-                    )
-            z_cursor += l.thickness
         n = self.topo.n_cells
-        if not active_units:
+        if not self.power_sources:
             return sp.csr_matrix((n, 0)), []
+
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, u in enumerate(active_units):
-            vol_u = u["dx"] * u["dy"] * u["dz"]
+        for j, ps in enumerate(self.power_sources):
+            vol_u = ps.dx * ps.dy * ps.dz
             if vol_u <= 0:
                 continue
-            u_min, u_max = np.array([u["lx"], u["ly"], u["lz"]]), np.array(
-                [u["lx"], u["ly"], u["lz"]]
-            ) + np.array([u["dx"], u["dy"], u["dz"]])
+
+            u_min = np.array([ps.lx, ps.ly, ps.lz])
+            u_max = u_min + np.array([ps.dx, ps.dy, ps.dz])
+
             intersect = np.prod(
                 np.maximum(
                     0, np.minimum(boxes[:, 3:], u_max) - np.maximum(boxes[:, :3], u_min)
@@ -196,6 +183,7 @@ class FVMAssembler:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
-        return sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))), [
-            u["name"] for u in active_units
-        ]
+
+        return sp.csr_matrix(
+            (data, (rows, cols)), shape=(n, len(self.power_sources))
+        ), [ps.name for ps in self.power_sources]

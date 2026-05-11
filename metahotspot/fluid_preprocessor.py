@@ -11,8 +11,6 @@ from metahotspot.metahotspot_types import (
 )
 from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
-_logger = get_logger(__name__)
-
 
 class FluidPreprocessor:
     def __init__(self, boundary_conditions: List[BoundaryCondition]):

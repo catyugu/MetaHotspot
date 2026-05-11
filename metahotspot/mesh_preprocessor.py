@@ -1,16 +1,23 @@
-from typing import Any, List, Tuple
+from typing import List, Tuple
 import meshio
 import numpy as np
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, MaterialProps
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    MaterialProps,
+    LayerRegion,
+)
 
 
 class MeshPreprocessor:
     GEOMETRY_TOLERANCE = 1e-12
 
-    def __init__(self, default_solid: MaterialProps, stackup: List[Any]) -> None:
+    def __init__(
+        self, default_solid: MaterialProps, layer_regions: List[LayerRegion]
+    ) -> None:
         self.default_solid = default_solid
-        self.stackup = stackup
+        self.layer_regions = layer_regions
 
     def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
         mesh = meshio.read(mesh_path)
@@ -180,10 +187,8 @@ class MeshPreprocessor:
         is_fluid[:] = self.default_solid.is_fluid
         dynamic_viscosity[:] = self.default_solid.dynamic_viscosity
 
-        z_cursor = 0.0
-        for layer in self.stackup:
-            z_min, z_max = z_cursor, z_cursor + layer.thickness
-            z_cursor = z_max
+        for layer in self.layer_regions:
+            z_min, z_max = layer.lz, layer.lz + layer.dz
             l_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
 
             if not np.any(l_mask):
@@ -193,11 +198,11 @@ class MeshPreprocessor:
                 layer_name_map.append(layer.name)
             l_id = layer_name_map.index(layer.name)
 
-            k[l_mask] = layer.k
-            cp[l_mask] = layer.cp
-            density[l_mask] = layer.density
-            is_fluid[l_mask] = layer.is_fluid
-            dynamic_viscosity[l_mask] = layer.dynamic_viscosity
+            k[l_mask] = layer.props.k
+            cp[l_mask] = layer.props.cp
+            density[l_mask] = layer.props.density
+            is_fluid[l_mask] = layer.props.is_fluid
+            dynamic_viscosity[l_mask] = layer.props.dynamic_viscosity
             layer_ids[l_mask] = l_id
 
             for unit in layer.units:
@@ -213,11 +218,11 @@ class MeshPreprocessor:
                         unit_name_map.append(unit.name)
                     u_id = unit_name_map.index(unit.name)
 
-                    k[u_mask] = unit.k
-                    cp[u_mask] = unit.cp
-                    density[u_mask] = unit.density
-                    is_fluid[u_mask] = unit.is_fluid
-                    dynamic_viscosity[u_mask] = unit.dynamic_viscosity
+                    k[u_mask] = unit.props.k
+                    cp[u_mask] = unit.props.cp
+                    density[u_mask] = unit.props.density
+                    is_fluid[u_mask] = unit.props.is_fluid
+                    dynamic_viscosity[u_mask] = unit.props.dynamic_viscosity
                     unit_ids[u_mask] = u_id
 
         return PhysicalFields(
