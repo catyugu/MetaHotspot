@@ -11,6 +11,7 @@ from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import load_config, load_stackup
+from metahotspot.numba_warmup import warmup_numba_kernels
 
 _logger = get_logger(__name__)
 
@@ -24,6 +25,12 @@ class MetaHotspotSolver:
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
 
     def run(self):
+        warmup_start = time.perf_counter()
+        warmup_numba_kernels()
+        warmup_end = time.perf_counter()
+        _logger.info(
+            f"Numba kernels warmup completed in {warmup_end - warmup_start:.2f} seconds"
+        )
         start = time.perf_counter()
         topo, fields = MeshPreprocessor(self.config, self.stackup).process(
             self.mesh_path

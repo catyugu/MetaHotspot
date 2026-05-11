@@ -176,7 +176,7 @@ class MeshPreprocessor:
         is_fluid = np.zeros(n, dtype=bool)
         dynamic_viscosity = np.zeros(n)
 
-        # 【修改点】使用整数数组（int16）替代字符串（object）
+        # 使用整数数组（int16）替代字符串（object）
         layer_ids = np.zeros(n, dtype=np.int16)
         unit_ids = np.zeros(n, dtype=np.int16)
 

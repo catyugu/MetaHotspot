@@ -18,6 +18,7 @@
 ├── metahotspot_solver.py
 ├── metahotspot_types.py
 ├── model25d.py
+├── numba_warmup.py
 └── thermal_solver.py
 ```
 
@@ -1041,7 +1042,7 @@ class MeshPreprocessor:
         is_fluid = np.zeros(n, dtype=bool)
         dynamic_viscosity = np.zeros(n)
 
-        # 【修改点】使用整数数组（int16）替代字符串（object）
+        # 使用整数数组（int16）替代字符串（object）
         layer_ids = np.zeros(n, dtype=np.int16)
         unit_ids = np.zeros(n, dtype=np.int16)
 
@@ -1132,6 +1133,7 @@ from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import load_config, load_stackup
+from metahotspot.numba_warmup import warmup_numba_kernels
 
 _logger = get_logger(__name__)
 
@@ -1145,6 +1147,12 @@ class MetaHotspotSolver:
         self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
 
     def run(self):
+        warmup_start = time.perf_counter()
+        warmup_numba_kernels()
+        warmup_end = time.perf_counter()
+        _logger.info(
+            f"Numba kernels warmup completed in {warmup_end - warmup_start:.2f} seconds"
+        )
         start = time.perf_counter()
         topo, fields = MeshPreprocessor(self.config, self.stackup).process(
             self.mesh_path
@@ -1559,6 +1567,31 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
 
 ```
 
+### File: numba_warmup.py
+```py
+import numpy as np
+from metahotspot.assembler_kernels import (
+    find_adjacent_pairs_kernel,
+    overlap_area_kernel,
+)
+
+
+def warmup_numba_kernels():
+    """使用 2 个单元的微型 Dummy 数据触发 JIT 缓存加载"""
+    # 构造极简的 boxes 数据 (N, 6)
+    dummy_boxes = np.array(
+        [[0.0, 0.0, 0.0, 1.0, 1.0, 1.0], [1.0, 0.0, 0.0, 2.0, 1.0, 1.0]],
+        dtype=np.float64,
+    )
+
+    # 触发 find_adjacent_pairs_kernel 编译/加载
+    find_adjacent_pairs_kernel(dummy_boxes)
+
+    # 触发 overlap_area_kernel
+    overlap_area_kernel(dummy_boxes[0], dummy_boxes[1], 0)
+
+```
+
 ### File: thermal_solver.py
 ```py
 import numpy as np
@@ -1602,9 +1635,6 @@ class ThermalSolver:
         A_step = c_mat - self.mat.A_total
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
-
-        t0 = time.perf_counter()
-
         for i, step_power in enumerate(ptrace):
             power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
             rhs = (
@@ -1617,8 +1647,6 @@ class ThermalSolver:
                 _logger.info(
                     f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
-
-        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp
 
 ```
