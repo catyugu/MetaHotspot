@@ -3,7 +3,6 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from typing import List
 
-from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import (
     MeshTopology,
     PhysicalFields,

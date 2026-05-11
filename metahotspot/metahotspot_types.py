@@ -67,8 +67,6 @@ class MeshTopology:
     volumes: np.ndarray
     internal_faces: np.ndarray
     boundary_faces: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
-    sorted_indices: np.ndarray
-    orig_to_new_id: np.ndarray
 
 
 @dataclass(slots=True)

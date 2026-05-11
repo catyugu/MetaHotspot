@@ -6,12 +6,11 @@ import time
 from metahotspot.logging_config import get_logger
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
-from metahotspot.mesh_preprocessor import MeshPreprocessor
+from metahotspot.mesher import Mesher
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
-from metahotspot.gmsh_mesher import GmshMesher
 
 _logger = get_logger(__name__)
 
@@ -26,8 +25,6 @@ class MetaHotspotSolver:
             self.layer_regions,
         ) = parse_computational_model(config_path)
 
-        self.mesh: meshio.Mesh = None
-
     def run(self):
         warmup_start = time.perf_counter()
         warmup_numba_kernels()
@@ -37,19 +34,11 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-        mesher = GmshMesher()
-        self.mesh = mesher.generate_mesh(self.layer_regions)
+        mesher = Mesher(self.solver_config.default_solid, self.layer_regions)
+        topo, fields, points, hex_cells = mesher.generate()
         mesh_gen_finished = time.perf_counter()
         _logger.info(
-            f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
-        )
-
-        topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.layer_regions
-        ).process(self.mesh)
-        mesh_pre_finished = time.perf_counter()
-        _logger.info(
-            f"Mesh preprocessing completed in {mesh_pre_finished - mesh_gen_finished:.2f} seconds"
+            f"Mesh generation & preprocessing completed in {mesh_gen_finished - start:.2f} seconds"
         )
 
         FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
@@ -57,7 +46,7 @@ class MetaHotspotSolver:
         )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
-            f"Fluid flow solving completed in {pressure_solve_finished - mesh_pre_finished:.2f} seconds"
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_gen_finished:.2f} seconds"
         )
 
         matrices = FVMAssembler(
@@ -99,7 +88,7 @@ class MetaHotspotSolver:
         )
         _logger.info(f"Simulation completed in {end - start:.2f} seconds")
         _logger.info(f"Exporting results to {out_filename}...")
-        self._export_vtu(topo, temperatures, out_filename, self.mesh)
+        self._export_vtu(temperatures, out_filename, points, hex_cells)
 
     def _load_ptrace(self) -> list[dict]:
         if not self.solver_config.ptrace_file_path:
@@ -122,31 +111,19 @@ class MetaHotspotSolver:
             ):
                 if block.type == "hexahedron":
                     count = len(block_temps)
-                    valid_ids = np.arange(offset, offset + count)
-                    valid_mask = valid_ids < len(topo.orig_to_new_id)
-                    temp[topo.orig_to_new_id[valid_ids[valid_mask]]] = block_temps[
-                        valid_mask
-                    ]
+                    temp[offset : offset + count] = block_temps
                     offset += count
         return temp
 
     def _export_vtu(
         self,
-        topo: MeshTopology,
         temperatures: np.ndarray,
         filename: str,
-        orig_mesh: meshio.Mesh,
+        points: np.ndarray,
+        hex_cells: np.ndarray,
     ):
-        mapped = np.empty(topo.n_cells)
-        hex_blocks, temp_chunks = [], []
-        offset = 0
-        mapped[topo.sorted_indices] = temperatures
-        for block in orig_mesh.cells:
-            if block.type == "hexahedron":
-                count = len(block.data)
-                hex_blocks.append(block)
-                temp_chunks.append(mapped[offset : offset + count])
-                offset += count
         meshio.Mesh(
-            orig_mesh.points, hex_blocks, cell_data={"Temperature_K": temp_chunks}
+            points,
+            [("hexahedron", hex_cells)],
+            cell_data={"Temperature_K": [temperatures]},
         ).write(os.path.join(self.base_dir, filename))

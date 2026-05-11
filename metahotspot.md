@@ -12,9 +12,8 @@
 ├── assembler_kernels.py
 ├── boundary_conditions.py
 ├── fluid_preprocessor.py
-├── gmsh_mesher.py
 ├── logging_config.py
-├── mesh_preprocessor.py
+├── mesher.py
 ├── metahotspot_solver.py
 ├── metahotspot_types.py
 ├── model25d.py
@@ -520,7 +519,6 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
 from typing import List
 
-from metahotspot.logging_config import get_logger
 from metahotspot.metahotspot_types import (
     MeshTopology,
     PhysicalFields,
@@ -630,168 +628,6 @@ class FluidPreprocessor:
 
 ```
 
-### File: gmsh_mesher.py
-```py
-import math
-from collections import deque
-import gmsh
-import meshio
-import numpy as np
-from typing import List
-
-from metahotspot.metahotspot_types import LayerRegion
-
-
-class GmshMesher:
-    DEFAULT_MAX_MESH_SIZE = 0.01
-    DEFAULT_MIN_MESH_SIZE = 0.0005
-    DEFAULT_REFINEMENT_DISTANCE = 0.002
-
-    def __init__(self, model_name: str = "MetaHotspotMesh") -> None:
-        self.model_name = model_name
-        self._node_id = 1
-        self._elem_id = 1
-        self._node_map: dict = {}
-        self._global_node_coords: dict = {}
-
-    def generate_mesh(
-        self,
-        layer_regions: List[LayerRegion],
-        mesh_params: dict = None,
-    ) -> meshio.Mesh:
-        gmsh.initialize()
-        gmsh.option.setNumber("General.Terminal", 0)  # Mute stdout warnings optionally
-        gmsh.model.add(self.model_name)
-
-        mesh_params = mesh_params or {}
-        max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
-        min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
-        refine_distance = mesh_params.get(
-            "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
-        )
-
-        heat_boxes = [
-            (lr.lx, lr.ly, lr.lx + lr.dx, lr.ly + lr.dy)
-            for lr in layer_regions
-            if lr.is_active
-        ]
-
-        for layer in layer_regions:
-            discrete_tag = gmsh.model.addDiscreteEntity(3)
-            gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
-
-            lz, dz = layer.lz, layer.dz
-
-            leaves = self._subdivide_layer(
-                layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
-            )
-            self._create_hex_elements(discrete_tag, lz, dz, leaves)
-
-        mesh = self._extract_meshio_mesh()
-
-        gmsh.finalize()
-        self._node_map.clear()
-        self._global_node_coords.clear()
-
-        return mesh
-
-    def _subdivide_layer(
-        self, layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
-    ):
-        leaves, queue = [], deque(
-            [(u.lx, u.ly, u.lx + u.dx, u.ly + u.dy) for u in layer.units]
-        )
-
-        while queue:
-            x0, y0, x1, y1 = queue.popleft()
-            w, h = x1 - x0, y1 - y0
-            needs_split = w > max_mesh_size or h > max_mesh_size
-
-            if not needs_split and (
-                w > min_mesh_size * 1.01 or h > min_mesh_size * 1.01
-            ):
-                for hb in heat_boxes:
-                    dist_x, dist_y = max(0.0, x0 - hb[2], hb[0] - x1), max(
-                        0.0, y0 - hb[3], hb[1] - y1
-                    )
-                    if math.hypot(dist_x, dist_y) <= refine_distance:
-                        needs_split = True
-                        break
-
-            if needs_split:
-                if w >= h:
-                    mid = (x0 + x1) / 2.0
-                    queue.extend([(x0, y0, mid, y1), (mid, y0, x1, y1)])
-                else:
-                    mid = (y0 + y1) / 2.0
-                    queue.extend([(x0, y0, x1, mid), (x0, mid, x1, y1)])
-            else:
-                leaves.append((x0, y0, x1, y1))
-
-        return leaves
-
-    def _get_node(self, x: float, y: float, z: float) -> int:
-        key = (round(x, 12), round(y, 12), round(z, 12))
-        if key not in self._node_map:
-            self._node_map[key] = self._node_id
-            self._global_node_coords[self._node_id] = (x, y, z)
-            self._node_id += 1
-        return self._node_map[key]
-
-    def _create_hex_elements(self, discrete_tag, lz, dz, leaves) -> None:
-        element_tags, element_nodes, used_node_ids = [], [], set()
-
-        for x0, y0, x1, y1 in leaves:
-            nodes = [
-                self._get_node(x0, y0, lz),
-                self._get_node(x1, y0, lz),
-                self._get_node(x1, y1, lz),
-                self._get_node(x0, y1, lz),
-                self._get_node(x0, y0, lz + dz),
-                self._get_node(x1, y0, lz + dz),
-                self._get_node(x1, y1, lz + dz),
-                self._get_node(x0, y1, lz + dz),
-            ]
-            element_tags.append(self._elem_id)
-            element_nodes.extend(nodes)
-            used_node_ids.update(nodes)
-            self._elem_id += 1
-
-        if element_tags:
-            layer_nodes_tags = sorted(used_node_ids)
-            layer_nodes_coords = [
-                coord
-                for nid in layer_nodes_tags
-                for coord in self._global_node_coords[nid]
-            ]
-            gmsh.model.mesh.addNodes(
-                3, discrete_tag, layer_nodes_tags, layer_nodes_coords
-            )
-            gmsh.model.mesh.addElements(
-                3, discrete_tag, [5], [element_tags], [element_nodes]
-            )
-
-    def _extract_meshio_mesh(self) -> meshio.Mesh:
-        node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
-        points = np.array(node_coords).reshape(-1, 3)
-        tag2idx = {tag: i for i, tag in enumerate(node_tags)}
-
-        hex_data = []
-        elem_types, elem_tags, elem_node_tags = gmsh.model.mesh.getElements(dim=3)
-
-        for etype, etags, enodes in zip(elem_types, elem_tags, elem_node_tags):
-            if etype == 5:
-                # Ensure elements strictly match the order they were generated/tagged
-                sort_idx = np.argsort(etags)
-                sorted_enodes = np.array(enodes).reshape(-1, 8)[sort_idx]
-                arr = np.array([tag2idx[t] for t in sorted_enodes.flat]).reshape(-1, 8)
-                hex_data.append(arr)
-
-        cells = [("hexahedron", np.vstack(hex_data))] if hex_data else []
-        return meshio.Mesh(points=points, cells=cells)
-
-```
-
 ### File: logging_config.py
 ```py
 """
@@ -855,11 +691,12 @@ def get_logger(name: str, level: int | None = None) -> logging.Logger:
 
 ```
 
-### File: mesh_preprocessor.py
+### File: mesher.py
 ```py
-from typing import List, Tuple
-import meshio
+import math
+from collections import deque
 import numpy as np
+from typing import List, Tuple
 
 from metahotspot.metahotspot_types import (
     MeshTopology,
@@ -869,58 +706,160 @@ from metahotspot.metahotspot_types import (
 )
 
 
-class MeshPreprocessor:
-    GEOMETRY_TOLERANCE = 1e-12
+class Mesher:
+    GEOMETRY_TOLERANCE = 1e-15
+    DEFAULT_MAX_MESH_SIZE = 0.01
+    DEFAULT_MIN_MESH_SIZE = 0.0005
+    DEFAULT_REFINEMENT_DISTANCE = 0.002
 
-    def __init__(
-        self, default_solid: MaterialProps, layer_regions: List[LayerRegion]
-    ) -> None:
+    def __init__(self, default_solid: MaterialProps, layer_regions: List[LayerRegion]):
         self.default_solid = default_solid
         self.layer_regions = layer_regions
 
-    def process(self, mesh: meshio.Mesh) -> Tuple[MeshTopology, PhysicalFields]:
-        topo = self._extract_geometry(mesh)
-        fields = self._map_physical_properties(topo)
-        return topo, fields
+    def generate(
+        self, mesh_params: dict = None
+    ) -> Tuple[MeshTopology, PhysicalFields, np.ndarray, np.ndarray]:
+        mesh_params = mesh_params or {}
+        max_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
+        min_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
+        refine_dist = mesh_params.get(
+            "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
+        )
 
-    def _extract_geometry(self, mesh: meshio.Mesh) -> MeshTopology:
-        hex_blocks = [b.data for b in mesh.cells if b.type == "hexahedron"]
-        if not hex_blocks:
-            raise ValueError("No hexahedron cells found in mesh")
+        heat_boxes = [
+            (lr.lx, lr.ly, lr.lx + lr.dx, lr.ly + lr.dy)
+            for lr in self.layer_regions
+            if lr.is_active
+        ]
 
-        hex_data = np.vstack(hex_blocks)
-        coords = mesh.points[hex_data]
-        lowers, uppers = np.min(coords, axis=1), np.max(coords, axis=1)
-        centers, dims = (lowers + uppers) * 0.5, uppers - lowers
+        boxes_list = []
+        k_list, cp_list, rho_list, fluid_list, visc_list = [], [], [], [], []
+        l_ids, u_ids = [], []
+        l_map, u_map = ["default_layer"], [""]
+
+        # 直接将属性与 Box 生成绑定，消除后续的空间查找消耗
+        for layer in self.layer_regions:
+            if layer.name not in l_map:
+                l_map.append(layer.name)
+            l_id = l_map.index(layer.name)
+
+            leaves = self._subdivide_layer(
+                layer, max_size, min_size, refine_dist, heat_boxes
+            )
+
+            for x0, y0, x1, y1, unit in leaves:
+                boxes_list.append([x0, y0, layer.lz, x1, y1, layer.lz + layer.dz])
+
+                if unit.name not in u_map:
+                    u_map.append(unit.name)
+                u_id = u_map.index(unit.name)
+
+                l_ids.append(l_id)
+                u_ids.append(u_id)
+                k_list.append(unit.props.k)
+                cp_list.append(unit.props.cp)
+                rho_list.append(unit.props.density)
+                fluid_list.append(unit.props.is_fluid)
+                visc_list.append(unit.props.dynamic_viscosity)
+
+        c_boxes = np.array(boxes_list, dtype=np.float64)
+        centers = (c_boxes[:, :3] + c_boxes[:, 3:]) * 0.5
+        dims = c_boxes[:, 3:] - c_boxes[:, :3]
         vols = np.prod(dims, axis=1)
 
-        sorted_indices = self._compute_morton_sort(lowers, uppers, centers)
-        n_cells = len(centers)
-        c_centers, c_dims, c_boxes, c_vols = (
-            centers[sorted_indices],
-            dims[sorted_indices],
-            np.hstack([lowers[sorted_indices], uppers[sorted_indices]]),
-            vols[sorted_indices],
-        )
+        # 空间莫顿排序优化访存局部性
+        sorted_idx = self._compute_morton_sort(c_boxes[:, :3], c_boxes[:, 3:], centers)
 
-        orig_to_new_id = np.empty(n_cells, dtype=int)
-        orig_to_new_id[sorted_indices] = np.arange(n_cells)
+        c_boxes = c_boxes[sorted_idx]
+        centers = centers[sorted_idx]
+        dims = dims[sorted_idx]
+        vols = vols[sorted_idx]
+
+        # 同步重排物理场数据
+        k = np.array(k_list, dtype=np.float64)[sorted_idx]
+        cp = np.array(cp_list, dtype=np.float64)[sorted_idx]
+        rho = np.array(rho_list, dtype=np.float64)[sorted_idx]
+        is_fluid = np.array(fluid_list, dtype=bool)[sorted_idx]
+        visc = np.array(visc_list, dtype=np.float64)[sorted_idx]
+        layer_ids = np.array(l_ids, dtype=np.int16)[sorted_idx]
+        unit_ids = np.array(u_ids, dtype=np.int16)[sorted_idx]
+
+        n_cells = len(c_boxes)
+
+        # 向量化生成六面体节点数据 (8 nodes/cell)
+        nodes = np.empty((n_cells, 8, 3), dtype=np.float64)
+        nodes[:, 0] = c_boxes[:, [0, 1, 2]]
+        nodes[:, 1] = c_boxes[:, [3, 1, 2]]
+        nodes[:, 2] = c_boxes[:, [3, 4, 2]]
+        nodes[:, 3] = c_boxes[:, [0, 4, 2]]
+        nodes[:, 4] = c_boxes[:, [0, 1, 5]]
+        nodes[:, 5] = c_boxes[:, [3, 1, 5]]
+        nodes[:, 6] = c_boxes[:, [3, 4, 5]]
+        nodes[:, 7] = c_boxes[:, [0, 4, 5]]
+
+        flat_nodes = nodes.reshape(-1, 3)
+        rounded_nodes = np.round(flat_nodes, decimals=9)
+        points, inverse_idx = np.unique(rounded_nodes, axis=0, return_inverse=True)
+        hex_data = inverse_idx.reshape(n_cells, 8)
 
         internal_faces, boundary_faces = self._build_topology_vectorized(
-            mesh, hex_data, sorted_indices, c_centers
+            points, hex_data, centers
         )
 
-        return MeshTopology(
-            n_cells,
-            c_centers,
-            c_dims,
-            c_boxes,
-            c_vols,
-            internal_faces,
-            boundary_faces,
-            sorted_indices,
-            orig_to_new_id,
+        topo = MeshTopology(
+            n_cells=n_cells,
+            centers=centers,
+            dims=dims,
+            boxes=c_boxes,
+            volumes=vols,
+            internal_faces=internal_faces,
+            boundary_faces=boundary_faces,
         )
+
+        fields = PhysicalFields(
+            k=k,
+            cp=cp,
+            density=rho,
+            is_fluid=is_fluid,
+            dynamic_viscosity=visc,
+            hydroC=np.zeros((n_cells, 3), dtype=np.float64),
+            pressure=np.zeros(n_cells, dtype=np.float64),
+            boundary_temperature=np.full(n_cells, np.nan, dtype=np.float64),
+            layer_ids=layer_ids,
+            unit_ids=unit_ids,
+            layer_name_map=l_map,
+            unit_name_map=u_map,
+        )
+
+        return topo, fields, points, hex_data
+
+    def _subdivide_layer(self, layer, max_size, min_size, refine_dist, heat_boxes):
+        leaves = []
+        queue = deque([(u.lx, u.ly, u.lx + u.dx, u.ly + u.dy, u) for u in layer.units])
+
+        while queue:
+            x0, y0, x1, y1, u = queue.popleft()
+            w, h = x1 - x0, y1 - y0
+            needs_split = w > max_size or h > max_size
+
+            if not needs_split and (w > min_size * 1.01 or h > min_size * 1.01):
+                for hb in heat_boxes:
+                    dist_x = max(0.0, x0 - hb[2], hb[0] - x1)
+                    dist_y = max(0.0, y0 - hb[3], hb[1] - y1)
+                    if math.hypot(dist_x, dist_y) <= refine_dist:
+                        needs_split = True
+                        break
+
+            if needs_split:
+                if w >= h:
+                    mid = (x0 + x1) / 2.0
+                    queue.extend([(x0, y0, mid, y1, u), (mid, y0, x1, y1, u)])
+                else:
+                    mid = (y0 + y1) / 2.0
+                    queue.extend([(x0, y0, x1, mid, u), (x0, mid, x1, y1, u)])
+            else:
+                leaves.append((x0, y0, x1, y1, u))
+        return leaves
 
     def _compute_morton_sort(self, lowers, uppers, centers) -> np.ndarray:
         b_min = np.min(lowers, axis=0)
@@ -937,15 +876,8 @@ class MeshPreprocessor:
             )
         return np.argsort(morton_keys)
 
-    def _build_topology_vectorized(
-        self,
-        mesh: meshio.Mesh,
-        hex_data: np.ndarray,
-        sorted_indices: np.ndarray,
-        c_centers: np.ndarray,
-    ) -> Tuple[np.ndarray, dict]:
-        n_cells = len(sorted_indices)
-
+    def _build_topology_vectorized(self, points, hex_data, centers):
+        n_cells = len(hex_data)
         faces_def = np.array(
             [
                 [0, 3, 2, 1],
@@ -958,7 +890,7 @@ class MeshPreprocessor:
         )
 
         cell_ids = np.repeat(np.arange(n_cells), 6)
-        all_faces_nodes = hex_data[sorted_indices][:, faces_def].reshape(-1, 4)
+        all_faces_nodes = hex_data[:, faces_def].reshape(-1, 4)
 
         sorted_faces = np.sort(all_faces_nodes, axis=1)
         sort_order = np.lexsort(
@@ -989,7 +921,7 @@ class MeshPreprocessor:
 
         boundary_faces = {"+X": [], "-X": [], "+Y": [], "-Y": [], "+Z": [], "-Z": []}
 
-        pts = mesh.points[bound_face_nodes]
+        pts = points[bound_face_nodes]
         cross = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
         areas = np.linalg.norm(cross, axis=1)
 
@@ -998,7 +930,7 @@ class MeshPreprocessor:
         b_c_ids = bound_c_ids[valid]
         b_areas = areas[valid]
 
-        centers_dir = np.mean(pts[valid], axis=1) - c_centers[b_c_ids]
+        centers_dir = np.mean(pts[valid], axis=1) - centers[b_c_ids]
         flip_mask = np.sum(centers_dir * normals, axis=1) < 0
         normals[flip_mask] *= -1
 
@@ -1023,80 +955,6 @@ class MeshPreprocessor:
             if v
         }
 
-    def _map_physical_properties(self, topo: MeshTopology) -> PhysicalFields:
-        n, centers, tol = topo.n_cells, topo.centers, self.GEOMETRY_TOLERANCE
-
-        k = np.zeros(n)
-        cp = np.zeros(n)
-        density = np.zeros(n)
-        is_fluid = np.zeros(n, dtype=bool)
-        dynamic_viscosity = np.zeros(n)
-
-        layer_ids = np.zeros(n, dtype=np.int16)
-        unit_ids = np.zeros(n, dtype=np.int16)
-
-        layer_name_map = ["default_layer"]
-        unit_name_map = [""]
-
-        k[:] = self.default_solid.k
-        cp[:] = self.default_solid.cp
-        density[:] = self.default_solid.density
-        is_fluid[:] = self.default_solid.is_fluid
-        dynamic_viscosity[:] = self.default_solid.dynamic_viscosity
-
-        for layer in self.layer_regions:
-            z_min, z_max = layer.lz, layer.lz + layer.dz
-            l_mask = (centers[:, 2] >= z_min - tol) & (centers[:, 2] <= z_max + tol)
-
-            if not np.any(l_mask):
-                continue
-
-            if layer.name not in layer_name_map:
-                layer_name_map.append(layer.name)
-            l_id = layer_name_map.index(layer.name)
-
-            k[l_mask] = layer.props.k
-            cp[l_mask] = layer.props.cp
-            density[l_mask] = layer.props.density
-            is_fluid[l_mask] = layer.props.is_fluid
-            dynamic_viscosity[l_mask] = layer.props.dynamic_viscosity
-            layer_ids[l_mask] = l_id
-
-            for unit in layer.units:
-                u_mask = (
-                    l_mask
-                    & (centers[:, 0] >= unit.lx - tol)
-                    & (centers[:, 0] <= unit.lx + unit.dx + tol)
-                    & (centers[:, 1] >= unit.ly - tol)
-                    & (centers[:, 1] <= unit.ly + unit.dy + tol)
-                )
-                if np.any(u_mask):
-                    if unit.name not in unit_name_map:
-                        unit_name_map.append(unit.name)
-                    u_id = unit_name_map.index(unit.name)
-
-                    k[u_mask] = unit.props.k
-                    cp[u_mask] = unit.props.cp
-                    density[u_mask] = unit.props.density
-                    is_fluid[u_mask] = unit.props.is_fluid
-                    dynamic_viscosity[u_mask] = unit.props.dynamic_viscosity
-                    unit_ids[u_mask] = u_id
-
-        return PhysicalFields(
-            k=k,
-            cp=cp,
-            density=density,
-            is_fluid=is_fluid,
-            dynamic_viscosity=dynamic_viscosity,
-            hydroC=np.zeros((n, 3)),
-            pressure=np.zeros(n),
-            boundary_temperature=np.full(n, np.nan),
-            layer_ids=layer_ids,
-            unit_ids=unit_ids,
-            layer_name_map=layer_name_map,
-            unit_name_map=unit_name_map,
-        )
-
 ```
 
 ### File: metahotspot_solver.py
@@ -1109,12 +967,11 @@ import time
 from metahotspot.logging_config import get_logger
 from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
-from metahotspot.mesh_preprocessor import MeshPreprocessor
+from metahotspot.mesher import Mesher
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
 from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
-from metahotspot.gmsh_mesher import GmshMesher
 
 _logger = get_logger(__name__)
 
@@ -1129,8 +986,6 @@ class MetaHotspotSolver:
             self.layer_regions,
         ) = parse_computational_model(config_path)
 
-        self.mesh: meshio.Mesh = None
-
     def run(self):
         warmup_start = time.perf_counter()
         warmup_numba_kernels()
@@ -1140,19 +995,11 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-        mesher = GmshMesher()
-        self.mesh = mesher.generate_mesh(self.layer_regions)
+        mesher = Mesher(self.solver_config.default_solid, self.layer_regions)
+        topo, fields, points, hex_cells = mesher.generate()
         mesh_gen_finished = time.perf_counter()
         _logger.info(
-            f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
-        )
-
-        topo, fields = MeshPreprocessor(
-            self.solver_config.default_solid, self.layer_regions
-        ).process(self.mesh)
-        mesh_pre_finished = time.perf_counter()
-        _logger.info(
-            f"Mesh preprocessing completed in {mesh_pre_finished - mesh_gen_finished:.2f} seconds"
+            f"Mesh generation & preprocessing completed in {mesh_gen_finished - start:.2f} seconds"
         )
 
         FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
@@ -1160,7 +1007,7 @@ class MetaHotspotSolver:
         )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
-            f"Fluid flow solving completed in {pressure_solve_finished - mesh_pre_finished:.2f} seconds"
+            f"Fluid flow solving completed in {pressure_solve_finished - mesh_gen_finished:.2f} seconds"
         )
 
         matrices = FVMAssembler(
@@ -1202,7 +1049,7 @@ class MetaHotspotSolver:
         )
         _logger.info(f"Simulation completed in {end - start:.2f} seconds")
         _logger.info(f"Exporting results to {out_filename}...")
-        self._export_vtu(topo, temperatures, out_filename, self.mesh)
+        self._export_vtu(temperatures, out_filename, points, hex_cells)
 
     def _load_ptrace(self) -> list[dict]:
         if not self.solver_config.ptrace_file_path:
@@ -1225,33 +1072,21 @@ class MetaHotspotSolver:
             ):
                 if block.type == "hexahedron":
                     count = len(block_temps)
-                    valid_ids = np.arange(offset, offset + count)
-                    valid_mask = valid_ids < len(topo.orig_to_new_id)
-                    temp[topo.orig_to_new_id[valid_ids[valid_mask]]] = block_temps[
-                        valid_mask
-                    ]
+                    temp[offset : offset + count] = block_temps
                     offset += count
         return temp
 
     def _export_vtu(
         self,
-        topo: MeshTopology,
         temperatures: np.ndarray,
         filename: str,
-        orig_mesh: meshio.Mesh,
+        points: np.ndarray,
+        hex_cells: np.ndarray,
     ):
-        mapped = np.empty(topo.n_cells)
-        hex_blocks, temp_chunks = [], []
-        offset = 0
-        mapped[topo.sorted_indices] = temperatures
-        for block in orig_mesh.cells:
-            if block.type == "hexahedron":
-                count = len(block.data)
-                hex_blocks.append(block)
-                temp_chunks.append(mapped[offset : offset + count])
-                offset += count
         meshio.Mesh(
-            orig_mesh.points, hex_blocks, cell_data={"Temperature_K": temp_chunks}
+            points,
+            [("hexahedron", hex_cells)],
+            cell_data={"Temperature_K": [temperatures]},
         ).write(os.path.join(self.base_dir, filename))
 
 ```
@@ -1327,8 +1162,6 @@ class MeshTopology:
     volumes: np.ndarray
     internal_faces: np.ndarray
     boundary_faces: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
-    sorted_indices: np.ndarray
-    orig_to_new_id: np.ndarray
 
 
 @dataclass(slots=True)
