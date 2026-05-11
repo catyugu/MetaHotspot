@@ -36,21 +36,15 @@ class UnitRegion:
 class LayerRegion:
     name: str
     tag: int
-    lz: float
-    dz: float
-    props: MaterialProps
-    units: List[UnitRegion]
-
-
-@dataclass(slots=True)
-class ActiveRegion:
-    name: str
     lx: float
     ly: float
     lz: float
     dx: float
     dy: float
     dz: float
+    props: MaterialProps
+    units: List[UnitRegion]
+    is_active: bool = False
 
 
 @dataclass(slots=True)

@@ -5,7 +5,7 @@ import meshio
 import numpy as np
 from typing import List
 
-from metahotspot.metahotspot_types import LayerRegion, ActiveRegion
+from metahotspot.metahotspot_types import LayerRegion
 
 
 class GmshMesher:
@@ -23,7 +23,6 @@ class GmshMesher:
     def generate_mesh(
         self,
         layer_regions: List[LayerRegion],
-        active_regions: List[ActiveRegion],
         mesh_params: dict = None,
     ) -> meshio.Mesh:
         gmsh.initialize()
@@ -38,7 +37,9 @@ class GmshMesher:
         )
 
         heat_boxes = [
-            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in active_regions
+            (lr.lx, lr.ly, lr.lx + lr.dx, lr.ly + lr.dy)
+            for lr in layer_regions
+            if lr.is_active
         ]
 
         for layer in layer_regions:

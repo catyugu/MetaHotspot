@@ -24,7 +24,6 @@ class MetaHotspotSolver:
         (
             self.solver_config,
             self.layer_regions,
-            self.active_regions,
         ) = parse_computational_model(config_path)
 
         self.mesh: meshio.Mesh = None
@@ -39,7 +38,7 @@ class MetaHotspotSolver:
 
         start = time.perf_counter()
         mesher = GmshMesher()
-        self.mesh = mesher.generate_mesh(self.layer_regions, self.active_regions)
+        self.mesh = mesher.generate_mesh(self.layer_regions)
         mesh_gen_finished = time.perf_counter()
         _logger.info(
             f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
@@ -62,7 +61,7 @@ class MetaHotspotSolver:
         )
 
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.active_regions
+            topo, fields, self.solver_config.boundary_conditions, self.layer_regions
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(

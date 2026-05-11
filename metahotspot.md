@@ -35,7 +35,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     SystemMatrices,
     BoundaryCondition,
-    ActiveRegion,
+    LayerRegion,
 )
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
@@ -58,12 +58,12 @@ class FVMAssembler:
         topo: MeshTopology,
         fields: PhysicalFields,
         boundary_conditions: List[BoundaryCondition],
-        active_regions: List[ActiveRegion],
+        layer_regions: List[LayerRegion],
     ):
         self.topo = topo
         self.fields = fields
         self.boundary_conditions = boundary_conditions
-        self.active_regions = active_regions
+        self.layer_regions = layer_regions
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -189,17 +189,27 @@ class FVMAssembler:
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
         n = self.topo.n_cells
-        if not self.active_regions:
+        active_units = [
+            (u, lr.lz, lr.dz)
+            for lr in self.layer_regions
+            if lr.is_active
+            for u in lr.units
+        ]
+
+        if not active_units:
             return sp.csr_matrix((n, 0)), []
 
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, ps in enumerate(self.active_regions):
-            vol_u = ps.dx * ps.dy * ps.dz
+        unit_names = []
+
+        for j, (u, lz, dz) in enumerate(active_units):
+            vol_u = u.dx * u.dy * dz
+            unit_names.append(u.name)
             if vol_u <= 0:
                 continue
 
-            u_min = np.array([ps.lx, ps.ly, ps.lz])
-            u_max = u_min + np.array([ps.dx, ps.dy, ps.dz])
+            u_min = np.array([u.lx, u.ly, lz])
+            u_max = u_min + np.array([u.dx, u.dy, dz])
 
             intersect = np.prod(
                 np.maximum(
@@ -212,9 +222,10 @@ class FVMAssembler:
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
 
-        return sp.csr_matrix(
-            (data, (rows, cols)), shape=(n, len(self.active_regions))
-        ), [ps.name for ps in self.active_regions]
+        return (
+            sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))),
+            unit_names,
+        )
 
 ```
 
@@ -628,7 +639,7 @@ import meshio
 import numpy as np
 from typing import List
 
-from metahotspot.metahotspot_types import LayerRegion, ActiveRegion
+from metahotspot.metahotspot_types import LayerRegion
 
 
 class GmshMesher:
@@ -646,7 +657,6 @@ class GmshMesher:
     def generate_mesh(
         self,
         layer_regions: List[LayerRegion],
-        active_regions: List[ActiveRegion],
         mesh_params: dict = None,
     ) -> meshio.Mesh:
         gmsh.initialize()
@@ -661,7 +671,9 @@ class GmshMesher:
         )
 
         heat_boxes = [
-            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in active_regions
+            (lr.lx, lr.ly, lr.lx + lr.dx, lr.ly + lr.dy)
+            for lr in layer_regions
+            if lr.is_active
         ]
 
         for layer in layer_regions:
@@ -1115,7 +1127,6 @@ class MetaHotspotSolver:
         (
             self.solver_config,
             self.layer_regions,
-            self.active_regions,
         ) = parse_computational_model(config_path)
 
         self.mesh: meshio.Mesh = None
@@ -1130,7 +1141,7 @@ class MetaHotspotSolver:
 
         start = time.perf_counter()
         mesher = GmshMesher()
-        self.mesh = mesher.generate_mesh(self.layer_regions, self.active_regions)
+        self.mesh = mesher.generate_mesh(self.layer_regions)
         mesh_gen_finished = time.perf_counter()
         _logger.info(
             f"Mesh generation completed in {mesh_gen_finished - start:.2f} seconds"
@@ -1153,7 +1164,7 @@ class MetaHotspotSolver:
         )
 
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.active_regions
+            topo, fields, self.solver_config.boundary_conditions, self.layer_regions
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
@@ -1285,21 +1296,15 @@ class UnitRegion:
 class LayerRegion:
     name: str
     tag: int
-    lz: float
-    dz: float
-    props: MaterialProps
-    units: List[UnitRegion]
-
-
-@dataclass(slots=True)
-class ActiveRegion:
-    name: str
     lx: float
     ly: float
     lz: float
     dx: float
     dy: float
     dz: float
+    props: MaterialProps
+    units: List[UnitRegion]
+    is_active: bool = False
 
 
 @dataclass(slots=True)
@@ -1364,7 +1369,6 @@ from metahotspot.metahotspot_types import (
     MaterialProps,
     LayerRegion,
     UnitRegion,
-    ActiveRegion,
 )
 
 DEFAULT_CONFIG = {
@@ -1480,7 +1484,7 @@ def _resolve_prop(
 
 def parse_computational_model(
     config_path: str,
-) -> Tuple[SolverConfig, List[LayerRegion], List[ActiveRegion]]:
+) -> Tuple[SolverConfig, List[LayerRegion]]:
     base_dir = os.path.dirname(config_path)
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
@@ -1524,7 +1528,6 @@ def parse_computational_model(
     )
 
     layer_regions: List[LayerRegion] = []
-    active_regions: List[ActiveRegion] = []
 
     materials = config.get("materials", {})
     stackup_data = config.get("stackup", [])
@@ -1608,30 +1611,21 @@ def parse_computational_model(
             LayerRegion(
                 name=name,
                 tag=tag,
+                lx=lx,
+                ly=ly,
                 lz=z_cursor,
+                dx=dx,
+                dy=dy,
                 dz=thickness,
                 props=l_props_layer,
                 units=units,
+                is_active=active,
             )
         )
 
-        if active:
-            for u in units:
-                active_regions.append(
-                    ActiveRegion(
-                        name=u.name,
-                        lx=u.lx,
-                        ly=u.ly,
-                        lz=z_cursor,
-                        dx=u.dx,
-                        dy=u.dy,
-                        dz=thickness,
-                    )
-                )
-
         z_cursor += thickness
 
-    return solver_config, layer_regions, active_regions
+    return solver_config, layer_regions
 
 ```
 

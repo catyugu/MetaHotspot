@@ -8,7 +8,6 @@ from metahotspot.metahotspot_types import (
     MaterialProps,
     LayerRegion,
     UnitRegion,
-    ActiveRegion,
 )
 
 DEFAULT_CONFIG = {
@@ -124,7 +123,7 @@ def _resolve_prop(
 
 def parse_computational_model(
     config_path: str,
-) -> Tuple[SolverConfig, List[LayerRegion], List[ActiveRegion]]:
+) -> Tuple[SolverConfig, List[LayerRegion]]:
     base_dir = os.path.dirname(config_path)
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
@@ -168,7 +167,6 @@ def parse_computational_model(
     )
 
     layer_regions: List[LayerRegion] = []
-    active_regions: List[ActiveRegion] = []
 
     materials = config.get("materials", {})
     stackup_data = config.get("stackup", [])
@@ -252,27 +250,18 @@ def parse_computational_model(
             LayerRegion(
                 name=name,
                 tag=tag,
+                lx=lx,
+                ly=ly,
                 lz=z_cursor,
+                dx=dx,
+                dy=dy,
                 dz=thickness,
                 props=l_props_layer,
                 units=units,
+                is_active=active,
             )
         )
 
-        if active:
-            for u in units:
-                active_regions.append(
-                    ActiveRegion(
-                        name=u.name,
-                        lx=u.lx,
-                        ly=u.ly,
-                        lz=z_cursor,
-                        dx=u.dx,
-                        dy=u.dy,
-                        dz=thickness,
-                    )
-                )
-
         z_cursor += thickness
 
-    return solver_config, layer_regions, active_regions
+    return solver_config, layer_regions
