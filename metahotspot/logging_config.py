@@ -41,7 +41,6 @@ def get_logger(name: str, level: int | None = None) -> logging.Logger:
         logger.setLevel(_log_level)
 
     # Only add handler if logger doesn't already have one
-    # (prevents duplicate handlers on repeated calls)
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(level if level is not None else _log_level)

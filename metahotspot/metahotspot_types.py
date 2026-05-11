@@ -5,9 +5,61 @@ from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
-class MeshTopology:
-    """纯几何与拓扑数据 (SoA 布局)"""
+class BoundaryCondition:
+    name: str
+    type: str
+    face: str
+    target: str
+    parameters: Dict[str, float]
 
+
+@dataclass(slots=True)
+class MaterialProps:
+    k: float
+    cp: float
+    density: float
+    is_fluid: bool
+    dynamic_viscosity: float
+
+
+@dataclass(slots=True)
+class UnitRegion:
+    name: str
+    lx: float
+    ly: float
+    dx: float
+    dy: float
+    props: MaterialProps
+
+
+@dataclass(slots=True)
+class LayerRegion:
+    name: str
+    tag: int
+    lx: float
+    ly: float
+    lz: float
+    dx: float
+    dy: float
+    dz: float
+    props: MaterialProps
+    units: List[UnitRegion]
+    is_active: bool = False
+
+
+@dataclass(slots=True)
+class SolverConfig:
+    simulation_type: str
+    timestep: float
+    init_temperature: float
+    ptrace_file_path: str
+    init_temperature_file_path: str
+    default_solid: MaterialProps
+    boundary_conditions: List[BoundaryCondition]
+
+
+@dataclass(slots=True)
+class MeshTopology:
     n_cells: int
     centers: np.ndarray
     dims: np.ndarray
@@ -15,14 +67,10 @@ class MeshTopology:
     volumes: np.ndarray
     internal_faces: np.ndarray
     boundary_faces: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]
-    sorted_indices: np.ndarray
-    orig_to_new_id: np.ndarray
 
 
 @dataclass(slots=True)
 class PhysicalFields:
-    """物理属性与状态场 (SoA 布局)"""
-
     k: np.ndarray
     cp: np.ndarray
     density: np.ndarray
@@ -40,8 +88,6 @@ class PhysicalFields:
 
 @dataclass(slots=True)
 class SystemMatrices:
-    """装配后的代数方程 A * T = b"""
-
     A_total: sp.csr_matrix
     b_total: np.ndarray
     power_matrix: sp.csr_matrix

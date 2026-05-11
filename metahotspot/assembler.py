@@ -2,7 +2,13 @@ from typing import List, Tuple
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, SystemMatrices
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    SystemMatrices,
+    BoundaryCondition,
+    LayerRegion,
+)
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
     build_cond_coo_kernel,
@@ -17,17 +23,19 @@ from metahotspot.boundary_conditions import (
 
 
 class FVMAssembler:
-    GEOMETRY_TOLERANCE = 1e-12
+    GEOMETRY_TOLERANCE = 1e-15
 
     def __init__(
-        self, topo: MeshTopology, fields: PhysicalFields, config: dict, stackup: list
+        self,
+        topo: MeshTopology,
+        fields: PhysicalFields,
+        boundary_conditions: List[BoundaryCondition],
+        layer_regions: List[LayerRegion],
     ):
-        self.topo, self.fields, self.config, self.stackup = (
-            topo,
-            fields,
-            config,
-            stackup,
-        )
+        self.topo = topo
+        self.fields = fields
+        self.boundary_conditions = boundary_conditions
+        self.layer_regions = layer_regions
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -65,13 +73,12 @@ class FVMAssembler:
         )
 
     def _apply_temperature_boundaries(self) -> None:
-        """记录所有 Dirichlet 边界温度状态"""
-        for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") == "temperature":
+        for bc in self.boundary_conditions:
+            if bc.type == "temperature":
                 c_ids, _ = resolve_boundary_cells(
-                    self.topo, self.fields, bc["face"], bc.get("target", "")
+                    self.topo, self.fields, bc.face, bc.target
                 )
-                apply_temperature_state_bc(c_ids, bc["parameters"], self.fields)
+                apply_temperature_state_bc(c_ids, bc, self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -93,37 +100,21 @@ class FVMAssembler:
         n = self.topo.n_cells
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
-        for bc in self.config.get("boundary_conditions", []):
-            bc_type = bc.get("type")
-            if bc_type not in ["convection", "temperature"]:
+        for bc in self.boundary_conditions:
+            if bc.type not in ["convection", "temperature"]:
                 continue
+
             c_ids, areas = resolve_boundary_cells(
-                self.topo, self.fields, bc["face"], bc.get("target", "")
+                self.topo, self.fields, bc.face, bc.target
             )
 
-            if bc_type == "convection":
+            if bc.type == "convection":
                 apply_convection_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
-            elif bc_type == "temperature":
+            elif bc.type == "temperature":
                 apply_temperature_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
@@ -150,7 +141,6 @@ class FVMAssembler:
         influxes = net_outflux[fluid_ids]
         in_mask = influxes > self.GEOMETRY_TOLERANCE
         v_in_ids = fluid_ids[in_mask]
-        # 使用重构后的 boundary_temperature 字段
         v_temps = self.fields.boundary_temperature[v_in_ids]
         temp_mask = ~np.isnan(v_temps)
         rhs[v_in_ids[temp_mask]] += (
@@ -170,33 +160,29 @@ class FVMAssembler:
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
 
     def _build_power_matrix(self) -> Tuple[sp.csr_matrix, List[str]]:
-        active_units, z_cursor = [], 0.0
-        for l in self.stackup:
-            if l.active:
-                for u in l.units:
-                    active_units.append(
-                        {
-                            "name": u.name,
-                            "lx": u.lx,
-                            "ly": u.ly,
-                            "lz": z_cursor,
-                            "dx": u.dx,
-                            "dy": u.dy,
-                            "dz": l.thickness,
-                        }
-                    )
-            z_cursor += l.thickness
         n = self.topo.n_cells
+        active_units = [
+            (u, lr.lz, lr.dz)
+            for lr in self.layer_regions
+            if lr.is_active
+            for u in lr.units
+        ]
+
         if not active_units:
             return sp.csr_matrix((n, 0)), []
+
         rows, cols, data, boxes = [], [], [], self.topo.boxes
-        for j, u in enumerate(active_units):
-            vol_u = u["dx"] * u["dy"] * u["dz"]
+        unit_names = []
+
+        for j, (u, lz, dz) in enumerate(active_units):
+            vol_u = u.dx * u.dy * dz
+            unit_names.append(u.name)
             if vol_u <= 0:
                 continue
-            u_min, u_max = np.array([u["lx"], u["ly"], u["lz"]]), np.array(
-                [u["lx"], u["ly"], u["lz"]]
-            ) + np.array([u["dx"], u["dy"], u["dz"]])
+
+            u_min = np.array([u.lx, u.ly, lz])
+            u_max = u_min + np.array([u.dx, u.dy, dz])
+
             intersect = np.prod(
                 np.maximum(
                     0, np.minimum(boxes[:, 3:], u_max) - np.maximum(boxes[:, :3], u_min)
@@ -207,6 +193,8 @@ class FVMAssembler:
             rows.extend(valid)
             cols.extend([j] * len(valid))
             data.extend(intersect[valid] / vol_u)
-        return sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))), [
-            u["name"] for u in active_units
-        ]
+
+        return (
+            sp.csr_matrix((data, (rows, cols)), shape=(n, len(active_units))),
+            unit_names,
+        )

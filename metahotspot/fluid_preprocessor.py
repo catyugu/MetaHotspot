@@ -1,16 +1,19 @@
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
-from metahotspot.logging_config import get_logger
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
-from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+from typing import List
 
-_logger = get_logger(__name__)
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    BoundaryCondition,
+)
+from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
 
 class FluidPreprocessor:
-    def __init__(self, config: dict):
-        self.config = config
+    def __init__(self, boundary_conditions: List[BoundaryCondition]):
+        self.boundary_conditions = boundary_conditions
 
     def solve_flow(self, topo: MeshTopology, fields: PhysicalFields) -> None:
         if not np.any(fields.is_fluid):
@@ -50,12 +53,10 @@ class FluidPreprocessor:
     def _apply_pressure_boundary_conditions(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
-        for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") == "pressure":
-                c_ids, _ = resolve_boundary_cells(
-                    topo, fields, bc["face"], bc.get("target", "")
-                )
-                apply_pressure_bc(c_ids, bc["parameters"], fields, is_p_bound)
+        for bc in self.boundary_conditions:
+            if bc.type == "pressure":
+                c_ids, _ = resolve_boundary_cells(topo, fields, bc.face, bc.target)
+                apply_pressure_bc(c_ids, bc, fields, is_p_bound)
 
     def _solve_pressure(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray

@@ -1,11 +1,15 @@
 import json
 import os
-from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-# ==========================================
-# 单一真相：全局默认配置与标准材料库
-# ==========================================
+from metahotspot.metahotspot_types import (
+    SolverConfig,
+    BoundaryCondition,
+    MaterialProps,
+    LayerRegion,
+    UnitRegion,
+)
+
 DEFAULT_CONFIG = {
     "simulation_type": "steady",
     "ambient": 318.15,
@@ -23,7 +27,6 @@ DEFAULT_CONFIG = {
     "sampling_intvl": 0.01,
     "time": 0.01,
     "timestep": 0.01,
-    "mesh_file_path": "mesh.msh",
     "ptrace_file_path": "",
     "init_temperature_file_path": "",
     "pumping_pressure": 52000.0,
@@ -79,50 +82,6 @@ STANDARD_MATERIALS = {
 }
 
 
-@dataclass(slots=True)
-class Unit2D:
-    """2D layout unit for FVM mesh generation with full property resolution."""
-
-    name: str
-    lx: float
-    ly: float
-    dx: float
-    dy: float
-    material: str
-    k: float
-    cp: float
-    density: float
-    dynamic_viscosity: float
-    is_fluid: bool
-
-
-@dataclass(slots=True)
-class Layer25D:
-    """2.5D layer definition with fully resolved properties."""
-
-    name: str
-    tag: int
-    thickness: float
-    material: str
-    k: float
-    cp: float
-    density: float
-    dynamic_viscosity: float
-    is_fluid: bool
-    active: bool
-    units: List[Unit2D] = field(default_factory=list)
-    lx: float = 0.0
-    ly: float = 0.0
-    dx: float = 0.01
-    dy: float = 0.01
-
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    with open(config_path, "r", encoding="utf-8") as f:
-        raw_config = json.load(f)
-    return merge_with_defaults(raw_config)
-
-
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
 
@@ -153,7 +112,6 @@ def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
 def _resolve_prop(
     key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
 ) -> Any:
-    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
     if key in unit_data and unit_data[key] is not None:
         return unit_data[key]
     if key in unit_mat and unit_mat[key] is not None:
@@ -163,23 +121,70 @@ def _resolve_prop(
     return default_mat.get(key)
 
 
-def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    layers = []
-    stackup_data = config.get("stackup", [])
+def parse_computational_model(
+    config_path: str,
+) -> Tuple[SolverConfig, List[LayerRegion]]:
+    base_dir = os.path.dirname(config_path)
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw_config = json.load(f)
+
+    config = merge_with_defaults(raw_config)
+
+    def_mat = config.get("materials", {}).get(
+        "default_solid", STANDARD_MATERIALS["default_solid"]
+    )
+
+    default_solid = MaterialProps(
+        k=float(def_mat.get("k", 1.0)),
+        cp=float(def_mat.get("cp", 1.0e6)),
+        density=float(def_mat.get("density", 1000.0)),
+        is_fluid=bool(def_mat.get("fluid", False)),
+        dynamic_viscosity=float(def_mat.get("dynamic_viscosity", 0.0)),
+    )
+
+    boundary_conditions = []
+    for bc in config.get("boundary_conditions", []):
+        boundary_conditions.append(
+            BoundaryCondition(
+                name=str(bc.get("name", "")),
+                type=str(bc.get("type", "")),
+                face=str(bc.get("face", "")),
+                target=str(bc.get("target", "")),
+                parameters={
+                    str(k): float(v) for k, v in bc.get("parameters", {}).items()
+                },
+            )
+        )
+
+    solver_config = SolverConfig(
+        simulation_type=str(config.get("simulation_type", "steady")),
+        timestep=float(config.get("timestep", 0.01)),
+        init_temperature=float(config.get("init_temperature", 318.15)),
+        ptrace_file_path=str(config.get("ptrace_file_path", "")),
+        init_temperature_file_path=str(config.get("init_temperature_file_path", "")),
+        default_solid=default_solid,
+        boundary_conditions=boundary_conditions,
+    )
+
+    layer_regions: List[LayerRegion] = []
+
     materials = config.get("materials", {})
-    def_mat = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
+    stackup_data = config.get("stackup", [])
+    z_cursor = 0.0
 
     for i, layer_cfg in enumerate(stackup_data):
         tag = int(layer_cfg.get("tag", i + 100))
         name = str(layer_cfg.get("name", f"layer_{tag}"))
+        thickness = float(layer_cfg.get("thickness", 0.0))
         lx, ly = float(layer_cfg.get("lx", 0.0)), float(layer_cfg.get("ly", 0.0))
         dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
+        active = bool(layer_cfg.get("active", False))
 
         layer_mat_name = layer_cfg.get("material", "silicon")
         layer_mat = materials.get(layer_mat_name, def_mat)
         layout_file = layer_cfg.get("layout_file", "")
-        units = []
 
+        units: List[UnitRegion] = []
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
             if os.path.exists(full_path):
@@ -188,75 +193,75 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                         umat_name = u.get("material", layer_mat_name)
                         umat = materials.get(umat_name, layer_mat)
 
+                        u_props = MaterialProps(
+                            k=float(_resolve_prop("k", u, umat, layer_mat, def_mat)),
+                            cp=float(_resolve_prop("cp", u, umat, layer_mat, def_mat)),
+                            density=float(
+                                _resolve_prop("density", u, umat, layer_mat, def_mat)
+                            ),
+                            is_fluid=bool(
+                                _resolve_prop("fluid", u, umat, layer_mat, def_mat)
+                            ),
+                            dynamic_viscosity=float(
+                                _resolve_prop(
+                                    "dynamic_viscosity", u, umat, layer_mat, def_mat
+                                )
+                            ),
+                        )
+
                         units.append(
-                            Unit2D(
+                            UnitRegion(
                                 name=u["name"],
                                 lx=float(u["lx"]),
                                 ly=float(u["ly"]),
                                 dx=float(u["dx"]),
                                 dy=float(u["dy"]),
-                                material=umat_name,
-                                k=float(
-                                    _resolve_prop("k", u, umat, layer_mat, def_mat)
-                                ),
-                                cp=float(
-                                    _resolve_prop("cp", u, umat, layer_mat, def_mat)
-                                ),
-                                density=float(
-                                    _resolve_prop(
-                                        "density", u, umat, layer_mat, def_mat
-                                    )
-                                ),
-                                dynamic_viscosity=float(
-                                    _resolve_prop(
-                                        "dynamic_viscosity", u, umat, layer_mat, def_mat
-                                    )
-                                ),
-                                is_fluid=bool(
-                                    _resolve_prop("fluid", u, umat, layer_mat, def_mat)
-                                ),
+                                props=u_props,
                             )
                         )
 
         if not units:
-            units.append(
-                Unit2D(
-                    name=f"{name}_bulk",
-                    lx=lx,
-                    ly=ly,
-                    dx=dx,
-                    dy=dy,
-                    material=layer_mat_name,
-                    k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
-                    cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
-                    density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
-                    dynamic_viscosity=float(
-                        _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
-                    ),
-                    is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
-                )
-            )
-
-        layers.append(
-            Layer25D(
-                name=name,
-                tag=tag,
-                thickness=float(layer_cfg["thickness"]),
-                material=layer_mat_name,
+            l_props = MaterialProps(
                 k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
                 cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
                 density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 dynamic_viscosity=float(
                     _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
                 ),
-                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
-                active=bool(layer_cfg.get("active", False)),
-                units=units,
+            )
+            units.append(
+                UnitRegion(
+                    name=f"{name}_bulk", lx=lx, ly=ly, dx=dx, dy=dy, props=l_props
+                )
+            )
+
+        l_props_layer = MaterialProps(
+            k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+            cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+            density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+            is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
+            dynamic_viscosity=float(
+                _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+            ),
+        )
+
+        layer_regions.append(
+            LayerRegion(
+                name=name,
+                tag=tag,
                 lx=lx,
                 ly=ly,
+                lz=z_cursor,
                 dx=dx,
                 dy=dy,
+                dz=thickness,
+                props=l_props_layer,
+                units=units,
+                is_active=active,
             )
         )
 
-    return layers
+        z_cursor += thickness
+
+    return solver_config, layer_regions

@@ -11,9 +11,8 @@ _logger = get_logger(__name__)
 
 
 class ThermalSolver:
-    def __init__(self, matrices: SystemMatrices, config: dict):
+    def __init__(self, matrices: SystemMatrices):
         self.mat = matrices
-        self.config = config
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:
         rhs = self.mat.b_total + (self.mat.power_matrix @ mean_powers)
@@ -40,8 +39,6 @@ class ThermalSolver:
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
 
-        t0 = time.perf_counter()
-
         for i, step_power in enumerate(ptrace):
             power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
             rhs = (
@@ -54,6 +51,4 @@ class ThermalSolver:
                 _logger.info(
                     f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
-
-        _logger.info(f"Transient loop took {time.perf_counter() - t0:.3f}s.")
         return temp
