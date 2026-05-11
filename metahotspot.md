@@ -623,10 +623,8 @@ class FluidPreprocessor:
 ```py
 import math
 from collections import deque
-from pathlib import Path
-
 import gmsh
-from metahotspot.model25d import load_config, load_stackup
+from metahotspot.model25d import parse_computational_model
 
 
 class GmshMesher:
@@ -644,10 +642,9 @@ class GmshMesher:
 
     def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
         mesh_params = mesh_params or {}
-        base_dir = str(Path(config_path).parent)
 
-        # 换用统一入口加载JSON
-        config = load_config(config_path)
+        # 换用统一解析器：直接获取组装后的强类型 LayerRegion 与 PowerSource
+        _, layer_regions, power_sources = parse_computational_model(config_path)
 
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
@@ -655,22 +652,17 @@ class GmshMesher:
             "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
         )
 
-        stackup = load_stackup(config, base_dir)
-
+        # 完美映射：PowerSource 本身就准确代表了所有的有源区域（即原本的 active 过滤）
         heat_boxes = [
-            (u.lx, u.ly, u.lx + u.dx, u.ly + u.dy)
-            for l in stackup
-            if l.active
-            for u in l.units
+            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in power_sources
         ]
-        z_cursor = 0.0
 
-        for layer in stackup:
+        for layer in layer_regions:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
+            # 通过加入到实体模型的 tag 来解绑原有字典中 index 概念依赖
             gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
 
-            lz, dz = z_cursor, layer.thickness
-            z_cursor += dz
+            lz, dz = layer.lz, layer.dz
 
             leaves = self._subdivide_layer(
                 layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
@@ -1080,14 +1072,8 @@ from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
-from metahotspot.metahotspot_types import (
-    MeshTopology,
-    LayerRegion,
-    UnitRegion,
-    PowerSource,
-    MaterialProps,
-)
-from metahotspot.model25d import load_config, load_stackup, build_solver_config
+from metahotspot.metahotspot_types import MeshTopology
+from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
 
 _logger = get_logger(__name__)
@@ -1098,67 +1084,14 @@ class MetaHotspotSolver:
         self.config_path = config_path
         self.base_dir = os.path.dirname(config_path)
 
-        # IO 读取弱类型配置
-        raw_config = load_config(config_path)
-        stackup = load_stackup(raw_config, self.base_dir)
+        # 唯一的数据入口：强类型计算原语获取，彻底屏蔽 IO 和 Weakly-Typed Dict 细节
+        (
+            self.solver_config,
+            self.layer_regions,
+            self.power_sources,
+        ) = parse_computational_model(config_path)
 
-        # 生成强类型对象，内部解耦抛弃弱类型 raw_config
-        self.solver_config = build_solver_config(raw_config)
         self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
-
-        # 将弱类型IO热学栈翻译为强类型几何运算原语
-        self.layer_regions = []
-        self.power_sources = []
-
-        z_cursor = 0.0
-        for layer in stackup:
-            units = []
-            for u in layer.units:
-                units.append(
-                    UnitRegion(
-                        name=u.name,
-                        lx=u.lx,
-                        ly=u.ly,
-                        dx=u.dx,
-                        dy=u.dy,
-                        props=MaterialProps(
-                            k=u.k,
-                            cp=u.cp,
-                            density=u.density,
-                            is_fluid=u.is_fluid,
-                            dynamic_viscosity=u.dynamic_viscosity,
-                        ),
-                    )
-                )
-                if layer.active:
-                    self.power_sources.append(
-                        PowerSource(
-                            name=u.name,
-                            lx=u.lx,
-                            ly=u.ly,
-                            lz=z_cursor,
-                            dx=u.dx,
-                            dy=u.dy,
-                            dz=layer.thickness,
-                        )
-                    )
-
-            self.layer_regions.append(
-                LayerRegion(
-                    name=layer.name,
-                    lz=z_cursor,
-                    dz=layer.thickness,
-                    props=MaterialProps(
-                        k=layer.k,
-                        cp=layer.cp,
-                        density=layer.density,
-                        is_fluid=layer.is_fluid,
-                        dynamic_viscosity=layer.dynamic_viscosity,
-                    ),
-                    units=units,
-                )
-            )
-            z_cursor += layer.thickness
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -1169,6 +1102,7 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
+
         # 传递完全解耦的强类型几何层
         topo, fields = MeshPreprocessor(
             self.solver_config.default_solid, self.layer_regions
@@ -1211,7 +1145,6 @@ class MetaHotspotSolver:
                 if ptrace
                 else np.zeros(len(matrices.unit_names))
             )
-
         else:
             temperatures = solver.solve_transient(
                 self.solver_config.timestep,
@@ -1323,6 +1256,7 @@ class LayerRegion:
     """数值计算层几何区域"""
 
     name: str
+    tag: int  # 用于 Gmsh 标记 Physical Group
     lz: float
     dz: float
     props: MaterialProps
@@ -1405,10 +1339,16 @@ class SystemMatrices:
 ```py
 import json
 import os
-from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
-from metahotspot.metahotspot_types import SolverConfig, BoundaryCondition, MaterialProps
+from metahotspot.metahotspot_types import (
+    SolverConfig,
+    BoundaryCondition,
+    MaterialProps,
+    LayerRegion,
+    UnitRegion,
+    PowerSource,
+)
 
 # ==========================================
 # 单一真相：全局默认配置与标准材料库
@@ -1486,93 +1426,6 @@ STANDARD_MATERIALS = {
 }
 
 
-@dataclass(slots=True)
-class Unit2D:
-    """2D layout unit for FVM mesh generation with full property resolution."""
-
-    name: str
-    lx: float
-    ly: float
-    dx: float
-    dy: float
-    material: str
-    k: float
-    cp: float
-    density: float
-    dynamic_viscosity: float
-    is_fluid: bool
-
-
-@dataclass(slots=True)
-class Layer25D:
-    """2.5D layer definition with fully resolved properties."""
-
-    name: str
-    tag: int
-    thickness: float
-    material: str
-    k: float
-    cp: float
-    density: float
-    dynamic_viscosity: float
-    is_fluid: bool
-    active: bool
-    units: List[Unit2D] = field(default_factory=list)
-    lx: float = 0.0
-    ly: float = 0.0
-    dx: float = 0.01
-    dy: float = 0.01
-
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    """读取并合并默认值的底层方法（返回弱类型字典给外部框架使用）"""
-    with open(config_path, "r", encoding="utf-8") as f:
-        raw_config = json.load(f)
-    return merge_with_defaults(raw_config)
-
-
-def build_solver_config(raw_config: Dict[str, Any]) -> SolverConfig:
-    """将弱类型的 JSON 配置字典转为内部核心使用的强类型 SolverConfig (单向屏障)"""
-    def_mat = raw_config.get("materials", {}).get(
-        "default_solid", STANDARD_MATERIALS["default_solid"]
-    )
-
-    default_solid = MaterialProps(
-        k=float(def_mat.get("k", 1.0)),
-        cp=float(def_mat.get("cp", 1.0e6)),
-        density=float(def_mat.get("density", 1000.0)),
-        is_fluid=bool(def_mat.get("fluid", False)),
-        dynamic_viscosity=float(def_mat.get("dynamic_viscosity", 0.0)),
-    )
-
-    boundary_conditions = []
-    for bc in raw_config.get("boundary_conditions", []):
-        boundary_conditions.append(
-            BoundaryCondition(
-                name=str(bc.get("name", "")),
-                type=str(bc.get("type", "")),
-                face=str(bc.get("face", "")),
-                target=str(bc.get("target", "")),
-                parameters={
-                    str(k): float(v) for k, v in bc.get("parameters", {}).items()
-                },
-            )
-        )
-
-    return SolverConfig(
-        simulation_type=str(raw_config.get("simulation_type", "steady")),
-        timestep=float(raw_config.get("timestep", 0.01)),
-        init_temperature=float(raw_config.get("init_temperature", 318.15)),
-        mesh_file_path=str(raw_config.get("mesh_file_path", "mesh.msh")),
-        ptrace_file_path=str(raw_config.get("ptrace_file_path", "")),
-        init_temperature_file_path=str(
-            raw_config.get("init_temperature_file_path", "")
-        ),
-        default_solid=default_solid,
-        boundary_conditions=boundary_conditions,
-    )
-
-
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
 
@@ -1612,23 +1465,79 @@ def _resolve_prop(
     return default_mat.get(key)
 
 
-def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
-    layers = []
-    stackup_data = config.get("stackup", [])
+def parse_computational_model(
+    config_path: str,
+) -> Tuple[SolverConfig, List[LayerRegion], List[PowerSource]]:
+    """唯一入口：将弱类型的 JSON 转换解耦，直接输出强类型的代数/网格计算原语。"""
+    base_dir = os.path.dirname(config_path)
+    with open(config_path, "r", encoding="utf-8") as f:
+        raw_config = json.load(f)
+
+    config = merge_with_defaults(raw_config)
+
+    # ==========================
+    # 1. 组装强类型 SolverConfig
+    # ==========================
+    def_mat = config.get("materials", {}).get(
+        "default_solid", STANDARD_MATERIALS["default_solid"]
+    )
+
+    default_solid = MaterialProps(
+        k=float(def_mat.get("k", 1.0)),
+        cp=float(def_mat.get("cp", 1.0e6)),
+        density=float(def_mat.get("density", 1000.0)),
+        is_fluid=bool(def_mat.get("fluid", False)),
+        dynamic_viscosity=float(def_mat.get("dynamic_viscosity", 0.0)),
+    )
+
+    boundary_conditions = []
+    for bc in config.get("boundary_conditions", []):
+        boundary_conditions.append(
+            BoundaryCondition(
+                name=str(bc.get("name", "")),
+                type=str(bc.get("type", "")),
+                face=str(bc.get("face", "")),
+                target=str(bc.get("target", "")),
+                parameters={
+                    str(k): float(v) for k, v in bc.get("parameters", {}).items()
+                },
+            )
+        )
+
+    solver_config = SolverConfig(
+        simulation_type=str(config.get("simulation_type", "steady")),
+        timestep=float(config.get("timestep", 0.01)),
+        init_temperature=float(config.get("init_temperature", 318.15)),
+        mesh_file_path=str(config.get("mesh_file_path", "mesh.msh")),
+        ptrace_file_path=str(config.get("ptrace_file_path", "")),
+        init_temperature_file_path=str(config.get("init_temperature_file_path", "")),
+        default_solid=default_solid,
+        boundary_conditions=boundary_conditions,
+    )
+
+    # ==========================
+    # 2. 组装强类型 Geometry/Power
+    # ==========================
+    layer_regions: List[LayerRegion] = []
+    power_sources: List[PowerSource] = []
+
     materials = config.get("materials", {})
-    def_mat = materials.get("default_solid", STANDARD_MATERIALS["default_solid"])
+    stackup_data = config.get("stackup", [])
+    z_cursor = 0.0
 
     for i, layer_cfg in enumerate(stackup_data):
         tag = int(layer_cfg.get("tag", i + 100))
         name = str(layer_cfg.get("name", f"layer_{tag}"))
+        thickness = float(layer_cfg.get("thickness", 0.0))
         lx, ly = float(layer_cfg.get("lx", 0.0)), float(layer_cfg.get("ly", 0.0))
         dx, dy = float(layer_cfg.get("dx", 0.01)), float(layer_cfg.get("dy", 0.01))
+        active = bool(layer_cfg.get("active", False))
 
         layer_mat_name = layer_cfg.get("material", "silicon")
         layer_mat = materials.get(layer_mat_name, def_mat)
         layout_file = layer_cfg.get("layout_file", "")
-        units = []
 
+        units: List[UnitRegion] = []
         if layout_file and layout_file.lower() not in {"none", "(null)", ""}:
             full_path = os.path.join(base_dir, layout_file)
             if os.path.exists(full_path):
@@ -1637,78 +1546,88 @@ def load_stackup(config: Dict[str, Any], base_dir: str) -> List[Layer25D]:
                         umat_name = u.get("material", layer_mat_name)
                         umat = materials.get(umat_name, layer_mat)
 
+                        u_props = MaterialProps(
+                            k=float(_resolve_prop("k", u, umat, layer_mat, def_mat)),
+                            cp=float(_resolve_prop("cp", u, umat, layer_mat, def_mat)),
+                            density=float(
+                                _resolve_prop("density", u, umat, layer_mat, def_mat)
+                            ),
+                            is_fluid=bool(
+                                _resolve_prop("fluid", u, umat, layer_mat, def_mat)
+                            ),
+                            dynamic_viscosity=float(
+                                _resolve_prop(
+                                    "dynamic_viscosity", u, umat, layer_mat, def_mat
+                                )
+                            ),
+                        )
+
                         units.append(
-                            Unit2D(
+                            UnitRegion(
                                 name=u["name"],
                                 lx=float(u["lx"]),
                                 ly=float(u["ly"]),
                                 dx=float(u["dx"]),
                                 dy=float(u["dy"]),
-                                material=umat_name,
-                                k=float(
-                                    _resolve_prop("k", u, umat, layer_mat, def_mat)
-                                ),
-                                cp=float(
-                                    _resolve_prop("cp", u, umat, layer_mat, def_mat)
-                                ),
-                                density=float(
-                                    _resolve_prop(
-                                        "density", u, umat, layer_mat, def_mat
-                                    )
-                                ),
-                                dynamic_viscosity=float(
-                                    _resolve_prop(
-                                        "dynamic_viscosity", u, umat, layer_mat, def_mat
-                                    )
-                                ),
-                                is_fluid=bool(
-                                    _resolve_prop("fluid", u, umat, layer_mat, def_mat)
-                                ),
+                                props=u_props,
                             )
                         )
 
+        # 默认 Bulk 逻辑兜底
         if not units:
-            units.append(
-                Unit2D(
-                    name=f"{name}_bulk",
-                    lx=lx,
-                    ly=ly,
-                    dx=dx,
-                    dy=dy,
-                    material=layer_mat_name,
-                    k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
-                    cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
-                    density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
-                    dynamic_viscosity=float(
-                        _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
-                    ),
-                    is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
-                )
-            )
-
-        layers.append(
-            Layer25D(
-                name=name,
-                tag=tag,
-                thickness=float(layer_cfg["thickness"]),
-                material=layer_mat_name,
+            l_props = MaterialProps(
                 k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
                 cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
                 density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
                 dynamic_viscosity=float(
                     _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
                 ),
-                is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
-                active=bool(layer_cfg.get("active", False)),
+            )
+            units.append(
+                UnitRegion(
+                    name=f"{name}_bulk", lx=lx, ly=ly, dx=dx, dy=dy, props=l_props
+                )
+            )
+
+        l_props_layer = MaterialProps(
+            k=float(_resolve_prop("k", {}, {}, layer_mat, def_mat)),
+            cp=float(_resolve_prop("cp", {}, {}, layer_mat, def_mat)),
+            density=float(_resolve_prop("density", {}, {}, layer_mat, def_mat)),
+            is_fluid=bool(_resolve_prop("fluid", {}, {}, layer_mat, def_mat)),
+            dynamic_viscosity=float(
+                _resolve_prop("dynamic_viscosity", {}, {}, layer_mat, def_mat)
+            ),
+        )
+
+        layer_regions.append(
+            LayerRegion(
+                name=name,
+                tag=tag,
+                lz=z_cursor,
+                dz=thickness,
+                props=l_props_layer,
                 units=units,
-                lx=lx,
-                ly=ly,
-                dx=dx,
-                dy=dy,
             )
         )
 
-    return layers
+        if active:
+            for u in units:
+                power_sources.append(
+                    PowerSource(
+                        name=u.name,
+                        lx=u.lx,
+                        ly=u.ly,
+                        lz=z_cursor,
+                        dx=u.dx,
+                        dy=u.dy,
+                        dz=thickness,
+                    )
+                )
+
+        z_cursor += thickness
+
+    return solver_config, layer_regions, power_sources
 
 ```
 

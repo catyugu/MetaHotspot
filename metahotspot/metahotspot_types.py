@@ -43,6 +43,7 @@ class LayerRegion:
     """数值计算层几何区域"""
 
     name: str
+    tag: int  # 用于 Gmsh 标记 Physical Group
     lz: float
     dz: float
     props: MaterialProps

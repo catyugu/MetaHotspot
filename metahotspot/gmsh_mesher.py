@@ -1,9 +1,7 @@
 import math
 from collections import deque
-from pathlib import Path
-
 import gmsh
-from metahotspot.model25d import load_config, load_stackup
+from metahotspot.model25d import parse_computational_model
 
 
 class GmshMesher:
@@ -21,10 +19,9 @@ class GmshMesher:
 
     def generate_mesh(self, config_path: str, mesh_params: dict = None) -> None:
         mesh_params = mesh_params or {}
-        base_dir = str(Path(config_path).parent)
 
-        # 换用统一入口加载JSON
-        config = load_config(config_path)
+        # 换用统一解析器：直接获取组装后的强类型 LayerRegion 与 PowerSource
+        _, layer_regions, power_sources = parse_computational_model(config_path)
 
         max_mesh_size = mesh_params.get("max_mesh_size", self.DEFAULT_MAX_MESH_SIZE)
         min_mesh_size = mesh_params.get("min_mesh_size", self.DEFAULT_MIN_MESH_SIZE)
@@ -32,22 +29,17 @@ class GmshMesher:
             "refine_distance", self.DEFAULT_REFINEMENT_DISTANCE
         )
 
-        stackup = load_stackup(config, base_dir)
-
+        # 完美映射：PowerSource 本身就准确代表了所有的有源区域（即原本的 active 过滤）
         heat_boxes = [
-            (u.lx, u.ly, u.lx + u.dx, u.ly + u.dy)
-            for l in stackup
-            if l.active
-            for u in l.units
+            (ps.lx, ps.ly, ps.lx + ps.dx, ps.ly + ps.dy) for ps in power_sources
         ]
-        z_cursor = 0.0
 
-        for layer in stackup:
+        for layer in layer_regions:
             discrete_tag = gmsh.model.addDiscreteEntity(3)
+            # 通过加入到实体模型的 tag 来解绑原有字典中 index 概念依赖
             gmsh.model.addPhysicalGroup(3, [discrete_tag], layer.tag)
 
-            lz, dz = z_cursor, layer.thickness
-            z_cursor += dz
+            lz, dz = layer.lz, layer.dz
 
             leaves = self._subdivide_layer(
                 layer, max_mesh_size, min_mesh_size, refine_distance, heat_boxes
