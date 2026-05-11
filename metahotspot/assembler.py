@@ -23,7 +23,7 @@ from metahotspot.boundary_conditions import (
 
 
 class FVMAssembler:
-    GEOMETRY_TOLERANCE = 1e-12
+    GEOMETRY_TOLERANCE = 1e-15
 
     def __init__(
         self,

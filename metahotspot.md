@@ -50,7 +50,7 @@ from metahotspot.boundary_conditions import (
 
 
 class FVMAssembler:
-    GEOMETRY_TOLERANCE = 1e-12
+    GEOMETRY_TOLERANCE = 1e-15
 
     def __init__(
         self,
@@ -271,7 +271,7 @@ def find_adjacent_pairs_kernel(boxes):
     area_arr = np.empty(max_pairs, dtype=FLOAT_DTYPE)
 
     ptr = 0
-    tol = 1e-12  # 工业常用容差
+    tol = 1e-15  # 工业常用容差
     sorted_ids = np.argsort(boxes[:, 0])
 
     for i in range(len(sorted_ids)):
@@ -372,7 +372,7 @@ def build_adv_coo_kernel(
     data = np.empty(count * 2, dtype=FLOAT_DTYPE)
     net_outflux = np.zeros(pressure.shape[0], dtype=FLOAT_DTYPE)
     ptr = 0
-    tol = 1e-12
+    tol = 1e-15
 
     for i in range(count):
         c_a, c_b, axis = c_a_arr[i], c_b_arr[i], axis_arr[i]
