@@ -1,15 +1,15 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, List, Tuple
 import meshio
 import numpy as np
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, MaterialProps
 
 
 class MeshPreprocessor:
     GEOMETRY_TOLERANCE = 1e-12
 
-    def __init__(self, config: Dict[str, Any], stackup: List[Any]) -> None:
-        self.config = config
+    def __init__(self, default_solid: MaterialProps, stackup: List[Any]) -> None:
+        self.default_solid = default_solid
         self.stackup = stackup
 
     def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
@@ -79,10 +79,8 @@ class MeshPreprocessor:
         sorted_indices: np.ndarray,
         c_centers: np.ndarray,
     ) -> Tuple[np.ndarray, dict]:
-        """使用 lexsort 替代慢速的 Python Dict 解析面连通性"""
         n_cells = len(sorted_indices)
 
-        # 6 个面的局部节点定义
         faces_def = np.array(
             [
                 [0, 3, 2, 1],
@@ -97,7 +95,6 @@ class MeshPreprocessor:
         cell_ids = np.repeat(np.arange(n_cells), 6)
         all_faces_nodes = hex_data[sorted_indices][:, faces_def].reshape(-1, 4)
 
-        # 排序面节点用于统一签名
         sorted_faces = np.sort(all_faces_nodes, axis=1)
         sort_order = np.lexsort(
             (
@@ -110,14 +107,12 @@ class MeshPreprocessor:
         sorted_faces_lex = sorted_faces[sort_order]
         cell_ids_lex = cell_ids[sort_order]
 
-        # 查找内部面
         is_same = np.all(sorted_faces_lex[:-1] == sorted_faces_lex[1:], axis=1)
         internal_idx = np.where(is_same)[0]
         internal_faces = np.column_stack(
             (cell_ids_lex[internal_idx], cell_ids_lex[internal_idx + 1])
         )
 
-        # 提取边界面
         bound_mask = np.ones(len(sorted_faces_lex), dtype=bool)
         bound_mask[internal_idx] = False
         bound_mask[internal_idx + 1] = False
@@ -138,12 +133,10 @@ class MeshPreprocessor:
         b_c_ids = bound_c_ids[valid]
         b_areas = areas[valid]
 
-        # 法向校正
         centers_dir = np.mean(pts[valid], axis=1) - c_centers[b_c_ids]
         flip_mask = np.sum(centers_dir * normals, axis=1) < 0
         normals[flip_mask] *= -1
 
-        # 方向分类
         abs_n = np.abs(normals)
         for i in range(len(b_c_ids)):
             n, a_n = normals[i], abs_n[i]
@@ -166,31 +159,26 @@ class MeshPreprocessor:
         }
 
     def _map_physical_properties(self, topo: MeshTopology) -> PhysicalFields:
-        """纯 SoA 数组映射，解决 TypeError 报错"""
         n, centers, tol = topo.n_cells, topo.centers, self.GEOMETRY_TOLERANCE
 
-        # 初始化基础属性数组
         k = np.zeros(n)
         cp = np.zeros(n)
         density = np.zeros(n)
         is_fluid = np.zeros(n, dtype=bool)
         dynamic_viscosity = np.zeros(n)
 
-        # 使用整数数组（int16）替代字符串（object）
         layer_ids = np.zeros(n, dtype=np.int16)
         unit_ids = np.zeros(n, dtype=np.int16)
 
-        # 维护一个双向映射表
         layer_name_map = ["default_layer"]
         unit_name_map = [""]
 
-        # 兼容 dict 模式配置读取
-        def_mat = self.config.get("materials", {}).get("default_solid", {})
-        k[:] = def_mat.get("k", 1.0)
-        cp[:] = def_mat.get("cp", 1.0e6)
-        density[:] = def_mat.get("density", 1000.0)
-        is_fluid[:] = def_mat.get("fluid", False)
-        dynamic_viscosity[:] = def_mat.get("dynamic_viscosity", 0.0)
+        # 直接读取强类型 default_solid 属性
+        k[:] = self.default_solid.k
+        cp[:] = self.default_solid.cp
+        density[:] = self.default_solid.density
+        is_fluid[:] = self.default_solid.is_fluid
+        dynamic_viscosity[:] = self.default_solid.dynamic_viscosity
 
         z_cursor = 0.0
         for layer in self.stackup:
@@ -201,7 +189,6 @@ class MeshPreprocessor:
             if not np.any(l_mask):
                 continue
 
-            # 【查表/建表】注册 Layer 的整型 ID
             if layer.name not in layer_name_map:
                 layer_name_map.append(layer.name)
             l_id = layer_name_map.index(layer.name)
@@ -211,7 +198,7 @@ class MeshPreprocessor:
             density[l_mask] = layer.density
             is_fluid[l_mask] = layer.is_fluid
             dynamic_viscosity[l_mask] = layer.dynamic_viscosity
-            layer_ids[l_mask] = l_id  # 写入整数
+            layer_ids[l_mask] = l_id
 
             for unit in layer.units:
                 u_mask = (
@@ -222,7 +209,6 @@ class MeshPreprocessor:
                     & (centers[:, 1] <= unit.ly + unit.dy + tol)
                 )
                 if np.any(u_mask):
-                    # 【查表/建表】注册 Unit 的整型 ID
                     if unit.name not in unit_name_map:
                         unit_name_map.append(unit.name)
                     u_id = unit_name_map.index(unit.name)
@@ -232,9 +218,8 @@ class MeshPreprocessor:
                     density[u_mask] = unit.density
                     is_fluid[u_mask] = unit.is_fluid
                     dynamic_viscosity[u_mask] = unit.dynamic_viscosity
-                    unit_ids[u_mask] = u_id  # 写入整数
+                    unit_ids[u_mask] = u_id
 
-        # 组装完整的 PhysicalFields (SoA 布局)
         return PhysicalFields(
             k=k,
             cp=cp,

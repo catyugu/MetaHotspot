@@ -1,5 +1,4 @@
 import os
-
 import meshio
 import numpy as np
 import time
@@ -10,7 +9,7 @@ from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
-from metahotspot.model25d import load_config, load_stackup
+from metahotspot.model25d import load_config, load_stackup, build_solver_config
 from metahotspot.numba_warmup import warmup_numba_kernels
 
 _logger = get_logger(__name__)
@@ -18,11 +17,16 @@ _logger = get_logger(__name__)
 
 class MetaHotspotSolver:
     def __init__(self, config_path: str):
-        self.config_path, self.base_dir = config_path, os.path.dirname(config_path)
-        self.config, self.stackup = load_config(config_path), load_stackup(
-            load_config(config_path), os.path.dirname(config_path)
-        )
-        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
+        self.config_path = config_path
+        self.base_dir = os.path.dirname(config_path)
+
+        # IO 读取弱类型配置
+        raw_config = load_config(config_path)
+        self.stackup = load_stackup(raw_config, self.base_dir)
+
+        # 生成强类型对象，内部解耦抛弃弱类型 raw_config
+        self.solver_config = build_solver_config(raw_config)
+        self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -31,26 +35,40 @@ class MetaHotspotSolver:
         _logger.info(
             f"Numba kernels warmup completed in {warmup_end - warmup_start:.2f} seconds"
         )
+
         start = time.perf_counter()
-        topo, fields = MeshPreprocessor(self.config, self.stackup).process(
-            self.mesh_path
-        )
+        # 传递强类型的 default_solid 和 stackup
+        topo, fields = MeshPreprocessor(
+            self.solver_config.default_solid, self.stackup
+        ).process(self.mesh_path)
         mesh_finished = time.perf_counter()
         _logger.info(
             f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
         )
-        FluidPreprocessor(self.config).solve_flow(topo, fields)
+
+        # 传递强类型的 boundary_conditions
+        FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
+            topo, fields
+        )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
             f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
-        matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
+
+        # 传递强类型的 boundary_conditions 和 stackup
+        matrices = FVMAssembler(
+            topo, fields, self.solver_config.boundary_conditions, self.stackup
+        ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
             f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
-        solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
-        if self.config["simulation_type"] == "steady":
+
+        # ThermalSolver 已完全剥离冗余信息，仅依赖装配完成的 matrices
+        solver = ThermalSolver(matrices)
+        ptrace = self._load_ptrace()
+
+        if self.solver_config.simulation_type == "steady":
             temperatures = solver.solve_steady(
                 np.array(
                     [
@@ -64,12 +82,13 @@ class MetaHotspotSolver:
 
         else:
             temperatures = solver.solve_transient(
-                self.config["timestep"],
+                self.solver_config.timestep,
                 ptrace,
                 self._get_init_temp(topo),
                 topo.volumes,
                 fields.cp,
             )
+
         end = time.perf_counter()
         _logger.info(
             f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
@@ -79,7 +98,9 @@ class MetaHotspotSolver:
         self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
-        path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
+        if not self.solver_config.ptrace_file_path:
+            return []
+        path = os.path.join(self.base_dir, self.solver_config.ptrace_file_path)
         if not os.path.exists(path):
             return []
         with open(path, "r") as f:
@@ -87,10 +108,11 @@ class MetaHotspotSolver:
             return [dict(zip(headers, map(float, l.split()))) for l in f if l.strip()]
 
     def _get_init_temp(self, topo: MeshTopology) -> np.ndarray:
-        temp = np.full(topo.n_cells, float(self.config["init_temperature"]))
-        init_file = self.config.get("init_temperature_file_path")
+        temp = np.full(topo.n_cells, self.solver_config.init_temperature)
+        init_file = self.solver_config.init_temperature_file_path
         if init_file and os.path.exists(os.path.join(self.base_dir, init_file)):
-            init_mesh, offset = meshio.read(os.path.join(self.base_dir, init_file)), 0
+            init_mesh = meshio.read(os.path.join(self.base_dir, init_file))
+            offset = 0
             for block, block_temps in zip(
                 init_mesh.cells, init_mesh.cell_data.get("Temperature_K", [])
             ):
@@ -105,13 +127,10 @@ class MetaHotspotSolver:
         return temp
 
     def _export_vtu(self, topo: MeshTopology, temperatures: np.ndarray, filename: str):
-        mapped, orig_mesh, hex_blocks, temp_chunks, offset = (
-            np.empty(topo.n_cells),
-            meshio.read(self.mesh_path),
-            [],
-            [],
-            0,
-        )
+        mapped = np.empty(topo.n_cells)
+        orig_mesh = meshio.read(self.mesh_path)
+        hex_blocks, temp_chunks = [], []
+        offset = 0
         mapped[topo.sorted_indices] = temperatures
         for block in orig_mesh.cells:
             if block.type == "hexahedron":

@@ -2,7 +2,12 @@ from typing import List, Tuple
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, SystemMatrices
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    SystemMatrices,
+    BoundaryCondition,
+)
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
     build_cond_coo_kernel,
@@ -20,14 +25,16 @@ class FVMAssembler:
     GEOMETRY_TOLERANCE = 1e-12
 
     def __init__(
-        self, topo: MeshTopology, fields: PhysicalFields, config: dict, stackup: list
+        self,
+        topo: MeshTopology,
+        fields: PhysicalFields,
+        boundary_conditions: List[BoundaryCondition],
+        stackup: list,
     ):
-        self.topo, self.fields, self.config, self.stackup = (
-            topo,
-            fields,
-            config,
-            stackup,
-        )
+        self.topo = topo
+        self.fields = fields
+        self.boundary_conditions = boundary_conditions
+        self.stackup = stackup
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -65,13 +72,12 @@ class FVMAssembler:
         )
 
     def _apply_temperature_boundaries(self) -> None:
-        """记录所有 Dirichlet 边界温度状态"""
-        for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") == "temperature":
+        for bc in self.boundary_conditions:
+            if bc.type == "temperature":
                 c_ids, _ = resolve_boundary_cells(
-                    self.topo, self.fields, bc["face"], bc.get("target", "")
+                    self.topo, self.fields, bc.face, bc.target
                 )
-                apply_temperature_state_bc(c_ids, bc["parameters"], self.fields)
+                apply_temperature_state_bc(c_ids, bc, self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -93,37 +99,21 @@ class FVMAssembler:
         n = self.topo.n_cells
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
-        for bc in self.config.get("boundary_conditions", []):
-            bc_type = bc.get("type")
-            if bc_type not in ["convection", "temperature"]:
+        for bc in self.boundary_conditions:
+            if bc.type not in ["convection", "temperature"]:
                 continue
+
             c_ids, areas = resolve_boundary_cells(
-                self.topo, self.fields, bc["face"], bc.get("target", "")
+                self.topo, self.fields, bc.face, bc.target
             )
 
-            if bc_type == "convection":
+            if bc.type == "convection":
                 apply_convection_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
-            elif bc_type == "temperature":
+            elif bc.type == "temperature":
                 apply_temperature_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
@@ -150,7 +140,6 @@ class FVMAssembler:
         influxes = net_outflux[fluid_ids]
         in_mask = influxes > self.GEOMETRY_TOLERANCE
         v_in_ids = fluid_ids[in_mask]
-        # 使用重构后的 boundary_temperature 字段
         v_temps = self.fields.boundary_temperature[v_in_ids]
         temp_mask = ~np.isnan(v_temps)
         rhs[v_in_ids[temp_mask]] += (

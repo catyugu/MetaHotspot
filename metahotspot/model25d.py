@@ -3,6 +3,8 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
 
+from metahotspot.metahotspot_types import SolverConfig, BoundaryCondition, MaterialProps
+
 # ==========================================
 # 单一真相：全局默认配置与标准材料库
 # ==========================================
@@ -118,9 +120,52 @@ class Layer25D:
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
+    """读取并合并默认值的底层方法（返回弱类型字典给外部框架使用）"""
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
     return merge_with_defaults(raw_config)
+
+
+def build_solver_config(raw_config: Dict[str, Any]) -> SolverConfig:
+    """将弱类型的 JSON 配置字典转为内部核心使用的强类型 SolverConfig (单向屏障)"""
+    def_mat = raw_config.get("materials", {}).get(
+        "default_solid", STANDARD_MATERIALS["default_solid"]
+    )
+
+    default_solid = MaterialProps(
+        k=float(def_mat.get("k", 1.0)),
+        cp=float(def_mat.get("cp", 1.0e6)),
+        density=float(def_mat.get("density", 1000.0)),
+        is_fluid=bool(def_mat.get("fluid", False)),
+        dynamic_viscosity=float(def_mat.get("dynamic_viscosity", 0.0)),
+    )
+
+    boundary_conditions = []
+    for bc in raw_config.get("boundary_conditions", []):
+        boundary_conditions.append(
+            BoundaryCondition(
+                name=str(bc.get("name", "")),
+                type=str(bc.get("type", "")),
+                face=str(bc.get("face", "")),
+                target=str(bc.get("target", "")),
+                parameters={
+                    str(k): float(v) for k, v in bc.get("parameters", {}).items()
+                },
+            )
+        )
+
+    return SolverConfig(
+        simulation_type=str(raw_config.get("simulation_type", "steady")),
+        timestep=float(raw_config.get("timestep", 0.01)),
+        init_temperature=float(raw_config.get("init_temperature", 318.15)),
+        mesh_file_path=str(raw_config.get("mesh_file_path", "mesh.msh")),
+        ptrace_file_path=str(raw_config.get("ptrace_file_path", "")),
+        init_temperature_file_path=str(
+            raw_config.get("init_temperature_file_path", "")
+        ),
+        default_solid=default_solid,
+        boundary_conditions=boundary_conditions,
+    )
 
 
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -153,7 +198,6 @@ def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
 def _resolve_prop(
     key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
 ) -> Any:
-    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
     if key in unit_data and unit_data[key] is not None:
         return unit_data[key]
     if key in unit_mat and unit_mat[key] is not None:

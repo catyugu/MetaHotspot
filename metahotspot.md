@@ -30,7 +30,12 @@ from typing import List, Tuple
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, SystemMatrices
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    SystemMatrices,
+    BoundaryCondition,
+)
 from metahotspot.assembler_kernels import (
     find_adjacent_pairs_kernel,
     build_cond_coo_kernel,
@@ -48,14 +53,16 @@ class FVMAssembler:
     GEOMETRY_TOLERANCE = 1e-12
 
     def __init__(
-        self, topo: MeshTopology, fields: PhysicalFields, config: dict, stackup: list
+        self,
+        topo: MeshTopology,
+        fields: PhysicalFields,
+        boundary_conditions: List[BoundaryCondition],
+        stackup: list,
     ):
-        self.topo, self.fields, self.config, self.stackup = (
-            topo,
-            fields,
-            config,
-            stackup,
-        )
+        self.topo = topo
+        self.fields = fields
+        self.boundary_conditions = boundary_conditions
+        self.stackup = stackup
         self.flow_axes = np.zeros(self.topo.n_cells, dtype=np.int32)
         self._c_a, self._c_b, self._axes, self._areas, self._pair_count = (
             find_adjacent_pairs_kernel(self.topo.boxes)
@@ -93,13 +100,12 @@ class FVMAssembler:
         )
 
     def _apply_temperature_boundaries(self) -> None:
-        """记录所有 Dirichlet 边界温度状态"""
-        for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") == "temperature":
+        for bc in self.boundary_conditions:
+            if bc.type == "temperature":
                 c_ids, _ = resolve_boundary_cells(
-                    self.topo, self.fields, bc["face"], bc.get("target", "")
+                    self.topo, self.fields, bc.face, bc.target
                 )
-                apply_temperature_state_bc(c_ids, bc["parameters"], self.fields)
+                apply_temperature_state_bc(c_ids, bc, self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -121,37 +127,21 @@ class FVMAssembler:
         n = self.topo.n_cells
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
-        for bc in self.config.get("boundary_conditions", []):
-            bc_type = bc.get("type")
-            if bc_type not in ["convection", "temperature"]:
+        for bc in self.boundary_conditions:
+            if bc.type not in ["convection", "temperature"]:
                 continue
+
             c_ids, areas = resolve_boundary_cells(
-                self.topo, self.fields, bc["face"], bc.get("target", "")
+                self.topo, self.fields, bc.face, bc.target
             )
 
-            if bc_type == "convection":
+            if bc.type == "convection":
                 apply_convection_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
-            elif bc_type == "temperature":
+            elif bc.type == "temperature":
                 apply_temperature_matrix_bc(
-                    c_ids,
-                    areas,
-                    bc["parameters"],
-                    self.topo,
-                    self.fields,
-                    rows,
-                    cols,
-                    data,
-                    rhs,
+                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
                 )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
@@ -178,7 +168,6 @@ class FVMAssembler:
         influxes = net_outflux[fluid_ids]
         in_mask = influxes > self.GEOMETRY_TOLERANCE
         v_in_ids = fluid_ids[in_mask]
-        # 使用重构后的 boundary_temperature 字段
         v_temps = self.fields.boundary_temperature[v_in_ids]
         temp_mask = ~np.isnan(v_temps)
         rhs[v_in_ids[temp_mask]] += (
@@ -423,17 +412,16 @@ import re
 import numpy as np
 from typing import Tuple, List
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    BoundaryCondition,
+)
 
 
 def resolve_boundary_cells(
     topo: MeshTopology, fields: PhysicalFields, face_key: str, target_regex: str
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    通用边界单元解析器。
-    根据指定的面 (face_key) 和 目标正则 (target_regex) 过滤边界单元。
-    支持对 layer_name 或 unit_name 的双向匹配。
-    """
     if face_key not in topo.boundary_faces:
         return np.array([], dtype=int), np.array([], dtype=float)
 
@@ -444,11 +432,9 @@ def resolve_boundary_cells(
 
     pattern = re.compile(target_regex)
 
-    # 提取边界单元对应的 层名称 和 单元名称
     layer_names = [fields.layer_name_map[fields.layer_ids[cid]] for cid in c_ids]
     unit_names = [fields.unit_name_map[fields.unit_ids[cid]] for cid in c_ids]
 
-    # 如果层名称或单元名称任意一个匹配正则，则保留该单元
     mask = np.array(
         [
             bool(pattern.match(l_name)) or bool(pattern.match(u_name))
@@ -459,42 +445,30 @@ def resolve_boundary_cells(
     return c_ids[mask], areas[mask]
 
 
-# ==========================================
-# 状态修改算子 (State Modification Operators)
-# ==========================================
-
-
 def apply_pressure_bc(
     c_ids: np.ndarray,
-    params: dict,
+    bc: BoundaryCondition,
     fields: PhysicalFields,
     is_pressure_boundary: np.ndarray,
 ) -> None:
-    """流体压力边界算子"""
     fluid_mask = fields.is_fluid[c_ids]
     valid_c_ids = c_ids[fluid_mask]
 
     if len(valid_c_ids) > 0:
         is_pressure_boundary[valid_c_ids] = True
-        fields.pressure[valid_c_ids] = float(params["pressure"])
+        fields.pressure[valid_c_ids] = bc.parameters["pressure"]
 
 
 def apply_temperature_state_bc(
-    c_ids: np.ndarray, params: dict, fields: PhysicalFields
+    c_ids: np.ndarray, bc: BoundaryCondition, fields: PhysicalFields
 ) -> None:
-    """通用温度状态设定算子（记录 Dirichlet 边界值）"""
-    fields.boundary_temperature[c_ids] = float(params["temperature"])
-
-
-# ==========================================
-# 矩阵装配算子 (Matrix Assembly Operators)
-# ==========================================
+    fields.boundary_temperature[c_ids] = bc.parameters["temperature"]
 
 
 def apply_convection_matrix_bc(
     c_ids: np.ndarray,
     areas: np.ndarray,
-    params: dict,
+    bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
     rows: List[int],
@@ -502,11 +476,9 @@ def apply_convection_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
-    """对流边界(Robin)矩阵算子 (完全向量化)"""
-    h, t_inf = float(params["h"]), float(params["T_inf"])
+    h, t_inf = bc.parameters["h"], bc.parameters["T_inf"]
     vols, k = topo.volumes[c_ids], fields.k[c_ids]
 
-    # 向量化计算传热系数
     g = areas / ((0.5 * (vols / areas) / k) + (1.0 / h))
 
     rows.extend(c_ids.tolist())
@@ -518,7 +490,7 @@ def apply_convection_matrix_bc(
 def apply_temperature_matrix_bc(
     c_ids: np.ndarray,
     areas: np.ndarray,
-    params: dict,
+    bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
     rows: List[int],
@@ -526,12 +498,11 @@ def apply_temperature_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
-    """恒温边界(Dirichlet)矩阵算子 - 罚函数法 (完全向量化)"""
     if len(c_ids) == 0:
         return
 
-    temp = float(params["temperature"])
-    h_inf = 1e20  # 使用巨大对流换热系数锁定表面温度
+    temp = bc.parameters["temperature"]
+    h_inf = 1e20
     vols, k = topo.volumes[c_ids], fields.k[c_ids]
 
     g = areas / ((0.5 * (vols / areas) / k) + (1.0 / h_inf))
@@ -548,16 +519,22 @@ def apply_temperature_matrix_bc(
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as splinalg
+from typing import List
+
 from metahotspot.logging_config import get_logger
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    BoundaryCondition,
+)
 from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
 
 _logger = get_logger(__name__)
 
 
 class FluidPreprocessor:
-    def __init__(self, config: dict):
-        self.config = config
+    def __init__(self, boundary_conditions: List[BoundaryCondition]):
+        self.boundary_conditions = boundary_conditions
 
     def solve_flow(self, topo: MeshTopology, fields: PhysicalFields) -> None:
         if not np.any(fields.is_fluid):
@@ -597,12 +574,10 @@ class FluidPreprocessor:
     def _apply_pressure_boundary_conditions(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
     ) -> None:
-        for bc in self.config.get("boundary_conditions", []):
-            if bc.get("type") == "pressure":
-                c_ids, _ = resolve_boundary_cells(
-                    topo, fields, bc["face"], bc.get("target", "")
-                )
-                apply_pressure_bc(c_ids, bc["parameters"], fields, is_p_bound)
+        for bc in self.boundary_conditions:
+            if bc.type == "pressure":
+                c_ids, _ = resolve_boundary_cells(topo, fields, bc.face, bc.target)
+                apply_pressure_bc(c_ids, bc, fields, is_p_bound)
 
     def _solve_pressure(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
@@ -864,18 +839,18 @@ def get_logger(name: str, level: int | None = None) -> logging.Logger:
 
 ### File: mesh_preprocessor.py
 ```py
-from typing import Any, Dict, List, Tuple
+from typing import Any, List, Tuple
 import meshio
 import numpy as np
 
-from metahotspot.metahotspot_types import MeshTopology, PhysicalFields
+from metahotspot.metahotspot_types import MeshTopology, PhysicalFields, MaterialProps
 
 
 class MeshPreprocessor:
     GEOMETRY_TOLERANCE = 1e-12
 
-    def __init__(self, config: Dict[str, Any], stackup: List[Any]) -> None:
-        self.config = config
+    def __init__(self, default_solid: MaterialProps, stackup: List[Any]) -> None:
+        self.default_solid = default_solid
         self.stackup = stackup
 
     def process(self, mesh_path: str) -> Tuple[MeshTopology, PhysicalFields]:
@@ -945,10 +920,8 @@ class MeshPreprocessor:
         sorted_indices: np.ndarray,
         c_centers: np.ndarray,
     ) -> Tuple[np.ndarray, dict]:
-        """使用 lexsort 替代慢速的 Python Dict 解析面连通性"""
         n_cells = len(sorted_indices)
 
-        # 6 个面的局部节点定义
         faces_def = np.array(
             [
                 [0, 3, 2, 1],
@@ -963,7 +936,6 @@ class MeshPreprocessor:
         cell_ids = np.repeat(np.arange(n_cells), 6)
         all_faces_nodes = hex_data[sorted_indices][:, faces_def].reshape(-1, 4)
 
-        # 排序面节点用于统一签名
         sorted_faces = np.sort(all_faces_nodes, axis=1)
         sort_order = np.lexsort(
             (
@@ -976,14 +948,12 @@ class MeshPreprocessor:
         sorted_faces_lex = sorted_faces[sort_order]
         cell_ids_lex = cell_ids[sort_order]
 
-        # 查找内部面
         is_same = np.all(sorted_faces_lex[:-1] == sorted_faces_lex[1:], axis=1)
         internal_idx = np.where(is_same)[0]
         internal_faces = np.column_stack(
             (cell_ids_lex[internal_idx], cell_ids_lex[internal_idx + 1])
         )
 
-        # 提取边界面
         bound_mask = np.ones(len(sorted_faces_lex), dtype=bool)
         bound_mask[internal_idx] = False
         bound_mask[internal_idx + 1] = False
@@ -1004,12 +974,10 @@ class MeshPreprocessor:
         b_c_ids = bound_c_ids[valid]
         b_areas = areas[valid]
 
-        # 法向校正
         centers_dir = np.mean(pts[valid], axis=1) - c_centers[b_c_ids]
         flip_mask = np.sum(centers_dir * normals, axis=1) < 0
         normals[flip_mask] *= -1
 
-        # 方向分类
         abs_n = np.abs(normals)
         for i in range(len(b_c_ids)):
             n, a_n = normals[i], abs_n[i]
@@ -1032,31 +1000,26 @@ class MeshPreprocessor:
         }
 
     def _map_physical_properties(self, topo: MeshTopology) -> PhysicalFields:
-        """纯 SoA 数组映射，解决 TypeError 报错"""
         n, centers, tol = topo.n_cells, topo.centers, self.GEOMETRY_TOLERANCE
 
-        # 初始化基础属性数组
         k = np.zeros(n)
         cp = np.zeros(n)
         density = np.zeros(n)
         is_fluid = np.zeros(n, dtype=bool)
         dynamic_viscosity = np.zeros(n)
 
-        # 使用整数数组（int16）替代字符串（object）
         layer_ids = np.zeros(n, dtype=np.int16)
         unit_ids = np.zeros(n, dtype=np.int16)
 
-        # 维护一个双向映射表
         layer_name_map = ["default_layer"]
         unit_name_map = [""]
 
-        # 兼容 dict 模式配置读取
-        def_mat = self.config.get("materials", {}).get("default_solid", {})
-        k[:] = def_mat.get("k", 1.0)
-        cp[:] = def_mat.get("cp", 1.0e6)
-        density[:] = def_mat.get("density", 1000.0)
-        is_fluid[:] = def_mat.get("fluid", False)
-        dynamic_viscosity[:] = def_mat.get("dynamic_viscosity", 0.0)
+        # 直接读取强类型 default_solid 属性
+        k[:] = self.default_solid.k
+        cp[:] = self.default_solid.cp
+        density[:] = self.default_solid.density
+        is_fluid[:] = self.default_solid.is_fluid
+        dynamic_viscosity[:] = self.default_solid.dynamic_viscosity
 
         z_cursor = 0.0
         for layer in self.stackup:
@@ -1067,7 +1030,6 @@ class MeshPreprocessor:
             if not np.any(l_mask):
                 continue
 
-            # 【查表/建表】注册 Layer 的整型 ID
             if layer.name not in layer_name_map:
                 layer_name_map.append(layer.name)
             l_id = layer_name_map.index(layer.name)
@@ -1077,7 +1039,7 @@ class MeshPreprocessor:
             density[l_mask] = layer.density
             is_fluid[l_mask] = layer.is_fluid
             dynamic_viscosity[l_mask] = layer.dynamic_viscosity
-            layer_ids[l_mask] = l_id  # 写入整数
+            layer_ids[l_mask] = l_id
 
             for unit in layer.units:
                 u_mask = (
@@ -1088,7 +1050,6 @@ class MeshPreprocessor:
                     & (centers[:, 1] <= unit.ly + unit.dy + tol)
                 )
                 if np.any(u_mask):
-                    # 【查表/建表】注册 Unit 的整型 ID
                     if unit.name not in unit_name_map:
                         unit_name_map.append(unit.name)
                     u_id = unit_name_map.index(unit.name)
@@ -1098,9 +1059,8 @@ class MeshPreprocessor:
                     density[u_mask] = unit.density
                     is_fluid[u_mask] = unit.is_fluid
                     dynamic_viscosity[u_mask] = unit.dynamic_viscosity
-                    unit_ids[u_mask] = u_id  # 写入整数
+                    unit_ids[u_mask] = u_id
 
-        # 组装完整的 PhysicalFields (SoA 布局)
         return PhysicalFields(
             k=k,
             cp=cp,
@@ -1121,7 +1081,6 @@ class MeshPreprocessor:
 ### File: metahotspot_solver.py
 ```py
 import os
-
 import meshio
 import numpy as np
 import time
@@ -1132,7 +1091,7 @@ from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesh_preprocessor import MeshPreprocessor
 from metahotspot.fluid_preprocessor import FluidPreprocessor
 from metahotspot.metahotspot_types import MeshTopology
-from metahotspot.model25d import load_config, load_stackup
+from metahotspot.model25d import load_config, load_stackup, build_solver_config
 from metahotspot.numba_warmup import warmup_numba_kernels
 
 _logger = get_logger(__name__)
@@ -1140,11 +1099,16 @@ _logger = get_logger(__name__)
 
 class MetaHotspotSolver:
     def __init__(self, config_path: str):
-        self.config_path, self.base_dir = config_path, os.path.dirname(config_path)
-        self.config, self.stackup = load_config(config_path), load_stackup(
-            load_config(config_path), os.path.dirname(config_path)
-        )
-        self.mesh_path = os.path.join(self.base_dir, self.config["mesh_file_path"])
+        self.config_path = config_path
+        self.base_dir = os.path.dirname(config_path)
+
+        # IO 读取弱类型配置
+        raw_config = load_config(config_path)
+        self.stackup = load_stackup(raw_config, self.base_dir)
+
+        # 生成强类型对象，内部解耦抛弃弱类型 raw_config
+        self.solver_config = build_solver_config(raw_config)
+        self.mesh_path = os.path.join(self.base_dir, self.solver_config.mesh_file_path)
 
     def run(self):
         warmup_start = time.perf_counter()
@@ -1153,26 +1117,40 @@ class MetaHotspotSolver:
         _logger.info(
             f"Numba kernels warmup completed in {warmup_end - warmup_start:.2f} seconds"
         )
+
         start = time.perf_counter()
-        topo, fields = MeshPreprocessor(self.config, self.stackup).process(
-            self.mesh_path
-        )
+        # 传递强类型的 default_solid 和 stackup
+        topo, fields = MeshPreprocessor(
+            self.solver_config.default_solid, self.stackup
+        ).process(self.mesh_path)
         mesh_finished = time.perf_counter()
         _logger.info(
             f"Mesh preprocessing completed in {mesh_finished - start:.2f} seconds"
         )
-        FluidPreprocessor(self.config).solve_flow(topo, fields)
+
+        # 传递强类型的 boundary_conditions
+        FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
+            topo, fields
+        )
         pressure_solve_finished = time.perf_counter()
         _logger.info(
             f"Fluid flow solving completed in {pressure_solve_finished - mesh_finished:.2f} seconds"
         )
-        matrices = FVMAssembler(topo, fields, self.config, self.stackup).assemble()
+
+        # 传递强类型的 boundary_conditions 和 stackup
+        matrices = FVMAssembler(
+            topo, fields, self.solver_config.boundary_conditions, self.stackup
+        ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
             f"System matrix assembly completed in {assembly_finished - pressure_solve_finished:.2f} seconds"
         )
-        solver, ptrace = ThermalSolver(matrices, self.config), self._load_ptrace()
-        if self.config["simulation_type"] == "steady":
+
+        # ThermalSolver 已完全剥离冗余信息，仅依赖装配完成的 matrices
+        solver = ThermalSolver(matrices)
+        ptrace = self._load_ptrace()
+
+        if self.solver_config.simulation_type == "steady":
             temperatures = solver.solve_steady(
                 np.array(
                     [
@@ -1186,12 +1164,13 @@ class MetaHotspotSolver:
 
         else:
             temperatures = solver.solve_transient(
-                self.config["timestep"],
+                self.solver_config.timestep,
                 ptrace,
                 self._get_init_temp(topo),
                 topo.volumes,
                 fields.cp,
             )
+
         end = time.perf_counter()
         _logger.info(
             f"Thermal solving completed in {end - assembly_finished:.2f} seconds"
@@ -1201,7 +1180,9 @@ class MetaHotspotSolver:
         self._export_vtu(topo, temperatures, "transient_result.vtu")
 
     def _load_ptrace(self) -> list[dict]:
-        path = os.path.join(self.base_dir, self.config.get("ptrace_file_path", ""))
+        if not self.solver_config.ptrace_file_path:
+            return []
+        path = os.path.join(self.base_dir, self.solver_config.ptrace_file_path)
         if not os.path.exists(path):
             return []
         with open(path, "r") as f:
@@ -1209,10 +1190,11 @@ class MetaHotspotSolver:
             return [dict(zip(headers, map(float, l.split()))) for l in f if l.strip()]
 
     def _get_init_temp(self, topo: MeshTopology) -> np.ndarray:
-        temp = np.full(topo.n_cells, float(self.config["init_temperature"]))
-        init_file = self.config.get("init_temperature_file_path")
+        temp = np.full(topo.n_cells, self.solver_config.init_temperature)
+        init_file = self.solver_config.init_temperature_file_path
         if init_file and os.path.exists(os.path.join(self.base_dir, init_file)):
-            init_mesh, offset = meshio.read(os.path.join(self.base_dir, init_file)), 0
+            init_mesh = meshio.read(os.path.join(self.base_dir, init_file))
+            offset = 0
             for block, block_temps in zip(
                 init_mesh.cells, init_mesh.cell_data.get("Temperature_K", [])
             ):
@@ -1227,13 +1209,10 @@ class MetaHotspotSolver:
         return temp
 
     def _export_vtu(self, topo: MeshTopology, temperatures: np.ndarray, filename: str):
-        mapped, orig_mesh, hex_blocks, temp_chunks, offset = (
-            np.empty(topo.n_cells),
-            meshio.read(self.mesh_path),
-            [],
-            [],
-            0,
-        )
+        mapped = np.empty(topo.n_cells)
+        orig_mesh = meshio.read(self.mesh_path)
+        hex_blocks, temp_chunks = [], []
+        offset = 0
         mapped[topo.sorted_indices] = temperatures
         for block in orig_mesh.cells:
             if block.type == "hexahedron":
@@ -1253,6 +1232,42 @@ import numpy as np
 import scipy.sparse as sp
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple
+
+
+@dataclass(slots=True)
+class BoundaryCondition:
+    """强类型边界条件定义"""
+
+    name: str
+    type: str
+    face: str
+    target: str
+    parameters: Dict[str, float]
+
+
+@dataclass(slots=True)
+class MaterialProps:
+    """强类型材料属性定义"""
+
+    k: float
+    cp: float
+    density: float
+    is_fluid: bool
+    dynamic_viscosity: float
+
+
+@dataclass(slots=True)
+class SolverConfig:
+    """强类型求解器配置 (解耦IO与计算)"""
+
+    simulation_type: str
+    timestep: float
+    init_temperature: float
+    mesh_file_path: str
+    ptrace_file_path: str
+    init_temperature_file_path: str
+    default_solid: MaterialProps
+    boundary_conditions: List[BoundaryCondition]
 
 
 @dataclass(slots=True)
@@ -1306,6 +1321,8 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
+
+from metahotspot.metahotspot_types import SolverConfig, BoundaryCondition, MaterialProps
 
 # ==========================================
 # 单一真相：全局默认配置与标准材料库
@@ -1422,9 +1439,52 @@ class Layer25D:
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
+    """读取并合并默认值的底层方法（返回弱类型字典给外部框架使用）"""
     with open(config_path, "r", encoding="utf-8") as f:
         raw_config = json.load(f)
     return merge_with_defaults(raw_config)
+
+
+def build_solver_config(raw_config: Dict[str, Any]) -> SolverConfig:
+    """将弱类型的 JSON 配置字典转为内部核心使用的强类型 SolverConfig (单向屏障)"""
+    def_mat = raw_config.get("materials", {}).get(
+        "default_solid", STANDARD_MATERIALS["default_solid"]
+    )
+
+    default_solid = MaterialProps(
+        k=float(def_mat.get("k", 1.0)),
+        cp=float(def_mat.get("cp", 1.0e6)),
+        density=float(def_mat.get("density", 1000.0)),
+        is_fluid=bool(def_mat.get("fluid", False)),
+        dynamic_viscosity=float(def_mat.get("dynamic_viscosity", 0.0)),
+    )
+
+    boundary_conditions = []
+    for bc in raw_config.get("boundary_conditions", []):
+        boundary_conditions.append(
+            BoundaryCondition(
+                name=str(bc.get("name", "")),
+                type=str(bc.get("type", "")),
+                face=str(bc.get("face", "")),
+                target=str(bc.get("target", "")),
+                parameters={
+                    str(k): float(v) for k, v in bc.get("parameters", {}).items()
+                },
+            )
+        )
+
+    return SolverConfig(
+        simulation_type=str(raw_config.get("simulation_type", "steady")),
+        timestep=float(raw_config.get("timestep", 0.01)),
+        init_temperature=float(raw_config.get("init_temperature", 318.15)),
+        mesh_file_path=str(raw_config.get("mesh_file_path", "mesh.msh")),
+        ptrace_file_path=str(raw_config.get("ptrace_file_path", "")),
+        init_temperature_file_path=str(
+            raw_config.get("init_temperature_file_path", "")
+        ),
+        default_solid=default_solid,
+        boundary_conditions=boundary_conditions,
+    )
 
 
 def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -1457,7 +1517,6 @@ def merge_with_defaults(raw_config: Dict[str, Any]) -> Dict[str, Any]:
 def _resolve_prop(
     key: str, unit_data: dict, unit_mat: dict, layer_mat: dict, default_mat: dict
 ) -> Any:
-    """单一回退关口：严格执行 局部设定 > 单元材料 > 层材料 > 默认材料 优先级"""
     if key in unit_data and unit_data[key] is not None:
         return unit_data[key]
     if key in unit_mat and unit_mat[key] is not None:
@@ -1607,9 +1666,9 @@ _logger = get_logger(__name__)
 
 
 class ThermalSolver:
-    def __init__(self, matrices: SystemMatrices, config: dict):
+    def __init__(self, matrices: SystemMatrices):
+        # 移除弱类型字典 config 的传入，强依赖于装配阶段的 SystemMatrices
         self.mat = matrices
-        self.config = config
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:
         rhs = self.mat.b_total + (self.mat.power_matrix @ mean_powers)
@@ -1635,6 +1694,7 @@ class ThermalSolver:
         A_step = c_mat - self.mat.A_total
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
+
         for i, step_power in enumerate(ptrace):
             power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
             rhs = (

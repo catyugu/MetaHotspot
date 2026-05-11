@@ -11,9 +11,9 @@ _logger = get_logger(__name__)
 
 
 class ThermalSolver:
-    def __init__(self, matrices: SystemMatrices, config: dict):
+    def __init__(self, matrices: SystemMatrices):
+        # 移除弱类型字典 config 的传入，强依赖于装配阶段的 SystemMatrices
         self.mat = matrices
-        self.config = config
 
     def solve_steady(self, mean_powers: np.ndarray) -> np.ndarray:
         rhs = self.mat.b_total + (self.mat.power_matrix @ mean_powers)
@@ -39,6 +39,7 @@ class ThermalSolver:
         A_step = c_mat - self.mat.A_total
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
+
         for i, step_power in enumerate(ptrace):
             power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
             rhs = (

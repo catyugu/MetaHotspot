@@ -5,6 +5,42 @@ from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
+class BoundaryCondition:
+    """强类型边界条件定义"""
+
+    name: str
+    type: str
+    face: str
+    target: str
+    parameters: Dict[str, float]
+
+
+@dataclass(slots=True)
+class MaterialProps:
+    """强类型材料属性定义"""
+
+    k: float
+    cp: float
+    density: float
+    is_fluid: bool
+    dynamic_viscosity: float
+
+
+@dataclass(slots=True)
+class SolverConfig:
+    """强类型求解器配置 (解耦IO与计算)"""
+
+    simulation_type: str
+    timestep: float
+    init_temperature: float
+    mesh_file_path: str
+    ptrace_file_path: str
+    init_temperature_file_path: str
+    default_solid: MaterialProps
+    boundary_conditions: List[BoundaryCondition]
+
+
+@dataclass(slots=True)
 class MeshTopology:
     """纯几何与拓扑数据 (SoA 布局)"""
 
