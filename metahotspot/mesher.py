@@ -17,8 +17,7 @@ class Mesher:
     DEFAULT_MIN_MESH_SIZE = 0.0005
     DEFAULT_REFINEMENT_DISTANCE = 0.002
 
-    def __init__(self, default_solid: MaterialProps, layer_regions: List[LayerRegion]):
-        self.default_solid = default_solid
+    def __init__(self, layer_regions: List[LayerRegion]):
         self.layer_regions = layer_regions
 
     def generate(

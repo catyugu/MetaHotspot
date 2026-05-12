@@ -39,7 +39,7 @@ class MetaHotspotSolver:
         )
 
         start = time.perf_counter()
-        mesher = Mesher(self.solver_config.default_solid, self.layer_regions)
+        mesher = Mesher(self.layer_regions)
         topo, fields, points, hex_cells = mesher.generate()
         mesh_gen_finished = time.perf_counter()
         _logger.info(
