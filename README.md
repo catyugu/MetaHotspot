@@ -1,4 +1,4 @@
-# MetaHotspot项目进展
+# MetaHotspot项目
 
 ## 当前功能边界
 
