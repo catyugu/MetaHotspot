@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Tuple
 
 from metahotspot.metahotspot_types import (
     SolverConfig,
-    BoundaryCondition,
+    BoundaryConditionConfig,
     MaterialProps,
     LayerRegion,
     UnitRegion,
@@ -145,7 +145,7 @@ def parse_computational_model(
     boundary_conditions = []
     for bc in config.get("boundary_conditions", []):
         boundary_conditions.append(
-            BoundaryCondition(
+            BoundaryConditionConfig(
                 name=str(bc.get("name", "")),
                 type=str(bc.get("type", "")),
                 face=str(bc.get("face", "")),

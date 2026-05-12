@@ -15,7 +15,6 @@ from metahotspot.assembler_kernels import (
     build_adv_coo_kernel,
 )
 from metahotspot.boundary_conditions import (
-    resolve_boundary_cells,
     apply_temperature_state_bc,
     apply_convection_matrix_bc,
     apply_temperature_matrix_bc,
@@ -75,10 +74,7 @@ class FVMAssembler:
     def _apply_temperature_boundaries(self) -> None:
         for bc in self.boundary_conditions:
             if bc.type == "temperature":
-                c_ids, _ = resolve_boundary_cells(
-                    self.topo, self.fields, bc.face, bc.target
-                )
-                apply_temperature_state_bc(c_ids, bc, self.fields)
+                apply_temperature_state_bc(bc, self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -101,20 +97,13 @@ class FVMAssembler:
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
         for bc in self.boundary_conditions:
-            if bc.type not in ["convection", "temperature"]:
-                continue
-
-            c_ids, areas = resolve_boundary_cells(
-                self.topo, self.fields, bc.face, bc.target
-            )
-
             if bc.type == "convection":
                 apply_convection_matrix_bc(
-                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
+                    bc, self.topo, self.fields, rows, cols, data, rhs
                 )
             elif bc.type == "temperature":
                 apply_temperature_matrix_bc(
-                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
+                    bc, self.topo, self.fields, rows, cols, data, rhs
                 )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs

@@ -1,6 +1,5 @@
-import re
 import numpy as np
-from typing import Tuple, List
+from typing import List
 
 from metahotspot.metahotspot_types import (
     MeshTopology,
@@ -9,38 +8,12 @@ from metahotspot.metahotspot_types import (
 )
 
 
-def resolve_boundary_cells(
-    topo: MeshTopology, fields: PhysicalFields, face_key: str, target_regex: str
-) -> Tuple[np.ndarray, np.ndarray]:
-    if face_key not in topo.boundary_faces:
-        return np.array([], dtype=int), np.array([], dtype=float)
-
-    c_ids, _, areas = topo.boundary_faces[face_key]
-
-    if not target_regex:
-        return c_ids, areas
-
-    pattern = re.compile(target_regex)
-
-    layer_names = [fields.layer_name_map[fields.layer_ids[cid]] for cid in c_ids]
-    unit_names = [fields.unit_name_map[fields.unit_ids[cid]] for cid in c_ids]
-
-    mask = np.array(
-        [
-            bool(pattern.match(l_name)) or bool(pattern.match(u_name))
-            for l_name, u_name in zip(layer_names, unit_names)
-        ]
-    )
-
-    return c_ids[mask], areas[mask]
-
-
 def apply_pressure_bc(
-    c_ids: np.ndarray,
     bc: BoundaryCondition,
     fields: PhysicalFields,
     is_pressure_boundary: np.ndarray,
 ) -> None:
+    c_ids = bc.c_ids
     fluid_mask = fields.is_fluid[c_ids]
     valid_c_ids = c_ids[fluid_mask]
 
@@ -49,15 +22,12 @@ def apply_pressure_bc(
         fields.pressure[valid_c_ids] = bc.parameters["pressure"]
 
 
-def apply_temperature_state_bc(
-    c_ids: np.ndarray, bc: BoundaryCondition, fields: PhysicalFields
-) -> None:
-    fields.boundary_temperature[c_ids] = bc.parameters["temperature"]
+def apply_temperature_state_bc(bc: BoundaryCondition, fields: PhysicalFields) -> None:
+    if len(bc.c_ids) > 0:
+        fields.boundary_temperature[bc.c_ids] = bc.parameters["temperature"]
 
 
 def apply_convection_matrix_bc(
-    c_ids: np.ndarray,
-    areas: np.ndarray,
     bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
@@ -66,6 +36,10 @@ def apply_convection_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
+    c_ids, areas = bc.c_ids, bc.areas
+    if len(c_ids) == 0:
+        return
+
     h, t_inf = bc.parameters["h"], bc.parameters["T_inf"]
     vols, k = topo.volumes[c_ids], fields.k[c_ids]
 
@@ -78,8 +52,6 @@ def apply_convection_matrix_bc(
 
 
 def apply_temperature_matrix_bc(
-    c_ids: np.ndarray,
-    areas: np.ndarray,
     bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
@@ -88,6 +60,7 @@ def apply_temperature_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
+    c_ids, areas = bc.c_ids, bc.areas
     if len(c_ids) == 0:
         return
 

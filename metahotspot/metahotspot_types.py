@@ -5,11 +5,21 @@ from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
-class BoundaryCondition:
+class BoundaryConditionConfig:
+    """仅用于读取配置文件中的字符串定义"""
     name: str
     type: str
     face: str
     target: str
+    parameters: Dict[str, float]
+
+
+@dataclass(slots=True)
+class BoundaryCondition:
+    """供内部计算内核使用，剥离了所有正则与字符串映射，仅保留索引与数值"""
+    type: str
+    c_ids: np.ndarray
+    areas: np.ndarray
     parameters: Dict[str, float]
 
 
@@ -55,7 +65,7 @@ class SolverConfig:
     ptrace_file_path: str
     init_temperature_file_path: str
     default_solid: MaterialProps
-    boundary_conditions: List[BoundaryCondition]
+    boundary_conditions: List[BoundaryConditionConfig]
 
 
 @dataclass(slots=True)
