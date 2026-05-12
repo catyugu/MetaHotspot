@@ -8,7 +8,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     BoundaryCondition,
 )
-from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+from metahotspot.boundary_conditions import apply_pressure_bc
 
 
 class FluidPreprocessor:
@@ -55,8 +55,7 @@ class FluidPreprocessor:
     ) -> None:
         for bc in self.boundary_conditions:
             if bc.type == "pressure":
-                c_ids, _ = resolve_boundary_cells(topo, fields, bc.face, bc.target)
-                apply_pressure_bc(c_ids, bc, fields, is_p_bound)
+                apply_pressure_bc(bc, fields, is_p_bound)
 
     def _solve_pressure(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray

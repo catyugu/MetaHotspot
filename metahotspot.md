@@ -42,7 +42,6 @@ from metahotspot.assembler_kernels import (
     build_adv_coo_kernel,
 )
 from metahotspot.boundary_conditions import (
-    resolve_boundary_cells,
     apply_temperature_state_bc,
     apply_convection_matrix_bc,
     apply_temperature_matrix_bc,
@@ -102,10 +101,7 @@ class FVMAssembler:
     def _apply_temperature_boundaries(self) -> None:
         for bc in self.boundary_conditions:
             if bc.type == "temperature":
-                c_ids, _ = resolve_boundary_cells(
-                    self.topo, self.fields, bc.face, bc.target
-                )
-                apply_temperature_state_bc(c_ids, bc, self.fields)
+                apply_temperature_state_bc(bc, self.fields)
 
     def _build_conduction_matrix(self) -> sp.csr_matrix:
         rows, cols, data = build_cond_coo_kernel(
@@ -128,20 +124,13 @@ class FVMAssembler:
         rhs, rows, cols, data = np.zeros(n), [], [], []
 
         for bc in self.boundary_conditions:
-            if bc.type not in ["convection", "temperature"]:
-                continue
-
-            c_ids, areas = resolve_boundary_cells(
-                self.topo, self.fields, bc.face, bc.target
-            )
-
             if bc.type == "convection":
                 apply_convection_matrix_bc(
-                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
+                    bc, self.topo, self.fields, rows, cols, data, rhs
                 )
             elif bc.type == "temperature":
                 apply_temperature_matrix_bc(
-                    c_ids, areas, bc, self.topo, self.fields, rows, cols, data, rhs
+                    bc, self.topo, self.fields, rows, cols, data, rhs
                 )
 
         return sp.csr_matrix((data, (rows, cols)), shape=(n, n)), rhs
@@ -406,9 +395,8 @@ def build_adv_coo_kernel(
 
 ### File: boundary_conditions.py
 ```py
-import re
 import numpy as np
-from typing import Tuple, List
+from typing import List
 
 from metahotspot.metahotspot_types import (
     MeshTopology,
@@ -417,38 +405,12 @@ from metahotspot.metahotspot_types import (
 )
 
 
-def resolve_boundary_cells(
-    topo: MeshTopology, fields: PhysicalFields, face_key: str, target_regex: str
-) -> Tuple[np.ndarray, np.ndarray]:
-    if face_key not in topo.boundary_faces:
-        return np.array([], dtype=int), np.array([], dtype=float)
-
-    c_ids, _, areas = topo.boundary_faces[face_key]
-
-    if not target_regex:
-        return c_ids, areas
-
-    pattern = re.compile(target_regex)
-
-    layer_names = [fields.layer_name_map[fields.layer_ids[cid]] for cid in c_ids]
-    unit_names = [fields.unit_name_map[fields.unit_ids[cid]] for cid in c_ids]
-
-    mask = np.array(
-        [
-            bool(pattern.match(l_name)) or bool(pattern.match(u_name))
-            for l_name, u_name in zip(layer_names, unit_names)
-        ]
-    )
-
-    return c_ids[mask], areas[mask]
-
-
 def apply_pressure_bc(
-    c_ids: np.ndarray,
     bc: BoundaryCondition,
     fields: PhysicalFields,
     is_pressure_boundary: np.ndarray,
 ) -> None:
+    c_ids = bc.c_ids
     fluid_mask = fields.is_fluid[c_ids]
     valid_c_ids = c_ids[fluid_mask]
 
@@ -457,15 +419,12 @@ def apply_pressure_bc(
         fields.pressure[valid_c_ids] = bc.parameters["pressure"]
 
 
-def apply_temperature_state_bc(
-    c_ids: np.ndarray, bc: BoundaryCondition, fields: PhysicalFields
-) -> None:
-    fields.boundary_temperature[c_ids] = bc.parameters["temperature"]
+def apply_temperature_state_bc(bc: BoundaryCondition, fields: PhysicalFields) -> None:
+    if len(bc.c_ids) > 0:
+        fields.boundary_temperature[bc.c_ids] = bc.parameters["temperature"]
 
 
 def apply_convection_matrix_bc(
-    c_ids: np.ndarray,
-    areas: np.ndarray,
     bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
@@ -474,6 +433,10 @@ def apply_convection_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
+    c_ids, areas = bc.c_ids, bc.areas
+    if len(c_ids) == 0:
+        return
+
     h, t_inf = bc.parameters["h"], bc.parameters["T_inf"]
     vols, k = topo.volumes[c_ids], fields.k[c_ids]
 
@@ -486,8 +449,6 @@ def apply_convection_matrix_bc(
 
 
 def apply_temperature_matrix_bc(
-    c_ids: np.ndarray,
-    areas: np.ndarray,
     bc: BoundaryCondition,
     topo: MeshTopology,
     fields: PhysicalFields,
@@ -496,6 +457,7 @@ def apply_temperature_matrix_bc(
     data: List[float],
     rhs: np.ndarray,
 ) -> None:
+    c_ids, areas = bc.c_ids, bc.areas
     if len(c_ids) == 0:
         return
 
@@ -524,7 +486,7 @@ from metahotspot.metahotspot_types import (
     PhysicalFields,
     BoundaryCondition,
 )
-from metahotspot.boundary_conditions import resolve_boundary_cells, apply_pressure_bc
+from metahotspot.boundary_conditions import apply_pressure_bc
 
 
 class FluidPreprocessor:
@@ -571,8 +533,7 @@ class FluidPreprocessor:
     ) -> None:
         for bc in self.boundary_conditions:
             if bc.type == "pressure":
-                c_ids, _ = resolve_boundary_cells(topo, fields, bc.face, bc.target)
-                apply_pressure_bc(c_ids, bc, fields, is_p_bound)
+                apply_pressure_bc(bc, fields, is_p_bound)
 
     def _solve_pressure(
         self, topo: MeshTopology, fields: PhysicalFields, is_p_bound: np.ndarray
@@ -960,6 +921,7 @@ class Mesher:
 ### File: metahotspot_solver.py
 ```py
 import os
+import re
 import meshio
 import numpy as np
 import time
@@ -969,7 +931,11 @@ from metahotspot.assembler import FVMAssembler
 from metahotspot.thermal_solver import ThermalSolver
 from metahotspot.mesher import Mesher
 from metahotspot.fluid_preprocessor import FluidPreprocessor
-from metahotspot.metahotspot_types import MeshTopology
+from metahotspot.metahotspot_types import (
+    MeshTopology,
+    PhysicalFields,
+    BoundaryCondition,
+)
 from metahotspot.model25d import parse_computational_model
 from metahotspot.numba_warmup import warmup_numba_kernels
 
@@ -1002,16 +968,16 @@ class MetaHotspotSolver:
             f"Mesh generation & preprocessing completed in {mesh_gen_finished - start:.2f} seconds"
         )
 
-        FluidPreprocessor(self.solver_config.boundary_conditions).solve_flow(
-            topo, fields
-        )
+        resolved_bcs = self._resolve_boundary_conditions(topo, fields)
+
+        FluidPreprocessor(resolved_bcs).solve_flow(topo, fields)
         pressure_solve_finished = time.perf_counter()
         _logger.info(
             f"Fluid flow solving completed in {pressure_solve_finished - mesh_gen_finished:.2f} seconds"
         )
 
         matrices = FVMAssembler(
-            topo, fields, self.solver_config.boundary_conditions, self.layer_regions
+            topo, fields, resolved_bcs, self.layer_regions
         ).assemble()
         assembly_finished = time.perf_counter()
         _logger.info(
@@ -1019,24 +985,20 @@ class MetaHotspotSolver:
         )
 
         solver = ThermalSolver(matrices)
-        ptrace = self._load_ptrace()
+        ptrace_matrix = self._load_ptrace_matrix(matrices.unit_names)
 
         if self.solver_config.simulation_type == "steady":
-            temperatures = solver.solve_steady(
-                np.array(
-                    [
-                        np.mean([s.get(n, 0.0) for s in ptrace])
-                        for n in matrices.unit_names
-                    ]
-                )
-                if ptrace
+            mean_powers = (
+                np.mean(ptrace_matrix, axis=0)
+                if ptrace_matrix.shape[0] > 0
                 else np.zeros(len(matrices.unit_names))
             )
+            temperatures = solver.solve_steady(mean_powers)
             out_filename = "result.vtu"
         else:
             temperatures = solver.solve_transient(
                 self.solver_config.timestep,
-                ptrace,
+                ptrace_matrix,
                 self._get_init_temp(topo),
                 topo.volumes,
                 fields.cp,
@@ -1051,15 +1013,87 @@ class MetaHotspotSolver:
         _logger.info(f"Exporting results to {out_filename}...")
         self._export_vtu(temperatures, out_filename, points, hex_cells)
 
-    def _load_ptrace(self) -> list[dict]:
+    def _resolve_boundary_conditions(
+        self, topo: MeshTopology, fields: PhysicalFields
+    ) -> list[BoundaryCondition]:
+        resolved_bcs = []
+        for cfg in self.solver_config.boundary_conditions:
+            if cfg.face not in topo.boundary_faces:
+                resolved_bcs.append(
+                    BoundaryCondition(
+                        type=cfg.type,
+                        c_ids=np.array([], dtype=int),
+                        areas=np.array([], dtype=float),
+                        parameters=cfg.parameters,
+                    )
+                )
+                continue
+
+            c_ids, _, areas = topo.boundary_faces[cfg.face]
+
+            if not cfg.target:
+                resolved_bcs.append(
+                    BoundaryCondition(
+                        type=cfg.type,
+                        c_ids=c_ids,
+                        areas=areas,
+                        parameters=cfg.parameters,
+                    )
+                )
+                continue
+
+            pattern = re.compile(cfg.target)
+            layer_names = [
+                fields.layer_name_map[fields.layer_ids[cid]] for cid in c_ids
+            ]
+            unit_names = [fields.unit_name_map[fields.unit_ids[cid]] for cid in c_ids]
+
+            mask = np.array(
+                [
+                    bool(pattern.match(l_name)) or bool(pattern.match(u_name))
+                    for l_name, u_name in zip(layer_names, unit_names)
+                ]
+            )
+
+            resolved_bcs.append(
+                BoundaryCondition(
+                    type=cfg.type,
+                    c_ids=c_ids[mask],
+                    areas=areas[mask],
+                    parameters=cfg.parameters,
+                )
+            )
+
+        return resolved_bcs
+
+    def _load_ptrace_matrix(self, unit_names: list[str]) -> np.ndarray:
         if not self.solver_config.ptrace_file_path:
-            return []
+            return np.zeros((0, len(unit_names)), dtype=np.float64)
+
         path = os.path.join(self.base_dir, self.solver_config.ptrace_file_path)
         if not os.path.exists(path):
-            return []
-        with open(path, "r") as f:
-            headers = f.readline().split()
-            return [dict(zip(headers, map(float, l.split()))) for l in f if l.strip()]
+            return np.zeros((0, len(unit_names)), dtype=np.float64)
+
+        with open(path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        if not lines:
+            return np.zeros((0, len(unit_names)), dtype=np.float64)
+
+        headers = lines[0].split()
+        name_to_idx = {name: i for i, name in enumerate(headers)}
+
+        col_indices = [name_to_idx.get(name, -1) for name in unit_names]
+        num_steps = len(lines) - 1
+        power_matrix = np.zeros((num_steps, len(unit_names)), dtype=np.float64)
+
+        for step_idx, line in enumerate(lines[1:]):
+            vals = line.split()
+            for u_idx, c_idx in enumerate(col_indices):
+                if c_idx != -1 and c_idx < len(vals):
+                    power_matrix[step_idx, u_idx] = float(vals[c_idx])
+
+        return power_matrix
 
     def _get_init_temp(self, topo: MeshTopology) -> np.ndarray:
         temp = np.full(topo.n_cells, self.solver_config.init_temperature)
@@ -1100,11 +1134,21 @@ from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
-class BoundaryCondition:
+class BoundaryConditionConfig:
+    """仅用于读取配置文件中的字符串定义"""
     name: str
     type: str
     face: str
     target: str
+    parameters: Dict[str, float]
+
+
+@dataclass(slots=True)
+class BoundaryCondition:
+    """供内部计算内核使用，剥离了所有正则与字符串映射，仅保留索引与数值"""
+    type: str
+    c_ids: np.ndarray
+    areas: np.ndarray
     parameters: Dict[str, float]
 
 
@@ -1150,7 +1194,7 @@ class SolverConfig:
     ptrace_file_path: str
     init_temperature_file_path: str
     default_solid: MaterialProps
-    boundary_conditions: List[BoundaryCondition]
+    boundary_conditions: List[BoundaryConditionConfig]
 
 
 @dataclass(slots=True)
@@ -1187,7 +1231,6 @@ class SystemMatrices:
     b_total: np.ndarray
     power_matrix: sp.csr_matrix
     unit_names: List[str]
-
 ```
 
 ### File: model25d.py
@@ -1198,7 +1241,7 @@ from typing import List, Dict, Any, Tuple
 
 from metahotspot.metahotspot_types import (
     SolverConfig,
-    BoundaryCondition,
+    BoundaryConditionConfig,
     MaterialProps,
     LayerRegion,
     UnitRegion,
@@ -1339,7 +1382,7 @@ def parse_computational_model(
     boundary_conditions = []
     for bc in config.get("boundary_conditions", []):
         boundary_conditions.append(
-            BoundaryCondition(
+            BoundaryConditionConfig(
                 name=str(bc.get("name", "")),
                 type=str(bc.get("type", "")),
                 face=str(bc.get("face", "")),
@@ -1520,7 +1563,7 @@ class ThermalSolver:
     def solve_transient(
         self,
         dt: float,
-        ptrace: list[dict],
+        power_trace: np.ndarray,
         init_temp: np.ndarray,
         vols: np.ndarray,
         cp: np.ndarray,
@@ -1530,15 +1573,17 @@ class ThermalSolver:
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
 
-        for i, step_power in enumerate(ptrace):
-            power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
+        n_steps = power_trace.shape[0]
+
+        for i in range(n_steps):
+            power_vec = power_trace[i]
             rhs = (
                 (c_mat @ temp) + self.mat.b_total + (self.mat.power_matrix @ power_vec)
             )
 
             temp = solve_func(rhs)
 
-            if i % 10 == 0 or i == len(ptrace) - 1:
+            if i % 10 == 0 or i == n_steps - 1:
                 _logger.info(
                     f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )

@@ -29,7 +29,7 @@ class ThermalSolver:
     def solve_transient(
         self,
         dt: float,
-        ptrace: list[dict],
+        power_trace: np.ndarray,
         init_temp: np.ndarray,
         vols: np.ndarray,
         cp: np.ndarray,
@@ -39,15 +39,17 @@ class ThermalSolver:
         temp = init_temp.copy()
         solve_func = splinalg.factorized(A_step.tocsc())
 
-        for i, step_power in enumerate(ptrace):
-            power_vec = np.array([step_power.get(n, 0.0) for n in self.mat.unit_names])
+        n_steps = power_trace.shape[0]
+
+        for i in range(n_steps):
+            power_vec = power_trace[i]
             rhs = (
                 (c_mat @ temp) + self.mat.b_total + (self.mat.power_matrix @ power_vec)
             )
 
             temp = solve_func(rhs)
 
-            if i % 10 == 0 or i == len(ptrace) - 1:
+            if i % 10 == 0 or i == n_steps - 1:
                 _logger.info(
                     f"Step {i:4d}: T_min={np.min(temp):.2f} K, T_max={np.max(temp):.2f} K"
                 )
