@@ -38,6 +38,7 @@ python scripts/adapter.py --batch-four
 ```
 
 Equivalent explicit form:
+
 ```bash
 python scripts/adapter.py Hotspot/examples examples/hotspot_converted --batch-four
 ```
@@ -51,11 +52,13 @@ python scripts/run_example_pipeline.py examples/hotspot_converted/example1
 ```
 
 Each converted example also has a `run.py` shortcut:
+
 ```bash
 python examples/hotspot_converted/example1/run.py
 ```
 
 **Pipeline flow:**
+
 1. Steady solve → writes `result.vtu`
 2. Copies `result.vtu` → `init.vtu` (initial field for transient)
 3. Transient solve → writes `transient_result.vtu`
@@ -87,6 +90,7 @@ python examples/hotspot_converted/example1/run.py
 ```
 
 Each `examples/hotspot_converted/exampleN/run.py` is a thin wrapper:
+
 ```python
 subprocess.run([sys.executable, str(script), str(example_dir)], check=True)
 # script = project_root / "scripts" / "run_example_pipeline.py"
@@ -137,7 +141,6 @@ ninja
 - Always use `load_config()` + `load_stackup()` as entry points
 - Config always merged with defaults via `merge_with_defaults()`
 - Property resolution priority: unit > unit material > layer material > default material
-
 
 ## Key Modules
 
