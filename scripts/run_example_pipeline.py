@@ -112,9 +112,9 @@ def run_pipeline(example_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate steady/transient configs and run steady->init->transient pipeline."
+        description="Run steady->init->transient pipeline."
     )
-    parser.add_argument("example_dir", help="Path to one converted example directory")
+    parser.add_argument("example_dir", help="Path to one example directory")
     args = parser.parse_args()
 
     run_pipeline(Path(args.example_dir).resolve())
