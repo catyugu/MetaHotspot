@@ -1,0 +1,37 @@
+"""单位换算模块。
+
+集中管理所有量纲的单位换算至国际标准单位 (SI)。
+"""
+
+from typing import Dict
+
+
+class UnitConverter:
+    """集中处理所有量纲的单位换算至国际标准单位 (SI)。"""
+
+    _LENGTH_FACTORS: Dict[str, float] = {
+        "m": 1.0,
+        "cm": 1e-2,
+        "Mm": 1e-3,   # 毫米 (上游软件拼写)
+        "mm": 1e-3,
+        "um": 1e-6,   # 微米
+        "nm": 1e-9,   # 纳米
+    }
+
+    def __init__(self, base_length_unit: str) -> None:
+        self.base_unit = base_length_unit
+        self.L = self._LENGTH_FACTORS.get(base_length_unit, 1e-3)
+        self.L2 = self.L ** 2
+        self.L3 = self.L ** 3
+
+    def to_m(self, value: float) -> float:
+        """长度转换: e.g., mm -> m"""
+        return value * self.L
+
+    def to_m2(self, value: float) -> float:
+        """面积转换: e.g., mm² -> m²"""
+        return value * self.L2
+
+    def to_m3(self, value: float) -> float:
+        """体积转换: e.g., mm³ -> m³"""
+        return value * self.L3

@@ -1,0 +1,1 @@
+"""Metahotspot Package"""
