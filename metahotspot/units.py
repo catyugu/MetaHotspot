@@ -3,7 +3,8 @@
 集中管理所有量纲的单位换算至国际标准单位 (SI)。
 """
 
-from typing import Dict
+from typing import Dict, Union
+import numpy as np
 
 
 class UnitConverter:
@@ -24,14 +25,18 @@ class UnitConverter:
         self.L2 = self.L ** 2
         self.L3 = self.L ** 3
 
-    def to_m(self, value: float) -> float:
+    def to_m(self, value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """长度转换: e.g., mm -> m"""
         return value * self.L
+        
+    def from_m(self, value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """长度逆转换: e.g., m -> mm"""
+        return value / self.L
 
-    def to_m2(self, value: float) -> float:
+    def to_m2(self, value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """面积转换: e.g., mm² -> m²"""
         return value * self.L2
 
-    def to_m3(self, value: float) -> float:
+    def to_m3(self, value: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """体积转换: e.g., mm³ -> m³"""
         return value * self.L3

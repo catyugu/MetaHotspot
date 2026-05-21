@@ -360,7 +360,7 @@ def parse_mesh(mesh_elem: ET.Element) -> MeshCoordinates:
 # ============================================================================
 
 
-def parse_xml(xml_path: str | Path) -> Tuple[ModelConfig, MeshCoordinates]:
+def parse_xml(xml_path: str | Path) -> ModelConfig:
     """解析 XML 配置文件。
 
     参数:

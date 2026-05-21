@@ -17,10 +17,11 @@ conda activate numerical
 - IO与接口：Python
 - 计算核心：当前使用Python+Numba JIT，后续拟迁移到C/C++
 
-## 当前建模配置方案
+## 架构和接口
 
 - 采取xml格式配置2.5D模型。
 - Python程序接口接受且只接受一个主配置文件，用于完成整个仿真流程。
+- 数据链路：XML文件读入配置 -> baker 烘焙成高性能SoA模型 -> assembler 装配 -> solver求解。
 - 输出格式：vtu文件（可用Paraview等软件打开）+ 写入结果后的xml文件（输出到新文件里，避免覆盖原有文件内容）
 
 ## 数值技术
@@ -33,6 +34,7 @@ conda activate numerical
 ## 代码规范
 
 - 面向数据设计，禁止面向对象的继承，多态等。总是使用SoA而非AoS。
+- 使用 `np.ndarray 的地方都必须注释其每个维度的索引含义
 - 所有数据类用 `@dataclass` 标记。所有类用 `__slots__` 严格限制其成员。
 - 所有容差数值必须具名、统一在一处配置文件管理。
 - 所有单位换算集中在一处完成。
