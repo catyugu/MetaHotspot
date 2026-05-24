@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from metahotspot.logger import get_logger
 
 from metahotspot.metahotspot_types import (
     BlockGeometry,
@@ -20,6 +21,8 @@ from metahotspot.metahotspot_types import (
     Rect,
     ThermalBoundary,
 )
+
+logger=get_logger()
 
 # ============================================================================
 # XML 命名空间
@@ -360,6 +363,8 @@ def parse_xml(xml_path: str | Path) -> ModelConfig:
     返回:
         Tuple[ModelConfig, MeshCoordinates]: 模型配置和网格坐标
     """
+    
+    logger.info(f"Start parsing xml file: {xml_path}")
     tree = ET.parse(str(xml_path))
     root = tree.getroot()
 
