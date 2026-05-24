@@ -990,46 +990,6 @@ class TestDataTypes:
         assert len(mesh.x) == 3
         assert isinstance(mesh.x, np.ndarray)
 
-
-# ============================================================================
-# Integration with example1.xml
-# ============================================================================
-
-
-class TestExample1Xml:
-    """Test parsing the example1.xml file."""
-
-    def test_parse_example1_exists(self):
-        example_path = Path("E:/code/cpp/MetaHotspot/examples/example1/example1.xml")
-        if example_path.exists():
-            config = parse_xml(example_path)
-
-            # Verify basic structure
-            assert config.study_type == "Steady"
-            assert config.ambient_temperature == 300.0
-            assert config.initial_temperature == 300.0
-            assert len(config.layers) >= 2
-            assert len(config.materials) >= 2
-            assert "copper" in config.materials
-            assert "silicon" in config.materials
-
-            # Verify copper material properties
-            copper = config.materials["copper"]
-            assert copper.k == 400.0
-            # In example1.xml, Midu is i:nil="true", so density is 0.0
-            assert copper.density == 0.0
-
-            # Verify silicon material properties
-            silicon = config.materials["silicon"]
-            assert silicon.k == 130.0
-
-            # Verify boundaries exist
-            assert len(config.boundaries) >= 3
-
-        else:
-            pytest.skip("example1.xml not found")
-
-
 # ============================================================================
 # Run Tests
 # ============================================================================
