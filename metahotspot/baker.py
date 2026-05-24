@@ -47,7 +47,7 @@ def bake_model(
     n_cells = topo.n_cells
     uc = UnitConverter(config.length_unit)
 
-    # 物理属性 SoA 数组 (shape: n_cells,)
+    # 物理属性 SoA 数组 (shape: n_cells,) — 初始为 0 便于累加
     k_arr = np.zeros(n_cells, dtype=np.float64)
     cp_arr = np.zeros(n_cells, dtype=np.float64)
     rho_arr = np.zeros(n_cells, dtype=np.float64)
@@ -111,34 +111,47 @@ def bake_model(
                 rect_z_max = z_top
 
                 # 交集的 6 个面
-                inter_x = np.maximum(0,
-                    np.minimum(x_corners[1:], rect_x_max) - np.maximum(x_corners[:-1], rect_x_min))
-                inter_y = np.maximum(0,
-                    np.minimum(y_corners[1:], rect_y_max) - np.maximum(y_corners[:-1], rect_y_min))
-                inter_z = np.maximum(0,
-                    np.minimum(z_corners[1:], rect_z_max) - np.maximum(z_corners[:-1], rect_z_min))
+                inter_x = np.maximum(
+                    0,
+                    np.minimum(x_corners[1:], rect_x_max)
+                    - np.maximum(x_corners[:-1], rect_x_min),
+                )
+                inter_y = np.maximum(
+                    0,
+                    np.minimum(y_corners[1:], rect_y_max)
+                    - np.maximum(y_corners[:-1], rect_y_min),
+                )
+                inter_z = np.maximum(
+                    0,
+                    np.minimum(z_corners[1:], rect_z_max)
+                    - np.maximum(z_corners[:-1], rect_z_min),
+                )
 
                 # 展成 (nx, ny, nz) 的交集体积
-                inter_vol_rect = inter_x[:, None, None] * inter_y[None, :, None] * inter_z[None, None, :]
+                inter_vol_rect = (
+                    inter_x[:, None, None]
+                    * inter_y[None, :, None]
+                    * inter_z[None, None, :]
+                )
 
                 if rect.add_sub:
-                    block_mask |= (inter_vol_rect > TOL.geom_tol)
+                    block_mask |= inter_vol_rect > TOL.geom_tol
                     intersect_vol += inter_vol_rect
                 else:
                     block_mask &= ~(inter_vol_rect > TOL.geom_tol)
                     intersect_vol -= inter_vol_rect
 
             final_mask = layer_mask & block_mask
-            k_3d[final_mask] = mat.k
-            cp_3d[final_mask] = mat.cp
-            rho_3d[final_mask] = mat.density
+            vol_3d = dx[:, None, None] * dy[None, :, None] * dz[None, None, :]
+            hs_weight = intersect_vol / np.maximum(vol_3d, TOL.geom_tol)
+            valid = final_mask & (intersect_vol > TOL.geom_tol)
+            hs_3d[valid] += block.heat_source * hs_weight[valid]
 
-            # 用交集体积占总单元体积的比例作为权重
-            # hs_3d 存储加权后的等效热源密度 (W/m³)
-            # 在 assembler 中: b += hs_3d * vol_cell = q_v * inter_vol
-            vol_3d = (dx[:, None, None] * dy[None, :, None] * dz[None, None, :])
-            hs_weight = intersect_vol / vol_3d
-            hs_3d[final_mask] = block.heat_source * hs_weight[final_mask]
+            # 体积加权热导率 / Cp / 密度 (等效介质模型)
+            w = intersect_vol[valid] / np.maximum(vol_3d[valid], TOL.geom_tol)
+            k_3d[valid] += mat.k * w
+            cp_3d[valid] += mat.cp * w
+            rho_3d[valid] += mat.density * w
 
     # 解析边界
     parsed_bcs = []
