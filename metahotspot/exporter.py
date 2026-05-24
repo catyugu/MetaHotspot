@@ -69,15 +69,19 @@ def export_vtu(
     hex_cells = np.zeros((n_solid, 8), dtype=np.int64)
 
     for seq, (i, j, k) in enumerate(zip(*solid_indices)):
-        # 8 节点六面体编号（按 VTK 约定）
+        # 8 节点六面体编号（按 VTK 逆时针环绕约定）
+        # --- 底面 (Z = k) ---
         n0 = i + j * topo.n_x + k * topo.n_x * topo.n_y
-        n1 = n0 + 1
-        n2 = i + (j + 1) * topo.n_x + k * topo.n_x * topo.n_y
-        n3 = n2 + 1
-        n4 = n0 + topo.n_x * topo.n_y
-        n5 = n4 + 1
-        n6 = n2 + topo.n_x * topo.n_y
-        n7 = n6 + 1
+        n1 = (i + 1) + j * topo.n_x + k * topo.n_x * topo.n_y
+        n2 = (i + 1) + (j + 1) * topo.n_x + k * topo.n_x * topo.n_y
+        n3 = i + (j + 1) * topo.n_x + k * topo.n_x * topo.n_y
+
+        # --- 顶面 (Z = k + 1) ---
+        n4 = i + j * topo.n_x + (k + 1) * topo.n_x * topo.n_y
+        n5 = (i + 1) + j * topo.n_x + (k + 1) * topo.n_x * topo.n_y
+        n6 = (i + 1) + (j + 1) * topo.n_x + (k + 1) * topo.n_x * topo.n_y
+        n7 = i + (j + 1) * topo.n_x + (k + 1) * topo.n_x * topo.n_y
+
         hex_cells[seq] = [n0, n1, n2, n3, n4, n5, n6, n7]
 
     # 材料 ID（用于 Paraview 可视化）
@@ -97,4 +101,6 @@ def export_vtu(
         },
     ).write(output_path)
 
-    logger.info(f"VTU export done: {n_solid} cells, {topo.n_x * topo.n_y * topo.n_z} points")
+    logger.info(
+        f"VTU export done: {n_solid} cells, {topo.n_x * topo.n_y * topo.n_z} points"
+    )

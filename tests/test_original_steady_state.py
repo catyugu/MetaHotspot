@@ -3,6 +3,7 @@
 End-to-end tests covering the full simulation pipeline using example1 and example2 cases.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -145,6 +146,18 @@ class TestExample2:
 
     def test_example2_time_series_empty(self, example2_result):
         assert len(example2_result.time_series) == 0
+
+    def test_example2_vtu_export(self, example2_path):
+        config = parse_xml(example2_path)
+        mesh_topo = generate_mesh(config)
+        fields, parsed_bcs = bake_model(config, mesh_topo)
+        sys_mat = assemble_system(mesh_topo, fields, parsed_bcs, config)
+        vtu_path = Path("outputs/case2_result.vtu")
+        if vtu_path.exists():
+            vtu_path.unlink()
+        result = solve_system(sys_mat, mesh_topo, fields, config, parsed_bcs, output_vtu=str(vtu_path))
+        assert vtu_path.exists()
+        assert vtu_path.stat().st_size > 0
 
 
 # ============================================================================
