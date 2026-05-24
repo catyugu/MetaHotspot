@@ -18,7 +18,7 @@ from metahotspot.logger import get_logger
 logger = get_logger()
 
 
-def solve_system(
+def solve_steady_state(
     sys_mat: SystemMatrix,
     topo: MeshTopology,
     fields: PhysicalFields,

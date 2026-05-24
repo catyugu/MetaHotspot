@@ -11,7 +11,7 @@ from metahotspot.xml_parser import parse_xml
 from metahotspot.mesher import generate_mesh
 from metahotspot.baker import bake_model
 from metahotspot.assembler import assemble_system
-from metahotspot.solver import solve_system
+from metahotspot.solver import solve_steady_state
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def case1_result(case1_path):
     mesh_topo = generate_mesh(config)
     fields, parsed_bcs = bake_model(config, mesh_topo)
     sys_mat = assemble_system(mesh_topo, fields, parsed_bcs, config)
-    return solve_system(sys_mat, mesh_topo, fields, config, parsed_bcs)
+    return solve_steady_state(sys_mat, mesh_topo, fields, config, parsed_bcs)
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def case2_result(case2_path, case2_vtu_path):
     mesh_topo = generate_mesh(config)
     fields, parsed_bcs = bake_model(config, mesh_topo)
     sys_mat = assemble_system(mesh_topo, fields, parsed_bcs, config)
-    return solve_system(sys_mat, mesh_topo, fields, config, parsed_bcs, output_vtu=str(case2_vtu_path))
+    return solve_steady_state(sys_mat, mesh_topo, fields, config, parsed_bcs, output_vtu=str(case2_vtu_path))
 
 
 @pytest.fixture
