@@ -133,6 +133,8 @@ def assemble_system(topo: MeshTopology, fields: PhysicalFields, bcs: List[Parsed
     data.extend(A_diag)
 
     A_csr = sp.coo_matrix((data, (rows, cols)), shape=(n_solid, n_solid)).tocsr()
+    
+    logger.info(f"Assembled system size {n_solid} * {n_solid}")
 
     return SystemMatrix(
         n_rows=n_solid,
