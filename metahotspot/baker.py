@@ -4,12 +4,18 @@ import numpy as np
 from typing import Tuple, List, Dict
 from dataclasses import dataclass
 
-from metahotspot.metahotspot_types import ModelConfig, MeshTopology, PhysicalFields, ParsedFaceKey
+from metahotspot.metahotspot_types import (
+    ModelConfig,
+    MeshTopology,
+    PhysicalFields,
+    ParsedFaceKey,
+)
 from metahotspot.config import TOL
 from metahotspot.units import UnitConverter
 from metahotspot.logger import get_logger
 
 logger = get_logger()
+
 
 def parse_face_key(fk_str: str, params: dict) -> ParsedFaceKey:
     """解析 FaceKey 字符串。"""
@@ -67,43 +73,39 @@ def bake_model(
         layer_bounds[layer.name] = (z_bot, z_top)
         current_z = z_bot
 
+    # 获取单元格中心点还原回原始单位用于和原始几何配置做比较
+    X = centers_3d[..., 0]
+    Y = centers_3d[..., 1]
+    Z = centers_3d[..., 2]
+
     # 分配属性
-    for i in range(nx):
-        for j in range(ny):
-            for k in range(nz):
-                x_c, y_c, z_c = centers_3d[i, j, k]
+    for layer in config.layers:
+        z_bot, z_top = layer_bounds[layer.name]
+        layer_mask = (Z >= z_bot - TOL.geom_tol) & (Z <= z_top + TOL.geom_tol)
 
-                # 层判定
-                for layer in config.layers:
-                    z_bot, z_top = layer_bounds[layer.name]
-                    if z_bot - TOL.geom_tol <= z_c <= z_top + TOL.geom_tol:
-                        # 块判定
-                        for block in layer.blocks:
-                            in_block = False
-                            for rect in block.rects:
-                                in_rect = (
-                                    rect.x - TOL.geom_tol
-                                    <= x_c
-                                    <= rect.x + rect.width + TOL.geom_tol
-                                ) and (
-                                    rect.y - TOL.geom_tol
-                                    <= y_c
-                                    <= rect.y + rect.height + TOL.geom_tol
-                                )
-                                if rect.add_sub:
-                                    in_block = in_block or in_rect
-                                else:
-                                    in_block = in_block and (not in_rect)
+        for block in layer.blocks:
+            mat = config.materials.get(block.material_name)
+            if not mat:
+                continue
 
-                            if in_block:
-                                mat = config.materials.get(block.material_name)
-                                if mat:
-                                    k_3d[i, j, k] = mat.k
-                                    cp_3d[i, j, k] = mat.cp
-                                    rho_3d[i, j, k] = mat.density
-                                    hs_3d[i, j, k] = block.heat_source
-                                break  # 匹配到所属块，停止检查同层其它块
-                        break  # 匹配到所属层，停止检查其它层
+            block_mask = np.zeros((nx, ny, nz), dtype=bool)
+            for rect in block.rects:
+                rect_mask = (
+                    (X >= rect.x - TOL.geom_tol)
+                    & (X <= rect.x + rect.width + TOL.geom_tol)
+                    & (Y >= rect.y - TOL.geom_tol)
+                    & (Y <= rect.y + rect.height + TOL.geom_tol)
+                )
+                if rect.add_sub:
+                    block_mask |= rect_mask
+                else:
+                    block_mask &= ~rect_mask
+
+            final_mask = layer_mask & block_mask
+            k_3d[final_mask] = mat.k
+            cp_3d[final_mask] = mat.cp
+            rho_3d[final_mask] = mat.density
+            hs_3d[final_mask] = block.heat_source
 
     # 解析边界
     parsed_bcs = []

@@ -23,7 +23,7 @@ class Rect:
     height: float  # 矩形高度
     x_interval: float = 0.0  # X 方向阵列间隔
     y_interval: float = 0.0  # Y 方向阵列间隔
-    
+
 
 @dataclass(slots=True)
 class ParsedFaceKey:
@@ -32,6 +32,7 @@ class ParsedFaceKey:
     coord: float  # 坐标平面位置 (使用配置的原始单位，如Mm)
     rects: List[Tuple[float, float, float, float]]  # (u1, u2, v1, v2) (原始单位)
     params: dict  # 边界条件参数
+
 
 @dataclass(slots=True)
 class BlockGeometry:
@@ -110,6 +111,15 @@ class MeshCoordinates:
     y: np.ndarray  # shape: (ny,) - Y 方向网格点坐标
     z: np.ndarray  # shape: (nz,) - Z 方向网格点坐标
 
+
+@dataclass(slots=True)
+class CellGeometry:
+    """单元格几何信息 (SoA format)。
+    """
+    centers: np.ndarray    # shape: (n_cells, 3) - 单元格中心坐标 (x,y,z)
+    volumes: np.ndarray    # shape: (n_cells,) - 单元格体积
+
+
 @dataclass(slots=True)
 class ModelConfig:
     """模型全局配置，对应 XML 中的 Structure 根元素。
@@ -128,42 +138,10 @@ class ModelConfig:
     boundaries: List[ThermalBoundary] = field(default_factory=list)
     mesh_coords: MeshCoordinates | None = None
 
+
 # ============================================================================
 # SoA 格式数据结构（用于计算内核）
 # ============================================================================
-
-@dataclass(slots=True)
-class CellProperties:
-    """单元格物性数据 (SoA format)。
-
-    所有数组按单元格索引排列。
-    """
-    k: np.ndarray          # shape: (n_cells,) - 热导率
-    cp: np.ndarray         # shape: (n_cells,) - 比热容
-    density: np.ndarray    # shape: (n_cells,) - 密度
-    heat_source: np.ndarray  # shape: (n_cells,) - 体热源密度 (W/m³)
-
-@dataclass(slots=True)
-class CellGeometry:
-    """单元格几何信息 (SoA format)。
-    """
-    centers: np.ndarray    # shape: (n_cells, 3) - 单元格中心坐标 (x,y,z)
-    volumes: np.ndarray    # shape: (n_cells,) - 单元格体积
-
-@dataclass(slots=True)
-class BoundaryCondition:
-    """边界条件数据结构 (SoA format)。
-
-    存储边界条件的索引和数值。
-    """
-    # shape 维度说明:
-    # c_ids: (n_boundary_cells,) - 边界条件对应的单元格索引
-    # areas: (n_boundary_cells,) - 边界面面积
-    # params: Dict[string, float] - 参数
-    c_ids: np.ndarray
-    areas: np.ndarray
-    params: Dict[str, float]
-
 
 @dataclass(slots=True)
 class MeshTopology:
@@ -195,19 +173,6 @@ class PhysicalFields:
     density: np.ndarray      # shape: (n_cells,) - 密度
     heat_source: np.ndarray  # shape: (n_cells,) - 体热源密度 (W/m³)
     temperature: np.ndarray   # shape: (n_cells,) - 温度 (K)
-
-@dataclass(slots=True)
-class SolverConfig:
-    """求解器配置。
-    """
-    study_type: str           # "Steady" 或 "Transient"
-    init_temperature: float   # 初始温度 (K)
-    ambient_temperature: float # 环境温度 (K)
-    timestep: float = 0.0     # 时间步长 (s)
-    transient_duration: float = 0.0  # 瞬态总时长 (s)
-
-    tolerance_abs: float = 1e-6   # 绝对容差
-    tolerance_rel: float = 1e-6   # 相对容差
 
 
 @dataclass(slots=True)
