@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -16,6 +15,7 @@ from metahotspot.metahotspot_types import (
     BlockGeometry,
     LayerConfig,
     MaterialModel,
+    MeshCoordinates,
     ModelConfig,
     Rect,
     ThermalBoundary,
@@ -306,15 +306,6 @@ def parse_boundary(boundary_elem: ET.Element) -> ThermalBoundary:
 # ============================================================================
 # 网格坐标解析 (来自 Results/Mesh)
 # ============================================================================
-
-
-@dataclass(slots=True)
-class MeshCoordinates:
-    """网格坐标数据。"""
-
-    x: np.ndarray
-    y: np.ndarray
-    z: np.ndarray
 
 
 def parse_mesh(mesh_elem: ET.Element) -> MeshCoordinates:

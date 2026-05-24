@@ -6,7 +6,7 @@ All data classes use @dataclass(slots=True) and SoA (Structure of Arrays) design
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
 @dataclass(slots=True)
@@ -23,7 +23,15 @@ class Rect:
     height: float  # 矩形高度
     x_interval: float = 0.0  # X 方向阵列间隔
     y_interval: float = 0.0  # Y 方向阵列间隔
+    
 
+@dataclass(slots=True)
+class ParsedFaceKey:
+    """解析后的边界定位键。"""
+    axis: str  # 'X', 'Y', 'Z'
+    coord: float  # 坐标平面位置 (使用配置的原始单位，如Mm)
+    rects: List[Tuple[float, float, float, float]]  # (u1, u2, v1, v2) (原始单位)
+    params: dict  # 边界条件参数
 
 @dataclass(slots=True)
 class BlockGeometry:
