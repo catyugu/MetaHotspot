@@ -11,12 +11,12 @@ class UnitConverter:
     """集中处理所有量纲的单位换算至国际标准单位 (SI)。"""
 
     _LENGTH_FACTORS: Dict[str, float] = {
-        "m": 1.0,
-        "cm": 1e-2,
+        "M": 1.0,
         "Mm": 1e-3,   # 毫米 (上游软件拼写)
-        "mm": 1e-3,
-        "um": 1e-6,   # 微米
-        "nm": 1e-9,   # 纳米
+        "Um": 1e-6,   # 微米
+        "Nm": 1e-9,   # 纳米
+        "Inch": 0.0254, # 英寸
+        "Mil": 2.54e-5, # 密耳
     }
 
     def __init__(self, base_length_unit: str) -> None:
