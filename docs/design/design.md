@@ -711,11 +711,80 @@ XML file
 
 1. **No raw strings in internal model** — preprocessor compiles ALL expressions (material props, BC params, heat sources) into `expr::FieldExpression` before passing to scheduler/assembler. The internal model contains only evaluable functions, no expression strings.
 2. **Heat source is per-cell** — `CellFields.heat_source` is a `vector<FieldExpression>` indexed by cell, precompiled from each Block's `ti_reyuan_expr`. Even constant heat sources are stored as `FieldExpression` (via `make_constant()`).
-2. **No virtual functions** — use static polymorphism via templates where needed
-3. **No exceptions** — errors logged via `mhs::logger` and program exits with error code
-4. **POD types preferred** — all internal model structs are POD-compatible for safety
-5. **Pure functions where possible** — `assembler::assemble()` is stateless given model + state
-6. **SoA throughout internal model** — all hot-loop arrays are contiguous per-field
-7. **Compiled expressions** — exprtk expressions precompiled once, evaluated many times
-8. **No shared mutable state** — modules communicate via const references and return values
-9. **Native functions for complex forms** — piecewise, tabulated, or spatially complex functions registered via `register_native()` and stored in the expr module's function pool
+3. **No virtual functions** — use static polymorphism via templates where needed
+4. **No exceptions** — errors logged via `mhs::logger` and program exits via `mhs::panic()`
+5. **POD types preferred** — all internal model structs are POD-compatible for safety
+6. **Pure functions where possible** — `assembler::assemble()` is stateless given model + state
+7. **SoA throughout internal model** — all hot-loop arrays are contiguous per-field
+8. **Compiled expressions** — exprtk expressions precompiled once, evaluated many times
+9. **No shared mutable state** — modules communicate via const references and return values
+10. **Native functions for complex forms** — piecewise, tabulated, or spatially complex functions registered via `register_native()` and stored in the expr module's function pool
+11. **2D not supported** — `Dimension::Dimension2D` triggers panic at preprocessing
+
+---
+
+## 7. Project Structure
+
+```bash
+MetaHotspot/
+├── CMakeLists.txt            # Top-level entry, defines project name, version, C++ standard
+├── cmake/
+│   ├── Dependencies.cmake    # CPM-based dependency declarations (Eigen, spdlog, exprtk, etc.)
+│   └── CompilerOptions.cmake # Strict warning flags (/W4 /WX or -Wall -Wextra -Wpedantic -Werror)
+├── src/
+│   ├── CMakeLists.txt        # Sources, include dirs, link libraries for all modules
+│   ├── general/              # Types, tolerances, constants
+│   ├── model/                # IO and internal data structures
+│   ├── io/                   # XML serialization/deserialization
+│   ├── xmlparser/            # tinyxml2 wrapper
+│   ├── expr/                 # exprtk wrapper, FieldExpression, native function registry
+│   ├── preprocessor/         # Mesh generation, BC resolution, expression compilation
+│   ├── assembler/             # Jacobian and RHS assembly
+│   ├── solver/               # Eigen sparse solver factory
+│   ├── scheduler/            # Simulation loop orchestration
+│   ├── postprocessor/        # VTU/XML output
+│   ├── logger/               # spdlog wrapper, global singleton, mhs::panic()
+│   └── utils/                # Utility functions
+├── tests/
+│   ├── CMakeLists.txt        # GTest configuration, test discovery
+│   ├── general/              # Tests for general module
+│   ├── model/                # Tests for model structures
+│   ├── expr/                 # Tests for expression evaluation
+│   ├── preprocessor/         # Tests for mesh generation, BC resolution
+│   ├── assembler/            # Tests for assembly
+│   └── scheduler/             # Integration tests for simulation loop
+├── bin/                      # Build output directory for executable targets
+│   └── CMakeLists.txt        # Main executable target entry
+```
+
+### Logger Interface
+
+```cpp
+namespace mhs::logger {
+
+// Global singleton instance. Initialize at program startup.
+// Default level: INFO. DEBUG level used only inside hot assembly loops.
+Logger& instance();
+
+// Logs at INFO level. Example: MHS_LOG_INFO("Starting step {}", step);
+#define MHS_INFO(...) ...
+
+// Logs at DEBUG level. Only active if compiled with MHS_DEBUG.
+#define MHS_DEBUG(...) ...
+
+// Logs at ERROR level, then terminates the program with exit code 1.
+// Use for unrecoverable errors (failed to parse required XML, solver diverged, etc.).
+#define MHS_ERROR(...) mhs::logger::instance().panic(__VA_ARGS__)
+
+// Logs at WARN level with a fallback value. Use for recoverable issues
+// where the system falls back to a default behavior.
+#define MHS_WARN(expr, fallback_value, ...) ...
+
+} // namespace mhs::logger
+```
+
+**`mhs::panic()` behavior**: Logs error message at ERROR level via spdlog, then calls `std::terminate()` or `std::exit(1)`. No exceptions thrown, no stack unwinding. The spdlog output ensures the error message is captured before termination.
+
+### 2D Support
+
+2D is **not supported**. `Dimension::Dimension2D` in the IO model is accepted but triggers a panic at preprocessing time if encountered.
