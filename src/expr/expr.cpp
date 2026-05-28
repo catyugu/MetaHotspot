@@ -1,7 +1,11 @@
 #include "expr.hpp"
+#define exprtk_disable_caseinsensitivity
 #include <exprtk/exprtk.hpp>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace mhs::expr {
 
@@ -55,6 +59,9 @@ namespace mhs::expr {
             if (!parser_->compile(formula, *expr_)) {
                 valid_ = false;
             }
+            else {
+                valid_ = true;
+            }
         }
 
         bool valid() const { return valid_; }
@@ -64,6 +71,11 @@ namespace mhs::expr {
             if (!valid_) {
                 return 0.0;
             }
+
+            // [FIX 2]: 加锁保护共享成员变量。
+            // 因为 ExprTKCompiled 在缓存中是单例的，多个线程可能会同时调用 eval，
+            // 并发修改 x_, y_, z_ 会导致严重的计算错误（Data Race）。
+            std::lock_guard<std::mutex> lock(eval_mutex_);
             x_ = ctx.x;
             y_ = ctx.y;
             z_ = ctx.z;
@@ -73,6 +85,7 @@ namespace mhs::expr {
         }
 
     private:
+        std::mutex eval_mutex_; // [FIX 2]: 新增互斥锁
         bool valid_ = true;
         double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
         std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
@@ -193,43 +206,26 @@ namespace mhs::expr {
             return var_it->second;
         }
 
-        // Try to evaluate as expression with substituted variables
-        std::string expr = formula;
-
-        // Sort by length descending to avoid partial replacements
-        std::vector<std::pair<std::string, double>> sorted_vars;
-        for (const auto& [name, val] : vars) {
-            sorted_vars.emplace_back(name, val);
-        }
-        std::sort(sorted_vars.begin(), sorted_vars.end(),
-            [](const auto& a, const auto& b) { return a.first.length() > b.first.length(); });
-
-        for (const auto& [name, val] : sorted_vars) {
-            size_t pos;
-            while ((pos = expr.find(name)) != std::string::npos) {
-                expr.replace(pos, name.length(), std::to_string(val));
-            }
-        }
-
-        // Try to compile and evaluate with exprtk
         using namespace exprtk;
         expression<double> exprtk_expr;
         symbol_table<double> sym_table;
 
-        // Add variables
         std::vector<std::pair<std::string, double>> active_vars;
-        for (const auto& [name, val] : sorted_vars) {
-            if (expr.find(name) != std::string::npos) {
-                double v = val;
-                sym_table.add_variable(name, v);
-                active_vars.emplace_back(name, v);
+        active_vars.reserve(vars.size());
+
+        for (const auto& [name, val] : vars) {
+            if (formula.find(name) != std::string::npos) {
+                active_vars.emplace_back(name, val);
+                sym_table.add_variable(active_vars.back().first, active_vars.back().second);
             }
         }
 
         exprtk_expr.register_symbol_table(sym_table);
 
         parser<double> parser;
-        if (parser.compile(expr, exprtk_expr)) {
+
+        // 直接编译未经替换的、原始的 formula 字符串
+        if (parser.compile(formula, exprtk_expr)) {
             return exprtk_expr.value();
         }
 

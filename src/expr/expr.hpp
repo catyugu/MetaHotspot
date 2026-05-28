@@ -8,7 +8,7 @@ namespace mhs::expr {
     // Precompiled expression (value type, stateless, thread-safe eval)
     class CompiledExpression {
     public:
-        CompiledExpression() = default;
+        CompiledExpression() : is_const_(true), const_val_(0.0) { }
         CompiledExpression(const CompiledExpression&) = default;
         CompiledExpression(CompiledExpression&&) = default;
         CompiledExpression& operator=(const CompiledExpression&) = default;

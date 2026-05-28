@@ -2,8 +2,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
-#include <vector>
 
 namespace mhs {
 
@@ -15,7 +13,10 @@ namespace mhs {
         SecondType = 2,
         ThirdType = 3 };
 
-    enum class ConvergenceStatus { Running, Converged, Diverged, Stalled };
+    enum class ConvergenceStatus { Running,
+        Converged,
+        Diverged,
+        Stalled };
 
     struct FieldContext {
         double x = 0.0, y = 0.0, z = 0.0;
