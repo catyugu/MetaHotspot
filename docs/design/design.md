@@ -61,7 +61,7 @@ struct Block {
     std::string x_offset_expr;
     std::string y_offset_expr;
     std::string z_offset_expr;
-    double ti_reyuan = 0.0;
+    std::string ti_reyuan_expr;  // volume heat source expression [W/m³], e.g. "1e9" or "1e8+0.5*x"
     std::string name;
     bool is_normal_material = true;
 };
@@ -132,6 +132,13 @@ struct Structure {
     double transient_duration = 0.0;
     double transient_time_step = 1.0;
     std::string transient_time_unit = "s";
+
+    // Default BC for any face not covered by an explicit Boundary entry.
+    // Typically SecondType (Neumann, HeatFlux=0 = adiabatic) or ThirdType (Cauchy).
+    // Preprocessor applies this to all interior/unspecified faces.
+    ThermalBCType other_bc_type = ThermalBCType::SecondType;
+    SecondTypeThermalBC other_bc_second;   // used if bc_type == SecondType
+    ThirdTypeThermalBC other_bc_third;     // used if bc_type == ThirdType
 
     // Results (for reading reference values from XML)
     std::vector<double> result_values;  // flat array of temperature values
@@ -246,6 +253,9 @@ struct CellFields {
 
     std::vector<MaterialID> material_id;   // size cell_count
     std::vector<LayerID> layer_id;         // size cell_count
+
+    // Per-cell volume heat source Q(x,y,z,T,t) [W/m³]. Precompiled from Block.ti_reyuan_expr.
+    std::vector<expr::FieldExpression> heat_source;  // size cell_count
 
     // BC-applied flags (bitmask for which faces have BCs applied)
     std::vector<uint8_t> bc_flags;         // size cell_count, bitmask
@@ -681,6 +691,7 @@ XML file
                           ├─> Compile all expressions → expr::FieldExpression
                           │     ├─> MaterialProps.k/rho/c per material
                           │     ├─> BCParamTable entries per boundary
+                          │     ├─> Heat source per cell (from Block.ti_reyuan_expr)
                           │     └─> User-defined function pool (exprtk + native)
                           └─> model::internal::InternalModel (SoA, ALL expressions compiled)
                                 └─> scheduler::Scheduler
@@ -699,6 +710,7 @@ XML file
 ## 6. Key Design Principles
 
 1. **No raw strings in internal model** — preprocessor compiles ALL expressions (material props, BC params, heat sources) into `expr::FieldExpression` before passing to scheduler/assembler. The internal model contains only evaluable functions, no expression strings.
+2. **Heat source is per-cell** — `CellFields.heat_source` is a `vector<FieldExpression>` indexed by cell, precompiled from each Block's `ti_reyuan_expr`. Even constant heat sources are stored as `FieldExpression` (via `make_constant()`).
 2. **No virtual functions** — use static polymorphism via templates where needed
 3. **No exceptions** — errors logged via `mhs::logger` and program exits with error code
 4. **POD types preferred** — all internal model structs are POD-compatible for safety
