@@ -17,7 +17,13 @@ namespace mhs::expr {
 
         double eval(const FieldContext& ctx) const
         {
-            return is_const_ ? const_val_ : (eval_ ? eval_(ctx) : 0.0);
+            if (is_const_) {
+                return const_val_;
+            }
+            if (!eval_) {
+                return 0.0;
+            }
+            return eval_(ctx);
         }
 
         bool is_constant() const { return is_const_; }
@@ -55,6 +61,9 @@ namespace mhs::expr {
 
     // Register a user-defined expression function
     void register_function(const std::string& name, const std::string& expression);
+
+    // Get a registered native function
+    FieldEvaluator get_native(const std::string& name);
 
     // Clear all registered functions (for testing)
     void clear_registry();
