@@ -13,5 +13,7 @@ include(cmake/CompilerOptions.cmake)
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(src)
+
+enable_testing()
 add_subdirectory(tests)
 add_subdirectory(bin)

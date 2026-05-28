@@ -1,7 +1,7 @@
 #pragma once
 
+#include "expr/expr.hpp"
 #include "types.hpp"
-#include "../expr/expr.hpp"
 #include <deque>
 #include <vector>
 
@@ -72,14 +72,14 @@ namespace mhs::model {
         int time_step = 0;
         ConvergenceStatus status = ConvergenceStatus::Running;
 
-        std::vector<double> T;              // current temperature
-        std::vector<double> T_prev;        // previous time step
-        std::vector<double> residual;       // current residual
+        std::vector<double> T; // current temperature
+        std::vector<double> T_prev; // previous time step
+        std::vector<double> residual; // current residual
 
         // Ring buffers (configurable capacity, default 5)
-        std::deque<std::vector<double>> T_history;   // past time steps
-        std::deque<std::vector<double>> nl_history;  // non-linear iteration snapshots
-        std::deque<double> dt_history;              // past dt values
+        std::deque<std::vector<double>> T_history; // past time steps
+        std::deque<std::vector<double>> nl_history; // non-linear iteration snapshots
+        std::deque<double> dt_history; // past dt values
     };
 
     struct InternalModel {
