@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Eigen/Sparse>
-#include <string>
 
 namespace mhs {
 

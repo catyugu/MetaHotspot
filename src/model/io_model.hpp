@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace mhs::io {
+namespace mhs::model {
 
     struct Variable {
         std::string name;
@@ -99,7 +99,7 @@ namespace mhs::io {
     enum class Dimension { Dimension2D,
         Dimension3D };
 
-    struct Structure {
+    struct IOStructure {
         std::string software_mode;
         StudyType study_type;
         Dimension dimension;
@@ -173,4 +173,4 @@ namespace mhs::io {
         PieceWiseFunction piecewise;
     };
 
-} // namespace mhs::io
+} // namespace mhs::model

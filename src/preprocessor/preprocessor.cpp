@@ -2,9 +2,9 @@
 
 namespace mhs {
 
-    std::unique_ptr<model::InternalModel> Preprocessor::load(const std::string& xmlPath)
+    std::unique_ptr<model::InternalModel> Preprocessor::load(const model::IOStructure& ioStructure)
     {
-        (void)xmlPath;
+        (void)ioStructure;
         return nullptr;
     }
 
