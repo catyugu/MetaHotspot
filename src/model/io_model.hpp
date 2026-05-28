@@ -1,5 +1,7 @@
 #pragma once
 
+#include "types.hpp"
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -69,7 +71,7 @@ namespace mhs::model {
 
     struct ThirdTypeThermalBC {
         std::string convection_coeff = "0.0";
-        std::string h_inf = "300.0";
+        std::string T_inf = "300.0";
     };
 
     struct Boundary {
@@ -88,9 +90,6 @@ namespace mhs::model {
         std::string midu = "0.0"; // 密度 rho
         std::string bi_rerong = "0.0"; // 比热容 c
     };
-
-    enum class StudyType { Steady,
-        Transient };
 
     enum class LengthUnit { M,
         Mm,

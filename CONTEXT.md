@@ -11,7 +11,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 
 ### Mesh
 
-- **Structured grid**: Cell-centered DOFs, regular Cartesian mesh. Only supported mesh type.
+- **Structured grid**: Cell-centered DOFs, regular Cartesian mesh. Only supported mesh type. 2D (`Dimension2D`) is explicitly unsupported — the mesh always uses 3D vertex arrays.
 - **Cell**: Fundamental volume element. Temperature DOF stored at cell center.
 - **Face**: Cell surface. Boundary conditions applied here via boundary integrals.
 - **Vertex coordinates**: Grid lines defining cell boundaries.
@@ -21,6 +21,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **First-type (Dirichlet)**: Fixed temperature `T = T₀`. Applied via ghost cell method.
 - **Second-type (Neumann)**: Fixed heat flux `q = q₀·n`. Enters cell RHS directly.
 - **Third-type (Cauchy/Robin)**: Convection `h(T - T_∞)`. Linearized into Jacobian + RHS contributions.
+- **Other BC (`other_bc`)**: Default BC applied to faces not covered by any face key. Specified at IO level via `other_bc_type` + `other_bc_first/second/third`; preprocessor applies it to all `BcType::None` faces during BC array initialization.
 
 ### Material Properties
 
@@ -35,6 +36,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Middle layer**: Substrate (silicon).
 - **Bottom layer**: PCB or heat spreader.
 - Each layer has a `ThicknessExpression` and mesh size hints.
+- **Block heat source**: Each block has one `ti_reyuan_expr` (体热源, [W/m³]). Preprocessor expands this to a per-cell `heat_source` array indexed by `cell_idx`.
 
 ### Expressions
 
@@ -51,6 +53,10 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 ## Solver Pipeline
 
 1. **Preprocessor**: IO model → Internal SoA model (mesh, BC arrays, compiled expressions)
+   - **IO model** (`io_model.hpp`): AoS structs mirroring XML schema. Uses `ThermalBCType` (FirstType, SecondType, ThirdType) matching XML element names. Length unit (`LengthUnit`: M, Mm, Um, Nm, Inch, Mil) converted to SI (meters) here.
+   - **Internal model** (`internal_model.hpp`): All geometry in SI units (meters), no unit storage.
+   - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
+   - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` 等需经由 `FunctionConverter` 转换为 `FieldEvaluator`，再包装为 `CompiledExpression`。
 2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — factory pattern
@@ -63,7 +69,7 @@ Persistent state across simulation, stored in `model::GlobalState`:
 - **Core fields**: `T` (current temperature), `T_prev` (previous time step), `residual`
 - **Ring buffers**: `T_history` (past time steps), `nl_history` (non-linear snapshots), `dt_history`
 - **Ring buffer capacity**: Configurable, default 5
-- **Convergence status**: `Running`, `Converged`, `Diverged`, `Stalled`
+- **Convergence status**: `Running`, `Converged`, `Diverged`
 
 ## Key Design Principles
 
@@ -73,6 +79,7 @@ Persistent state across simulation, stored in `model::GlobalState`:
 4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
 5. **Crank-Nicolson (θ=0.5)** — transient time discretization with lumped mass
 6. **TBB parallel assembly** — `tbb::parallel_for` over cells
+7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`, `ConvergenceStatus`); `io_model.hpp` includes it instead of redeclaring
 
 ## Glossary
 

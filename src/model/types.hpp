@@ -15,8 +15,7 @@ namespace mhs {
 
     enum class ConvergenceStatus { Running,
         Converged,
-        Diverged,
-        Stalled };
+        Diverged };
 
     struct FieldContext {
         double x = 0.0, y = 0.0, z = 0.0;

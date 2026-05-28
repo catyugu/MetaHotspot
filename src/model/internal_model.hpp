@@ -45,10 +45,10 @@ namespace mhs::model {
     };
 
     struct BCParamTable {
-        std::vector<FieldEvaluator> dirichlet_T;
-        std::vector<FieldEvaluator> neumann_q;
-        std::vector<FieldEvaluator> cauchy_h;
-        std::vector<FieldEvaluator> cauchy_T_inf;
+        std::vector<CompiledExpression> dirichlet_T;
+        std::vector<CompiledExpression> neumann_q;
+        std::vector<CompiledExpression> cauchy_h;
+        std::vector<CompiledExpression> cauchy_T_inf;
     };
 
     struct FaceBCFields {
