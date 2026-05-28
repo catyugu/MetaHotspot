@@ -39,9 +39,6 @@ struct MeshGeometry {
 ```cpp
 namespace mhs::model {
 
-enum class MaterialID : uint8_t { Void = 0, Copper = 1, Silicon = 2, TIM = 3 };
-enum class LayerID : uint8_t { None = 0, Layer1 = 1, Layer2 = 2, Layer3 = 3 };
-
 // 材料属性槽 — 预处理阶段全部预编译为 FieldExpression。
 // 若为常数表达式（is_constant=true），直接用 constant_value，无求值开销。
 struct MaterialProps {
@@ -53,8 +50,8 @@ struct MaterialProps {
 struct CellFields {
     int cell_count = 0;
 
-    std::vector<MaterialID> material_id;   // 大小 cell_count
-    std::vector<LayerID> layer_id;         // 大小 cell_count
+    std::vector<size_t> material_id;   // 大小 cell_count
+    std::vector<size_t> layer_id;         // 大小 cell_count
 
     // 每个单元的体热源 Q(x,y,z,T,t) [W/m³]。
     // 由 Block.ti_reyuan_expr 预编译而来。

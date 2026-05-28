@@ -1,5 +1,17 @@
-add_library(mhs_lib INTERFACE)
-target_include_directories(mhs_lib INTERFACE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/external
+add_library(mhs_lib
+    preprocessor/preprocessor.cpp
+    expr/expr.cpp
+    assembler/assembler.cpp
+    scheduler/scheduler.cpp
+    solver/solver.cpp
+    postprocessor/postprocessor.cpp
+)
+
+target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen)
+
+target_include_directories(mhs_lib
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>
+    $<INSTALL_INTERFACE:include>
 )
