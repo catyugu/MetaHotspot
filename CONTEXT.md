@@ -38,10 +38,10 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 
 ### Expressions
 
-- **Geometry expressions**: `w_top/2`, `h_middle`, evaluated at preprocessing to concrete numbers. Context: none (only variables like `w_top`).
-- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`.
-- User-defined functions (e.g., `test_gaussian`) registered in function pool.
-- **Native functions**: C++ functions `double(const FieldContext&)` registered via `register_native()`. Used for piecewise functions and other forms that are easier to express in code than as strings.
+- **Geometry expressions**: `w_top/2`, `h_middle` — evaluated via `expr::eval_geometry()`. Context: none (variables pre-registered).
+- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`. Pre-compiled to `FieldExpression`.
+- **Expr registry**: Global, thread-safe. Populated by `ModelBuilder` from `IOStructure` variables/functions.
+- **Native functions**: C++ functions registered via `expr::register_native()`. Used for piecewise functions and other forms easier to express in code than strings.
 
 ### Face Keys
 
@@ -55,6 +55,24 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — factory pattern
 5. **Postprocessor**: VTU (ParaView) + XML result output
+
+## GlobalState
+
+Persistent state across simulation, stored in `model::GlobalState`:
+
+- **Core fields**: `T` (current temperature), `T_prev` (previous time step), `residual`
+- **Ring buffers**: `T_history` (past time steps), `nl_history` (non-linear snapshots), `dt_history`
+- **Ring buffer capacity**: Configurable, default 5
+- **Convergence status**: `Running`, `Converged`, `Diverged`, `Stalled`
+
+## Key Design Principles
+
+1. **No raw strings in internal model** — all expressions compiled to `FieldExpression`
+2. **Expr registry is internal** — `ModelBuilder` populates, external code uses clean API
+3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected, `eval()` lock-free
+4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
+5. **Crank-Nicolson (θ=0.5)** — transient time discretization with lumped mass
+6. **TBB parallel assembly** — `tbb::parallel_for` over cells
 
 ## Glossary
 

@@ -40,12 +40,10 @@ XML 文件
 所有表达式（材料属性、BC 参数、热源）在预处理阶段编译为 `FieldExpression`。调度器/组装器只调用 `.eval(ctx)`，永远不需要字符串。
 
 **预处理阶段**：
-
 - 接收：`model::IOStructure`（含字符串如 `"1e9"`, `"sin(x)*T"`）
 - 输出：`model::InternalModel`（不含任何字符串，全是 `FieldExpression`）
 
 **组装阶段**：
-
 ```cpp
 // 只需要 eval，不需要知道表达式原本是什么字符串
 double k = material.props.k.eval(ctx);

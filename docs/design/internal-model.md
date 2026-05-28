@@ -170,12 +170,41 @@ struct InternalModel {
 
 ## 设计要点
 
-### DOF 与边界条件施加方式
+### Assembler Interface
 
-- **Cell-centered DOF**：温度存储在单元中心
-- **Dirichlet BC**：Ghost Cell 法 — 边界外一个虚单元，`T_ghost = 2·T_dirichlet - T_boundary`
-- **Neumann BC**：热通量直接进入单元 RHS（边界面积分）
-- **Cauchy BC**：对流项线性化，Jacobian 对角元加 `h·A`，RHS 加 `h·A·T_∞`
+- **Input**: `InternalModel` + `GlobalState` + `t` + `dt`
+- **Output**: `LinearSystem` (sparse A, RHS b, residual)
+- **GlobalState contains**: T, T_prev, T_history ring buffer, nl_history ring buffer, dt_history ring buffer
+- **Crank-Nicolson**: θ = 0.5, lumped mass matrix
+- **Convergence status**: `GlobalState::status` (Running/Converged/Diverged/Stalled)
+
+### GlobalState Ring Buffers
+
+```cpp
+struct GlobalState {
+    int cell_count = 0;
+    double current_time = 0.0;
+    int time_step = 0;
+    ConvergenceStatus status = ConvergenceStatus::Running;
+
+    std::vector<double> T;               // current temperature
+    std::vector<double> T_prev;          // previous time step
+    std::vector<double> residual;        // current residual
+
+    // Ring buffers (std::deque, configurable capacity, default 5)
+    std::deque<std::vector<double>> T_history;     // past time steps
+    std::deque<std::vector<double>> nl_history;    // non-linear iteration snapshots
+    std::deque<double> dt_history;                  // past Δt values
+};
+```
+
+### DOF & BC Application
+
+- **Cell-centered DOF**: Temperature stored at cell center
+- **Dirichlet BC**: Ghost cell method — boundary outside one ghost cell, `T_ghost = 2·T_dirichlet - T_boundary`
+- **Neumann BC**: Heat flux enters cell RHS directly (area integral)
+- **Cauchy BC**: Convection linearized — Jacobian diagonal adds `h·A`, RHS adds `h·A·T_∞`
+- **Default BC**: Configured in XML, not interior default
 
 ### SoA 布局优势
 

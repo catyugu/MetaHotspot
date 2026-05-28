@@ -1,7 +1,5 @@
 # 模块接口
 
----
-
 ## 4.1 `io`
 
 ```cpp
@@ -42,12 +40,15 @@ private:
 ```cpp
 namespace mhs::preprocessor {
 
-// 将 IO 模型转换为内部模型
 class ModelBuilder {
 public:
     explicit ModelBuilder(const model::IOStructure& io_model);
 
-    // 返回完全组装好的内部模型（所有表达式已编译）
+    // 构建内部模型
+    // - 填充 expr 表达式注册表（变量、函数）
+    // - 单位转换（IOStructure::length_unit → SI）
+    // - 构建 MeshGeometry、CellFields、FaceBCFields
+    // - 编译所有 FieldExpression
     model::InternalModel build();
 
 private:
@@ -55,24 +56,26 @@ private:
 };
 
 // 处理层几何 → 填充每个单元的 material_id / layer_id
+// 输入：IOStructure::layers，MeshGeometry
+// 输出：CellFields::material_id, layer_id
 class LayerProcessor {
 public:
-    static void resolve_layer_geometry(
-        const model::IOStructure& io_model,
-        const std::vector<double>& vertex_x,
-        const std::vector<double>& vertex_y,
-        const std::vector<double>& vertex_z,
-        model::InternalCellFields& cells);
+    static void resolve(
+        const std::vector<model::Layer>& layers,
+        const model::MeshGeometry& mesh,
+        model::CellFields& cells);
 };
 
-// 解析面键字符串 → 每面 BC 数组
+// 解析面键字符串 → FaceBCFields + BCParamTable
+// 输入：IOStructure::boundaries（包含 face_keys 字符串）
+// 输出：FaceBCFields（索引数组），BCParamTable（编译后的表达式）
 class FaceKeyProcessor {
 public:
-    static void resolve_face_keys(
-        const std::vector<model::IOBoundary>& boundaries,
-        const model::InternalMeshGeometry& mesh,
-        model::InternalFaceBCFields& face_bcs,
-        model::InternalBCParamTable& bc_params);
+    static void resolve(
+        const std::vector<model::Boundary>& boundaries,
+        const model::MeshGeometry& mesh,
+        model::FaceBCFields& face_bcs,
+        model::BCParamTable& bc_params);
 };
 
 } // namespace mhs::preprocessor
@@ -81,19 +84,20 @@ public:
 ### 预处理流程
 
 ```text
-IO 模型（Structure，含字符串表达式）
+IOStructure（含字符串表达式）
   └─> ModelBuilder::build()
-        ├─> 解析几何变量（w_top, h_middle 等）→ 具体数值
-        ├─> 计算每层厚度 → 确定全局 Z 网格线
-        ├─> 构建顶点坐标 vertex_x/y/z
-        ├─> LayerProcessor::resolve_layer_geometry()
-        │     └─> 对每个单元：判断属于哪个 Layer/Block → layer_id, material_id, heat_source
-        ├─> FaceKeyProcessor::resolve_face_keys()
-        │     └─> 解析 face_key 字符串 → face_bcs + bc_params
+        ├─> 转换单位（length_unit → SI），注册几何变量 → expr
+        ├─> 注册材料函数、用户函数 → expr
+        ├─> LayerProcessor::resolve()
+        │     ├─> 计算顶点坐标
+        │     └─> 对每个单元判断属于哪个 Layer/Block → material_id, layer_id
+        ├─> FaceKeyProcessor::resolve()
+        │     ├─> 解析 face_key 字符串（世界坐标）
+        │     └─> 坐标→索引映射 → face_bcs + bc_params
         └─> 编译所有 FieldExpression
-              ├─> 材料属性 k/rho/c → MaterialProps（每种材料一个）
-              ├─> BC 参数 → BCParamTable（每个边界参数一个）
-              └─> 热源 → CellFields.heat_source（每个单元一个）
+              ├─> 材料属性 k/rho/c → MaterialProps
+              ├─> BC 参数 → BCParamTable
+              └─> 热源 → CellFields.heat_source
 ```
 
 ---
@@ -103,31 +107,22 @@ IO 模型（Structure，含字符串表达式）
 ```cpp
 namespace mhs::assembler {
 
-// 组装上下文 — 组装器每次调用接收的信息
-struct AssemblyContext {
-    const model::InternalModel& model;
-    const model::InternalGlobalState& state;
-
-    // 完整的表达式求值上下文（传递给 FieldExpression::eval）
-    expr::FieldContext expr_ctx;
-};
-
 // 组装结果：线性系统 A * T = b
 struct LinearSystem {
     Eigen::SparseMatrix<double> A;  // 稀疏 Jacobian
     Eigen::VectorXd b;                // RHS（含 BC 贡献）
-    Eigen::VectorXd residual;        // 残差（用于收敛判断）
+    Eigen::VectorXd residual;         // 残差（用于收敛判断）
 };
 
+// 组装器（无状态，给定相同输入返回相同输出）
 class Assembler {
 public:
     explicit Assembler(const model::InternalModel& model);
 
-    // 组装 Jacobian A 和 RHS b（每次 Newton 迭代调用）
-    LinearSystem assemble(const model::InternalGlobalState& state, double t);
-
-    // 仅组装 RHS（用于定常迭代或 Picard）
-    LinearSystem assemble_rhs_only(const model::InternalGlobalState& state, double t);
+    // 组装 Jacobian A 和 RHS b
+    // GlobalState 包含：T, T_prev, dt_history, current_time, time_step
+    // 内部读取 model.sparsity_pattern，只填充值
+    LinearSystem assemble(const model::GlobalState& state);
 
 private:
     const model::InternalModel& model_;
@@ -136,19 +131,36 @@ private:
 } // namespace mhs::assembler
 ```
 
+### Sparsity Pattern
+
+矩阵稀疏模式（7点 stencil）在预处理阶段预计算，存储在 `InternalModel` 中：
+
+```cpp
+struct InternalModel {
+    // ...
+    SparsityPattern sparsity;  // 预计算的非零位置
+};
+```
+
+组装时只填充值，不重建结构。
+
 ### 组装热循环说明
 
 对每个单元 `(i, j, k)`：
 
-1. 获取 `material_id` → `material_table` → `MaterialProps {k, rho, c}`
+1. 获取 `material_id` → `material_table[id]` → `MaterialProps {k, rho, c}`
 2. 对每个临面：
    - 查 `face_bcs.bc_type[face_idx]` → BC 类型
-   - 查 `face_bcs.bc_param_idx[face_idx]` → 参数
-   - 调用 `bc_params.dirichlet_T[idx].eval(ctx)` 或类似函数
-   - 施加 BC 贡献到 A 和 b
+   - 查 `face_bcs.bc_param_idx[face_idx]` → 参数索引
+   - 调用 `bc_params.dirichlet_T[idx].eval(ctx)` 等
+   - 施加 BC 贡献
 3. 获取 `heat_source[cell_idx].eval(ctx)` → 体热源 Q
 4. 组装扩散项（邻居温度项）
-5. 若为瞬态，组装瞬态项（ρc/Δt）(T - T_prev)
+5. 组装瞬态项（Crank-Nicolson，θ = 0.5，lumped mass）
+
+### 并行化
+
+组装热循环使用 TBB 并行化：`tbb::parallel_for` 对单元进行并行迭代。
 
 ---
 
@@ -165,21 +177,22 @@ struct SolverConfig {
     int max_iterations = 1000;
 };
 
-class SolverFactory {
-public:
-    static std::unique_ptr<SolverBase> create(const SolverConfig& config);
+// 求解结果（无状态，返回值携带所有信息）
+struct SolveResult {
+    Eigen::VectorXd solution;
+    bool success;
+    double residual_norm;
+    int iterations;
 };
 
-class SolverBase {
+class Solver {
 public:
-    virtual ~SolverBase() = default;
+    virtual ~Solver() = default;
 
-    // 求解 A * x = b
-    virtual Eigen::VectorXd solve(const Eigen::SparseMatrix<double>& A,
-                                  const Eigen::VectorXd& b) = 0;
+    virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
+                              const Eigen::VectorXd& b) = 0;
 
-    // 求解后残差范数
-    virtual double residual_norm() const = 0;
+    static std::unique_ptr<Solver> create(SolverType type);
 };
 
 } // namespace mhs::solver
@@ -199,6 +212,9 @@ public:
 ```cpp
 namespace mhs::scheduler {
 
+// 收敛状态（GlobalState 中使用）
+enum class ConvergenceStatus { Running, Converged, Diverged, Stalled };
+
 struct SchedulerConfig {
     double transient_duration = 0.0;    // 0 = 稳态
     double time_step = 1.0;
@@ -206,36 +222,34 @@ struct SchedulerConfig {
     double newton_tolerance = 1e-6;
     double underrelaxation = 1.0;        // 1.0 = 无欠松弛
     bool is_steady = false;              // true 时跳过时间步进
+    int ring_buffer_capacity = 5;        // T_history, nl_history 容量
 };
 
 class Scheduler {
 public:
-    explicit Scheduler(const model::InternalModel& model,
+    explicit Scheduler(std::unique_ptr<model::InternalModel> model,
                        const SchedulerConfig& config);
 
     // 运行完整仿真，通过后处理器写出结果
-    // - 稳态（is_steady=true）：t=0 时单次非线性迭代
-    // - 瞬态：t=0 到 transient_duration 的时间步循环
     void run(postprocessor::PostProcessor& pp);
 
     // 步进 API（用于测试）
-    void initialize();
-    bool advance_time_step();       // 返回是否收敛
+    void initialize();          // 初始化 T = T_prev = initial_temperature
+    bool advance_time_step();  // 返回是否收敛
     bool is_finished() const;
 
-    const model::InternalGlobalState& state() const { return state_; }
+    const model::GlobalState& state() const { return state_; }
 
 private:
     bool solve_nonlinear_step();
-    bool check_convergence();
 
-    const model::InternalModel& model_;
+    std::unique_ptr<model::InternalModel> model_;  // 拥有权
     SchedulerConfig config_;
-    model::InternalGlobalState state_;
+    model::GlobalState state_;
     double current_time_ = 0.0;
     int current_step_ = 0;
     std::unique_ptr<assembler::Assembler> assembler_;
-    std::unique_ptr<solver::SolverBase> linear_solver_;
+    std::unique_ptr<solver::Solver> solver_;
 };
 
 } // namespace mhs::scheduler
@@ -243,30 +257,40 @@ private:
 
 ### 调度流程
 
+**初始化**：
+
+```cpp
+state_.T.resize(cell_count, initial_temperature);
+state_.T_prev = state_.T;
+state_.T_history.push_back(state_.T);  // ring buffer
+```
+
 **稳态**（`is_steady=true`，`transient_duration=0`）：
 
 ```cpp
-initialize()
-while (!converged && iter < max_newton):
-    ls = assembler.assemble(state, t=0)
-    dT = solver.solve(ls.A, ls.b)
-    state.T += underrelaxation * dT
-    converged = check_convergence(ls.residual)
+while (state_.status == ConvergenceStatus::Running && iter < max_newton):
+    ls = assembler.assemble(state_);
+    result = solver_->solve(ls.A, ls.b);
+    state_.T += underrelaxation * result.solution;
+    state_.residual = ls.residual;
+    check_convergence();
 postprocessor.write_vtu / write_xml_result
 ```
 
-**瞬态**：
+**瞬态**（自适应 Δt 解耦）：
 
 ```cpp
-initialize()
 while (current_time < transient_duration):
-    while (!converged && iter < max_newton):
-        ls = assembler.assemble(state, current_time)
-        dT = solver.solve(ls.A, ls.b)
-        state.T += underrelaxation * dT
-        converged = check_convergence()
-    state.T_prev = state.T
-    current_time += time_step
+    while (state_.status == ConvergenceStatus::Running && iter < max_newton):
+        ls = assembler.assemble(state_);
+        result = solver_->solve(ls.A, ls.b);
+        state_.T += underrelaxation * result.solution;
+        state_.residual = ls.residual;
+        check_convergence();
+    state_.T_history.push_back(state_.T);  // ring buffer push
+    state_.T_prev = state_.T;
+    dt_history.push_back(dt);
+    current_time += dt;
 postprocessor.write_vtu / write_xml_result
 ```
 
