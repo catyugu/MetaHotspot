@@ -92,21 +92,23 @@ namespace mhs::model {
     enum class StudyType { Steady,
         Transient };
 
-    enum class LengthUnit { Mm,
-        Cm,
-        M };
+    enum class LengthUnit { M,
+        Mm,
+        Um,
+        Nm,
+        Inch,
+        Mil
+    };
 
     enum class Dimension { Dimension2D,
         Dimension3D };
 
     struct IOStructure {
-        std::string software_mode;
         StudyType study_type;
         Dimension dimension;
         LengthUnit length_unit;
         double initial_temperature = 300.0;
         double ambient_temperature = 300.0;
-        int die_layer_num = 0;
 
         std::vector<Variable> variables;
         std::vector<Layer> layers;
@@ -118,6 +120,7 @@ namespace mhs::model {
         std::string transient_time_unit = "s";
 
         ThermalBCType other_bc_type = ThermalBCType::SecondType;
+        FirstTypeThermalBC other_bc_first;
         SecondTypeThermalBC other_bc_second;
         ThirdTypeThermalBC other_bc_third;
 

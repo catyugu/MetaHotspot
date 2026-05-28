@@ -78,18 +78,22 @@ struct Material {
 };
 
 enum class StudyType { Steady, Transient };
-enum class LengthUnit { Mm, Cm, M };
+enum class LengthUnit { M,
+        Mm,
+        Um,
+        Nm,
+        Inch,
+        Mil
+        };
 enum class Dimension { Dimension2D, Dimension3D };  // Dimension2D 触发 panic
 
 struct Structure {
     // 元数据
-    std::string software_mode;
     StudyType study_type;
     Dimension dimension;
     LengthUnit length_unit;
     double initial_temperature = 300.0;
     double ambient_temperature = 300.0;
-    int die_layer_num = 0;
 
     // 几何变量
     std::vector<Variable> variables;
@@ -110,6 +114,7 @@ struct Structure {
     // 通常为 SecondType（Neumann，HeatFlux=0 = 绝热）或 ThirdType。
     // 预处理阶段将此类默认 BC 应用于所有未明确指定的面。
     ThermalBCType other_bc_type = ThermalBCType::SecondType;
+    FirstTypeThermalBC other_bc_first;
     SecondTypeThermalBC other_bc_second;
     ThirdTypeThermalBC other_bc_third;
 
