@@ -12,8 +12,7 @@ MetaHotspot/
 │   └── CompilerOptions.cmake  # 严格编译选项（/W4 /WX 或 -Wall -Wextra -Wpedantic -Werror）
 ├── src/
 │   ├── CMakeLists.txt         # 所有模块的源文件、include 目录、链接库
-│   ├── general/               # 类型、公差、常量
-│   ├── model/                 # IO 模型和内部模型数据结构
+│   ├── model/                 # 类型、IO 模型、内部模型数据结构
 │   ├── io/                    # XML 序列化/反序列化
 │   ├── expr/                  # exprtk 封装、FieldExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
@@ -25,7 +24,6 @@ MetaHotspot/
 │   └── utils/                 # 通用工具函数
 ├── tests/
 │   ├── CMakeLists.txt         # GTest 配置、测试发现
-│   ├── general/               # general 模块单元测试
 │   ├── model/                 # 模型结构测试
 │   ├── expr/                  # 表达式求值测试
 │   ├── preprocessor/          # 网格生成、BC 解析测试
@@ -153,16 +151,15 @@ if (io_model.dimension == Dimension::Dimension2D) {
 
 ## 命名空间总结
 
-| 命名空间             | 模块                                                   |
-| -------------------- | ------------------------------------------------------ |
-| `mhs::general`       | custom types, tolerances, constants                    |
-| `mhs::model`         | All model structures (IO and Internal)                 |
-| `mhs::io`            | XML serialization/deserialization                      |
-| `mhs::expr`          | exprtk wrapper, FieldExpression, native functions      |
-| `mhs::preprocessor`  | mesh generation, BC resolution, expression compilation |
-| `mhs::assembler`     | system assembly (Jacobian + RHS)                       |
-| `mhs::solver`        | Eigen sparse solver factory                            |
-| `mhs::scheduler`     | simulation loop orchestration                          |
-| `mhs::postprocessor` | VTU/XML output                                         |
-| `mhs::logger`        | spdlog wrapper, global singleton                       |
-| `mhs::utils`         | utilities                                              |
+| 命名空间             | 模块                                               |
+| -------------------- | -------------------------------------------------- |
+| `mhs::model`         | 类型、IO 模型、内部模型数据结构                    |
+| `mhs::io`            | XML 序列化/反序列化                                |
+| `mhs::expr`          | exprtk 封装、FieldExpression、native function 注册 |
+| `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                      |
+| `mhs::assembler`     | Jacobian 和 RHS 组装                               |
+| `mhs::solver`        | Eigen 稀疏求解器工厂                               |
+| `mhs::scheduler`     | 仿真循环调度                                       |
+| `mhs::postprocessor` | VTU/XML 输出                                       |
+| `mhs::logger`        | spdlog 封装、全局单例、mhs::panic()                |
+| `mhs::utils`         | 通用工具函数                                       |
