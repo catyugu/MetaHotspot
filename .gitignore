@@ -3,6 +3,7 @@ outputs
 .vscode
 .idea
 .pytest_cache
+.cache
 .claude
 *.msh
 *.vtu
