@@ -3,6 +3,7 @@
 #include "assembler/assembler.hpp"
 #include "model/internal_model.hpp"
 #include "solver/solver.hpp"
+#include <vector>
 
 namespace mhs {
 
@@ -26,6 +27,7 @@ namespace mhs {
         std::unique_ptr<model::InternalModel> model_;
         std::unique_ptr<Solver> solver_;
         std::vector<double> solution_;
+        model::GlobalState state_;
     };
 
 } // namespace mhs
