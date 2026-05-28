@@ -151,15 +151,15 @@ if (io_model.dimension == Dimension::Dimension2D) {
 
 ## 命名空间总结
 
-| 命名空间             | 模块                                               |
-| -------------------- | -------------------------------------------------- |
-| `mhs::model`         | 类型、IO 模型、内部模型数据结构                    |
-| `mhs::io`            | XML 序列化/反序列化                                |
+| 命名空间             | 模块                                                  |
+| -------------------- | ----------------------------------------------------- |
+| `mhs::model`         | 类型、IO 模型、内部模型数据结构                       |
+| `mhs::io`            | XML 序列化/反序列化                                   |
 | `mhs::expr`          | exprtk 封装、CompiledExpression、native function 注册 |
-| `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                      |
-| `mhs::assembler`     | Jacobian 和 RHS 组装                               |
-| `mhs::solver`        | Eigen 稀疏求解器工厂                               |
-| `mhs::scheduler`     | 仿真循环调度                                       |
-| `mhs::postprocessor` | VTU/XML 输出                                       |
-| `mhs::logger`        | spdlog 封装、全局单例、mhs::panic()                |
-| `mhs::utils`         | 通用工具函数                                       |
+| `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                         |
+| `mhs::assembler`     | Jacobian 和 RHS 组装                                  |
+| `mhs::solver`        | Eigen 稀疏求解器工厂                                  |
+| `mhs::scheduler`     | 仿真循环调度                                          |
+| `mhs::postprocessor` | VTU/XML 输出                                          |
+| `mhs::logger`        | spdlog 封装、全局单例、mhs::panic()                   |
+| `mhs::utils`         | 通用工具函数                                          |
