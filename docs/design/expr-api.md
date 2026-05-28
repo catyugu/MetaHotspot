@@ -28,21 +28,33 @@ struct FieldContext {
 ```cpp
 namespace mhs::expr {
 
+// 值类型，无堆分配，无虚函数
 class CompiledExpression {
 public:
+    // 求值
     double eval(const FieldContext& ctx) const;
+
+    // 常量检查
     bool is_constant() const;
     double constant_value() const;
 
-    // 创建常数表达式
+    // 工厂方法
     static CompiledExpression make_constant(double value);
+    static CompiledExpression make_evaluator(FieldEvaluator eval);
 
 private:
-    // implementation detail
+    FieldEvaluator eval_;      // 求值函数
+    bool is_const_ = false;    // 是否为常量
+    double const_val_ = 0.0;   // 常量值
 };
 
 } // namespace mhs::expr
 ```
+
+特点：
+- **值类型**：`std::function` + 2 个标量，无堆分配
+- **无虚函数**：求值内联，无 vtable 开销
+- **可复制/移动**：`= default` 默认行为
 
 ---
 
