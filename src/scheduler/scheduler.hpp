@@ -20,6 +20,8 @@ namespace mhs {
 
         const std::vector<double>& solution() const;
 
+        model::InternalModel* getModel() const { return model_.get(); }
+
     private:
         void stepTime(double dt);
         void solveNonlinear(double t);
