@@ -41,6 +41,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Geometry expressions**: `w_top/2`, `h_middle`, evaluated at preprocessing to concrete numbers. Context: none (only variables like `w_top`).
 - **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`.
 - User-defined functions (e.g., `test_gaussian`) registered in function pool.
+- **Native functions**: C++ functions `double(const FieldContext&)` registered via `register_native()`. Used for piecewise functions and other forms that are easier to express in code than as strings.
 
 ### Face Keys
 

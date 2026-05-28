@@ -232,15 +232,13 @@ namespace mhs::model::internal {
 enum class MaterialID : uint8_t { Void = 0, Copper = 1, Silicon = 2, TIM = 3 };
 enum class LayerID : uint8_t { None = 0, Layer1 = 1, Layer2 = 2, Layer3 = 3 };
 
-// Material property slots — compiled expressions or constants
+// Material property slots — all precompiled into FieldExpression by preprocessor.
+// is_constant=true → use constant_value directly (no eval overhead).
+// is_constant=false → call expr.eval(ctx) at assembly time.
 struct MaterialProps {
-    double k = 0.0;       // thermal conductivity
-    double rho = 0.0;     // density
-    double c = 0.0;       // specific heat
-    bool k_is_expr = false;
-    bool rho_is_expr = false;
-    bool c_is_expr = false;
-    // expression handles stored separately (expr module)
+    expr::FieldExpression k;   // thermal conductivity k(x,y,z,T,t)
+    expr::FieldExpression rho; // density rho(x,y,z,T,t)
+    expr::FieldExpression c;   // specific heat c(x,y,z,T,t)
 };
 
 struct CellFields {
@@ -263,34 +261,38 @@ namespace mhs::model::internal {
 
 enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };
 
-// BC parameter table — flat array of parameter sets
+// BC parameter table — all precompiled into FieldExpression by preprocessor.
+// Each entry is a function: eval(ctx) → value.
+// bc_type still determines which parameter to use (e.g. FirstType uses dirichlet_T.eval(ctx)).
 struct BCParamTable {
-    std::vector<double> dirichlet_T;          // index by bc_param
-    std::vector<double> neumann_q;            // heat flux
-    std::vector<double> cauchy_h;            // convection coefficient
-    std::vector<double> cauchy_T_inf;         // environment temperature
+    std::vector<expr::FieldExpression> dirichlet_T;          // size N_dirichlet
+    std::vector<expr::FieldExpression> neumann_q;           // size N_neumann
+    std::vector<expr::FieldExpression> cauchy_h;            // size N_cauchy
+    std::vector<expr::FieldExpression> cauchy_T_inf;         // size N_cauchy
 };
 
 struct FaceBCFields {
     // 6 faces, each with N_xy or N_xz or N_yz cells
+    // bc_type[i] determines BC type; bc_param_idx[i] indexes into the appropriate
+    // BCParamTable vector (dirichlet_T, neumann_q, cauchy_h/cauchy_T_inf).
     // Z- face: size nx * ny
     std::vector<BcType> bc_type_zm;
-    std::vector<uint16_t> bc_param_zm;
+    std::vector<uint16_t> bc_param_idx_zm;   // index into dirichlet_T / neumann_q / cauchy_*
     // Z+ face: size nx * ny
     std::vector<BcType> bc_type_zp;
-    std::vector<uint16_t> bc_param_zp;
+    std::vector<uint16_t> bc_param_idx_zp;
     // Y- face: size nx * nz
     std::vector<BcType> bc_type_ym;
-    std::vector<uint16_t> bc_param_ym;
+    std::vector<uint16_t> bc_param_idx_ym;
     // Y+ face: size nx * nz
     std::vector<BcType> bc_type_yp;
-    std::vector<uint16_t> bc_param_yp;
+    std::vector<uint16_t> bc_param_idx_yp;
     // X- face: size ny * nz
     std::vector<BcType> bc_type_xm;
-    std::vector<uint16_t> bc_param_xm;
+    std::vector<uint16_t> bc_param_idx_xm;
     // X+ face: size ny * nz
     std::vector<BcType> bc_type_xp;
-    std::vector<uint16_t> bc_param_xp;
+    std::vector<uint16_t> bc_param_idx_xp;
 };
 
 } // namespace mhs::model::internal
@@ -333,12 +335,8 @@ struct InternalModel {
     BCParamTable bc_params;
 
     // Material properties per material ID
-    // MaterialID enum index → MaterialProps + compiled expressions
+    // MaterialID enum index → MaterialProps (each prop is a precompiled FieldExpression)
     std::array<MaterialProps, 256> material_table;  // indexed by uint8_t MaterialID
-
-    // Function pool — user-defined functions (e.g. test_gaussian)
-    // key: function name, value: compiled exprtk expression
-    std::unordered_map<std::string, /* expr handle */ void*> function_pool;
 
     // Simulation metadata
     double initial_temperature = 300.0;
@@ -432,12 +430,17 @@ struct FieldContext {
 };
 
 // Compiled field expression (using exprtk)
+// All expressions are FieldExpression objects — no raw strings escape preprocessor.
 class FieldExpression {
 public:
+    // Construct a constant expression (no eval needed)
+    static FieldExpression make_constant(double value);
+
     // Construct from string expression like "1.5 + 0.002*T"
-    // Registers x, y, z, T, t symbols
+    // Registers x, y, z, T, t symbols; looks up function names in expr module's pool
     static FieldExpression from_string(const std::string& expr);
 
+    // Evaluate this expression at the given context
     double eval(const FieldContext& ctx) const;
 
     bool is_constant() const { return is_constant_; }
@@ -448,6 +451,20 @@ private:
     bool is_constant_ = false;
     double constant_value_ = 0.0;
 };
+
+// Native function type — takes full context, returns a double.
+// Used for piecewise functions, spatialstep functions, etc. that are
+// easier to express in C++ than as strings.
+using NativeFunc = std::function<double(const FieldContext&)>;
+
+// Register a native C++ function into the global function pool.
+// The function receives the full FieldContext and returns a double.
+// Example: register_native("my_piecewise", [](const FieldContext& ctx) {
+//     if (ctx.x < 1.0) return 0.0;
+//     if (ctx.x < 2.0) return 1.0;
+//     return 2.0;
+// });
+void register_native(const std::string& name, NativeFunc func);
 
 // Register a user-defined function into the global function pool
 void register_function(const std::string& name,
@@ -508,9 +525,8 @@ struct AssemblyContext {
     const model::internal::InternalModel& model;
     const model::internal::GlobalState& state;
 
-    // For evaluating material/BC expressions
-    double x, y, z;   // cell center
-    double t;         // current time
+    // Full context for expression evaluation (passed to FieldExpression::eval)
+    expr::FieldContext expr_ctx;
 };
 
 // Result of assembly: linear system A * T = b
@@ -656,16 +672,21 @@ private:
 XML file
   └─> xmlparser::XmlDocument
         └─> io::Reader
-              └─> model::io::Structure (IO model, mirrors XML schema)
+              └─> model::io::Structure (IO model — strings only, mirrors XML schema)
                     └─> preprocessor::ModelBuilder
                           ├─> LayerProcessor::resolve_layer_geometry()
                           │     └─> model::internal::CellFields (SoA)
                           ├─> FaceKeyProcessor::resolve_face_keys()
-                          │     └─> model::internal::FaceBCFields + BCParamTable (SoA)
-                          ├─> expr::FieldExpression compilation (material props, BC params)
-                          └─> model::internal::InternalModel (SoA, precompiled)
+                          │     └─> model::internal::FaceBCFields + BCParamTable (SoA, strings resolved)
+                          ├─> Compile all expressions → expr::FieldExpression
+                          │     ├─> MaterialProps.k/rho/c per material
+                          │     ├─> BCParamTable entries per boundary
+                          │     └─> User-defined function pool (exprtk + native)
+                          └─> model::internal::InternalModel (SoA, ALL expressions compiled)
                                 └─> scheduler::Scheduler
                                       ├─> assembler::Assembler
+                                      │     ├─ eval material props: mat.props.k.eval(ctx)
+                                      │     ├─ eval BC params: bc_params.dirichlet_T[idx].eval(ctx)
                                       │     └─> solver::SolverBase
                                       │           └─> Eigen solution
                                       └─> postprocessor::PostProcessor
@@ -677,10 +698,12 @@ XML file
 
 ## 6. Key Design Principles
 
-1. **No virtual functions** — use static polymorphism via templates where needed
-2. **No exceptions** — errors logged via `mhs::logger` and program exits with error code
-3. **POD types preferred** — all internal model structs are POD-compatible for safety
-4. **Pure functions where possible** — `assembler::assemble()` is stateless given model + state
-5. **SoA throughout internal model** — all hot-loop arrays are contiguous per-field
-6. **Compiled expressions** — exprtk expressions precompiled once, evaluated many times
-7. **No shared mutable state** — modules communicate via const references and return values
+1. **No raw strings in internal model** — preprocessor compiles ALL expressions (material props, BC params, heat sources) into `expr::FieldExpression` before passing to scheduler/assembler. The internal model contains only evaluable functions, no expression strings.
+2. **No virtual functions** — use static polymorphism via templates where needed
+3. **No exceptions** — errors logged via `mhs::logger` and program exits with error code
+4. **POD types preferred** — all internal model structs are POD-compatible for safety
+5. **Pure functions where possible** — `assembler::assemble()` is stateless given model + state
+6. **SoA throughout internal model** — all hot-loop arrays are contiguous per-field
+7. **Compiled expressions** — exprtk expressions precompiled once, evaluated many times
+8. **No shared mutable state** — modules communicate via const references and return values
+9. **Native functions for complex forms** — piecewise, tabulated, or spatially complex functions registered via `register_native()` and stored in the expr module's function pool

@@ -40,6 +40,11 @@ Keep two expression evaluation paths strictly separate:
 
 ## Notes
 
-- The `expr` module exposes a `FieldExpression` type: compiled expression + symbol table. Evaluated by calling `eval(x, y, z, T, t)` returning a double.
-- Material properties are stored as `FieldExpression` slots (or constant fallback).
-- BC parameters are pre-compiled `FieldExpression` objects attached to boundary faces.
+- The `expr` module exposes a `FieldExpression` type: compiled expression + symbol table. Evaluated by calling `eval(ctx)` with a `FieldContext`, returning a double.
+- **Preprocessor compiles all expressions**: The preprocessor receives IO model structures containing raw expression strings and compiles them all into `FieldExpression` objects:
+    - Material properties (`k`, `ρ`, `c`) → `MaterialProps` (each a `FieldExpression`)
+    - BC parameters (`T_dirichlet`, `q_neumann`, `h_cauchy`, `T_inf_cauchy`) → `BCParamTable` (each a `FieldExpression`)
+    - Heat sources (future extension) → would be a `FieldExpression` per cell or per region
+    - After preprocessing, no raw expression strings remain in the internal model.
+- **Native functions**: In addition to string-based expressions, the `expr` module supports registering C++ functions directly via `register_native(name, func)`, where `func` is `std::function<double(const FieldContext&)>`. This handles cases that are awkward to express as strings: piecewise constant/linear functions over spatial domains, tabulated data, etc. Both exprtk-registered functions and native functions live in the expr module's pool and are resolved by name during `FieldExpression::from_string()`.
+- `FieldExpression` also has a `make_constant(double)` factory for values that are just numbers — avoids the overhead of expression evaluation when the value is known at compile time.
