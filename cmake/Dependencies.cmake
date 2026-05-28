@@ -2,10 +2,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/CPM.cmake)
 
 # Eigen - header-only from GitHub mirror
 CPMAddPackage(
-    NAME Eigen
-    GIT_TAG 3.4
-    GITHUB_REPOSITORY PX4/eigen
-    OPTIONS "EIGEN_BUILD_TESTING OFF"
+    GITLAB_REPOSITORY libeigen/eigen
+    GIT_TAG 5.0.0
+    OPTIONS
+    "EIGEN_BUILD_DOC OFF"
+    "EIGEN_BUILD_PKGCONFIG OFF"
 )
 
 # spdlog
