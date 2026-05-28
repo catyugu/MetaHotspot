@@ -47,6 +47,9 @@ project(MetaHotspot VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# VERBOSE=ON 时启用 DEBUG 日志，否则默认 INFO
+option(VERBOSE "Enable DEBUG level logging" OFF)
+
 include(cmake/CompilerOptions.cmake)
 include(cmake/Dependencies.cmake)
 
@@ -73,7 +76,11 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 ```cpp
 namespace mhs::logger {
 
-// 全局日志单例，程序启动时初始化，默认级别 INFO
+// 全局日志单例，程序启动时初始化。
+// 日志级别由 CMake VERBOSE 选项控制：
+//   VERBOSE=OFF  → 默认级别 INFO
+//   VERBOSE=ON   → 默认级别 DEBUG
+// 用户也可在运行时通过 MHS_LOG_LEVEL env var 覆盖。
 Logger& instance();
 
 // 初始化（通常在 main() 开头调用）
@@ -85,10 +92,10 @@ void init(const std::string& log_file = "", bool console_output = true);
 ### 日志宏
 
 ```cpp
-// INFO 级别日志
+// INFO 级别日志（始终启用）
 #define MHS_LOG_INFO(...) ...
 
-// DEBUG 级别日志（仅在 MHS_DEBUG 编译时有效）
+// DEBUG 级别日志（VERBOSE=ON 时启用，否则为空宏）
 #define MHS_LOG_DEBUG(...) ...
 
 // ERROR 级别日志，记录后触发 panic（程序终止）
