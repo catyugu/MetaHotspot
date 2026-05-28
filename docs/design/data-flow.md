@@ -6,9 +6,8 @@
 
 ```text
 XML 文件
-  └─> xmlparser::XmlDocument
-        └─> io::Reader
-              └─> model::IOStructure（IO 模型，仅含字符串，映射 XML schema）
+  └─> io::Reader
+        └─> model::IOStructure（IO 模型，仅含字符串，映射 XML schema）
                     └─> preprocessor::ModelBuilder
                           ├─> LayerProcessor::resolve_layer_geometry()
                           │     └─> model::InternalCellFields（SoA：layer_id, material_id, heat_source）
@@ -142,8 +141,7 @@ void modify_global_state(GlobalState& state);  // 避免
 
 | 阶段              | 输入                                  | 输出                            | 关键操作                                       |
 | ----------------- | ------------------------------------- | ------------------------------- | ---------------------------------------------- |
-| XML 解析          | XML 文件                              | `XmlDocument`                   | tinyxml2 解析                                  |
-| IO 反序列化       | `XmlDocument`                         | `model::IOStructure`            | 遍历 DOM，填入 IO 结构                         |
+| XML 解析          | XML 文件                              | `model::IOStructure`            | tinyxml2 解析 + io::Reader                     |
 | 预处理-几何       | `model::IOStructure` + 变量           | `MeshGeometry`                  | 解析几何表达式，计算顶点坐标                   |
 | 预处理-单元归属   | `MeshGeometry` + 层几何               | `CellFields`                    | 判断每个单元属于哪个 Layer/Block               |
 | 预处理-面 BC      | `MeshGeometry` + `Boundaries`         | `FaceBCFields` + `BCParamTable` | 解析 face_key，填充面数组                      |

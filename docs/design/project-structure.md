@@ -15,7 +15,6 @@ MetaHotspot/
 │   ├── general/               # 类型、公差、常量
 │   ├── model/                 # IO 模型和内部模型数据结构
 │   ├── io/                    # XML 序列化/反序列化
-│   ├── xmlparser/             # tinyxml2 封装
 │   ├── expr/                  # exprtk 封装、FieldExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
 │   ├── assembler/             # Jacobian 和 RHS 组装
@@ -160,7 +159,6 @@ if (io_model.dimension == Dimension::Dimension2D) {
 | `mhs::general`       | custom types, tolerances, constants                    |
 | `mhs::model`         | All model structures (IO and Internal)                 |
 | `mhs::io`            | XML serialization/deserialization                      |
-| `mhs::xmlparser`     | tinyxml2 wrapper                                       |
 | `mhs::expr`          | exprtk wrapper, FieldExpression, native functions      |
 | `mhs::preprocessor`  | mesh generation, BC resolution, expression compilation |
 | `mhs::assembler`     | system assembly (Jacobian + RHS)                       |

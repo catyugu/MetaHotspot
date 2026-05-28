@@ -2,50 +2,16 @@
 
 ---
 
-## 4.1 `xmlparser`
-
-```cpp
-namespace mhs::xmlparser {
-
-// 将 XML 文件解析为通用 DOM 树
-class XmlDocument {
-public:
-    static XmlDocument parse_file(const std::string& path);
-    static XmlDocument parse_string(const std::string& xml);
-
-    // DOM 树遍历接口
-    class Node {
-    public:
-        std::string name() const;
-        std::string text() const;
-        std::string attr(const std::string& name) const;
-        std::vector<Node> children() const;
-        std::vector<Node> children(const std::string& name);
-        Node first_child(const std::string& name) const;
-        bool has_child(const std::string& name) const;
-    };
-
-    Node root() const;
-};
-
-} // namespace mhs::xmlparser
-```
-
----
-
-## 4.2 `io`
+## 4.1 `io`
 
 ```cpp
 namespace mhs::io {
 
-// XML → IO 模型
+// XML → IO 模型（直接使用 tinyxml2）
 class Reader {
 public:
     explicit Reader(const std::string& xml_path);
     model::IOStructure read_structure();
-
-private:
-    xmlparser::XmlDocument doc_;
 };
 
 // IO 模型 → XML（结果输出）
@@ -71,7 +37,7 @@ private:
 
 ---
 
-## 4.4 `preprocessor`
+## 4.2 `preprocessor`
 
 ```cpp
 namespace mhs::preprocessor {
@@ -132,7 +98,7 @@ IO 模型（Structure，含字符串表达式）
 
 ---
 
-## 4.5 `assembler`
+## 4.3 `assembler`
 
 ```cpp
 namespace mhs::assembler {
@@ -186,7 +152,7 @@ private:
 
 ---
 
-## 4.6 `solver`
+## 4.4 `solver`
 
 ```cpp
 namespace mhs::solver {
@@ -228,7 +194,7 @@ public:
 
 ---
 
-## 4.7 `scheduler`
+## 4.5 `scheduler`
 
 ```cpp
 namespace mhs::scheduler {
@@ -306,7 +272,7 @@ postprocessor.write_vtu / write_xml_result
 
 ---
 
-## 4.8 `postprocessor`
+## 4.6 `postprocessor`
 
 ```cpp
 namespace mhs::postprocessor {

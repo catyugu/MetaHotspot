@@ -6,13 +6,13 @@
 
 ## 文档结构
 
-| 文件                                             | 内容                                                                                     |
-| ------------------------------------------------ | :--------------------------------------------------------------------------------------- |
-| **[io-model.md](io-model.md)**                   | IO 模型结构（直接映射 XML schema）                                                       |
-| **[internal-model.md](internal-model.md)**       | 内部模型结构（SoA 布局，扁平化）                                                         |
-| **[module-interfaces.md](module-interfaces.md)** | 模块接口定义（xmlparser、io、preprocessor、assembler、solver、scheduler、postprocessor） |
-| **[expr-api.md](expr-api.md)**                   | expr 模块接口（表达式解析与求值、native function）                                       |
-| **[project-structure.md](project-structure.md)** | 项目结构（目录、CMake、Logger 接口）                                                     |
+| 文件                                             | 内容                                                                          |
+| ------------------------------------------------ | :---------------------------------------------------------------------------- |
+| **[io-model.md](io-model.md)**                   | IO 模型结构（直接映射 XML schema）                                            |
+| **[internal-model.md](internal-model.md)**       | 内部模型结构（SoA 布局，扁平化）                                              |
+| **[module-interfaces.md](module-interfaces.md)** | 模块接口定义（io、preprocessor、assembler、solver、scheduler、postprocessor） |
+| **[expr-api.md](expr-api.md)**                   | expr 模块接口（表达式解析与求值、native function）                            |
+| **[project-structure.md](project-structure.md)** | 项目结构（目录、CMake、Logger 接口）                                          |
 
 ---
 
