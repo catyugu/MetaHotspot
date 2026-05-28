@@ -7,7 +7,7 @@ IO 结构直接映射 XML schema，仅用于序列化/反序列化。
 ## 2.1 顶层结构
 
 ```cpp
-namespace mhs::model::io {
+namespace mhs::model {
 
 struct Variable { std::string name; double value; };
 
@@ -120,7 +120,7 @@ struct Structure {
     std::vector<double> result_z;
 };
 
-} // namespace mhs::model::io
+} // namespace mhs::model
 ```
 
 ---
@@ -128,7 +128,7 @@ struct Structure {
 ## 2.2 表达式函数类型
 
 ```cpp
-namespace mhs::model::io {
+namespace mhs::model {
 
 enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
@@ -169,7 +169,7 @@ struct Function {
     PieceWiseFunction piecewise;
 };
 
-} // namespace mhs::model::io
+} // namespace mhs::model
 ```
 
 ---

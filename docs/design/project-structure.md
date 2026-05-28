@@ -148,18 +148,17 @@ if (io_model.dimension == Dimension::Dimension2D) {
 
 ## 命名空间总结
 
-| 命名空间               | 模块                                                   |
-| ---------------------- | ------------------------------------------------------ |
-| `mhs::general`         | custom types, tolerances, constants                    |
-| `mhs::model::io`       | IO model structures (XML mirrors)                      |
-| `mhs::model::internal` | Internal model structures (SoA)                        |
-| `mhs::io`              | XML serialization/deserialization                      |
-| `mhs::xmlparser`       | tinyxml2 wrapper                                       |
-| `mhs::expr`            | exprtk wrapper, FieldExpression, native functions      |
-| `mhs::preprocessor`    | mesh generation, BC resolution, expression compilation |
-| `mhs::assembler`       | system assembly (Jacobian + RHS)                       |
-| `mhs::solver`          | Eigen sparse solver factory                            |
-| `mhs::scheduler`       | simulation loop orchestration                          |
-| `mhs::postprocessor`   | VTU/XML output                                         |
-| `mhs::logger`          | spdlog wrapper, global singleton                       |
-| `mhs::utils`           | utilities                                              |
+| 命名空间             | 模块                                                   |
+| -------------------- | ------------------------------------------------------ |
+| `mhs::general`       | custom types, tolerances, constants                    |
+| `mhs::model`         | All model structures (IO and Internal)                 |
+| `mhs::io`            | XML serialization/deserialization                      |
+| `mhs::xmlparser`     | tinyxml2 wrapper                                       |
+| `mhs::expr`          | exprtk wrapper, FieldExpression, native functions      |
+| `mhs::preprocessor`  | mesh generation, BC resolution, expression compilation |
+| `mhs::assembler`     | system assembly (Jacobian + RHS)                       |
+| `mhs::solver`        | Eigen sparse solver factory                            |
+| `mhs::scheduler`     | simulation loop orchestration                          |
+| `mhs::postprocessor` | VTU/XML output                                         |
+| `mhs::logger`        | spdlog wrapper, global singleton                       |
+| `mhs::utils`         | utilities                                              |

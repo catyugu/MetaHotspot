@@ -7,7 +7,7 @@
 ## 3.1 网格几何
 
 ```cpp
-namespace mhs::model::internal {
+namespace mhs::model {
 
 struct MeshGeometry {
     int nx = 0, ny = 0, nz = 0;      // 每个方向的单元数
@@ -29,7 +29,7 @@ struct MeshGeometry {
     std::vector<double> cz;          // 大小 nz
 };
 
-} // namespace mhs::model::internal
+} // namespace mhs::model
 ```
 
 ---
@@ -37,7 +37,7 @@ struct MeshGeometry {
 ## 3.2 单元场（SoA）
 
 ```cpp
-namespace mhs::model::internal {
+namespace mhs::model {
 
 enum class MaterialID : uint8_t { Void = 0, Copper = 1, Silicon = 2, TIM = 3 };
 enum class LayerID : uint8_t { None = 0, Layer1 = 1, Layer2 = 2, Layer3 = 3 };
@@ -65,7 +65,7 @@ struct CellFields {
     std::vector<uint8_t> bc_flags;         // 大小 cell_count
 };
 
-} // namespace mhs::model::internal
+} // namespace mhs::model
 ```
 
 ---
@@ -73,7 +73,7 @@ struct CellFields {
 ## 3.3 面 BC 数组（SoA）
 
 ```cpp
-namespace mhs::model::internal {
+namespace mhs::model {
 
 enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };
 
@@ -111,7 +111,7 @@ struct FaceBCFields {
     std::vector<uint16_t> bc_param_idx_xp;
 };
 
-} // namespace mhs::model::internal
+} // namespace mhs::model
 ```
 
 ---
@@ -119,7 +119,7 @@ struct FaceBCFields {
 ## 3.4 全局状态缓冲
 
 ```cpp
-namespace mhs::model::internal {
+namespace mhs::model {
 
 struct GlobalState {
     int cell_count = 0;
@@ -136,7 +136,7 @@ struct GlobalState {
     std::vector<double> residual;    // 大小 cell_count
 };
 
-} // namespace mhs::model::internal
+} // namespace mhs::model
 ```
 
 ---
@@ -144,7 +144,7 @@ struct GlobalState {
 ## 3.5 完整内部模型
 
 ```cpp
-namespace mhs::model::internal {
+namespace mhs::model {
 
 struct InternalModel {
     MeshGeometry mesh;
@@ -166,7 +166,7 @@ struct InternalModel {
     double transient_time_step = 1.0;
 };
 
-} // namespace mhs::model::internal
+} // namespace mhs::model
 ```
 
 ---

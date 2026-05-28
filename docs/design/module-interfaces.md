@@ -42,7 +42,7 @@ namespace mhs::io {
 class Reader {
 public:
     explicit Reader(const std::string& xml_path);
-    model::io::Structure read_structure();
+    model::IOStructure read_structure();
 
 private:
     xmlparser::XmlDocument doc_;
@@ -54,11 +54,11 @@ public:
     explicit Writer(const std::string& output_path);
 
     // 写出温度结果 XML（与原始 GUI 格式兼容）
-    void write_result(const model::internal::InternalModel& model,
+    void write_result(const model::InternalModel& model,
                       const std::vector<double>& temperature);
 
     // 写出 VTU 文件（ParaView 可视化）
-    void write_vtu(const model::internal::InternalModel& model,
+    void write_vtu(const model::InternalModel& model,
                    const std::vector<double>& temperature,
                    const std::string& vtu_path);
 
@@ -79,34 +79,34 @@ namespace mhs::preprocessor {
 // 将 IO 模型转换为内部模型
 class ModelBuilder {
 public:
-    explicit ModelBuilder(const model::io::Structure& io_model);
+    explicit ModelBuilder(const model::IOStructure& io_model);
 
     // 返回完全组装好的内部模型（所有表达式已编译）
-    model::internal::InternalModel build();
+    model::InternalModel build();
 
 private:
-    const model::io::Structure& io_model_;
+    const model::IOStructure& io_model_;
 };
 
 // 处理层几何 → 填充每个单元的 material_id / layer_id
 class LayerProcessor {
 public:
     static void resolve_layer_geometry(
-        const model::io::Structure& io_model,
+        const model::IOStructure& io_model,
         const std::vector<double>& vertex_x,
         const std::vector<double>& vertex_y,
         const std::vector<double>& vertex_z,
-        model::internal::CellFields& cells);
+        model::InternalCellFields& cells);
 };
 
 // 解析面键字符串 → 每面 BC 数组
 class FaceKeyProcessor {
 public:
     static void resolve_face_keys(
-        const std::vector<model::io::Boundary>& boundaries,
-        const model::internal::MeshGeometry& mesh,
-        model::internal::FaceBCFields& face_bcs,
-        model::internal::BCParamTable& bc_params);
+        const std::vector<model::IOBoundary>& boundaries,
+        const model::InternalMeshGeometry& mesh,
+        model::InternalFaceBCFields& face_bcs,
+        model::InternalBCParamTable& bc_params);
 };
 
 } // namespace mhs::preprocessor
@@ -139,8 +139,8 @@ namespace mhs::assembler {
 
 // 组装上下文 — 组装器每次调用接收的信息
 struct AssemblyContext {
-    const model::internal::InternalModel& model;
-    const model::internal::GlobalState& state;
+    const model::InternalModel& model;
+    const model::InternalGlobalState& state;
 
     // 完整的表达式求值上下文（传递给 FieldExpression::eval）
     expr::FieldContext expr_ctx;
@@ -155,16 +155,16 @@ struct LinearSystem {
 
 class Assembler {
 public:
-    explicit Assembler(const model::internal::InternalModel& model);
+    explicit Assembler(const model::InternalModel& model);
 
     // 组装 Jacobian A 和 RHS b（每次 Newton 迭代调用）
-    LinearSystem assemble(const model::internal::GlobalState& state, double t);
+    LinearSystem assemble(const model::InternalGlobalState& state, double t);
 
     // 仅组装 RHS（用于定常迭代或 Picard）
-    LinearSystem assemble_rhs_only(const model::internal::GlobalState& state, double t);
+    LinearSystem assemble_rhs_only(const model::InternalGlobalState& state, double t);
 
 private:
-    const model::internal::InternalModel& model_;
+    const model::InternalModel& model_;
 };
 
 } // namespace mhs::assembler
@@ -244,7 +244,7 @@ struct SchedulerConfig {
 
 class Scheduler {
 public:
-    explicit Scheduler(const model::internal::InternalModel& model,
+    explicit Scheduler(const model::InternalModel& model,
                        const SchedulerConfig& config);
 
     // 运行完整仿真，通过后处理器写出结果
@@ -257,15 +257,15 @@ public:
     bool advance_time_step();       // 返回是否收敛
     bool is_finished() const;
 
-    const model::internal::GlobalState& state() const { return state_; }
+    const model::InternalGlobalState& state() const { return state_; }
 
 private:
     bool solve_nonlinear_step();
     bool check_convergence();
 
-    const model::internal::InternalModel& model_;
+    const model::InternalModel& model_;
     SchedulerConfig config_;
-    model::internal::GlobalState state_;
+    model::InternalGlobalState state_;
     double current_time_ = 0.0;
     int current_step_ = 0;
     std::unique_ptr<assembler::Assembler> assembler_;
@@ -316,12 +316,12 @@ public:
     explicit PostProcessor(const std::string& output_dir);
 
     // 写出 VTU 文件（ParaView 可视化）
-    void write_vtu(const model::internal::InternalModel& model,
+    void write_vtu(const model::InternalModel& model,
                    const std::vector<double>& temperature,
                    const std::string& filename);
 
     // 写出结果 XML（与原始 GUI 格式兼容）
-    void write_xml_result(const model::internal::InternalModel& model,
+    void write_xml_result(const model::InternalModel& model,
                           const std::vector<double>& temperature,
                           const std::string& filename);
 

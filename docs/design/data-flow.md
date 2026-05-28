@@ -8,18 +8,18 @@
 XML 文件
   └─> xmlparser::XmlDocument
         └─> io::Reader
-              └─> model::io::Structure（IO 模型，仅含字符串，映射 XML schema）
+              └─> model::IOStructure（IO 模型，仅含字符串，映射 XML schema）
                     └─> preprocessor::ModelBuilder
                           ├─> LayerProcessor::resolve_layer_geometry()
-                          │     └─> model::internal::CellFields（SoA：layer_id, material_id, heat_source）
+                          │     └─> model::InternalCellFields（SoA：layer_id, material_id, heat_source）
                           ├─> FaceKeyProcessor::resolve_face_keys()
-                          │     └─> model::internal::FaceBCFields + BCParamTable（SoA，BC 字符串已解析）
+                          │     └─> model::InternalFaceBCFields + BCParamTable（SoA，BC 字符串已解析）
                           ├─> 编译所有表达式 → expr::FieldExpression
                           │     ├─> MaterialProps.k/rho/c（每种材料一个）
                           │     ├─> BCParamTable 参数（每个边界参数一个）
                           │     ├─> 热源（每个单元一个，由 Block.ti_reyuan_expr 编译）
                           │     └─> 用户自定义函数池（exprtk + native）
-                          └─> model::internal::InternalModel（SoA，所有表达式已编译，无原始字符串）
+                          └─> model::InternalModel（SoA，所有表达式已编译，无原始字符串）
                                 └─> scheduler::Scheduler
                                       ├─> assembler::Assembler
                                       │     ├─ mat.props.k.eval(ctx)  → 材料导热系数
@@ -42,8 +42,8 @@ XML 文件
 
 **预处理阶段**：
 
-- 接收：`model::io::Structure`（含字符串如 `"1e9"`, `"sin(x)*T"`）
-- 输出：`model::internal::InternalModel`（不含任何字符串，全是 `FieldExpression`）
+- 接收：`model::IOStructure`（含字符串如 `"1e9"`, `"sin(x)*T"`）
+- 输出：`model::InternalModel`（不含任何字符串，全是 `FieldExpression`）
 
 **组装阶段**：
 
@@ -143,8 +143,8 @@ void modify_global_state(GlobalState& state);  // 避免
 | 阶段              | 输入                                  | 输出                            | 关键操作                                       |
 | ----------------- | ------------------------------------- | ------------------------------- | ---------------------------------------------- |
 | XML 解析          | XML 文件                              | `XmlDocument`                   | tinyxml2 解析                                  |
-| IO 反序列化       | `XmlDocument`                         | `model::io::Structure`          | 遍历 DOM，填入 IO 结构                         |
-| 预处理-几何       | `model::io::Structure` + 变量         | `MeshGeometry`                  | 解析几何表达式，计算顶点坐标                   |
+| IO 反序列化       | `XmlDocument`                         | `model::IOStructure`            | 遍历 DOM，填入 IO 结构                         |
+| 预处理-几何       | `model::IOStructure` + 变量           | `MeshGeometry`                  | 解析几何表达式，计算顶点坐标                   |
 | 预处理-单元归属   | `MeshGeometry` + 层几何               | `CellFields`                    | 判断每个单元属于哪个 Layer/Block               |
 | 预处理-面 BC      | `MeshGeometry` + `Boundaries`         | `FaceBCFields` + `BCParamTable` | 解析 face_key，填充面数组                      |
 | 预处理-表达式编译 | IO 字符串表达式                       | `FieldExpression`               | exprtk 编译或 `make_constant`                  |
