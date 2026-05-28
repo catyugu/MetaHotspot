@@ -86,8 +86,7 @@ MHS_LOG_ERROR("Failed to open file: {}", path);
 MHS_LOG_ERROR("Solver diverged at step {}", step);
 
 // 可恢复错误：记录警告并返回回退值
-double k = MHS_LOG_WARN_RETURN(mat.k.eval(ctx), 400.0,
-    "Material {} not found, using default k=400", mat.name);
+MHS_LOG_WARN_RETURN("Material not found, using default k={}", 400.0);
 ```
 
 ### 5. SoA 贯穿全局

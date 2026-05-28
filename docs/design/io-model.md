@@ -9,7 +9,7 @@ IO 结构直接映射 XML schema，仅用于序列化/反序列化。
 ```cpp
 namespace mhs::model {
 
-struct Variable { std::string name; double value; };
+struct Variable { std::string name; std::string value; };
 
 struct Rect {
     bool add_sub;
@@ -56,9 +56,9 @@ struct Layer {
 enum class BoundaryCategory { Electrical };
 enum class ThermalBCType { FirstType, SecondType, ThirdType };
 
-struct FirstTypeThermalBC  { double temperature = 300.0; };    // Dirichlet：固定温度
-struct SecondTypeThermalBC { double heat_flux = 0.0; };         // Neumann：固定热通量
-struct ThirdTypeThermalBC  { double convection_coeff = 0.0; double environment_temp = 300.0; };  // Cauchy：换热
+struct FirstTypeThermalBC  { std::string temperature = "300.0"; };    // Dirichlet：固定温度
+struct SecondTypeThermalBC { std::string heat_flux = "0.0"; };         // Neumann：固定热通量
+struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0"; std::string h_inf = "300.0"; };  // Cauchy：换热
 
 struct Boundary {
     BoundaryCategory category;
@@ -72,9 +72,9 @@ struct Boundary {
 
 struct Material {
     std::string name;
-    double daore_xishu = 0.0;       // 导热系数 k
-    double midu = 0.0;              // 密度 rho（可选）
-    double bi_rerong = 0.0;         // 比热容 c（可选）
+    std::string daore_xishu = "0.0";       // 导热系数 k
+    std::string midu = "0.0";              // 密度 rho（可选）
+    std::string bi_rerong = "0.0";         // 比热容 c（可选）
 };
 
 enum class StudyType { Steady, Transient };

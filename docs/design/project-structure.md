@@ -100,8 +100,8 @@ void init(const std::string& log_file = "", bool console_output = true);
 // ERROR 级别日志，记录后触发 panic（程序终止）
 #define MHS_LOG_ERROR(...) mhs::logger::instance().panic(__VA_ARGS__)
 
-// WARN 级别日志，记录警告并返回默认值
-#define MHS_LOG_WARN_RETURN(expr, fallback_value, ...) ...
+// WARN 级别日志，记录警告并报告默认值
+#define MHS_LOG_WARN_RETURN(...)
 ```
 
 ### mhs::panic()
@@ -129,8 +129,7 @@ MHS_LOG_DEBUG("Cell {}: k={}, Q={}", cell_idx, k, Q);
 MHS_LOG_ERROR("Failed to parse XML at line {}: {}", line_num, what);
 
 // 可恢复错误 + 回退值
-double k = MHS_LOG_WARN_RETURN(mat.k_eval(ctx), 400.0,
-    "Material {} not found, using default k=400", mat_name);
+MHS_LOG_WARN_RETURN("Material not found, using default k={}", 400.0);
 ```
 
 ---

@@ -34,4 +34,3 @@ apply_bc(bc, param, cell_temperature, A, b);
 ## Notes
 
 - Face keys also carry a `LayerIndex` component (e.g., `Z|E|30|...`) — this is used during preprocessing to only apply the BC to cells whose Z range overlaps with that layer index.
-- The `BCParameterTable` is a flat array of parameter structs: `{double temperature}` for Dirichlet, `{double flux}` for Neumann, `{double h, double T_inf}` for Cauchy.
