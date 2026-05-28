@@ -39,12 +39,12 @@ struct MeshGeometry {
 ```cpp
 namespace mhs::model {
 
-// 材料属性槽 — 预处理阶段全部预编译为 FieldExpression。
+// 材料属性槽 — 预处理阶段全部预编译为 CompiledExpression。
 // 若为常数表达式（is_constant=true），直接用 constant_value，无求值开销。
 struct MaterialProps {
-    expr::FieldExpression k;   // 导热系数 k(x,y,z,T,t)
-    expr::FieldExpression rho; // 密度 rho(x,y,z,T,t)
-    expr::FieldExpression c;   // 比热容 c(x,y,z,T,t)
+    expr::CompiledExpression k;   // 导热系数 k(x,y,z,T,t)
+    expr::CompiledExpression rho; // 密度 rho(x,y,z,T,t)
+    expr::CompiledExpression c;   // 比热容 c(x,y,z,T,t)
 };
 
 struct CellFields {
@@ -55,8 +55,8 @@ struct CellFields {
 
     // 每个单元的体热源 Q(x,y,z,T,t) [W/m³]。
     // 由 Block.ti_reyuan_expr 预编译而来。
-    // 常数热源也存为 FieldExpression（通过 make_constant()）。
-    std::vector<expr::FieldExpression> heat_source;  // 大小 cell_count
+    // 常数热源也存为 CompiledExpression（通过 make_constant()）。
+    std::vector<expr::CompiledExpression> heat_source;  // 大小 cell_count
 
     // BC 应用标志（位掩码，标记哪些面已施加 BC）
     std::vector<uint8_t> bc_flags;         // 大小 cell_count
@@ -74,14 +74,14 @@ namespace mhs::model {
 
 enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };
 
-// BC 参数表 — 预处理阶段全部预编译为 FieldExpression。
+// BC 参数表 — 预处理阶段全部预编译为 CompiledExpression。
 // 每个条目是一个函数：eval(ctx) -> value。
 // bc_type 决定使用哪个参数向量（如 FirstType 使用 dirichlet_T）。
 struct BCParamTable {
-    std::vector<expr::FieldExpression> dirichlet_T;          // 大小 N_dirichlet
-    std::vector<expr::FieldExpression> neumann_q;           // 大小 N_neumann
-    std::vector<expr::FieldExpression> cauchy_h;            // 大小 N_cauchy
-    std::vector<expr::FieldExpression> cauchy_T_inf;         // 大小 N_cauchy
+    std::vector<expr::CompiledExpression> dirichlet_T;          // 大小 N_dirichlet
+    std::vector<expr::CompiledExpression> neumann_q;           // 大小 N_neumann
+    std::vector<expr::CompiledExpression> cauchy_h;            // 大小 N_cauchy
+    std::vector<expr::CompiledExpression> cauchy_T_inf;         // 大小 N_cauchy
 };
 
 struct FaceBCFields {
@@ -152,7 +152,7 @@ struct InternalModel {
     BCParamTable bc_params;
 
     // 材料属性表（按 MaterialID 索引）
-    // MaterialID enum 值 -> MaterialProps（每个属性均为预编译 FieldExpression）
+    // MaterialID enum 值 -> MaterialProps（每个属性均为预编译 CompiledExpression）
     std::array<MaterialProps, 256> material_table;
 
     // 仿真元数据
@@ -214,7 +214,7 @@ struct GlobalState {
 
 ### 预处理阶段已完成的工作
 
-所有表达式编译为 `FieldExpression`：
+所有表达式编译为 `CompiledExpression`：
 
 - 材料属性（`k`、`ρ`、`c`）→ `MaterialProps`
 - BC 参数（`T_dirichlet`、`q_neumann`、`h_cauchy`、`T_inf_cauchy`）→ `BCParamTable`

@@ -48,7 +48,7 @@ public:
     // - 填充 expr 表达式注册表（变量、函数）
     // - 单位转换（IOStructure::length_unit → SI）
     // - 构建 MeshGeometry、CellFields、FaceBCFields
-    // - 编译所有 FieldExpression
+    // - 编译所有 CompiledExpression
     model::InternalModel build();
 
 private:
@@ -94,7 +94,7 @@ IOStructure（含字符串表达式）
         ├─> FaceKeyProcessor::resolve()
         │     ├─> 解析 face_key 字符串（世界坐标）
         │     └─> 坐标→索引映射 → face_bcs + bc_params
-        └─> 编译所有 FieldExpression
+        └─> 编译所有 CompiledExpression
               ├─> 材料属性 k/rho/c → MaterialProps
               ├─> BC 参数 → BCParamTable
               └─> 热源 → CellFields.heat_source

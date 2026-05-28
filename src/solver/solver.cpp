@@ -3,55 +3,56 @@
 
 namespace mhs {
 
+    // SparseLU solver implementation
     class SparseLUSolver : public Solver {
     public:
-        void analyzePattern(const Eigen::SparseMatrix<double>& A) override;
-        void factorize(const Eigen::SparseMatrix<double>& A) override;
-        Eigen::VectorXd solve(const Eigen::VectorXd& b) override;
+        SolveResult solve(const Eigen::SparseMatrix<double>& A,
+                          const Eigen::VectorXd& b) override
+        {
+            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+            solver.compute(A);
 
-    private:
-        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver_;
+            if (solver.info() != Eigen::Success) {
+                return {Eigen::VectorXd(), false, 0.0, 0};
+            }
+
+            Eigen::VectorXd x = solver.solve(b);
+
+            return {
+                x,
+                solver.info() == Eigen::Success,
+                (A * x - b).norm(),
+                1  // direct solver, 1 iteration
+            };
+        }
     };
 
+    // BiCGSTAB solver implementation
     class BiCGSTABSolver : public Solver {
     public:
-        void analyzePattern(const Eigen::SparseMatrix<double>& A) override;
-        void factorize(const Eigen::SparseMatrix<double>& A) override;
-        Eigen::VectorXd solve(const Eigen::VectorXd& b) override;
+        SolveResult solve(const Eigen::SparseMatrix<double>& A,
+                          const Eigen::VectorXd& b) override
+        {
+            (void)A;  // A is used by the solver internally
+            Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver;
+            solver.setMaxIterations(config_.max_iterations);
+            solver.setTolerance(config_.tolerance);
+
+            Eigen::VectorXd x = solver.solve(b);
+
+            return {
+                x,
+                solver.info() == Eigen::Success,
+                solver.error(),
+                static_cast<int>(solver.iterations())
+            };
+        }
+
+        void set_config(const SolverConfig& config) { config_ = config; }
 
     private:
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver_;
+        SolverConfig config_;
     };
-
-    void SparseLUSolver::analyzePattern(const Eigen::SparseMatrix<double>& A)
-    {
-        solver_.analyzePattern(A);
-    }
-
-    void SparseLUSolver::factorize(const Eigen::SparseMatrix<double>& A)
-    {
-        solver_.factorize(A);
-    }
-
-    Eigen::VectorXd SparseLUSolver::solve(const Eigen::VectorXd& b)
-    {
-        return solver_.solve(b);
-    }
-
-    void BiCGSTABSolver::analyzePattern(const Eigen::SparseMatrix<double>& A)
-    {
-        (void)A;
-    }
-
-    void BiCGSTABSolver::factorize(const Eigen::SparseMatrix<double>& A)
-    {
-        (void)A;
-    }
-
-    Eigen::VectorXd BiCGSTABSolver::solve(const Eigen::VectorXd& b)
-    {
-        return Eigen::VectorXd::Zero(b.size());
-    }
 
     std::unique_ptr<Solver> Solver::create(SolverType type)
     {

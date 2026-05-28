@@ -13,7 +13,7 @@ XML 文件
                           │     └─> model::InternalCellFields（SoA：layer_id, material_id, heat_source）
                           ├─> FaceKeyProcessor::resolve_face_keys()
                           │     └─> model::InternalFaceBCFields + BCParamTable（SoA，BC 字符串已解析）
-                          ├─> 编译所有表达式 → expr::FieldExpression
+                          ├─> 编译所有表达式 → expr::CompiledExpression
                           │     ├─> MaterialProps.k/rho/c（每种材料一个）
                           │     ├─> BCParamTable 参数（每个边界参数一个）
                           │     ├─> 热源（每个单元一个，由 Block.ti_reyuan_expr 编译）
@@ -37,13 +37,15 @@ XML 文件
 
 ### 1. 内部模型不含原始字符串
 
-所有表达式（材料属性、BC 参数、热源）在预处理阶段编译为 `FieldExpression`。调度器/组装器只调用 `.eval(ctx)`，永远不需要字符串。
+所有表达式（材料属性、BC 参数、热源）在预处理阶段编译为 `CompiledExpression`。调度器/组装器只调用 `.eval(ctx)`，永远不需要字符串。
 
 **预处理阶段**：
+
 - 接收：`model::IOStructure`（含字符串如 `"1e9"`, `"sin(x)*T"`）
-- 输出：`model::InternalModel`（不含任何字符串，全是 `FieldExpression`）
+- 输出：`model::InternalModel`（不含任何字符串，全是 `CompiledExpression`）
 
 **组装阶段**：
+
 ```cpp
 // 只需要 eval，不需要知道表达式原本是什么字符串
 double k = material.props.k.eval(ctx);
@@ -52,9 +54,9 @@ double Q = cells.heat_source[cell_idx].eval(ctx);
 
 ### 2. 热源为 per-cell
 
-`CellFields.heat_source` 是 `vector<FieldExpression>`，每个单元一个，由 `Block.ti_reyuan_expr` 编译。
+`CellFields.heat_source` 是 `vector<CompiledExpression>`，每个单元一个，由 `Block.ti_reyuan_expr` 编译。
 
-即使 `ti_reyuan_expr = "1e9"`（常数），也通过 `FieldExpression::make_constant(1e9)` 存储，保持类型一致。
+即使 `ti_reyuan_expr = "1e9"`（常数），也通过 `CompiledExpression::make_constant(1e9)` 存储，保持类型一致。
 
 ### 3. 无虚函数
 
@@ -96,11 +98,11 @@ MHS_LOG_WARN_RETURN("Material not found, using default k={}", 400.0);
 struct CellFields {
     std::vector<MaterialID> material_id;  // 连续访问
     std::vector<LayerID> layer_id;        // 连续访问
-    std::vector<FieldExpression> heat_source;  // 连续访问
+    std::vector<CompiledExpression> heat_source;  // 连续访问
 };
 
 // BAD: AoS — 访问 material_id 时也读入了其他字段，缓存污染
-struct Cell { MaterialID mat; LayerID layer; FieldExpression Q; };
+struct Cell { MaterialID mat; LayerID layer; CompiledExpression Q; };
 std::vector<Cell> cells;  // 缓存不友好
 ```
 
@@ -142,7 +144,7 @@ void modify_global_state(GlobalState& state);  // 避免
 | 预处理-几何       | `model::IOStructure` + 变量           | `MeshGeometry`                  | 解析几何表达式，计算顶点坐标                   |
 | 预处理-单元归属   | `MeshGeometry` + 层几何               | `CellFields`                    | 判断每个单元属于哪个 Layer/Block               |
 | 预处理-面 BC      | `MeshGeometry` + `Boundaries`         | `FaceBCFields` + `BCParamTable` | 解析 face_key，填充面数组                      |
-| 预处理-表达式编译 | IO 字符串表达式                       | `FieldExpression`               | exprtk 编译或 `make_constant`                  |
+| 预处理-表达式编译 | IO 字符串表达式                       | `CompiledExpression`            | exprtk 编译或 `make_constant`                  |
 | 组装              | `InternalModel` + `GlobalState` + `t` | `LinearSystem`                  | 对每个单元：求材料属性、热源、BC → 组装 A 和 b |
 | 线性求解          | `A * x = b`                           | `x`                             | Eigen `SparseLU` 或 `BiCGSTAB`                 |
 | Newton 更新       | `ΔT`                                  | `T_new = T_old + ω·ΔT`          | 状态更新，ω = 欠松弛因子                       |

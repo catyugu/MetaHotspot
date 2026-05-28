@@ -14,7 +14,7 @@ MetaHotspot/
 │   ├── CMakeLists.txt         # 所有模块的源文件、include 目录、链接库
 │   ├── model/                 # 类型、IO 模型、内部模型数据结构
 │   ├── io/                    # XML 序列化/反序列化
-│   ├── expr/                  # exprtk 封装、FieldExpression、native function 注册
+│   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
 │   ├── assembler/             # Jacobian 和 RHS 组装
 │   ├── solver/                # Eigen 稀疏求解器工厂
@@ -155,7 +155,7 @@ if (io_model.dimension == Dimension::Dimension2D) {
 | -------------------- | -------------------------------------------------- |
 | `mhs::model`         | 类型、IO 模型、内部模型数据结构                    |
 | `mhs::io`            | XML 序列化/反序列化                                |
-| `mhs::expr`          | exprtk 封装、FieldExpression、native function 注册 |
+| `mhs::expr`          | exprtk 封装、CompiledExpression、native function 注册 |
 | `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                      |
 | `mhs::assembler`     | Jacobian 和 RHS 组装                               |
 | `mhs::solver`        | Eigen 稀疏求解器工厂                               |

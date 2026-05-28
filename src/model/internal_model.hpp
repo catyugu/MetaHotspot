@@ -1,9 +1,14 @@
 #pragma once
 
 #include "types.hpp"
+#include "../expr/expr.hpp"
+#include <deque>
 #include <vector>
 
 namespace mhs::model {
+
+    // Type alias for convenience
+    using CompiledExpression = expr::CompiledExpression;
 
     struct MeshGeometry {
         int nx = 0, ny = 0, nz = 0;
@@ -23,9 +28,9 @@ namespace mhs::model {
     };
 
     struct MaterialProps {
-        FieldExpression k; // 导热系数
-        FieldExpression rho; // 密度
-        FieldExpression c; // 比热容
+        CompiledExpression k; // 导热系数
+        CompiledExpression rho; // 密度
+        CompiledExpression c; // 比热容
     };
 
     struct CellFields {
@@ -34,7 +39,7 @@ namespace mhs::model {
         std::vector<size_t> material_id;
         std::vector<size_t> layer_id;
 
-        std::vector<FieldExpression> heat_source;
+        std::vector<CompiledExpression> heat_source;
 
         std::vector<uint8_t> bc_flags;
     };
@@ -65,10 +70,16 @@ namespace mhs::model {
         int cell_count = 0;
         double current_time = 0.0;
         int time_step = 0;
+        ConvergenceStatus status = ConvergenceStatus::Running;
 
-        std::vector<double> T;
-        std::vector<double> T_prev;
-        std::vector<double> residual;
+        std::vector<double> T;              // current temperature
+        std::vector<double> T_prev;        // previous time step
+        std::vector<double> residual;       // current residual
+
+        // Ring buffers (configurable capacity, default 5)
+        std::deque<std::vector<double>> T_history;   // past time steps
+        std::deque<std::vector<double>> nl_history;  // non-linear iteration snapshots
+        std::deque<double> dt_history;              // past dt values
     };
 
     struct InternalModel {

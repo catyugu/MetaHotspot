@@ -21,19 +21,21 @@ struct FieldContext {
 
 ---
 
-## FieldExpression
+## CompiledExpression
 
-所有表达式（材料属性、BC 参数、热源）预编译后均为 `FieldExpression` 对象。
+所有表达式（材料属性、BC 参数、热源）预编译后均为 `CompiledExpression` 对象。
 
 ```cpp
 namespace mhs::expr {
 
-class FieldExpression {
+class CompiledExpression {
 public:
     double eval(const FieldContext& ctx) const;
-
     bool is_constant() const;
     double constant_value() const;
+
+    // 创建常数表达式
+    static CompiledExpression make_constant(double value);
 
 private:
     // implementation detail
@@ -87,9 +89,9 @@ void register_function(const std::string& name, const std::string& expression);
 ```cpp
 namespace mhs::expr {
 
-// 解析字符串表达式为 FieldExpression
+// 解析字符串表达式为 CompiledExpression
 // 注册表须已包含所有引用的变量和函数
-FieldExpression parse(const std::string& formula);
+CompiledExpression parse(const std::string& formula);
 
 // 求值几何表达式（不需要上下文）
 // 所有几何变量须已通过 set_variable() 注册
@@ -111,7 +113,7 @@ expr::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
 double half_width = expr::eval_geometry("w_top/2");
 
 // 编译场表达式
-FieldExpression k = expr::parse("k_copper + 0.01*T");
+CompiledExpression k = expr::parse("k_copper + 0.01*T");
 double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
 ```
 
@@ -119,7 +121,7 @@ double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
 
 ## 求值上下文生命周期
 
-`FieldExpression::eval(ctx)` 在以下两个场景被调用：
+`CompiledExpression::eval(ctx)` 在以下两个场景被调用：
 
 1. **预处理阶段**（一次性）：编译时做常量折叠
 2. **组装阶段**（高频）：每个 Newton 迭代、每个单元调用一次
@@ -132,5 +134,5 @@ double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
 
 - `set_variable()`, `register_native()`, `register_function()`: 互斥锁保护
 - `parse()`: 编译时读取注册表，互斥锁保护
-- `FieldExpression::eval()`: 无锁（函数指针在解析时已捕获）
+- `CompiledExpression::eval()`: 无锁（函数指针在解析时已捕获）
 - `eval_geometry()`: 无锁（变量在解析时已内联）
