@@ -14,6 +14,7 @@ using namespace tinyxml2;
 
 static std::string get_text(const XMLElement* elem)
 {
+    if (!elem) return "";
     const char* text = elem->GetText();
     return text ? text : "";
 }
@@ -51,6 +52,17 @@ model::IOStructure Reader::read_structure()
         } else {
             structure.study_type = StudyType::Transient;
         }
+    } else {
+        // Try parsing from child element (for namespace-prefixed XML)
+        const XMLElement* study_elem = root->FirstChildElement("StudyType");
+        if (study_elem) {
+            std::string val = get_text(study_elem);
+            if (val == "Steady") {
+                structure.study_type = StudyType::Steady;
+            } else {
+                structure.study_type = StudyType::Transient;
+            }
+        }
     }
 
     const char* dim_str = root->Attribute("Dimension");
@@ -59,6 +71,17 @@ model::IOStructure Reader::read_structure()
             structure.dimension = Dimension::Dimension3D;
         } else {
             structure.dimension = Dimension::Dimension2D;
+        }
+    } else {
+        // Try parsing from child element (for namespace-prefixed XML)
+        const XMLElement* dim_elem = root->FirstChildElement("Dimension");
+        if (dim_elem) {
+            std::string val = get_text(dim_elem);
+            if (val == "Dimension3D") {
+                structure.dimension = Dimension::Dimension3D;
+            } else {
+                structure.dimension = Dimension::Dimension2D;
+            }
         }
     }
 
@@ -78,6 +101,25 @@ model::IOStructure Reader::read_structure()
             structure.length_unit = LengthUnit::Inch;
         } else if (u == "Mil") {
             structure.length_unit = LengthUnit::Mil;
+        }
+    } else {
+        // Try parsing from child element
+        const XMLElement* unit_elem = root->FirstChildElement("LengthUnit");
+        if (unit_elem) {
+            std::string u = get_text(unit_elem);
+            if (u == "M") {
+                structure.length_unit = LengthUnit::M;
+            } else if (u == "Mm") {
+                structure.length_unit = LengthUnit::Mm;
+            } else if (u == "Um") {
+                structure.length_unit = LengthUnit::Um;
+            } else if (u == "Nm") {
+                structure.length_unit = LengthUnit::Nm;
+            } else if (u == "Inch") {
+                structure.length_unit = LengthUnit::Inch;
+            } else if (u == "Mil") {
+                structure.length_unit = LengthUnit::Mil;
+            }
         }
     }
 
@@ -102,8 +144,8 @@ model::IOStructure Reader::read_structure()
 
     // OtherThermalBoundary (default BC)
     if (const XMLElement* other = root->FirstChildElement("OtherThermalBondary")) {
-        const char* type = other->Attribute("i:type", "");
-        std::string type_str = type;
+        const char* type = other->Attribute("i:type");
+        std::string type_str = type ? type : "";
         if (type_str.find("FirstType") != std::string::npos) {
             structure.other_bc_type = ThermalBCType::FirstType;
             if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
@@ -305,8 +347,8 @@ model::IOStructure Reader::read_structure()
             // ThermalBoundary type
             const XMLElement* thermal = bound_elem->FirstChildElement("ThermalBoundary");
             if (thermal) {
-                const char* type = thermal->Attribute("i:type", "");
-                std::string type_str = type;
+                const char* type = thermal->Attribute("i:type");
+                std::string type_str = type ? type : "";
                 if (type_str.find("FirstType") != std::string::npos) {
                     boundary.bc_type = ThermalBCType::FirstType;
                     if (const XMLElement* t = thermal->FirstChildElement("a:Temperature")) {
@@ -329,54 +371,6 @@ model::IOStructure Reader::read_structure()
             }
 
             structure.boundaries.push_back(boundary);
-        }
-    }
-
-    // Results (temperature values for validation)
-    if (const XMLElement* results_elem = root->FirstChildElement("Results")) {
-        for (const XMLElement* result_elem = results_elem->FirstChildElement("a:anyType"); result_elem;
-             result_elem = result_elem->NextSiblingElement("a:anyType")) {
-            const XMLElement* values_elem = result_elem->FirstChildElement("Values");
-            if (!values_elem) {
-                continue;
-            }
-
-            const XMLElement* mesh_elem = result_elem->FirstChildElement("Mesh");
-            if (mesh_elem) {
-                // X array
-                if (const XMLElement* xarr = mesh_elem->FirstChildElement("b:XArray")) {
-                    for (const XMLElement* x = xarr->FirstChildElement("a:double"); x;
-                         x = x->NextSiblingElement("a:double")) {
-                        structure.result_x.push_back(parse_double(get_text(x)));
-                    }
-                }
-                // Y array
-                if (const XMLElement* yarr = mesh_elem->FirstChildElement("b:YArray")) {
-                    for (const XMLElement* y = yarr->FirstChildElement("a:double"); y;
-                         y = y->NextSiblingElement("a:double")) {
-                        structure.result_y.push_back(parse_double(get_text(y)));
-                    }
-                }
-                // Z array
-                if (const XMLElement* zarr = mesh_elem->FirstChildElement("b:ZArray")) {
-                    for (const XMLElement* z = zarr->FirstChildElement("a:double"); z;
-                         z = z->NextSiblingElement("a:double")) {
-                        structure.result_z.push_back(parse_double(get_text(z)));
-                    }
-                }
-            }
-
-            // Data values
-            if (const XMLElement* data_elem = values_elem->FirstChildElement("Data")) {
-                for (const XMLElement* d = data_elem->FirstChildElement("a:double"); d;
-                     d = d->NextSiblingElement("a:double")) {
-                    std::string txt = get_text(d);
-                    if (txt == "NaN" || txt.empty()) {
-                        continue; // Skip NaN values
-                    }
-                    structure.result_values.push_back(parse_double(txt));
-                }
-            }
         }
     }
 
