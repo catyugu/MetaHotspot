@@ -84,17 +84,66 @@ Persistent state across simulation, stored in `model::GlobalState`:
 
 ## Glossary
 
-| Term        | Chinese  | Notes                             |
-| ----------- | -------- | --------------------------------- |
-| Structure   | 结构体   | Top-level XML element             |
-| Layer       | 层       | Stack of material blocks          |
-| Block       | 块       | Geometry defined by add/sub rects |
-| Rect        | 矩形     | Add or subtract operation         |
-| Boundary    | 边界     | Face BC specification             |
-| Face key    | 面键     | String encoding boundary face     |
-| Material    | 材料     | copper, silicon, TIM              |
-| Variable    | 变量     | Geometry parameter (w_top, etc.)  |
-| Function    | 函数     | User-defined expression function  |
-| DAORE XISHU | 导热系数 | Thermal conductivity              |
-| MIDU        | 密度     | Density                           |
-| BI RERONG   | 比热容   | Specific heat                     |
+| Term              | Chinese  | Notes                                                                                                       |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| Structure         | 结构体   | Top-level XML element                                                                                       |
+| Layer             | 层       | Stack of material blocks                                                                                    |
+| Block             | 块       | Geometry defined by add/sub rects — contains material and heat source                                       |
+| CellBoundaryGroup | 面边界组 | BC definition group, one per Block. Each group has 6 faces (xm/xp/ym/yp/zm/zp) with independent BC settings |
+| Rect              | 矩形     | Add or subtract operation                                                                                   |
+| Boundary          | 边界     | Face BC specification                                                                                       |
+| Face key          | 面键     | String encoding boundary face                                                                               |
+| Material          | 材料     | copper, silicon, TIM                                                                                        |
+| Variable          | 变量     | Geometry parameter (w_top, etc.)                                                                            |
+| Function          | 函数     | User-defined expression function                                                                            |
+| DAORE XISHU       | 导热系数 | Thermal conductivity                                                                                        |
+| MIDU              | 密度     | Density                                                                                                     |
+| BI RERONG         | 比热容   | Specific heat                                                                                               |
+
+## Virtual Cell & Mesh Mask
+
+Structured grid creates `nx × ny × nz` cells, but not all cells are within valid geometry (electronic package has voids).
+
+| Concept      | Description                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| valid_mask   | `std::vector<uint8_t>` (size = nx*ny*nz). `1` = active cell, `0` = virtual                                   |
+| index_map    | `std::vector<size_t>` (size = nx*ny*nz). Maps old grid index → compact active index. SIZE_MAX = virtual cell |
+| active_count | Number of valid cells (N_active). Matrix dimension = active_count                                            |
+
+**CellFields layout:**
+
+- **Full-grid size** (nx*ny*nz): `index_map`, `valid_mask`, `material_id`, `layer_id`
+- **Compact size** (N_active): `cell_bcs`, `heat_source`
+
+Keeping full-grid arrays for material/layer IDs simplifies debugging and maintains consistent array style across the model.
+
+## Cell-Level BC
+
+BC is stored at cell level (not face-array level) to handle overlapping projections between blocks in the same layer.
+
+```cpp
+struct CellBC {
+    std::array<BcType, 6> types;           // xm, xp, ym, yp, zm, zp
+    std::array<uint16_t, 6> param_idxs;   // indices into BCParamTable
+};
+
+struct CellFields {
+    int cell_count = 0;  // = N_active
+
+    // Full-grid size (nx*ny*nz): virtual + active
+    std::vector<size_t> index_map;
+    std::vector<uint8_t> valid_mask;
+    std::vector<size_t> material_id;
+    std::vector<size_t> layer_id;
+
+    // Compact size (N_active): active cells only
+    std::vector<CellBC> cell_bcs;
+    std::vector<CompiledExpression> heat_source;
+};
+```
+
+- Face projection overlap between blocks is resolved — each cell's face has independent BC
+- `other_bc` is applied during preprocessing for faces not explicitly specified
+- Virtual cell neighbors are also handled in preprocessing (neighboring active cells get other_bc on that face)
+
+**FaceBCFields removed**: Replaced by cell-level `CellBC`. Each cell stores its 6 face BCs independently, eliminating face projection ambiguity.

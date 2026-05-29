@@ -10,23 +10,20 @@
 namespace mhs::model {
 
 struct MeshGeometry {
-    int nx = 0, ny = 0, nz = 0;      // 每个方向的单元数
-    int cell_count = 0;              // nx * ny * nz
+    int nx = 0, ny = 0, nz = 0;
+    int total_cell_count = 0;  // nx * ny * nz
 
-    // 顶点坐标（每个轴比单元数多一个）
-    std::vector<double> vertex_x;    // 大小 nx+1
-    std::vector<double> vertex_y;    // 大小 ny+1
-    std::vector<double> vertex_z;    // 大小 nz+1
+    std::vector<double> vertex_x;    // nx+1
+    std::vector<double> vertex_y;    // ny+1
+    std::vector<double> vertex_z;    // nz+1
 
-    // 单元尺寸（用于热通量计算）
-    std::vector<double> dx;          // 大小 nx，相邻 x 顶点间距
-    std::vector<double> dy;          // 大小 ny
-    std::vector<double> dz;          // 大小 nz
+    std::vector<double> dx;          // nx
+    std::vector<double> dy;          // ny
+    std::vector<double> dz;          // nz
 
-    // 单元中心坐标（用于 BC 表达式求值）
-    std::vector<double> cx;          // 大小 nx
-    std::vector<double> cy;          // 大小 ny
-    std::vector<double> cz;          // 大小 nz
+    std::vector<double> cx;         // nx
+    std::vector<double> cy;         // ny
+    std::vector<double> cz;         // nz
 };
 
 } // namespace mhs::model
@@ -36,80 +33,69 @@ struct MeshGeometry {
 
 ## 3.2 单元场（SoA）
 
+### 3.2.1 Cell-Level BC
+
+边界条件存储在单元级别，每个单元存储 6 个面的 BC 信息，解决面投影重叠问题。
+
 ```cpp
 namespace mhs::model {
 
-// 材料属性槽 — 预处理阶段全部预编译为 CompiledExpression。
-// 若为常数表达式（is_constant=true），直接用 constant_value，无求值开销。
-struct MaterialProps {
-    expr::CompiledExpression k;   // 导热系数 k(x,y,z,T,t)
-    expr::CompiledExpression rho; // 密度 rho(x,y,z,T,t)
-    expr::CompiledExpression c;   // 比热容 c(x,y,z,T,t)
+// Face direction indices
+enum FaceDir : size_t { XM = 0, XP = 1, YM = 2, YP = 3, ZM = 4, ZP = 5 };
+
+// Per-cell per-face BC
+struct CellBC {
+    std::array<BcType, 6> types;        // xm, xp, ym, yp, zm, zp
+    std::array<uint16_t, 6> param_idxs; // indices into BCParamTable
 };
 
 struct CellFields {
-    int cell_count = 0;
+    int cell_count = 0;  // = N_active (valid cell count)
 
-    std::vector<size_t> material_id;   // 大小 cell_count
-    std::vector<size_t> layer_id;         // 大小 cell_count
+    // Full-grid size (nx*ny*nz): virtual + active
+    std::vector<size_t> index_map;     // Maps old grid index → compact active index. SIZE_MAX = virtual
+    std::vector<uint8_t> valid_mask;   // 1 = active cell, 0 = virtual
+    std::vector<size_t> material_id;   // Full grid size
+    std::vector<size_t> layer_id;      // Full grid size
 
-    // 每个单元的体热源 Q(x,y,z,T,t) [W/m³]。
-    // 由 Block.ti_reyuan_expr 预编译而来。
-    // 常数热源也存为 CompiledExpression（通过 make_constant()）。
-    std::vector<expr::CompiledExpression> heat_source;  // 大小 cell_count
-
-    // BC 应用标志（位掩码，标记哪些面已施加 BC）
-    std::vector<uint8_t> bc_flags;         // 大小 cell_count
+    // Compact size (N_active): active cells only
+    std::vector<CellBC> cell_bcs;
+    std::vector<expr::CompiledExpression> heat_source;
 };
 
 } // namespace mhs::model
 ```
 
+### 3.2.2 虚拟单元标记
+
+结构化网格创建 `nx × ny × nz` 个单元，但并非所有单元都在有效几何区域内（电子封装有空洞）。
+
+- `valid_mask`: 全网格大小，`1` = 有效单元，`0` = 虚拟单元
+- `index_map`: 全网格大小，映射旧网格索引 → 紧凑活跃索引。`SIZE_MAX` = 虚拟单元
+- `cell_count = N_active`: 矩阵维度为活跃单元数量
+
+### 3.2.3 热源
+
+每个单元的体热源 `Q(x,y,z,T,t)` [W/m³]，由 `Block.ti_reyuan_expr` 预编译而来。紧凑存储，大小为 N_active。
+
 ---
 
-## 3.3 面 BC 数组（SoA）
+## 3.3 BC 参数表
 
 ```cpp
 namespace mhs::model {
 
-enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };
-
-// BC 参数表 — 预处理阶段全部预编译为 CompiledExpression。
-// 每个条目是一个函数：eval(ctx) -> value。
-// bc_type 决定使用哪个参数向量（如 FirstType 使用 dirichlet_T）。
 struct BCParamTable {
-    std::vector<expr::CompiledExpression> dirichlet_T;          // 大小 N_dirichlet
-    std::vector<expr::CompiledExpression> neumann_q;           // 大小 N_neumann
-    std::vector<expr::CompiledExpression> cauchy_h;            // 大小 N_cauchy
-    std::vector<expr::CompiledExpression> cauchy_T_inf;         // 大小 N_cauchy
-};
-
-struct FaceBCFields {
-    // 6 个面，每个面大小为 N_xy 或 N_xz 或 N_yz。
-    // bc_type[i] 决定 BC 类型；bc_param_idx[i] 索引到 BCParamTable 的对应向量中。
-    //
-    // Z- 面：大小 nx * ny
-    std::vector<BcType> bc_type_zm;
-    std::vector<uint16_t> bc_param_idx_zm;   // 索引到 dirichlet_T / neumann_q / cauchy_*
-    // Z+ 面：大小 nx * ny
-    std::vector<BcType> bc_type_zp;
-    std::vector<uint16_t> bc_param_idx_zp;
-    // Y- 面：大小 nx * nz
-    std::vector<BcType> bc_type_ym;
-    std::vector<uint16_t> bc_param_idx_ym;
-    // Y+ 面：大小 nx * nz
-    std::vector<BcType> bc_type_yp;
-    std::vector<uint16_t> bc_param_idx_yp;
-    // X- 面：大小 ny * nz
-    std::vector<BcType> bc_type_xm;
-    std::vector<uint16_t> bc_param_idx_xm;
-    // X+ 面：大小 ny * nz
-    std::vector<BcType> bc_type_xp;
-    std::vector<uint16_t> bc_param_idx_xp;
+    std::vector<expr::CompiledExpression> dirichlet_T;  // N_dirichlet
+    std::vector<expr::CompiledExpression> neumann_q;    // N_neumann
+    std::vector<expr::CompiledExpression> cauchy_h;      // N_cauchy
+    std::vector<expr::CompiledExpression> cauchy_T_inf;  // N_cauchy
 };
 
 } // namespace mhs::model
 ```
+
+`FaceBCFields` 已移除。BC 参数通过 `CellBC.param_idxs` 索引到对应参数表。
 
 ---
 
@@ -119,18 +105,17 @@ struct FaceBCFields {
 namespace mhs::model {
 
 struct GlobalState {
-    int cell_count = 0;
-    double current_time = 0.0;   // t=0（稳态）或当前时间（瞬态）
+    int cell_count = 0;  // = N_active
+    double current_time = 0.0;
     int time_step = 0;
 
-    // 主解向量
-    std::vector<double> T;           // 温度，大小 cell_count
+    std::vector<double> T;           // size = N_active
+    std::vector<double> T_prev;       // size = N_active
+    std::vector<double> residual;     // size = N_active
 
-    // 瞬态：前一时间步温度（用于时间导数离散）
-    std::vector<double> T_prev;       // 大小 cell_count
-
-    // Newton 迭代：残差向量
-    std::vector<double> residual;    // 大小 cell_count
+    std::deque<std::vector<double>> T_history;     // ring buffer
+    std::deque<std::vector<double>> nl_history;    // ring buffer
+    std::deque<double> dt_history;                 // ring buffer
 };
 
 } // namespace mhs::model
@@ -145,17 +130,11 @@ namespace mhs::model {
 
 struct InternalModel {
     MeshGeometry mesh;
-
     CellFields cells;
-
-    FaceBCFields face_bcs;
     BCParamTable bc_params;
 
-    // 材料属性表（按 MaterialID 索引）
-    // MaterialID enum 值 -> MaterialProps（每个属性均为预编译 CompiledExpression）
-    std::array<MaterialProps, 256> material_table;
+    std::vector<MaterialProps> material_table;
 
-    // 仿真元数据
     double initial_temperature = 300.0;
     double ambient_temperature = 300.0;
     StudyType study_type = StudyType::Steady;
@@ -170,53 +149,21 @@ struct InternalModel {
 
 ## 设计要点
 
-### Assembler Interface
+### Virtual Cell Handling
 
-- **Input**: `InternalModel` + `GlobalState` + `t` + `dt`
-- **Output**: `LinearSystem` (sparse A, RHS b, residual)
-- **GlobalState contains**: T, T_prev, T_history ring buffer, nl_history ring buffer, dt_history ring buffer
-- **Crank-Nicolson**: θ = 0.5, lumped mass matrix
-- **Convergence status**: `GlobalState::status` (Running/Converged/Diverged/Stalled)
+1. `LayerProcessor::resolve()` 生成 `valid_mask` + `index_map`
+2. `GlobalState.cell_count = N_active`，T 向量紧凑存储
+3. Assembler 跳过虚拟单元（`if (!valid_mask[idx]) continue;`）
+4. Postprocessor 使用 `valid_mask` 展开 T 向量，虚拟区域填充 NaN
 
-### GlobalState Ring Buffers
+### Cell-Level BC Benefits
 
-```cpp
-struct GlobalState {
-    int cell_count = 0;
-    double current_time = 0.0;
-    int time_step = 0;
-    ConvergenceStatus status = ConvergenceStatus::Running;
+- **消除投影歧义**：每个单元的每个面独立 BC，不受面投影重叠影响
+- **虚拟单元邻居**：预处理阶段处理，临面虚拟的有效单元自动获得 `other_bc`
+- **一致性**：与虚拟单元标记机制一致
 
-    std::vector<double> T;               // current temperature
-    std::vector<double> T_prev;          // previous time step
-    std::vector<double> residual;        // current residual
+### BCParamTable
 
-    // Ring buffers (std::deque, configurable capacity, default 5)
-    std::deque<std::vector<double>> T_history;     // past time steps
-    std::deque<std::vector<double>> nl_history;    // non-linear iteration snapshots
-    std::deque<double> dt_history;                  // past Δt values
-};
-```
+共享的 BC 参数（如多个面使用相同的 Dirichlet 温度）存储在 BCParamTable 中，通过 `param_idx` 索引。
 
-### DOF & BC Application
-
-- **Cell-centered DOF**: Temperature stored at cell center
-- **Dirichlet BC**: Ghost cell method — boundary outside one ghost cell, `T_ghost = 2·T_dirichlet - T_boundary`
-- **Neumann BC**: Heat flux enters cell RHS directly (area integral)
-- **Cauchy BC**: Convection linearized — Jacobian diagonal adds `h·A`, RHS adds `h·A·T_∞`
-- **Default BC**: Configured in XML, not interior default
-
-### SoA 布局优势
-
-- 按字段顺序连续读取，优化缓存命中
-- SIMD 向量化容易（连续内存操作）
-- TBB 并行化简单：每个线程操作一段连续的单元索引
-
-### 预处理阶段已完成的工作
-
-所有表达式编译为 `CompiledExpression`：
-
-- 材料属性（`k`、`ρ`、`c`）→ `MaterialProps`
-- BC 参数（`T_dirichlet`、`q_neumann`、`h_cauchy`、`T_inf_cauchy`）→ `BCParamTable`
-- 热源（每个单元）→ `CellFields.heat_source`
-- 用户自定义函数（exprtk + native）→ expr 模块函数池
+`other_bc` 在预处理阶段填充，未显式指定的面自动设置为 default BC。

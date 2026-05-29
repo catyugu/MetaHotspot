@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
         auto model = preprocessor.load(io_structure);
 
         MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})",
-            model->mesh.cell_count,
+            model->mesh.total_cell_count,
             model->mesh.nx,
             model->mesh.ny,
             model->mesh.nz);
