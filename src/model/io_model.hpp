@@ -30,9 +30,6 @@ namespace mhs::model {
         std::vector<Rect> all_rects;
         std::string material_name;
         std::string thickness_expr;
-        std::string mesh_size_x_expr;
-        std::string mesh_size_y_expr;
-        std::string mesh_size_z_expr;
         std::string x_offset_expr;
         std::string y_offset_expr;
         std::string z_offset_expr;
@@ -45,9 +42,6 @@ namespace mhs::model {
         std::vector<Block> blocks;
         std::string name;
         std::string thickness_expr;
-        std::string mesh_size_x_expr;
-        std::string mesh_size_y_expr;
-        std::string mesh_size_z_expr;
         std::string x_offset_expr;
         std::string y_offset_expr;
         std::string period_width_expr;
@@ -123,10 +117,13 @@ namespace mhs::model {
         SecondTypeThermalBC other_bc_second;
         ThirdTypeThermalBC other_bc_third;
 
+        // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
+        // These are read directly from XML and passed to preprocessor
+        std::vector<double> mesh_vertex_x;
+        std::vector<double> mesh_vertex_y;
+        std::vector<double> mesh_vertex_z;
+
         std::vector<double> result_values;
-        std::vector<double> result_x;
-        std::vector<double> result_y;
-        std::vector<double> result_z;
     };
 
     // Expression functions

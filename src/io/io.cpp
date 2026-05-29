@@ -244,15 +244,6 @@ namespace mhs::io {
                 if (const XMLElement* yoff = layer_elem->FirstChildElement("YOffsetExpression")) {
                     layer.y_offset_expr = get_text(yoff);
                 }
-                if (const XMLElement* msx = layer_elem->FirstChildElement("MeshSizeXExpression")) {
-                    layer.mesh_size_x_expr = get_text(msx);
-                }
-                if (const XMLElement* msy = layer_elem->FirstChildElement("MeshSizeYExpression")) {
-                    layer.mesh_size_y_expr = get_text(msy);
-                }
-                if (const XMLElement* msz = layer_elem->FirstChildElement("MeshSizeZExpression")) {
-                    layer.mesh_size_z_expr = get_text(msz);
-                }
                 if (const XMLElement* period = layer_elem->FirstChildElement("PeriodWidth")) {
                     layer.period_width = std::stoi(get_text(period));
                 }
@@ -389,6 +380,32 @@ namespace mhs::io {
                 }
 
                 structure.boundaries.push_back(boundary);
+            }
+        }
+
+        // Mesh vertex coordinates from Results[0].Mesh (XArray/YArray/ZArray)
+        if (const XMLElement* results_elem = root->FirstChildElement("Results")) {
+            if (const XMLElement* any_type = results_elem->FirstChildElement("a:anyType")) {
+                if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
+                    if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
+                        for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
+                             val = val->NextSiblingElement("a:double")) {
+                            structure.mesh_vertex_x.push_back(parse_double(get_text(val)));
+                        }
+                    }
+                    if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
+                        for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
+                             val = val->NextSiblingElement("a:double")) {
+                            structure.mesh_vertex_y.push_back(parse_double(get_text(val)));
+                        }
+                    }
+                    if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
+                        for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
+                             val = val->NextSiblingElement("a:double")) {
+                            structure.mesh_vertex_z.push_back(parse_double(get_text(val)));
+                        }
+                    }
+                }
             }
         }
 

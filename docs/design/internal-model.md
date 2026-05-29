@@ -13,17 +13,17 @@ struct MeshGeometry {
     int nx = 0, ny = 0, nz = 0;
     int total_cell_count = 0;  // nx * ny * nz
 
-    std::vector<double> vertex_x;    // nx+1
-    std::vector<double> vertex_y;    // ny+1
-    std::vector<double> vertex_z;    // nz+1
+    std::vector<double> vertex_x;    // nx+1, from XML
+    std::vector<double> vertex_y;    // ny+1, from XML
+    std::vector<double> vertex_z;    // nz+1, from XML
 
-    std::vector<double> dx;          // nx
-    std::vector<double> dy;          // ny
-    std::vector<double> dz;          // nz
+    std::vector<double> dx;          // nx, computed from vertex_x
+    std::vector<double> dy;          // ny, computed from vertex_y
+    std::vector<double> dz;          // nz, computed from vertex_z
 
-    std::vector<double> cx;         // nx
-    std::vector<double> cy;         // ny
-    std::vector<double> cz;         // nz
+    std::vector<double> cx;         // nx, cell centers
+    std::vector<double> cy;         // ny, cell centers
+    std::vector<double> cz;         // nz, cell centers
 };
 
 } // namespace mhs::model

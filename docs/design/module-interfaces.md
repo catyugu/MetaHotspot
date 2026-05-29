@@ -71,12 +71,13 @@ public:
 ### 预处理流程
 
 ```text
-IOStructure（含字符串表达式）
+IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
   └─> ModelBuilder::build()
         ├─> 转换单位（length_unit → SI），注册几何变量 → expr
         ├─> 注册材料函数、用户函数 → expr
         ├─> LayerProcessor::resolve()
-        │     ├─> 计算顶点坐标
+        │     ├─> 直接使用 mesh_vertex_x/y/z 构建顶点坐标
+        │     ├─> 计算 dx/dy/dz, cx/cy/cz
         │     ├─> 生成 valid_mask + index_map
         │     └─> 分配 material_id, layer_id（全网格大小）
         ├─> FaceKeyProcessor::resolve()

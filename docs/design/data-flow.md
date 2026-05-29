@@ -34,18 +34,18 @@ XML 文件
 
 ## 各阶段数据变换
 
-| 阶段              | 输入                                  | 输出                       | 关键操作                            |
-| ----------------- | ------------------------------------- | -------------------------- | ----------------------------------- |
-| XML 解析          | XML 文件                              | `model::IOStructure`       | tinyxml2 解析                       |
-| 预处理-几何       | `model::IOStructure` + 变量           | `MeshGeometry`             | 解析几何表达式，计算顶点坐标        |
-| 预处理-虚拟单元   | `MeshGeometry` + 层几何               | `valid_mask` + `index_map` | 标记虚拟单元，生成紧凑化映射        |
-| 预处理-单元归属   | `MeshGeometry` + 层几何               | `material_id` + `layer_id` | 判断每个单元属于哪个 Layer/Block    |
-| 预处理-面 BC      | `MeshGeometry` + `Boundaries`         | `CellBC` + `BCParamTable`  | 为每个单元每面分配 BC，解决投影重叠 |
-| 预处理-表达式编译 | IO 字符串表达式                       | `CompiledExpression`       | exprtk 编译或 `make_constant`       |
-| 组装              | `InternalModel` + `GlobalState` + `t` | `LinearSystem`             | 遍历活跃单元，组装 A 和 b           |
-| 线性求解          | `A * x = b`                           | `x`                        | Eigen `SparseLU` 或 `BiCGSTAB`      |
-| Newton 更新       | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                            |
-| 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开 T 向量，写出文件               |
+| 阶段              | 输入                                  | 输出                       | 关键操作                                   |
+| ----------------- | ------------------------------------- | -------------------------- | ------------------------------------------ |
+| XML 解析          | XML 文件                              | `model::IOStructure`       | tinyxml2 解析，包含 mesh_vertex_x/y/z      |
+| 预处理-几何       | `IOStructure.mesh_vertex_*`           | `MeshGeometry`             | 直接使用 XML 坐标，计算 dx/dy/dz, cx/cy/cz |
+| 预处理-虚拟单元   | `MeshGeometry` + 层几何               | `valid_mask` + `index_map` | 标记虚拟单元，生成紧凑化映射               |
+| 预处理-单元归属   | `MeshGeometry` + 层几何               | `material_id` + `layer_id` | 判断每个单元属于哪个 Layer/Block           |
+| 预处理-面 BC      | `MeshGeometry` + `Boundaries`         | `CellBC` + `BCParamTable`  | 为每个单元每面分配 BC，解决投影重叠        |
+| 预处理-表达式编译 | IO 字符串表达式                       | `CompiledExpression`       | exprtk 编译或 `make_constant`              |
+| 组装              | `InternalModel` + `GlobalState` + `t` | `LinearSystem`             | 遍历活跃单元，组装 A 和 b                  |
+| 线性求解          | `A * x = b`                           | `x`                        | Eigen `SparseLU` 或 `BiCGSTAB`             |
+| Newton 更新       | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                   |
+| 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开 T 向量，写出文件                      |
 
 ---
 

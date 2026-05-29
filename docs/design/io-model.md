@@ -28,9 +28,6 @@ struct Block {
     std::vector<Rect> all_rects;
     std::string material_name;
     std::string thickness_expr;
-    std::string mesh_size_x_expr;
-    std::string mesh_size_y_expr;
-    std::string mesh_size_z_expr;
     std::string x_offset_expr;
     std::string y_offset_expr;
     std::string z_offset_expr;
@@ -43,9 +40,6 @@ struct Layer {
     std::vector<Block> blocks;
     std::string name;
     std::string thickness_expr;
-    std::string mesh_size_x_expr;
-    std::string mesh_size_y_expr;
-    std::string mesh_size_z_expr;
     std::string x_offset_expr;
     std::string y_offset_expr;
     std::string period_width_expr;
@@ -118,11 +112,14 @@ struct Structure {
     SecondTypeThermalBC other_bc_second;
     ThirdTypeThermalBC other_bc_third;
 
-    // 结果（用于从 XML 读取参考值进行回归测试）
-    std::vector<double> result_values;  // 温度值扁平数组
-    std::vector<double> result_x;
-    std::vector<double> result_y;
-    std::vector<double> result_z;
+    // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
+    // These are read directly from XML and passed to preprocessor
+    std::vector<double> mesh_vertex_x;
+    std::vector<double> mesh_vertex_y;
+    std::vector<double> mesh_vertex_z;
+
+    // Result values for regression testing
+    std::vector<double> result_values;
 };
 
 } // namespace mhs::model
