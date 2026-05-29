@@ -9,7 +9,7 @@ namespace mhs::io {
 class Reader {
 public:
     explicit Reader(const std::string& xml_path);
-    model::IOStructure read_structure();
+    model::IOStructure read_xml();
 };
 
 // IO 模型 → XML（结果输出）
@@ -227,29 +227,29 @@ struct SchedulerConfig {
 
 class Scheduler {
 public:
-    explicit Scheduler(std::unique_ptr<model::InternalModel> model,
-                       const SchedulerConfig& config);
+    explicit Scheduler(const SchedulerConfig& config);
 
-    // 运行完整仿真，通过后处理器写出结果
-    void run(postprocessor::PostProcessor& pp);
+    void setModel(model::InternalModel* model);
+
+    // 运行完整仿真
+    void run();
 
     // 步进 API（用于测试）
     void initialize();          // 初始化 T = T_prev = initial_temperature
     bool advance_time_step();  // 返回是否收敛
     bool is_finished() const;
 
-    const model::GlobalState& state() const { return state_; }
+    const std::vector<double>& solution() const;
 
 private:
     bool solve_nonlinear_step();
 
-    std::unique_ptr<model::InternalModel> model_;  // 拥有权
+    model::InternalModel* model_ = nullptr;  // 非拥有权，外部管理
     SchedulerConfig config_;
-    model::GlobalState state_;
     double current_time_ = 0.0;
     int current_step_ = 0;
-    std::unique_ptr<assembler::Assembler> assembler_;
     std::unique_ptr<solver::Solver> solver_;
+    std::vector<double> solution_;
 };
 
 } // namespace mhs::scheduler

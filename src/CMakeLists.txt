@@ -11,12 +11,11 @@ add_library(mhs_lib
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib tinyxml2)
+target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib io_lib)
 
 target_include_directories(mhs_lib
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>
-    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/_deps/tinyxml2-src>
     $<INSTALL_INTERFACE:include>
 )

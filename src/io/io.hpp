@@ -1,20 +1,21 @@
 #pragma once
 
+#include "model/internal_model.hpp"
 #include "model/io_model.hpp"
-#include <memory>
 #include <string>
+#include <vector>
 
 namespace mhs::io {
 
-class Reader {
-public:
-    explicit Reader(const std::string& xml_path);
-    ~Reader() = default;
+    model::IOStructure read_xml(const std::string& xml_path);
 
-    model::IOStructure read_structure();
+    void write_vtu(const std::string& path,
+        const model::InternalModel& model,
+        const std::vector<double>& node_temperature);
 
-private:
-    std::string xml_path_;
-};
+    void write_xml(const std::string& output_path,
+        const std::string& input_path,
+        const model::InternalModel& model,
+        const std::vector<double>& node_temperature);
 
 } // namespace mhs::io

@@ -1,9 +1,7 @@
 #pragma once
 
-#include "assembler/assembler.hpp"
 #include "model/internal_model.hpp"
 #include "solver/solver.hpp"
-#include <vector>
 
 namespace mhs {
 
@@ -12,7 +10,7 @@ namespace mhs {
         Scheduler() = default;
         ~Scheduler() = default;
 
-        void setModel(std::unique_ptr<model::InternalModel> model);
+        void setModel(model::InternalModel* model) { model_ = model; }
 
         void setSolver(std::unique_ptr<Solver> solver);
 
@@ -20,16 +18,13 @@ namespace mhs {
 
         const std::vector<double>& solution() const;
 
-        model::InternalModel* getModel() const { return model_.get(); }
-
     private:
         void stepTime(double dt);
         void solveNonlinear(double t);
 
-        std::unique_ptr<model::InternalModel> model_;
+        model::InternalModel* model_ = nullptr;
         std::unique_ptr<Solver> solver_;
         std::vector<double> solution_;
-        model::GlobalState state_;
     };
 
 } // namespace mhs
