@@ -11,7 +11,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 
 ### Mesh
 
-- **Structured grid**: Cell-centered DOFs, regular Cartesian mesh. Only supported mesh type.
+- **Structured grid**: Cell-centered DOFs, regular Cartesian mesh. Only supported mesh type. 2D (`Dimension2D`) is explicitly unsupported — the mesh always uses 3D vertex arrays.
 - **Cell**: Fundamental volume element. Temperature DOF stored at cell center.
 - **Face**: Cell surface. Boundary conditions applied here via boundary integrals.
 - **Vertex coordinates**: Grid lines defining cell boundaries.
@@ -21,6 +21,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **First-type (Dirichlet)**: Fixed temperature `T = T₀`. Applied via ghost cell method.
 - **Second-type (Neumann)**: Fixed heat flux `q = q₀·n`. Enters cell RHS directly.
 - **Third-type (Cauchy/Robin)**: Convection `h(T - T_∞)`. Linearized into Jacobian + RHS contributions.
+- **Other BC (`other_bc`)**: Default BC applied to faces not covered by any face key. Specified at IO level via `other_bc_type` + `other_bc_first/second/third`; preprocessor applies it to all `BcType::None` faces during BC array initialization.
 
 ### Material Properties
 
@@ -35,13 +36,14 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Middle layer**: Substrate (silicon).
 - **Bottom layer**: PCB or heat spreader.
 - Each layer has a `ThicknessExpression` and mesh size hints.
+- **Block heat source**: Each block has one `ti_reyuan_expr` (体热源, [W/m³]). Preprocessor expands this to a per-cell `heat_source` array indexed by `cell_idx`.
 
 ### Expressions
 
-- **Geometry expressions**: `w_top/2`, `h_middle`, evaluated at preprocessing to concrete numbers. Context: none (only variables like `w_top`).
-- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`.
-- User-defined functions (e.g., `test_gaussian`) registered in function pool.
-- **Native functions**: C++ functions `double(const FieldContext&)` registered via `register_native()`. Used for piecewise functions and other forms that are easier to express in code than as strings.
+- **Geometry expressions**: `w_top/2`, `h_middle` — evaluated via `expr::eval_geometry()`. Context: none (variables pre-registered).
+- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`. Pre-compiled to `FieldExpression`.
+- **Expr registry**: Global, thread-safe. Populated by `ModelBuilder` from `IOStructure` variables/functions.
+- **Native functions**: C++ functions registered via `expr::register_native()`. Used for piecewise functions and other forms easier to express in code than strings.
 
 ### Face Keys
 
@@ -51,24 +53,97 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 ## Solver Pipeline
 
 1. **Preprocessor**: IO model → Internal SoA model (mesh, BC arrays, compiled expressions)
+   - **IO model** (`io_model.hpp`): AoS structs mirroring XML schema. Uses `ThermalBCType` (FirstType, SecondType, ThirdType) matching XML element names. Length unit (`LengthUnit`: M, Mm, Um, Nm, Inch, Mil) converted to SI (meters) here.
+   - **Internal model** (`internal_model.hpp`): All geometry in SI units (meters), no unit storage.
+   - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
+   - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` 等需经由 `FunctionConverter` 转换为 `FieldEvaluator`，再包装为 `CompiledExpression`。
 2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — factory pattern
-5. **Postprocessor**: VTU (ParaView) + XML result output
+5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O.
+6. **io module**: `read_xml(xml_path)` reads XML; `write_vtu(path, model, node_temperature)` writes VTU; `write_xml(output_path, input_path, model, node_temperature)` copies and updates XML.
+
+## GlobalState
+
+Persistent state across simulation, stored in `model::GlobalState`:
+
+- **Core fields**: `T` (current temperature), `T_prev` (previous time step), `residual`
+- **Ring buffers**: `T_history` (past time steps), `nl_history` (non-linear snapshots), `dt_history`
+- **Ring buffer capacity**: Configurable, default 5
+- **Convergence status**: `Running`, `Converged`, `Diverged`
+
+## Key Design Principles
+
+1. **No raw strings in internal model** — all expressions compiled to `FieldExpression`
+2. **Expr registry is internal** — `ModelBuilder` populates, external code uses clean API
+3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected, `eval()` lock-free
+4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
+5. **Crank-Nicolson (θ=0.5)** — transient time discretization with lumped mass
+6. **TBB parallel assembly** — `tbb::parallel_for` over cells
+7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`, `ConvergenceStatus`); `io_model.hpp` includes it instead of redeclaring
 
 ## Glossary
 
-| Term        | Chinese  | Notes                             |
-| ----------- | -------- | --------------------------------- |
-| Structure   | 结构体   | Top-level XML element             |
-| Layer       | 层       | Stack of material blocks          |
-| Block       | 块       | Geometry defined by add/sub rects |
-| Rect        | 矩形     | Add or subtract operation         |
-| Boundary    | 边界     | Face BC specification             |
-| Face key    | 面键     | String encoding boundary face     |
-| Material    | 材料     | copper, silicon, TIM              |
-| Variable    | 变量     | Geometry parameter (w_top, etc.)  |
-| Function    | 函数     | User-defined expression function  |
-| DAORE XISHU | 导热系数 | Thermal conductivity              |
-| MIDU        | 密度     | Density                           |
-| BI RERONG   | 比热容   | Specific heat                     |
+| Term              | Chinese  | Notes                                                                                                       |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| Structure         | 结构体   | Top-level XML element                                                                                       |
+| Layer             | 层       | Stack of material blocks                                                                                    |
+| Block             | 块       | Geometry defined by add/sub rects — contains material and heat source                                       |
+| CellBoundaryGroup | 面边界组 | BC definition group, one per Block. Each group has 6 faces (xm/xp/ym/yp/zm/zp) with independent BC settings |
+| Rect              | 矩形     | Add or subtract operation                                                                                   |
+| Boundary          | 边界     | Face BC specification                                                                                       |
+| Face key          | 面键     | String encoding boundary face                                                                               |
+| Material          | 材料     | copper, silicon, TIM                                                                                        |
+| Variable          | 变量     | Geometry parameter (w_top, etc.)                                                                            |
+| Function          | 函数     | User-defined expression function                                                                            |
+| DAORE XISHU       | 导热系数 | Thermal conductivity                                                                                        |
+| MIDU              | 密度     | Density                                                                                                     |
+| BI RERONG         | 比热容   | Specific heat                                                                                               |
+
+## Virtual Cell & Mesh Mask
+
+Structured grid creates `nx × ny × nz` cells, but not all cells are within valid geometry (electronic package has voids).
+
+| Concept      | Description                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| valid_mask   | `std::vector<uint8_t>` (size = nx*ny*nz). `1` = active cell, `0` = virtual                                   |
+| index_map    | `std::vector<size_t>` (size = nx*ny*nz). Maps old grid index → compact active index. SIZE_MAX = virtual cell |
+| active_count | Number of valid cells (N_active). Matrix dimension = active_count                                            |
+
+**CellFields layout:**
+
+- **Full-grid size** (nx*ny*nz): `index_map`, `valid_mask`, `material_id`, `layer_id`
+- **Compact size** (N_active): `cell_bcs`, `heat_source`
+
+Keeping full-grid arrays for material/layer IDs simplifies debugging and maintains consistent array style across the model.
+
+## Cell-Level BC
+
+BC is stored at cell level (not face-array level) to handle overlapping projections between blocks in the same layer.
+
+```cpp
+struct CellBC {
+    std::array<BcType, 6> types;           // xm, xp, ym, yp, zm, zp
+    std::array<uint16_t, 6> param_idxs;   // indices into BCParamTable
+};
+
+struct CellFields {
+    int cell_count = 0;  // = N_active
+
+    // Full-grid size (nx*ny*nz): virtual + active
+    std::vector<size_t> index_map;
+    std::vector<uint8_t> valid_mask;
+    std::vector<size_t> material_id;
+    std::vector<size_t> layer_id;
+
+    // Compact size (N_active): active cells only
+    std::vector<CellBC> cell_bcs;
+    std::vector<CompiledExpression> heat_source;
+};
+```
+
+- Face projection overlap between blocks is resolved — each cell's face has independent BC
+- `other_bc` is applied during preprocessing for faces not explicitly specified
+- Virtual cell neighbors are also handled in preprocessing (neighboring active cells get other_bc on that face)
+
+**FaceBCFields removed**: Replaced by cell-level `CellBC`. Each cell stores its 6 face BCs independently, eliminating face projection ambiguity.

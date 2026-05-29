@@ -1,13 +1,17 @@
+add_subdirectory(io)
+add_subdirectory(expr)
+add_subdirectory(logger)
+
 add_library(mhs_lib
+    io/io.cpp
     preprocessor/preprocessor.cpp
-    expr/expr.cpp
     assembler/assembler.cpp
     scheduler/scheduler.cpp
     solver/solver.cpp
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen)
+target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib io_lib)
 
 target_include_directories(mhs_lib
     PUBLIC

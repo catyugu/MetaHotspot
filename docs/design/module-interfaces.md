@@ -1,29 +1,23 @@
 # 模块接口
 
----
-
 ## 4.1 `io`
 
 ```cpp
 namespace mhs::io {
 
-// XML → IO 模型（直接使用 tinyxml2）
 class Reader {
 public:
     explicit Reader(const std::string& xml_path);
-    model::IOStructure read_structure();
+    model::IOStructure read_xml();
 };
 
-// IO 模型 → XML（结果输出）
 class Writer {
 public:
     explicit Writer(const std::string& output_path);
 
-    // 写出温度结果 XML（与原始 GUI 格式兼容）
     void write_result(const model::InternalModel& model,
                       const std::vector<double>& temperature);
 
-    // 写出 VTU 文件（ParaView 可视化）
     void write_vtu(const model::InternalModel& model,
                    const std::vector<double>& temperature,
                    const std::string& vtu_path);
@@ -42,37 +36,33 @@ private:
 ```cpp
 namespace mhs::preprocessor {
 
-// 将 IO 模型转换为内部模型
 class ModelBuilder {
 public:
     explicit ModelBuilder(const model::IOStructure& io_model);
 
-    // 返回完全组装好的内部模型（所有表达式已编译）
     model::InternalModel build();
 
 private:
     const model::IOStructure& io_model_;
 };
 
-// 处理层几何 → 填充每个单元的 material_id / layer_id
+// 处理层几何 → 生成 valid_mask, index_map, material_id, layer_id
 class LayerProcessor {
 public:
-    static void resolve_layer_geometry(
-        const model::IOStructure& io_model,
-        const std::vector<double>& vertex_x,
-        const std::vector<double>& vertex_y,
-        const std::vector<double>& vertex_z,
-        model::InternalCellFields& cells);
+    static void resolve(
+        const std::vector<model::Layer>& layers,
+        const model::MeshGeometry& mesh,
+        model::CellFields& cells);
 };
 
-// 解析面键字符串 → 每面 BC 数组
+// 解析面键字符串 → 为每个单元的每个面分配 CellBC
 class FaceKeyProcessor {
 public:
-    static void resolve_face_keys(
-        const std::vector<model::IOBoundary>& boundaries,
-        const model::InternalMeshGeometry& mesh,
-        model::InternalFaceBCFields& face_bcs,
-        model::InternalBCParamTable& bc_params);
+    static void resolve(
+        const std::vector<model::Boundary>& boundaries,
+        const model::MeshGeometry& mesh,
+        model::CellFields& cells,
+        model::BCParamTable& bc_params);
 };
 
 } // namespace mhs::preprocessor
@@ -81,19 +71,23 @@ public:
 ### 预处理流程
 
 ```text
-IO 模型（Structure，含字符串表达式）
+IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
   └─> ModelBuilder::build()
-        ├─> 解析几何变量（w_top, h_middle 等）→ 具体数值
-        ├─> 计算每层厚度 → 确定全局 Z 网格线
-        ├─> 构建顶点坐标 vertex_x/y/z
-        ├─> LayerProcessor::resolve_layer_geometry()
-        │     └─> 对每个单元：判断属于哪个 Layer/Block → layer_id, material_id, heat_source
-        ├─> FaceKeyProcessor::resolve_face_keys()
-        │     └─> 解析 face_key 字符串 → face_bcs + bc_params
-        └─> 编译所有 FieldExpression
-              ├─> 材料属性 k/rho/c → MaterialProps（每种材料一个）
-              ├─> BC 参数 → BCParamTable（每个边界参数一个）
-              └─> 热源 → CellFields.heat_source（每个单元一个）
+        ├─> 转换单位（length_unit → SI），注册几何变量 → expr
+        ├─> 注册材料函数、用户函数 → expr
+        ├─> LayerProcessor::resolve()
+        │     ├─> 直接使用 mesh_vertex_x/y/z 构建顶点坐标
+        │     ├─> 计算 dx/dy/dz, cx/cy/cz
+        │     ├─> 生成 valid_mask + index_map
+        │     └─> 分配 material_id, layer_id（全网格大小）
+        ├─> FaceKeyProcessor::resolve()
+        │     ├─> 解析 face_key 字符串
+        │     ├─> 为每个单元的每个面分配 CellBC
+        │     └─> 填充未指定面的 other_bc
+        └─> 编译表达式
+              ├─> 材料属性 k/rho/c → MaterialProps
+              ├─> BC 参数 → BCParamTable
+              └─> 热源 → CellFields.heat_source（紧凑）
 ```
 
 ---
@@ -103,31 +97,17 @@ IO 模型（Structure，含字符串表达式）
 ```cpp
 namespace mhs::assembler {
 
-// 组装上下文 — 组装器每次调用接收的信息
-struct AssemblyContext {
-    const model::InternalModel& model;
-    const model::InternalGlobalState& state;
-
-    // 完整的表达式求值上下文（传递给 FieldExpression::eval）
-    expr::FieldContext expr_ctx;
-};
-
-// 组装结果：线性系统 A * T = b
 struct LinearSystem {
-    Eigen::SparseMatrix<double> A;  // 稀疏 Jacobian
-    Eigen::VectorXd b;                // RHS（含 BC 贡献）
-    Eigen::VectorXd residual;        // 残差（用于收敛判断）
+    Eigen::SparseMatrix<double> A;
+    Eigen::VectorXd b;
+    Eigen::VectorXd residual;
 };
 
 class Assembler {
 public:
     explicit Assembler(const model::InternalModel& model);
 
-    // 组装 Jacobian A 和 RHS b（每次 Newton 迭代调用）
-    LinearSystem assemble(const model::InternalGlobalState& state, double t);
-
-    // 仅组装 RHS（用于定常迭代或 Picard）
-    LinearSystem assemble_rhs_only(const model::InternalGlobalState& state, double t);
+    LinearSystem assemble(const model::GlobalState& state);
 
 private:
     const model::InternalModel& model_;
@@ -138,17 +118,18 @@ private:
 
 ### 组装热循环说明
 
-对每个单元 `(i, j, k)`：
+对每个活跃单元 `cell_idx`：
 
-1. 获取 `material_id` → `material_table` → `MaterialProps {k, rho, c}`
-2. 对每个临面：
-   - 查 `face_bcs.bc_type[face_idx]` → BC 类型
-   - 查 `face_bcs.bc_param_idx[face_idx]` → 参数
-   - 调用 `bc_params.dirichlet_T[idx].eval(ctx)` 或类似函数
-   - 施加 BC 贡献到 A 和 b
-3. 获取 `heat_source[cell_idx].eval(ctx)` → 体热源 Q
-4. 组装扩散项（邻居温度项）
-5. 若为瞬态，组装瞬态项（ρc/Δt）(T - T_prev)
+1. 获取 `material_id[cell_idx]` → `material_table[id]` → `MaterialProps {k, rho, c}`
+2. 对每个临面 `FaceDir`：
+   - 查 `cell_bcs[compact_idx].types[dir]` → BC 类型
+   - 查 `cell_bcs[compact_idx].param_idxs[dir]` → 参数索引
+   - 调用 `bc_params.*[idx].eval(ctx)` 等
+   - 施加 BC 贡献
+3. 获取 `heat_source[compact_idx].eval(ctx)` → 体热源 Q
+4. 组装扩散项 + 瞬态项
+
+**注意**：虚拟单元已在预处理阶段标记，Assembler 只处理活跃单元。
 
 ---
 
@@ -165,32 +146,23 @@ struct SolverConfig {
     int max_iterations = 1000;
 };
 
-class SolverFactory {
-public:
-    static std::unique_ptr<SolverBase> create(const SolverConfig& config);
+struct SolveResult {
+    Eigen::VectorXd solution;
+    bool success;
+    double residual_norm;
+    int iterations;
 };
 
-class SolverBase {
+class Solver {
 public:
-    virtual ~SolverBase() = default;
-
-    // 求解 A * x = b
-    virtual Eigen::VectorXd solve(const Eigen::SparseMatrix<double>& A,
-                                  const Eigen::VectorXd& b) = 0;
-
-    // 求解后残差范数
-    virtual double residual_norm() const = 0;
+    virtual ~Solver() = default;
+    virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
+                              const Eigen::VectorXd& b) = 0;
+    static std::unique_ptr<Solver> create(SolverType type);
 };
 
 } // namespace mhs::solver
 ```
-
-### 求解器选择策略
-
-| 规模             | 推荐求解器              | 原因                   |
-| ---------------- | ----------------------- | ---------------------- |
-| 小（< 10⁴ 单元） | `SparseLU`              | 直接法，无迭代收敛问题 |
-| 大（> 10⁴ 单元） | `BiCGSTAB` + ILU 预条件 | 迭代法，内存效率高     |
 
 ---
 
@@ -200,74 +172,37 @@ public:
 namespace mhs::scheduler {
 
 struct SchedulerConfig {
-    double transient_duration = 0.0;    // 0 = 稳态
+    double transient_duration = 0.0;
     double time_step = 1.0;
     int max_newton_iterations = 50;
     double newton_tolerance = 1e-6;
-    double underrelaxation = 1.0;        // 1.0 = 无欠松弛
-    bool is_steady = false;              // true 时跳过时间步进
+    double underrelaxation = 1.0;
+    bool is_steady = false;
+    int ring_buffer_capacity = 5;
 };
 
 class Scheduler {
 public:
-    explicit Scheduler(const model::InternalModel& model,
-                       const SchedulerConfig& config);
-
-    // 运行完整仿真，通过后处理器写出结果
-    // - 稳态（is_steady=true）：t=0 时单次非线性迭代
-    // - 瞬态：t=0 到 transient_duration 的时间步循环
-    void run(postprocessor::PostProcessor& pp);
-
-    // 步进 API（用于测试）
+    explicit Scheduler(const SchedulerConfig& config);
+    void setModel(model::InternalModel* model);
+    void run();
     void initialize();
-    bool advance_time_step();       // 返回是否收敛
+    bool advance_time_step();
     bool is_finished() const;
-
-    const model::InternalGlobalState& state() const { return state_; }
+    const std::vector<double>& solution() const;
 
 private:
     bool solve_nonlinear_step();
-    bool check_convergence();
 
-    const model::InternalModel& model_;
+    model::InternalModel* model_ = nullptr;
     SchedulerConfig config_;
-    model::InternalGlobalState state_;
     double current_time_ = 0.0;
     int current_step_ = 0;
-    std::unique_ptr<assembler::Assembler> assembler_;
-    std::unique_ptr<solver::SolverBase> linear_solver_;
+    std::unique_ptr<solver::Solver> solver_;
+    std::vector<double> solution_;
 };
 
 } // namespace mhs::scheduler
-```
-
-### 调度流程
-
-**稳态**（`is_steady=true`，`transient_duration=0`）：
-
-```cpp
-initialize()
-while (!converged && iter < max_newton):
-    ls = assembler.assemble(state, t=0)
-    dT = solver.solve(ls.A, ls.b)
-    state.T += underrelaxation * dT
-    converged = check_convergence(ls.residual)
-postprocessor.write_vtu / write_xml_result
-```
-
-**瞬态**：
-
-```cpp
-initialize()
-while (current_time < transient_duration):
-    while (!converged && iter < max_newton):
-        ls = assembler.assemble(state, current_time)
-        dT = solver.solve(ls.A, ls.b)
-        state.T += underrelaxation * dT
-        converged = check_convergence()
-    state.T_prev = state.T
-    current_time += time_step
-postprocessor.write_vtu / write_xml_result
 ```
 
 ---
@@ -281,17 +216,16 @@ class PostProcessor {
 public:
     explicit PostProcessor(const std::string& output_dir);
 
-    // 写出 VTU 文件（ParaView 可视化）
+    // VTU 输出：展开 T 向量，虚拟区域填充 NaN
     void write_vtu(const model::InternalModel& model,
                    const std::vector<double>& temperature,
                    const std::string& filename);
 
-    // 写出结果 XML（与原始 GUI 格式兼容）
+    // XML 输出：展开 T 向量，虚拟区域填充 NaN
     void write_xml_result(const model::InternalModel& model,
                           const std::vector<double>& temperature,
                           const std::string& filename);
 
-    // 计算导出量
     double max_temperature(const std::vector<double>& T) const;
     double min_temperature(const std::vector<double>& T) const;
 
@@ -300,4 +234,20 @@ private:
 };
 
 } // namespace mhs::postprocessor
+```
+
+### 展开逻辑
+
+```cpp
+// 根据 nx, ny, nz 计算全网格大小
+int total = mesh.nx * mesh.ny * mesh.nz;
+std::vector<double> output_T(total);
+
+for (int old_idx = 0; old_idx < total; old_idx++) {
+    if (cells.valid_mask[old_idx]) {
+        output_T[old_idx] = temperature[cells.index_map[old_idx]];
+    } else {
+        output_T[old_idx] = std::nan("");  // 虚拟区域 NaN
+    }
+}
 ```

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "assembler/assembler.hpp"
 #include "model/internal_model.hpp"
 #include "solver/solver.hpp"
 
@@ -11,7 +10,7 @@ namespace mhs {
         Scheduler() = default;
         ~Scheduler() = default;
 
-        void setModel(std::unique_ptr<model::InternalModel> model);
+        void setModel(model::InternalModel* model) { model_ = model; }
 
         void setSolver(std::unique_ptr<Solver> solver);
 
@@ -23,7 +22,7 @@ namespace mhs {
         void stepTime(double dt);
         void solveNonlinear(double t);
 
-        std::unique_ptr<model::InternalModel> model_;
+        model::InternalModel* model_ = nullptr;
         std::unique_ptr<Solver> solver_;
         std::vector<double> solution_;
     };

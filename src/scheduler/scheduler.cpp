@@ -3,11 +3,6 @@
 
 namespace mhs {
 
-    void Scheduler::setModel(std::unique_ptr<model::InternalModel> model)
-    {
-        model_ = std::move(model);
-    }
-
     void Scheduler::setSolver(std::unique_ptr<Solver> solver)
     {
         solver_ = std::move(solver);

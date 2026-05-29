@@ -1,13 +1,22 @@
 #pragma once
-
-#include "types.hpp"
+#include "expr/expr.hpp"
+#include "model/types.hpp"
+#include <deque>
 #include <vector>
 
 namespace mhs::model {
 
+    using CompiledExpression = expr::CompiledExpression;
+
+    // Per-cell per-face BC: type + parameter index into BCParamTable
+    struct CellBC {
+        std::array<BcType, FACE_COUNT> types;
+        std::array<uint16_t, FACE_COUNT> param_idxs;
+    };
+
     struct MeshGeometry {
         int nx = 0, ny = 0, nz = 0;
-        int cell_count = 0;
+        int total_cell_count = 0; // nx * ny * nz
 
         std::vector<double> vertex_x;
         std::vector<double> vertex_y;
@@ -23,58 +32,51 @@ namespace mhs::model {
     };
 
     struct MaterialProps {
-        FieldExpression k; // 导热系数
-        FieldExpression rho; // 密度
-        FieldExpression c; // 比热容
+        CompiledExpression k;
+        CompiledExpression rho;
+        CompiledExpression c;
     };
 
     struct CellFields {
-        int cell_count = 0;
+        int cell_count = 0; // = N_active (valid cell count)
 
-        std::vector<size_t> material_id;
-        std::vector<size_t> layer_id;
+        // Full-grid size (nx*ny*nz): virtual + active
+        std::vector<size_t> index_map; // Maps old grid index → compact active index. SIZE_MAX = virtual
+        std::vector<uint8_t> valid_mask; // 1 = active cell, 0 = virtual
+        std::vector<size_t> material_id; // Full grid size
+        std::vector<size_t> layer_id; // Full grid size
 
-        std::vector<FieldExpression> heat_source;
-
-        std::vector<uint8_t> bc_flags;
+        // Compact size (N_active): active cells only
+        std::vector<CellBC> cell_bcs;
+        std::vector<CompiledExpression> heat_source;
     };
 
     struct BCParamTable {
-        std::vector<FieldEvaluator> dirichlet_T;
-        std::vector<FieldEvaluator> neumann_q;
-        std::vector<FieldEvaluator> cauchy_h;
-        std::vector<FieldEvaluator> cauchy_T_inf;
-    };
-
-    struct FaceBCFields {
-        std::vector<BcType> bc_type_zm;
-        std::vector<uint16_t> bc_param_idx_zm;
-        std::vector<BcType> bc_type_zp;
-        std::vector<uint16_t> bc_param_idx_zp;
-        std::vector<BcType> bc_type_ym;
-        std::vector<uint16_t> bc_param_idx_ym;
-        std::vector<BcType> bc_type_yp;
-        std::vector<uint16_t> bc_param_idx_yp;
-        std::vector<BcType> bc_type_xm;
-        std::vector<uint16_t> bc_param_idx_xm;
-        std::vector<BcType> bc_type_xp;
-        std::vector<uint16_t> bc_param_idx_xp;
+        std::vector<CompiledExpression> dirichlet_T;
+        std::vector<CompiledExpression> neumann_q;
+        std::vector<CompiledExpression> cauchy_h;
+        std::vector<CompiledExpression> cauchy_T_inf;
     };
 
     struct GlobalState {
-        int cell_count = 0;
+        int cell_count = 0; // = N_active
         double current_time = 0.0;
         int time_step = 0;
+        ConvergenceStatus status = ConvergenceStatus::Running;
 
-        std::vector<double> T;
-        std::vector<double> T_prev;
-        std::vector<double> residual;
+        std::vector<double> T; // size = N_active
+        std::vector<double> T_prev; // size = N_active
+        std::vector<double> residual; // size = N_active
+
+        // Ring buffers
+        std::deque<std::vector<double>> T_history;
+        std::deque<std::vector<double>> nl_history;
+        std::deque<double> dt_history;
     };
 
     struct InternalModel {
         MeshGeometry mesh;
         CellFields cells;
-        FaceBCFields face_bcs;
         BCParamTable bc_params;
 
         std::vector<MaterialProps> material_table;

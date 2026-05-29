@@ -1,10 +1,12 @@
 #pragma once
 
+#include "types.hpp"
+
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-namespace mhs::io {
+namespace mhs::model {
 
     struct Variable {
         std::string name;
@@ -28,9 +30,6 @@ namespace mhs::io {
         std::vector<Rect> all_rects;
         std::string material_name;
         std::string thickness_expr;
-        std::string mesh_size_x_expr;
-        std::string mesh_size_y_expr;
-        std::string mesh_size_z_expr;
         std::string x_offset_expr;
         std::string y_offset_expr;
         std::string z_offset_expr;
@@ -43,9 +42,6 @@ namespace mhs::io {
         std::vector<Block> blocks;
         std::string name;
         std::string thickness_expr;
-        std::string mesh_size_x_expr;
-        std::string mesh_size_y_expr;
-        std::string mesh_size_z_expr;
         std::string x_offset_expr;
         std::string y_offset_expr;
         std::string period_width_expr;
@@ -69,7 +65,7 @@ namespace mhs::io {
 
     struct ThirdTypeThermalBC {
         std::string convection_coeff = "0.0";
-        std::string h_inf = "300.0";
+        std::string T_inf = "300.0";
     };
 
     struct Boundary {
@@ -89,24 +85,23 @@ namespace mhs::io {
         std::string bi_rerong = "0.0"; // 比热容 c
     };
 
-    enum class StudyType { Steady,
-        Transient };
-
-    enum class LengthUnit { Mm,
-        Cm,
-        M };
+    enum class LengthUnit { M,
+        Mm,
+        Um,
+        Nm,
+        Inch,
+        Mil
+    };
 
     enum class Dimension { Dimension2D,
         Dimension3D };
 
-    struct Structure {
-        std::string software_mode;
+    struct IOStructure {
         StudyType study_type;
         Dimension dimension;
         LengthUnit length_unit;
         double initial_temperature = 300.0;
         double ambient_temperature = 300.0;
-        int die_layer_num = 0;
 
         std::vector<Variable> variables;
         std::vector<Layer> layers;
@@ -118,13 +113,17 @@ namespace mhs::io {
         std::string transient_time_unit = "s";
 
         ThermalBCType other_bc_type = ThermalBCType::SecondType;
+        FirstTypeThermalBC other_bc_first;
         SecondTypeThermalBC other_bc_second;
         ThirdTypeThermalBC other_bc_third;
 
+        // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
+        // These are read directly from XML and passed to preprocessor
+        std::vector<double> mesh_vertex_x;
+        std::vector<double> mesh_vertex_y;
+        std::vector<double> mesh_vertex_z;
+
         std::vector<double> result_values;
-        std::vector<double> result_x;
-        std::vector<double> result_y;
-        std::vector<double> result_z;
     };
 
     // Expression functions
@@ -173,4 +172,4 @@ namespace mhs::io {
         PieceWiseFunction piecewise;
     };
 
-} // namespace mhs::io
+} // namespace mhs::model

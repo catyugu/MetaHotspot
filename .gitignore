@@ -1,11 +1,13 @@
 build*
 outputs
+results
 .vscode
 .idea
 .pytest_cache
 .cache
 .claude
 *.msh
+*.log
 *.vtu
 *.steady
 *.ttrace

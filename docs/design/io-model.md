@@ -28,9 +28,6 @@ struct Block {
     std::vector<Rect> all_rects;
     std::string material_name;
     std::string thickness_expr;
-    std::string mesh_size_x_expr;
-    std::string mesh_size_y_expr;
-    std::string mesh_size_z_expr;
     std::string x_offset_expr;
     std::string y_offset_expr;
     std::string z_offset_expr;
@@ -43,9 +40,6 @@ struct Layer {
     std::vector<Block> blocks;
     std::string name;
     std::string thickness_expr;
-    std::string mesh_size_x_expr;
-    std::string mesh_size_y_expr;
-    std::string mesh_size_z_expr;
     std::string x_offset_expr;
     std::string y_offset_expr;
     std::string period_width_expr;
@@ -78,18 +72,22 @@ struct Material {
 };
 
 enum class StudyType { Steady, Transient };
-enum class LengthUnit { Mm, Cm, M };
+enum class LengthUnit { M,
+        Mm,
+        Um,
+        Nm,
+        Inch,
+        Mil
+        };
 enum class Dimension { Dimension2D, Dimension3D };  // Dimension2D 触发 panic
 
 struct Structure {
     // 元数据
-    std::string software_mode;
     StudyType study_type;
     Dimension dimension;
     LengthUnit length_unit;
     double initial_temperature = 300.0;
     double ambient_temperature = 300.0;
-    int die_layer_num = 0;
 
     // 几何变量
     std::vector<Variable> variables;
@@ -110,14 +108,18 @@ struct Structure {
     // 通常为 SecondType（Neumann，HeatFlux=0 = 绝热）或 ThirdType。
     // 预处理阶段将此类默认 BC 应用于所有未明确指定的面。
     ThermalBCType other_bc_type = ThermalBCType::SecondType;
+    FirstTypeThermalBC other_bc_first;
     SecondTypeThermalBC other_bc_second;
     ThirdTypeThermalBC other_bc_third;
 
-    // 结果（用于从 XML 读取参考值进行回归测试）
-    std::vector<double> result_values;  // 温度值扁平数组
-    std::vector<double> result_x;
-    std::vector<double> result_y;
-    std::vector<double> result_z;
+    // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
+    // These are read directly from XML and passed to preprocessor
+    std::vector<double> mesh_vertex_x;
+    std::vector<double> mesh_vertex_y;
+    std::vector<double> mesh_vertex_z;
+
+    // Result values for regression testing
+    std::vector<double> result_values;
 };
 
 } // namespace mhs::model

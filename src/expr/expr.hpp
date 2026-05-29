@@ -1,29 +1,77 @@
 #pragma once
 
 #include "model/types.hpp"
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
-namespace mhs {
+namespace mhs::expr {
 
-    class ExprEngine {
+    // Precompiled expression (value type, stateless, thread-safe eval)
+    class CompiledExpression {
     public:
-        ExprEngine() = default;
-        ~ExprEngine() = default;
+        CompiledExpression() : is_const_(true), const_val_(0.0) { }
+        CompiledExpression(const CompiledExpression&) = default;
+        CompiledExpression(CompiledExpression&&) = default;
+        CompiledExpression& operator=(const CompiledExpression&) = default;
+        CompiledExpression& operator=(CompiledExpression&&) = default;
+        ~CompiledExpression() = default;
 
-        FieldEvaluator compile(const std::string& formula);
+        double eval(const FieldContext& ctx) const
+        {
+            if (is_const_) {
+                return const_val_;
+            }
+            if (!eval_) {
+                return 0.0;
+            }
+            return eval_(ctx);
+        }
 
-        double evaluate(const FieldContext& ctx);
+        bool is_constant() const { return is_const_; }
+        double constant_value() const { return const_val_; }
 
-        void registerNative(const std::string& name, FieldEvaluator func);
+        static CompiledExpression make_constant(double value)
+        {
+            return CompiledExpression(nullptr, true, value);
+        }
+
+        static CompiledExpression make_evaluator(FieldEvaluator eval)
+        {
+            return CompiledExpression(std::move(eval), false, 0.0);
+        }
 
     private:
-        std::unordered_map<std::string, FieldEvaluator> natives_;
-        std::unique_ptr<FieldEvaluator> current_;
+        FieldEvaluator eval_;
+        bool is_const_ = false;
+        double const_val_ = 0.0;
+
+        CompiledExpression(FieldEvaluator eval, bool is_const, double const_val)
+            : eval_(std::move(eval)), is_const_(is_const), const_val_(const_val)
+        {
+        }
     };
 
-    double evalGeometryExpr(const std::string& formula, const std::unordered_map<std::string, double>& vars);
+    // Thread-safe registry operations (mutex-protected)
+    // These are called by ModelBuilder during preprocessing
 
-} // namespace mhs
+    // Register a geometry variable (used by eval_geometry)
+    void set_variable(const std::string& name, double value);
+
+    // Register a native C++ function
+    void register_native(const std::string& name, FieldEvaluator func);
+
+    // Register a user-defined expression function
+    void register_function(const std::string& name, const std::string& expression);
+
+    // Get a registered native function
+    FieldEvaluator get_native(const std::string& name);
+
+    // Clear all registered functions (for testing)
+    void clear_registry();
+
+    // Parse a field expression string (thread-safe during compilation)
+    CompiledExpression parse(const std::string& formula);
+
+    // Evaluate a geometry expression (no context needed, uses registered variables)
+    double eval_geometry(const std::string& formula);
+
+} // namespace mhs::expr
