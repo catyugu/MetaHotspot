@@ -62,6 +62,7 @@ namespace mhs::model {
         int cell_count = 0; // = N_active
         double current_time = 0.0;
         int time_step = 0;
+        double dt = 0.0; // current time step size for transient assembly
         ConvergenceStatus status = ConvergenceStatus::Running;
 
         std::vector<double> T; // size = N_active
