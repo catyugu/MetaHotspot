@@ -285,7 +285,7 @@ namespace mhs::io {
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect");
-                                rect_elem; rect_elem = rects_elem->NextSiblingElement("Rect")) {
+                                rect_elem; rect_elem = rect_elem->NextSiblingElement("Rect")) {
                                 model::Rect rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.add_sub = std::string(get_text(adds)) == "true";
@@ -593,17 +593,19 @@ namespace mhs::io {
         }
 
         // Node temperature layout: (nx+1)*(ny+1)*(nz+1) vertices
-        // The output XML uses SizeX = nx+1, SizeY = ny+1, SizeZ = nz+1
+        // Reference data ordering: index = z + SizeZ * x + SizeZ * SizeX * y
+        // (Y outermost, X middle, Z innermost)
         int node_nx = model.mesh.nx + 1;
         int node_ny = model.mesh.ny + 1;
         int node_nz = model.mesh.nz + 1;
 
-        // Write new temperature values in the same order as the original: x * SizeY * SizeZ + y * SizeZ + z
-        for (int vx = 0; vx < node_nx; vx++) {
-            for (int vy = 0; vy < node_ny; vy++) {
+        // Write new temperature values in reference ordering: (y, x, z)
+        for (int vy = 0; vy < node_ny; vy++) {
+            for (int vx = 0; vx < node_nx; vx++) {
                 for (int vz = 0; vz < node_nz; vz++) {
-                    int node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
-                    double val = node_temperature[node_idx];
+                    // Our internal index is (vx, vy, vz) with Z innermost
+                    int internal_idx = vx * node_ny * node_nz + vy * node_nz + vz;
+                    double val = node_temperature[internal_idx];
 
                     XMLElement* double_elem = doc.NewElement("a:double");
                     if (std::isnan(val)) {
