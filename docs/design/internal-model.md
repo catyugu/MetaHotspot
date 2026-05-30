@@ -43,10 +43,15 @@ namespace mhs::model {
 // Face direction indices
 enum FaceDir : size_t { XM = 0, XP = 1, YM = 2, YP = 3, ZM = 4, ZP = 5 };
 
+constexpr size_t FACE_COUNT = 6;
+
+constexpr std::array<FaceDir, FACE_COUNT> FACE_DIRS = {
+    FaceDir::XM, FaceDir::XP, FaceDir::YM, FaceDir::YP, FaceDir::ZM, FaceDir::ZP};
+
 // Per-cell per-face BC
 struct CellBC {
-    std::array<BcType, 6> types;        // xm, xp, ym, yp, zm, zp
-    std::array<uint16_t, 6> param_idxs; // indices into BCParamTable
+    std::array<BcType, FACE_COUNT> types;           // xm, xp, ym, yp, zm, zp
+    std::array<uint16_t, FACE_COUNT> param_idxs;    // indices into BCParamTable
 };
 
 struct CellFields {
@@ -109,6 +114,7 @@ struct GlobalState {
     double current_time = 0.0;
     int time_step = 0;
     double dt = 0.0;     // current time step size for transient assembly
+    ConvergenceStatus status = ConvergenceStatus::Running;
 
     std::vector<double> T;           // size = N_active
     std::vector<double> T_prev;       // size = N_active

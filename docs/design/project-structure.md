@@ -17,11 +17,11 @@ MetaHotspot/
 │   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
 │   ├── assembler/             # Jacobian 和 RHS 组装
-│   ├── solver/                # Eigen 稀疏求解器工厂
-│   ├── scheduler/            # 仿真循环调度
-│   ├── postprocessor/         # VTU/XML 输出
+│   ├── solver/                # Eigen 稀疏求解器工厂（namespace mhs, not mhs::solver）
+│   ├── scheduler/            # 仿真循环调度（namespace mhs, not mhs::scheduler）
+│   ├── postprocessor/         # VTU/XML 输出（namespace mhs, not mhs::postprocessor）
 │   ├── logger/                # spdlog 封装、全局单例、mhs::panic()
-│   └── utils/                 # 通用工具函数
+│   └── utils/                 # 通用工具函数（暂未使用）
 ├── tests/
 │   ├── CMakeLists.txt         # GTest 配置、测试发现
 │   ├── model/                 # 模型结构测试
@@ -158,8 +158,5 @@ if (io_model.dimension == Dimension::Dimension2D) {
 | `mhs::expr`          | exprtk 封装、CompiledExpression、native function 注册 |
 | `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                         |
 | `mhs::assembler`     | Jacobian 和 RHS 组装                                  |
-| `mhs::solver`        | Eigen 稀疏求解器工厂                                  |
-| `mhs::scheduler`     | 仿真循环调度                                          |
-| `mhs::postprocessor` | VTU/XML 输出                                          |
+| `mhs`                | Solver、Scheduler、Postprocessor                      |
 | `mhs::logger`        | spdlog 封装、全局单例、mhs::panic()                   |
-| `mhs::utils`         | 通用工具函数                                          |

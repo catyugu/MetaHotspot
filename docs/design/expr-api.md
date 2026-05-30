@@ -28,24 +28,33 @@ struct FieldContext {
 ```cpp
 namespace mhs::expr {
 
-// 值类型，无堆分配，无虚函数
+// 值类型，无堆分配，无虚函数（eval 内联）
 class CompiledExpression {
 public:
-    // 求值
+    CompiledExpression() : is_const_(true), const_val_(0.0) { }
+    CompiledExpression(const CompiledExpression&) = default;
+    CompiledExpression(CompiledExpression&&) = default;
+    CompiledExpression& operator=(const CompiledExpression&) = default;
+    CompiledExpression& operator=(CompiledExpression&&) = default;
+    ~CompiledExpression() = default;
+
     double eval(const FieldContext& ctx) const;
 
-    // 常量检查
-    bool is_constant() const;
-    double constant_value() const;
+    bool is_constant() const { return is_const_; }
+    double constant_value() const { return const_val_; }
 
-    // 工厂方法
     static CompiledExpression make_constant(double value);
     static CompiledExpression make_evaluator(FieldEvaluator eval);
 
 private:
-    FieldEvaluator eval_;      // 求值函数
-    bool is_const_ = false;    // 是否为常量
-    double const_val_ = 0.0;   // 常量值
+    FieldEvaluator eval_;
+    bool is_const_ = false;
+    double const_val_ = 0.0;
+
+    CompiledExpression(FieldEvaluator eval, bool is_const, double const_val)
+        : eval_(std::move(eval)), is_const_(is_const), const_val_(const_val)
+    {
+    }
 };
 
 } // namespace mhs::expr
@@ -102,12 +111,17 @@ void register_function(const std::string& name, const std::string& expression);
 ```cpp
 namespace mhs::expr {
 
-// 解析字符串表达式为 CompiledExpression
-// 注册表须已包含所有引用的变量和函数
+// Get a registered native function
+FieldEvaluator get_native(const std::string& name);
+
+// Clear all registered variables, native functions, and user functions
+// Called at the start of Preprocessor::load() to reset state
+void clear_registry();
+
+// Parse a field expression string (thread-safe during compilation)
 CompiledExpression parse(const std::string& formula);
 
-// 求值几何表达式（不需要上下文）
-// 所有几何变量须已通过 set_variable() 注册
+// Evaluate a geometry expression (no context needed, uses registered variables)
 double eval_geometry(const std::string& formula);
 
 } // namespace mhs::expr
@@ -143,9 +157,14 @@ double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
 
 ---
 
-## 线程安全
+### 线程安全
 
 - `set_variable()`, `register_native()`, `register_function()`: 互斥锁保护
 - `parse()`: 编译时读取注册表，互斥锁保护
-- `CompiledExpression::eval()`: 无锁（函数指针在解析时已捕获）
-- `eval_geometry()`: 无锁（变量在解析时已内联）
+- `CompiledExpression::eval()`: **exprtk 缓存内的表达式有互斥锁保护**（`ExprTKCompiled` 在缓存中为单例，`eval()` 须锁保护共享的 x_/y_/z_/T_/t_ 成员）。常数表达式（`make_constant`）无锁开销。
+- `eval_geometry()`: 互斥锁保护（访问注册表变量）
+
+### 注意事项
+
+- `clear_registry()` 必须在每次 `Preprocessor::load()` 开头调用，以清除上一次运行残留的变量和函数
+- `ExprTKCompiled` 的 `eval_mutex_` 意味着缓存命中时多个 `CompiledExpression` 对象共享同一个 exprtk 实例，且求值被串行化。这对 TBB 并行组装有性能影响——常数表达式无此问题

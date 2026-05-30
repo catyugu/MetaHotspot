@@ -41,9 +41,10 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 ### Expressions
 
 - **Geometry expressions**: `w_top/2`, `h_middle` — evaluated via `expr::eval_geometry()`. Context: none (variables pre-registered).
-- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`. Pre-compiled to `FieldExpression`.
-- **Expr registry**: Global, thread-safe. Populated by `ModelBuilder` from `IOStructure` variables/functions.
+- **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`. Pre-compiled to `CompiledExpression`.
+- **Expr registry**: Global, thread-safe. `Preprocessor::load()` calls `clear_registry()` then populates from `IOStructure` variables/functions.
 - **Native functions**: C++ functions registered via `expr::register_native()`. Used for piecewise functions and other forms easier to express in code than strings.
+- **Expr eval concurrency**: Cached ExprTK expressions share a singleton `ExprTKCompiled` per formula string. `eval()` uses a mutex to protect shared x_/y_/z_/T_/t_ members, which serializes evaluation. Constant expressions (`make_constant`) are lock-free.
 
 ### Face Keys
 
@@ -52,16 +53,17 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 
 ## Solver Pipeline
 
-1. **Preprocessor**: IO model → Internal SoA model (mesh, BC arrays, compiled expressions)
-   - **IO model** (`io_model.hpp`): AoS structs mirroring XML schema. Uses `ThermalBCType` (FirstType, SecondType, ThirdType) matching XML element names. Length unit (`LengthUnit`: M, Mm, Um, Nm, Inch, Mil) converted to SI (meters) here.
-   - **Internal model** (`internal_model.hpp`): All geometry in SI units (meters), no unit storage.
-   - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
-   - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` 等需经由 `FunctionConverter` 转换为 `FieldEvaluator`，再包装为 `CompiledExpression`。
-2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration
+- **Preprocessor**: `Preprocessor::load(IOStructure)` → `unique_ptr<InternalModel>`. Stateless class; calls free functions in `mhs::preprocessor` namespace. Not a `ModelBuilder` class.
+    - **IO model** (`io_model.hpp`): AoS structs mirroring XML schema. Uses `ThermalBCType` (FirstType, SecondType, ThirdType) matching XML element names. Length unit (`LengthUnit`: M, Mm, Um, Nm, Inch, Mil) converted to SI (meters) here.
+    - **Internal model** (`internal_model.hpp`): All geometry in SI units (meters), no unit storage.
+    - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
+    - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` are defined in `io_model.hpp` but not yet implemented — dead code. `io.cpp` does not parse them from XML, and no converter module exists yet.
+
+2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration (namespace `mhs`)
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
-4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — factory pattern
-5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O.
-6. **io module**: `read_xml(xml_path)` reads XML; `write_vtu(path, model, node_temperature)` writes VTU; `write_xml(input_path, output_path, model, node_temperature)` copies and updates XML.
+4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — virtual factory pattern (namespace `mhs`)
+5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O. (namespace `mhs`)
+6. **io module**: `read_xml(xml_path)` reads XML; `write_vtu(path, model, node_temperature)` writes VTU; `write_xml(input_path, output_path, model, node_temperature)` copies and updates XML. Free functions, not class.
 
 ## GlobalState
 
@@ -74,12 +76,12 @@ Persistent state across simulation, stored in `model::GlobalState`:
 
 ## Key Design Principles
 
-1. **No raw strings in internal model** — all expressions compiled to `FieldExpression`
-2. **Expr registry is internal** — `ModelBuilder` populates, external code uses clean API
-3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected, `eval()` lock-free
+1. **No raw strings in internal model** — all expressions compiled to `CompiledExpression`
+2. **Expr registry is global** — `Preprocessor::load()` calls `clear_registry()` then populates; external code uses `parse()`/`eval()`
+3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected; `eval()` on cached ExprTK expressions has a mutex (singleton in cache), constant expressions are lock-free
 4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
-5. **Crank-Nicolson (θ=0.5)** — transient time discretization with lumped mass
-6. **TBB parallel assembly** — `tbb::parallel_for` over cells
+5. **Backward Euler** — transient time discretization (θ=1.0), the code uses `ρ*c*vol/dt * (T - T_prev)` mass term
+6. **TBB parallel assembly** — `tbb::parallel_for` over cells (planned, not yet implemented — eval_mutex on ExprTK would serialize it)
 7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`, `ConvergenceStatus`); `io_model.hpp` includes it instead of redeclaring
 
 ## Glossary
