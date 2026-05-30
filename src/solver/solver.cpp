@@ -7,7 +7,7 @@ namespace mhs {
     class SparseLUSolver : public Solver {
     public:
         SolveResult solve(const Eigen::SparseMatrix<double>& A,
-                          const Eigen::VectorXd& b) override
+            const Eigen::VectorXd& b) override
         {
             Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
             solver.compute(A);
@@ -22,7 +22,7 @@ namespace mhs {
                 x,
                 solver.info() == Eigen::Success,
                 (A * x - b).norm(),
-                1  // direct solver, 1 iteration
+                1 // direct solver, 1 iteration
             };
         }
     };
@@ -31,10 +31,10 @@ namespace mhs {
     class BiCGSTABSolver : public Solver {
     public:
         SolveResult solve(const Eigen::SparseMatrix<double>& A,
-                          const Eigen::VectorXd& b) override
+            const Eigen::VectorXd& b) override
         {
-            (void)A;  // A is used by the solver internally
             Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver;
+            solver.compute(A);
             solver.setMaxIterations(config_.max_iterations);
             solver.setTolerance(config_.tolerance);
 
@@ -44,8 +44,7 @@ namespace mhs {
                 x,
                 solver.info() == Eigen::Success,
                 solver.error(),
-                static_cast<int>(solver.iterations())
-            };
+                static_cast<int>(solver.iterations())};
         }
 
         void set_config(const SolverConfig& config) { config_ = config; }
