@@ -74,25 +74,37 @@ namespace mhs::assembler {
     }
 
     // Get neighbor cell coordinate for face direction
-    static int neighbor_ix(FaceDir dir, int ix) {
+    static int neighbor_ix(FaceDir dir, int ix)
+    {
         switch (dir) {
-        case FaceDir::XM: return ix - 1;
-        case FaceDir::XP: return ix + 1;
-        default: return ix;
+        case FaceDir::XM:
+            return ix - 1;
+        case FaceDir::XP:
+            return ix + 1;
+        default:
+            return ix;
         }
     }
-    static int neighbor_iy(FaceDir dir, int iy) {
+    static int neighbor_iy(FaceDir dir, int iy)
+    {
         switch (dir) {
-        case FaceDir::YM: return iy - 1;
-        case FaceDir::YP: return iy + 1;
-        default: return iy;
+        case FaceDir::YM:
+            return iy - 1;
+        case FaceDir::YP:
+            return iy + 1;
+        default:
+            return iy;
         }
     }
-    static int neighbor_iz(FaceDir dir, int iz) {
+    static int neighbor_iz(FaceDir dir, int iz)
+    {
         switch (dir) {
-        case FaceDir::ZM: return iz - 1;
-        case FaceDir::ZP: return iz + 1;
-        default: return iz;
+        case FaceDir::ZM:
+            return iz - 1;
+        case FaceDir::ZP:
+            return iz + 1;
+        default:
+            return iz;
         }
     }
 
@@ -132,7 +144,7 @@ namespace mhs::assembler {
                     // Heat source term: Q * vol on RHS
                     double Q = cells.heat_source[c_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                         state.T[c_idx], state.current_time});
+                            state.T[c_idx], state.current_time});
                     b(c_idx) += Q * vol;
 
                     // Process each face
@@ -164,7 +176,7 @@ namespace mhs::assembler {
                             double dist = face_distance(dir, mesh, ix, iy, iz);
                             double k_neighbor = materials[cells.material_id[neighbor_old]].k.eval(
                                 {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
-                                 state.T[n_idx], state.current_time});
+                                    state.T[n_idx], state.current_time});
 
                             double k_face = 2.0 * k * k_neighbor / (k + k_neighbor);
                             double coeff = k_face * A_f / dist;
@@ -199,7 +211,7 @@ namespace mhs::assembler {
 
                             double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
                                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                                 state.T[c_idx], state.current_time});
+                                    state.T[c_idx], state.current_time});
 
                             double coeff = k * A_f / half_dist;
                             diag += 2.0 * coeff;
@@ -210,21 +222,22 @@ namespace mhs::assembler {
                             // Flux = q * A_f entering the cell -> directly adds to RHS
                             double q = bc_params.neumann_q[param_idx].eval(
                                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                                 state.T[c_idx], state.current_time});
+                                    state.T[c_idx], state.current_time});
                             b(c_idx) += q * A_f;
                         }
                         else if (bc_type == BcType::ThirdType) {
-                            // Cauchy/Robin BC: combined convection + diffusion to boundary
-                            // Convective flux = h * A_f * (T_inf - T)
-                            // Diffusive flux to boundary = k * A_f / half_dist * (T_inf - T)
-                            // Total: (k/half_dist + h) * A_f * (T_inf - T)
-                            // diag += (k/half_dist + h) * A_f, rhs += (k/half_dist + h) * A_f * T_inf
+                            // Cauchy/Robin BC: ghost cell where diffusive flux balances convective flux
+                            // T_ghost = (k/half_dist * T_cell + h * T_inf) / (k/half_dist + h)
+                            // Flux into cell = k * A_f / half_dist * (T_ghost - T_cell)
+                            //              = (k/half_dist * h * A_f) / (k/half_dist + h) * (T_inf - T_cell)
+                            // diag += k*h*A_f / (k + h*half_dist)
+                            // rhs += k*h*A_f / (k + h*half_dist) * T_inf
                             double h = bc_params.cauchy_h[param_idx].eval(
                                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                                 state.T[c_idx], state.current_time});
+                                    state.T[c_idx], state.current_time});
                             double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
                                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                                 state.T[c_idx], state.current_time});
+                                    state.T[c_idx], state.current_time});
 
                             double half_dist;
                             switch (dir) {
@@ -244,11 +257,9 @@ namespace mhs::assembler {
                                 half_dist = 0.0;
                             }
 
-                            double coeff_k = k * A_f / half_dist;
-                            double coeff_h = h * A_f;
-                            double total_coeff = coeff_k + coeff_h;
-                            diag += total_coeff;
-                            b(c_idx) += total_coeff * T_inf;
+                            double coeff = k * h * A_f / (k + h * half_dist);
+                            diag += coeff;
+                            b(c_idx) += coeff * T_inf;
                         }
                     }
 
@@ -258,10 +269,10 @@ namespace mhs::assembler {
                     if (model_.study_type == StudyType::Transient && state.dt > 0.0) {
                         double rho = materials[mat_id].rho.eval(
                             {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                             state.T[c_idx], state.current_time});
+                                state.T[c_idx], state.current_time});
                         double c_heat = materials[mat_id].c.eval(
                             {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                             state.T[c_idx], state.current_time});
+                                state.T[c_idx], state.current_time});
                         double mass_coeff = rho * c_heat * vol / state.dt;
                         triplets.emplace_back(c_idx, c_idx, mass_coeff);
                         b(c_idx) += mass_coeff * state.T_prev[c_idx];
