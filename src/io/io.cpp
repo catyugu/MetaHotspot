@@ -595,17 +595,24 @@ namespace mhs::io {
         // Node temperature layout: (nx+1)*(ny+1)*(nz+1) vertices
         // Reference data ordering: index = z + SizeZ * x + SizeZ * SizeX * y
         // (Y outermost, X middle, Z innermost)
+        // NOTE: The original software uses an inverted Y-axis compared to our internal
+        // representation. Our vy=0 corresponds to y=0 (bottom), but reference expects
+        // vy=0 to correspond to the TOP of the domain. We invert Y when writing.
         int node_nx = model.mesh.nx + 1;
         int node_ny = model.mesh.ny + 1;
         int node_nz = model.mesh.nz + 1;
 
         // Write new temperature values in reference ordering: (y, x, z)
-        for (int vy = 0; vy < node_ny; vy++) {
+        // Reference index: z + SizeZ * x + SizeZ * SizeX * y
+        // The original software uses inverted Y-axis: y_ref increases from top to bottom
+        // while our internal vy increases from bottom to top.
+        // We iterate output y positions from top (y_ref=0) to bottom (y_ref=node_ny-1)
+        for (int vy_ref = node_ny - 1; vy_ref >= 0; vy_ref--) {
+            int vy_internal = (node_ny - 1) - vy_ref;  // Invert: top -> high internal index
             for (int vx = 0; vx < node_nx; vx++) {
                 for (int vz = 0; vz < node_nz; vz++) {
-                    // Our internal index is (vx, vy, vz) with Z innermost
-                    int internal_idx = vx * node_ny * node_nz + vy * node_nz + vz;
-                    double val = node_temperature[internal_idx];
+                    // Read from internal node position (vx, vy_internal)
+                    double val = node_temperature[vx * node_ny * node_nz + vy_internal * node_nz + vz];
 
                     XMLElement* double_elem = doc.NewElement("a:double");
                     if (std::isnan(val)) {

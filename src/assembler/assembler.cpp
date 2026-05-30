@@ -50,29 +50,6 @@ namespace mhs::assembler {
         }
     }
 
-    // Helper: distance between cell centers across a face
-    static double face_distance(FaceDir dir,
-        const model::MeshGeometry& mesh,
-        int ix, int iy, int iz)
-    {
-        switch (dir) {
-        case FaceDir::XM:
-            return (mesh.cx[ix] - mesh.cx[ix - 1]);
-        case FaceDir::XP:
-            return (mesh.cx[ix + 1] - mesh.cx[ix]);
-        case FaceDir::YM:
-            return (mesh.cy[iy] - mesh.cy[iy - 1]);
-        case FaceDir::YP:
-            return (mesh.cy[iy + 1] - mesh.cy[iy]);
-        case FaceDir::ZM:
-            return (mesh.cz[iz] - mesh.cz[iz - 1]);
-        case FaceDir::ZP:
-            return (mesh.cz[iz + 1] - mesh.cz[iz]);
-        default:
-            return 0.0;
-        }
-    }
-
     // Get neighbor cell coordinate for face direction
     static int neighbor_ix(FaceDir dir, int ix)
     {
@@ -158,9 +135,9 @@ namespace mhs::assembler {
                         uint16_t param_idx = cell_bc.param_idxs[f];
 
                         if (bc_type == BcType::None) {
-                            // Interior face: diffusion flux = k_face * A_f / dist * (T_n - T_c)
-                            // In equation: k_face*A_f/dist * T_n - k_face*A_f/dist * T_c = contribution
-                            // diag += k_face*A_f/dist, off-diag -= k_face*A_f/dist
+                            // Interior face: resistance model (matches legacy)
+                            // r_ij = d_half1 / (k_c * A_f) + d_half2 / (k_n * A_f)
+                            // cond = 1 / r_ij = A_f / (d_half1/k_c + d_half2/k_n)
                             int neighbor_old = neighbor_grid_index(ix, iy, iz, dir,
                                 mesh.nx, mesh.ny, mesh.nz);
                             if (neighbor_old < 0)
@@ -173,24 +150,51 @@ namespace mhs::assembler {
                             int niy = neighbor_iy(dir, iy);
                             int niz = neighbor_iz(dir, iz);
 
-                            double dist = face_distance(dir, mesh, ix, iy, iz);
                             double k_neighbor = materials[cells.material_id[neighbor_old]].k.eval(
                                 {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
                                     state.T[n_idx], state.current_time});
 
-                            double k_face = 2.0 * k * k_neighbor / (k + k_neighbor);
-                            double coeff = k_face * A_f / dist;
+                            double d_half_cell, d_half_neighbor;
+                            switch (dir) {
+                            case FaceDir::XM:
+                                d_half_cell = mesh.dx[ix] / 2.0;
+                                d_half_neighbor = mesh.dx[ix - 1] / 2.0;
+                                break;
+                            case FaceDir::XP:
+                                d_half_cell = mesh.dx[ix] / 2.0;
+                                d_half_neighbor = mesh.dx[ix + 1] / 2.0;
+                                break;
+                            case FaceDir::YM:
+                                d_half_cell = mesh.dy[iy] / 2.0;
+                                d_half_neighbor = mesh.dy[iy - 1] / 2.0;
+                                break;
+                            case FaceDir::YP:
+                                d_half_cell = mesh.dy[iy] / 2.0;
+                                d_half_neighbor = mesh.dy[iy + 1] / 2.0;
+                                break;
+                            case FaceDir::ZM:
+                                d_half_cell = mesh.dz[iz] / 2.0;
+                                d_half_neighbor = mesh.dz[iz - 1] / 2.0;
+                                break;
+                            case FaceDir::ZP:
+                                d_half_cell = mesh.dz[iz] / 2.0;
+                                d_half_neighbor = mesh.dz[iz + 1] / 2.0;
+                                break;
+                            default:
+                                d_half_cell = 0.0;
+                                d_half_neighbor = 0.0;
+                            }
 
-                            diag += coeff;
-                            triplets.emplace_back(c_idx, n_idx, -coeff);
+                            double cond = A_f / (d_half_cell / k + d_half_neighbor / k_neighbor);
+
+                            diag += cond;
+                            triplets.emplace_back(c_idx, n_idx, -cond);
                         }
                         else if (bc_type == BcType::FirstType) {
-                            // Dirichlet BC: ghost cell T_ghost = 2*T_bc - T_cell
-                            // Flux = k*A_f/half_dist * (T_ghost - T_cell)
-                            //      = k*A_f/half_dist * (2*T_bc - 2*T_cell)
-                            //      = 2*k*A_f/half_dist * (T_bc - T_cell)
-                            // In equation: -2*k*A_f/half_dist*T_c + 2*k*A_f/half_dist*T_bc
-                            // diag += 2*k*A_f/half_dist, rhs += 2*k*A_f/half_dist*T_bc
+                            // Dirichlet BC: resistance model
+                            // r_bc = half_dist / (k * A_f)
+                            // cond = 1 / r_bc = k * A_f / half_dist
+                            // diag += cond, rhs += cond * T_bc
                             double half_dist;
                             switch (dir) {
                             case FaceDir::XM:
@@ -213,9 +217,9 @@ namespace mhs::assembler {
                                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
                                     state.T[c_idx], state.current_time});
 
-                            double coeff = k * A_f / half_dist;
-                            diag += 2.0 * coeff;
-                            b(c_idx) += 2.0 * coeff * T_bc_val;
+                            double cond = k * A_f / half_dist;
+                            diag += cond;
+                            b(c_idx) += cond * T_bc_val;
                         }
                         else if (bc_type == BcType::SecondType) {
                             // Neumann BC: specified heat flux q entering the cell

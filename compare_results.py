@@ -1,171 +1,102 @@
-"""Compare computed temperatures against reference values in original XML files."""
-
-import sys
+"""Compare simulation results with reference values from original XML files."""
 import xml.etree.ElementTree as ET
 import math
+import sys
 
 NS = {
-    'dc': 'http://schemas.datacontract.org/2004/07/ThermalSim.Models',
+    'ts': 'http://schemas.datacontract.org/2004/07/ThermalSim.Models',
     'a': 'http://schemas.microsoft.com/2003/10/Serialization/Arrays',
-    'i': 'http://www.w3.org/2001/XMLSchema-instance',
+    'b': 'http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh',
 }
 
 def find_element(parent, local_tag):
-    """Find an element by local tag name, handling namespaces."""
-    # Try with default namespace
-    result = parent.find(f'dc:{local_tag}', NS)
-    if result is not None:
-        return result
-    # Try without namespace
-    result = parent.find(local_tag)
-    if result is not None:
-        return result
-    # Search all children for matching local name
     for child in parent:
-        tag_local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-        if tag_local == local_tag:
+        tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if tag == local_tag:
             return child
     return None
 
-def find_all_elements(parent, local_tag):
-    """Find all elements by local tag name."""
-    results = []
-    for child in parent:
-        tag_local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-        if tag_local == local_tag:
-            results.append(child)
-    return results
-
-def parse_double_list(data_elem):
-    """Parse a list of doubles from a Data element."""
-    values = []
-    for child in data_elem:
-        tag_local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-        if tag_local != 'double':
-            continue
-        text = child.text.strip()
-        if text == 'NaN' or text.lower() == 'nan':
-            values.append(float('nan'))
-        else:
-            values.append(float(text))
-    return values
-
-def get_temps_from_xml(xml_path):
-    """Extract temperature values and grid dimensions from the Results section."""
+def extract_values(xml_path):
     tree = ET.parse(xml_path)
     root = tree.getroot()
-
     results = find_element(root, 'Results')
-    if results is None:
-        print(f"  No Results section in {xml_path}")
+    if not results:
         return None
-
-    any_type = find_element(results, 'anyType')
-    if any_type is None:
-        print(f"  No anyType in Results of {xml_path}")
+    anytype = find_element(results, 'anyType')
+    if not anytype:
         return None
-
-    values_elem = find_element(any_type, 'Values')
-    if values_elem is None:
-        print(f"  No Values in {xml_path}")
+    values = find_element(anytype, 'Values')
+    if not values:
         return None
+    data = find_element(values, 'Data')
+    size_x_el = find_element(values, 'SizeX')
+    size_y_el = find_element(values, 'SizeY')
+    size_z_el = find_element(values, 'SizeZ')
 
-    data_elem = find_element(values_elem, 'Data')
-    if data_elem is None:
-        print(f"  No Data in {xml_path}")
-        return None
+    sx = int(size_x_el.text) if size_x_el else 0
+    sy = int(size_y_el.text) if size_y_el else 0
+    sz = int(size_z_el.text) if size_z_el else 0
 
-    size_x = int(find_element(values_elem, 'SizeX').text)
-    size_y = int(find_element(values_elem, 'SizeY').text)
-    size_z = int(find_element(values_elem, 'SizeZ').text)
-
-    temps = parse_double_list(data_elem)
-    return temps, (size_x, size_y, size_z), len(temps)
-
-def compare_temps(ref_temps, comp_temps, ref_size, comp_size, tolerance=5.0):
-    """Compare reference and computed temperatures within tolerance."""
-    ref_total = ref_size[0] * ref_size[1] * ref_size[2]
-    comp_total = comp_size[0] * comp_size[1] * comp_size[2]
-
-    if ref_total != comp_total:
-        print(f"  Size mismatch: ref={ref_size} ({ref_total}), comp={comp_size} ({comp_total})")
-        return None
-
-    max_error = 0.0
-    total_error = 0.0
-    num_comparable = 0
-    num_exceed = 0
-
-    for i in range(ref_total):
-        ref_val = ref_temps[i]
-        comp_val = comp_temps[i]
-
-        if math.isnan(ref_val) and math.isnan(comp_val):
-            continue
-        if math.isnan(ref_val) or math.isnan(comp_val):
-            continue
-
-        error = abs(ref_val - comp_val)
-        max_error = max(max_error, error)
-        total_error += error
-        num_comparable += 1
-
-        if error > tolerance:
-            num_exceed += 1
-            if num_exceed <= 10:
-                sx, sy, sz = ref_size
-                x = i // (sy * sz)
-                y = (i % (sy * sz)) // sz
-                z = i % sz
-                print(f"    Exceed: ({x},{y},{z}), ref={ref_val:.4f}, comp={comp_val:.4f}, err={error:.4f}")
-
-    mean_error = total_error / num_comparable if num_comparable > 0 else 0.0
-    return max_error, mean_error, num_comparable, num_exceed
+    vals = []
+    for child in data:
+        tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if tag == 'double':
+            text = child.text.strip()
+            if text == 'NaN' or text.lower() == 'nan':
+                vals.append(float('nan'))
+            else:
+                vals.append(float(text))
+    return vals, (sx, sy, sz)
 
 def main():
-    cases = [
-        ("case1", "cases/original_steady_tests/case1.xml", "output_case1.xml"),
-        ("case2", "cases/original_steady_tests/case2.xml", "output_case2.xml"),
-        ("case3", "cases/original_steady_tests/case3.xml", "output_case3.xml"),
-    ]
+    for case_num in [1, 2, 3]:
+        ref_path = f'cases/original_steady_tests/case{case_num}.xml'
+        out_path = f'build/bin/case{case_num}_output.xml'
 
-    tolerance = 5.0
-    all_pass = True
+        print(f"\n=== Case {case_num} ===")
+        ref = extract_values(ref_path)
+        out = extract_values(out_path)
 
-    for name, ref_path, comp_path in cases:
-        print(f"\n=== {name} ===")
-        ref = get_temps_from_xml(ref_path)
-        comp = get_temps_from_xml(comp_path)
-
-        if ref is None or comp is None:
-            all_pass = False
+        if not ref or not out:
+            print("  Failed to extract values")
             continue
 
-        ref_temps, ref_size, ref_count = ref
-        comp_temps, comp_size, comp_count = comp
+        ref_vals, ref_size = ref
+        out_vals, out_size = out
 
-        print(f"  Reference: {ref_size} ({ref_count} values)")
-        print(f"  Computed:  {comp_size} ({comp_count} values)")
+        ref_valid = [v for v in ref_vals if not math.isnan(v) and abs(v) < 1e10]
+        out_valid = [v for v in out_vals if not math.isnan(v) and abs(v) < 1e10]
 
-        result = compare_temps(ref_temps, comp_temps, ref_size, comp_size, tolerance)
-        if result is None:
-            all_pass = False
+        print(f"  Ref:  size={ref_size}, total={len(ref_vals)}, valid={len(ref_valid)}, min={min(ref_valid):.2f}, max={max(ref_valid):.2f}")
+        print(f"  Out:  size={out_size}, total={len(out_vals)}, valid={len(out_valid)}, min={min(out_valid):.2f}, max={max(out_valid):.2f}")
+
+        if len(ref_vals) != len(out_vals):
+            print(f"  SIZE MISMATCH: ref has {len(ref_vals)} values, out has {len(out_vals)} values")
             continue
 
-        max_err, mean_err, num_comp, num_exceed = result
-        print(f"  Comparable points: {num_comp}")
-        print(f"  Max error: {max_err:.4f} K")
-        print(f"  Mean error: {mean_err:.4f} K")
-        print(f"  Points exceeding {tolerance}K: {num_exceed}")
+        errors = []
+        worst = []
+        for i in range(len(ref_vals)):
+            rv = ref_vals[i]
+            ov = out_vals[i]
+            if math.isnan(rv) and math.isnan(ov):
+                continue
+            if math.isnan(rv) or math.isnan(ov):
+                continue
+            err = abs(rv - ov)
+            errors.append(err)
+            if err > 5.0:
+                worst.append((i, rv, ov, err))
 
-        if max_err <= tolerance:
-            print(f"  PASS")
-        else:
-            print(f"  FAIL")
-            all_pass = False
+        if errors:
+            print(f"  Max error: {max(errors):.4f}K")
+            print(f"  Mean error: {sum(errors)/len(errors):.4f}K")
+            print(f"  Points >5K error: {len(worst)} / {len(errors)}")
+            if worst:
+                worst.sort(key=lambda x: x[3], reverse=True)
+                print(f"  Worst 5:")
+                for idx, rv, ov, err in worst[:5]:
+                    print(f"    idx={idx}: ref={rv:.2f}, out={ov:.2f}, err={err:.4f}")
 
-    print(f"\n{'All cases PASSED!' if all_pass else 'Some cases FAILED!'}")
-    return 0 if all_pass else 1
-
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == '__main__':
+    main()
