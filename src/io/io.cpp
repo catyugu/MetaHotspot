@@ -416,9 +416,141 @@ namespace mhs::io {
         const model::InternalModel& model,
         const std::vector<double>& node_temperature)
     {
-        (void)model;
-        (void)path;
-        (void)node_temperature;
+        using namespace tinyxml2;
+
+        const auto& mesh = model.mesh;
+        const auto& cells = model.cells;
+        int node_nx = mesh.nx + 1;
+        int node_ny = mesh.ny + 1;
+        int node_nz = mesh.nz + 1;
+        int total_nodes = node_nx * node_ny * node_nz;
+
+        XMLDocument doc;
+
+        // VTK XML UnstructuredGrid format
+        XMLElement* vtk_elem = doc.NewElement("VTKFile");
+        vtk_elem->SetAttribute("type", "UnstructuredGrid");
+        vtk_elem->SetAttribute("version", "0.1");
+        vtk_elem->SetAttribute("byte_order", "LittleEndian");
+        doc.InsertFirstChild(vtk_elem);
+
+        XMLElement* grid_elem = doc.NewElement("UnstructuredGrid");
+        vtk_elem->InsertEndChild(grid_elem);
+
+        XMLElement* piece_elem = doc.NewElement("Piece");
+        piece_elem->SetAttribute("NumberOfPoints", total_nodes);
+
+        // Count active cells for the number of hexahedral elements
+        int active_count = cells.cell_count;
+        piece_elem->SetAttribute("NumberOfCells", active_count);
+        grid_elem->InsertEndChild(piece_elem);
+
+        // Points section
+        XMLElement* points_elem = doc.NewElement("Points");
+        piece_elem->InsertEndChild(points_elem);
+
+        XMLElement* data_arr = doc.NewElement("DataArray");
+        data_arr->SetAttribute("type", "Float64");
+        data_arr->SetAttribute("NumberOfComponents", "3");
+        data_arr->SetAttribute("format", "ascii");
+
+        std::string coords;
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    coords += std::to_string(mesh.vertex_x[vx]) + " "
+                        + std::to_string(mesh.vertex_y[vy]) + " "
+                        + std::to_string(mesh.vertex_z[vz]) + "\n";
+                }
+            }
+        }
+        data_arr->SetText(coords.c_str());
+        points_elem->InsertEndChild(data_arr);
+
+        // PointData section (temperature)
+        XMLElement* point_data = doc.NewElement("PointData");
+        piece_elem->InsertEndChild(point_data);
+
+        XMLElement* temp_arr = doc.NewElement("DataArray");
+        temp_arr->SetAttribute("type", "Float64");
+        temp_arr->SetAttribute("Name", "Temperature");
+        temp_arr->SetAttribute("NumberOfComponents", "1");
+        temp_arr->SetAttribute("format", "ascii");
+
+        std::string temp_str;
+        for (int i = 0; i < total_nodes; i++) {
+            if (std::isnan(node_temperature[i])) {
+                temp_str += "0\n";
+            } else {
+                temp_str += std::to_string(node_temperature[i]) + "\n";
+            }
+        }
+        temp_arr->SetText(temp_str.c_str());
+        point_data->InsertEndChild(temp_arr);
+
+        // Cells section
+        XMLElement* cells_elem = doc.NewElement("Cells");
+        piece_elem->InsertEndChild(cells_elem);
+
+        // Connectivity: 8 node indices per hex
+        XMLElement* conn_arr = doc.NewElement("DataArray");
+        conn_arr->SetAttribute("type", "Int32");
+        conn_arr->SetAttribute("Name", "connectivity");
+        conn_arr->SetAttribute("format", "ascii");
+
+        std::string conn_str;
+        for (int ix = 0; ix < mesh.nx; ix++) {
+            for (int iy = 0; iy < mesh.ny; iy++) {
+                for (int iz = 0; iz < mesh.nz; iz++) {
+                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.valid_mask[old_idx] == 0) continue;
+                    // Hex vertices: 8 nodes at (ix±1, iy±1, iz±1)
+                    // VTK hex ordering: 0-3 bottom face, 4-7 top face
+                    int n0 = ix * node_ny * node_nz + iy * node_nz + iz;
+                    int n1 = (ix+1) * node_ny * node_nz + iy * node_nz + iz;
+                    int n2 = (ix+1) * node_ny * node_nz + (iy+1) * node_nz + iz;
+                    int n3 = ix * node_ny * node_nz + (iy+1) * node_nz + iz;
+                    int n4 = ix * node_ny * node_nz + iy * node_nz + (iz+1);
+                    int n5 = (ix+1) * node_ny * node_nz + iy * node_nz + (iz+1);
+                    int n6 = (ix+1) * node_ny * node_nz + (iy+1) * node_nz + (iz+1);
+                    int n7 = ix * node_ny * node_nz + (iy+1) * node_nz + (iz+1);
+                    conn_str += std::to_string(n0) + " " + std::to_string(n1) + " "
+                        + std::to_string(n2) + " " + std::to_string(n3) + " "
+                        + std::to_string(n4) + " " + std::to_string(n5) + " "
+                        + std::to_string(n6) + " " + std::to_string(n7) + "\n";
+                }
+            }
+        }
+        conn_arr->SetText(conn_str.c_str());
+        cells_elem->InsertEndChild(conn_arr);
+
+        // Offsets
+        XMLElement* offsets_arr = doc.NewElement("DataArray");
+        offsets_arr->SetAttribute("type", "Int32");
+        offsets_arr->SetAttribute("Name", "offsets");
+        offsets_arr->SetAttribute("format", "ascii");
+
+        std::string off_str;
+        for (int c = 1; c <= active_count; c++) {
+            off_str += std::to_string(c * 8) + "\n";
+        }
+        offsets_arr->SetText(off_str.c_str());
+        cells_elem->InsertEndChild(offsets_arr);
+
+        // Types (all hexahedra = VTK type 12)
+        XMLElement* types_arr = doc.NewElement("DataArray");
+        types_arr->SetAttribute("type", "UInt8");
+        types_arr->SetAttribute("Name", "types");
+        types_arr->SetAttribute("format", "ascii");
+
+        std::string type_str;
+        for (int c = 0; c < active_count; c++) {
+            type_str += "12\n";
+        }
+        types_arr->SetText(type_str.c_str());
+        cells_elem->InsertEndChild(types_arr);
+
+        doc.SaveFile(path.c_str());
     }
 
     void write_xml(const std::string& input_path,
@@ -426,11 +558,75 @@ namespace mhs::io {
         const model::InternalModel& model,
         const std::vector<double>& node_temperature)
     {
-        // model parameter kept for API consistency; not used in current implementation
-        (void)model;
-        (void)output_path;
-        (void)input_path;
-        (void)node_temperature;
+        using namespace tinyxml2;
+
+        // Load the original XML
+        XMLDocument doc;
+        XMLError err = doc.LoadFile(input_path.c_str());
+        if (err != XML_SUCCESS) {
+            return;
+        }
+
+        XMLElement* results_elem = doc.FirstChildElement("Structure")->FirstChildElement("Results");
+        if (!results_elem) {
+            return;
+        }
+
+        XMLElement* any_type = results_elem->FirstChildElement("a:anyType");
+        if (!any_type) {
+            return;
+        }
+
+        XMLElement* values_elem = any_type->FirstChildElement("Values");
+        if (!values_elem) {
+            return;
+        }
+
+        XMLElement* data_elem = values_elem->FirstChildElement("Data");
+        if (!data_elem) {
+            return;
+        }
+
+        // Remove old data values
+        while (XMLElement* child = data_elem->FirstChildElement("a:double")) {
+            data_elem->DeleteChild(child);
+        }
+
+        // Node temperature layout: (nx+1)*(ny+1)*(nz+1) vertices
+        // The output XML uses SizeX = nx+1, SizeY = ny+1, SizeZ = nz+1
+        int node_nx = model.mesh.nx + 1;
+        int node_ny = model.mesh.ny + 1;
+        int node_nz = model.mesh.nz + 1;
+
+        // Write new temperature values in the same order as the original: x * SizeY * SizeZ + y * SizeZ + z
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    int node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
+                    double val = node_temperature[node_idx];
+
+                    XMLElement* double_elem = doc.NewElement("a:double");
+                    if (std::isnan(val)) {
+                        double_elem->SetText("NaN");
+                    } else {
+                        char buf[64];
+                        snprintf(buf, sizeof(buf), "%.6f", val);
+                        double_elem->SetText(buf);
+                    }
+                    data_elem->InsertEndChild(double_elem);
+                }
+            }
+        }
+
+        // Update SizeX, SizeY, SizeZ
+        XMLElement* sx = values_elem->FirstChildElement("SizeX");
+        if (sx) sx->SetText(node_nx);
+        XMLElement* sy = values_elem->FirstChildElement("SizeY");
+        if (sy) sy->SetText(node_ny);
+        XMLElement* sz = values_elem->FirstChildElement("SizeZ");
+        if (sz) sz->SetText(node_nz);
+
+        doc.SaveFile(output_path.c_str());
     }
 
 } // namespace mhs::io
