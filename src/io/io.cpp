@@ -389,19 +389,19 @@ namespace mhs::io {
                 if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_x.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_y.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_z.push_back(parse_double(get_text(val)));
                         }
                     }
@@ -421,8 +421,8 @@ namespace mhs::io {
         (void)node_temperature;
     }
 
-    void write_xml(const std::string& output_path,
-        const std::string& input_path,
+    void write_xml(const std::string& input_path,
+        const std::string& output_path,
         const model::InternalModel& model,
         const std::vector<double>& node_temperature)
     {

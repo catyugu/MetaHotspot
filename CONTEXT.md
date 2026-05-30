@@ -61,7 +61,7 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — factory pattern
 5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O.
-6. **io module**: `read_xml(xml_path)` reads XML; `write_vtu(path, model, node_temperature)` writes VTU; `write_xml(output_path, input_path, model, node_temperature)` copies and updates XML.
+6. **io module**: `read_xml(xml_path)` reads XML; `write_vtu(path, model, node_temperature)` writes VTU; `write_xml(input_path, output_path, model, node_temperature)` copies and updates XML.
 
 ## GlobalState
 

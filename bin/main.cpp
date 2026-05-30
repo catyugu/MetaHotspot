@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
         mhs::io::write_vtu(output_vtu, *model, node_temperature);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
-        mhs::io::write_xml(output_xml, input_path, *model, node_temperature);
+        mhs::io::write_xml(input_path, output_xml, *model, node_temperature);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics

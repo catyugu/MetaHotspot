@@ -210,30 +210,21 @@ private:
 ## 4.6 `postprocessor`
 
 ```cpp
-namespace mhs::postprocessor {
+namespace mhs {
 
-class PostProcessor {
-public:
-    explicit PostProcessor(const std::string& output_dir);
+    class Postprocessor {
+    public:
+        Postprocessor() = default;
+        ~Postprocessor() = default;
 
-    // VTU 输出：展开 T 向量，虚拟区域填充 NaN
-    void write_vtu(const model::InternalModel& model,
-                   const std::vector<double>& temperature,
-                   const std::string& filename);
+        std::vector<double> interpolate_cell_to_node(const model::InternalModel& model,
+            const std::vector<double>& cell_temperature) const;
 
-    // XML 输出：展开 T 向量，虚拟区域填充 NaN
-    void write_xml_result(const model::InternalModel& model,
-                          const std::vector<double>& temperature,
-                          const std::string& filename);
+        double max_temperature(const std::vector<double>& T) const;
+        double min_temperature(const std::vector<double>& T) const;
+    };
 
-    double max_temperature(const std::vector<double>& T) const;
-    double min_temperature(const std::vector<double>& T) const;
-
-private:
-    std::string output_dir_;
-};
-
-} // namespace mhs::postprocessor
+} // namespace mhs
 ```
 
 ### 展开逻辑
