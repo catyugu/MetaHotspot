@@ -417,17 +417,98 @@ namespace mhs::io {
         const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
-
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
         int node_nx = mesh.nx + 1;
         int node_ny = mesh.ny + 1;
         int node_nz = mesh.nz + 1;
+
+        // Build node remapping: only include nodes whose temperature is not NaN
         int total_nodes = node_nx * node_ny * node_nz;
+        std::vector<int> node_remap(total_nodes, -1);
+        std::vector<double> active_coords;
+        std::vector<double> active_temps;
 
+        auto node_idx = [](int vx, int vy, int vz, int nny, int nnz) {
+            return vx * nny * nnz + vy * nnz + vz;
+        };
+
+        char buf[64];
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    double T = node_temperature[i];
+                    if (std::isnan(T)) continue;
+                    node_remap[i] = (int)active_temps.size();
+                    active_temps.push_back(T);
+                }
+            }
+        }
+
+        int num_points = (int)active_temps.size();
+
+        // Build string buffers
+        std::string coords_str;
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    if (node_remap[i] < 0) continue;
+                    snprintf(buf, sizeof(buf), "%.8g %.8g %.8g\n",
+                        mesh.vertex_x[vx], mesh.vertex_y[vy], mesh.vertex_z[vz]);
+                    coords_str += buf;
+                }
+            }
+        }
+
+        std::string temp_str;
+        for (double T : active_temps) {
+            snprintf(buf, sizeof(buf), "%.8g\n", T);
+            temp_str += buf;
+        }
+
+        // Build cell connectivity using remapped node indices
+        std::string conn_str;
+        std::string off_str;
+        std::string type_str;
+        int cell_num = 0;
+
+        for (int ix = 0; ix < mesh.nx; ix++) {
+            for (int iy = 0; iy < mesh.ny; iy++) {
+                for (int iz = 0; iz < mesh.nz; iz++) {
+                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.valid_mask[old_idx] == 0) continue;
+
+                    // VTK hex ordering: 0-3 bottom face, 4-7 top face
+                    // Node indices in original grid
+                    int n[8] = {
+                        node_idx(ix, iy, iz, node_ny, node_nz),
+                        node_idx(ix+1, iy, iz, node_ny, node_nz),
+                        node_idx(ix+1, iy+1, iz, node_ny, node_nz),
+                        node_idx(ix, iy+1, iz, node_ny, node_nz),
+                        node_idx(ix, iy, iz+1, node_ny, node_nz),
+                        node_idx(ix+1, iy, iz+1, node_ny, node_nz),
+                        node_idx(ix+1, iy+1, iz+1, node_ny, node_nz),
+                        node_idx(ix, iy+1, iz+1, node_ny, node_nz)
+                    };
+
+                    // Remap to compact node indices
+                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n",
+                        node_remap[n[0]], node_remap[n[1]], node_remap[n[2]], node_remap[n[3]],
+                        node_remap[n[4]], node_remap[n[5]], node_remap[n[6]], node_remap[n[7]]);
+                    conn_str += buf;
+
+                    cell_num++;
+                    snprintf(buf, sizeof(buf), "%d\n", cell_num * 8);
+                    off_str += buf;
+                    type_str += "12\n";
+                }
+            }
+        }
+
+        // Assemble XML document
         XMLDocument doc;
-
-        // VTK XML UnstructuredGrid format
         XMLElement* vtk_elem = doc.NewElement("VTKFile");
         vtk_elem->SetAttribute("type", "UnstructuredGrid");
         vtk_elem->SetAttribute("version", "0.1");
@@ -438,115 +519,53 @@ namespace mhs::io {
         vtk_elem->InsertEndChild(grid_elem);
 
         XMLElement* piece_elem = doc.NewElement("Piece");
-        piece_elem->SetAttribute("NumberOfPoints", total_nodes);
-
-        // Count active cells for the number of hexahedral elements
-        int active_count = cells.cell_count;
-        piece_elem->SetAttribute("NumberOfCells", active_count);
+        piece_elem->SetAttribute("NumberOfPoints", num_points);
+        piece_elem->SetAttribute("NumberOfCells", cell_num);
         grid_elem->InsertEndChild(piece_elem);
 
-        // Points section
+        // Points
         XMLElement* points_elem = doc.NewElement("Points");
         piece_elem->InsertEndChild(points_elem);
+        XMLElement* coords_arr = doc.NewElement("DataArray");
+        coords_arr->SetAttribute("type", "Float64");
+        coords_arr->SetAttribute("NumberOfComponents", "3");
+        coords_arr->SetAttribute("format", "ascii");
+        coords_arr->SetText(coords_str.c_str());
+        points_elem->InsertEndChild(coords_arr);
 
-        XMLElement* data_arr = doc.NewElement("DataArray");
-        data_arr->SetAttribute("type", "Float64");
-        data_arr->SetAttribute("NumberOfComponents", "3");
-        data_arr->SetAttribute("format", "ascii");
-
-        std::string coords;
-        for (int vx = 0; vx < node_nx; vx++) {
-            for (int vy = 0; vy < node_ny; vy++) {
-                for (int vz = 0; vz < node_nz; vz++) {
-                    coords += std::to_string(mesh.vertex_x[vx]) + " "
-                        + std::to_string(mesh.vertex_y[vy]) + " "
-                        + std::to_string(mesh.vertex_z[vz]) + "\n";
-                }
-            }
-        }
-        data_arr->SetText(coords.c_str());
-        points_elem->InsertEndChild(data_arr);
-
-        // PointData section (temperature)
+        // PointData (temperature)
         XMLElement* point_data = doc.NewElement("PointData");
         piece_elem->InsertEndChild(point_data);
-
         XMLElement* temp_arr = doc.NewElement("DataArray");
         temp_arr->SetAttribute("type", "Float64");
         temp_arr->SetAttribute("Name", "Temperature");
         temp_arr->SetAttribute("NumberOfComponents", "1");
         temp_arr->SetAttribute("format", "ascii");
-
-        std::string temp_str;
-        for (int i = 0; i < total_nodes; i++) {
-            if (std::isnan(node_temperature[i])) {
-                temp_str += "0\n";
-            } else {
-                temp_str += std::to_string(node_temperature[i]) + "\n";
-            }
-        }
         temp_arr->SetText(temp_str.c_str());
         point_data->InsertEndChild(temp_arr);
 
-        // Cells section
+        // Cells
         XMLElement* cells_elem = doc.NewElement("Cells");
         piece_elem->InsertEndChild(cells_elem);
 
-        // Connectivity: 8 node indices per hex
-        XMLElement* conn_arr = doc.NewElement("DataArray");
-        conn_arr->SetAttribute("type", "Int32");
-        conn_arr->SetAttribute("Name", "connectivity");
-        conn_arr->SetAttribute("format", "ascii");
+        XMLElement* conn_arr_el = doc.NewElement("DataArray");
+        conn_arr_el->SetAttribute("type", "Int32");
+        conn_arr_el->SetAttribute("Name", "connectivity");
+        conn_arr_el->SetAttribute("format", "ascii");
+        conn_arr_el->SetText(conn_str.c_str());
+        cells_elem->InsertEndChild(conn_arr_el);
 
-        std::string conn_str;
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 0) continue;
-                    // Hex vertices: 8 nodes at (ix±1, iy±1, iz±1)
-                    // VTK hex ordering: 0-3 bottom face, 4-7 top face
-                    int n0 = ix * node_ny * node_nz + iy * node_nz + iz;
-                    int n1 = (ix+1) * node_ny * node_nz + iy * node_nz + iz;
-                    int n2 = (ix+1) * node_ny * node_nz + (iy+1) * node_nz + iz;
-                    int n3 = ix * node_ny * node_nz + (iy+1) * node_nz + iz;
-                    int n4 = ix * node_ny * node_nz + iy * node_nz + (iz+1);
-                    int n5 = (ix+1) * node_ny * node_nz + iy * node_nz + (iz+1);
-                    int n6 = (ix+1) * node_ny * node_nz + (iy+1) * node_nz + (iz+1);
-                    int n7 = ix * node_ny * node_nz + (iy+1) * node_nz + (iz+1);
-                    conn_str += std::to_string(n0) + " " + std::to_string(n1) + " "
-                        + std::to_string(n2) + " " + std::to_string(n3) + " "
-                        + std::to_string(n4) + " " + std::to_string(n5) + " "
-                        + std::to_string(n6) + " " + std::to_string(n7) + "\n";
-                }
-            }
-        }
-        conn_arr->SetText(conn_str.c_str());
-        cells_elem->InsertEndChild(conn_arr);
-
-        // Offsets
         XMLElement* offsets_arr = doc.NewElement("DataArray");
         offsets_arr->SetAttribute("type", "Int32");
         offsets_arr->SetAttribute("Name", "offsets");
         offsets_arr->SetAttribute("format", "ascii");
-
-        std::string off_str;
-        for (int c = 1; c <= active_count; c++) {
-            off_str += std::to_string(c * 8) + "\n";
-        }
         offsets_arr->SetText(off_str.c_str());
         cells_elem->InsertEndChild(offsets_arr);
 
-        // Types (all hexahedra = VTK type 12)
         XMLElement* types_arr = doc.NewElement("DataArray");
         types_arr->SetAttribute("type", "UInt8");
         types_arr->SetAttribute("Name", "types");
         types_arr->SetAttribute("format", "ascii");
-
-        std::string type_str;
-        for (int c = 0; c < active_count; c++) {
-            type_str += "12\n";
-        }
         types_arr->SetText(type_str.c_str());
         cells_elem->InsertEndChild(types_arr);
 
