@@ -56,14 +56,21 @@ namespace mhs::preprocessor {
             return -1;
         }
 
+        // Layer offsets transform rect coords from centered to absolute coordinate system
+        double layer_x_offset_orig = expr::eval_geometry(layer.x_offset_expr);
+        double layer_y_offset_orig = expr::eval_geometry(layer.y_offset_expr);
+
         for (int b = 0; b < (int)layer.blocks.size(); b++) {
             const auto& block = layer.blocks[b];
+            double block_x_offset_orig = expr::eval_geometry(block.x_offset_expr);
+            double block_y_offset_orig = expr::eval_geometry(block.y_offset_expr);
+
             bool in_add = false;
             bool in_sub = false;
 
             for (const auto& rect : block.all_rects) {
-                double rx = expr::eval_geometry(rect.x_expr) * si_scale;
-                double ry = expr::eval_geometry(rect.y_expr) * si_scale;
+                double rx = (expr::eval_geometry(rect.x_expr) + block_x_offset_orig + layer_x_offset_orig) * si_scale;
+                double ry = (expr::eval_geometry(rect.y_expr) + block_y_offset_orig + layer_y_offset_orig) * si_scale;
                 double rw = expr::eval_geometry(rect.width_expr) * si_scale;
                 double rh = expr::eval_geometry(rect.height_expr) * si_scale;
 
