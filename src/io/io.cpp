@@ -439,7 +439,8 @@ namespace mhs::io {
                 for (int vz = 0; vz < node_nz; vz++) {
                     int i = node_idx(vx, vy, vz, node_ny, node_nz);
                     double T = node_temperature[i];
-                    if (std::isnan(T)) continue;
+                    if (std::isnan(T))
+                        continue;
                     node_remap[i] = (int)active_temps.size();
                     active_temps.push_back(T);
                 }
@@ -454,7 +455,8 @@ namespace mhs::io {
             for (int vy = 0; vy < node_ny; vy++) {
                 for (int vz = 0; vz < node_nz; vz++) {
                     int i = node_idx(vx, vy, vz, node_ny, node_nz);
-                    if (node_remap[i] < 0) continue;
+                    if (node_remap[i] < 0)
+                        continue;
                     snprintf(buf, sizeof(buf), "%.8g %.8g %.8g\n",
                         mesh.vertex_x[vx], mesh.vertex_y[vy], mesh.vertex_z[vz]);
                     coords_str += buf;
@@ -478,20 +480,20 @@ namespace mhs::io {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
                     int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 0) continue;
+                    if (cells.valid_mask[old_idx] == 0)
+                        continue;
 
                     // VTK hex ordering: 0-3 bottom face, 4-7 top face
                     // Node indices in original grid
                     int n[8] = {
                         node_idx(ix, iy, iz, node_ny, node_nz),
-                        node_idx(ix+1, iy, iz, node_ny, node_nz),
-                        node_idx(ix+1, iy+1, iz, node_ny, node_nz),
-                        node_idx(ix, iy+1, iz, node_ny, node_nz),
-                        node_idx(ix, iy, iz+1, node_ny, node_nz),
-                        node_idx(ix+1, iy, iz+1, node_ny, node_nz),
-                        node_idx(ix+1, iy+1, iz+1, node_ny, node_nz),
-                        node_idx(ix, iy+1, iz+1, node_ny, node_nz)
-                    };
+                        node_idx(ix + 1, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)};
 
                     // Remap to compact node indices
                     snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n",
@@ -611,32 +613,27 @@ namespace mhs::io {
             data_elem->DeleteChild(child);
         }
 
-        // Node temperature layout: (nx+1)*(ny+1)*(nz+1) vertices
-        // Reference data ordering: index = z + SizeZ * x + SizeZ * SizeX * y
-        // (Y outermost, X middle, Z innermost)
-        // NOTE: The original software uses an inverted Y-axis compared to our internal
-        // representation. Our vy=0 corresponds to y=0 (bottom), but reference expects
-        // vy=0 to correspond to the TOP of the domain. We invert Y when writing.
+        // Node temperature layout: vx * node_ny * node_nz + vy * node_nz + vz
+        // Reference data ordering: index = vz + SizeZ * vy + SizeZ * SizeY * vx
+        // (X outermost, Y middle, Z innermost)
+        // Note: in the reference formula, 'x' maps to our Y dimension (stride = SizeZ)
+        // and 'y' maps to our X dimension (stride = SizeZ * SizeY).
         int node_nx = model.mesh.nx + 1;
         int node_ny = model.mesh.ny + 1;
         int node_nz = model.mesh.nz + 1;
 
-        // Write new temperature values in reference ordering: (y, x, z)
-        // Reference index: z + SizeZ * x + SizeZ * SizeX * y
-        // The original software uses inverted Y-axis: y_ref increases from top to bottom
-        // while our internal vy increases from bottom to top.
-        // We iterate output y positions from top (y_ref=0) to bottom (y_ref=node_ny-1)
-        for (int vy_ref = node_ny - 1; vy_ref >= 0; vy_ref--) {
-            int vy_internal = (node_ny - 1) - vy_ref;  // Invert: top -> high internal index
-            for (int vx = 0; vx < node_nx; vx++) {
+        // Write new temperature values in reference ordering: (vx, vy, vz)
+        // Reference index = vz + SizeZ * vy + SizeZ * SizeY * vx
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
                 for (int vz = 0; vz < node_nz; vz++) {
-                    // Read from internal node position (vx, vy_internal)
-                    double val = node_temperature[vx * node_ny * node_nz + vy_internal * node_nz + vz];
+                    double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
 
                     XMLElement* double_elem = doc.NewElement("a:double");
                     if (std::isnan(val)) {
                         double_elem->SetText("NaN");
-                    } else {
+                    }
+                    else {
                         char buf[64];
                         snprintf(buf, sizeof(buf), "%.6f", val);
                         double_elem->SetText(buf);
@@ -648,11 +645,14 @@ namespace mhs::io {
 
         // Update SizeX, SizeY, SizeZ
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
-        if (sx) sx->SetText(node_nx);
+        if (sx)
+            sx->SetText(node_nx);
         XMLElement* sy = values_elem->FirstChildElement("SizeY");
-        if (sy) sy->SetText(node_ny);
+        if (sy)
+            sy->SetText(node_ny);
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
-        if (sz) sz->SetText(node_nz);
+        if (sz)
+            sz->SetText(node_nz);
 
         doc.SaveFile(output_path.c_str());
     }
