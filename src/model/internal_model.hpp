@@ -1,7 +1,6 @@
 #pragma once
 #include "expr/expr.hpp"
 #include "model/types.hpp"
-#include <deque>
 #include <vector>
 
 namespace mhs::model {
@@ -68,11 +67,6 @@ namespace mhs::model {
         std::vector<double> T; // size = N_active
         std::vector<double> T_prev; // size = N_active
         std::vector<double> residual; // size = N_active
-
-        // Ring buffers
-        std::deque<std::vector<double>> T_history;
-        std::deque<std::vector<double>> nl_history;
-        std::deque<double> dt_history;
     };
 
     struct InternalModel {

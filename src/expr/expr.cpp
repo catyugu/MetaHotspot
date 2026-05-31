@@ -71,11 +71,7 @@ namespace mhs::expr {
             if (!valid_) {
                 return 0.0;
             }
-
-            // [FIX 2]: 加锁保护共享成员变量。
-            // 因为 ExprTKCompiled 在缓存中是单例的，多个线程可能会同时调用 eval，
-            // 并发修改 x_, y_, z_ 会导致严重的计算错误（Data Race）。
-            std::lock_guard<std::mutex> lock(eval_mutex_);
+            // Not thread-safe. For parallel evaluation, create per-thread instances.
             x_ = ctx.x;
             y_ = ctx.y;
             z_ = ctx.z;
@@ -85,7 +81,6 @@ namespace mhs::expr {
         }
 
     private:
-        std::mutex eval_mutex_; // [FIX 2]: 新增互斥锁
         bool valid_ = true;
         double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
         std::unique_ptr<exprtk::symbol_table<double>> sym_table_;

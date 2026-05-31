@@ -12,7 +12,6 @@ namespace mhs {
         double newton_tolerance = 1e-6;
         double underrelaxation = 1.0;
         bool is_steady = false;
-        int ring_buffer_capacity = 5;
     };
 
     class Scheduler {
@@ -28,16 +27,11 @@ namespace mhs {
         const std::vector<double>& solution() const;
 
     private:
-        bool solve_nonlinear_step();
-        void step_time(double dt);
-
         model::InternalModel* model_ = nullptr;
         std::unique_ptr<Solver> solver_;
         SchedulerConfig config_;
         model::GlobalState state_;
         std::vector<double> solution_;
-        double current_time_ = 0.0;
-        int current_step_ = 0;
     };
 
 } // namespace mhs

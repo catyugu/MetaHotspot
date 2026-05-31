@@ -8,6 +8,7 @@ add_library(mhs_lib
     preprocessor/layer_processor.cpp
     preprocessor/face_key_processor.cpp
     assembler/assembler.cpp
+    nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
     solver/solver.cpp
     postprocessor/postprocessor.cpp
