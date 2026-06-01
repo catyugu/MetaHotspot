@@ -11,10 +11,9 @@
             <BoundaryCategory>Electrical</BoundaryCategory>
             <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
             <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100</a:string>
                 <a:string>Z|E|0|-50,50,-60,60</a:string>
             </FaceKeys>
-            <Name>边界 1</Name>
+            <Name>边界 4</Name>
             <ThermalBoundary i:type="a:FirstTypeThermalBoundary"
                 xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
                 <a:Temperature>300</a:Temperature>
@@ -24,23 +23,14 @@
             <BoundaryCategory>Electrical</BoundaryCategory>
             <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
             <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>Z|E|30|0,50,0,50;50,100,0,50;50,100,50,100</a:string>
-                <a:string>Y|E|-7.5|-5|5|26|29</a:string>
-                <a:string>Y|E|-7.5|-5|5|30|35</a:string>
-                <a:string>X|E|5|-7.5|7.5|30|35</a:string>
-                <a:string>X|E|-5|0|7.5|30|35</a:string>
-                <a:string>X|E|-5|-7.5|0|30|35</a:string>
-                <a:string>Y|E|7.5|0|5|30|35</a:string>
-                <a:string>Y|E|7.5|-5|0|30|35</a:string>
-                <a:string>
-                    Z|E|20|-15,0,-25,0;-15,0,-60,-25;-15,0,25,60;-50,-15,-25,0;-50,-15,-60,-25;-50,-15,0,25;-50,-15,25,60;0,15,-60,-25;0,15,25,60;15,50,-25,0;15,50,-60,-25;15,50,0,25;15,50,25,60</a:string>
-                <a:string>X|E|-5|-7.5|0|26|29</a:string>
-                <a:string>X|E|-5|0|7.5|26|29</a:string>
+                <a:string>X|E|5|-7.5|7.5|26|29</a:string>
                 <a:string>Y|E|7.5|-5|0|26|29</a:string>
                 <a:string>Y|E|7.5|0|5|26|29</a:string>
-                <a:string>X|E|5|-7.5|7.5|26|29</a:string>
+                <a:string>X|E|-5|-7.5|0|26|29</a:string>
+                <a:string>X|E|-5|0|7.5|26|29</a:string>
+                <a:string>Y|E|-7.5|-5|5|26|29</a:string>
             </FaceKeys>
-            <Name>边界 2</Name>
+            <Name>边界 5</Name>
             <ThermalBoundary i:type="a:ThirdTypeThermalBoundary"
                 xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
                 <a:ConvectionCoefficient>10</a:ConvectionCoefficient>
@@ -51,26 +41,11 @@
             <BoundaryCategory>Electrical</BoundaryCategory>
             <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
             <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>Y|E|100|0|100|0|10</a:string>
-                <a:string>Y|E|50|0|50|0|10</a:string>
-                <a:string>X|E|50|0|50|0|10</a:string>
-                <a:string>X|E|0|50|100|0|10</a:string>
-                <a:string>X|E|100|0|100|0|10</a:string>
-                <a:string>Y|E|0|50|100|0|10</a:string>
-                <a:string>Y|E|0|-15|0|20|30</a:string>
-                <a:string>X|E|15|-25|25|20|30</a:string>
-                <a:string>X|E|-15|0|25|20|30</a:string>
-                <a:string>Y|E|25|-15|15|20|30</a:string>
-                <a:string>Y|E|-25|0|15|20|30</a:string>
-                <a:string>X|E|0|-50|-25|20|30</a:string>
-                <a:string>X|E|0|-25|0|20|30</a:string>
-                <a:string>Y|E|-50|-15|0|20|30</a:string>
-                <a:string>X|E|-15|-50|25|20|30</a:string>
+                <a:string>X|E|-15|-50|25|20|26</a:string>
                 <a:string>X|E|15|-25|25|20|26</a:string>
                 <a:string>X|E|0|-50|-25|20|26</a:string>
-                <a:string>X|E|-15|-50|25|20|26</a:string>
             </FaceKeys>
-            <Name>边界 3</Name>
+            <Name>边界 6</Name>
             <ThermalBoundary i:type="a:SecondTypeThermalBoundary"
                 xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
                 <a:HeatFlux>1000</a:HeatFlux>
