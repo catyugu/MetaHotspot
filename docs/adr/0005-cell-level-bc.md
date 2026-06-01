@@ -1,16 +1,8 @@
-# ADR-0006: Cell-Level BC Storage
+# ADR-0005: Cell-Level BC Storage
 
 ## Status
 
-Supersedes ADR-0005
-
-## Context
-
-ADR-0005 proposed precomputed face BC arrays (`FaceBCFields`) stored per face direction (Z-, Z+, Y-, Y+, X-, X+) with global face grids. This design had a fundamental flaw:
-
-**Face projection overlap**: In a single layer, two blocks may have their outward faces projected onto the same YZ/XZ/XY plane. For example, two adjacent blocks both have a +X face, and their YZ-projections overlap. With `FaceBCFields`, the +X face array can only store one BC type per grid point, making it impossible to assign different BCs to each block's outward face.
-
-Additionally, when a cell is adjacent to a virtual (void) cell, the BC for that face needs to be determined at the cell level, not the global face level.
+Accepted
 
 ## Decision
 

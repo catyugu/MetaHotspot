@@ -34,7 +34,6 @@ static IOStructure make_simple_io()
     Block block;
     block.name = "test_block";
     block.material_name = "test_material";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -166,7 +165,6 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     Block block1;
     block1.name = "b1";
     block1.material_name = "copper";
-    block1.thickness_expr = "20";
     block1.ti_reyuan_expr = "0";
     block1.is_normal_material = true;
 
@@ -198,7 +196,6 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     Block block2;
     block2.name = "b2";
     block2.material_name = "silicon";
-    block2.thickness_expr = "10";
     block2.ti_reyuan_expr = "0";
     block2.is_normal_material = true;
 
@@ -302,7 +299,6 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     Block block;
     block.name = "b1";
     block.material_name = "copper";
-    block.thickness_expr = "30";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -417,7 +413,6 @@ TEST(PreprocessorTest, HeatSourceCompilation)
     Block block1;
     block1.name = "b1";
     block1.material_name = "copper";
-    block1.thickness_expr = "30";
     block1.ti_reyuan_expr = "0";
     block1.is_normal_material = true;
 
@@ -432,7 +427,6 @@ TEST(PreprocessorTest, HeatSourceCompilation)
     Block block2;
     block2.name = "b2";
     block2.material_name = "copper";
-    block2.thickness_expr = "30";
     block2.ti_reyuan_expr = "1e8"; // heat source
     block2.is_normal_material = true;
 
@@ -534,7 +528,6 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     Block block;
     block.name = "b1";
     block.material_name = "copper";
-    block.thickness_expr = "30";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -603,7 +596,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     Block block1;
     block1.name = "substrate";
     block1.material_name = "copper";
-    block1.thickness_expr = "30";
     block1.ti_reyuan_expr = "0";
     block1.is_normal_material = true;
 
@@ -619,7 +611,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     Block block2;
     block2.name = "chip";
     block2.material_name = "silicon";
-    block2.thickness_expr = "30";
     block2.ti_reyuan_expr = "1e7";
     block2.is_normal_material = true;
 

@@ -28,7 +28,6 @@ static IOStructure make_simple_cube_io()
     Block block;
     block.name = "test_block";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -96,7 +95,6 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     Block block;
     block.name = "test_block";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -177,7 +175,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     Block block;
     block.name = "test_block";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "1e6"; // heat source
     block.is_normal_material = true;
 

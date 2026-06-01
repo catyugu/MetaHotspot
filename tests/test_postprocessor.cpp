@@ -30,7 +30,6 @@ static IOStructure make_simple_uniform_grid_io()
     Block block;
     block.name = "test_block";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -124,7 +123,6 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     Block block;
     block.name = "b1";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
@@ -210,7 +208,6 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     Block block;
     block.name = "b1";
     block.material_name = "copper";
-    block.thickness_expr = "10";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 

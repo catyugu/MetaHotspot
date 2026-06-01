@@ -29,10 +29,8 @@ namespace mhs::model {
     struct Block {
         std::vector<Rect> all_rects;
         std::string material_name;
-        std::string thickness_expr;
         std::string x_offset_expr;
         std::string y_offset_expr;
-        std::string z_offset_expr;
         std::string ti_reyuan_expr; // 体热源表达式 [W/m³]
         std::string name;
         bool is_normal_material = true;

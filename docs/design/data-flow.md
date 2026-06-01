@@ -12,7 +12,7 @@ XML 文件
                           ├─> expr::clear_registry + register variables/functions
                           ├─> Build MeshGeometry from mesh_vertex_x/y/z (×si_scale)
                           │     └─> compute dx/dy/dz, cx/cy/cz
-                          ├─> compute_layer_z_ranges
+                          ├─> resolve_geometry() — 预求解层 Z 范围 + Block XY 坐标
                           ├─> Build material_table (parse k/rho/c expressions)
                           ├─> preprocessor::resolve_layers()
                           │     └─> CellFields（valid_mask, index_map, material_id, layer_id）
@@ -36,18 +36,19 @@ XML 文件
 
 ## 各阶段数据变换
 
-| 阶段              | 输入                                       | 输出                       | 关键操作                               |
-| ----------------- | ------------------------------------------ | -------------------------- | -------------------------------------- |
-| XML 解析          | XML 文件                                   | `model::IOStructure`       | tinyxml2 解析，包含 mesh_vertex_x/y/z  |
-| 预处理-几何       | `IOStructure.mesh_vertex_*`                | `MeshGeometry`             | si_scale 转换，计算 dx/dy/dz, cx/cy/cz |
-| 预处理-虚拟单元   | `MeshGeometry` + 层几何                    | `valid_mask` + `index_map` | 标记虚拟单元，生成紧凑化映射           |
-| 预处理-单元归属   | `MeshGeometry` + 层几何                    | `material_id` + `layer_id` | 判断每个单元属于哪个 Layer/Block       |
-| 预处理-面 BC      | `MeshGeometry` + `Boundaries`              | `CellBC` + `BCParamTable`  | 为每个单元每面分配 BC，解决投影重叠    |
-| 预处理-表达式编译 | IO 字符串表达式                            | `CompiledExpression`       | exprtk 编译或 `make_constant`          |
-| 组装              | `InternalModel` + `GlobalState`（含 `dt`） | `LinearSystem`             | 遍历活跃单元，组装 A 和 b              |
-| 线性求解          | `A * x = b`                                | `x`                        | Eigen `SparseLU` 或 `BiCGSTAB`         |
-| 非线性 更新       | `ΔT`                                       | `T_new = T_old + ω·ΔT`     | 状态更新                               |
-| 后处理            | `InternalModel` + `T`                      | VTU + XML                  | 展开 T 向量，写出文件                  |
+| 阶段              | 输入                                       | 输出                       | 关键操作                                           |
+| ----------------- | ------------------------------------------ | -------------------------- | -------------------------------------------------- |
+| XML 解析          | XML 文件                                   | `model::IOStructure`       | tinyxml2 解析，包含 mesh_vertex_x/y/z              |
+| 预处理-几何       | `IOStructure.mesh_vertex_*`                | `MeshGeometry`             | si_scale 转换，计算 dx/dy/dz, cx/cy/cz             |
+| 预处理-层几何     | `IOStructure.layers`                       | `ResolvedLayerGeometry[]`  | 预求解层 Z 范围和 Block XY 坐标（Block 无 Z 维度） |
+| 预处理-虚拟单元   | `MeshGeometry` + 层几何                    | `valid_mask` + `index_map` | 标记虚拟单元，生成紧凑化映射                       |
+| 预处理-单元归属   | `MeshGeometry` + 层几何                    | `material_id` + `layer_id` | 判断每个单元属于哪个 Layer/Block                   |
+| 预处理-面 BC      | `MeshGeometry` + `Boundaries`              | `CellBC` + `BCParamTable`  | 为每个单元每面分配 BC，解决投影重叠                |
+| 预处理-表达式编译 | IO 字符串表达式                            | `CompiledExpression`       | exprtk 编译或 `make_constant`                      |
+| 组装              | `InternalModel` + `GlobalState`（含 `dt`） | `LinearSystem`             | 遍历活跃单元，组装 A 和 b                          |
+| 线性求解          | `A * x = b`                                | `x`                        | Eigen `SparseLU` 或 `BiCGSTAB`                     |
+| 非线性 更新       | `ΔT`                                       | `T_new = T_old + ω·ΔT`     | 状态更新                                           |
+| 后处理            | `InternalModel` + `T`                      | VTU + XML                  | 展开 T 向量，写出文件                              |
 
 ---
 

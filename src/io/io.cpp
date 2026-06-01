@@ -272,9 +272,6 @@ namespace mhs::io {
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
                             block.material_name = get_text(mat);
                         }
-                        if (const XMLElement* thick = block_elem->FirstChildElement("ThicknessExpression")) {
-                            block.thickness_expr = get_text(thick);
-                        }
                         if (const XMLElement* ti = block_elem->FirstChildElement("TiReyuan")) {
                             block.ti_reyuan_expr = get_text(ti);
                         }
@@ -283,9 +280,6 @@ namespace mhs::io {
                         }
                         if (const XMLElement* yoff = block_elem->FirstChildElement("YOffsetExpression")) {
                             block.y_offset_expr = get_text(yoff);
-                        }
-                        if (const XMLElement* zoff = block_elem->FirstChildElement("ZOffsetExpression")) {
-                            block.z_offset_expr = get_text(zoff);
                         }
                         if (const XMLElement* normal = block_elem->FirstChildElement("IsNormalMaterial")) {
                             block.is_normal_material = std::string(get_text(normal)) == "true";
