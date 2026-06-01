@@ -1,6 +1,6 @@
 #include "scheduler.hpp"
-#include "nonlinear/nonlinear_solver.hpp"
 #include "logger/logger.hpp"
+#include "nonlinear/nonlinear_solver.hpp"
 
 namespace mhs {
 
@@ -40,7 +40,7 @@ namespace mhs {
                 state_.T_prev = state_.T;
                 auto result = nonlinear::solve(*model_, state_, *solver_,
                     config_.underrelaxation, config_.max_newton_iterations, config_.newton_tolerance);
-                if (result.status != ConvergenceStatus::Converged) {
+                if (!result.converged) {
                     MHS_LOG_WARN("Newton iteration did not converge at time step {}", state_.time_step);
                 }
 

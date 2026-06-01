@@ -6,16 +6,16 @@
 
 namespace mhs::nonlinear {
 
-    struct SolveResult {
-        ConvergenceStatus status = ConvergenceStatus::Running;
+    struct NewtonResult {
+        bool converged = false;
         int iterations = 0;
     };
 
-    SolveResult solve(const model::InternalModel& model,
-                      model::GlobalState& state,
-                      Solver& solver,
-                      double underrelaxation,
-                      int max_iterations,
-                      double tolerance);
+    NewtonResult solve(const model::InternalModel& model,
+                       model::GlobalState& state,
+                       Solver& solver,
+                       double underrelaxation,
+                       int max_iterations,
+                       double tolerance);
 
 } // namespace mhs::nonlinear

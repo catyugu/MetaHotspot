@@ -14,10 +14,6 @@ namespace mhs {
         SecondType = 2,
         ThirdType = 3 };
 
-    enum class ConvergenceStatus { Running,
-        Converged,
-        Diverged };
-
     struct FieldContext {
         double x = 0.0, y = 0.0, z = 0.0;
         double T = 0.0;

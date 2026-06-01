@@ -6,12 +6,12 @@
 
 namespace mhs::nonlinear {
 
-    SolveResult solve(const model::InternalModel& model,
-                      model::GlobalState& state,
-                      Solver& solver,
-                      double underrelaxation,
-                      int max_iterations,
-                      double tolerance)
+    NewtonResult solve(const model::InternalModel& model,
+                       model::GlobalState& state,
+                       Solver& solver,
+                       double underrelaxation,
+                       int max_iterations,
+                       double tolerance)
     {
         assembler::Assembler assembler(model);
 
@@ -42,13 +42,11 @@ namespace mhs::nonlinear {
                 iter, max_update, max_residual);
 
             if (max_update < tolerance && max_residual < tolerance) {
-                state.status = ConvergenceStatus::Converged;
-                return {ConvergenceStatus::Converged, iter + 1};
+                return {true, iter + 1};
             }
         }
 
-        state.status = ConvergenceStatus::Diverged;
-        return {ConvergenceStatus::Diverged, max_iterations};
+        return {false, max_iterations};
     }
 
 } // namespace mhs::nonlinear
