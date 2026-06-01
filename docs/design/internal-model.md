@@ -38,15 +38,18 @@ struct MeshGeometry {
 边界条件存储在单元级别，每个单元存储 6 个面的 BC 信息，解决面投影重叠问题。
 
 ```cpp
-namespace mhs::model {
+namespace mhs {  // FaceDir 和 FACE_COUNT 定义在 types.hpp（namespace mhs）
 
-// Face direction indices
 enum FaceDir : size_t { XM = 0, XP = 1, YM = 2, YP = 3, ZM = 4, ZP = 5 };
 
 constexpr size_t FACE_COUNT = 6;
 
 constexpr std::array<FaceDir, FACE_COUNT> FACE_DIRS = {
     FaceDir::XM, FaceDir::XP, FaceDir::YM, FaceDir::YP, FaceDir::ZM, FaceDir::ZP};
+
+} // namespace mhs
+
+namespace mhs::model {
 
 // Per-cell per-face BC
 struct CellBC {
@@ -114,18 +117,25 @@ struct GlobalState {
     double current_time = 0.0;
     int time_step = 0;
     double dt = 0.0;     // current time step size for transient assembly
-    
+
     std::vector<double> T;           // size = N_active
     std::vector<double> T_prev;       // size = N_active
     std::vector<double> residual;     // size = N_active
-
-    std::deque<std::vector<double>> T_history;     // ring buffer
-    std::deque<std::vector<double>> nl_history;    // ring buffer
-    std::deque<double> dt_history;                 // ring buffer
 };
 
 } // namespace mhs::model
 ```
+
+> **TODO（自适应时间步进）**: 未来将添加 ring buffer 支持：
+>
+> ```cpp
+> // 计划添加，用于自适应 dt 和收敛监控
+> std::deque<std::vector<double>> T_history;     // ring buffer: 过去时间步的温度场
+> std::deque<std::vector<double>> nl_history;    // ring buffer: Newton 迭代历史
+> std::deque<double> dt_history;                 // ring buffer: 时间步历史
+> ```
+>
+> 配合 `SchedulerConfig` 中新增的 `ring_buffer_capacity` 参数（默认 5），用于自适应时间步长策略。
 
 ---
 
@@ -157,7 +167,7 @@ struct InternalModel {
 
 ### Virtual Cell Handling
 
-1. `LayerProcessor::resolve()` 生成 `valid_mask` + `index_map`
+1. `preprocessor::resolve_layers()` 生成 `valid_mask` + `index_map`
 2. `GlobalState.cell_count = N_active`，T 向量紧凑存储
 3. Assembler 跳过虚拟单元（`if (!valid_mask[idx]) continue;`）
 4. Postprocessor 使用 `valid_mask` 展开 T 向量，虚拟区域填充 NaN

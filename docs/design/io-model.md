@@ -81,7 +81,7 @@ enum class LengthUnit { M,
         };
 enum class Dimension { Dimension2D, Dimension3D };  // Dimension2D 触发 panic
 
-struct Structure {
+struct IOStructure {
     // 元数据
     StudyType study_type;
     Dimension dimension;
@@ -118,8 +118,9 @@ struct Structure {
     std::vector<double> mesh_vertex_y;
     std::vector<double> mesh_vertex_z;
 
-    // Result values for regression testing
-    std::vector<double> result_values;
+    // Native functions registered during preprocessing
+    // Key = function name, Value = FieldEvaluator (std::function<double(FieldContext)>)
+    std::unordered_map<std::string, FieldEvaluator> functions;
 };
 
 } // namespace mhs::model
@@ -127,7 +128,11 @@ struct Structure {
 
 ---
 
-## 2.2 表达式函数类型
+## 2.2 表达式函数类型（TODO：待实现）
+
+> **注意**：以下类型体系尚未实现。当前 `IOStructure.functions` 为 `unordered_map<string, FieldEvaluator>` 的扁平 map。
+> 未来将实现完整的 Function 类型体系，支持从 XML 解析结构化函数定义（Gauss、PieceWise 等），
+> 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
 
 ```cpp
 namespace mhs::model {
@@ -142,23 +147,27 @@ struct ExpressionFunction {
 
 struct DoubleExponentialFunction {
     double a = 0.0, alpha = 0.0, beta = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct GaussFunction {
     double a = 0.0, tau = 0.0, x0 = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct SineFunction {
     double a = 0.0, omega = 0.0, phi = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct PieceWiseFunction {
     struct Point { double x = 0.0, y = 0.0; };
     std::vector<Point> points;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct Function {

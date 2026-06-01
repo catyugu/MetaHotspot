@@ -7,16 +7,16 @@
 ## FieldContext
 
 ```cpp
-namespace mhs::expr {
+namespace mhs {
 
-// 表达式求值上下文
+// 表达式求值上下文（定义在 types.hpp，非 mhs::expr）
 struct FieldContext {
     double x = 0.0, y = 0.0, z = 0.0;  // 空间位置（SI 单位）
     double T = 0.0;                     // 该位置的温度
     double t = 0.0;                     // 当前仿真时间
 };
 
-} // namespace mhs::expr
+} // namespace mhs
 ```
 
 ---
@@ -28,33 +28,30 @@ struct FieldContext {
 ```cpp
 namespace mhs::expr {
 
-// 值类型，无堆分配，无虚函数（eval 内联）
+// Move-only 独占类型，每个实例持有独立 ExprTKCompiled（pimpl）
 class CompiledExpression {
 public:
-    CompiledExpression() : is_const_(true), const_val_(0.0) { }
-    CompiledExpression(const CompiledExpression&) = default;
-    CompiledExpression(CompiledExpression&&) = default;
-    CompiledExpression& operator=(const CompiledExpression&) = default;
-    CompiledExpression& operator=(CompiledExpression&&) = default;
-    ~CompiledExpression() = default;
+    CompiledExpression();  // 默认构造为常数 0.0
+    ~CompiledExpression();
+
+    // Move-only：每个实例独占 unique_ptr<ExprTKCompiled>，不可复制
+    CompiledExpression(CompiledExpression&&) noexcept;
+    CompiledExpression& operator=(CompiledExpression&&) noexcept;
+    CompiledExpression(const CompiledExpression&) = delete;
+    CompiledExpression& operator=(const CompiledExpression&) = delete;
 
     double eval(const FieldContext& ctx) const;
 
-    bool is_constant() const { return is_const_; }
-    double constant_value() const { return const_val_; }
+    bool is_constant() const;
+    double constant_value() const;
 
     static CompiledExpression make_constant(double value);
-    static CompiledExpression make_evaluator(FieldEvaluator eval);
+    static CompiledExpression make_evaluator(std::unique_ptr<ExprTKCompiled> impl);
 
 private:
-    FieldEvaluator eval_;
+    std::unique_ptr<ExprTKCompiled> impl_;
     bool is_const_ = false;
     double const_val_ = 0.0;
-
-    CompiledExpression(FieldEvaluator eval, bool is_const, double const_val)
-        : eval_(std::move(eval)), is_const_(is_const), const_val_(const_val)
-    {
-    }
 };
 
 } // namespace mhs::expr
@@ -62,15 +59,16 @@ private:
 
 特点：
 
-- **值类型**：`std::function` + 2 个标量，无堆分配
-- **无虚函数**：求值内联，无 vtable 开销
-- **可复制/移动**：`= default` 默认行为
+- **Move-only 独占类型**：每个实例持有 `unique_ptr<ExprTKCompiled>`，表达式编译后只传递所有权，不复制
+- **无虚函数**：`ExprTKCompiled` 为 pimpl 内部类，对外不可见
+- **独占实例**：每个 `CompiledExpression` 拥有独立的 `ExprTKCompiled`，不共享缓存
+- **eval() 无锁**：因为实例独立，`eval()` 天然线程安全，无需 mutex
 
 ---
 
 ## 表达式注册表（模块内部，对外无感）
 
-线程安全的全局注册表，在预处理阶段由 `ModelBuilder` 填充：
+线程安全的全局注册表，在预处理阶段由 `Preprocessor` 填充：
 
 ```cpp
 namespace mhs::expr {
@@ -118,7 +116,7 @@ FieldEvaluator get_native(const std::string& name);
 // Called at the start of Preprocessor::load() to reset state
 void clear_registry();
 
-// Parse a field expression string (thread-safe during compilation)
+// Parse a field expression string — creates a fresh ExprTKCompiled instance (no caching)
 CompiledExpression parse(const std::string& formula);
 
 // Evaluate a geometry expression (no context needed, uses registered variables)
@@ -130,8 +128,8 @@ double eval_geometry(const std::string& formula);
 ### 使用示例
 
 ```cpp
-// 预处理阶段（ModelBuilder 中）
-expr::set_variable("w_top", 10.0);      // mm -> SI 已在 ModelBuilder 转换
+// 预处理阶段（Preprocessor::load() 中）
+expr::set_variable("w_top", 10.0);      // mm -> SI 已在 Preprocessor 转换
 expr::set_variable("h_middle", 2.0);
 expr::register_native("my_piecewise", [](const FieldContext&) { ... });
 expr::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
@@ -141,7 +139,7 @@ double half_width = expr::eval_geometry("w_top/2");
 
 // 编译场表达式
 CompiledExpression k = expr::parse("k_copper + 0.01*T");
-double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
+double k_val = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});  // FieldContext 字段顺序
 ```
 
 ---
@@ -160,11 +158,11 @@ double k_val = k.eval({x: 0.01, y: 0.02, z: 0.0, T: 350.0, t: 1.0});
 ### 线程安全
 
 - `set_variable()`, `register_native()`, `register_function()`: 互斥锁保护
-- `parse()`: 编译时读取注册表，互斥锁保护
-- `CompiledExpression::eval()`: **exprtk 缓存内的表达式有互斥锁保护**（`ExprTKCompiled` 在缓存中为单例，`eval()` 须锁保护共享的 x_/y_/z_/T_/t_ 成员）。常数表达式（`make_constant`）无锁开销。
+- `parse()`: 编译时读取注册表，互斥锁保护；每次 `parse()` 创建新实例，不做缓存
+- `CompiledExpression::eval()`: **无锁**——每个实例持有独立的 `ExprTKCompiled`，各实例天然线程安全。常数表达式（`make_constant`）同样无锁。
 - `eval_geometry()`: 互斥锁保护（访问注册表变量）
 
 ### 注意事项
 
 - `clear_registry()` 必须在每次 `Preprocessor::load()` 开头调用，以清除上一次运行残留的变量和函数
-- `ExprTKCompiled` 的 `eval_mutex_` 意味着缓存命中时多个 `CompiledExpression` 对象共享同一个 exprtk 实例，且求值被串行化。这对 TBB 并行组装有性能影响——常数表达式无此问题
+- `CompiledExpression` 为 move-only 类型——表达式编译后只能通过 `std::move` 传递，不可复制。所有权转移发生在 `MaterialProps`、`BCParamTable`、`CellFields.heat_source` 等内部模型结构中
