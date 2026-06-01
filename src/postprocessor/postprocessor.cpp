@@ -21,14 +21,18 @@ namespace mhs {
         std::vector<double> node_T(total_nodes, std::numeric_limits<double>::quiet_NaN());
 
         // Each vertex (vx, vy, vz) is shared by up to 8 cells:
-        // cells (ix, iy, iz) where ix ∈ {vx-1, vx}, iy ∈ {vy-1, vz}, iz ∈ {vz-1, vz}
-        // Only valid cells contribute; NaN for vertices with no valid neighbors
+        // cells (ix, iy, iz) where ix ∈ {vx-1, vx}, iy ∈ {vy-1, vy}, iz ∈ {vz-1, vz}
+        // Distance-weighted interpolation: weight = 1/d where d = distance from cell center to node
         for (int vx = 0; vx < node_nx; vx++) {
             for (int vy = 0; vy < node_ny; vy++) {
                 for (int vz = 0; vz < node_nz; vz++) {
                     int node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
-                    double sum = 0.0;
-                    int count = 0;
+                    double node_x = mesh.vertex_x[vx];
+                    double node_y = mesh.vertex_y[vy];
+                    double node_z = mesh.vertex_z[vz];
+
+                    double weighted_sum = 0.0;
+                    double weight_sum = 0.0;
 
                     // Check all 8 neighboring cells
                     for (int dx = -1; dx <= 0; dx++) {
@@ -45,14 +49,21 @@ namespace mhs {
                                 if (cells.valid_mask[cell_grid_idx] == 0) continue;
 
                                 int compact_idx = (int)cells.index_map[cell_grid_idx];
-                                sum += cell_temperature[compact_idx];
-                                count++;
+
+                                double dist = std::sqrt(
+                                    (mesh.cx[ix] - node_x) * (mesh.cx[ix] - node_x)
+                                    + (mesh.cy[iy] - node_y) * (mesh.cy[iy] - node_y)
+                                    + (mesh.cz[iz] - node_z) * (mesh.cz[iz] - node_z));
+
+                                double w = 1.0 / dist;
+                                weighted_sum += w * cell_temperature[compact_idx];
+                                weight_sum += w;
                             }
                         }
                     }
 
-                    if (count > 0) {
-                        node_T[node_idx] = sum / count;
+                    if (weight_sum > 0.0) {
+                        node_T[node_idx] = weighted_sum / weight_sum;
                     }
                 }
             }
