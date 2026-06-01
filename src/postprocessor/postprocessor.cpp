@@ -56,9 +56,9 @@ namespace mhs {
                                 double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
                                     {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
 
-                                // 1. Conductivity-scaled inverse volume weighting
-                                double vol = mesh.dx[ix] * mesh.dy[iy] * mesh.dz[iz];
-                                double w = k / vol;
+                                double d = std::sqrt(std::pow(mesh.cx[ix] - node_x, 2) + std::pow(mesh.cy[iy] - node_y, 2) + std::pow(mesh.cz[iz] - node_z, 2));
+
+                                double w = k / d;
 
                                 FaceDir dirs[3];
                                 int num_dirs = 0;
