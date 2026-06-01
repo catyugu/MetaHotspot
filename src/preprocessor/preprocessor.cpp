@@ -63,11 +63,10 @@ namespace mhs {
             mesh.cz[k] = (mesh.vertex_z[k] + mesh.vertex_z[k + 1]) / 2.0;
         }
 
-        // --- 3. Compute layer Z ranges ---
-        int num_layers = (int)ioStructure.layers.size();
-        std::vector<double> layer_z_start(num_layers);
-        std::vector<double> layer_z_end(num_layers);
-        preprocessor::compute_layer_z_ranges(ioStructure.layers, si_scale, layer_z_start, layer_z_end);
+        // --- 3. Pre-resolve all geometry expressions (including Z ranges) ---
+        // This eliminates millions of eval_geometry calls in the cell loops
+        auto resolved_layers = preprocessor::resolve_geometry(
+            ioStructure.layers, si_scale);
 
         // --- 4. Build material table ---
         std::vector<std::string> material_names;
@@ -92,8 +91,7 @@ namespace mhs {
 
         // --- 5. Resolve layers (valid_mask, index_map, layer_id, material_id) ---
         auto& cells = model->cells;
-        preprocessor::resolve_layers(ioStructure.layers, mesh, si_scale,
-            layer_z_start, layer_z_end, name_to_idx, cells);
+        preprocessor::resolve_layers(resolved_layers, mesh, name_to_idx, cells);
 
         // Allocate compact arrays
         cells.cell_bcs.resize(cells.cell_count);
@@ -110,11 +108,11 @@ namespace mhs {
                         double cx = mesh.cx[ix];
                         double cy = mesh.cy[iy];
                         double cz = mesh.cz[iz];
-                        int block_idx = preprocessor::find_block_for_cell(ioStructure.layers[layer_idx],
-                            cx, cy, cz, si_scale, layer_z_start[layer_idx], layer_z_end[layer_idx]);
+                        int block_idx = preprocessor::find_block_for_cell(resolved_layers[layer_idx],
+                            cx, cy, cz);
                         if (block_idx >= 0) {
                             cells.heat_source[c_idx] = expr::parse(
-                                ioStructure.layers[layer_idx].blocks[block_idx].ti_reyuan_expr);
+                                resolved_layers[layer_idx].blocks[block_idx].ti_reyuan_expr);
                         }
                         else {
                             cells.heat_source[c_idx] = expr::CompiledExpression::make_constant(0.0);

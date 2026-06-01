@@ -18,8 +18,10 @@ namespace mhs {
         double node_y = mesh.vertex_y[vy];
         double node_z = mesh.vertex_z[vz];
 
-        double sum_T = 0.0;
-        int count = 0;
+        double dirichlet_sum = 0.0;
+        int dirichlet_count = 0;
+        double other_sum = 0.0;
+        int other_count = 0;
 
         // Check the up-to-8 cells sharing this vertex
         for (int dx = -1; dx <= 0; dx++) {
@@ -57,9 +59,9 @@ namespace mhs {
                         double T_c = cell_temperature[c_idx];
 
                         if (bc_type == BcType::FirstType) {
-                            sum_T += model.bc_params.dirichlet_T[param_idx].eval(
+                            dirichlet_sum += model.bc_params.dirichlet_T[param_idx].eval(
                                 {node_x, node_y, node_z, T_c, current_time});
-                            count++;
+                            dirichlet_count++;
                         }
                         else if (bc_type == BcType::SecondType || bc_type == BcType::ThirdType) {
                             double k = model.material_table[cells.material_id[grid_idx]].k.eval(
@@ -87,16 +89,18 @@ namespace mhs {
                                 double cond = k / half_dist;
                                 T_f = (h * T_inf + cond * T_c) / (h + cond); // Heat flux balance
                             }
-                            sum_T += T_f;
-                            count++;
+                            other_sum += T_f;
+                            other_count++;
                         }
                     }
                 }
             }
         }
 
-        if (count > 0)
-            return sum_T / count;
+        if (dirichlet_count > 0)
+            return dirichlet_sum / dirichlet_count;
+        if (other_count > 0)
+            return other_sum / other_count;
         return std::numeric_limits<double>::quiet_NaN();
     }
 

@@ -201,6 +201,98 @@ TEST(PostprocessorTest, NonUniformGridWeightedInterpolation)
     EXPECT_NEAR(node_T[interior_node], expected, 1e-6);
 }
 
+TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
+{
+    // A corner node that touches both a Dirichlet face and a Neumann face
+    // must have the Dirichlet temperature exclusively — never averaged
+    // with the Neumann-computed temperature.
+    //
+    // Setup: 10x10x10mm cube with Dirichlet 500K on Z bottom face and
+    // Neumann(0) on Y=0 face (adiabatic). The corner node at (0, 0, 0)
+    // touches both. Without Dirichlet priority, the result would be an
+    // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
+    // With Dirichlet priority, the result must be exactly 500K.
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 5.0, 10.0};
+    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+
+    Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+
+    Block block;
+    block.name = "b1";
+    block.material_name = "copper";
+    block.thickness_expr = "10";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material copper;
+    copper.name = "copper";
+    copper.daore_xishu = "400";
+    io.materials["copper"] = copper;
+
+    // Dirichlet BC on bottom Z face (Z=0) at 500K
+    Boundary boundary_dirichlet;
+    boundary_dirichlet.name = "bc_dirichlet";
+    boundary_dirichlet.bc_type = ThermalBCType::FirstType;
+    boundary_dirichlet.first.temperature = "500";
+    boundary_dirichlet.face_keys.push_back("Z|E|0|0,10,0,10");
+    io.boundaries.push_back(boundary_dirichlet);
+
+    // Neumann(0) for all other faces (adiabatic)
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    // Set all cell temperatures to something different from 500
+    int N = model->cells.cell_count;
+    std::vector<double> cell_T(N, 400.0);
+
+    Postprocessor postprocessor;
+    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+
+    int node_ny = model->mesh.ny + 1;
+    int node_nz = model->mesh.nz + 1;
+
+    // Corner node (vx=0, vy=0, vz=0) touches Dirichlet Z-bottom AND
+    // Neumann Y-bottom AND Neumann X-bottom. Dirichlet must win.
+    int corner_idx = 0 * node_ny * node_nz + 0 * node_nz + 0;
+    EXPECT_NEAR(node_T[corner_idx], 500.0, 1e-6)
+        << "Corner node touching Dirichlet must have exactly 500K, not an average";
+
+    // All nodes on Z=0 face should be 500K (they all touch Dirichlet)
+    for (int vx = 0; vx < model->mesh.nx + 1; vx++) {
+        for (int vy = 0; vy < model->mesh.ny + 1; vy++) {
+            int idx = vx * node_ny * node_nz + vy * node_nz + 0;
+            EXPECT_NEAR(node_T[idx], 500.0, 1e-6)
+                << "Z=0 node at (vx=" << vx << ", vy=" << vy << ") must be 500K";
+        }
+    }
+}
+
 TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
 {
     // A cube with Dirichlet BC on the bottom face (Z=0) at 500K.

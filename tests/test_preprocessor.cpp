@@ -573,3 +573,105 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     int idx1 = 1 * ny * nz + 0 * nz + 0;
     EXPECT_EQ(model->cells.valid_mask[idx1], 1);
 }
+
+TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
+{
+    // In CAD semantics, later blocks override earlier blocks in overlapping
+    // regions. A chip (block2, silicon) overlaying a substrate (block1, copper)
+    // should assign silicon material to cells in the overlap area.
+    //
+    // Before the fix: first-match logic gives block1 (copper) to overlap cells.
+    // After the fix: last-match logic gives block2 (silicon) to overlap cells.
+
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0, 50, 100};
+    io.mesh_vertex_y = {0, 50, 100};
+    io.mesh_vertex_z = {0, 10, 20, 30};
+
+    Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "30";
+
+    // Block 1: background substrate covering entire 100x100mm area (copper)
+    Block block1;
+    block1.name = "substrate";
+    block1.material_name = "copper";
+    block1.thickness_expr = "30";
+    block1.ti_reyuan_expr = "0";
+    block1.is_normal_material = true;
+
+    Rect rect1;
+    rect1.add_sub = true;
+    rect1.x_expr = "0";
+    rect1.y_expr = "0";
+    rect1.width_expr = "100";
+    rect1.height_expr = "100";
+    block1.all_rects.push_back(rect1);
+
+    // Block 2: chip overlaying the first quadrant (0-50, 0-50) (silicon)
+    Block block2;
+    block2.name = "chip";
+    block2.material_name = "silicon";
+    block2.thickness_expr = "30";
+    block2.ti_reyuan_expr = "1e7";
+    block2.is_normal_material = true;
+
+    Rect rect2;
+    rect2.add_sub = true;
+    rect2.x_expr = "0";
+    rect2.y_expr = "0";
+    rect2.width_expr = "50";
+    rect2.height_expr = "50";
+    block2.all_rects.push_back(rect2);
+
+    layer.blocks.push_back(block1);
+    layer.blocks.push_back(block2);
+    io.layers.push_back(layer);
+
+    Material copper;
+    copper.name = "copper";
+    copper.daore_xishu = "400";
+    io.materials["copper"] = copper;
+
+    Material silicon;
+    silicon.name = "silicon";
+    silicon.daore_xishu = "130";
+    io.materials["silicon"] = silicon;
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int ny = model->mesh.ny;
+    int nz = model->mesh.nz;
+
+    // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
+    // Last block (block2 = silicon) should override first block (block1 = copper).
+    int idx_overlap = 0 * ny * nz + 0 * nz + 0;
+    EXPECT_EQ(model->cells.valid_mask[idx_overlap], 1);
+
+    // Material should be silicon (block2), not copper (block1)
+    // name_to_idx order: "copper" = 0, "silicon" = 1
+    EXPECT_EQ(model->cells.material_id[idx_overlap], 1)
+        << "Overlapping cell must get material from later block (silicon), not earlier (copper)";
+
+    // Heat source should be from block2 (1e7), not block1 (0)
+    int compact_idx = (int)model->cells.index_map[idx_overlap];
+    EXPECT_NEAR(model->cells.heat_source[compact_idx].constant_value(), 1e7, 1e0)
+        << "Overlapping cell must get heat source from later block (1e7), not earlier (0)";
+
+    // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
+    int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
+    EXPECT_EQ(model->cells.material_id[idx_only_block1], 0)
+        << "Cell in only block1 must get copper material";
+}
