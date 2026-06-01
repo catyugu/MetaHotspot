@@ -42,24 +42,60 @@ namespace mhs::preprocessor {
             int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
             return cells.valid_mask[neighbor] == 0;
         }
+
+        // Split a string by a single-character delimiter.
+        std::vector<std::string> split(const std::string& s, char delim)
+        {
+            std::vector<std::string> out;
+            std::string token;
+            for (char c : s) {
+                if (c == delim) {
+                    out.push_back(token);
+                    token.clear();
+                }
+                else {
+                    token += c;
+                }
+            }
+            if (!token.empty())
+                out.push_back(token);
+            return out;
+        }
+
+        // Parse the comma/semicolon rect list used by Z-face keys:
+        //   "0,50,50,100;50,100,0,50" -> two rects, each {xmin,xmax,ymin,ymax}
+        std::vector<std::array<double, 4>> parse_z_rects(
+            const std::string& rect_str, double si_scale)
+        {
+            std::vector<std::array<double, 4>> rects;
+            for (const auto& rp : split(rect_str, ';')) {
+                std::vector<double> vals;
+                for (const auto& v : split(rp, ','))
+                    vals.push_back(std::stod(v) * si_scale);
+                if (vals.size() == 4)
+                    rects.push_back({vals[0], vals[1], vals[2], vals[3]});
+            }
+            return rects;
+        }
+
+        // Parse the four pipe-delimited rect numbers used by X/Y-face keys:
+        //   parts[3..6] = Min1, Max1, Min2, Max2
+        std::vector<std::array<double, 4>> parse_xy_rect(
+            const std::vector<std::string>& parts, double si_scale)
+        {
+            if (parts.size() < 7)
+                return {};
+            return {{std::stod(parts[3]) * si_scale,
+                std::stod(parts[4]) * si_scale,
+                std::stod(parts[5]) * si_scale,
+                std::stod(parts[6]) * si_scale}};
+        }
     } // anonymous namespace
 
     FaceKeyInfo parse_face_key(const std::string& key, double si_scale)
     {
         FaceKeyInfo info;
-        std::vector<std::string> parts;
-        std::string token;
-        for (char c : key) {
-            if (c == '|') {
-                parts.push_back(token);
-                token.clear();
-            }
-            else {
-                token += c;
-            }
-        }
-        if (!token.empty())
-            parts.push_back(token);
+        auto parts = split(key, '|');
         if (parts.size() < 3)
             return info;
 
@@ -67,46 +103,12 @@ namespace mhs::preprocessor {
         info.side = parts[1][0];
         info.coord_value = std::stod(parts[2]) * si_scale;
 
-        if (parts.size() == 4) {
-            std::string rect_str = parts[3];
-            std::vector<std::string> rect_parts;
-            std::string rt;
-            for (char c : rect_str) {
-                if (c == ';') {
-                    rect_parts.push_back(rt);
-                    rt.clear();
-                }
-                else {
-                    rt += c;
-                }
-            }
-            if (!rt.empty())
-                rect_parts.push_back(rt);
-
-            for (const auto& rp : rect_parts) {
-                std::vector<double> vals;
-                std::string v;
-                for (char c : rp) {
-                    if (c == ',') {
-                        vals.push_back(std::stod(v) * si_scale);
-                        v.clear();
-                    }
-                    else {
-                        v += c;
-                    }
-                }
-                if (!v.empty())
-                    vals.push_back(std::stod(v) * si_scale);
-                if (vals.size() == 4)
-                    info.rects.push_back({vals[0], vals[1], vals[2], vals[3]});
-            }
+        if (info.axis == 'Z') {
+            if (parts.size() == 4)
+                info.rects = parse_z_rects(parts[3], si_scale);
         }
-        else if (parts.size() >= 7) {
-            std::vector<double> vals;
-            for (size_t i = 3; i < parts.size(); i++)
-                vals.push_back(std::stod(parts[i]) * si_scale);
-            if (vals.size() >= 4)
-                info.rects.push_back({vals[0], vals[1], vals[2], vals[3]});
+        else if (info.axis == 'X' || info.axis == 'Y') {
+            info.rects = parse_xy_rect(parts, si_scale);
         }
         return info;
     }

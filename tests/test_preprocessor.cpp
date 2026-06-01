@@ -3,6 +3,7 @@
 #include "io/io.hpp"
 #include "model/internal_model.hpp"
 #include "model/io_model.hpp"
+#include "preprocessor/face_key_processor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -665,4 +666,195 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
     EXPECT_EQ(model->cells.material_id[idx_only_block1], 0)
         << "Cell in only block1 must get copper material";
+}
+
+TEST(PreprocessorTest, ParseFaceKey_XFormatSevenParts)
+{
+    // case1 Boundary 5 (convection on X faces of the top die)
+    mhs::preprocessor::FaceKeyInfo fk
+        = mhs::preprocessor::parse_face_key("X|E|5|-7.5|7.5|26|29", 1.0);
+    EXPECT_EQ(fk.axis, 'X');
+    EXPECT_EQ(fk.side, 'E');
+    EXPECT_NEAR(fk.coord_value, 5.0, 1e-12);
+    ASSERT_EQ(fk.rects.size(), 1u);
+    EXPECT_NEAR(fk.rects[0][0], -7.5, 1e-12);
+    EXPECT_NEAR(fk.rects[0][1], 7.5, 1e-12);
+    EXPECT_NEAR(fk.rects[0][2], 26.0, 1e-12);
+    EXPECT_NEAR(fk.rects[0][3], 29.0, 1e-12);
+}
+
+TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
+{
+    // End-to-end: feed a Y-format face key, assert the correct Y+ face
+    // of a cell adjacent to vertex_y = 7.5mm gets the assigned BC.
+    //
+    // Mesh: 2x2 cells over [0, 10]x[0, 10]x[0, 10] mm; one block filling all.
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0, 5, 10};
+    io.mesh_vertex_y = {0, 5, 10};
+    io.mesh_vertex_z = {0, 5, 10};
+
+    Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+
+    Block block;
+    block.name = "b1";
+    block.material_name = "copper";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material copper;
+    copper.name = "copper";
+    copper.daore_xishu = "400";
+    io.materials["copper"] = copper;
+
+    // Convection on the upper half of the y=10mm Y+ face
+    Boundary boundary;
+    boundary.name = "bc_yp";
+    boundary.bc_type = ThermalBCType::ThirdType;
+    boundary.third.convection_coeff = "10";
+    boundary.third.T_inf = "200";
+    boundary.face_keys.push_back("Y|E|10|0|10|0|5"); // cx: 0-10, cz: 0-5
+    io.boundaries.push_back(boundary);
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    // Cells adjacent to the Y+ face at y=10mm have iy=1 (vertex_y[2] = 10).
+    // Their YP face is exposed. Rect: cx in [0,10], cz in [0,5].
+    // Cells with iz=0 (cz=2.5) are inside the rect and get ThirdType.
+    // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
+    // the other_bc (SecondType).
+    int ny = model->mesh.ny;
+    int nz = model->mesh.nz;
+    for (int ix = 0; ix < 2; ++ix) {
+        int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
+        int compact = (int)model->cells.index_map[idx];
+        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)FaceDir::YP],
+            BcType::ThirdType)
+            << "Y-format face key should assign ThirdType to YP face at ("
+            << ix << ",1,0)";
+    }
+
+    // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
+    // they should fall through to the other_bc (SecondType).
+    int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
+    int compact_out = (int)model->cells.index_map[idx_outside];
+    EXPECT_NE(model->cells.cell_bcs[compact_out].types[(size_t)FaceDir::YP],
+        BcType::ThirdType)
+        << "Cell outside rect must not get the ThirdType BC";
+}
+
+TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
+{
+    // A single boundary carrying many face_keys must apply each one.
+    // Mirrors case1 Boundary 5: 4 X-keys + 2 Y-keys covering the side faces
+    // of the top die. Without correct per-key iteration, some faces would
+    // silently fall through to other_bc.
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0, 5, 10};
+    io.mesh_vertex_y = {0, 5, 10};
+    io.mesh_vertex_z = {0, 5, 10};
+
+    Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+
+    Block block;
+    block.name = "b1";
+    block.material_name = "copper";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material copper;
+    copper.name = "copper";
+    copper.daore_xishu = "400";
+    io.materials["copper"] = copper;
+
+    // One boundary, three face_keys targeting three different exposed faces
+    Boundary boundary;
+    boundary.name = "bc_multi";
+    boundary.bc_type = ThermalBCType::ThirdType;
+    boundary.third.convection_coeff = "10";
+    boundary.third.T_inf = "200";
+    boundary.face_keys.push_back("X|E|10|0|10|0|10"); // XP face, all cz
+    boundary.face_keys.push_back("X|E|0|0|10|0|10"); // XM face, all cz
+    boundary.face_keys.push_back("Y|E|10|0|10|0|10"); // YP face, all cz
+    io.boundaries.push_back(boundary);
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int ny = model->mesh.ny;
+    int nz = model->mesh.nz;
+    int nx = model->mesh.nx;
+
+    // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
+    // and specifically the three faces the keys target must be ThirdType.
+    auto check_face = [&](int ix, int iy, int iz, FaceDir dir) {
+        int idx = ix * ny * nz + iy * nz + iz;
+        int compact = (int)model->cells.index_map[idx];
+        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)dir],
+            BcType::ThirdType)
+            << "Face " << (int)dir << " of cell (" << ix << "," << iy << ","
+            << iz << ") should be ThirdType from one of the boundary face_keys";
+    };
+
+    // X|E|10 -> XP face at x=10mm -> cells with ix=nx-1=1
+    for (int iy = 0; iy < ny; ++iy)
+        for (int iz = 0; iz < nz; ++iz)
+            check_face(nx - 1, iy, iz, FaceDir::XP);
+
+    // X|E|0 -> XM face at x=0mm -> cells with ix=0
+    for (int iy = 0; iy < ny; ++iy)
+        for (int iz = 0; iz < nz; ++iz)
+            check_face(0, iy, iz, FaceDir::XM);
+
+    // Y|E|10 -> YP face at y=10mm -> cells with iy=ny-1=1
+    for (int ix = 0; ix < nx; ++ix)
+        for (int iz = 0; iz < nz; ++iz)
+            check_face(ix, ny - 1, iz, FaceDir::YP);
 }
