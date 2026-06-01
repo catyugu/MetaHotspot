@@ -3,6 +3,8 @@
 
 namespace mhs::preprocessor {
 
+    constexpr double EPS = 1e-9;
+
     double length_unit_to_si(model::LengthUnit unit)
     {
         switch (unit) {
@@ -52,7 +54,7 @@ namespace mhs::preprocessor {
         double si_scale,
         double layer_z_start, double layer_z_end)
     {
-        if (cz < layer_z_start || cz >= layer_z_end) {
+        if (cz < layer_z_start - EPS || cz > layer_z_end + EPS) {
             return -1;
         }
 
@@ -74,7 +76,7 @@ namespace mhs::preprocessor {
                 double rw = expr::eval_geometry(rect.width_expr) * si_scale;
                 double rh = expr::eval_geometry(rect.height_expr) * si_scale;
 
-                if (cx >= rx && cx < rx + rw && cy >= ry && cy < ry + rh) {
+                if (cx >= rx - EPS && cx <= rx + rw + EPS && cy >= ry - EPS && cy <= ry + rh + EPS) {
                     if (rect.add_sub) {
                         in_add = true;
                     }
@@ -121,7 +123,7 @@ namespace mhs::preprocessor {
                     int block_idx = -1;
 
                     for (int l = 0; l < num_layers; l++) {
-                        if (cz >= layer_z_start[l] && cz < layer_z_end[l]) {
+                        if (cz >= layer_z_start[l] - EPS && cz <= layer_z_end[l] + EPS) {
                             int b = find_block_for_cell(layers[l], cx, cy, cz,
                                 si_scale, layer_z_start[l], layer_z_end[l]);
                             if (b >= 0) {

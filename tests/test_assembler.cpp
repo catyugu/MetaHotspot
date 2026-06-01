@@ -370,8 +370,8 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
 
 TEST(AssemblerTest, Case1AssemblyRuns)
 {
-    std::string case_path = "/cases/original_steady_tests/case1.xml";
-    if (!std::filesystem::exists(PROJECT_SOURCE_DIR + case_path)) {
+    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/original_steady_tests/case1.xml";
+    if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found";
     }
 
