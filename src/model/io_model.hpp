@@ -118,58 +118,11 @@ namespace mhs::model {
         ThirdTypeThermalBC other_bc_third;
 
         // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
-        // These are read directly from XML and passed to preprocessor
         std::vector<double> mesh_vertex_x;
         std::vector<double> mesh_vertex_y;
         std::vector<double> mesh_vertex_z;
 
-        std::vector<double> result_values;
-    };
-
-    // Expression functions
-    enum class FunctionType { Expression,
-        DoubleExponential,
-        Gauss,
-        Sine,
-        PieceWise };
-
-    struct ExpressionFunction {
-        std::string expression;
-        double draw_min_x = 0.0;
-        double draw_max_x = 100.0;
-    };
-
-    struct DoubleExponentialFunction {
-        double a = 0.0, alpha = 0.0, beta = 0.0;
-        double draw_min_x = 0.0, draw_max_x = 100.0;
-    };
-
-    struct GaussFunction {
-        double a = 0.0, tau = 0.0, x0 = 0.0;
-        double draw_min_x = 0.0, draw_max_x = 100.0;
-    };
-
-    struct SineFunction {
-        double a = 0.0, omega = 0.0, phi = 0.0;
-        double draw_min_x = 0.0, draw_max_x = 100.0;
-    };
-
-    struct PieceWiseFunction {
-        struct Point {
-            double x = 0.0, y = 0.0;
-        };
-        std::vector<Point> points;
-        double draw_min_x = 0.0, draw_max_x = 100.0;
-    };
-
-    struct Function {
-        std::string key;
-        FunctionType type;
-        ExpressionFunction expression;
-        DoubleExponentialFunction double_exp;
-        GaussFunction gauss;
-        SineFunction sine;
-        PieceWiseFunction piecewise;
+        std::unordered_map<std::string, FieldEvaluator> functions;
     };
 
 } // namespace mhs::model

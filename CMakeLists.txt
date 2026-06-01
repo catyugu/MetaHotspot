@@ -9,6 +9,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(VERBOSE "Enable DEBUG level logging" OFF)
 
+configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.h)
+
+include_directories(${CMAKE_BINARY_DIR})
+
 include(cmake/CompilerOptions.cmake)
 include(cmake/Dependencies.cmake)
 

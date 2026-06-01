@@ -31,8 +31,8 @@ namespace {
 
     TEST(CompiledExpression, MakeEvaluator)
     {
-        auto expr = mhs::expr::CompiledExpression::make_evaluator(
-            [](const mhs::FieldContext& ctx) { return ctx.x + ctx.y; });
+        mhs::expr::clear_registry();
+        auto expr = mhs::expr::parse("x + y");
         EXPECT_FALSE(expr.is_constant());
 
         mhs::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
@@ -46,17 +46,10 @@ namespace {
         EXPECT_EQ(expr.eval(ctx), 99.0);
     }
 
-    TEST(CompiledExpression, Copyable)
-    {
-        auto orig = mhs::expr::CompiledExpression::make_constant(5.0);
-        auto copy = orig;
-        EXPECT_EQ(copy.constant_value(), 5.0);
-    }
-
     TEST(CompiledExpression, Movable)
     {
-        auto moved = mhs::expr::CompiledExpression::make_constant(7.0);
-        auto dest = std::move(moved);
+        auto orig = mhs::expr::CompiledExpression::make_constant(7.0);
+        auto dest = std::move(orig);
         EXPECT_EQ(dest.constant_value(), 7.0);
     }
 

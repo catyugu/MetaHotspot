@@ -2,28 +2,24 @@
 
 #include "model/internal_model.hpp"
 #include <Eigen/Sparse>
-#include <vector>
 
-namespace mhs {
+namespace mhs::assembler {
 
-    struct AssemblerResult {
+    struct LinearSystem {
         Eigen::SparseMatrix<double> A;
         Eigen::VectorXd b;
+        Eigen::VectorXd residual;
     };
 
     class Assembler {
     public:
-        Assembler() = default;
+        explicit Assembler(const model::InternalModel& model) : model_(model) { }
         ~Assembler() = default;
 
-        AssemblerResult assemble(const model::InternalModel& model,
-            const std::vector<double>& T,
-            double t);
-
-        void setTime(double t) { t_ = t; }
+        LinearSystem assemble(const model::GlobalState& state);
 
     private:
-        double t_ = 0.0;
+        const model::InternalModel& model_;
     };
 
-} // namespace mhs
+} // namespace mhs::assembler

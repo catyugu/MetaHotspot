@@ -285,7 +285,7 @@ namespace mhs::io {
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect");
-                                rect_elem; rect_elem = rects_elem->NextSiblingElement("Rect")) {
+                                rect_elem; rect_elem = rect_elem->NextSiblingElement("Rect")) {
                                 model::Rect rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.add_sub = std::string(get_text(adds)) == "true";
@@ -389,19 +389,19 @@ namespace mhs::io {
                 if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_x.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_y.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             structure.mesh_vertex_z.push_back(parse_double(get_text(val)));
                         }
                     }
@@ -416,21 +416,245 @@ namespace mhs::io {
         const model::InternalModel& model,
         const std::vector<double>& node_temperature)
     {
-        (void)model;
-        (void)path;
-        (void)node_temperature;
+        using namespace tinyxml2;
+        const auto& mesh = model.mesh;
+        const auto& cells = model.cells;
+        int node_nx = mesh.nx + 1;
+        int node_ny = mesh.ny + 1;
+        int node_nz = mesh.nz + 1;
+
+        // Build node remapping: only include nodes whose temperature is not NaN
+        int total_nodes = node_nx * node_ny * node_nz;
+        std::vector<int> node_remap(total_nodes, -1);
+        std::vector<double> active_coords;
+        std::vector<double> active_temps;
+
+        auto node_idx = [](int vx, int vy, int vz, int nny, int nnz) {
+            return vx * nny * nnz + vy * nnz + vz;
+        };
+
+        char buf[64];
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    double T = node_temperature[i];
+                    if (std::isnan(T))
+                        continue;
+                    node_remap[i] = (int)active_temps.size();
+                    active_temps.push_back(T);
+                }
+            }
+        }
+
+        int num_points = (int)active_temps.size();
+
+        // Build string buffers
+        std::string coords_str;
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    if (node_remap[i] < 0)
+                        continue;
+                    snprintf(buf, sizeof(buf), "%.8g %.8g %.8g\n",
+                        mesh.vertex_x[vx], mesh.vertex_y[vy], mesh.vertex_z[vz]);
+                    coords_str += buf;
+                }
+            }
+        }
+
+        std::string temp_str;
+        for (double T : active_temps) {
+            snprintf(buf, sizeof(buf), "%.8g\n", T);
+            temp_str += buf;
+        }
+
+        // Build cell connectivity using remapped node indices
+        std::string conn_str;
+        std::string off_str;
+        std::string type_str;
+        int cell_num = 0;
+
+        for (int ix = 0; ix < mesh.nx; ix++) {
+            for (int iy = 0; iy < mesh.ny; iy++) {
+                for (int iz = 0; iz < mesh.nz; iz++) {
+                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.valid_mask[old_idx] == 0)
+                        continue;
+
+                    // VTK hex ordering: 0-3 bottom face, 4-7 top face
+                    // Node indices in original grid
+                    int n[8] = {
+                        node_idx(ix, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)};
+
+                    // Remap to compact node indices
+                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n",
+                        node_remap[n[0]], node_remap[n[1]], node_remap[n[2]], node_remap[n[3]],
+                        node_remap[n[4]], node_remap[n[5]], node_remap[n[6]], node_remap[n[7]]);
+                    conn_str += buf;
+
+                    cell_num++;
+                    snprintf(buf, sizeof(buf), "%d\n", cell_num * 8);
+                    off_str += buf;
+                    type_str += "12\n";
+                }
+            }
+        }
+
+        // Assemble XML document
+        XMLDocument doc;
+        XMLElement* vtk_elem = doc.NewElement("VTKFile");
+        vtk_elem->SetAttribute("type", "UnstructuredGrid");
+        vtk_elem->SetAttribute("version", "0.1");
+        vtk_elem->SetAttribute("byte_order", "LittleEndian");
+        doc.InsertFirstChild(vtk_elem);
+
+        XMLElement* grid_elem = doc.NewElement("UnstructuredGrid");
+        vtk_elem->InsertEndChild(grid_elem);
+
+        XMLElement* piece_elem = doc.NewElement("Piece");
+        piece_elem->SetAttribute("NumberOfPoints", num_points);
+        piece_elem->SetAttribute("NumberOfCells", cell_num);
+        grid_elem->InsertEndChild(piece_elem);
+
+        // Points
+        XMLElement* points_elem = doc.NewElement("Points");
+        piece_elem->InsertEndChild(points_elem);
+        XMLElement* coords_arr = doc.NewElement("DataArray");
+        coords_arr->SetAttribute("type", "Float64");
+        coords_arr->SetAttribute("NumberOfComponents", "3");
+        coords_arr->SetAttribute("format", "ascii");
+        coords_arr->SetText(coords_str.c_str());
+        points_elem->InsertEndChild(coords_arr);
+
+        // PointData (temperature)
+        XMLElement* point_data = doc.NewElement("PointData");
+        piece_elem->InsertEndChild(point_data);
+        XMLElement* temp_arr = doc.NewElement("DataArray");
+        temp_arr->SetAttribute("type", "Float64");
+        temp_arr->SetAttribute("Name", "Temperature");
+        temp_arr->SetAttribute("NumberOfComponents", "1");
+        temp_arr->SetAttribute("format", "ascii");
+        temp_arr->SetText(temp_str.c_str());
+        point_data->InsertEndChild(temp_arr);
+
+        // Cells
+        XMLElement* cells_elem = doc.NewElement("Cells");
+        piece_elem->InsertEndChild(cells_elem);
+
+        XMLElement* conn_arr_el = doc.NewElement("DataArray");
+        conn_arr_el->SetAttribute("type", "Int32");
+        conn_arr_el->SetAttribute("Name", "connectivity");
+        conn_arr_el->SetAttribute("format", "ascii");
+        conn_arr_el->SetText(conn_str.c_str());
+        cells_elem->InsertEndChild(conn_arr_el);
+
+        XMLElement* offsets_arr = doc.NewElement("DataArray");
+        offsets_arr->SetAttribute("type", "Int32");
+        offsets_arr->SetAttribute("Name", "offsets");
+        offsets_arr->SetAttribute("format", "ascii");
+        offsets_arr->SetText(off_str.c_str());
+        cells_elem->InsertEndChild(offsets_arr);
+
+        XMLElement* types_arr = doc.NewElement("DataArray");
+        types_arr->SetAttribute("type", "UInt8");
+        types_arr->SetAttribute("Name", "types");
+        types_arr->SetAttribute("format", "ascii");
+        types_arr->SetText(type_str.c_str());
+        cells_elem->InsertEndChild(types_arr);
+
+        doc.SaveFile(path.c_str());
     }
 
-    void write_xml(const std::string& output_path,
-        const std::string& input_path,
+    void write_xml(const std::string& input_path,
+        const std::string& output_path,
         const model::InternalModel& model,
         const std::vector<double>& node_temperature)
     {
-        // model parameter kept for API consistency; not used in current implementation
-        (void)model;
-        (void)output_path;
-        (void)input_path;
-        (void)node_temperature;
+        using namespace tinyxml2;
+
+        // Load the original XML
+        XMLDocument doc;
+        XMLError err = doc.LoadFile(input_path.c_str());
+        if (err != XML_SUCCESS) {
+            return;
+        }
+
+        XMLElement* results_elem = doc.FirstChildElement("Structure")->FirstChildElement("Results");
+        if (!results_elem) {
+            return;
+        }
+
+        XMLElement* any_type = results_elem->FirstChildElement("a:anyType");
+        if (!any_type) {
+            return;
+        }
+
+        XMLElement* values_elem = any_type->FirstChildElement("Values");
+        if (!values_elem) {
+            return;
+        }
+
+        XMLElement* data_elem = values_elem->FirstChildElement("Data");
+        if (!data_elem) {
+            return;
+        }
+
+        // Remove old data values
+        while (XMLElement* child = data_elem->FirstChildElement("a:double")) {
+            data_elem->DeleteChild(child);
+        }
+
+        // Node temperature layout: vx * node_ny * node_nz + vy * node_nz + vz
+        // Reference data ordering: index = vz + SizeZ * vy + SizeZ * SizeY * vx
+        // (X outermost, Y middle, Z innermost)
+        // Note: in the reference formula, 'x' maps to our Y dimension (stride = SizeZ)
+        // and 'y' maps to our X dimension (stride = SizeZ * SizeY).
+        int node_nx = model.mesh.nx + 1;
+        int node_ny = model.mesh.ny + 1;
+        int node_nz = model.mesh.nz + 1;
+
+        // Write new temperature values in reference ordering: (vx, vy, vz)
+        // Reference index = vz + SizeZ * vy + SizeZ * SizeY * vx
+        for (int vx = 0; vx < node_nx; vx++) {
+            for (int vy = 0; vy < node_ny; vy++) {
+                for (int vz = 0; vz < node_nz; vz++) {
+                    double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
+
+                    XMLElement* double_elem = doc.NewElement("a:double");
+                    if (std::isnan(val)) {
+                        double_elem->SetText("NaN");
+                    }
+                    else {
+                        char buf[64];
+                        snprintf(buf, sizeof(buf), "%.6f", val);
+                        double_elem->SetText(buf);
+                    }
+                    data_elem->InsertEndChild(double_elem);
+                }
+            }
+        }
+
+        // Update SizeX, SizeY, SizeZ
+        XMLElement* sx = values_elem->FirstChildElement("SizeX");
+        if (sx)
+            sx->SetText(node_nx);
+        XMLElement* sy = values_elem->FirstChildElement("SizeY");
+        if (sy)
+            sy->SetText(node_ny);
+        XMLElement* sz = values_elem->FirstChildElement("SizeZ");
+        if (sz)
+            sz->SetText(node_nz);
+
+        doc.SaveFile(output_path.c_str());
     }
 
 } // namespace mhs::io

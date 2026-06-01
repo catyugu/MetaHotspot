@@ -52,7 +52,7 @@ enum class ThermalBCType { FirstType, SecondType, ThirdType };
 
 struct FirstTypeThermalBC  { std::string temperature = "300.0"; };    // Dirichlet：固定温度
 struct SecondTypeThermalBC { std::string heat_flux = "0.0"; };         // Neumann：固定热通量
-struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0"; std::string h_inf = "300.0"; };  // Cauchy：换热
+struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0"; std::string T_inf = "300.0"; };  // Cauchy：换热
 
 struct Boundary {
     BoundaryCategory category;
@@ -142,23 +142,23 @@ struct ExpressionFunction {
 
 struct DoubleExponentialFunction {
     double a = 0.0, alpha = 0.0, beta = 0.0;
-    double draw_min_x = 0.0, double draw_max_x = 100.0;
+    double draw_min_x = 0.0, draw_max_x = 100.0;
 };
 
 struct GaussFunction {
     double a = 0.0, tau = 0.0, x0 = 0.0;
-    double draw_min_x = 0.0, double draw_max_x = 100.0;
+    double draw_min_x = 0.0, draw_max_x = 100.0;
 };
 
 struct SineFunction {
     double a = 0.0, omega = 0.0, phi = 0.0;
-    double draw_min_x = 0.0, double draw_max_x = 100.0;
+    double draw_min_x = 0.0, draw_max_x = 100.0;
 };
 
 struct PieceWiseFunction {
     struct Point { double x = 0.0, y = 0.0; };
     std::vector<Point> points;
-    double draw_min_x = 0.0, double draw_max_x = 100.0;
+    double draw_min_x = 0.0, draw_max_x = 100.0;
 };
 
 struct Function {

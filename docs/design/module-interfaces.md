@@ -5,26 +5,16 @@
 ```cpp
 namespace mhs::io {
 
-class Reader {
-public:
-    explicit Reader(const std::string& xml_path);
-    model::IOStructure read_xml();
-};
+model::IOStructure read_xml(const std::string& xml_path);
 
-class Writer {
-public:
-    explicit Writer(const std::string& output_path);
+void write_vtu(const std::string& path,
+    const model::InternalModel& model,
+    const std::vector<double>& node_temperature);
 
-    void write_result(const model::InternalModel& model,
-                      const std::vector<double>& temperature);
-
-    void write_vtu(const model::InternalModel& model,
-                   const std::vector<double>& temperature,
-                   const std::string& vtu_path);
-
-private:
-    std::string output_path_;
-};
+void write_xml(const std::string& input_path,
+    const std::string& output_path,
+    const model::InternalModel& model,
+    const std::vector<double>& node_temperature);
 
 } // namespace mhs::io
 ```
@@ -34,36 +24,67 @@ private:
 ## 4.2 `preprocessor`
 
 ```cpp
+namespace mhs {
+
+class Preprocessor {
+public:
+    Preprocessor() = default;
+    ~Preprocessor() = default;
+
+    std::unique_ptr<model::InternalModel> load(const model::IOStructure& ioStructure);
+};
+
+} // namespace mhs
+
 namespace mhs::preprocessor {
 
-class ModelBuilder {
-public:
-    explicit ModelBuilder(const model::IOStructure& io_model);
+// Convert length unit to SI (meters) scale factor
+double length_unit_to_si(model::LengthUnit unit);
 
-    model::InternalModel build();
+// Compute layer Z ranges from IO layers (top-down stacking)
+void compute_layer_z_ranges(const std::vector<model::Layer>& layers,
+    double si_scale,
+    std::vector<double>& z_start,
+    std::vector<double>& z_end);
 
-private:
-    const model::IOStructure& io_model_;
+// Determine which block a cell at (cx, cy, cz) belongs to
+int find_block_for_cell(const model::Layer& layer,
+    double cx, double cy, double cz,
+    double si_scale,
+    double layer_z_start, double layer_z_end);
+
+// Resolve cell validity, layer assignment, and material assignment
+void resolve_layers(const std::vector<model::Layer>& layers,
+    const model::MeshGeometry& mesh,
+    double si_scale,
+    const std::vector<double>& layer_z_start,
+    const std::vector<double>& layer_z_end,
+    const std::unordered_map<std::string, size_t>& name_to_idx,
+    model::CellFields& cells);
+
+} // namespace mhs::preprocessor
+
+namespace mhs::preprocessor {
+
+struct FaceKeyInfo {
+    char axis = 'Z';
+    char side = 'E';
+    double coord_value = 0.0;
+    std::vector<std::array<double, 4>> rects; // {a_min, a_max, b_min, b_max}
 };
 
-// 处理层几何 → 生成 valid_mask, index_map, material_id, layer_id
-class LayerProcessor {
-public:
-    static void resolve(
-        const std::vector<model::Layer>& layers,
-        const model::MeshGeometry& mesh,
-        model::CellFields& cells);
-};
+FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
+bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-// 解析面键字符串 → 为每个单元的每个面分配 CellBC
-class FaceKeyProcessor {
-public:
-    static void resolve(
-        const std::vector<model::Boundary>& boundaries,
-        const model::MeshGeometry& mesh,
-        model::CellFields& cells,
-        model::BCParamTable& bc_params);
-};
+void resolve_face_keys(const std::vector<model::Boundary>& boundaries,
+    model::ThermalBCType other_bc_type,
+    const model::FirstTypeThermalBC& other_bc_first,
+    const model::SecondTypeThermalBC& other_bc_second,
+    const model::ThirdTypeThermalBC& other_bc_third,
+    const model::MeshGeometry& mesh,
+    model::CellFields& cells,
+    model::BCParamTable& bc_params,
+    double si_scale);
 
 } // namespace mhs::preprocessor
 ```
@@ -72,22 +93,24 @@ public:
 
 ```text
 IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
-  └─> ModelBuilder::build()
+  └─> Preprocessor::load()
         ├─> 转换单位（length_unit → SI），注册几何变量 → expr
         ├─> 注册材料函数、用户函数 → expr
-        ├─> LayerProcessor::resolve()
-        │     ├─> 直接使用 mesh_vertex_x/y/z 构建顶点坐标
-        │     ├─> 计算 dx/dy/dz, cx/cy/cz
+        ├─> expr::clear_registry() （清除上次残留）
+        ├─> Build MeshGeometry from mesh_vertex_x/y/z (×si_scale)
+        ├─> compute_layer_z_ranges()
+        ├─> Build material_table (parse k/rho/c)
+        ├─> resolve_layers()
         │     ├─> 生成 valid_mask + index_map
         │     └─> 分配 material_id, layer_id（全网格大小）
-        ├─> FaceKeyProcessor::resolve()
+        ├─> Compile heat_source (find_block_for_cell per active cell)
+        ├─> resolve_face_keys()
         │     ├─> 解析 face_key 字符串
+        │     ├─> ThermalBCType → BcType conversion
         │     ├─> 为每个单元的每个面分配 CellBC
-        │     └─> 填充未指定面的 other_bc
-        └─> 编译表达式
-              ├─> 材料属性 k/rho/c → MaterialProps
-              ├─> BC 参数 → BCParamTable
-              └─> 热源 → CellFields.heat_source（紧凑）
+        │     ├─> 填充未指定面的 other_bc
+        │     └─> 虚拟单元邻面也分配 other_bc
+        └─> InternalModel ready
 ```
 
 ---
@@ -106,6 +129,7 @@ struct LinearSystem {
 class Assembler {
 public:
     explicit Assembler(const model::InternalModel& model);
+    ~Assembler() = default;
 
     LinearSystem assemble(const model::GlobalState& state);
 
@@ -136,7 +160,7 @@ private:
 ## 4.4 `solver`
 
 ```cpp
-namespace mhs::solver {
+namespace mhs {
 
 enum class SolverType { SparseLU, BiCGSTAB };
 
@@ -161,7 +185,7 @@ public:
     static std::unique_ptr<Solver> create(SolverType type);
 };
 
-} // namespace mhs::solver
+} // namespace mhs
 ```
 
 ---
@@ -169,7 +193,7 @@ public:
 ## 4.5 `scheduler`
 
 ```cpp
-namespace mhs::scheduler {
+namespace mhs {
 
 struct SchedulerConfig {
     double transient_duration = 0.0;
@@ -183,26 +207,29 @@ struct SchedulerConfig {
 
 class Scheduler {
 public:
+    Scheduler() = default;
     explicit Scheduler(const SchedulerConfig& config);
+    ~Scheduler() = default;
+
     void setModel(model::InternalModel* model);
+    void setSolver(std::unique_ptr<Solver> solver);
     void run();
-    void initialize();
-    bool advance_time_step();
-    bool is_finished() const;
     const std::vector<double>& solution() const;
 
 private:
     bool solve_nonlinear_step();
+    void step_time(double dt);
 
     model::InternalModel* model_ = nullptr;
+    std::unique_ptr<Solver> solver_;
     SchedulerConfig config_;
+    model::GlobalState state_;
+    std::vector<double> solution_;
     double current_time_ = 0.0;
     int current_step_ = 0;
-    std::unique_ptr<solver::Solver> solver_;
-    std::vector<double> solution_;
 };
 
-} // namespace mhs::scheduler
+} // namespace mhs
 ```
 
 ---
@@ -210,30 +237,21 @@ private:
 ## 4.6 `postprocessor`
 
 ```cpp
-namespace mhs::postprocessor {
+namespace mhs {
 
-class PostProcessor {
+class Postprocessor {
 public:
-    explicit PostProcessor(const std::string& output_dir);
+    Postprocessor() = default;
+    ~Postprocessor() = default;
 
-    // VTU 输出：展开 T 向量，虚拟区域填充 NaN
-    void write_vtu(const model::InternalModel& model,
-                   const std::vector<double>& temperature,
-                   const std::string& filename);
-
-    // XML 输出：展开 T 向量，虚拟区域填充 NaN
-    void write_xml_result(const model::InternalModel& model,
-                          const std::vector<double>& temperature,
-                          const std::string& filename);
+    std::vector<double> interpolate_cell_to_node(const model::InternalModel& model,
+        const std::vector<double>& cell_temperature) const;
 
     double max_temperature(const std::vector<double>& T) const;
     double min_temperature(const std::vector<double>& T) const;
-
-private:
-    std::string output_dir_;
 };
 
-} // namespace mhs::postprocessor
+} // namespace mhs
 ```
 
 ### 展开逻辑
@@ -250,4 +268,4 @@ for (int old_idx = 0; old_idx < total; old_idx++) {
         output_T[old_idx] = std::nan("");  // 虚拟区域 NaN
     }
 }
-```
+````

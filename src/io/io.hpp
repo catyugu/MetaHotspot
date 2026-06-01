@@ -13,8 +13,8 @@ namespace mhs::io {
         const model::InternalModel& model,
         const std::vector<double>& node_temperature);
 
-    void write_xml(const std::string& output_path,
-        const std::string& input_path,
+    void write_xml(const std::string& input_path,
+        const std::string& output_path,
         const model::InternalModel& model,
         const std::vector<double>& node_temperature);
 

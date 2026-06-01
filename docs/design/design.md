@@ -26,13 +26,13 @@
 | ADR-0002 | Cell-centered DOF；边界条件通过面积分施加，无需面 DOF                                |
 | ADR-0003 | 全局 SoA（Structure of Arrays）布局                                                  |
 | ADR-0004 | 几何表达式与场/BC 表达式求值分离；preprocessor 编译所有表达式为 `CompiledExpression` |
-| ADR-0005 | 面 BC 类型和参数预计算为 SoA 数组                                                    |
+| ADR-0006 | Cell-level BC 存储；每个单元的每个面独立 BC，解决面投影重叠                          |
 
 ### 关键原则
 
 1. **内部模型不含原始字符串** — 所有表达式在 preprocess 阶段编译为 `CompiledExpression`
 2. **热源为 per-cell** — `CellFields.heat_source` 是 `vector<CompiledExpression>`，由 `Block.ti_reyuan_expr` 编译
-3. **无虚函数** — 使用模板静态多态
+4. **无虚函数（solver 除外）** — Solver 使用虚接口（工厂模式），其余模块均使用模板静态多态
 4. **无异常** — 错误通过 `mhs::logger` 记录，程序通过 `mhs::panic()` 退出
 5. **POD 类型优先** — 所有内部模型结构均为 POD 兼容
 6. **纯函数优先** — `assembler::assemble()` 在给定 model + state 下无状态

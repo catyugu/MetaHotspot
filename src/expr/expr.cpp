@@ -36,7 +36,7 @@ namespace mhs::expr {
         }
     } // namespace registry
 
-    // Pre-compiled exprtk expression (thread-safe, reusable)
+    // ExprTKCompiled: owns its own symbol table and mutable context variables
     class ExprTKCompiled {
     public:
         explicit ExprTKCompiled(const std::string& formula)
@@ -45,9 +45,7 @@ namespace mhs::expr {
 
             sym_table_ = std::make_unique<symbol_table<double>>();
             expr_ = std::make_unique<expression<double>>();
-            parser_ = std::make_unique<parser<double>>();
 
-            // Add context variables
             sym_table_->add_variable("x", x_);
             sym_table_->add_variable("y", y_);
             sym_table_->add_variable("z", z_);
@@ -56,26 +54,16 @@ namespace mhs::expr {
 
             expr_->register_symbol_table(*sym_table_);
 
-            if (!parser_->compile(formula, *expr_)) {
-                valid_ = false;
-            }
-            else {
-                valid_ = true;
-            }
+            parser<double> parser;
+            valid_ = parser.compile(formula, *expr_);
         }
 
         bool valid() const { return valid_; }
 
         double eval(const FieldContext& ctx)
         {
-            if (!valid_) {
+            if (!valid_)
                 return 0.0;
-            }
-
-            // [FIX 2]: 加锁保护共享成员变量。
-            // 因为 ExprTKCompiled 在缓存中是单例的，多个线程可能会同时调用 eval，
-            // 并发修改 x_, y_, z_ 会导致严重的计算错误（Data Race）。
-            std::lock_guard<std::mutex> lock(eval_mutex_);
             x_ = ctx.x;
             y_ = ctx.y;
             z_ = ctx.z;
@@ -85,13 +73,61 @@ namespace mhs::expr {
         }
 
     private:
-        std::mutex eval_mutex_; // [FIX 2]: 新增互斥锁
         bool valid_ = true;
         double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
         std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
         std::unique_ptr<exprtk::expression<double>> expr_;
-        std::unique_ptr<exprtk::parser<double>> parser_;
     };
+
+    // CompiledExpression implementation
+    CompiledExpression::CompiledExpression() : is_const_(true), const_val_(0.0) { }
+
+    CompiledExpression::~CompiledExpression() = default;
+
+    CompiledExpression::CompiledExpression(CompiledExpression&& other) noexcept
+        : is_const_(other.is_const_), const_val_(other.const_val_), impl_(std::move(other.impl_))
+    {
+        other.is_const_ = true;
+        other.const_val_ = 0.0;
+    }
+
+    CompiledExpression& CompiledExpression::operator=(CompiledExpression&& other) noexcept
+    {
+        if (this != &other) {
+            is_const_ = other.is_const_;
+            const_val_ = other.const_val_;
+            impl_ = std::move(other.impl_);
+            other.is_const_ = true;
+            other.const_val_ = 0.0;
+        }
+        return *this;
+    }
+
+    double CompiledExpression::eval(const FieldContext& ctx) const
+    {
+        if (is_const_)
+            return const_val_;
+        if (!impl_)
+            return 0.0;
+        return impl_->eval(ctx);
+    }
+
+    CompiledExpression CompiledExpression::make_constant(double value)
+    {
+        CompiledExpression e;
+        e.is_const_ = true;
+        e.const_val_ = value;
+        return e;
+    }
+
+    CompiledExpression CompiledExpression::make_evaluator(std::unique_ptr<ExprTKCompiled> impl)
+    {
+        CompiledExpression e;
+        e.is_const_ = false;
+        e.const_val_ = 0.0;
+        e.impl_ = std::move(impl);
+        return e;
+    }
 
     // Thread-safe registry operations
     void set_variable(const std::string& name, double value)
@@ -130,26 +166,6 @@ namespace mhs::expr {
         registry::user_functions().clear();
     }
 
-    // Internal: pre-compiled exprtk expression holder
-    struct PrecompiledExpr {
-        std::unique_ptr<ExprTKCompiled> impl;
-        bool is_const = false;
-        double const_val = 0.0;
-    };
-
-    // Cache for compiled expressions (thread-safe)
-    static std::unordered_map<std::string, PrecompiledExpr>& expr_cache()
-    {
-        static std::unordered_map<std::string, PrecompiledExpr> cache;
-        return cache;
-    }
-
-    static std::mutex& cache_mutex()
-    {
-        static std::mutex m;
-        return m;
-    }
-
     CompiledExpression parse(const std::string& formula)
     {
         // Quick check for constant
@@ -161,37 +177,11 @@ namespace mhs::expr {
             }
         }
 
-        std::lock_guard<std::mutex> lock(cache_mutex());
-
-        // Check cache
-        auto it = expr_cache().find(formula);
-        if (it != expr_cache().end()) {
-            const auto& cached = it->second;
-            if (cached.is_const) {
-                return CompiledExpression::make_constant(cached.const_val);
-            }
-            return CompiledExpression::make_evaluator(
-                [impl = it->second.impl.get()](const FieldContext& ctx) {
-                    return impl ? impl->eval(ctx) : 0.0;
-                });
+        auto impl = std::make_unique<ExprTKCompiled>(formula);
+        if (!impl->valid()) {
+            return CompiledExpression::make_constant(0.0);
         }
-
-        // Compile and cache
-        auto precompiled = std::make_unique<ExprTKCompiled>(formula);
-        PrecompiledExpr entry;
-        entry.impl = std::move(precompiled);
-
-        expr_cache()[formula] = std::move(entry);
-        auto& cached = expr_cache()[formula];
-
-        if (cached.is_const) {
-            return CompiledExpression::make_constant(cached.const_val);
-        }
-
-        return CompiledExpression::make_evaluator(
-            [impl = cached.impl.get()](const FieldContext& ctx) {
-                return impl ? impl->eval(ctx) : 0.0;
-            });
+        return CompiledExpression::make_evaluator(std::move(impl));
     }
 
     double eval_geometry(const std::string& formula)
@@ -223,8 +213,6 @@ namespace mhs::expr {
         exprtk_expr.register_symbol_table(sym_table);
 
         parser<double> parser;
-
-        // 直接编译未经替换的、原始的 formula 字符串
         if (parser.compile(formula, exprtk_expr)) {
             return exprtk_expr.value();
         }

@@ -1,7 +1,6 @@
 #pragma once
 #include "expr/expr.hpp"
 #include "model/types.hpp"
-#include <deque>
 #include <vector>
 
 namespace mhs::model {
@@ -62,16 +61,12 @@ namespace mhs::model {
         int cell_count = 0; // = N_active
         double current_time = 0.0;
         int time_step = 0;
+        double dt = 0.0; // current time step size for transient assembly
         ConvergenceStatus status = ConvergenceStatus::Running;
 
         std::vector<double> T; // size = N_active
         std::vector<double> T_prev; // size = N_active
         std::vector<double> residual; // size = N_active
-
-        // Ring buffers
-        std::deque<std::vector<double>> T_history;
-        std::deque<std::vector<double>> nl_history;
-        std::deque<double> dt_history;
     };
 
     struct InternalModel {
