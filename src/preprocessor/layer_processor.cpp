@@ -67,28 +67,43 @@ namespace mhs::preprocessor {
             double block_x_offset_orig = expr::eval_geometry(block.x_offset_expr);
             double block_y_offset_orig = expr::eval_geometry(block.y_offset_expr);
 
-            bool in_add = false;
-            bool in_sub = false;
+            // ================= 核心布尔逻辑优化 =================
+            // 采用单一状态机变量，严格遵循 CAD 特征树的顺序求值
+            bool is_inside = false;
 
             for (const auto& rect : block.all_rects) {
-                double rx = (expr::eval_geometry(rect.x_expr) + block_x_offset_orig + layer_x_offset_orig) * si_scale;
-                double ry = (expr::eval_geometry(rect.y_expr) + block_y_offset_orig + layer_y_offset_orig) * si_scale;
-                double rw = expr::eval_geometry(rect.width_expr) * si_scale;
-                double rh = expr::eval_geometry(rect.height_expr) * si_scale;
+                double x_val = expr::eval_geometry(rect.x_expr);
+                double y_val = expr::eval_geometry(rect.y_expr);
+                double w_val = expr::eval_geometry(rect.width_expr);
+                double h_val = expr::eval_geometry(rect.height_expr);
 
+                // 归一化处理：正确处理负数拉伸，保证宽高永远为正
+                if (w_val < 0) {
+                    x_val += w_val;
+                    w_val = -w_val;
+                }
+                if (h_val < 0) {
+                    y_val += h_val;
+                    h_val = -h_val;
+                }
+
+                double rx = (x_val + block_x_offset_orig + layer_x_offset_orig) * si_scale;
+                double ry = (y_val + block_y_offset_orig + layer_y_offset_orig) * si_scale;
+                double rw = w_val * si_scale;
+                double rh = h_val * si_scale;
+
+                // 如果当前网格点落在该矩形内，则此矩形的操作会覆盖之前的状态
                 if (cx >= rx - EPS && cx <= rx + rw + EPS && cy >= ry - EPS && cy <= ry + rh + EPS) {
-                    if (rect.add_sub) {
-                        in_add = true;
-                    }
-                    else {
-                        in_sub = true;
-                    }
+                    // 若是加操作，点变为实心(true)；若是减操作，点变为空洞(false)
+                    // 因为是顺次执行，后面的加操作可以完美填补前面减操作挖出来的洞
+                    is_inside = rect.add_sub;
                 }
             }
 
-            if (in_add && !in_sub) {
+            if (is_inside) {
                 return b;
             }
+            // ====================================================
         }
 
         return -1;
