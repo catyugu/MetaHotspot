@@ -1,4 +1,5 @@
 #include "assembler/assembler.hpp"
+#include "config.h"
 #include "io/io.hpp"
 #include "model/internal_model.hpp"
 #include "model/io_model.hpp"
@@ -369,8 +370,8 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
 
 TEST(AssemblerTest, Case1AssemblyRuns)
 {
-    std::string case_path = "cases/original_steady_tests/case1.xml";
-    if (!std::filesystem::exists(case_path)) {
+    std::string case_path = "/cases/original_steady_tests/case1.xml";
+    if (!std::filesystem::exists(PROJECT_SOURCE_DIR + case_path)) {
         GTEST_SKIP() << "Case1 XML not found";
     }
 

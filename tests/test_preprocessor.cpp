@@ -1,3 +1,4 @@
+#include "config.h"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
 #include "model/internal_model.hpp"
@@ -477,8 +478,8 @@ TEST(PreprocessorTest, HeatSourceCompilation)
 
 TEST(PreprocessorTest, Case1XMLLoad)
 {
-    std::string case_path = "cases/original_steady_tests/case1.xml";
-    if (!std::filesystem::exists(case_path)) {
+    std::string case_path = "/cases/original_steady_tests/case1.xml";
+    if (!std::filesystem::exists(PROJECT_SOURCE_DIR + case_path)) {
         GTEST_SKIP() << "Case1 XML not found at " << case_path;
     }
 
@@ -499,4 +500,76 @@ TEST(PreprocessorTest, Case1XMLLoad)
 
     // Material table should have copper and silicon
     EXPECT_EQ(model->material_table.size(), 2);
+}
+// ---- Epsilon Tolerance Tests for find_block_for_cell ----
+
+TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
+{
+    // This test verifies that cells whose centers fall exactly on
+    // a block rect boundary edge (due to floating-point alignment)
+    // are correctly classified as valid, not incorrectly excluded.
+    //
+    // Setup: 100x100x30mm domain, 2x2x9 cells.
+    // Block rect: x=25, width=50, y=0, height=100 -> covers [25mm, 75mm] in X
+    // Cell ix=0: cx=25mm -> exactly at rx=25mm (lower bound inclusive)
+    // Cell ix=1: cx=75mm -> exactly at rx+rw=75mm (upper bound must be inclusive with epsilon)
+    // Without epsilon tolerance, strict `<` on upper bound excludes ix=1.
+
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0, 50, 100};
+    io.mesh_vertex_y = {0, 50, 100};
+    io.mesh_vertex_z = {0, 10, 20, 30};
+
+    Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "30";
+
+    Block block;
+    block.name = "b1";
+    block.material_name = "copper";
+    block.thickness_expr = "30";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "25";
+    rect.y_expr = "0";
+    rect.width_expr = "50";
+    rect.height_expr = "100";
+    block.all_rects.push_back(rect);
+
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material copper;
+    copper.name = "copper";
+    copper.daore_xishu = "400";
+    io.materials["copper"] = copper;
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int ny = model->mesh.ny;
+    int nz = model->mesh.nz;
+
+    // Cell (ix=0, iy=0, iz=0): cx=25mm >= rx=25mm, should be valid
+    int idx0 = 0 * ny * nz + 0 * nz + 0;
+    EXPECT_EQ(model->cells.valid_mask[idx0], 1);
+
+    // Cell (ix=1, iy=0, iz=0): cx=75mm exactly equals rx+rw=75mm
+    // Without epsilon tolerance, this cell is incorrectly classified as virtual
+    int idx1 = 1 * ny * nz + 0 * nz + 0;
+    EXPECT_EQ(model->cells.valid_mask[idx1], 1);
 }
