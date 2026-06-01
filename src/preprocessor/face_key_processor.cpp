@@ -113,8 +113,9 @@ namespace mhs::preprocessor {
 
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b)
     {
+        constexpr double EPS = 1e-9;
         for (const auto& rect : fk.rects) {
-            if (a >= rect[0] && a <= rect[1] && b >= rect[2] && b <= rect[3]) {
+            if (a >= rect[0] - EPS && a <= rect[1] + EPS && b >= rect[2] - EPS && b <= rect[3] + EPS) {
                 return true;
             }
         }
