@@ -33,32 +33,28 @@ namespace mhs::preprocessor {
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
 
         // Compute layer Z ranges (top-down stacking)
-        // Top layer starts at the total thickness sum, going down
-        std::vector<double> z_start(num_layers);
-        std::vector<double> z_end(num_layers);
+        // Evaluate thicknesses once, then assign z_start/z_end directly
+        std::vector<double> thickness(num_layers);
         double z_cursor = 0.0;
         for (int l = 0; l < num_layers; l++) {
-            double layer_thick = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
-            z_cursor += layer_thick;
+            thickness[l] = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
+            z_cursor += thickness[l];
         }
         for (int l = 0; l < num_layers; l++) {
-            double layer_thick = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
-            z_start[l] = z_cursor - layer_thick;
-            z_end[l] = z_cursor;
-            z_cursor -= layer_thick;
+            resolved[l].z_start = z_cursor - thickness[l];
+            resolved[l].z_end = z_cursor;
+            z_cursor -= thickness[l];
         }
 
         for (int l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
-            resolved[l].x_offset_si = expr::eval_geometry(layer.x_offset_expr) * si_scale;
-            resolved[l].y_offset_si = expr::eval_geometry(layer.y_offset_expr) * si_scale;
-            resolved[l].z_start = z_start[l];
-            resolved[l].z_end = z_end[l];
+            double layer_x_off_si = expr::eval_geometry(layer.x_offset_expr) * si_scale;
+            double layer_y_off_si = expr::eval_geometry(layer.y_offset_expr) * si_scale;
 
             for (const auto& block : layer.blocks) {
                 ResolvedBlock rb;
-                rb.x_offset_si = expr::eval_geometry(block.x_offset_expr) * si_scale;
-                rb.y_offset_si = expr::eval_geometry(block.y_offset_expr) * si_scale;
+                double block_x_off_si = expr::eval_geometry(block.x_offset_expr) * si_scale;
+                double block_y_off_si = expr::eval_geometry(block.y_offset_expr) * si_scale;
                 rb.material_name = block.material_name;
                 rb.ti_reyuan_expr = block.ti_reyuan_expr;
 
@@ -81,14 +77,9 @@ namespace mhs::preprocessor {
                         h_val = -h_val;
                     }
 
-                    // Compute absolute SI coordinates: (rect + block_offset + layer_offset) * si_scale
-                    double block_x_off = expr::eval_geometry(block.x_offset_expr);
-                    double block_y_off = expr::eval_geometry(block.y_offset_expr);
-                    double layer_x_off = expr::eval_geometry(layer.x_offset_expr);
-                    double layer_y_off = expr::eval_geometry(layer.y_offset_expr);
-
-                    rr.x = (x_val + block_x_off + layer_x_off) * si_scale;
-                    rr.y = (y_val + block_y_off + layer_y_off) * si_scale;
+                    // Absolute SI coordinates: rect-local * si_scale + pre-resolved offsets
+                    rr.x = x_val * si_scale + block_x_off_si + layer_x_off_si;
+                    rr.y = y_val * si_scale + block_y_off_si + layer_y_off_si;
                     rr.width = w_val * si_scale;
                     rr.height = h_val * si_scale;
 

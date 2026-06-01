@@ -2,8 +2,6 @@
 
 #include "model/internal_model.hpp"
 #include "model/io_model.hpp"
-#include <string>
-#include <vector>
 
 namespace mhs::preprocessor {
 
@@ -19,8 +17,6 @@ namespace mhs::preprocessor {
     // Pre-resolved geometry for a single block
     struct ResolvedBlock {
         std::vector<ResolvedRect> rects;
-        double x_offset_si; // block x offset in SI meters
-        double y_offset_si; // block y offset in SI meters
         std::string material_name;
         std::string ti_reyuan_expr; // kept as string for later expr::parse
     };
@@ -28,8 +24,6 @@ namespace mhs::preprocessor {
     // Pre-resolved geometry for a single layer
     struct ResolvedLayerGeometry {
         std::vector<ResolvedBlock> blocks;
-        double x_offset_si; // layer x offset in SI meters
-        double y_offset_si; // layer y offset in SI meters
         double z_start; // SI z coordinate of layer bottom
         double z_end; // SI z coordinate of layer top
     };
