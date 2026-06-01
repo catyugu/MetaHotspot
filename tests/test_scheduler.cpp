@@ -58,7 +58,7 @@ TEST(SchedulerTest, ConstructWithConfig)
 {
     SchedulerConfig config;
     config.is_steady = true;
-    config.max_newton_iterations = 10;
+    config.max_nonlinear_iterations = 10;
     Scheduler scheduler(config);
 }
 
@@ -133,8 +133,8 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     SchedulerConfig config;
     config.is_steady = true;
-    config.max_newton_iterations = 50;
-    config.newton_tolerance = 1e-6;
+    config.max_nonlinear_iterations = 50;
+    config.nonlinear_tolerance = 1e-6;
 
     Scheduler scheduler(config);
     scheduler.setModel(model.get());
@@ -214,8 +214,8 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     SchedulerConfig config;
     config.is_steady = true;
-    config.max_newton_iterations = 50;
-    config.newton_tolerance = 1e-6;
+    config.max_nonlinear_iterations = 50;
+    config.nonlinear_tolerance = 1e-6;
 
     Scheduler scheduler(config);
     scheduler.setModel(model.get());
@@ -237,8 +237,8 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, SchedulerConfigDefaults)
 {
     SchedulerConfig config;
-    EXPECT_EQ(config.max_newton_iterations, 50);
-    EXPECT_NEAR(config.newton_tolerance, 1e-6, 1e-10);
+    EXPECT_EQ(config.max_nonlinear_iterations, 50);
+    EXPECT_NEAR(config.nonlinear_tolerance, 1e-6, 1e-10);
     EXPECT_NEAR(config.underrelaxation, 1.0, 1e-10);
     EXPECT_FALSE(config.is_steady);
 }
@@ -247,12 +247,12 @@ TEST(SchedulerTest, SchedulerConfigCustom)
 {
     SchedulerConfig config;
     config.is_steady = true;
-    config.max_newton_iterations = 20;
-    config.newton_tolerance = 1e-4;
+    config.max_nonlinear_iterations = 20;
+    config.nonlinear_tolerance = 1e-4;
     config.underrelaxation = 0.7;
 
     EXPECT_TRUE(config.is_steady);
-    EXPECT_EQ(config.max_newton_iterations, 20);
-    EXPECT_NEAR(config.newton_tolerance, 1e-4, 1e-10);
+    EXPECT_EQ(config.max_nonlinear_iterations, 20);
+    EXPECT_NEAR(config.nonlinear_tolerance, 1e-4, 1e-10);
     EXPECT_NEAR(config.underrelaxation, 0.7, 1e-10);
 }

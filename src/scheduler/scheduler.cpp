@@ -28,7 +28,7 @@ namespace mhs {
 
         if (model_->study_type == StudyType::Steady) {
             nonlinear::solve(*model_, state_, *solver_,
-                config_.underrelaxation, config_.max_newton_iterations, config_.newton_tolerance);
+                config_.underrelaxation, config_.max_nonlinear_iterations, config_.nonlinear_tolerance);
             solution_ = state_.T;
         }
         else {
@@ -39,9 +39,9 @@ namespace mhs {
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
                 auto result = nonlinear::solve(*model_, state_, *solver_,
-                    config_.underrelaxation, config_.max_newton_iterations, config_.newton_tolerance);
+                    config_.underrelaxation, config_.max_nonlinear_iterations, config_.nonlinear_tolerance);
                 if (!result.converged) {
-                    MHS_LOG_WARN("Newton iteration did not converge at time step {}", state_.time_step);
+                    MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
                 }
 
                 state_.current_time += dt;

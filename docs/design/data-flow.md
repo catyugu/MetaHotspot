@@ -46,7 +46,7 @@ XML 文件
 | 预处理-表达式编译 | IO 字符串表达式                            | `CompiledExpression`       | exprtk 编译或 `make_constant`          |
 | 组装              | `InternalModel` + `GlobalState`（含 `dt`） | `LinearSystem`             | 遍历活跃单元，组装 A 和 b              |
 | 线性求解          | `A * x = b`                                | `x`                        | Eigen `SparseLU` 或 `BiCGSTAB`         |
-| Newton 更新       | `ΔT`                                       | `T_new = T_old + ω·ΔT`     | 状态更新                               |
+| 非线性 更新       | `ΔT`                                       | `T_new = T_old + ω·ΔT`     | 状态更新                               |
 | 后处理            | `InternalModel` + `T`                      | VTU + XML                  | 展开 T 向量，写出文件                  |
 
 ---

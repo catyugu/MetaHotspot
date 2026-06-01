@@ -131,7 +131,7 @@ struct GlobalState {
 > ```cpp
 > // 计划添加，用于自适应 dt 和收敛监控
 > std::deque<std::vector<double>> T_history;     // ring buffer: 过去时间步的温度场
-> std::deque<std::vector<double>> nl_history;    // ring buffer: Newton 迭代历史
+> std::deque<std::vector<double>> nl_history;    // ring buffer: 非线性迭代历史
 > std::deque<double> dt_history;                 // ring buffer: 时间步历史
 > ```
 >

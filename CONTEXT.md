@@ -59,7 +59,7 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
     - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
     - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` are defined in `io_model.hpp` but not yet implemented — dead code. `io.cpp` does not parse them from XML, and no converter module exists yet.
 
-2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration (namespace `mhs`)
+2. **Scheduler**: Outer loop — time stepping + nonlinear Anderson accelerated iteration (namespace `mhs`)
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — virtual factory pattern (namespace `mhs`)
 5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O. (namespace `mhs`)

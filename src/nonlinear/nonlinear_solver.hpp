@@ -5,12 +5,12 @@
 
 namespace mhs::nonlinear {
 
-    struct NewtonResult {
+    struct NonLinearResult {
         bool converged = false;
         int iterations = 0;
     };
 
-    NewtonResult solve(const model::InternalModel& model,
+    NonLinearResult solve(const model::InternalModel& model,
         model::GlobalState& state,
         Solver& solver,
         double underrelaxation,
