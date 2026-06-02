@@ -17,18 +17,19 @@ MetaHotspot/
 │   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
 │   ├── assembler/             # Jacobian 和 RHS 组装
+│   ├── nonlinear/             # Anderson 加速非线性迭代（namespace mhs::nonlinear）
 │   ├── solver/                # Eigen 稀疏求解器工厂（namespace mhs, not mhs::solver）
-│   ├── scheduler/            # 仿真循环调度（namespace mhs, not mhs::scheduler）
+│   ├── scheduler/             # 仿真循环调度（namespace mhs, not mhs::scheduler）
 │   ├── postprocessor/         # VTU/XML 输出（namespace mhs, not mhs::postprocessor）
-│   ├── logger/                # spdlog 封装、全局单例、mhs::panic()
-│   └── utils/                 # 通用工具函数（暂未使用）
+│   └── logger/                # spdlog 封装、free function API、mhs::panic()
 ├── tests/
 │   ├── CMakeLists.txt         # GTest 配置、测试发现
-│   ├── model/                 # 模型结构测试
-│   ├── expr/                  # 表达式求值测试
-│   ├── preprocessor/          # 网格生成、BC 解析测试
-│   ├── assembler/             # 组装测试
-│   └── scheduler/             # 仿真循环集成测试
+│   ├── test_expr.cpp          # 表达式求值测试
+│   ├── test_preprocessor.cpp  # 网格生成、BC 解析测试
+│   ├── test_assembler.cpp     # 组装测试
+│   ├── test_scheduler.cpp     # 仿真循环集成测试
+│   ├── test_postprocessor.cpp # 后处理测试
+│   └── test_logger.cpp        # 日志测试
 ├── bin/                       # 可执行目标构建输出目录
 │   └── CMakeLists.txt         # 主程序入口 target
 ```
@@ -68,20 +69,32 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 ## Logger 接口
 
-### 全局单例
+### Free Function API
 
 ```cpp
 namespace mhs::logger {
 
-// 全局日志单例，程序启动时初始化。
-// 日志级别由 CMake VERBOSE 选项控制：
-//   VERBOSE=OFF  → 默认级别 INFO
-//   VERBOSE=ON   → 默认级别 DEBUG
-// 用户也可在运行时通过 MHS_LOG_LEVEL env var 覆盖。
-Logger& instance();
+// 初始化日志系统（仅需在程序入口调用一次）
+void init(std::string_view log_file = {}, bool console_output = true);
 
-// 初始化（通常在 main() 开头调用）
-void init(const std::string& log_file = "", bool console_output = true);
+// 手动刷新日志缓冲
+void flush();
+
+// 记录错误并退出进程（无格式化参数，由 MHS_LOG_ERROR 宏调用）
+[[noreturn]] void panic();
+
+// 模板化日志记录函数（直接转发到 spdlog）
+template <typename... Args>
+void debug(spdlog::format_string_t<Args...> fmt, Args&&... args);
+
+template <typename... Args>
+void info(spdlog::format_string_t<Args...> fmt, Args&&... args);
+
+template <typename... Args>
+void warn(spdlog::format_string_t<Args...> fmt, Args&&... args);
+
+template <typename... Args>
+void error(spdlog::format_string_t<Args...> fmt, Args&&... args);
 
 } // namespace mhs::logger
 ```
@@ -89,27 +102,33 @@ void init(const std::string& log_file = "", bool console_output = true);
 ### 日志宏
 
 ```cpp
-// INFO 级别日志（始终启用）
-#define MHS_LOG_INFO(...) ...
-
 // DEBUG 级别日志（VERBOSE=ON 时启用，否则为空宏）
-#define MHS_LOG_DEBUG(...) ...
+#ifdef VERBOSE
+#define MHS_LOG_DEBUG(...) ::mhs::logger::debug(__VA_ARGS__)
+#else
+#define MHS_LOG_DEBUG(...) (void)0
+#endif
 
-// ERROR 级别日志，记录后触发 panic（程序终止）
-#define MHS_LOG_ERROR(...) mhs::logger::instance().panic(__VA_ARGS__)
+// INFO 级别日志（始终启用）
+#define MHS_LOG_INFO(...) ::mhs::logger::info(__VA_ARGS__)
 
 // WARN 级别日志，记录警告并报告默认值
-#define MHS_LOG_WARN(...)
+#define MHS_LOG_WARN(...) ::mhs::logger::warn(__VA_ARGS__)
+
+// ERROR 级别日志，记录后触发 panic（程序终止）
+// 实际行为：先调用 error(fmt, args)，再调用 panic()
+#define MHS_LOG_ERROR(...) (::mhs::logger::error(__VA_ARGS__), ::mhs::logger::panic())
 ```
 
-### mhs::panic()
+### mhs::logger::panic()
 
 ```cpp
 namespace mhs::logger {
 
-// 记录错误信息到日志（ERROR 级别），然后 std::exit(1)。
+// 无格式化参数。仅记录标记并调用 std::exit(1)。
 // 不抛出异常，不触发栈展开。
-[[noreturn]] void panic(const char* fmt, auto&&... args);
+// 由 MHS_LOG_ERROR 宏调用——宏先调用 error(fmt, args) 记录消息，再调用 panic() 退出。
+[[noreturn]] void panic();
 
 } // namespace mhs::logger
 ```
@@ -156,7 +175,8 @@ if (io_model.dimension == Dimension::Dimension2D) {
 | `mhs::model`         | 类型、IO 模型、内部模型数据结构                       |
 | `mhs::io`            | XML 序列化/反序列化                                   |
 | `mhs::expr`          | exprtk 封装、CompiledExpression、native function 注册 |
-| `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译                         |
+| `mhs::preprocessor`  | 网格生成、BC 解析、表达式编译（free functions）       |
+| `mhs`                | Preprocessor 类、Solver、Scheduler、Postprocessor     |
 | `mhs::assembler`     | Jacobian 和 RHS 组装                                  |
-| `mhs`                | Solver、Scheduler、Postprocessor                      |
-| `mhs::logger`        | spdlog 封装、全局单例、mhs::panic()                   |
+| `mhs::nonlinear`     | Anderson 加速非线性迭代（free function solve()）      |
+| `mhs::logger`        | spdlog 封装、free function API、mhs::panic()          |

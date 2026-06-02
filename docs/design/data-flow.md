@@ -67,7 +67,7 @@ XML 文件
 BC 存储在单元级别，解决面投影重叠问题：
 
 - 每个单元的每个面独立 BC（`CellBC { types[6], param_idxs[6] }`）
-- `FaceBCFields` 已移除（ADR-0005 → ADR-0006）
+- **FaceBCFields 已移除**（ADR-0005）
 
 ### 4. 虚拟单元标记与展开
 

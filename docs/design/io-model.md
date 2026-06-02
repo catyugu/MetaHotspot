@@ -126,10 +126,10 @@ struct IOStructure {
 
 ---
 
-## 2.2 表达式函数类型（TODO：待实现）
+## 2.2 表达式函数类型（TODO：尚未定义）
 
-> **注意**：以下类型体系尚未实现。当前 `IOStructure.functions` 为 `unordered_map<string, FieldEvaluator>` 的扁平 map。
-> 未来将实现完整的 Function 类型体系，支持从 XML 解析结构化函数定义（Gauss、PieceWise 等），
+> **注意**：以下类型体系尚未定义——连头文件声明也不存在。当前 `IOStructure.functions` 为 `unordered_map<string, FieldEvaluator>` 的扁平 map。
+> 未来计划定义完整的 Function 类型体系，支持从 XML 解析结构化函数定义（Gauss、PieceWise 等），
 > 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
 
 ```cpp

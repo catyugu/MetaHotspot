@@ -26,7 +26,7 @@
 | ADR-0002 | Cell-centered DOF；边界条件通过面积分施加，无需面 DOF                                |
 | ADR-0003 | 全局 SoA（Structure of Arrays）布局                                                  |
 | ADR-0004 | 几何表达式与场/BC 表达式求值分离；preprocessor 编译所有表达式为 `CompiledExpression` |
-| ADR-0006 | Cell-level BC 存储；每个单元的每个面独立 BC，解决面投影重叠                          |
+| ADR-0005 | Cell-level BC 存储；每个单元的每个面独立 BC，解决面投影重叠                          |
 
 > **注**：Block 仅在 XY 平面通过 add/sub Rect 定义几何，Z 维度完全由 Layer 控制（`ResolvedBlock` 无 Z 范围字段）。FaceKey 第3字段为空间坐标（CoordValue），非层索引。
 

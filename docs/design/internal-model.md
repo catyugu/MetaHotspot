@@ -126,16 +126,15 @@ struct GlobalState {
 } // namespace mhs::model
 ```
 
-> **TODO（自适应时间步进）**: 未来将添加 ring buffer 支持：
+> **TODO（多步法时间步进）**: 未来将添加时间步 ring buffer 支持：
 >
 > ```cpp
-> // 计划添加，用于自适应 dt 和收敛监控
+> // 计划添加，用于多步法（如 BDF2）时间步进
 > std::deque<std::vector<double>> T_history;     // ring buffer: 过去时间步的温度场
-> std::deque<std::vector<double>> nl_history;    // ring buffer: 非线性迭代历史
 > std::deque<double> dt_history;                 // ring buffer: 时间步历史
 > ```
 >
-> 配合 `SchedulerConfig` 中新增的 `ring_buffer_capacity` 参数（默认 5），用于自适应时间步长策略。
+> 配合 `SchedulerConfig` 中新增的 `ring_buffer_capacity` 参数（默认 5），用于多步法时间步长策略。
 
 ---
 

@@ -63,7 +63,7 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
     - **IO model** (`io_model.hpp`): AoS structs mirroring XML schema. Uses `ThermalBCType` (FirstType, SecondType, ThirdType) matching XML element names. Length unit (`LengthUnit`: M, Mm, Um, Nm, Inch, Mil) converted to SI (meters) here.
     - **Internal model** (`internal_model.hpp`): All geometry in SI units (meters), no unit storage.
     - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
-    - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` are defined in `io_model.hpp` but not yet implemented — dead code. `io.cpp` does not parse them from XML, and no converter module exists yet.
+    - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction`, `DoubleExponentialFunction` are planned but not yet defined — even in headers. Current `IOStructure.functions` is a flat `unordered_map<string, FieldEvaluator>` using native function registration.
 
 2. **Scheduler**: Outer loop — time stepping + nonlinear Anderson accelerated iteration (namespace `mhs`)
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
@@ -76,19 +76,17 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 Persistent state across simulation, stored in `model::GlobalState`:
 
 - **Core fields**: `T` (current temperature), `T_prev` (previous time step), `residual`
-- **Ring buffers**: `T_history` (past time steps), `nl_history` (non-linear snapshots), `dt_history`
-- **Ring buffer capacity**: Configurable, default 5
-- **Convergence status**: `Running`, `Converged`, `Diverged`
+- **Time stepping**: `current_time`, `time_step` (step counter), `dt` (current step size)
 
 ## Key Design Principles
 
 1. **No raw strings in internal model** — all expressions compiled to `CompiledExpression`
 2. **Expr registry is global** — `Preprocessor::load()` calls `clear_registry()` then populates; external code uses `parse()`/`eval()`
-3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected; `eval()` on cached ExprTK expressions has a mutex (singleton in cache), constant expressions are lock-free
+3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected; `eval()` is lock-free — each `CompiledExpression` owns its own `ExprTKCompiled` instance, no shared mutable state. Constant expressions (`make_constant`) are also lock-free.
 4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
 5. **Backward Euler** — transient time discretization (θ=1.0), the code uses `ρ*c*vol/dt * (T - T_prev)` mass term
-6. **TBB parallel assembly** — `tbb::parallel_for` over cells (planned, not yet implemented — eval_mutex on ExprTK would serialize it)
-7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`, `ConvergenceStatus`); `io_model.hpp` includes it instead of redeclaring
+6. **TBB parallel assembly** — `tbb::parallel_for` over cells. `CompiledExpression::eval()` is lock-free (per-instance ownership), so no serialization bottleneck.
+7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`) and core types (`FieldContext`, `FaceDir`, `FieldEvaluator`); `io_model.hpp` includes it instead of redeclaring
 
 ## Glossary
 

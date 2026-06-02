@@ -203,7 +203,6 @@ struct SchedulerConfig {
     double nonlinear_tolerance = 1e-6;
     double underrelaxation = 1.0;
     bool is_steady = false;
-    int ring_buffer_capacity = 5;
 };
 
 class Scheduler {
@@ -218,20 +217,41 @@ public:
     const std::vector<double>& solution() const;
 
 private:
-    bool solve_nonlinear_step();
-    void step_time(double dt);
-
     model::InternalModel* model_ = nullptr;
     std::unique_ptr<Solver> solver_;
     SchedulerConfig config_;
     model::GlobalState state_;
     std::vector<double> solution_;
-    double current_time_ = 0.0;
-    int current_step_ = 0;
 };
 
 } // namespace mhs
 ```
+
+> **Note**: Nonlinear iteration is delegated to `mhs::nonlinear::solve()` (see §4.5.1 below), not a private method on `Scheduler`. Time state (`current_time`, `time_step`, `dt`) lives in `GlobalState`, not as private members on `Scheduler`.
+
+---
+
+## 4.5.1 `nonlinear`
+
+```cpp
+namespace mhs::nonlinear {
+
+struct NonLinearResult {
+    bool converged = false;
+    int iterations = 0;
+};
+
+NonLinearResult solve(const model::InternalModel& model,
+    model::GlobalState& state,
+    Solver& solver,
+    double underrelaxation,
+    int max_iterations,
+    double tolerance);
+
+} // namespace mhs::nonlinear
+```
+
+Anderson-accelerated fixed-point iteration. `solve()` performs the full nonlinear loop (assemble → solve → underrelaxation update → check convergence) and returns whether it converged and how many iterations it took. Called by `Scheduler::run()` for each time step (or once for steady-state).
 
 ---
 

@@ -34,11 +34,11 @@ struct CellFields {
 
 ```text
 IOStructure
-  └─> ModelBuilder::build()
-        ├─> LayerProcessor::resolve()
+  └─> Preprocessor::load()
+        ├─> preprocessor::resolve_layers()
         │     ├─> Generate valid_mask, index_map
         │     └─> Assign material_id, layer_id per cell
-        ├─> FaceKeyProcessor::resolve()
+        ├─> preprocessor::resolve_face_keys()
         │     └─> Assign CellBC to each cell's faces
         │         (handles projection overlap by cell-to-face assignment)
         ├─> Apply other_bc to unspecified faces
