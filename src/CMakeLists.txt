@@ -16,6 +16,10 @@ add_library(mhs_lib
 
 target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib io_lib solver_lib)
 
+if(VERBOSE)
+    target_compile_definitions(mhs_lib PUBLIC VERBOSE)
+endif()
+
 target_include_directories(mhs_lib
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>

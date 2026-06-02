@@ -13,42 +13,11 @@
             <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
                 <a:string>Z|E|0|-50,50,-60,60</a:string>
             </FaceKeys>
-            <Name>边界 4</Name>
-            <ThermalBoundary i:type="a:FirstTypeThermalBoundary"
-                xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
-                <a:Temperature>300</a:Temperature>
-            </ThermalBoundary>
-        </Boundary>
-        <Boundary>
-            <BoundaryCategory>Electrical</BoundaryCategory>
-            <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
-            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>X|E|5|-7.5|7.5|26|29</a:string>
-                <a:string>Y|E|7.5|-5|0|26|29</a:string>
-                <a:string>Y|E|7.5|0|5|26|29</a:string>
-                <a:string>X|E|-5|-7.5|0|26|29</a:string>
-                <a:string>X|E|-5|0|7.5|26|29</a:string>
-                <a:string>Y|E|-7.5|-5|5|26|29</a:string>
-            </FaceKeys>
             <Name>边界 5</Name>
             <ThermalBoundary i:type="a:ThirdTypeThermalBoundary"
                 xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
-                <a:ConvectionCoefficient>10</a:ConvectionCoefficient>
+                <a:ConvectionCoefficient>60</a:ConvectionCoefficient>
                 <a:EnvironmentTemperature>200</a:EnvironmentTemperature>
-            </ThermalBoundary>
-        </Boundary>
-        <Boundary>
-            <BoundaryCategory>Electrical</BoundaryCategory>
-            <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
-            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>X|E|-15|-50|25|20|26</a:string>
-                <a:string>X|E|15|-25|25|20|26</a:string>
-                <a:string>X|E|0|-50|-25|20|26</a:string>
-            </FaceKeys>
-            <Name>边界 6</Name>
-            <ThermalBoundary i:type="a:SecondTypeThermalBoundary"
-                xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
-                <a:HeatFlux>1000</a:HeatFlux>
             </ThermalBoundary>
         </Boundary>
     </Boundaries>
@@ -266,7 +235,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>t_top</ThicknessExpression>
-                    <TiReyuan>1e9</TiReyuan>
+                    <TiReyuan>1e8</TiReyuan>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -381,7 +350,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>10</ThicknessExpression>
-                    <TiReyuan>5e7</TiReyuan>
+                    <TiReyuan>1e7</TiReyuan>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -620,506 +589,506 @@
             <Name>温度</Name>
             <Values>
                 <Data>
-                    <a:double>300</a:double>
-                    <a:double>300.3916724788275</a:double>
+                    <a:double>372.24169860966606</a:double>
+                    <a:double>372.309044490657</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.61890057458442</a:double>
+                    <a:double>372.26115235900255</a:double>
+                    <a:double>372.36372299984669</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.84201787420966</a:double>
+                    <a:double>372.29097134973148</a:double>
+                    <a:double>372.423747081468</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.91389602869185</a:double>
+                    <a:double>372.31338725756484</a:double>
+                    <a:double>372.45043603170029</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.98631916166158</a:double>
+                    <a:double>372.32298704391195</a:double>
+                    <a:double>372.4646961522779</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.069082823357</a:double>
+                    <a:double>372.30794593187744</a:double>
+                    <a:double>372.45572444529824</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.162759874914</a:double>
+                    <a:double>372.26191191849131</a:double>
+                    <a:double>372.41354386595378</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.21610316536515</a:double>
+                    <a:double>372.18899293879218</a:double>
+                    <a:double>372.34249073210697</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.16416679837579</a:double>
+                    <a:double>372.07620749341748</a:double>
+                    <a:double>372.22872217708834</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.98866297620845</a:double>
+                    <a:double>371.909710210654</a:double>
+                    <a:double>372.04922028054006</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.61176465134139</a:double>
+                    <a:double>371.63683703620154</a:double>
+                    <a:double>371.79239056724685</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.19648424829325</a:double>
+                    <a:double>371.163779605242</a:double>
+                    <a:double>371.29168382829488</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>302.00011154199871</a:double>
+                    <a:double>372.62197305694389</a:double>
+                    <a:double>372.88897266062281</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>303.39861780472273</a:double>
-                    <a:double>308.66904816692647</a:double>
-                    <a:double>311.52351673179976</a:double>
-                    <a:double>312.4392183410821</a:double>
+                    <a:double>372.69232624256335</a:double>
+                    <a:double>373.194498516276</a:double>
+                    <a:double>374.27803629723167</a:double>
+                    <a:double>374.85801038584657</a:double>
+                    <a:double>375.04360145505825</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>304.97373060785566</a:double>
-                    <a:double>309.75532703218312</a:double>
-                    <a:double>312.36921089862557</a:double>
-                    <a:double>313.214851175823</a:double>
+                    <a:double>372.81956106357353</a:double>
+                    <a:double>373.55619211492274</a:double>
+                    <a:double>374.52808072244494</a:double>
+                    <a:double>375.05419931091876</a:double>
+                    <a:double>375.22415014370523</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>305.74793848629963</a:double>
-                    <a:double>310.65380910346158</a:double>
-                    <a:double>313.33430126280848</a:double>
-                    <a:double>314.20040832344057</a:double>
+                    <a:double>372.95548955713008</a:double>
+                    <a:double>373.76025854046514</a:double>
+                    <a:double>374.75299779228186</a:double>
+                    <a:double>375.28996468604015</a:double>
+                    <a:double>375.46300241338452</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.408422744855</a:double>
-                    <a:double>311.48782380092496</a:double>
-                    <a:double>314.256136316095</a:double>
-                    <a:double>315.15873974351734</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.15103565054119</a:double>
-                    <a:double>312.522424961162</a:double>
-                    <a:double>315.45120354507748</a:double>
-                    <a:double>316.47195370393621</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.94043316047294</a:double>
-                    <a:double>313.86652268772133</a:double>
-                    <a:double>317.17714035129922</a:double>
-                    <a:double>318.81265351363533</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>308.34184310266761</a:double>
-                    <a:double>314.7328180743857</a:double>
-                    <a:double>318.43115219280088</a:double>
-                    <a:double>321.12783529942345</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.9850992963635</a:double>
-                    <a:double>314.24470409725325</a:double>
-                    <a:double>317.95179537694173</a:double>
-                    <a:double>321.21487113193888</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.59793078028713</a:double>
-                    <a:double>312.12844742940268</a:double>
-                    <a:double>315.15895236288986</a:double>
-                    <a:double>316.42727326834063</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>304.02892310384152</a:double>
-                    <a:double>310.02167281960976</a:double>
-                    <a:double>313.25390221509178</a:double>
-                    <a:double>314.36594944176449</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.55693597933492</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>302.2737325343316</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>304.63678429776263</a:double>
-                    <a:double>309.31396831962354</a:double>
-                    <a:double>311.87055190152859</a:double>
-                    <a:double>312.70323890950908</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.9865142235542</a:double>
-                    <a:double>310.66986477017065</a:double>
-                    <a:double>312.83347652972407</a:double>
-                    <a:double>313.56255841176892</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>308.091652471058</a:double>
-                    <a:double>311.78489635728647</a:double>
-                    <a:double>313.97158911197204</a:double>
-                    <a:double>314.71120471763635</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>309.3433354980416</a:double>
-                    <a:double>313.06968077449818</a:double>
-                    <a:double>315.26745672454604</a:double>
-                    <a:double>316.03902439484614</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>310.8955751275945</a:double>
-                    <a:double>314.798119216544</a:double>
-                    <a:double>317.12944721032568</a:double>
-                    <a:double>318.1785672775523</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>313.02971550124056</a:double>
-                    <a:double>318.47291184667881</a:double>
-                    <a:double>322.63156708452448</a:double>
-                    <a:double>326.26963066236016</a:double>
-                    <a:double>330.58318329728161</a:double>
-                    <a:double>300</a:double>
-                    <a:double>314.85848361541304</a:double>
-                    <a:double>322.96727675340617</a:double>
-                    <a:double>330.61759511357178</a:double>
-                    <a:double>339.31726455528644</a:double>
-                    <a:double>345.74513309608625</a:double>
-                    <a:double>300</a:double>
-                    <a:double>314.18631011820713</a:double>
-                    <a:double>322.15891678354234</a:double>
-                    <a:double>330.15517886759943</a:double>
-                    <a:double>340.99504264048295</a:double>
-                    <a:double>356.19796263731212</a:double>
-                    <a:double>300</a:double>
-                    <a:double>310.61399990926634</a:double>
-                    <a:double>314.81282088682696</a:double>
-                    <a:double>317.37783446381843</a:double>
-                    <a:double>319.23657724416512</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.17239734636382</a:double>
-                    <a:double>311.60706009289959</a:double>
-                    <a:double>314.48566643966285</a:double>
-                    <a:double>315.659203354498</a:double>
+                    <a:double>373.07675420067233</a:double>
+                    <a:double>373.92111465262906</a:double>
+                    <a:double>374.9427188606565</a:double>
+                    <a:double>375.49336346890658</a:double>
+                    <a:double>375.67134575372341</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.16092196063664</a:double>
+                    <a:double>374.04930630727659</a:double>
+                    <a:double>375.10962299064454</a:double>
+                    <a:double>375.68011837439104</a:double>
+                    <a:double>375.870765656927</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.1761369668252</a:double>
+                    <a:double>374.1155464002988</a:double>
+                    <a:double>375.235582036832</a:double>
+                    <a:double>375.84591760565667</a:double>
+                    <a:double>376.097174069153</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.10948865639836</a:double>
+                    <a:double>374.07970132819071</a:double>
+                    <a:double>375.246927378274</a:double>
+                    <a:double>375.89681474451658</a:double>
+                    <a:double>376.25618824817565</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.94983520859586</a:double>
+                    <a:double>373.898893722777</a:double>
+                    <a:double>375.05237632773424</a:double>
+                    <a:double>375.70343055063239</a:double>
+                    <a:double>376.12590752736969</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.66496752991611</a:double>
+                    <a:double>373.4928472703096</a:double>
+                    <a:double>374.57603078425973</a:double>
+                    <a:double>375.15877007478167</a:double>
+                    <a:double>375.37627415807037</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.25396941396519</a:double>
+                    <a:double>372.7889771315908</a:double>
+                    <a:double>374.06538761503475</a:double>
+                    <a:double>374.7340248403487</a:double>
+                    <a:double>374.95404433222421</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.36431018816023</a:double>
+                    <a:double>371.52165304633542</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.61058524722125</a:double>
+                    <a:double>372.97813969398044</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.702006488417</a:double>
+                    <a:double>373.47997619063767</a:double>
+                    <a:double>374.42603188661911</a:double>
+                    <a:double>374.94055145653658</a:double>
+                    <a:double>375.10808291210924</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.85478172669053</a:double>
+                    <a:double>373.99879415293452</a:double>
+                    <a:double>374.73206247833343</a:double>
+                    <a:double>375.16192992213792</a:double>
+                    <a:double>375.30694511641838</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.0291607686712</a:double>
+                    <a:double>374.27660563476587</a:double>
+                    <a:double>375.00482971735391</a:double>
+                    <a:double>375.435449232888</a:double>
+                    <a:double>375.58085921179662</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.19755693402567</a:double>
+                    <a:double>374.55747679919926</a:double>
+                    <a:double>375.2834865741637</a:double>
+                    <a:double>375.71100370047839</a:double>
+                    <a:double>375.85777214876424</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.33025282472869</a:double>
+                    <a:double>374.82334635151881</a:double>
+                    <a:double>375.560999662901</a:double>
+                    <a:double>375.99675434077739</a:double>
+                    <a:double>376.16868537132751</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.38188324809062</a:double>
+                    <a:double>375.04899417077257</a:double>
+                    <a:double>375.936329447138</a:double>
+                    <a:double>376.54920222064641</a:double>
+                    <a:double>376.97273423362947</a:double>
+                    <a:double>377.393168981066</a:double>
+                    <a:double>373.335125123969</a:double>
+                    <a:double>375.1649785642071</a:double>
+                    <a:double>376.32117293296881</a:double>
+                    <a:double>377.28683694875116</a:double>
+                    <a:double>378.22441468115471</a:double>
+                    <a:double>378.86952933406275</a:double>
+                    <a:double>373.17018042467578</a:double>
+                    <a:double>374.95160507790712</a:double>
+                    <a:double>376.102047857523</a:double>
+                    <a:double>377.11447794811011</a:double>
+                    <a:double>378.29422658828571</a:double>
+                    <a:double>379.85994392204367</a:double>
+                    <a:double>372.84256966219931</a:double>
+                    <a:double>374.2981361572667</a:double>
+                    <a:double>375.08052802724512</a:double>
+                    <a:double>375.54430725590032</a:double>
+                    <a:double>375.8026884794719</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.48309095982273</a:double>
+                    <a:double>373.29960999220009</a:double>
+                    <a:double>374.41648012333133</a:double>
+                    <a:double>374.99839329765092</a:double>
+                    <a:double>375.20985575564845</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.86675127988792</a:double>
+                    <a:double>371.50859964967367</a:double>
+                    <a:double>371.64115993859576</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>302.03205371670646</a:double>
+                    <a:double>372.57734970660931</a:double>
+                    <a:double>372.91044074880847</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>303.621065239678</a:double>
-                    <a:double>308.92189629825316</a:double>
-                    <a:double>311.71070683641807</a:double>
-                    <a:double>312.60435861376658</a:double>
+                    <a:double>372.65638006328561</a:double>
+                    <a:double>373.257902306307</a:double>
+                    <a:double>374.34169855063726</a:double>
+                    <a:double>374.90637942750635</a:double>
+                    <a:double>375.08689998855743</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>305.42450907276424</a:double>
-                    <a:double>310.1447674287686</a:double>
-                    <a:double>312.63984753433385</a:double>
-                    <a:double>313.45025556062586</a:double>
+                    <a:double>372.80686565920189</a:double>
+                    <a:double>373.67313040107223</a:double>
+                    <a:double>374.62316235368866</a:double>
+                    <a:double>375.12202214465208</a:double>
+                    <a:double>375.28384333061234</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.5887968447891</a:double>
-                    <a:double>311.31061617057117</a:double>
-                    <a:double>313.82786771174761</a:double>
-                    <a:double>314.64999238764437</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>308.7414332357024</a:double>
-                    <a:double>312.95142058838104</a:double>
-                    <a:double>315.36742868870283</a:double>
-                    <a:double>316.21184328377956</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>311.09754290135345</a:double>
-                    <a:double>314.97239919988419</a:double>
-                    <a:double>317.33217032629062</a:double>
-                    <a:double>318.41663757440989</a:double>
-                    <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>313.56109357128639</a:double>
-                    <a:double>319.29167276517484</a:double>
-                    <a:double>323.92335597338047</a:double>
-                    <a:double>328.00682107938837</a:double>
-                    <a:double>330.31686691233369</a:double>
-                    <a:double>300</a:double>
-                    <a:double>315.54957374126514</a:double>
-                    <a:double>323.962984291683</a:double>
-                    <a:double>331.67962263890558</a:double>
-                    <a:double>338.72450353975762</a:double>
-                    <a:double>341.10439788738722</a:double>
-                    <a:double>300</a:double>
-                    <a:double>314.80959916037324</a:double>
-                    <a:double>323.09901063956909</a:double>
-                    <a:double>331.43090347131056</a:double>
-                    <a:double>341.6060367146664</a:double>
-                    <a:double>348.17849112913927</a:double>
-                    <a:double>300</a:double>
-                    <a:double>310.9620520337603</a:double>
-                    <a:double>315.12118700769344</a:double>
-                    <a:double>317.70451574688428</a:double>
-                    <a:double>319.4414574023495</a:double>
+                    <a:double>372.98945444150439</a:double>
+                    <a:double>373.96818114578008</a:double>
+                    <a:double>374.9080032037653</a:double>
+                    <a:double>375.40645089648439</a:double>
+                    <a:double>375.56848610864762</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.1835295955774</a:double>
+                    <a:double>374.43165762234395</a:double>
+                    <a:double>375.25252609501524</a:double>
+                    <a:double>375.72315427152569</a:double>
+                    <a:double>375.88268135214594</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.3393249633113</a:double>
+                    <a:double>374.85474673717931</a:double>
+                    <a:double>375.58242934053612</a:double>
+                    <a:double>376.02178753183512</a:double>
+                    <a:double>376.196339718876</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.404795477266</a:double>
+                    <a:double>375.12960870100659</a:double>
+                    <a:double>376.03334851914553</a:double>
+                    <a:double>376.68949635401196</a:double>
+                    <a:double>377.14569994420407</a:double>
+                    <a:double>377.36346269272417</a:double>
+                    <a:double>373.36368494860022</a:double>
+                    <a:double>375.26722397196454</a:double>
+                    <a:double>376.44194819425059</a:double>
+                    <a:double>377.41009922362423</a:double>
+                    <a:double>378.16974250426023</a:double>
+                    <a:double>378.40426020584357</a:double>
+                    <a:double>373.20220758044189</a:double>
+                    <a:double>375.0503660002347</a:double>
+                    <a:double>376.22380531531439</a:double>
+                    <a:double>377.27205364472269</a:double>
+                    <a:double>378.38351235059309</a:double>
+                    <a:double>379.06132351667179</a:double>
+                    <a:double>372.87317108061632</a:double>
+                    <a:double>374.3671263889463</a:double>
+                    <a:double>375.13584850330443</a:double>
+                    <a:double>375.60213288439417</a:double>
+                    <a:double>375.84820265501315</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.36176800879593</a:double>
-                    <a:double>311.80100155490072</a:double>
-                    <a:double>314.69875835551062</a:double>
-                    <a:double>315.84052762740328</a:double>
+                    <a:double>372.51695187455385</a:double>
+                    <a:double>373.34734452010679</a:double>
+                    <a:double>374.45736464602044</a:double>
+                    <a:double>375.04215167597397</a:double>
+                    <a:double>375.25075665196539</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.88340981427183</a:double>
+                    <a:double>371.52915495212278</a:double>
+                    <a:double>371.65262044194975</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.64293503218875</a:double>
+                    <a:double>372.49565595311611</a:double>
+                    <a:double>372.78491967508404</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>302.27076887444838</a:double>
+                    <a:double>372.55725139069074</a:double>
+                    <a:double>372.93795070660957</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>303.212250935607</a:double>
+                    <a:double>372.692059784155</a:double>
+                    <a:double>373.182766731265</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>304.35057588802573</a:double>
+                    <a:double>372.873515729163</a:double>
+                    <a:double>373.4775056922864</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.50288269478472</a:double>
-                    <a:double>312.43018256111594</a:double>
-                    <a:double>315.07962186000185</a:double>
-                    <a:double>315.99347501344477</a:double>
+                    <a:double>373.09141177371896</a:double>
+                    <a:double>374.14881044325637</a:double>
+                    <a:double>375.11601639412453</a:double>
+                    <a:double>375.63340402775754</a:double>
+                    <a:double>375.80615624884695</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>310.52410141900339</a:double>
-                    <a:double>314.46268827807017</a:double>
-                    <a:double>316.78137177294622</a:double>
-                    <a:double>317.80192834870644</a:double>
+                    <a:double>373.261636115973</a:double>
+                    <a:double>374.71597644836248</a:double>
+                    <a:double>375.46546334391542</a:double>
+                    <a:double>375.90130336427524</a:double>
+                    <a:double>376.07175755184335</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>312.69752924635327</a:double>
-                    <a:double>317.92835522852448</a:double>
-                    <a:double>321.85305943835658</a:double>
-                    <a:double>325.17535970742426</a:double>
-                    <a:double>328.96394848253709</a:double>
-                    <a:double>300</a:double>
-                    <a:double>314.12862217995826</a:double>
-                    <a:double>320.82868442308018</a:double>
-                    <a:double>326.35917912093691</a:double>
-                    <a:double>331.43741740513468</a:double>
-                    <a:double>334.82045551053784</a:double>
-                    <a:double>300</a:double>
-                    <a:double>313.45157261614247</a:double>
-                    <a:double>319.81613218316642</a:double>
-                    <a:double>325.14628149637042</a:double>
-                    <a:double>330.60614592728552</a:double>
-                    <a:double>337.46223519194217</a:double>
-                    <a:double>300</a:double>
-                    <a:double>310.4319910528958</a:double>
-                    <a:double>314.54652042337506</a:double>
-                    <a:double>316.99895259085866</a:double>
-                    <a:double>318.26887905195161</a:double>
+                    <a:double>373.33332263697685</a:double>
+                    <a:double>374.976556012041</a:double>
+                    <a:double>375.84611296220226</a:double>
+                    <a:double>376.4391320587946</a:double>
+                    <a:double>376.83951395937305</a:double>
+                    <a:double>377.22060417724765</a:double>
+                    <a:double>373.29276668617183</a:double>
+                    <a:double>375.06345772661541</a:double>
+                    <a:double>376.08242110860709</a:double>
+                    <a:double>376.84007421952776</a:double>
+                    <a:double>377.42284406651692</a:double>
+                    <a:double>377.76977582352271</a:double>
+                    <a:double>373.13522506619535</a:double>
+                    <a:double>374.85574242539894</a:double>
+                    <a:double>375.84784668324028</a:double>
+                    <a:double>376.59597045240645</a:double>
+                    <a:double>377.2419537180138</a:double>
+                    <a:double>377.97945540430271</a:double>
+                    <a:double>372.82130150968868</a:double>
+                    <a:double>374.26295307142192</a:double>
+                    <a:double>375.03766997250932</a:double>
+                    <a:double>375.49052410565287</a:double>
+                    <a:double>375.69058212392514</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.12818489050863</a:double>
-                    <a:double>311.52969428110441</a:double>
-                    <a:double>314.39613559943655</a:double>
-                    <a:double>315.42778639297643</a:double>
+                    <a:double>372.46715205518063</a:double>
+                    <a:double>373.2812223918462</a:double>
+                    <a:double>374.3947076952478</a:double>
+                    <a:double>374.97537033584507</a:double>
+                    <a:double>375.17276533960427</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.86055428931911</a:double>
+                    <a:double>371.49991482818791</a:double>
+                    <a:double>371.632035685192</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.98454072039533</a:double>
+                    <a:double>372.34280711866148</a:double>
+                    <a:double>372.50757264239871</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.17028495123469</a:double>
+                    <a:double>372.39874473514055</a:double>
+                    <a:double>372.57110699749234</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.59538697738242</a:double>
+                    <a:double>372.51589719800512</a:double>
+                    <a:double>372.7102634162959</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>302.41105695892622</a:double>
+                    <a:double>372.67005156985186</a:double>
+                    <a:double>372.93878665048129</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>304.47556006555624</a:double>
-                    <a:double>310.3687729817255</a:double>
-                    <a:double>313.52461372381686</a:double>
-                    <a:double>314.55052182248284</a:double>
+                    <a:double>372.84430429728184</a:double>
+                    <a:double>373.40573176519115</a:double>
+                    <a:double>374.6211100161521</a:double>
+                    <a:double>375.26136058071518</a:double>
+                    <a:double>375.46659019560565</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.5427827114076</a:double>
-                    <a:double>311.90628538975676</a:double>
-                    <a:double>314.81633458482412</a:double>
-                    <a:double>315.82499152119266</a:double>
+                    <a:double>372.98969094311525</a:double>
+                    <a:double>373.82736511524138</a:double>
+                    <a:double>374.90915968608778</a:double>
+                    <a:double>375.48663891217075</a:double>
+                    <a:double>375.67908030257121</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.55902226595623</a:double>
-                    <a:double>313.34192669333595</a:double>
-                    <a:double>316.55672681793567</a:double>
-                    <a:double>318.09988857502492</a:double>
+                    <a:double>373.05177103622009</a:double>
+                    <a:double>373.97240243270488</a:double>
+                    <a:double>375.09367110262878</a:double>
+                    <a:double>375.70136682244612</a:double>
+                    <a:double>375.9473278474365</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.93529450872592</a:double>
-                    <a:double>314.02804694415488</a:double>
-                    <a:double>317.45642252027653</a:double>
-                    <a:double>319.3497435676411</a:double>
+                    <a:double>373.01346141673883</a:double>
+                    <a:double>373.95989511585009</a:double>
+                    <a:double>375.11043746032726</a:double>
+                    <a:double>375.73932752131662</a:double>
+                    <a:double>376.02163335399035</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>307.62248583739466</a:double>
-                    <a:double>313.58142480741094</a:double>
-                    <a:double>316.96347019011745</a:double>
-                    <a:double>318.98329897866188</a:double>
+                    <a:double>372.8742905055982</a:double>
+                    <a:double>373.80044971183167</a:double>
+                    <a:double>374.934667423771</a:double>
+                    <a:double>375.558125694254</a:double>
+                    <a:double>375.85860692975507</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>306.4105844332318</a:double>
-                    <a:double>311.82544929365258</a:double>
-                    <a:double>314.77370214360997</a:double>
-                    <a:double>315.85476002718377</a:double>
+                    <a:double>372.60737094488354</a:double>
+                    <a:double>373.42551128453283</a:double>
+                    <a:double>374.50547529561277</a:double>
+                    <a:double>375.08371848179479</a:double>
+                    <a:double>375.28371504014041</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>303.96053614479825</a:double>
-                    <a:double>309.89587294197048</a:double>
-                    <a:double>313.09561036205491</a:double>
-                    <a:double>314.15389297121442</a:double>
+                    <a:double>372.20954176288285</a:double>
+                    <a:double>372.74222692017025</a:double>
+                    <a:double>374.01825143469313</a:double>
+                    <a:double>374.686168595724</a:double>
+                    <a:double>374.90160665927044</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.54918163996331</a:double>
+                    <a:double>371.3393269359488</a:double>
+                    <a:double>371.49635025240713</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.22908481821264</a:double>
+                    <a:double>371.90841657040005</a:double>
+                    <a:double>371.97332921546155</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.25626929217839</a:double>
+                    <a:double>371.93161014955285</a:double>
+                    <a:double>371.99302736807778</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.30885314402155</a:double>
+                    <a:double>371.97364352468611</a:double>
+                    <a:double>372.03177953649356</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.38967667389994</a:double>
+                    <a:double>372.01786942788914</a:double>
+                    <a:double>372.08027403601551</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.69211431319337</a:double>
+                    <a:double>372.05920200189036</a:double>
+                    <a:double>372.16699808418207</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.97088142107242</a:double>
+                    <a:double>372.081059666761</a:double>
+                    <a:double>372.228400555896</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.07772017172289</a:double>
+                    <a:double>372.07147703426222</a:double>
+                    <a:double>372.22223228942903</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.12715936710265</a:double>
+                    <a:double>372.028297568837</a:double>
+                    <a:double>372.17863643318333</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>301.08952263301416</a:double>
+                    <a:double>371.94209161538765</a:double>
+                    <a:double>372.09129405564056</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.95075341991355</a:double>
+                    <a:double>371.8015569602631</a:double>
+                    <a:double>371.94001305103495</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.59428185737045</a:double>
+                    <a:double>371.54902970460938</a:double>
+                    <a:double>371.70442799787656</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
-                    <a:double>300</a:double>
-                    <a:double>300.19255559511925</a:double>
+                    <a:double>371.10965982442667</a:double>
+                    <a:double>371.23749877721752</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
                     <a:double>NaN</a:double>
