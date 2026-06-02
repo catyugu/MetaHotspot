@@ -55,7 +55,7 @@ def extract_values(xml_path):
 def main():
     for case_num in [1, 2, 3]:
         ref_path = f"cases/original_steady_tests/case{case_num}.xml"
-        out_path = f"build/bin/case{case_num}_output.xml"
+        out_path = f"results/original_steady_tests/case{case_num}_output.xml"
 
         print(f"\n=== Case {case_num} ===")
         ref = extract_values(ref_path)

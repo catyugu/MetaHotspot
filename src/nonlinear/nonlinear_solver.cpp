@@ -6,12 +6,12 @@
 
 namespace mhs::nonlinear {
 
-    SolveResult solve(const model::InternalModel& model,
-                      model::GlobalState& state,
-                      Solver& solver,
-                      double underrelaxation,
-                      int max_iterations,
-                      double tolerance)
+    NonLinearResult solve(const model::InternalModel& model,
+        model::GlobalState& state,
+        Solver& solver,
+        double underrelaxation,
+        int max_iterations,
+        double tolerance)
     {
         assembler::Assembler assembler(model);
 
@@ -22,7 +22,7 @@ namespace mhs::nonlinear {
             auto solve_result = solver.solve(linear_system.A, linear_system.b);
 
             if (!solve_result.success) {
-                MHS_LOG_WARN("Linear solver failed at Newton iteration {}", iter);
+                MHS_LOG_WARN("Linear solver failed at Non-Linear iteration {}", iter);
             }
 
             double max_update = 0.0;
@@ -38,17 +38,15 @@ namespace mhs::nonlinear {
                 max_residual = std::max(max_residual, std::abs(state.residual[i]));
             }
 
-            MHS_LOG_INFO("Newton iteration {}: max_update={:.6e}, max_residual={:.6e}",
+            MHS_LOG_INFO("Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e}",
                 iter, max_update, max_residual);
 
             if (max_update < tolerance && max_residual < tolerance) {
-                state.status = ConvergenceStatus::Converged;
-                return {ConvergenceStatus::Converged, iter + 1};
+                return {true, iter + 1};
             }
         }
 
-        state.status = ConvergenceStatus::Diverged;
-        return {ConvergenceStatus::Diverged, max_iterations};
+        return {false, max_iterations};
     }
 
 } // namespace mhs::nonlinear

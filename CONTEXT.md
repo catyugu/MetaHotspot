@@ -35,7 +35,8 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Top layer**: Die-attach and chip materials (copper, etc.).
 - **Middle layer**: Substrate (silicon).
 - **Bottom layer**: PCB or heat spreader.
-- Each layer has a `ThicknessExpression` and mesh size hints.
+- Each layer has a `ThicknessExpression` and mesh size hints. The layer thickness is the **only** Z-axis dimension — blocks inherit the full Z extent of their parent layer and have no independent Z thickness or offset.
+- **Block geometry**: Blocks define shape only in the XY plane via add/sub `Rect` operations. A block's Z range is always `[layer.z_start, layer.z_end]`.
 - **Block heat source**: Each block has one `ti_reyuan_expr` (体热源, [W/m³]). Preprocessor expands this to a per-cell `heat_source` array indexed by `cell_idx`.
 
 ### Expressions
@@ -48,8 +49,13 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 
 ### Face Keys
 
-Boundary face specification format: `Face|Direction|LayerIndex|X_min,Y_min,X_max,Y_max;...`
+Boundary face specification format: `Face|Direction|CoordValue|X_min,Y_min,X_max,Y_max;...`
 Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
+
+- `Face`: Z/Y/X — axis perpendicular to the boundary plane
+- `Direction`: E — boundary category (Electrical, currently the only category)
+- `CoordValue`: spatial coordinate of the boundary plane (e.g., `0` = Z=0mm, `30` = Z=30mm), multiplied by si_scale internally. **Not a layer index** — boundary selection is purely coordinate-based, independent of layer ordering.
+- The trailing coordinates describe one or more rectangular regions in the 2D projection of the boundary face
 
 ## Solver Pipeline
 
@@ -59,7 +65,7 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
     - **Internal model** (`internal_model.hpp`): Flat SoA arrays. Uses `BcType` (None, FirstType, SecondType, ThirdType) — the `None` variant marks faces with no BC. Conversion happens once at preprocessing.
     - **IO function converters**: `ExpressionFunction`, `GaussFunction`, `SineFunction`, `PieceWiseFunction` are defined in `io_model.hpp` but not yet implemented — dead code. `io.cpp` does not parse them from XML, and no converter module exists yet.
 
-2. **Scheduler**: Outer loop — time stepping + nonlinear Newton iteration (namespace `mhs`)
+2. **Scheduler**: Outer loop — time stepping + nonlinear Anderson accelerated iteration (namespace `mhs`)
 3. **Assembler**: Given model + current state → evaluates A(T)·T = b(T) as linear system
 4. **Solver**: Eigen `SparseLU` or `BiCGSTAB` — virtual factory pattern (namespace `mhs`)
 5. **Postprocessor**: Pure computation — cell-to-node interpolation, max/min temperature. No file I/O. (namespace `mhs`)

@@ -1,92 +1,123 @@
 #include "face_key_processor.hpp"
 #include "expr/expr.hpp"
 #include "model/types.hpp"
+#include <cmath>
 
 namespace mhs::preprocessor {
+
+    namespace {
+        // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
+        bool is_face_exposed(mhs::FaceDir dir, int ix, int iy, int iz,
+            const model::MeshGeometry& mesh,
+            const model::CellFields& cells)
+        {
+            int nix = ix, niy = iy, niz = iz;
+            switch (dir) {
+            case FaceDir::XM:
+                nix--;
+                break;
+            case FaceDir::XP:
+                nix++;
+                break;
+            case FaceDir::YM:
+                niy--;
+                break;
+            case FaceDir::YP:
+                niy++;
+                break;
+            case FaceDir::ZM:
+                niz--;
+                break;
+            case FaceDir::ZP:
+                niz++;
+                break;
+            }
+
+            // 1. 如果超出网格边界，说明是域外，绝对暴露
+            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {
+                return true;
+            }
+
+            // 2. 如果内部对应邻居是空洞（虚拟单元），说明面暴露在了内部孔隙中
+            int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
+            return cells.valid_mask[neighbor] == 0;
+        }
+
+        // Split a string by a single-character delimiter.
+        std::vector<std::string> split(const std::string& s, char delim)
+        {
+            std::vector<std::string> out;
+            std::string token;
+            for (char c : s) {
+                if (c == delim) {
+                    out.push_back(token);
+                    token.clear();
+                }
+                else {
+                    token += c;
+                }
+            }
+            if (!token.empty())
+                out.push_back(token);
+            return out;
+        }
+
+        // Parse the comma/semicolon rect list used by Z-face keys:
+        //   "0,50,50,100;50,100,0,50" -> two rects, each {xmin,xmax,ymin,ymax}
+        std::vector<std::array<double, 4>> parse_z_rects(
+            const std::string& rect_str, double si_scale)
+        {
+            std::vector<std::array<double, 4>> rects;
+            for (const auto& rp : split(rect_str, ';')) {
+                std::vector<double> vals;
+                for (const auto& v : split(rp, ','))
+                    vals.push_back(std::stod(v) * si_scale);
+                if (vals.size() == 4)
+                    rects.push_back({vals[0], vals[1], vals[2], vals[3]});
+            }
+            return rects;
+        }
+
+        // Parse the four pipe-delimited rect numbers used by X/Y-face keys:
+        //   parts[3..6] = Min1, Max1, Min2, Max2
+        std::vector<std::array<double, 4>> parse_xy_rect(
+            const std::vector<std::string>& parts, double si_scale)
+        {
+            if (parts.size() < 7)
+                return {};
+            return {{std::stod(parts[3]) * si_scale,
+                std::stod(parts[4]) * si_scale,
+                std::stod(parts[5]) * si_scale,
+                std::stod(parts[6]) * si_scale}};
+        }
+    } // anonymous namespace
 
     FaceKeyInfo parse_face_key(const std::string& key, double si_scale)
     {
         FaceKeyInfo info;
-
-        std::vector<std::string> parts;
-        std::string token;
-        for (char c : key) {
-            if (c == '|') {
-                parts.push_back(token);
-                token.clear();
-            }
-            else {
-                token += c;
-            }
-        }
-        if (!token.empty()) {
-            parts.push_back(token);
-        }
-
-        if (parts.size() < 3) {
+        auto parts = split(key, '|');
+        if (parts.size() < 3)
             return info;
-        }
 
         info.axis = parts[0][0];
         info.side = parts[1][0];
         info.coord_value = std::stod(parts[2]) * si_scale;
 
-        if (parts.size() == 4) {
-            // Format: semicolon-separated rects in parts[3]
-            std::string rect_str = parts[3];
-            std::vector<std::string> rect_parts;
-            std::string rt;
-            for (char c : rect_str) {
-                if (c == ';') {
-                    rect_parts.push_back(rt);
-                    rt.clear();
-                }
-                else {
-                    rt += c;
-                }
-            }
-            if (!rt.empty()) {
-                rect_parts.push_back(rt);
-            }
-
-            for (const auto& rp : rect_parts) {
-                std::vector<double> vals;
-                std::string v;
-                for (char c : rp) {
-                    if (c == ',') {
-                        vals.push_back(std::stod(v) * si_scale);
-                        v.clear();
-                    }
-                    else {
-                        v += c;
-                    }
-                }
-                if (!v.empty()) {
-                    vals.push_back(std::stod(v) * si_scale);
-                }
-                if (vals.size() == 4) {
-                    info.rects.push_back({vals[0], vals[1], vals[2], vals[3]});
-                }
-            }
+        if (info.axis == 'Z') {
+            if (parts.size() == 4)
+                info.rects = parse_z_rects(parts[3], si_scale);
         }
-        else if (parts.size() >= 7) {
-            // Format: pipe-separated values after axis|side|coord
-            std::vector<double> vals;
-            for (size_t i = 3; i < parts.size(); i++) {
-                vals.push_back(std::stod(parts[i]) * si_scale);
-            }
-            if (vals.size() >= 4) {
-                info.rects.push_back({vals[0], vals[1], vals[2], vals[3]});
-            }
+        else if (info.axis == 'X' || info.axis == 'Y') {
+            info.rects = parse_xy_rect(parts, si_scale);
         }
-
         return info;
     }
 
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b)
     {
+        constexpr double EPS = 1e-9;
         for (const auto& rect : fk.rects) {
-            if (a >= rect[0] && a <= rect[1] && b >= rect[2] && b <= rect[3]) {
+            if (a >= rect[0] - EPS && a <= rect[1] + EPS && b >= rect[2] - EPS && b <= rect[3] + EPS) {
                 return true;
             }
         }
@@ -103,7 +134,7 @@ namespace mhs::preprocessor {
         model::BCParamTable& bc_params,
         double si_scale)
     {
-        // Initialize all BCs to None
+        // 1. 初始化所有 BC 为 None
         for (int c = 0; c < cells.cell_count; c++) {
             for (size_t f = 0; f < FACE_COUNT; f++) {
                 cells.cell_bcs[c].types[f] = BcType::None;
@@ -111,54 +142,46 @@ namespace mhs::preprocessor {
             }
         }
 
-        // Build "other_bc" parameter entries (index 0)
+        // 2. 预存 other_bc 参数（索引始终为 0）
         uint16_t other_idx = 0;
+        BcType other_bc_enum = BcType::None;
         switch (other_bc_type) {
         case model::ThermalBCType::FirstType:
+            other_bc_enum = BcType::FirstType;
             bc_params.dirichlet_T.push_back(expr::parse(other_bc_first.temperature));
             break;
         case model::ThermalBCType::SecondType:
+            other_bc_enum = BcType::SecondType;
             bc_params.neumann_q.push_back(expr::parse(other_bc_second.heat_flux));
             break;
         case model::ThermalBCType::ThirdType:
+            other_bc_enum = BcType::ThirdType;
             bc_params.cauchy_h.push_back(expr::parse(other_bc_third.convection_coeff));
             bc_params.cauchy_T_inf.push_back(expr::parse(other_bc_third.T_inf));
             break;
         }
 
-        // Process each explicit boundary
+        // 3. 拾取并分配显式定义的 FaceKey 边界
         for (const auto& boundary : boundaries) {
             uint16_t bc_param_idx = 0;
+            BcType bc_enum = BcType::None;
 
             switch (boundary.bc_type) {
             case model::ThermalBCType::FirstType:
+                bc_enum = BcType::FirstType;
                 bc_param_idx = (uint16_t)bc_params.dirichlet_T.size();
                 bc_params.dirichlet_T.push_back(expr::parse(boundary.first.temperature));
                 break;
             case model::ThermalBCType::SecondType:
+                bc_enum = BcType::SecondType;
                 bc_param_idx = (uint16_t)bc_params.neumann_q.size();
                 bc_params.neumann_q.push_back(expr::parse(boundary.second.heat_flux));
                 break;
             case model::ThermalBCType::ThirdType:
+                bc_enum = BcType::ThirdType;
                 bc_param_idx = (uint16_t)bc_params.cauchy_h.size();
                 bc_params.cauchy_h.push_back(expr::parse(boundary.third.convection_coeff));
                 bc_params.cauchy_T_inf.push_back(expr::parse(boundary.third.T_inf));
-                break;
-            }
-
-            BcType bc_enum;
-            switch (boundary.bc_type) {
-            case model::ThermalBCType::FirstType:
-                bc_enum = BcType::FirstType;
-                break;
-            case model::ThermalBCType::SecondType:
-                bc_enum = BcType::SecondType;
-                break;
-            case model::ThermalBCType::ThirdType:
-                bc_enum = BcType::ThirdType;
-                break;
-            default:
-                bc_enum = BcType::None;
                 break;
             }
 
@@ -169,100 +192,43 @@ namespace mhs::preprocessor {
                     for (int iy = 0; iy < mesh.ny; iy++) {
                         for (int iz = 0; iz < mesh.nz; iz++) {
                             int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-
                             if (cells.valid_mask[old_idx] == 0)
                                 continue;
-
                             int c_idx = (int)cells.index_map[old_idx];
 
-                            double cx_val = mesh.cx[ix];
-                            double cy_val = mesh.cy[iy];
-                            double cz_val = mesh.cz[iz];
+                            // 泛化迭代该活跃单元的 6 个面
+                            for (FaceDir dir : FACE_DIRS) {
+                                char face_axis;
+                                double face_coord, a_val, b_val;
 
-                            FaceDir dir;
-                            bool on_boundary = false;
-
-                            if (fk.axis == 'Z') {
-                                double z_min = mesh.vertex_z[0];
-                                double z_max = mesh.vertex_z[mesh.nz];
-
-                                if (fk.coord_value <= z_min + 1e-10) {
-                                    if (iz == 0) {
-                                        on_boundary = true;
-                                        dir = FaceDir::ZM;
-                                    }
+                                if (dir == FaceDir::XM || dir == FaceDir::XP) {
+                                    face_axis = 'X';
+                                    face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
+                                    a_val = mesh.cy[iy];
+                                    b_val = mesh.cz[iz];
                                 }
-                                else if (fk.coord_value >= z_max - 1e-10) {
-                                    if (iz == mesh.nz - 1) {
-                                        on_boundary = true;
-                                        dir = FaceDir::ZP;
-                                    }
+                                else if (dir == FaceDir::YM || dir == FaceDir::YP) {
+                                    face_axis = 'Y';
+                                    face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
+                                    a_val = mesh.cx[ix];
+                                    b_val = mesh.cz[iz];
                                 }
-                                else {
-                                    for (int k = 0; k < mesh.nz; k++) {
-                                        double vk = mesh.vertex_z[k];
-                                        if (std::abs(vk - fk.coord_value) < 1e-10) {
-                                            if (iz == k - 1) {
-                                                on_boundary = true;
-                                                dir = FaceDir::ZP;
-                                            }
-                                            else if (iz == k) {
-                                                on_boundary = true;
-                                                dir = FaceDir::ZM;
-                                            }
-                                            break;
+                                else { // ZM, ZP
+                                    face_axis = 'Z';
+                                    face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
+                                    a_val = mesh.cx[ix];
+                                    b_val = mesh.cy[iy];
+                                }
+
+                                // 严格条件验证：同轴 -> 坐标重合 -> 面朝外暴露 -> 落入指定框内
+                                if (fk.axis == face_axis && std::abs(face_coord - fk.coord_value) < 1e-10) {
+                                    if (is_face_exposed(dir, ix, iy, iz, mesh, cells)) {
+                                        if (point_in_face_rects(fk, a_val, b_val)) {
+                                            cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
+                                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
                                         }
                                     }
                                 }
-
-                                if (on_boundary && point_in_face_rects(fk, cx_val, cy_val)) {
-                                    cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
-                                    cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
-                                }
-                            }
-                            else if (fk.axis == 'Y') {
-                                double y_min = mesh.vertex_y[0];
-                                double y_max = mesh.vertex_y[mesh.ny];
-
-                                if (fk.coord_value <= y_min + 1e-10) {
-                                    if (iy == 0) {
-                                        on_boundary = true;
-                                        dir = FaceDir::YM;
-                                    }
-                                }
-                                else if (fk.coord_value >= y_max - 1e-10) {
-                                    if (iy == mesh.ny - 1) {
-                                        on_boundary = true;
-                                        dir = FaceDir::YP;
-                                    }
-                                }
-
-                                if (on_boundary && point_in_face_rects(fk, cx_val, cz_val)) {
-                                    cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
-                                    cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
-                                }
-                            }
-                            else if (fk.axis == 'X') {
-                                double x_min = mesh.vertex_x[0];
-                                double x_max = mesh.vertex_x[mesh.nx];
-
-                                if (fk.coord_value <= x_min + 1e-10) {
-                                    if (ix == 0) {
-                                        on_boundary = true;
-                                        dir = FaceDir::XM;
-                                    }
-                                }
-                                else if (fk.coord_value >= x_max - 1e-10) {
-                                    if (ix == mesh.nx - 1) {
-                                        on_boundary = true;
-                                        dir = FaceDir::XP;
-                                    }
-                                }
-
-                                if (on_boundary && point_in_face_rects(fk, cy_val, cz_val)) {
-                                    cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
-                                    cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
-                                }
                             }
                         }
                     }
@@ -270,22 +236,7 @@ namespace mhs::preprocessor {
             }
         }
 
-        // Fill other_bc for domain boundary faces not explicitly specified
-        BcType other_bc_enum;
-        switch (other_bc_type) {
-        case model::ThermalBCType::FirstType:
-            other_bc_enum = BcType::FirstType;
-            break;
-        case model::ThermalBCType::SecondType:
-            other_bc_enum = BcType::SecondType;
-            break;
-        case model::ThermalBCType::ThirdType:
-            other_bc_enum = BcType::ThirdType;
-            break;
-        default:
-            other_bc_enum = BcType::SecondType;
-        }
-
+        // 4. 为所有依然是 BcType::None 且【暴露在外/侧壁】的面，分配兜底的 other_bc
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
@@ -294,83 +245,12 @@ namespace mhs::preprocessor {
                         continue;
                     int c_idx = (int)cells.index_map[old_idx];
 
-                    if (ix == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::XM] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::XM] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::XM] = other_idx;
-                    }
-                    if (ix == mesh.nx - 1 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::XP] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::XP] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::XP] = other_idx;
-                    }
-                    if (iy == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::YM] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::YM] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::YM] = other_idx;
-                    }
-                    if (iy == mesh.ny - 1 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::YP] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::YP] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::YP] = other_idx;
-                    }
-                    if (iz == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZM] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZM] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::ZM] = other_idx;
-                    }
-                    if (iz == mesh.nz - 1 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZP] == BcType::None) {
-                        cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZP] = other_bc_enum;
-                        cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::ZP] = other_idx;
-                    }
-                }
-            }
-        }
-
-        // Handle virtual-cell neighbor faces
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 0)
-                        continue;
-                    int c_idx = (int)cells.index_map[old_idx];
-
-                    if (ix > 0) {
-                        int neighbor = (ix - 1) * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::XM] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::XM] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::XM] = other_idx;
-                        }
-                    }
-                    if (ix < mesh.nx - 1) {
-                        int neighbor = (ix + 1) * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::XP] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::XP] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::XP] = other_idx;
-                        }
-                    }
-                    if (iy > 0) {
-                        int neighbor = ix * mesh.ny * mesh.nz + (iy - 1) * mesh.nz + iz;
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::YM] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::YM] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::YM] = other_idx;
-                        }
-                    }
-                    if (iy < mesh.ny - 1) {
-                        int neighbor = ix * mesh.ny * mesh.nz + (iy + 1) * mesh.nz + iz;
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::YP] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::YP] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::YP] = other_idx;
-                        }
-                    }
-                    if (iz > 0) {
-                        int neighbor = ix * mesh.ny * mesh.nz + iy * mesh.nz + (iz - 1);
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZM] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZM] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::ZM] = other_idx;
-                        }
-                    }
-                    if (iz < mesh.nz - 1) {
-                        int neighbor = ix * mesh.ny * mesh.nz + iy * mesh.nz + (iz + 1);
-                        if (cells.valid_mask[neighbor] == 0 && cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZP] == BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)FaceDir::ZP] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)FaceDir::ZP] = other_idx;
+                    for (FaceDir dir : FACE_DIRS) {
+                        if (cells.cell_bcs[c_idx].types[(size_t)dir] == BcType::None) {
+                            if (is_face_exposed(dir, ix, iy, iz, mesh, cells)) {
+                                cells.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
+                                cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_idx;
+                            }
                         }
                     }
                 }

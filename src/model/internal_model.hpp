@@ -62,7 +62,6 @@ namespace mhs::model {
         double current_time = 0.0;
         int time_step = 0;
         double dt = 0.0; // current time step size for transient assembly
-        ConvergenceStatus status = ConvergenceStatus::Running;
 
         std::vector<double> T; // size = N_active
         std::vector<double> T_prev; // size = N_active

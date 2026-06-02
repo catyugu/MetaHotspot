@@ -25,84 +25,114 @@ namespace mhs::preprocessor {
         }
     }
 
-    void compute_layer_z_ranges(const std::vector<model::Layer>& layers,
-        double si_scale,
-        std::vector<double>& z_start,
-        std::vector<double>& z_end)
+    std::vector<ResolvedLayerGeometry> resolve_geometry(
+        const std::vector<model::Layer>& layers,
+        double si_scale)
     {
         int num_layers = (int)layers.size();
-        z_start.resize(num_layers);
-        z_end.resize(num_layers);
+        std::vector<ResolvedLayerGeometry> resolved(num_layers);
 
+        // Compute layer Z ranges (top-down stacking)
+        // Evaluate thicknesses once, then assign z_start/z_end directly
+        std::vector<double> thickness(num_layers);
         double z_cursor = 0.0;
         for (int l = 0; l < num_layers; l++) {
-            double layer_thick = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
-            z_cursor += layer_thick;
+            thickness[l] = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
+            z_cursor += thickness[l];
+        }
+        for (int l = 0; l < num_layers; l++) {
+            resolved[l].z_start = z_cursor - thickness[l];
+            resolved[l].z_end = z_cursor;
+            z_cursor -= thickness[l];
         }
 
-        // Top layer starts at the top, going down
         for (int l = 0; l < num_layers; l++) {
-            double layer_thick = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
-            z_start[l] = z_cursor - layer_thick;
-            z_end[l] = z_cursor;
-            z_cursor -= layer_thick;
+            const auto& layer = layers[l];
+            double layer_x_off_si = expr::eval_geometry(layer.x_offset_expr) * si_scale;
+            double layer_y_off_si = expr::eval_geometry(layer.y_offset_expr) * si_scale;
+
+            for (const auto& block : layer.blocks) {
+                ResolvedBlock rb;
+                double block_x_off_si = expr::eval_geometry(block.x_offset_expr) * si_scale;
+                double block_y_off_si = expr::eval_geometry(block.y_offset_expr) * si_scale;
+                rb.material_name = block.material_name;
+                rb.ti_reyuan_expr = block.ti_reyuan_expr;
+
+                for (const auto& rect : block.all_rects) {
+                    ResolvedRect rr;
+                    rr.add_sub = rect.add_sub;
+
+                    double x_val = expr::eval_geometry(rect.x_expr);
+                    double y_val = expr::eval_geometry(rect.y_expr);
+                    double w_val = expr::eval_geometry(rect.width_expr);
+                    double h_val = expr::eval_geometry(rect.height_expr);
+
+                    // Normalize negative widths/heights
+                    if (w_val < 0) {
+                        x_val += w_val;
+                        w_val = -w_val;
+                    }
+                    if (h_val < 0) {
+                        y_val += h_val;
+                        h_val = -h_val;
+                    }
+
+                    // Absolute SI coordinates: rect-local * si_scale + pre-resolved offsets
+                    rr.x = x_val * si_scale + block_x_off_si + layer_x_off_si;
+                    rr.y = y_val * si_scale + block_y_off_si + layer_y_off_si;
+                    rr.width = w_val * si_scale;
+                    rr.height = h_val * si_scale;
+
+                    rb.rects.push_back(rr);
+                }
+
+                resolved[l].blocks.push_back(rb);
+            }
         }
+
+        return resolved;
     }
 
-    int find_block_for_cell(const model::Layer& layer,
-        double cx, double cy, double cz,
-        double si_scale,
-        double layer_z_start, double layer_z_end)
+    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer,
+        double cx, double cy, double cz)
     {
-        if (cz < layer_z_start - EPS || cz > layer_z_end + EPS) {
+        if (cz < resolved_layer.z_start - EPS || cz > resolved_layer.z_end + EPS) {
             return -1;
         }
 
-        // Layer offsets transform rect coords from centered to absolute coordinate system
-        double layer_x_offset_orig = expr::eval_geometry(layer.x_offset_expr);
-        double layer_y_offset_orig = expr::eval_geometry(layer.y_offset_expr);
+        // Traverse blocks in reverse order: last block wins in overlap regions
+        for (int b = (int)resolved_layer.blocks.size() - 1; b >= 0; b--) {
+            const auto& block = resolved_layer.blocks[b];
 
-        for (int b = 0; b < (int)layer.blocks.size(); b++) {
-            const auto& block = layer.blocks[b];
-            double block_x_offset_orig = expr::eval_geometry(block.x_offset_expr);
-            double block_y_offset_orig = expr::eval_geometry(block.y_offset_expr);
+            // ================= 核心布尔逻辑优化 =================
+            // 采用单一状态机变量，严格遵循 CAD 特征树的顺序求值
+            bool is_inside = false;
 
-            bool in_add = false;
-            bool in_sub = false;
-
-            for (const auto& rect : block.all_rects) {
-                double rx = (expr::eval_geometry(rect.x_expr) + block_x_offset_orig + layer_x_offset_orig) * si_scale;
-                double ry = (expr::eval_geometry(rect.y_expr) + block_y_offset_orig + layer_y_offset_orig) * si_scale;
-                double rw = expr::eval_geometry(rect.width_expr) * si_scale;
-                double rh = expr::eval_geometry(rect.height_expr) * si_scale;
-
-                if (cx >= rx - EPS && cx <= rx + rw + EPS && cy >= ry - EPS && cy <= ry + rh + EPS) {
-                    if (rect.add_sub) {
-                        in_add = true;
-                    }
-                    else {
-                        in_sub = true;
-                    }
+            for (const auto& rect : block.rects) {
+                // 如果当前网格点落在该矩形内，则此矩形的操作会覆盖之前的状态
+                if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS
+                    && cy >= rect.y - EPS && cy <= rect.y + rect.height + EPS) {
+                    // 若是加操作，点变为实心(true)；若是减操作，点变为空洞(false)
+                    // 因为是顺次执行，后面的加操作可以完美填补前面减操作挖出来的洞
+                    is_inside = rect.add_sub;
                 }
             }
 
-            if (in_add && !in_sub) {
+            if (is_inside) {
                 return b;
             }
+            // ====================================================
         }
 
         return -1;
     }
 
-    void resolve_layers(const std::vector<model::Layer>& layers,
+    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const model::MeshGeometry& mesh,
-        double si_scale,
-        const std::vector<double>& layer_z_start,
-        const std::vector<double>& layer_z_end,
         const std::unordered_map<std::string, size_t>& name_to_idx,
         model::CellFields& cells)
     {
-        int num_layers = (int)layers.size();
+        int num_layers = (int)resolved_layers.size();
         int total = mesh.total_cell_count;
 
         cells.valid_mask.resize(total, 0);
@@ -123,9 +153,8 @@ namespace mhs::preprocessor {
                     int block_idx = -1;
 
                     for (int l = 0; l < num_layers; l++) {
-                        if (cz >= layer_z_start[l] - EPS && cz <= layer_z_end[l] + EPS) {
-                            int b = find_block_for_cell(layers[l], cx, cy, cz,
-                                si_scale, layer_z_start[l], layer_z_end[l]);
+                        if (cz >= resolved_layers[l].z_start - EPS && cz <= resolved_layers[l].z_end + EPS) {
+                            int b = find_block_for_cell(resolved_layers[l], cx, cy, cz);
                             if (b >= 0) {
                                 layer_idx = l;
                                 block_idx = b;
@@ -137,7 +166,7 @@ namespace mhs::preprocessor {
                     if (layer_idx >= 0 && block_idx >= 0) {
                         cells.valid_mask[old_idx] = 1;
                         cells.layer_id[old_idx] = layer_idx;
-                        const auto& block = layers[layer_idx].blocks[block_idx];
+                        const auto& block = resolved_layers[layer_idx].blocks[block_idx];
                         cells.material_id[old_idx] = name_to_idx.at(block.material_name);
                     }
                 }

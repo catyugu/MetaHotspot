@@ -27,10 +27,8 @@ struct Rect {
 struct Block {
     std::vector<Rect> all_rects;
     std::string material_name;
-    std::string thickness_expr;
     std::string x_offset_expr;
     std::string y_offset_expr;
-    std::string z_offset_expr;
     std::string ti_reyuan_expr;  // 体热源表达式 [W/m³]，如 "1e9" 或 "1e8+0.5*x"
     std::string name;
     bool is_normal_material = true;
@@ -81,7 +79,7 @@ enum class LengthUnit { M,
         };
 enum class Dimension { Dimension2D, Dimension3D };  // Dimension2D 触发 panic
 
-struct Structure {
+struct IOStructure {
     // 元数据
     StudyType study_type;
     Dimension dimension;
@@ -118,8 +116,9 @@ struct Structure {
     std::vector<double> mesh_vertex_y;
     std::vector<double> mesh_vertex_z;
 
-    // Result values for regression testing
-    std::vector<double> result_values;
+    // Native functions registered during preprocessing
+    // Key = function name, Value = FieldEvaluator (std::function<double(FieldContext)>)
+    std::unordered_map<std::string, FieldEvaluator> functions;
 };
 
 } // namespace mhs::model
@@ -127,7 +126,11 @@ struct Structure {
 
 ---
 
-## 2.2 表达式函数类型
+## 2.2 表达式函数类型（TODO：待实现）
+
+> **注意**：以下类型体系尚未实现。当前 `IOStructure.functions` 为 `unordered_map<string, FieldEvaluator>` 的扁平 map。
+> 未来将实现完整的 Function 类型体系，支持从 XML 解析结构化函数定义（Gauss、PieceWise 等），
+> 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
 
 ```cpp
 namespace mhs::model {
@@ -142,23 +145,27 @@ struct ExpressionFunction {
 
 struct DoubleExponentialFunction {
     double a = 0.0, alpha = 0.0, beta = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct GaussFunction {
     double a = 0.0, tau = 0.0, x0 = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct SineFunction {
     double a = 0.0, omega = 0.0, phi = 0.0;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct PieceWiseFunction {
     struct Point { double x = 0.0, y = 0.0; };
     std::vector<Point> points;
-    double draw_min_x = 0.0, draw_max_x = 100.0;
+    double draw_min_x = 0.0;
+    double draw_max_x = 100.0;
 };
 
 struct Function {
@@ -188,14 +195,16 @@ struct Function {
 
 ### 面键格式
 
-边界面规格格式：`Face|Direction|LayerIndex|X_min,Y_min,X_max,Y_max;...`
+边界面规格格式：`Face|Direction|CoordValue|X_min,Y_min,X_max,Y_max;...`
 
 示例：`Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 
 - `Face`：Z/Y/X 表示法向方向
 - `Direction`：E 表示电气边界（暂未用）
-- `LayerIndex`：层索引
+- `CoordValue`：边界平面的空间坐标值（如 `0` 表示 Z=0mm 位置，`30` 表示 Z=30mm），预处理时乘以 si_scale 转换为 SI 单位。**不是层索引**——边界面选择完全基于坐标匹配，与层的排列顺序无关
 - 后续坐标描述一个或多个矩形区域
+
+> **注意**：Block 不包含 Z 维度字段（`thickness_expr`、`z_offset_expr`）。Block 仅在 XY 平面通过 add/sub Rect 定义几何形状，其 Z 范围完全继承父 Layer 的 `z_start/z_end`。
 
 ### ti_reyuan_expr（热源）
 

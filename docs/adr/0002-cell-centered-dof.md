@@ -35,3 +35,4 @@ Use **cell-centered DOFs only**. Boundary conditions are applied directly as bou
 
 - Face BC arrays are stored SoA alongside cell arrays for cache efficiency during assembly.
 - Each of 6 mesh faces (Z-, Z+, Y-, Y+, X-, X+) has its own BC type + param arrays.
+- **Update**: ADR-0005 replaced the per-face SoA arrays described here with cell-level `CellBC` storage. Each cell stores BC for its 6 faces independently (see `docs/adr/0005-cell-level-bc.md`).

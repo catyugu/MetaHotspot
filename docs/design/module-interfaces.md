@@ -41,24 +41,24 @@ namespace mhs::preprocessor {
 // Convert length unit to SI (meters) scale factor
 double length_unit_to_si(model::LengthUnit unit);
 
-// Compute layer Z ranges from IO layers (top-down stacking)
-void compute_layer_z_ranges(const std::vector<model::Layer>& layers,
-    double si_scale,
-    std::vector<double>& z_start,
-    std::vector<double>& z_end);
+// Pre-evaluate all geometry expressions for all layers, including Z ranges
+// Returns resolved geometry per layer: blocks with pre-evaluated rect coordinates
+// and layer z_start/z_end
+std::vector<ResolvedLayerGeometry> resolve_geometry(
+    const std::vector<model::Layer>& layers,
+    double si_scale);
 
-// Determine which block a cell at (cx, cy, cz) belongs to
-int find_block_for_cell(const model::Layer& layer,
-    double cx, double cy, double cz,
-    double si_scale,
-    double layer_z_start, double layer_z_end);
+// Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
+// Uses pre-evaluated geometry values — no expression evaluation at runtime
+// Traverses blocks in reverse order (last block wins in overlap regions)
+// Returns block index or -1 if cell is virtual
+int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer,
+    double cx, double cy, double cz);
 
 // Resolve cell validity, layer assignment, and material assignment
-void resolve_layers(const std::vector<model::Layer>& layers,
+// Populates valid_mask, index_map, layer_id, material_id in CellFields
+void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
     const model::MeshGeometry& mesh,
-    double si_scale,
-    const std::vector<double>& layer_z_start,
-    const std::vector<double>& layer_z_end,
     const std::unordered_map<std::string, size_t>& name_to_idx,
     model::CellFields& cells);
 
@@ -69,8 +69,8 @@ namespace mhs::preprocessor {
 struct FaceKeyInfo {
     char axis = 'Z';
     char side = 'E';
-    double coord_value = 0.0;
-    std::vector<std::array<double, 4>> rects; // {a_min, a_max, b_min, b_max}
+    double coord_value = 0.0;  // spatial coordinate of the boundary plane (SI meters)
+    std::vector<std::array<double, 4>> rects; // {a_min, a_max, b_min, b_max} in SI
 };
 
 FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
@@ -98,7 +98,8 @@ IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
         ├─> 注册材料函数、用户函数 → expr
         ├─> expr::clear_registry() （清除上次残留）
         ├─> Build MeshGeometry from mesh_vertex_x/y/z (×si_scale)
-        ├─> compute_layer_z_ranges()
+        │     └─> compute dx/dy/dz, cx/cy/cz
+        ├─> resolve_geometry() — 预求解层几何（Z 范围 + Block XY 坐标）
         ├─> Build material_table (parse k/rho/c)
         ├─> resolve_layers()
         │     ├─> 生成 valid_mask + index_map
@@ -198,8 +199,8 @@ namespace mhs {
 struct SchedulerConfig {
     double transient_duration = 0.0;
     double time_step = 1.0;
-    int max_newton_iterations = 50;
-    double newton_tolerance = 1e-6;
+    int max_nonlinear_iterations = 50;
+    double nonlinear_tolerance = 1e-6;
     double underrelaxation = 1.0;
     bool is_steady = false;
     int ring_buffer_capacity = 5;
