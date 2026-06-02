@@ -1,5 +1,9 @@
 build*
 outputs
+results
+*.log
+.claude
+.cache
 .vscode
 .idea
 *.msh
