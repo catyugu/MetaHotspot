@@ -37,3 +37,13 @@ CPMAddPackage(
     "BUILD_GMOCK OFF"
     "INSTALL_GTEST OFF"
 )
+
+# oneTBB - parallel assembly
+CPMAddPackage(
+    NAME TBB
+    GITHUB_REPOSITORY "oneapi-src/oneTBB"
+    GIT_TAG "v2023.0.0"
+    OPTIONS
+    "TBB_TEST OFF"
+    "TBB_EXAMPLES OFF"
+)

@@ -1,5 +1,6 @@
 add_subdirectory(io)
 add_subdirectory(expr)
+add_subdirectory(assembler)
 add_subdirectory(logger)
 add_subdirectory(solver)
 
@@ -8,13 +9,12 @@ add_library(mhs_lib
     preprocessor/preprocessor.cpp
     preprocessor/layer_processor.cpp
     preprocessor/face_key_processor.cpp
-    assembler/assembler.cpp
     nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib io_lib solver_lib)
+target_link_libraries(mhs_lib PUBLIC Eigen3::Eigen expr_lib logger_lib io_lib solver_lib assembler_lib)
 
 if(VERBOSE)
     target_compile_definitions(mhs_lib PUBLIC VERBOSE)
