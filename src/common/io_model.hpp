@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace mhs::model {
+namespace mhs {
 
     struct Variable {
         std::string name;
@@ -123,4 +123,4 @@ namespace mhs::model {
         std::unordered_map<std::string, FieldEvaluator> functions;
     };
 
-} // namespace mhs::model
+} // namespace mhs

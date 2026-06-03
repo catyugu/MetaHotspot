@@ -9,7 +9,6 @@
 #include <gtest/gtest.h>
 
 using namespace mhs;
-using namespace mhs::model;
 
 // Helper: build a minimal IOStructure for testing
 static IOStructure make_simple_io()

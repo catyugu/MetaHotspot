@@ -7,7 +7,7 @@ IO 结构直接映射 XML schema，仅用于序列化/反序列化。
 ## 2.1 顶层结构
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 struct Variable { std::string name; std::string value; };
 
@@ -121,7 +121,7 @@ struct IOStructure {
     std::unordered_map<std::string, FieldEvaluator> functions;
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 ---
@@ -133,7 +133,7 @@ struct IOStructure {
 > 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
@@ -178,7 +178,7 @@ struct Function {
     PieceWiseFunction piecewise;
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 ---

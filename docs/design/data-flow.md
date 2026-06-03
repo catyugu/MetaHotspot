@@ -7,7 +7,7 @@
 ```text
 XML 文件
   └─> io::read_xml
-        └─> model::IOStructure（IO 模型，仅含字符串，映射 XML schema）
+        └─> mhs::IOStructure（IO 模型，仅含字符串，映射 XML schema）
                     └─> Preprocessor::load
                           ├─> expr::clear_registry + register variables/functions
                           ├─> Build MeshGeometry from mesh_vertex_x/y/z (×si_scale)
@@ -20,7 +20,7 @@ XML 文件
                           ├─> preprocessor::resolve_face_keys()
                           │     └─> CellFields.cell_bcs（每单元每面独立 BC）
                           │         + BCParamTable（编译后的表达式）
-                          └─> model::InternalModel
+                          └─> mhs::InternalModel
                                 └─> Scheduler::run()
                                       ├─> Assembler::assemble(state)
                                       │     ├─> MaterialProps.k/rho/c.eval(ctx)
@@ -38,7 +38,7 @@ XML 文件
 
 | 阶段              | 输入                                       | 输出                       | 关键操作                                           |
 | ----------------- | ------------------------------------------ | -------------------------- | -------------------------------------------------- |
-| XML 解析          | XML 文件                                   | `model::IOStructure`       | tinyxml2 解析，包含 mesh_vertex_x/y/z              |
+| XML 解析          | XML 文件                                   | `mhs::IOStructure`         | tinyxml2 解析，包含 mesh_vertex_x/y/z              |
 | 预处理-几何       | `IOStructure.mesh_vertex_*`                | `MeshGeometry`             | si_scale 转换，计算 dx/dy/dz, cx/cy/cz             |
 | 预处理-层几何     | `IOStructure.layers`                       | `ResolvedLayerGeometry[]`  | 预求解层 Z 范围和 Block XY 坐标（Block 无 Z 维度） |
 | 预处理-虚拟单元   | `MeshGeometry` + 层几何                    | `valid_mask` + `index_map` | 标记虚拟单元，生成紧凑化映射                       |

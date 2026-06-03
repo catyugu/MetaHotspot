@@ -10,7 +10,7 @@ namespace mhs {
         Postprocessor() = default;
         ~Postprocessor() = default;
 
-        std::vector<double> interpolate_cell_to_node(const model::InternalModel& model,
+        std::vector<double> interpolate_cell_to_node(const InternalModel& model,
             const std::vector<double>& cell_temperature) const;
 
         double max_temperature(const std::vector<double>& T) const;

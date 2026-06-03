@@ -2,10 +2,6 @@
 #include <stdexcept>
 #include <tinyxml2.h>
 
-using mhs::model::Dimension;
-using mhs::model::LengthUnit;
-using mhs::model::ThermalBCType;
-
 namespace mhs::io {
 
     using namespace tinyxml2;
@@ -35,7 +31,7 @@ namespace mhs::io {
         return std::stod(s);
     }
 
-    model::IOStructure read_xml(const std::string& xml_path)
+    IOStructure read_xml(const std::string& xml_path)
     {
         XMLDocument doc;
         XMLError err = doc.LoadFile(xml_path.c_str());
@@ -43,7 +39,7 @@ namespace mhs::io {
             throw std::runtime_error("Failed to load XML file: " + xml_path);
         }
 
-        model::IOStructure structure;
+        IOStructure structure;
 
         const XMLElement* root = doc.FirstChildElement("Structure");
         if (!root) {
@@ -196,7 +192,7 @@ namespace mhs::io {
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement("a:KeyValueOfstringdouble"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringdouble")) {
-                model::Variable var;
+                Variable var;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     var.name = get_text(key);
                 }
@@ -213,7 +209,7 @@ namespace mhs::io {
         if (const XMLElement* mats = root->FirstChildElement("Materials")) {
             for (const XMLElement* kv = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz");
                 kv; kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
-                model::Material mat;
+                Material mat;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     mat.name = get_text(key);
                 }
@@ -239,7 +235,7 @@ namespace mhs::io {
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
                 layer_elem = layer_elem->NextSiblingElement("Layer")) {
-                model::Layer layer;
+                Layer layer;
 
                 if (const XMLElement* name = layer_elem->FirstChildElement("Name")) {
                     layer.name = get_text(name);
@@ -264,7 +260,7 @@ namespace mhs::io {
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
                         block_elem = block_elem->NextSiblingElement("Block")) {
-                        model::Block block;
+                        Block block;
 
                         if (const XMLElement* name = block_elem->FirstChildElement("Name")) {
                             block.name = get_text(name);
@@ -289,7 +285,7 @@ namespace mhs::io {
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect");
                                 rect_elem; rect_elem = rect_elem->NextSiblingElement("Rect")) {
-                                model::Rect rect;
+                                Rect rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.add_sub = std::string(get_text(adds)) == "true";
                                 }
@@ -336,8 +332,8 @@ namespace mhs::io {
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-                model::Boundary boundary;
-                boundary.category = mhs::model::BoundaryCategory::Electrical;
+                Boundary boundary;
+                boundary.category = BoundaryCategory::Electrical;
 
                 if (const XMLElement* name = bound_elem->FirstChildElement("Name")) {
                     boundary.name = get_text(name);
@@ -416,7 +412,7 @@ namespace mhs::io {
     }
 
     void write_vtu(const std::string& path,
-        const model::InternalModel& model,
+        const InternalModel& model,
         const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
@@ -579,7 +575,7 @@ namespace mhs::io {
 
     void write_xml(const std::string& input_path,
         const std::string& output_path,
-        const model::InternalModel& model,
+        const InternalModel& model,
         const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;

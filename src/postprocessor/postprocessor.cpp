@@ -6,7 +6,7 @@
 namespace mhs {
 
     std::vector<double> Postprocessor::interpolate_cell_to_node(
-        const model::InternalModel& model,
+        const InternalModel& model,
         const std::vector<double>& cell_temperature) const
     {
         const auto& mesh = model.mesh;

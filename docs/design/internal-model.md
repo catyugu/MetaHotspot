@@ -7,7 +7,7 @@
 ## 3.1 网格几何
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 struct MeshGeometry {
     int nx = 0, ny = 0, nz = 0;
@@ -26,7 +26,7 @@ struct MeshGeometry {
     std::vector<double> cz;         // nz, cell centers
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 ---
@@ -49,7 +49,7 @@ constexpr std::array<FaceDir, FACE_COUNT> FACE_DIRS = {
 
 } // namespace mhs
 
-namespace mhs::model {
+namespace mhs {
 
 // Per-cell per-face BC
 struct CellBC {
@@ -71,7 +71,7 @@ struct CellFields {
     std::vector<expr::CompiledExpression> heat_source;
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 ### 3.2.2 虚拟单元标记
@@ -91,7 +91,7 @@ struct CellFields {
 ## 3.3 BC 参数表
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 struct BCParamTable {
     std::vector<expr::CompiledExpression> dirichlet_T;  // N_dirichlet
@@ -100,7 +100,7 @@ struct BCParamTable {
     std::vector<expr::CompiledExpression> cauchy_T_inf;  // N_cauchy
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 `FaceBCFields` 已移除。BC 参数通过 `CellBC.param_idxs` 索引到对应参数表。
@@ -110,7 +110,7 @@ struct BCParamTable {
 ## 3.4 全局状态缓冲
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 struct GlobalState {
     int cell_count = 0;  // = N_active
@@ -123,7 +123,7 @@ struct GlobalState {
     std::vector<double> residual;     // size = N_active
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 > **TODO（多步法时间步进）**: 未来将添加时间步 ring buffer 支持：
@@ -141,7 +141,7 @@ struct GlobalState {
 ## 3.5 完整内部模型
 
 ```cpp
-namespace mhs::model {
+namespace mhs {
 
 struct InternalModel {
     MeshGeometry mesh;
@@ -157,7 +157,7 @@ struct InternalModel {
     double transient_time_step = 1.0;
 };
 
-} // namespace mhs::model
+} // namespace mhs
 ```
 
 ---

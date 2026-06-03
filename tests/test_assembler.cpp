@@ -8,7 +8,6 @@
 #include <gtest/gtest.h>
 
 using namespace mhs;
-using namespace mhs::model;
 using namespace mhs::assembler;
 
 // Helper: build a minimal IOStructure for a simple uniform cube

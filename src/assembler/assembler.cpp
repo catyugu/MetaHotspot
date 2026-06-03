@@ -1,7 +1,7 @@
 #include "assembler.hpp"
 #include <Eigen/Sparse>
-#include <tbb/parallel_for.h>
 #include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
 
 namespace mhs::assembler {
 
@@ -100,10 +100,10 @@ namespace mhs::assembler {
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd b;
 
-        explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)) {}
+        explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)) { }
     };
 
-    LinearSystem Assembler::assemble(const model::GlobalState& state)
+    LinearSystem Assembler::assemble(const GlobalState& state)
     {
         const auto& mesh = model_.mesh;
         const auto& cells = model_.cells;

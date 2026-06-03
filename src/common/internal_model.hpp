@@ -3,7 +3,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace mhs::model {
+namespace mhs {
 
     using CompiledExpression = expr::CompiledExpression;
 
@@ -82,4 +82,4 @@ namespace mhs::model {
         double transient_time_step = 1.0;
     };
 
-} // namespace mhs::model
+} // namespace mhs

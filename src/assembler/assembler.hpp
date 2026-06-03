@@ -13,13 +13,13 @@ namespace mhs::assembler {
 
     class Assembler {
     public:
-        explicit Assembler(const model::InternalModel& model) : model_(model) { }
+        explicit Assembler(const InternalModel& model) : model_(model) { }
         ~Assembler() = default;
 
-        LinearSystem assemble(const model::GlobalState& state);
+        LinearSystem assemble(const GlobalState& state);
 
     private:
-        const model::InternalModel& model_;
+        const InternalModel& model_;
     };
 
 } // namespace mhs::assembler

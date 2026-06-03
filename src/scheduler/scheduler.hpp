@@ -20,17 +20,17 @@ namespace mhs {
         explicit Scheduler(const SchedulerConfig& config) : config_(config) { }
         ~Scheduler() = default;
 
-        void setModel(model::InternalModel* model) { model_ = model; }
+        void setModel(InternalModel* model) { model_ = model; }
         void setSolver(std::unique_ptr<Solver> solver);
 
         void run();
         const std::vector<double>& solution() const;
 
     private:
-        model::InternalModel* model_ = nullptr;
+        InternalModel* model_ = nullptr;
         std::unique_ptr<Solver> solver_;
         SchedulerConfig config_;
-        model::GlobalState state_;
+        GlobalState state_;
         std::vector<double> solution_;
     };
 

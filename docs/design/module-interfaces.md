@@ -5,15 +5,15 @@
 ```cpp
 namespace mhs::io {
 
-model::IOStructure read_xml(const std::string& xml_path);
+IOStructure read_xml(const std::string& xml_path);
 
 void write_vtu(const std::string& path,
-    const model::InternalModel& model,
+    const InternalModel& model,
     const std::vector<double>& node_temperature);
 
 void write_xml(const std::string& input_path,
     const std::string& output_path,
-    const model::InternalModel& model,
+    const InternalModel& model,
     const std::vector<double>& node_temperature);
 
 } // namespace mhs::io
@@ -31,7 +31,7 @@ public:
     Preprocessor() = default;
     ~Preprocessor() = default;
 
-    std::unique_ptr<model::InternalModel> load(const model::IOStructure& ioStructure);
+    std::unique_ptr<mhs::InternalModel> load(const mhs::IOStructure& ioStructure);
 };
 
 } // namespace mhs
@@ -39,13 +39,13 @@ public:
 namespace mhs::preprocessor {
 
 // Convert length unit to SI (meters) scale factor
-double length_unit_to_si(model::LengthUnit unit);
+double length_unit_to_si(LengthUnit unit);
 
 // Pre-evaluate all geometry expressions for all layers, including Z ranges
 // Returns resolved geometry per layer: blocks with pre-evaluated rect coordinates
 // and layer z_start/z_end
 std::vector<ResolvedLayerGeometry> resolve_geometry(
-    const std::vector<model::Layer>& layers,
+    const std::vector<Layer>& layers,
     double si_scale);
 
 // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
@@ -58,9 +58,9 @@ int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer,
 // Resolve cell validity, layer assignment, and material assignment
 // Populates valid_mask, index_map, layer_id, material_id in CellFields
 void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-    const model::MeshGeometry& mesh,
+    const MeshGeometry& mesh,
     const std::unordered_map<std::string, size_t>& name_to_idx,
-    model::CellFields& cells);
+    CellFields& cells);
 
 } // namespace mhs::preprocessor
 
@@ -76,14 +76,14 @@ struct FaceKeyInfo {
 FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
 bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-void resolve_face_keys(const std::vector<model::Boundary>& boundaries,
-    model::ThermalBCType other_bc_type,
-    const model::FirstTypeThermalBC& other_bc_first,
-    const model::SecondTypeThermalBC& other_bc_second,
-    const model::ThirdTypeThermalBC& other_bc_third,
-    const model::MeshGeometry& mesh,
-    model::CellFields& cells,
-    model::BCParamTable& bc_params,
+void resolve_face_keys(const std::vector<Boundary>& boundaries,
+    ThermalBCType other_bc_type,
+    const FirstTypeThermalBC& other_bc_first,
+    const SecondTypeThermalBC& other_bc_second,
+    const ThirdTypeThermalBC& other_bc_third,
+    const MeshGeometry& mesh,
+    CellFields& cells,
+    BCParamTable& bc_params,
     double si_scale);
 
 } // namespace mhs::preprocessor
@@ -129,13 +129,13 @@ struct LinearSystem {
 
 class Assembler {
 public:
-    explicit Assembler(const model::InternalModel& model);
+    explicit Assembler(const InternalModel& model);
     ~Assembler() = default;
 
-    LinearSystem assemble(const model::GlobalState& state);
+    LinearSystem assemble(const GlobalState& state);
 
 private:
-    const model::InternalModel& model_;
+    const InternalModel& model_;
 };
 
 } // namespace mhs::assembler
@@ -211,16 +211,16 @@ public:
     explicit Scheduler(const SchedulerConfig& config);
     ~Scheduler() = default;
 
-    void setModel(model::InternalModel* model);
+    void setModel(InternalModel* model);
     void setSolver(std::unique_ptr<Solver> solver);
     void run();
     const std::vector<double>& solution() const;
 
 private:
-    model::InternalModel* model_ = nullptr;
+    InternalModel* model_ = nullptr;
     std::unique_ptr<Solver> solver_;
     SchedulerConfig config_;
-    model::GlobalState state_;
+    GlobalState state_;
     std::vector<double> solution_;
 };
 
@@ -241,8 +241,8 @@ struct NonLinearResult {
     int iterations = 0;
 };
 
-NonLinearResult solve(const model::InternalModel& model,
-    model::GlobalState& state,
+NonLinearResult solve(const InternalModel& model,
+    GlobalState& state,
     Solver& solver,
     double underrelaxation,
     int max_iterations,
@@ -265,7 +265,7 @@ public:
     Postprocessor() = default;
     ~Postprocessor() = default;
 
-    std::vector<double> interpolate_cell_to_node(const model::InternalModel& model,
+    std::vector<double> interpolate_cell_to_node(const InternalModel& model,
         const std::vector<double>& cell_temperature) const;
 
     double max_temperature(const std::vector<double>& T) const;

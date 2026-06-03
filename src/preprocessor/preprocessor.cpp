@@ -5,9 +5,9 @@
 
 namespace mhs {
 
-    std::unique_ptr<model::InternalModel> Preprocessor::load(const model::IOStructure& ioStructure)
+    std::unique_ptr<InternalModel> Preprocessor::load(const IOStructure& ioStructure)
     {
-        auto model = std::make_unique<model::InternalModel>();
+        auto model = std::make_unique<InternalModel>();
 
         // --- 1. Register variables and set metadata ---
         model->study_type = ioStructure.study_type;

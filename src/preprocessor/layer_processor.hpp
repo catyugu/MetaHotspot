@@ -29,12 +29,12 @@ namespace mhs::preprocessor {
     };
 
     // Convert length unit to SI (meters) scale factor
-    double length_unit_to_si(model::LengthUnit unit);
+    double length_unit_to_si(LengthUnit unit);
 
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
     // This eliminates repeated eval_geometry calls in the cell loops
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<model::Layer>& layers,
+        const std::vector<Layer>& layers,
         double si_scale);
 
     // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
@@ -47,8 +47,8 @@ namespace mhs::preprocessor {
     // Resolve cell validity, layer assignment, and material assignment
     // Populates valid_mask, index_map, layer_id, material_id in CellFields
     void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const model::MeshGeometry& mesh,
+        const MeshGeometry& mesh,
         const std::unordered_map<std::string, size_t>& name_to_idx,
-        model::CellFields& cells);
+        CellFields& cells);
 
 } // namespace mhs::preprocessor

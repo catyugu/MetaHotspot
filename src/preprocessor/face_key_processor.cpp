@@ -1,15 +1,15 @@
 #include "face_key_processor.hpp"
-#include "expr/expr.hpp"
 #include "common/types.hpp"
+#include "expr/expr.hpp"
 #include <cmath>
 
 namespace mhs::preprocessor {
 
     namespace {
         // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
-        bool is_face_exposed(mhs::FaceDir dir, int ix, int iy, int iz,
-            const model::MeshGeometry& mesh,
-            const model::CellFields& cells)
+        bool is_face_exposed(FaceDir dir, int ix, int iy, int iz,
+            const MeshGeometry& mesh,
+            const CellFields& cells)
         {
             int nix = ix, niy = iy, niz = iz;
             switch (dir) {
@@ -124,14 +124,14 @@ namespace mhs::preprocessor {
         return false;
     }
 
-    void resolve_face_keys(const std::vector<model::Boundary>& boundaries,
-        model::ThermalBCType other_bc_type,
-        const model::FirstTypeThermalBC& other_bc_first,
-        const model::SecondTypeThermalBC& other_bc_second,
-        const model::ThirdTypeThermalBC& other_bc_third,
-        const model::MeshGeometry& mesh,
-        model::CellFields& cells,
-        model::BCParamTable& bc_params,
+    void resolve_face_keys(const std::vector<Boundary>& boundaries,
+        ThermalBCType other_bc_type,
+        const FirstTypeThermalBC& other_bc_first,
+        const SecondTypeThermalBC& other_bc_second,
+        const ThirdTypeThermalBC& other_bc_third,
+        const MeshGeometry& mesh,
+        CellFields& cells,
+        BCParamTable& bc_params,
         double si_scale)
     {
         // 1. 初始化所有 BC 为 None
@@ -146,15 +146,15 @@ namespace mhs::preprocessor {
         uint16_t other_idx = 0;
         BcType other_bc_enum = BcType::None;
         switch (other_bc_type) {
-        case model::ThermalBCType::FirstType:
+        case ThermalBCType::FirstType:
             other_bc_enum = BcType::FirstType;
             bc_params.dirichlet_T.push_back(expr::parse(other_bc_first.temperature));
             break;
-        case model::ThermalBCType::SecondType:
+        case ThermalBCType::SecondType:
             other_bc_enum = BcType::SecondType;
             bc_params.neumann_q.push_back(expr::parse(other_bc_second.heat_flux));
             break;
-        case model::ThermalBCType::ThirdType:
+        case ThermalBCType::ThirdType:
             other_bc_enum = BcType::ThirdType;
             bc_params.cauchy_h.push_back(expr::parse(other_bc_third.convection_coeff));
             bc_params.cauchy_T_inf.push_back(expr::parse(other_bc_third.T_inf));
@@ -167,17 +167,17 @@ namespace mhs::preprocessor {
             BcType bc_enum = BcType::None;
 
             switch (boundary.bc_type) {
-            case model::ThermalBCType::FirstType:
+            case ThermalBCType::FirstType:
                 bc_enum = BcType::FirstType;
                 bc_param_idx = (uint16_t)bc_params.dirichlet_T.size();
                 bc_params.dirichlet_T.push_back(expr::parse(boundary.first.temperature));
                 break;
-            case model::ThermalBCType::SecondType:
+            case ThermalBCType::SecondType:
                 bc_enum = BcType::SecondType;
                 bc_param_idx = (uint16_t)bc_params.neumann_q.size();
                 bc_params.neumann_q.push_back(expr::parse(boundary.second.heat_flux));
                 break;
-            case model::ThermalBCType::ThirdType:
+            case ThermalBCType::ThirdType:
                 bc_enum = BcType::ThirdType;
                 bc_param_idx = (uint16_t)bc_params.cauchy_h.size();
                 bc_params.cauchy_h.push_back(expr::parse(boundary.third.convection_coeff));

@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 using namespace mhs;
-using namespace mhs::model;
 
 // Helper: build a minimal IOStructure for a simple uniform cube
 static IOStructure make_simple_cube_io()

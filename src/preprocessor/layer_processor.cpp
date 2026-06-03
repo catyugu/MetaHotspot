@@ -5,20 +5,20 @@ namespace mhs::preprocessor {
 
     constexpr double EPS = 1e-9;
 
-    double length_unit_to_si(model::LengthUnit unit)
+    double length_unit_to_si(LengthUnit unit)
     {
         switch (unit) {
-        case model::LengthUnit::M:
+        case LengthUnit::M:
             return 1.0;
-        case model::LengthUnit::Mm:
+        case LengthUnit::Mm:
             return 1e-3;
-        case model::LengthUnit::Um:
+        case LengthUnit::Um:
             return 1e-6;
-        case model::LengthUnit::Nm:
+        case LengthUnit::Nm:
             return 1e-9;
-        case model::LengthUnit::Inch:
+        case LengthUnit::Inch:
             return 0.0254;
-        case model::LengthUnit::Mil:
+        case LengthUnit::Mil:
             return 2.54e-5;
         default:
             return 1e-3;
@@ -26,7 +26,7 @@ namespace mhs::preprocessor {
     }
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<model::Layer>& layers,
+        const std::vector<Layer>& layers,
         double si_scale)
     {
         int num_layers = (int)layers.size();
@@ -128,9 +128,9 @@ namespace mhs::preprocessor {
     }
 
     void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const model::MeshGeometry& mesh,
+        const MeshGeometry& mesh,
         const std::unordered_map<std::string, size_t>& name_to_idx,
-        model::CellFields& cells)
+        CellFields& cells)
     {
         int num_layers = (int)resolved_layers.size();
         int total = mesh.total_cell_count;

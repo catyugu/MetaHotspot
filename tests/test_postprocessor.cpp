@@ -6,7 +6,6 @@
 #include <gtest/gtest.h>
 
 using namespace mhs;
-using namespace mhs::model;
 
 // Helper: build a minimal IOStructure with a uniform grid
 static IOStructure make_simple_uniform_grid_io()

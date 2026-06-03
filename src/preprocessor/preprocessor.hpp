@@ -15,7 +15,7 @@ namespace mhs {
         Preprocessor() = default;
         ~Preprocessor() = default;
 
-        std::unique_ptr<model::InternalModel> load(const model::IOStructure& ioStructure);
+        std::unique_ptr<InternalModel> load(const IOStructure& ioStructure);
     };
 
 } // namespace mhs

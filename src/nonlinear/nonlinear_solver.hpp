@@ -10,8 +10,8 @@ namespace mhs::nonlinear {
         int iterations = 0;
     };
 
-    NonLinearResult solve(const model::InternalModel& model,
-        model::GlobalState& state,
+    NonLinearResult solve(const InternalModel& model,
+        GlobalState& state,
         Solver& solver,
         double underrelaxation,
         int max_iterations,

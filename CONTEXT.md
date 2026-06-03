@@ -73,7 +73,7 @@ Example: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 
 ## GlobalState
 
-Persistent state across simulation, stored in `model::GlobalState`:
+Persistent state across simulation, stored in `GlobalState`:
 
 - **Core fields**: `T` (current temperature), `T_prev` (previous time step), `residual`
 - **Time stepping**: `current_time`, `time_step` (step counter), `dt` (current step size)
