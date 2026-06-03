@@ -26,9 +26,14 @@ namespace mhs {
         state_.time_step = 0;
         state_.dt = config_.time_step;
 
+        const nonlinear::NonLinearConfig nl_cfg {
+            config_.underrelaxation,
+            config_.max_nonlinear_iterations,
+            config_.nonlinear_tolerance
+        };
+
         if (model_->study_type == StudyType::Steady) {
-            nonlinear::solve(*model_, state_, *solver_,
-                config_.underrelaxation, config_.max_nonlinear_iterations, config_.nonlinear_tolerance);
+            nonlinear::solve(*model_, state_, *solver_, nl_cfg);
             solution_ = state_.T;
         }
         else {
@@ -38,8 +43,7 @@ namespace mhs {
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
-                auto result = nonlinear::solve(*model_, state_, *solver_,
-                    config_.underrelaxation, config_.max_nonlinear_iterations, config_.nonlinear_tolerance);
+                auto result = nonlinear::solve(*model_, state_, *solver_, nl_cfg);
                 if (!result.converged) {
                     MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
                 }

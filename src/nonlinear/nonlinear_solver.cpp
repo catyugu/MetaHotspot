@@ -9,15 +9,13 @@ namespace mhs::nonlinear {
     NonLinearResult solve(const InternalModel& model,
         GlobalState& state,
         Solver& solver,
-        double underrelaxation,
-        int max_iterations,
-        double tolerance)
+        const NonLinearConfig& cfg)
     {
         assembler::Assembler assembler(model);
 
-        double omega = underrelaxation > 0.0 ? underrelaxation : 1.0;
+        double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
 
-        for (int iter = 0; iter < max_iterations; iter++) {
+        for (int iter = 0; iter < cfg.max_iterations; iter++) {
             auto linear_system = assembler.assemble(state);
             auto solve_result = solver.solve(linear_system.A, linear_system.b);
 
@@ -41,12 +39,12 @@ namespace mhs::nonlinear {
             MHS_LOG_INFO("Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e}",
                 iter, max_update, max_residual);
 
-            if (max_update < tolerance && max_residual < tolerance) {
+            if (max_update < cfg.tolerance && max_residual < cfg.tolerance) {
                 return {true, iter + 1};
             }
         }
 
-        return {false, max_iterations};
+        return {false, cfg.max_iterations};
     }
 
 } // namespace mhs::nonlinear

@@ -10,11 +10,15 @@ namespace mhs::nonlinear {
         int iterations = 0;
     };
 
+    struct NonLinearConfig {
+        double underrelaxation = 1.0;
+        int max_iterations = 50;
+        double tolerance = 1e-6;
+    };
+
     NonLinearResult solve(const InternalModel& model,
         GlobalState& state,
         Solver& solver,
-        double underrelaxation,
-        int max_iterations,
-        double tolerance);
+        const NonLinearConfig& cfg);
 
 } // namespace mhs::nonlinear
