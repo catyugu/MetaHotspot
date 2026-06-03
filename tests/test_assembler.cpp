@@ -1,8 +1,8 @@
 #include "assembler/assembler.hpp"
 #include "config.h"
 #include "io/io.hpp"
-#include "model/internal_model.hpp"
-#include "model/io_model.hpp"
+#include "common/internal_model.hpp"
+#include "common/io_model.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>

@@ -1,5 +1,5 @@
 #include "io/io.hpp"
-#include "logger/logger.hpp"
+#include "common/logger.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"

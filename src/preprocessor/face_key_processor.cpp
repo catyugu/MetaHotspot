@@ -1,6 +1,6 @@
 #include "face_key_processor.hpp"
 #include "expr/expr.hpp"
-#include "model/types.hpp"
+#include "common/types.hpp"
 #include <cmath>
 
 namespace mhs::preprocessor {

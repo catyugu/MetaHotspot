@@ -1,6 +1,6 @@
 #include "nonlinear_solver.hpp"
 #include "assembler/assembler.hpp"
-#include "logger/logger.hpp"
+#include "common/logger.hpp"
 #include <algorithm>
 #include <cmath>
 

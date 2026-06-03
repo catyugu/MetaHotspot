@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/internal_model.hpp"
+#include "common/internal_model.hpp"
 #include <Eigen/Sparse>
 
 namespace mhs::assembler {

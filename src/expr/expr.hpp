@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/types.hpp"
+#include "common/types.hpp"
 #include <memory>
 #include <string>
 

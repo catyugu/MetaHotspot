@@ -1,7 +1,7 @@
 #pragma once
 
-#include "model/internal_model.hpp"
-#include "model/io_model.hpp"
+#include "common/internal_model.hpp"
+#include "common/io_model.hpp"
 
 namespace mhs::preprocessor {
 

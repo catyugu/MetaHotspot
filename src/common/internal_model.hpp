@@ -1,6 +1,6 @@
 #pragma once
 #include "expr/expr.hpp"
-#include "model/types.hpp"
+#include "types.hpp"
 #include <vector>
 
 namespace mhs::model {

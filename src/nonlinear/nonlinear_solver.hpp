@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/internal_model.hpp"
+#include "common/internal_model.hpp"
 #include "solver/solver.hpp"
 
 namespace mhs::nonlinear {

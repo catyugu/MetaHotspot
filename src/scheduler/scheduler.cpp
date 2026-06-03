@@ -1,5 +1,5 @@
 #include "scheduler.hpp"
-#include "logger/logger.hpp"
+#include "common/logger.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
 
 namespace mhs {

@@ -1,7 +1,7 @@
 add_subdirectory(io)
 add_subdirectory(expr)
 add_subdirectory(assembler)
-add_subdirectory(logger)
+add_subdirectory(common)
 add_subdirectory(solver)
 
 add_library(mhs_lib
@@ -14,7 +14,7 @@ add_library(mhs_lib
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC expr_lib logger_lib io_lib solver_lib assembler_lib)
+target_link_libraries(mhs_lib PUBLIC expr_lib common_lib io_lib solver_lib assembler_lib)
 
 if(VERBOSE)
     target_compile_definitions(mhs_lib PUBLIC VERBOSE)

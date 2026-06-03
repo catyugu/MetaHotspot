@@ -1,8 +1,8 @@
 #include "config.h"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
-#include "model/internal_model.hpp"
-#include "model/io_model.hpp"
+#include "common/internal_model.hpp"
+#include "common/io_model.hpp"
 #include "preprocessor/face_key_processor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
