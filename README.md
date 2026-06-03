@@ -4,7 +4,7 @@
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：主命名空间为 `mhs`, 每个模块一个命名空间例如 `mhs::general`。模块内部，无需暴露的实现应该用匿名空间。
+- 命名空间：主命名空间为 `mhs`, 每个模块一个命名空间例如 `mhs::preprocessor`。模块内部，无需暴露的实现应该用匿名空间。
 - 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。无虚函数。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -20,29 +20,29 @@
 
 ### 核心模块
 
-- **general**：自定义类型，公差、回退值等常量。
-- **model**：核心数据结构。应包含两套，一套用于 IO（直接地反映配置项的结构），一套用于内部使用（扁平化的 SoA 设计，使用掩码数组、预编译表达式等，用于瞬态/非线性求解的全局状态缓冲区，组装时的上下文缓冲区……）。
-- **io**：处理输入 XML 的读取（以及可能的额外输入文件）和输出 VTU/XML 的写入。使用 IO 专用结构进行解析和序列化。
-- **preprocessor**：负责将高层模型转换为优化的内部表示。处理网格生成、连通性构建和数据布局优化。
-- **assembler**：消费内部模型配置和当前全局状态，给出组装后的线性系统，即左侧矩阵 A 和右侧向量 b。应针对缓存局部性和向量化进行高度优化。
-- **solver**：线性求解器，使用工厂设计模式选择并实例化不同求解器。
-- **scheduler**：调度完整的求解流程，如非线性迭代和时间步进。协调求解器与组装器完成仿真循环。
-- **postprocessor**：将求解向量转换为其他形式，如插值到节点、评估导出量等。
+- **common**：共享基础类型、IO 模型与内部模型、logger、单例 types（`FieldContext`、`StudyType`、`BcType` 等）。`model` 与 `logger` 已合并到此模块（参见 `5f7071a`）。
+    - `common/types.hpp` — `mhs::FieldContext`、`mhs::StudyType`、`mhs::BcType`、`mhs::FaceDir`、`mhs::FieldEvaluator` 等。
+    - `common/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`IOStructure`、`Variable`、`Rect`、`Block`、`Layer`、`Boundary`、`Material`、`FirstTypeThermalBC` 等）。
+    - `common/internal_model.hpp` — 扁平化 SoA 内部模型（`InternalModel`、`MeshGeometry`、`MaterialProps`、`CellFields`、`BCParamTable`、`GlobalState`）。
+    - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
+- **io**：XML 读取与序列化（VTU/VTK 调试输出）。`xmlparser` 已合并到此模块。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
+- **preprocessor**：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::preprocessor::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
+- **assembler**：消费内部模型配置和当前全局状态，给出组装后的线性系统 `A·T = b`。`mhs::assembler::{Assembler, LinearSystem, ThreadLocalData}`。TBB 并行。
+- **solver**：线性求解器，使用工厂设计模式选择并实例化不同求解器。命名空间为 `mhs`（没有独立的 `mhs::solver` 命名空间）。`mhs::{Solver, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver}`。
+- **nonlinear**：非线性迭代求解（`mhs::nonlinear::{NonLinearConfig, NonLinearResult, solve}`）。`Scheduler` 调用此模块在每个时间步内做非线性迭代直到收敛或达到 `max_nonlinear_iterations`。
+- **scheduler**：调度完整的求解流程，时间步推进 + 每步内的非线性迭代协调。`mhs::{Scheduler, SchedulerConfig}`，方法 `setModel / setSolver / run / solution`。
+- **postprocessor**：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::Postprocessor`。
 
 ### 工具模块
 
-- **expr**：处理表达式解析与求值。可封装第三方库如 `exprtk` 用于我们的场景。提供变量/函数/表达式注册池，并基于上下文进行求值。
-- **xmlparser**：将 XML 解析为易于遍历并转换为 IO 模型结构的树状结构。可使用 `tinyxml2` 进行 XML 解析。
-- **logger**：封装日志库（如 spdlog），为所有模块提供统一的日志接口。
-- **utils**：不适合归入其他特定模块的通用实用函数。
+- **expr**：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::expr::{CompiledExpression, ExprTKCompiled, register_native, register_function, make_constant, make_evaluator, eval, ...}`。
 
 ### 数据流
 
 ```mermaid
 flowchart TD
-    XML["XML 输入文件"] --> xmlp["xmlparser"]
-    xmlp --> io_read["IO: 反序列化"]
-    io_read --> IOModel["IO 模型结构（参数、网格、边界条件等）"]
+    XML["XML 输入文件"] --> io_read["io: 反序列化 (tinyxml2)"]
+    io_read --> IOModel["IO 模型"]
     IOModel --> pre["预处理器"]
     pre -- "构建连通性、SoA布局、预编译表达式" --> IntModel["内部模型 (SoA, 掩码, 状态缓冲区, 预编译表达式)"]
 
@@ -79,14 +79,13 @@ flowchart TD
     io_write --> XMLout["XML 结果文件"]
     io_write --> VTU["VTU/VTK 调试输出"]
 
-
 ```
 
 ## 第三方依赖
 
 - **CPM**：用于引入其余依赖项。
-- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `xmlparser` 和 `io` 用于读取/写入 XML。
-- **spdlog**：结构化、快速的日志记录，支持多种接收器（控制台、文件、系统日志）。由 `logger` 模块封装。
+- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
+- **spdlog**：结构化、快速的日志记录，支持多种接收器（控制台、文件、系统日志）。由 `common` 模块（`mhs::logger`）封装。
 - **exprtk**：数学表达式解析和即时编译。由 `expr` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：线性代数核心：稠密向量、稀疏矩阵（Eigen::SparseMatrix），以及内置求解器（SparseLU、ConjugateGradient、BiCGSTAB），可通过 `solver` 工厂选择。同时提供 SIMD 向量化和无矩阵功能。
 - **GTest**：测试框架。每个模块一个测试套件。
