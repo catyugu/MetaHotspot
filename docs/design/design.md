@@ -35,7 +35,7 @@
 1. **内部模型不含原始字符串** — 所有表达式在 preprocess 阶段编译为 `CompiledExpression`
 2. **热源为 per-cell** — `CellFields.heat_source` 是 `vector<CompiledExpression>`，由 `Block.ti_reyuan_expr` 编译
 4. **无虚函数（solver 除外）** — Solver 使用虚接口（工厂模式），其余模块均使用模板静态多态
-4. **无异常** — 错误通过 `mhs::logger` 记录，程序通过 `mhs::panic()` 退出
+4. **无异常** — 错误通过 `mhs::logger` 记录，程序通过 `mhs::logger::panic()` 退出
 5. **POD 类型优先** — 所有内部模型结构均为 POD 兼容
 6. **纯函数优先** — `assembler::assemble()` 在给定 model + state 下无状态
 7. **SoA 贯穿全局** — 所有热循环数组按字段连续存储

@@ -12,7 +12,7 @@ MetaHotspot/
 │   └── CompilerOptions.cmake  # 严格编译选项（/W4 /WX 或 -Wall -Wextra -Wpedantic -Werror）
 ├── src/
 │   ├── CMakeLists.txt         # 所有模块的源文件、include 目录、链接库
-│   ├── model/                 # 类型、IO 模型、内部模型数据结构
+│   ├── common/                # spdlog 封装、域类型、IO/内部模型数据结构 (namespace mhs::logger, mhs::model, mhs)
 │   ├── io/                    # XML 序列化/反序列化
 │   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
@@ -20,8 +20,7 @@ MetaHotspot/
 │   ├── nonlinear/             # Anderson 加速非线性迭代（namespace mhs::nonlinear）
 │   ├── solver/                # Eigen 稀疏求解器工厂（namespace mhs, not mhs::solver）
 │   ├── scheduler/             # 仿真循环调度（namespace mhs, not mhs::scheduler）
-│   ├── postprocessor/         # VTU/XML 输出（namespace mhs, not mhs::postprocessor）
-│   └── logger/                # spdlog 封装、free function API、mhs::panic()
+│   └── postprocessor/         # VTU/XML 输出（namespace mhs, not mhs::postprocessor）
 ├── tests/
 │   ├── CMakeLists.txt         # GTest 配置、测试发现
 │   ├── test_expr.cpp          # 表达式求值测试
@@ -179,4 +178,4 @@ if (io_model.dimension == Dimension::Dimension2D) {
 | `mhs`                | Preprocessor 类、Solver、Scheduler、Postprocessor     |
 | `mhs::assembler`     | Jacobian 和 RHS 组装                                  |
 | `mhs::nonlinear`     | Anderson 加速非线性迭代（free function solve()）      |
-| `mhs::logger`        | spdlog 封装、free function API、mhs::panic()          |
+| `mhs::logger`        | spdlog 封装、free function API、panic() — 位于 common_lib |
