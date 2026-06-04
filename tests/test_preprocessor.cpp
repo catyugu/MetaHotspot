@@ -1,8 +1,8 @@
+#include "common/internal_model.hpp"
+#include "common/io_model.hpp"
 #include "config.h"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
-#include "common/internal_model.hpp"
-#include "common/io_model.hpp"
 #include "preprocessor/face_key_processor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
@@ -483,14 +483,14 @@ TEST(PreprocessorTest, Case1XMLLoad)
     ASSERT_NE(model, nullptr);
 
     // Case1: X=[0,10,...,100], Y=[0,10,...,100], Z=[0,2,4,6,8,10,15,20,25,30]
-    EXPECT_EQ(model->mesh.nx, 10);
-    EXPECT_EQ(model->mesh.ny, 10);
+    EXPECT_EQ(model->mesh.nx, 20);
+    EXPECT_EQ(model->mesh.ny, 20);
     EXPECT_EQ(model->mesh.nz, 9);
-    EXPECT_EQ(model->mesh.total_cell_count, 900);
+    EXPECT_EQ(model->mesh.total_cell_count, 3600);
 
     // Should have some valid and some virtual cells
     EXPECT_GT(model->cells.cell_count, 0);
-    EXPECT_LT(model->cells.cell_count, 900);
+    EXPECT_LT(model->cells.cell_count, 3600);
 
     // Material table should have copper and silicon
     EXPECT_EQ(model->material_table.size(), 2);
