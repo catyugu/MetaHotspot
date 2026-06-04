@@ -1,12 +1,9 @@
 #pragma once
 #include <vector>
 
-#include "expr/expr.hpp"
 #include "types.hpp"
 
 namespace mhs {
-
-    using CompiledExpression = expr::CompiledExpression;
 
     struct CellBC {
         std::array<BcType, FACE_COUNT> types;

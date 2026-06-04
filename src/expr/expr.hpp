@@ -1,11 +1,22 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
-#include "common/types.hpp"
-
 namespace mhs::expr {
+
+    // FieldContext 是 expr 引擎向上层暴露的数据契约：调用方在求值时必须以
+    // 这个结构提供 (x, y, z, T, t)。
+    struct FieldContext {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+        double T = 0.0;
+        double t = 0.0;
+    };
+
+    using FieldEvaluator = std::function<double(const FieldContext&)>;
 
     // Internal: Thread-Local Storage wrapper for ExprTK compiled instances
     struct ExprTKCompiledTLS;

@@ -36,14 +36,14 @@ namespace {
         auto expr = mhs::expr::parse("x + y");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 3.0);
     }
 
     TEST(CompiledExpression, EvaluatorIgnoresContextForConstant)
     {
         auto expr = mhs::expr::CompiledExpression::make_constant(99.0);
-        mhs::FieldContext ctx {1.0, 2.0, 3.0, 300.0, 10.0};
+        mhs::expr::FieldContext ctx {1.0, 2.0, 3.0, 300.0, 10.0};
         EXPECT_EQ(expr.eval(ctx), 99.0);
     }
 
@@ -191,7 +191,7 @@ namespace {
         auto expr = mhs::expr::parse("x + 1");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 6.0);
     }
 
@@ -202,7 +202,7 @@ namespace {
         auto expr = mhs::expr::parse("x + y");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 7.0);
     }
 
@@ -213,7 +213,7 @@ namespace {
         auto expr = mhs::expr::parse("x + y + z");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 6.0);
     }
 
@@ -224,7 +224,7 @@ namespace {
         auto expr = mhs::expr::parse("x * y");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 12.0);
     }
 
@@ -235,7 +235,7 @@ namespace {
         auto expr = mhs::expr::parse("x / y");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {10.0, 2.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {10.0, 2.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 5.0);
     }
 
@@ -246,7 +246,7 @@ namespace {
         auto expr = mhs::expr::parse("(x + y) * z");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 9.0);
     }
 
@@ -257,7 +257,7 @@ namespace {
         auto expr = mhs::expr::parse("2 + 3 * 4");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 14.0); // 2 + (3*4) = 14
     }
 
@@ -272,7 +272,7 @@ namespace {
         auto expr = mhs::expr::parse("sin(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 0.0, 1e-10);
 
         ctx.x = PI / 2;
@@ -286,7 +286,7 @@ namespace {
         auto expr = mhs::expr::parse("cos(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 1.0, 1e-10);
 
         ctx.x = PI;
@@ -300,7 +300,7 @@ namespace {
         auto expr = mhs::expr::parse("exp(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 1.0, 1e-10);
 
         ctx.x = 1.0;
@@ -314,7 +314,7 @@ namespace {
         auto expr = mhs::expr::parse("log(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {1.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {1.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 0.0, 1e-10);
 
         ctx.x = E;
@@ -328,7 +328,7 @@ namespace {
         auto expr = mhs::expr::parse("sqrt(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {4.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {4.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 2.0, 1e-10);
 
         ctx.x = 9.0;
@@ -342,7 +342,7 @@ namespace {
         auto expr = mhs::expr::parse("abs(x)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {-5.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {-5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 5.0);
 
         ctx.x = 3.0;
@@ -356,7 +356,7 @@ namespace {
         auto floor_expr = mhs::expr::parse("floor(x)");
         auto ceil_expr = mhs::expr::parse("ceil(x)");
 
-        mhs::FieldContext ctx {3.7, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {3.7, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(floor_expr.eval(ctx), 3.0);
         EXPECT_EQ(ceil_expr.eval(ctx), 4.0);
     }
@@ -372,7 +372,7 @@ namespace {
         auto expr = mhs::expr::parse("T + 100");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 400.0);
     }
 
@@ -383,7 +383,7 @@ namespace {
         auto expr = mhs::expr::parse("t * 2");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 5.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 5.0};
         auto result = expr.eval(ctx);
         EXPECT_EQ(result, 10.0);
     }
@@ -396,7 +396,7 @@ namespace {
         auto expr = mhs::expr::parse("x + 1");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         auto result = expr.eval(ctx);
         EXPECT_EQ(result, 6.0);
     }
@@ -409,7 +409,7 @@ namespace {
         auto expr = mhs::expr::parse("T * 2");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 10.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 10.0, 0.0};
         auto result = expr.eval(ctx);
         EXPECT_EQ(result, 20.0);
     }
@@ -421,7 +421,7 @@ namespace {
 
         auto expr = mhs::expr::parse("t");
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 7.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 7.0};
         auto result = expr.eval(ctx);
         EXPECT_EQ(result, 7.0);
     }
@@ -433,7 +433,7 @@ namespace {
         auto expr = mhs::expr::parse("x + y + z + T + t");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
+        mhs::expr::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
         EXPECT_EQ(expr.eval(ctx), 116.0);
     }
 
@@ -445,7 +445,7 @@ namespace {
         auto expr = mhs::expr::parse("10 * (1 + 0.001 * T)");
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
+        mhs::expr::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 13.0, 1e-10);
     }
 
@@ -458,7 +458,7 @@ namespace {
         mhs::expr::clear_registry();
 
         // Register a piecewise function
-        mhs::expr::register_native("piecewise", [](const mhs::FieldContext& ctx) {
+        mhs::expr::register_native("piecewise", [](const mhs::expr::FieldContext& ctx) {
             if (ctx.x < 1.0)
                 return 0.0;
             if (ctx.x < 2.0)
@@ -469,7 +469,7 @@ namespace {
         auto native = mhs::expr::get_native("piecewise");
         EXPECT_TRUE(native != nullptr);
 
-        mhs::FieldContext ctx {0.5, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {0.5, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(native(ctx), 0.0);
 
         ctx.x = 1.5;
@@ -501,7 +501,7 @@ namespace {
     TEST(ClearRegistry, ClearsFunctions)
     {
         mhs::expr::clear_registry();
-        mhs::expr::register_native("f", [](const mhs::FieldContext&) { return 42.0; });
+        mhs::expr::register_native("f", [](const mhs::expr::FieldContext&) { return 42.0; });
         EXPECT_TRUE(mhs::expr::get_native("f") != nullptr);
 
         mhs::expr::clear_registry();
@@ -516,7 +516,7 @@ namespace {
         auto expr2 = mhs::expr::parse("x + 1");
 
         // Both should evaluate the same
-        mhs::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr1.eval(ctx), 6.0);
         EXPECT_EQ(expr2.eval(ctx), 6.0);
     }
@@ -528,7 +528,7 @@ namespace {
         auto expr1 = mhs::expr::parse("x + 1");
         auto expr2 = mhs::expr::parse("x + 2");
 
-        mhs::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expr::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr1.eval(ctx), 6.0);
         EXPECT_EQ(expr2.eval(ctx), 7.0);
     }
