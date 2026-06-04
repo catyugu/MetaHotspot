@@ -1,298 +1,212 @@
 # 模块接口
 
-## 4.1 `io`
+## `io`
 
 ```cpp
 namespace mhs::io {
+    IOStructure read_xml(const std::string& xml_path);
 
-IOStructure read_xml(const std::string& xml_path);
+    void write_vtu(const std::string& path,
+                   const InternalModel& model,
+                   const std::vector<double>& node_temperature);
 
-void write_vtu(const std::string& path,
-    const InternalModel& model,
-    const std::vector<double>& node_temperature);
-
-void write_xml(const std::string& input_path,
-    const std::string& output_path,
-    const InternalModel& model,
-    const std::vector<double>& node_temperature);
-
-} // namespace mhs::io
+    void write_xml(const std::string& input_path,
+                   const std::string& output_path,
+                   const InternalModel& model,
+                   const std::vector<double>& node_temperature);
+}
 ```
 
----
-
-## 4.2 `preprocessor`
+## `preprocessor`
 
 ```cpp
 namespace mhs {
-
-class Preprocessor {
-public:
-    Preprocessor() = default;
-    ~Preprocessor() = default;
-
-    std::unique_ptr<mhs::InternalModel> load(const mhs::IOStructure& ioStructure);
-};
-
-} // namespace mhs
+    class Preprocessor {
+    public:
+        std::unique_ptr<InternalModel> load(const IOStructure& io);
+    };
+}
 
 namespace mhs::preprocessor {
 
-// Convert length unit to SI (meters) scale factor
 double length_unit_to_si(LengthUnit unit);
 
-// Pre-evaluate all geometry expressions for all layers, including Z ranges
-// Returns resolved geometry per layer: blocks with pre-evaluated rect coordinates
-// and layer z_start/z_end
+struct ResolvedRect         { bool add_sub; double x, y, width, height; };  // SI
+struct ResolvedBlock        { std::vector<ResolvedRect> rects;
+                              std::string material_name;
+                              std::string ti_reyuan_expr; };  // 字符串，待 parse
+struct ResolvedLayerGeometry{ std::vector<ResolvedBlock> blocks;
+                              double z_start, z_end; };  // SI
+
 std::vector<ResolvedLayerGeometry> resolve_geometry(
-    const std::vector<Layer>& layers,
-    double si_scale);
+    const std::vector<Layer>& layers, double si_scale);
 
-// Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
-// Uses pre-evaluated geometry values — no expression evaluation at runtime
-// Traverses blocks in reverse order (last block wins in overlap regions)
-// Returns block index or -1 if cell is virtual
-int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer,
-    double cx, double cy, double cz);
+int find_block_for_cell(const ResolvedLayerGeometry& layer,
+                        double cx, double cy, double cz);  // -1 = virtual
 
-// Resolve cell validity, layer assignment, and material assignment
-// Populates valid_mask, index_map, layer_id, material_id in CellFields
-void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-    const MeshGeometry& mesh,
-    const std::unordered_map<std::string, size_t>& name_to_idx,
-    CellFields& cells);
+void resolve_layers(const std::vector<ResolvedLayerGeometry>& layers,
+                    const MeshGeometry& mesh,
+                    const std::unordered_map<std::string, size_t>& name_to_idx,
+                    CellFields& cells);
 
-} // namespace mhs::preprocessor
-
-namespace mhs::preprocessor {
-
-struct FaceKeyInfo {
-    char axis = 'Z';
-    char side = 'E';
-    double coord_value = 0.0;  // spatial coordinate of the boundary plane (SI meters)
-    std::vector<std::array<double, 4>> rects; // {a_min, a_max, b_min, b_max} in SI
-};
+struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
+                     double coord_value = 0.0;
+                     std::vector<std::array<double,4>> rects; };  // SI
 
 FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
 bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
 void resolve_face_keys(const std::vector<Boundary>& boundaries,
-    ThermalBCType other_bc_type,
-    const FirstTypeThermalBC& other_bc_first,
-    const SecondTypeThermalBC& other_bc_second,
-    const ThirdTypeThermalBC& other_bc_third,
-    const MeshGeometry& mesh,
-    CellFields& cells,
-    BCParamTable& bc_params,
-    double si_scale);
-
-} // namespace mhs::preprocessor
+                       ThermalBCType other_bc_type,
+                       const FirstTypeThermalBC&  other_bc_first,
+                       const SecondTypeThermalBC& other_bc_second,
+                       const ThirdTypeThermalBC&  other_bc_third,
+                       const MeshGeometry& mesh, CellFields& cells,
+                       BCParamTable& bc_params, double si_scale);
+}
 ```
 
 ### 预处理流程
 
 ```text
-IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
+IOStructure
   └─> Preprocessor::load()
-        ├─> 转换单位（length_unit → SI），注册几何变量 → expr
-        ├─> 注册材料函数、用户函数 → expr
-        ├─> expr::clear_registry() （清除上次残留）
-        ├─> Build MeshGeometry from mesh_vertex_x/y/z (×si_scale)
-        │     └─> compute dx/dy/dz, cx/cy/cz
-        ├─> resolve_geometry() — 预求解层几何（Z 范围 + Block XY 坐标）
-        ├─> Build material_table (parse k/rho/c)
-        ├─> resolve_layers()
-        │     ├─> 生成 valid_mask + index_map
-        │     └─> 分配 material_id, layer_id（全网格大小）
-        ├─> Compile heat_source dictionary
-        │     ├─> 去重 block.ti_reyuan_expr 字符串
-        │     ├─> heat_source_table[0] = make_constant(0.0)
-        │     ├─> 每个唯一公式 → expr::parse() → heat_source_table.emplace_back()
-        │     └─> 按单元写入 heat_source_idx[c_idx] = uint16_t
-        ├─> resolve_face_keys()
-        │     ├─> 解析 face_key 字符串
-        │     ├─> ThermalBCType → BcType conversion
-        │     ├─> 为每个单元的每个面分配 CellBC
-        │     ├─> 填充未指定面的 other_bc
-        │     └─> 虚拟单元邻面也分配 other_bc
+        ├─> expr::clear_registry() + set_variable(几何变量) + register_native(ios.functions)
+        ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
+        ├─> resolve_geometry()     // 预求层 Z 范围 + Block XY 坐标
+        ├─> material_table         // 解析 k/rho/c
+        ├─> resolve_layers()       // valid_mask, index_map, material_id, layer_id
+        ├─> heat_source_table      // 去重 ti_reyuan_expr，idx 0 = constant(0)
+        │     + cells.heat_source_idx[c_idx] = uint16_t
+        ├─> resolve_face_keys()    // CellBC + BCParamTable
         └─> InternalModel ready
 ```
 
----
-
-## 4.3 `assembler`
+## `assembler`
 
 ```cpp
 namespace mhs::assembler {
+    struct LinearSystem {
+        Eigen::SparseMatrix<double> A;
+        Eigen::VectorXd b;
+        Eigen::VectorXd residual;     // b - A * T  (snapshot at assemble time)
+    };
 
-struct LinearSystem {
-    Eigen::SparseMatrix<double> A;
-    Eigen::VectorXd b;
-    Eigen::VectorXd residual;
-};
-
-class Assembler {
-public:
-    explicit Assembler(const InternalModel& model);
-    ~Assembler() = default;
-
-    LinearSystem assemble(const GlobalState& state);
-
-private:
-    const InternalModel& model_;
-};
-
-} // namespace mhs::assembler
+    class Assembler {
+    public:
+        explicit Assembler(const InternalModel& model);
+        LinearSystem assemble(const GlobalState& state);
+    };
+}
 ```
 
-### 组装热循环说明
+`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。组装项：
 
-`Assembler::assemble()` 使用 `tbb::parallel_for` 扫描全网格索引范围 `0..total`，跳过虚拟单元（`valid_mask[old_idx] == 0` 时直接 `return`）。每线程独立的 `tbb::enumerable_thread_specific<ThreadLocalData>` 持有 `std::vector<Eigen::Triplet<double>>` 与 `Eigen::VectorXd b`，并行结束后一次性合并到全局 `LinearSystem`（`triplets.insert(...)` + `b += local.b`）。
+- 扩散项（与 `k` 求值，邻居平均传导率）
+- 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
+- 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
+- 瞬态项（仅 `StudyType::Transient && dt > 0`）：`ρc·vol/dt·(T − T_prev)`
 
-对每个活跃单元 `cell_idx`：
+所有 `eval()` 走 TBB ETS，无锁。
 
-1. 获取 `material_id[cell_idx]` → `material_table[id]` → `MaterialProps {k, rho, c}`
-2. 对每个临面 `FaceDir`：
-   - 查 `cell_bcs[c_idx].types[dir]` → BC 类型
-   - 查 `cell_bcs[c_idx].param_idxs[dir]` → 参数索引
-   - 调用 `bc_params.*[idx].eval(ctx)` 等
-   - 施加 BC 贡献
-3. 获取 `heat_source_idx[c_idx]` → `heat_source_table[hs_idx].eval(ctx)` → 体热源 Q
-4. 组装扩散项 + 瞬态项
-
-**注意**：虚拟单元已在预处理阶段标记，Assembler 的并行 for 跳过它们。所有 `eval()` 路径都走 `tbb::enumerable_thread_specific<ExprTKCompiled>`，无锁 —— TBB 工作线程间无序列化瓶颈。
-
----
-
-## 4.4 `solver`
+## `solver`
 
 ```cpp
 namespace mhs {
+    enum class SolverType { SparseLU, BiCGSTAB };
 
-enum class SolverType { SparseLU, BiCGSTAB };
+    struct SolverConfig {
+        SolverType type = SolverType::BiCGSTAB;
+        double tolerance = 1e-8;
+        int max_iterations = 1000;
+    };
 
-struct SolverConfig {
-    SolverType type = SolverType::BiCGSTAB;
-    double tolerance = 1e-8;
-    int max_iterations = 1000;
-};
+    struct SolveResult {
+        Eigen::VectorXd solution;
+        bool success;
+        double residual_norm;
+        int iterations;
+    };
 
-struct SolveResult {
-    Eigen::VectorXd solution;
-    bool success;
-    double residual_norm;
-    int iterations;
-};
-
-class Solver {
-public:
-    virtual ~Solver() = default;
-    virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
-                              const Eigen::VectorXd& b) = 0;
-    static std::unique_ptr<Solver> create(SolverType type);
-};
-
-} // namespace mhs
+    class Solver {
+    public:
+        virtual ~Solver() = default;
+        virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
+                                  const Eigen::VectorXd& b) = 0;
+        static std::unique_ptr<Solver> create(SolverType type);
+    };
+}
 ```
 
----
+**`solver` 在 `mhs` 根命名空间**，没有 `mhs::solver` 子命名空间。
 
-## 4.5 `scheduler`
-
-```cpp
-namespace mhs {
-
-struct SchedulerConfig {
-    double transient_duration = 0.0;
-    double time_step = 1.0;
-    int max_nonlinear_iterations = 50;
-    double nonlinear_tolerance = 1e-6;
-    double underrelaxation = 1.0;
-    bool is_steady = false;
-};
-
-class Scheduler {
-public:
-    Scheduler() = default;
-    explicit Scheduler(const SchedulerConfig& config);
-    ~Scheduler() = default;
-
-    void setModel(InternalModel* model);
-    void setSolver(std::unique_ptr<Solver> solver);
-    void run();
-    const std::vector<double>& solution() const;
-
-private:
-    InternalModel* model_ = nullptr;
-    std::unique_ptr<Solver> solver_;
-    SchedulerConfig config_;
-    GlobalState state_;
-    std::vector<double> solution_;
-};
-
-} // namespace mhs
-```
-
-> **Note**: Nonlinear iteration is delegated to `mhs::nonlinear::solve()` (see §4.5.1 below), not a private method on `Scheduler`. Time state (`current_time`, `time_step`, `dt`) lives in `GlobalState`, not as private members on `Scheduler`.
-
----
-
-## 4.5.1 `nonlinear`
+## `nonlinear`
 
 ```cpp
 namespace mhs::nonlinear {
+    struct NonLinearResult { bool converged = false; int iterations = 0; };
 
-struct NonLinearResult {
-    bool converged = false;
-    int iterations = 0;
-};
+    struct NonLinearConfig {
+        double underrelaxation = 1.0;
+        int    max_iterations  = 50;
+        double tolerance       = 1e-6;
+    };
 
-NonLinearResult solve(const InternalModel& model,
-    GlobalState& state,
-    Solver& solver,
-    double underrelaxation,
-    int max_iterations,
-    double tolerance);
-
-} // namespace mhs::nonlinear
+    NonLinearResult solve(const InternalModel& model,
+                          GlobalState& state,
+                          Solver& solver,
+                          const NonLinearConfig& cfg);
+}
 ```
 
-Anderson-accelerated fixed-point iteration. `solve()` performs the full nonlinear loop (assemble → solve → underrelaxation update → check convergence) and returns whether it converged and how many iterations it took. Called by `Scheduler::run()` for each time step (or once for steady-state).
+`nonlinear::solve()` 是 Anderson 加速的定点迭代：assemble → solve → underrelax 更新 → 收敛判据。**完整非线性循环在 `nonlinear` 内**，`Scheduler` 不持有私有非线性逻辑。
 
----
-
-## 4.6 `postprocessor`
+## `scheduler`
 
 ```cpp
 namespace mhs {
+    struct SchedulerConfig {
+        double transient_duration       = 0.0;
+        double time_step                = 1.0;
+        int    max_nonlinear_iterations = 50;
+        double nonlinear_tolerance      = 1e-6;
+        double underrelaxation          = 1.0;
+        bool   is_steady                = false;
+    };
 
-class Postprocessor {
-public:
-    Postprocessor() = default;
-    ~Postprocessor() = default;
-
-    std::vector<double> interpolate_cell_to_node(const InternalModel& model,
-        const std::vector<double>& cell_temperature) const;
-
-    double max_temperature(const std::vector<double>& T) const;
-    double min_temperature(const std::vector<double>& T) const;
-};
-
-} // namespace mhs
+    class Scheduler {
+    public:
+        void setModel(InternalModel* model);
+        void setSolver(std::unique_ptr<Solver> solver);
+        void run();
+        const std::vector<double>& solution() const;
+    };
+}
 ```
 
-### 展开逻辑
+**`scheduler` 在 `mhs` 根命名空间**，无子命名空间。时间状态（`current_time`, `time_step`, `dt`）在 `GlobalState`，非 `Scheduler` 私有成员。
+
+`run()` 行为：
+
+- `Steady`：跳过时间循环，单次调用 `nonlinear::solve()`
+- `Transient`：循环至 `current_time < duration`，每步 `T_prev = T` 后调用 `nonlinear::solve()`
+
+## `postprocessor`
 
 ```cpp
-// 根据 nx, ny, nz 计算全网格大小
-int total = mesh.nx * mesh.ny * mesh.nz;
-std::vector<double> output_T(total);
+namespace mhs {
+    class Postprocessor {
+    public:
+        std::vector<double> interpolate_cell_to_node(
+            const InternalModel& model,
+            const std::vector<double>& cell_temperature) const;
 
-for (int old_idx = 0; old_idx < total; old_idx++) {
-    if (cells.valid_mask[old_idx]) {
-        output_T[old_idx] = temperature[cells.index_map[old_idx]];
-    } else {
-        output_T[old_idx] = std::nan("");  // 虚拟区域 NaN
-    }
+        double max_temperature(const std::vector<double>& T) const;
+        double min_temperature(const std::vector<double>& T) const;
+    };
 }
-````
+```
+
+**`postprocessor` 在 `mhs` 根命名空间**，无子命名空间。纯计算，无 IO。
+
+展开到全网格：虚拟位置写 NaN，由 `write_vtu` / `write_xml` 序列化。

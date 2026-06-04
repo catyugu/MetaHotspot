@@ -1,10 +1,6 @@
 # IO 模型结构
 
-IO 结构直接映射 XML schema，仅用于序列化/反序列化。
-
----
-
-## 2.1 顶层结构
+直接映射 XML schema，仅用于序列化/反序列化。`src/common/io_model.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
 
 ```cpp
 namespace mhs {
@@ -45,81 +41,57 @@ struct Layer {
     bool is_top_layer = false;
 };
 
+// 边界
 enum class BoundaryCategory { Electrical };
-enum class ThermalBCType { FirstType, SecondType, ThirdType };
+enum class ThermalBCType    { FirstType, SecondType, ThirdType };
+struct FirstTypeThermalBC  { std::string temperature = "300.0"; };   // Dirichlet
+struct SecondTypeThermalBC { std::string heat_flux = "0.0"; };       // Neumann
+struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0";
+                             std::string T_inf = "300.0"; };         // Cauchy
+struct Boundary { BoundaryCategory category; std::string name;
+                  std::vector<std::string> face_keys;
+                  ThermalBCType bc_type;
+                  FirstTypeThermalBC first; SecondTypeThermalBC second; ThirdTypeThermalBC third; };
 
-struct FirstTypeThermalBC  { std::string temperature = "300.0"; };    // Dirichlet：固定温度
-struct SecondTypeThermalBC { std::string heat_flux = "0.0"; };         // Neumann：固定热通量
-struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0"; std::string T_inf = "300.0"; };  // Cauchy：换热
+// 材料
+struct Material { std::string name;
+                  std::string daore_xishu = "0.0";   // k
+                  std::string midu        = "0.0";   // rho
+                  std::string bi_rerong   = "0.0"; }; // c
 
-struct Boundary {
-    BoundaryCategory category;
-    std::string name;
-    std::vector<std::string> face_keys;  // 原始面键字符串
-    ThermalBCType bc_type;
-    FirstTypeThermalBC  first;
-    SecondTypeThermalBC second;
-    ThirdTypeThermalBC  third;
-};
-
-struct Material {
-    std::string name;
-    std::string daore_xishu = "0.0";       // 导热系数 k
-    std::string midu = "0.0";              // 密度 rho（可选）
-    std::string bi_rerong = "0.0";         // 比热容 c（可选）
-};
-
-enum class StudyType { Steady, Transient };
-enum class LengthUnit { M,
-        Mm,
-        Um,
-        Nm,
-        Inch,
-        Mil
-        };
-enum class Dimension { Dimension2D, Dimension3D };  // Dimension2D 触发 panic
+// 元数据
+enum class StudyType  { Steady, Transient };
+enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
+enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 在预处理 panic
 
 struct IOStructure {
-    // 元数据
-    StudyType study_type;
-    Dimension dimension;
+    StudyType  study_type;
+    Dimension  dimension;
     LengthUnit length_unit;
-    double initial_temperature = 300.0;
-    double ambient_temperature = 300.0;
+    double initial_temperature  = 300.0;
+    double ambient_temperature  = 300.0;
 
-    // 几何变量
     std::vector<Variable> variables;
-
-    // 层和材料
-    std::vector<Layer> layers;
+    std::vector<Layer>    layers;
     std::unordered_map<std::string, Material> materials;
-
-    // 边界条件
     std::vector<Boundary> boundaries;
 
-    // 瞬态设置（仅当 study_type == Transient 时使用）
-    double transient_duration = 0.0;
-    double transient_time_step = 1.0;
+    double transient_duration     = 0.0;
+    double transient_time_step    = 1.0;
     std::string transient_time_unit = "s";
 
-    // 未指定面的默认 BC（OtherThermalBoundary）。
-    // 通常为 SecondType（Neumann，HeatFlux=0 = 绝热）或 ThirdType。
-    // 预处理阶段将此类默认 BC 应用于所有未明确指定的面。
-    ThermalBCType other_bc_type = ThermalBCType::SecondType;
-    FirstTypeThermalBC other_bc_first;
+    ThermalBCType     other_bc_type  = ThermalBCType::SecondType;
+    FirstTypeThermalBC  other_bc_first;
     SecondTypeThermalBC other_bc_second;
-    ThirdTypeThermalBC other_bc_third;
+    ThirdTypeThermalBC  other_bc_third;
 
-    // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
-    // These are read directly from XML and passed to preprocessor
-    std::vector<double> mesh_vertex_x;
-    std::vector<double> mesh_vertex_y;
-    std::vector<double> mesh_vertex_z;
+    std::vector<double> mesh_vertex_x, mesh_vertex_y, mesh_vertex_z;
 
-    // Native functions registered during preprocessing
-    // Key = function name, Value = FieldEvaluator (std::function<double(FieldContext)>)
-    // FieldEvaluator 的权威定义在 mhs::expr（src/expr/expr.hpp），此处经由
-    // mhs::FieldEvaluator（src/common/types.hpp 的 using 重新导出）使用。
+    // 已注册为 native function 的 C++ 求值器。
+    // ⚠️ TODO(Function types): 当前为扁平 map；
+    //    计划从 XML 解析结构化函数定义（Gauss、PieceWise、…）→ 编译为 CompiledExpression / FieldEvaluator。
+    //    计划类型（未实现）：enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise }
+    //    + ExpressionFunction / DoubleExponentialFunction / GaussFunction / SineFunction / PieceWiseFunction / Function。
     std::unordered_map<std::string, FieldEvaluator> functions;
 };
 
@@ -187,31 +159,33 @@ struct Function {
 
 ## 字段说明
 
-### 热边界条件类型
+### BC 类型
 
-| 类型       | 中文名                 | 数学描述                            | XML 类型                    |
-| ---------- | ---------------------- | ----------------------------------- | --------------------------- |
-| FirstType  | 第一类（Dirichlet）    | `T = T₀`（固定温度）                | `FirstTypeThermalBoundary`  |
-| SecondType | 第二类（Neumann）      | `-k ∂T/∂n = q₀`（固定热通量）       | `SecondTypeThermalBoundary` |
-| ThirdType  | 第三类（Cauchy/Robin） | `-k ∂T/∂n = h(T - T_∞)`（对流换热） | `ThirdTypeThermalBoundary`  |
+| 类型       | 数学                          | XML 元素                       |
+| ---------- | ----------------------------- | ------------------------------ |
+| FirstType  | `T = T₀`                      | `FirstTypeThermalBoundary`     |
+| SecondType | `-k ∂T/∂n = q₀`               | `SecondTypeThermalBoundary`    |
+| ThirdType  | `-k ∂T/∂n = h(T - T_∞)`       | `ThirdTypeThermalBoundary`     |
 
-### 面键格式
+### Face key 格式
 
-边界面规格格式：`Face|Direction|CoordValue|X_min,Y_min,X_max,Y_max;...`
+```text
+Face|Direction|CoordValue|RectList
+```
 
-示例：`Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
+- `Face`: `Z` / `Y` / `X` — 法向轴
+- `Direction`: `E` — 类别（当前仅 Electrical，未使用）
+- `CoordValue`: 边界面的**空间坐标**（SI 前乘 `si_scale`）。**不是层索引**。
+- `RectList`:
+    - Z-face: `xmin,xmax,ymin,ymax;xmin2,xmax2,ymin2,ymax2;…`
+    - X/Y-face: `Min1|Max1|Min2|Max2`（pipe-delimited single rect）
 
-- `Face`：Z/Y/X 表示法向方向
-- `Direction`：E 表示电气边界（暂未用）
-- `CoordValue`：边界平面的空间坐标值（如 `0` 表示 Z=0mm 位置，`30` 表示 Z=30mm），预处理时乘以 si_scale 转换为 SI 单位。**不是层索引**——边界面选择完全基于坐标匹配，与层的排列顺序无关
-- 后续坐标描述一个或多个矩形区域
+示例: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
 
-> **注意**：Block 不包含 Z 维度字段（`thickness_expr`、`z_offset_expr`）。Block 仅在 XY 平面通过 add/sub Rect 定义几何形状，其 Z 范围完全继承父 Layer 的 `z_start/z_end`。
+### `ti_reyuan_expr`（体热源）
 
-### ti_reyuan_expr（热源）
+每个 Block 一个体热源密度表达式 `[W/m³]`，由 `preprocessor` 去重后编入 `heat_source_table`。可以是常数（`"1e9"`）、空间函数（`"1e8 + 0.5*x"`），或任意 exprtk 表达式。
 
-每个 Block 有一个体热源密度表达式，单位 W/m³。可以是：
+### Block 不含 Z 字段
 
-- 常数：如 `"1e9"`
-- 空间表达式：如 `"1e8 + 0.5*x"`（上下文为 `{x, y, z, T, t}`）
-- 任意 exprtk 支持的表达式
+Block 仅在 XY 平面通过 add/sub Rect 定义形状，Z 范围完全继承父 Layer 的 `z_start/z_end`。

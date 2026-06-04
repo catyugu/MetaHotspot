@@ -19,8 +19,6 @@ struct CellBC {
 };
 ```
 
-`FaceBCFields` is removed.
-
 ## Rationale
 
 - **No projection ambiguity**: each cell's face is independent.
