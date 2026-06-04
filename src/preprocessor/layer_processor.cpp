@@ -1,5 +1,5 @@
-#include "layer_processor.hpp"
 #include "expr/expr.hpp"
+#include "layer_processor.hpp"
 
 namespace mhs::preprocessor {
 
@@ -26,8 +26,7 @@ namespace mhs::preprocessor {
     }
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<Layer>& layers,
-        double si_scale)
+        const std::vector<Layer>& layers, double si_scale)
     {
         int num_layers = (int)layers.size();
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
@@ -93,8 +92,8 @@ namespace mhs::preprocessor {
         return resolved;
     }
 
-    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer,
-        double cx, double cy, double cz)
+    int find_block_for_cell(
+        const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
     {
         if (cz < resolved_layer.z_start - EPS || cz > resolved_layer.z_end + EPS) {
             return -1;
@@ -110,8 +109,8 @@ namespace mhs::preprocessor {
 
             for (const auto& rect : block.rects) {
                 // 如果当前网格点落在该矩形内，则此矩形的操作会覆盖之前的状态
-                if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS
-                    && cy >= rect.y - EPS && cy <= rect.y + rect.height + EPS) {
+                if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS && cy >= rect.y - EPS
+                    && cy <= rect.y + rect.height + EPS) {
                     // 若是加操作，点变为实心(true)；若是减操作，点变为空洞(false)
                     // 因为是顺次执行，后面的加操作可以完美填补前面减操作挖出来的洞
                     is_inside = rect.add_sub;
@@ -128,8 +127,7 @@ namespace mhs::preprocessor {
     }
 
     void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const MeshGeometry& mesh,
-        const std::unordered_map<std::string, size_t>& name_to_idx,
+        const MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
         CellFields& cells)
     {
         int num_layers = (int)resolved_layers.size();
@@ -153,7 +151,8 @@ namespace mhs::preprocessor {
                     int block_idx = -1;
 
                     for (int l = 0; l < num_layers; l++) {
-                        if (cz >= resolved_layers[l].z_start - EPS && cz <= resolved_layers[l].z_end + EPS) {
+                        if (cz >= resolved_layers[l].z_start - EPS
+                            && cz <= resolved_layers[l].z_end + EPS) {
                             int b = find_block_for_cell(resolved_layers[l], cx, cy, cz);
                             if (b >= 0) {
                                 layer_idx = l;

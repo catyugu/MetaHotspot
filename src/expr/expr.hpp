@@ -1,27 +1,27 @@
 #pragma once
 
-#include "common/types.hpp"
 #include <memory>
 #include <string>
 
+#include "common/types.hpp"
+
 namespace mhs::expr {
 
-    // Internal: compiled ExprTK expression (defined in expr.cpp, pimpl)
-    class ExprTKCompiled;
+    // Internal: Thread-Local Storage wrapper for ExprTK compiled instances
+    struct ExprTKCompiledTLS;
 
-    // Precompiled expression (move-only, thread-safe eval)
-    // Each instance owns its own ExprTKCompiled — no shared mutable state
+    // Precompiled expression (Copyable, thread-safe eval via TLS)
+    // Each thread accessing this expression will instantiate its own ExprTK AST on-demand.
     class CompiledExpression {
     public:
         CompiledExpression();
         ~CompiledExpression();
 
-        CompiledExpression(CompiledExpression&& other) noexcept;
-        CompiledExpression& operator=(CompiledExpression&& other) noexcept;
-
-        // Non-copyable: each instance owns a unique ExprTKCompiled
-        CompiledExpression(const CompiledExpression&) = delete;
-        CompiledExpression& operator=(const CompiledExpression&) = delete;
+        // 允许复制和移动，使其在 vector 等容器中成为廉价的句柄
+        CompiledExpression(const CompiledExpression& other) = default;
+        CompiledExpression& operator=(const CompiledExpression& other) = default;
+        CompiledExpression(CompiledExpression&& other) noexcept = default;
+        CompiledExpression& operator=(CompiledExpression&& other) noexcept = default;
 
         double eval(const FieldContext& ctx) const;
 
@@ -29,12 +29,12 @@ namespace mhs::expr {
         double constant_value() const { return const_val_; }
 
         static CompiledExpression make_constant(double value);
-        static CompiledExpression make_evaluator(std::unique_ptr<ExprTKCompiled> impl);
+        static CompiledExpression make_evaluator(const std::string& formula);
 
     private:
         bool is_const_ = false;
         double const_val_ = 0.0;
-        std::unique_ptr<ExprTKCompiled> impl_;
+        std::shared_ptr<ExprTKCompiledTLS> tls_impl_;
     };
 
     // Thread-safe registry operations (mutex-protected)
@@ -44,7 +44,7 @@ namespace mhs::expr {
     FieldEvaluator get_native(const std::string& name);
     void clear_registry();
 
-    // Parse a field expression string (each call creates a fresh ExprTK instance)
+    // Parse a field expression string
     CompiledExpression parse(const std::string& formula);
 
     // Evaluate a geometry expression (uses registered variables)

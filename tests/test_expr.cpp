@@ -1,6 +1,7 @@
 #include "expr/expr.hpp"
 #include <gtest/gtest.h>
-
+using namespace mhs;
+using namespace mhs::expr;
 namespace {
     constexpr double PI = 3.14159265358979323846;
     constexpr double E = 2.71828182845904523536;
@@ -507,10 +508,6 @@ namespace {
         EXPECT_TRUE(mhs::expr::get_native("f") == nullptr);
     }
 
-} // namespace
-
-namespace {
-
     TEST(ParserCaching, SameExpressionReturnsCached)
     {
         mhs::expr::clear_registry();
@@ -534,6 +531,124 @@ namespace {
         mhs::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr1.eval(ctx), 6.0);
         EXPECT_EQ(expr2.eval(ctx), 7.0);
+    }
+
+    TEST(ExprTest, ConcurrentEvaluationSingleExpression)
+    {
+        // 构造一个稍微复杂、依赖全部上下文变量的表达式
+        auto expr = parse("x*x + 2*y - z + T*0.5 + t");
+        ASSERT_FALSE(expr.is_constant());
+
+        const int num_threads = 16;
+        const int num_iterations = 10000;
+
+        // 预分配内存避免伪共享(False Sharing)影响性能，每个线程写入自己独立的块
+        std::vector<double> results(num_threads * num_iterations, 0.0);
+        std::vector<std::thread> threads;
+
+        // 启动多线程进行并发求值
+        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+            threads.emplace_back([&, thread_id]() {
+                for (int i = 0; i < num_iterations; ++i) {
+                    // 每个线程、每次循环拥有截然不同的上下文变量
+                    double x = 1.0 + thread_id;
+                    double y = 2.0 + i;
+                    double z = 3.0 + thread_id * 0.1;
+                    double T = 300.0 + i * 0.01;
+                    double t_time = 0.1 * i;
+
+                    FieldContext ctx {x, y, z, T, t_time};
+
+                    // 并发调用 eval
+                    double val = expr.eval(ctx);
+                    results[thread_id * num_iterations + i] = val;
+                }
+            });
+        }
+
+        // 等待所有线程完成
+        for (auto& th : threads) {
+            th.join();
+        }
+
+        // 串行验证结果的正确性
+        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+            for (int i = 0; i < num_iterations; ++i) {
+                double x = 1.0 + thread_id;
+                double y = 2.0 + i;
+                double z = 3.0 + thread_id * 0.1;
+                double T = 300.0 + i * 0.01;
+                double t_time = 0.1 * i;
+
+                double expected = x * x + 2.0 * y - z + T * 0.5 + t_time;
+                EXPECT_NEAR(results[thread_id * num_iterations + i], expected, 1e-9);
+            }
+        }
+    }
+
+    // 测试 2：高并发下访问表达式字典（模拟装配时的查表求值）
+    TEST(ExprTest, ConcurrentEvaluationDictionary)
+    {
+        std::vector<CompiledExpression> dict;
+        dict.push_back(parse("0.0")); // 索引 0：常数 (默认无热源)
+        dict.push_back(parse("x + y")); // 索引 1：线性
+        dict.push_back(parse("x * y")); // 索引 2：乘积
+        dict.push_back(parse("T^2 + t*10")); // 索引 3：非线性
+
+        const int num_threads = 16;
+        const int num_iterations = 5000;
+
+        std::vector<double> results(num_threads * num_iterations, 0.0);
+        std::vector<std::thread> threads;
+
+        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+            threads.emplace_back([&, thread_id]() {
+                for (int i = 0; i < num_iterations; ++i) {
+                    double x = (double)thread_id;
+                    double y = (double)(i % 100); // 限制 y 的范围
+                    double z = 0.0;
+                    double T = 300.0 + thread_id;
+                    double t_time = 1.0 + i * 0.1;
+
+                    // 模拟根据 Cell 所属的 Block 随机访问不同的表达式
+                    int expr_idx = (thread_id + i) % dict.size();
+                    FieldContext ctx {x, y, z, T, t_time};
+
+                    results[thread_id * num_iterations + i] = dict[expr_idx].eval(ctx);
+                }
+            });
+        }
+
+        for (auto& th : threads) {
+            th.join();
+        }
+
+        // 串行验证结果
+        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+            for (int i = 0; i < num_iterations; ++i) {
+                double x = (double)thread_id;
+                double y = (double)(i % 100);
+                [[maybe_unused]] double z = 0.0;
+                double T = 300.0 + thread_id;
+                double t_time = 1.0 + i * 0.1;
+
+                int expr_idx = (thread_id + i) % dict.size();
+                double expected = 0.0;
+
+                if (expr_idx == 0)
+                    expected = 0.0;
+                else if (expr_idx == 1)
+                    expected = x + y;
+                else if (expr_idx == 2)
+                    expected = x * y;
+                else if (expr_idx == 3)
+                    expected = std::pow(T, 2.0) + t_time * 10.0;
+
+                EXPECT_NEAR(results[thread_id * num_iterations + i], expected, 1e-9)
+                    << "Mismatch at thread " << thread_id << ", iteration " << i
+                    << " with expr_idx " << expr_idx;
+            }
+        }
     }
 
 } // namespace

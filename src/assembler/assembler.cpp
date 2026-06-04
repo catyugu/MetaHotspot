@@ -1,17 +1,17 @@
-#include "assembler.hpp"
-#include <Eigen/Sparse>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
+#include <Eigen/Sparse>
+
+#include "assembler.hpp"
+
 namespace mhs::assembler {
 
-    // Helper: convert 3D grid index to flat index
     static int grid_index(int ix, int iy, int iz, int ny, int nz)
     {
         return ix * ny * nz + iy * nz + iz;
     }
 
-    // Helper: decode flat index back to (ix, iy, iz)
     static void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
     {
         ix = old_idx / (ny * nz);
@@ -19,8 +19,6 @@ namespace mhs::assembler {
         iz = old_idx % nz;
     }
 
-    // Helper: get neighbor grid index in a given face direction
-    // Returns -1 if neighbor is out of grid bounds
     static int neighbor_grid_index(int ix, int iy, int iz, FaceDir dir, int nx, int ny, int nz)
     {
         switch (dir) {
@@ -41,8 +39,6 @@ namespace mhs::assembler {
         }
     }
 
-    // Helper: face area for a cell at (ix, iy, iz)
-    // XM/XP: dy*dz, YM/YP: dx*dz, ZM/ZP: dx*dy
     static double face_area(FaceDir dir, double dx, double dy, double dz)
     {
         switch (dir) {
@@ -60,7 +56,6 @@ namespace mhs::assembler {
         }
     }
 
-    // Get neighbor cell coordinate for face direction
     static int neighbor_ix(FaceDir dir, int ix)
     {
         switch (dir) {
@@ -95,11 +90,9 @@ namespace mhs::assembler {
         }
     }
 
-    // Per-thread local buffers for parallel assembly
     struct ThreadLocalData {
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd b;
-
         explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)) { }
     };
 
@@ -113,9 +106,6 @@ namespace mhs::assembler {
         int N = cells.cell_count;
         int total = mesh.total_cell_count;
 
-        // Convention: A*T = b where A has POSITIVE diagonal, NEGATIVE off-diagonal
-
-        // Per-thread local buffers
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>(
             [&]() { return ThreadLocalData(N); });
 
@@ -124,7 +114,6 @@ namespace mhs::assembler {
                 return;
 
             auto& local = thread_data.local();
-
             int ix, iy, iz;
             decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
@@ -134,18 +123,17 @@ namespace mhs::assembler {
             double dz_cell = mesh.dz[iz];
             double vol = dx_cell * dy_cell * dz_cell;
 
-            // Material thermal conductivity
+            // 材料字典求值：底层已由 TLS 保证线程安全
             size_t mat_id = cells.material_id[old_idx];
-            double k = materials[mat_id].k.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                state.T[c_idx], state.current_time});
+            double k = materials[mat_id].k.eval(
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-            // Heat source term: Q * vol on RHS
-            double Q = cells.heat_source[c_idx].eval(
-                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                    state.T[c_idx], state.current_time});
+            // 热源字典求值：利用 uint16_t 索引进行极速查表和计算
+            uint16_t hs_idx = cells.heat_source_idx[c_idx];
+            double Q = model_.heat_source_table[hs_idx].eval(
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             local.b(c_idx) += Q * vol;
 
-            // Process each face
             const auto& cell_bc = cells.cell_bcs[c_idx];
             double diag = 0.0;
 
@@ -156,14 +144,9 @@ namespace mhs::assembler {
                 uint16_t param_idx = cell_bc.param_idxs[f];
 
                 if (bc_type == BcType::None) {
-                    // Interior face: resistance model (matches legacy)
-                    // r_ij = d_half1 / (k_c * A_f) + d_half2 / (k_n * A_f)
-                    // cond = 1 / r_ij = A_f / (d_half1/k_c + d_half2/k_n)
-                    int neighbor_old = neighbor_grid_index(ix, iy, iz, dir,
-                        mesh.nx, mesh.ny, mesh.nz);
-                    if (neighbor_old < 0)
-                        continue;
-                    if (cells.valid_mask[neighbor_old] == 0)
+                    int neighbor_old
+                        = neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz);
+                    if (neighbor_old < 0 || cells.valid_mask[neighbor_old] == 0)
                         continue;
 
                     int n_idx = (int)cells.index_map[neighbor_old];
@@ -171,116 +154,50 @@ namespace mhs::assembler {
                     int niy = neighbor_iy(dir, iy);
                     int niz = neighbor_iz(dir, iz);
 
-                    double k_neighbor = materials[cells.material_id[neighbor_old]].k.eval(
-                        {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
-                            state.T[n_idx], state.current_time});
+                    double k_neighbor
+                        = materials[cells.material_id[neighbor_old]].k.eval({mesh.cx[nix],
+                            mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
 
-                    double d_half_cell, d_half_neighbor;
-                    switch (dir) {
-                    case FaceDir::XM:
-                        d_half_cell = mesh.dx[ix] / 2.0;
-                        d_half_neighbor = mesh.dx[ix - 1] / 2.0;
-                        break;
-                    case FaceDir::XP:
-                        d_half_cell = mesh.dx[ix] / 2.0;
-                        d_half_neighbor = mesh.dx[ix + 1] / 2.0;
-                        break;
-                    case FaceDir::YM:
-                        d_half_cell = mesh.dy[iy] / 2.0;
-                        d_half_neighbor = mesh.dy[iy - 1] / 2.0;
-                        break;
-                    case FaceDir::YP:
-                        d_half_cell = mesh.dy[iy] / 2.0;
-                        d_half_neighbor = mesh.dy[iy + 1] / 2.0;
-                        break;
-                    case FaceDir::ZM:
-                        d_half_cell = mesh.dz[iz] / 2.0;
-                        d_half_neighbor = mesh.dz[iz - 1] / 2.0;
-                        break;
-                    case FaceDir::ZP:
-                        d_half_cell = mesh.dz[iz] / 2.0;
-                        d_half_neighbor = mesh.dz[iz + 1] / 2.0;
-                        break;
-                    default:
-                        d_half_cell = 0.0;
-                        d_half_neighbor = 0.0;
-                    }
+                    double d_half_cell = (dir == FaceDir::XM || dir == FaceDir::XP)
+                        ? mesh.dx[ix] / 2.0
+                        : (dir == FaceDir::YM || dir == FaceDir::YP) ? mesh.dy[iy] / 2.0
+                                                                     : mesh.dz[iz] / 2.0;
+
+                    double d_half_neighbor = (dir == FaceDir::XM || dir == FaceDir::XP)
+                        ? mesh.dx[nix] / 2.0
+                        : (dir == FaceDir::YM || dir == FaceDir::YP) ? mesh.dy[niy] / 2.0
+                                                                     : mesh.dz[niz] / 2.0;
 
                     double cond = A_f / (d_half_cell / k + d_half_neighbor / k_neighbor);
-
                     diag += cond;
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
                 else if (bc_type == BcType::FirstType) {
-                    // Dirichlet BC: resistance model
-                    // r_bc = half_dist / (k * A_f)
-                    // cond = 1 / r_bc = k * A_f / half_dist
-                    // diag += cond, rhs += cond * T_bc
-                    double half_dist;
-                    switch (dir) {
-                    case FaceDir::XM:
-                    case FaceDir::XP:
-                        half_dist = dx_cell / 2.0;
-                        break;
-                    case FaceDir::YM:
-                    case FaceDir::YP:
-                        half_dist = dy_cell / 2.0;
-                        break;
-                    case FaceDir::ZM:
-                    case FaceDir::ZP:
-                        half_dist = dz_cell / 2.0;
-                        break;
-                    default:
-                        half_dist = 0.0;
-                    }
+                    double half_dist = (dir == FaceDir::XM || dir == FaceDir::XP) ? dx_cell / 2.0
+                        : (dir == FaceDir::YM || dir == FaceDir::YP)              ? dy_cell / 2.0
+                                                                                  : dz_cell / 2.0;
 
-                    double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                            state.T[c_idx], state.current_time});
+                    double T_bc_val = bc_params.dirichlet_T[param_idx].eval({mesh.cx[ix],
+                        mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
                     double cond = k * A_f / half_dist;
                     diag += cond;
                     local.b(c_idx) += cond * T_bc_val;
                 }
                 else if (bc_type == BcType::SecondType) {
-                    // Neumann BC: specified heat flux q entering the cell
-                    // Flux = q * A_f entering the cell -> directly adds to RHS
-                    double q = bc_params.neumann_q[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                            state.T[c_idx], state.current_time});
+                    double q = bc_params.neumann_q[param_idx].eval({mesh.cx[ix], mesh.cy[iy],
+                        mesh.cz[iz], state.T[c_idx], state.current_time});
                     local.b(c_idx) += q * A_f;
                 }
                 else if (bc_type == BcType::ThirdType) {
-                    // Cauchy/Robin BC: ghost cell where diffusive flux balances convective flux
-                    // T_ghost = (k/half_dist * T_cell + h * T_inf) / (k/half_dist + h)
-                    // Flux into cell = k * A_f / half_dist * (T_ghost - T_cell)
-                    //              = (k/half_dist * h * A_f) / (k/half_dist + h) * (T_inf - T_cell)
-                    // diag += k*h*A_f / (k + h*half_dist)
-                    // rhs += k*h*A_f / (k + h*half_dist) * T_inf
-                    double h = bc_params.cauchy_h[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                            state.T[c_idx], state.current_time});
-                    double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                            state.T[c_idx], state.current_time});
+                    double h = bc_params.cauchy_h[param_idx].eval({mesh.cx[ix], mesh.cy[iy],
+                        mesh.cz[iz], state.T[c_idx], state.current_time});
+                    double T_inf = bc_params.cauchy_T_inf[param_idx].eval({mesh.cx[ix], mesh.cy[iy],
+                        mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double half_dist;
-                    switch (dir) {
-                    case FaceDir::XM:
-                    case FaceDir::XP:
-                        half_dist = dx_cell / 2.0;
-                        break;
-                    case FaceDir::YM:
-                    case FaceDir::YP:
-                        half_dist = dy_cell / 2.0;
-                        break;
-                    case FaceDir::ZM:
-                    case FaceDir::ZP:
-                        half_dist = dz_cell / 2.0;
-                        break;
-                    default:
-                        half_dist = 0.0;
-                    }
+                    double half_dist = (dir == FaceDir::XM || dir == FaceDir::XP) ? dx_cell / 2.0
+                        : (dir == FaceDir::YM || dir == FaceDir::YP)              ? dy_cell / 2.0
+                                                                                  : dz_cell / 2.0;
 
                     double coeff = k * h * A_f / (k + h * half_dist);
                     diag += coeff;
@@ -290,21 +207,18 @@ namespace mhs::assembler {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            // Transient term (backward Euler)
             if (model_.study_type == StudyType::Transient && state.dt > 0.0) {
                 double rho = materials[mat_id].rho.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                        state.T[c_idx], state.current_time});
+                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
                 double c_heat = materials[mat_id].c.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                        state.T[c_idx], state.current_time});
+                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+
                 double mass_coeff = rho * c_heat * vol / state.dt;
                 local.triplets.emplace_back(c_idx, c_idx, mass_coeff);
                 local.b(c_idx) += mass_coeff * state.T_prev[c_idx];
             }
         });
 
-        // Merge thread-local data
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
 
@@ -316,13 +230,11 @@ namespace mhs::assembler {
         Eigen::SparseMatrix<double> A(N, N);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
-        // Compute residual: r = b - A*T
         Eigen::VectorXd T_vec(N);
-        for (int i = 0; i < N; i++) {
+        for (int i = 0; i < N; i++)
             T_vec(i) = state.T[i];
-        }
-        Eigen::VectorXd residual_vec = b - A * T_vec;
 
+        Eigen::VectorXd residual_vec = b - A * T_vec;
         return {A, b, residual_vec};
     }
 

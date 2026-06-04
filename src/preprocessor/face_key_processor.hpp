@@ -31,14 +31,9 @@ namespace mhs::preprocessor {
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
     // Resolve BCs: assign CellBC per cell per face from boundaries + other_bc + virtual neighbors
-    void resolve_face_keys(const std::vector<Boundary>& boundaries,
-        ThermalBCType other_bc_type,
-        const FirstTypeThermalBC& other_bc_first,
-        const SecondTypeThermalBC& other_bc_second,
-        const ThirdTypeThermalBC& other_bc_third,
-        const MeshGeometry& mesh,
-        CellFields& cells,
-        BCParamTable& bc_params,
-        double si_scale);
+    void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
+        const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
+        const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells,
+        BCParamTable& bc_params, double si_scale);
 
 } // namespace mhs::preprocessor

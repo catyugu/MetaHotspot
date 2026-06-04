@@ -1,15 +1,14 @@
-#include "face_key_processor.hpp"
 #include "common/types.hpp"
 #include "expr/expr.hpp"
+#include "face_key_processor.hpp"
 #include <cmath>
 
 namespace mhs::preprocessor {
 
     namespace {
         // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
-        bool is_face_exposed(FaceDir dir, int ix, int iy, int iz,
-            const MeshGeometry& mesh,
-            const CellFields& cells)
+        bool is_face_exposed(
+            FaceDir dir, int ix, int iy, int iz, const MeshGeometry& mesh, const CellFields& cells)
         {
             int nix = ix, niy = iy, niz = iz;
             switch (dir) {
@@ -34,7 +33,8 @@ namespace mhs::preprocessor {
             }
 
             // 1. 如果超出网格边界，说明是域外，绝对暴露
-            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {
+            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0
+                || niz >= mesh.nz) {
                 return true;
             }
 
@@ -85,10 +85,8 @@ namespace mhs::preprocessor {
         {
             if (parts.size() < 7)
                 return {};
-            return {{std::stod(parts[3]) * si_scale,
-                std::stod(parts[4]) * si_scale,
-                std::stod(parts[5]) * si_scale,
-                std::stod(parts[6]) * si_scale}};
+            return {{std::stod(parts[3]) * si_scale, std::stod(parts[4]) * si_scale,
+                std::stod(parts[5]) * si_scale, std::stod(parts[6]) * si_scale}};
         }
     } // anonymous namespace
 
@@ -117,22 +115,18 @@ namespace mhs::preprocessor {
     {
         constexpr double EPS = 1e-9;
         for (const auto& rect : fk.rects) {
-            if (a >= rect[0] - EPS && a <= rect[1] + EPS && b >= rect[2] - EPS && b <= rect[3] + EPS) {
+            if (a >= rect[0] - EPS && a <= rect[1] + EPS && b >= rect[2] - EPS
+                && b <= rect[3] + EPS) {
                 return true;
             }
         }
         return false;
     }
 
-    void resolve_face_keys(const std::vector<Boundary>& boundaries,
-        ThermalBCType other_bc_type,
-        const FirstTypeThermalBC& other_bc_first,
-        const SecondTypeThermalBC& other_bc_second,
-        const ThirdTypeThermalBC& other_bc_third,
-        const MeshGeometry& mesh,
-        CellFields& cells,
-        BCParamTable& bc_params,
-        double si_scale)
+    void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
+        const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
+        const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells,
+        BCParamTable& bc_params, double si_scale)
     {
         // 1. 初始化所有 BC 为 None
         for (int c = 0; c < cells.cell_count; c++) {
@@ -203,29 +197,34 @@ namespace mhs::preprocessor {
 
                                 if (dir == FaceDir::XM || dir == FaceDir::XP) {
                                     face_axis = 'X';
-                                    face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
+                                    face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix]
+                                                                      : mesh.vertex_x[ix + 1];
                                     a_val = mesh.cy[iy];
                                     b_val = mesh.cz[iz];
                                 }
                                 else if (dir == FaceDir::YM || dir == FaceDir::YP) {
                                     face_axis = 'Y';
-                                    face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
+                                    face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy]
+                                                                      : mesh.vertex_y[iy + 1];
                                     a_val = mesh.cx[ix];
                                     b_val = mesh.cz[iz];
                                 }
                                 else { // ZM, ZP
                                     face_axis = 'Z';
-                                    face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
+                                    face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz]
+                                                                      : mesh.vertex_z[iz + 1];
                                     a_val = mesh.cx[ix];
                                     b_val = mesh.cy[iy];
                                 }
 
                                 // 严格条件验证：同轴 -> 坐标重合 -> 面朝外暴露 -> 落入指定框内
-                                if (fk.axis == face_axis && std::abs(face_coord - fk.coord_value) < 1e-10) {
+                                if (fk.axis == face_axis
+                                    && std::abs(face_coord - fk.coord_value) < 1e-10) {
                                     if (is_face_exposed(dir, ix, iy, iz, mesh, cells)) {
                                         if (point_in_face_rects(fk, a_val, b_val)) {
                                             cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
-                                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
+                                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir]
+                                                = bc_param_idx;
                                         }
                                     }
                                 }

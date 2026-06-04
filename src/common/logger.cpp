@@ -1,8 +1,10 @@
-#include "logger.hpp"
-#include <cstdlib>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+
+#include <cstdlib>
 #include <vector>
+
+#include "logger.hpp"
 
 #pragma warning(disable : 4996)
 
@@ -19,7 +21,8 @@ namespace mhs::logger {
         }
 
         if (!log_file.empty()) {
-            auto file = std::make_shared<spdlog::sinks::basic_file_sink_mt>(std::string(log_file), true);
+            auto file
+                = std::make_shared<spdlog::sinks::basic_file_sink_mt>(std::string(log_file), true);
             file->set_pattern("%Y-%m-%d %H:%M:%S [%^%l%$] %v");
             sinks.push_back(file);
         }

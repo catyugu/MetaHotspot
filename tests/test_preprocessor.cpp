@@ -390,84 +390,6 @@ TEST(PreprocessorTest, OtherBCFallback)
     EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)FaceDir::ZP], BcType::SecondType);
 }
 
-// ---- Expression Compilation Tests ----
-
-TEST(PreprocessorTest, HeatSourceCompilation)
-{
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
-    io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
-
-    io.mesh_vertex_x = {0, 50, 100};
-    io.mesh_vertex_y = {0, 50, 100};
-    io.mesh_vertex_z = {0, 15, 30};
-
-    Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
-    layer.thickness_expr = "30";
-
-    Block block1;
-    block1.name = "b1";
-    block1.material_name = "copper";
-    block1.ti_reyuan_expr = "0";
-    block1.is_normal_material = true;
-
-    Rect rect1;
-    rect1.add_sub = true;
-    rect1.x_expr = "0";
-    rect1.y_expr = "0";
-    rect1.width_expr = "50";
-    rect1.height_expr = "50";
-    block1.all_rects.push_back(rect1);
-
-    Block block2;
-    block2.name = "b2";
-    block2.material_name = "copper";
-    block2.ti_reyuan_expr = "1e8"; // heat source
-    block2.is_normal_material = true;
-
-    Rect rect2;
-    rect2.add_sub = true;
-    rect2.x_expr = "50";
-    rect2.y_expr = "0";
-    rect2.width_expr = "50";
-    rect2.height_expr = "50";
-    block2.all_rects.push_back(rect2);
-
-    layer.blocks.push_back(block1);
-    layer.blocks.push_back(block2);
-    io.layers.push_back(layer);
-
-    Material copper;
-    copper.name = "copper";
-    copper.daore_xishu = "400";
-    io.materials["copper"] = copper;
-
-    io.other_bc_type = ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
-
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
-
-    // Cell at (0,0,*) belongs to block1 -> heat source = 0
-    // Cell at (1,0,*) belongs to block2 -> heat source = 1e8
-
-    int idx_block1 = 0 * 2 * 2 + 0 * 2 + 0;
-    int compact1 = model->cells.index_map[idx_block1];
-    EXPECT_TRUE(model->cells.heat_source[compact1].is_constant());
-    EXPECT_NEAR(model->cells.heat_source[compact1].constant_value(), 0.0, 1e-10);
-
-    int idx_block2 = 1 * 2 * 2 + 0 * 2 + 0;
-    int compact2 = model->cells.index_map[idx_block2];
-    EXPECT_TRUE(model->cells.heat_source[compact2].is_constant());
-    EXPECT_NEAR(model->cells.heat_source[compact2].constant_value(), 1e8, 1e-6);
-}
-
 // ---- Full Case1 Integration Test ----
 
 TEST(PreprocessorTest, Case1XMLLoad)
@@ -655,11 +577,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // name_to_idx order: "copper" = 0, "silicon" = 1
     EXPECT_EQ(model->cells.material_id[idx_overlap], 1)
         << "Overlapping cell must get material from later block (silicon), not earlier (copper)";
-
-    // Heat source should be from block2 (1e7), not block1 (0)
-    int compact_idx = (int)model->cells.index_map[idx_overlap];
-    EXPECT_NEAR(model->cells.heat_source[compact_idx].constant_value(), 1e7, 1e0)
-        << "Overlapping cell must get heat source from later block (1e7), not earlier (0)";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;

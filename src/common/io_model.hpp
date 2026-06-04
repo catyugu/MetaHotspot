@@ -1,10 +1,10 @@
 #pragma once
 
-#include "types.hpp"
-
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "types.hpp"
 
 namespace mhs {
 
@@ -49,9 +49,7 @@ namespace mhs {
 
     enum class BoundaryCategory { Electrical };
 
-    enum class ThermalBCType { FirstType,
-        SecondType,
-        ThirdType };
+    enum class ThermalBCType { FirstType, SecondType, ThirdType };
 
     struct FirstTypeThermalBC {
         std::string temperature = "300.0";
@@ -83,16 +81,9 @@ namespace mhs {
         std::string bi_rerong = "0.0"; // 比热容 c
     };
 
-    enum class LengthUnit { M,
-        Mm,
-        Um,
-        Nm,
-        Inch,
-        Mil
-    };
+    enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
 
-    enum class Dimension { Dimension2D,
-        Dimension3D };
+    enum class Dimension { Dimension2D, Dimension3D };
 
     struct IOStructure {
         StudyType study_type;

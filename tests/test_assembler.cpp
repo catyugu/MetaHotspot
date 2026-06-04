@@ -1,8 +1,8 @@
 #include "assembler/assembler.hpp"
-#include "config.h"
-#include "io/io.hpp"
 #include "common/internal_model.hpp"
 #include "common/io_model.hpp"
+#include "config.h"
+#include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -365,7 +365,8 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
 
 TEST(AssemblerTest, Case1AssemblyRuns)
 {
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/original_steady_tests/case1.xml";
+    std::string case_path
+        = std::string(PROJECT_SOURCE_DIR) + "/cases/original_steady_tests/case1.xml";
     if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found";
     }

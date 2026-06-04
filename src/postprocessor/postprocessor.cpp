@@ -6,8 +6,7 @@
 namespace mhs {
 
     std::vector<double> Postprocessor::interpolate_cell_to_node(
-        const InternalModel& model,
-        const std::vector<double>& cell_temperature) const
+        const InternalModel& model, const std::vector<double>& cell_temperature) const
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -53,10 +52,12 @@ namespace mhs {
                                 int compact_idx = (int)cells.index_map[cell_grid_idx];
                                 double T_c = cell_temperature[compact_idx];
 
-                                double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
-                                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+                                double k
+                                    = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
+                                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
 
-                                double v = std::abs((mesh.cx[ix] - node_x) * (mesh.cy[iy] - node_y) * (mesh.cz[iz] - node_z));
+                                double v = std::abs((mesh.cx[ix] - node_x) * (mesh.cy[iy] - node_y)
+                                    * (mesh.cz[iz] - node_z));
                                 double w = k / v;
 
                                 FaceDir dirs[3];
@@ -75,14 +76,17 @@ namespace mhs {
                                     if (bc_type == BcType::None)
                                         continue;
 
-                                    uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[(size_t)dir];
+                                    uint16_t param_idx
+                                        = cells.cell_bcs[compact_idx].param_idxs[(size_t)dir];
 
                                     if (bc_type == BcType::FirstType) {
-                                        dirichlet_sum += model.bc_params.dirichlet_T[param_idx].eval(
-                                            {node_x, node_y, node_z, T_c, 0.0});
+                                        dirichlet_sum
+                                            += model.bc_params.dirichlet_T[param_idx].eval(
+                                                {node_x, node_y, node_z, T_c, 0.0});
                                         dirichlet_count++;
                                     }
-                                    else if (bc_type == BcType::SecondType || bc_type == BcType::ThirdType) {
+                                    else if (bc_type == BcType::SecondType
+                                        || bc_type == BcType::ThirdType) {
                                         double half_dist = 0;
                                         if (dir == FaceDir::XM || dir == FaceDir::XP)
                                             half_dist = mesh.dx[ix] / 2.0;
@@ -100,8 +104,9 @@ namespace mhs {
                                         else {
                                             double h = model.bc_params.cauchy_h[param_idx].eval(
                                                 {node_x, node_y, node_z, T_c, 0.0});
-                                            double T_inf = model.bc_params.cauchy_T_inf[param_idx].eval(
-                                                {node_x, node_y, node_z, T_c, 0.0});
+                                            double T_inf
+                                                = model.bc_params.cauchy_T_inf[param_idx].eval(
+                                                    {node_x, node_y, node_z, T_c, 0.0});
                                             double cond_h = k / half_dist;
                                             T_f = (h * T_inf + cond_h * T_c) / (h + cond_h);
                                         }

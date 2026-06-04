@@ -1,13 +1,10 @@
-#include "scheduler.hpp"
 #include "common/logger.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
+#include "scheduler.hpp"
 
 namespace mhs {
 
-    void Scheduler::setSolver(std::unique_ptr<Solver> solver)
-    {
-        solver_ = std::move(solver);
-    }
+    void Scheduler::setSolver(std::unique_ptr<Solver> solver) { solver_ = std::move(solver); }
 
     void Scheduler::run()
     {
@@ -27,25 +24,25 @@ namespace mhs {
         state_.dt = config_.time_step;
 
         const nonlinear::NonLinearConfig nl_cfg {
-            config_.underrelaxation,
-            config_.max_nonlinear_iterations,
-            config_.nonlinear_tolerance
-        };
+            config_.underrelaxation, config_.max_nonlinear_iterations, config_.nonlinear_tolerance};
 
         if (model_->study_type == StudyType::Steady) {
             nonlinear::solve(*model_, state_, *solver_, nl_cfg);
             solution_ = state_.T;
         }
         else {
-            double duration = model_->transient_duration > 0.0 ? model_->transient_duration : config_.transient_duration;
-            double dt = model_->transient_time_step > 0.0 ? model_->transient_time_step : config_.time_step;
+            double duration = model_->transient_duration > 0.0 ? model_->transient_duration
+                                                               : config_.transient_duration;
+            double dt = model_->transient_time_step > 0.0 ? model_->transient_time_step
+                                                          : config_.time_step;
             state_.dt = dt;
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
                 auto result = nonlinear::solve(*model_, state_, *solver_, nl_cfg);
                 if (!result.converged) {
-                    MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
+                    MHS_LOG_WARN(
+                        "Non-Linear iteration did not converge at time step {}", state_.time_step);
                 }
 
                 state_.current_time += dt;
@@ -56,9 +53,6 @@ namespace mhs {
         }
     }
 
-    const std::vector<double>& Scheduler::solution() const
-    {
-        return solution_;
-    }
+    const std::vector<double>& Scheduler::solution() const { return solution_; }
 
 } // namespace mhs

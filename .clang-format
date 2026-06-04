@@ -19,7 +19,7 @@ BreakBeforeTernaryOperators: true
 BreakConstructorInitializersBeforeComma: false
 BinPackParameters: true
 BinPackArguments: true
-ColumnLimit: 0
+ColumnLimit: 100
 ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ConstructorInitializerIndentWidth: 4
 DerivePointerAlignment: false
@@ -37,7 +37,7 @@ PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakComment: 300
 PenaltyBreakString: 1000
 PenaltyBreakFirstLessLess: 120
-PenaltyExcessCharacter: 1000000
+PenaltyExcessCharacter: 100000
 PenaltyReturnTypeOnItsOwnLine: 60
 PointerAlignment: Left
 SpacesBeforeTrailingComments: 1
@@ -47,7 +47,6 @@ IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 BreakBeforeBraces: Stroustrup
-# SortIncludes: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 SpacesInAngles: false

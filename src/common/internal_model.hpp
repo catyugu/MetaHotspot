@@ -1,13 +1,13 @@
 #pragma once
+#include <vector>
+
 #include "expr/expr.hpp"
 #include "types.hpp"
-#include <vector>
 
 namespace mhs {
 
     using CompiledExpression = expr::CompiledExpression;
 
-    // Per-cell per-face BC: type + parameter index into BCParamTable
     struct CellBC {
         std::array<BcType, FACE_COUNT> types;
         std::array<uint16_t, FACE_COUNT> param_idxs;
@@ -15,7 +15,7 @@ namespace mhs {
 
     struct MeshGeometry {
         int nx = 0, ny = 0, nz = 0;
-        int total_cell_count = 0; // nx * ny * nz
+        int total_cell_count = 0;
 
         std::vector<double> vertex_x;
         std::vector<double> vertex_y;
@@ -37,17 +37,17 @@ namespace mhs {
     };
 
     struct CellFields {
-        int cell_count = 0; // = N_active (valid cell count)
+        int cell_count = 0;
 
-        // Full-grid size (nx*ny*nz): virtual + active
-        std::vector<size_t> index_map; // Maps old grid index → compact active index. SIZE_MAX = virtual
-        std::vector<uint8_t> valid_mask; // 1 = active cell, 0 = virtual
-        std::vector<size_t> material_id; // Full grid size
-        std::vector<size_t> layer_id; // Full grid size
+        std::vector<size_t> index_map;
+        std::vector<uint8_t> valid_mask;
+        std::vector<size_t> material_id;
+        std::vector<size_t> layer_id;
 
-        // Compact size (N_active): active cells only
         std::vector<CellBC> cell_bcs;
-        std::vector<CompiledExpression> heat_source;
+
+        // 降维为 16 位整型字典索引，实现极速的连续内存读取
+        std::vector<uint16_t> heat_source_idx;
     };
 
     struct BCParamTable {
@@ -58,14 +58,14 @@ namespace mhs {
     };
 
     struct GlobalState {
-        int cell_count = 0; // = N_active
+        int cell_count = 0;
         double current_time = 0.0;
         int time_step = 0;
-        double dt = 0.0; // current time step size for transient assembly
+        double dt = 0.0;
 
-        std::vector<double> T; // size = N_active
-        std::vector<double> T_prev; // size = N_active
-        std::vector<double> residual; // size = N_active
+        std::vector<double> T;
+        std::vector<double> T_prev;
+        std::vector<double> residual;
     };
 
     struct InternalModel {
@@ -74,6 +74,8 @@ namespace mhs {
         BCParamTable bc_params;
 
         std::vector<MaterialProps> material_table;
+
+        std::vector<CompiledExpression> heat_source_table;
 
         double initial_temperature = 300.0;
         double ambient_temperature = 300.0;

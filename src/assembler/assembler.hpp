@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/internal_model.hpp"
 #include <Eigen/Sparse>
+
+#include "common/internal_model.hpp"
 
 namespace mhs::assembler {
 

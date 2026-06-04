@@ -1,5 +1,7 @@
 #include "expr.hpp"
 #define exprtk_disable_caseinsensitivity
+#include <tbb/enumerable_thread_specific.h>
+
 #include <exprtk/exprtk.hpp>
 #include <memory>
 #include <mutex>
@@ -9,7 +11,6 @@
 
 namespace mhs::expr {
 
-    // Internal registry (thread-safe)
     namespace registry {
         std::mutex& mutex()
         {
@@ -36,7 +37,6 @@ namespace mhs::expr {
         }
     } // namespace registry
 
-    // ExprTKCompiled: owns its own symbol table and mutable context variables
     class ExprTKCompiled {
     public:
         explicit ExprTKCompiled(const std::string& formula)
@@ -58,12 +58,16 @@ namespace mhs::expr {
             valid_ = parser.compile(formula, *expr_);
         }
 
+        ExprTKCompiled(ExprTKCompiled&&) = default;
+        ExprTKCompiled& operator=(ExprTKCompiled&&) = default;
+
         bool valid() const { return valid_; }
 
         double eval(const FieldContext& ctx)
         {
             if (!valid_)
                 return 0.0;
+            // 这里的状态修改现在是线程安全的，因为每个线程拥有自己独立的 ExprTKCompiled 副本
             x_ = ctx.x;
             y_ = ctx.y;
             z_ = ctx.z;
@@ -79,37 +83,28 @@ namespace mhs::expr {
         std::unique_ptr<exprtk::expression<double>> expr_;
     };
 
-    // CompiledExpression implementation
+    // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST
+    struct ExprTKCompiledTLS {
+        tbb::enumerable_thread_specific<ExprTKCompiled> tls;
+
+        explicit ExprTKCompiledTLS(const std::string& formula)
+            : tls([formula]() { return ExprTKCompiled(formula); })
+        {
+        }
+    };
+
     CompiledExpression::CompiledExpression() : is_const_(true), const_val_(0.0) { }
 
     CompiledExpression::~CompiledExpression() = default;
-
-    CompiledExpression::CompiledExpression(CompiledExpression&& other) noexcept
-        : is_const_(other.is_const_), const_val_(other.const_val_), impl_(std::move(other.impl_))
-    {
-        other.is_const_ = true;
-        other.const_val_ = 0.0;
-    }
-
-    CompiledExpression& CompiledExpression::operator=(CompiledExpression&& other) noexcept
-    {
-        if (this != &other) {
-            is_const_ = other.is_const_;
-            const_val_ = other.const_val_;
-            impl_ = std::move(other.impl_);
-            other.is_const_ = true;
-            other.const_val_ = 0.0;
-        }
-        return *this;
-    }
 
     double CompiledExpression::eval(const FieldContext& ctx) const
     {
         if (is_const_)
             return const_val_;
-        if (!impl_)
+        if (!tls_impl_)
             return 0.0;
-        return impl_->eval(ctx);
+        // 无锁获取当前线程的专属 AST 副本进行求值
+        return tls_impl_->tls.local().eval(ctx);
     }
 
     CompiledExpression CompiledExpression::make_constant(double value)
@@ -120,16 +115,14 @@ namespace mhs::expr {
         return e;
     }
 
-    CompiledExpression CompiledExpression::make_evaluator(std::unique_ptr<ExprTKCompiled> impl)
+    CompiledExpression CompiledExpression::make_evaluator(const std::string& formula)
     {
         CompiledExpression e;
         e.is_const_ = false;
-        e.const_val_ = 0.0;
-        e.impl_ = std::move(impl);
+        e.tls_impl_ = std::make_shared<ExprTKCompiledTLS>(formula);
         return e;
     }
 
-    // Thread-safe registry operations
     void set_variable(const std::string& name, double value)
     {
         std::lock_guard<std::mutex> lock(registry::mutex());
@@ -168,29 +161,27 @@ namespace mhs::expr {
 
     CompiledExpression parse(const std::string& formula)
     {
-        // Quick check for constant
-        {
-            char* end = nullptr;
-            double val = std::strtod(formula.c_str(), &end);
-            if (end != formula.c_str() && *end == '\0') {
-                return CompiledExpression::make_constant(val);
-            }
+        char* end = nullptr;
+        double val = std::strtod(formula.c_str(), &end);
+        if (end != formula.c_str() && *end == '\0') {
+            return CompiledExpression::make_constant(val);
         }
 
-        auto impl = std::make_unique<ExprTKCompiled>(formula);
-        if (!impl->valid()) {
-            return CompiledExpression::make_constant(0.0);
+        // 主线程进行一次试编译，尽早捕获语法错误
+        {
+            ExprTKCompiled test_compile(formula);
+            if (!test_compile.valid()) {
+                return CompiledExpression::make_constant(0.0);
+            }
         }
-        return CompiledExpression::make_evaluator(std::move(impl));
+        return CompiledExpression::make_evaluator(formula);
     }
 
     double eval_geometry(const std::string& formula)
     {
         std::lock_guard<std::mutex> lock(registry::mutex());
-
         const auto& vars = registry::variables();
 
-        // Direct variable lookup
         auto var_it = vars.find(formula);
         if (var_it != vars.end()) {
             return var_it->second;
@@ -211,12 +202,10 @@ namespace mhs::expr {
         }
 
         exprtk_expr.register_symbol_table(sym_table);
-
         parser<double> parser;
         if (parser.compile(formula, exprtk_expr)) {
             return exprtk_expr.value();
         }
-
         return 0.0;
     }
 

@@ -277,7 +277,8 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
                 // Interior nodes should not equal Dirichlet value (unless coincidentally)
                 // At least check they are not NaN
                 EXPECT_FALSE(std::isnan(node_T[node_idx]))
-                    << "Interior node at (vx=" << vx << ", vy=" << vy << ", vz=" << vz << ") should not be NaN";
+                    << "Interior node at (vx=" << vx << ", vy=" << vy << ", vz=" << vz
+                    << ") should not be NaN";
             }
         }
     }
