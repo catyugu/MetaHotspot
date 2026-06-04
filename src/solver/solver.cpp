@@ -1,14 +1,22 @@
 #include "solver/bicgstab_solver.hpp"
 #include "solver/solver.hpp"
 #include "solver/sparse_lu_solver.hpp"
+#ifdef MHS_ENABLE_PARDISO
+#include "solver/pardiso_solver.hpp"
+#endif
 
 namespace mhs {
 
-    // Factory: explicit branches for each SolverType. Unknown types fall back
-    // to SuperLUMTSolver, matching SolverConfig::type default (SuperLU_MT).
+    // Factory: explicit branches for each SolverType. The default and the
+    // Pardiso branch are guarded by MHS_ENABLE_PARDISO; without it, both
+    // fall back to SparseLUSolver.
     std::unique_ptr<Solver> Solver::create(SolverType type)
     {
         switch (type) {
+#ifdef MHS_ENABLE_PARDISO
+        case SolverType::Pardiso:
+            return std::make_unique<PardisoSolver>();
+#endif
         case SolverType::SparseLU:
             return std::make_unique<SparseLUSolver>();
         case SolverType::BiCGSTAB:

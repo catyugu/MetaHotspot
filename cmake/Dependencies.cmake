@@ -49,3 +49,19 @@ CPMAddPackage(
     "TBB_TEST OFF"
     "TBB_EXAMPLES OFF"
 )
+
+# Intel oneMKL — provides MKL::MKL INTERFACE IMPORTED target with include
+# paths, libraries, and runtime DLLs. Required only when USE_MKL=ON.
+if(USE_MKL)
+    set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
+    set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading runtime")
+    set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
+    find_package(MKL REQUIRED)
+    set(MHS_HAS_PARDISO TRUE CACHE INTERNAL "" FORCE)
+    # Cache the bin dir so subdirectories can replicate MKL runtime DLLs.
+    get_target_property(_mkl_rt_loc MKL::mkl_rt LOCATION)
+    get_filename_component(MKL_BIN_DIR "${_mkl_rt_loc}" DIRECTORY)
+else()
+    message(WARNING "MKL not found, setting MHS_HAS_PARDISO to FALSE")
+    set(MHS_HAS_PARDISO FALSE CACHE INTERNAL "" FORCE)
+endif()

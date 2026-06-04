@@ -113,10 +113,10 @@ namespace mhs::assembler {
 
 ```cpp
 namespace mhs {
-    enum class SolverType { SparseLU, BiCGSTAB };
+    enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
 
     struct SolverConfig {
-        SolverType type = SolverType::BiCGSTAB;
+        SolverType type = SolverType::Pardiso;
         double tolerance = 1e-8;
         int max_iterations = 1000;
     };

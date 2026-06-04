@@ -135,7 +135,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     Scheduler scheduler(config);
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::SparseLU));
+    scheduler.setSolver(Solver::create(SolverType::Pardiso));
 
     scheduler.run();
 
@@ -215,7 +215,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     Scheduler scheduler(config);
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::SparseLU));
+    scheduler.setSolver(Solver::create(SolverType::Pardiso));
 
     scheduler.run();
 

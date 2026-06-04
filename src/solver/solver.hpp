@@ -5,12 +5,13 @@
 
 namespace mhs {
 
-    enum class SolverType { SparseLU, BiCGSTAB };
+    enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
 
     // Solver configuration
     struct SolverConfig {
-        // Active solver.
-        SolverType type = SolverType::SparseLU;
+        // Active solver. Pardiso is default when MHS_ENABLE_PARDISO is defined;
+        // otherwise falls back to SparseLU.
+        SolverType type = SolverType::Pardiso;
 
         // BiCGSTAB-only knobs.
         double tolerance = 1e-8;

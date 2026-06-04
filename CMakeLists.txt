@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(VERBOSE "Enable DEBUG level logging" OFF)
+option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" ON)
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.h)
 

@@ -9,3 +9,16 @@ add_custom_command(TARGET metahotspot POST_BUILD
     $<TARGET_FILE:TBB::tbb>
     $<TARGET_FILE_DIR:metahotspot>
 )
+if(MHS_HAS_PARDISO)
+    file(GLOB _mkl_runtime_dlls CONFIGURE_DEPENDS
+        "${MKL_BIN_DIR}/mkl_*.dll"
+        "${MKL_BIN_DIR}/libiomp5md.dll"
+    )
+    foreach(_dll IN LISTS _mkl_runtime_dlls)
+        add_custom_command(TARGET metahotspot POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_dll}"
+            "$<TARGET_FILE_DIR:metahotspot>"
+        )
+    endforeach()
+endif()

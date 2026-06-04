@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
             model->mesh.nz);
 
         // Create solver
-        auto solver = mhs::Solver::create(mhs::SolverType::SparseLU);
+        auto solver = mhs::Solver::create(mhs::SolverType::Pardiso);
 
         // Create scheduler
         mhs::Scheduler scheduler;
