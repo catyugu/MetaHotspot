@@ -44,6 +44,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "oneapi-src/oneTBB"
     GIT_TAG "v2023.0.0"
     OPTIONS
+    "BUILD_SHARED_LIBS ON"
     "TBB_TEST OFF"
     "TBB_EXAMPLES OFF"
 )
