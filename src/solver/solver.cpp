@@ -1,51 +1,11 @@
-#include "solver.hpp"
-#include <Eigen/Sparse>
+#include "solver/bicgstab_solver.hpp"
+#include "solver/solver.hpp"
+#include "solver/sparse_lu_solver.hpp"
 
 namespace mhs {
 
-    // SparseLU solver implementation
-    class SparseLUSolver : public Solver {
-    public:
-        SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) override
-        {
-            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
-            solver.compute(A);
-
-            if (solver.info() != Eigen::Success) {
-                return {Eigen::VectorXd(), false, 0.0, 0};
-            }
-
-            Eigen::VectorXd x = solver.solve(b);
-
-            return {
-                x, solver.info() == Eigen::Success, (A * x - b).norm(),
-                1 // direct solver, 1 iteration
-            };
-        }
-    };
-
-    // BiCGSTAB solver implementation
-    class BiCGSTABSolver : public Solver {
-    public:
-        SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) override
-        {
-            Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver;
-            solver.compute(A);
-            solver.setMaxIterations(config_.max_iterations);
-            solver.setTolerance(config_.tolerance);
-
-            Eigen::VectorXd x = solver.solve(b);
-
-            return {x, solver.info() == Eigen::Success, solver.error(),
-                static_cast<int>(solver.iterations())};
-        }
-
-        void set_config(const SolverConfig& config) { config_ = config; }
-
-    private:
-        SolverConfig config_;
-    };
-
+    // Factory: explicit branches for each SolverType. Unknown types fall back
+    // to SuperLUMTSolver, matching SolverConfig::type default (SuperLU_MT).
     std::unique_ptr<Solver> Solver::create(SolverType type)
     {
         switch (type) {
