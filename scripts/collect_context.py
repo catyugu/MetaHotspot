@@ -24,8 +24,7 @@ IGNORE_DIR_PATTERNS = [
     r"^vcpkg_installed$",
     r"^cases$",
     r"^results$",
-    r"^\.next$",
-    r"^\.pytest_cache$",
+    r"^\.",
 ]
 
 # 2. 文件忽略正则（匹配文件名）
