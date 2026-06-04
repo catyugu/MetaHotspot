@@ -2,22 +2,20 @@
 
 ## Status
 
-Accepted
+Accepted. Supersedes the per-face SoA arrays described in ADR-0002.
+
+## Context
+
+When block face projections overlap in the same layer, a per-face SoA array can only hold one BC per face — but two overlapping blocks in the same layer can disagree on what that face's BC should be.
 
 ## Decision
 
-Boundary conditions are stored at **cell level**, with each cell storing BC information for its 6 faces independently:
+Store BCs **per cell per face**:
 
 ```cpp
 struct CellBC {
-    std::array<BcType, 6> types;        // xm, xp, ym, yp, zm, zp
-    std::array<uint16_t, 6> param_idxs; // indices into BCParamTable
-};
-
-struct CellFields {
-    // Compact size (N_active): active cells only
-    std::vector<CellBC> cell_bcs;
-    std::vector<CompiledExpression> heat_source;
+    std::array<BcType, FACE_COUNT> types;        // xm, xp, ym, yp, zm, zp
+    std::array<uint16_t, FACE_COUNT> param_idxs; // indices into BCParamTable
 };
 ```
 
@@ -25,28 +23,28 @@ struct CellFields {
 
 ## Rationale
 
-- **No projection ambiguity**: Each cell's face has independent BC, regardless of overlapping projections
-- **Consistent with virtual cell handling**: When a cell's neighbor is virtual, the cell's face BC is already set to `other_bc` during preprocessing
-- **Flexibility**: Different cells in the same layer can have different BC types on the same directional face
-- **Simpler preprocessing**: FaceKeyProcessor no longer needs to manage global face arrays; BC assignment happens at cell level
+- **No projection ambiguity**: each cell's face is independent.
+- **Virtual-neighbor consistency**: when a cell's neighbor is virtual, the cell's face BC is already set to `other_bc` during preprocessing — same channel as overlap resolution.
+- **Flexibility**: different cells in the same layer can have different BC types on the same directional face.
+- **Simpler preprocessing**: no global face arrays; assignment is at cell level.
 
-## Data Flow
+## Data flow
 
 ```text
 IOStructure
   └─> Preprocessor::load()
         ├─> preprocessor::resolve_layers()
-        │     ├─> Generate valid_mask, index_map
-        │     └─> Assign material_id, layer_id per cell
+        │     ├─> valid_mask, index_map
+        │     └─> material_id, layer_id (full-grid)
         ├─> preprocessor::resolve_face_keys()
-        │     └─> Assign CellBC to each cell's faces
-        │         (handles projection overlap by cell-to-face assignment)
+        │     └─> CellBC per cell, per face (handles overlap)
         ├─> Apply other_bc to unspecified faces
-        └─> Compile expressions → BCParamTable, heat_source
+        └─> Compile expressions → BCParamTable + heat_source_table
 ```
 
 ## Notes
 
-- `BCParamTable` still exists: shared BC parameters are indexed by `param_idx`
-- `other_bc` is applied during preprocessing, not at assembly time
-- Virtual cell neighbors: the active cell's face touching a virtual cell gets `other_bc` set during LayerProcessor.resolve()
+- `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
+- `other_bc` is applied during preprocessing, not at assembly time.
+- Virtual neighbors: the active cell's face touching a virtual cell gets `other_bc` set during `resolve_face_keys()`.
+- The heat source is **not** part of `CellBC` — it is a deduplicated dictionary indexed by `uint16_t` (see ADR-0004 §Heat source dictionary).

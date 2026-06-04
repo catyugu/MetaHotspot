@@ -2,37 +2,28 @@
 
 ## Status
 
-Accepted
+Accepted. **Superseded in storage form by ADR-0005** — per-face SoA arrays were replaced by cell-level `CellBC` storage. The mathematical decision (cell-centered DOF, no face DOF, BCs applied as boundary integrals) is unchanged.
 
 ## Context
 
-The original XML uses face-key strings (e.g., `Z|E|0|0,50,50,100`) to specify boundary conditions. The mesh uses cell-centered DOFs (temperature at cell centers). Boundary conditions include:
-
-- **First-type (Dirichlet)**: Fixed temperature
-- **Second-type (Neumann)**: Fixed heat flux
-- **Third-type (Cauchy/Robin)**: Convection `h(T - T_∞)`
-
-A concern was raised about future microfluid support (face velocity/pressure BCs), which might require actual face DOFs.
+The XML uses face-key strings to specify BCs. The mesh uses cell-centered DOFs. BC types: Dirichlet / Neumann / Cauchy. A future microfluid phase might want face DOFs for velocity/pressure.
 
 ## Decision
 
-Use **cell-centered DOFs only**. Boundary conditions are applied directly as boundary integrals over cell faces, without storing separate face DOFs.
+**Cell-centered DOFs only.** BCs are applied as boundary integrals over cell faces — no face DOFs stored.
 
-- **Dirichlet BC**: Ghost cell method — one phantom cell value beyond the boundary. The cell equation at the boundary uses the ghost cell temperature `T_ghost = 2·T_dirichlet - T_boundary`.
-- **Neumann BC (flux)**: The flux `q·n` directly enters the cell's RHS as `Σ q·A_face`.
-- **Cauchy BC**: The convective term `h·A·(T_boundary - T_∞)` is linearized and contributes both to the RHS (`h·A·T_∞`) and to the diagonal of the Jacobian (`h·A·T_boundary` coefficient).
-
-**Face BC data**: `preprocessor` pre-resolves all face-key strings into per-face BC type + parameter index arrays, indexed by face. Assembly hot loops do array lookups only, no string parsing.
+- **Dirichlet**: ghost cell method. The boundary cell's equation uses the ghost value `T_ghost = 2·T_dirichlet − T_boundary` (linear contribution to diag and RHS).
+- **Neumann**: flux `q·n` enters the cell RHS directly as `Σ q·A_face`.
+- **Cauchy**: linearized as `h·A·(T_boundary − T_∞)` → contributes to the diagonal (`h·A` coefficient) and to the RHS (`h·A·T_∞`).
 
 ## Rationale
 
-- Flux-type BCs (Neumann, Cauchy) don't need face DOFs — they contribute as boundary integrals.
-- Ghost cell method for Dirichlet is standard practice in finite volume methods.
-- Dual DOF system (volume + face) would roughly double memory and complicate assembly.
-- Future microfluid face fields (velocity, pressure) would be a Phase 2 extension, requiring a separate face-field storage — at that point, face DOFs would be added intentionally for that subsystem only.
+- Flux-type BCs need no face DOF — they are integrals.
+- Ghost cell for Dirichlet is standard FVM.
+- A dual volume+face DOF system would roughly double memory.
+- Microfluid face fields (Phase 2) would warrant their own face-field storage — face DOFs would be added intentionally for that subsystem only, not retrofitted here.
 
 ## Notes
 
-- Face BC arrays are stored SoA alongside cell arrays for cache efficiency during assembly.
-- Each of 6 mesh faces (Z-, Z+, Y-, Y+, X-, X+) has its own BC type + param arrays.
-- **Update**: ADR-0005 replaced the per-face SoA arrays described here with cell-level `CellBC` storage. Each cell stores BC for its 6 faces independently (see `docs/adr/0005-cell-level-bc.md`).
+- The preprocessor pre-resolves every face-key string into per-cell `CellBC { types[6], param_idxs[6] }` (see ADR-0005). Assembly hot loops do array lookups only — no string parsing.
+- All geometry stays in SI meters.
