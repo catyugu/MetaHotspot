@@ -25,7 +25,7 @@ Single-context — one `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents
 
 ```bash
 # Build
-conda activate cpp_env
+conda activate numerical # For MKL
 # Use Ninja
 cmake -G "Ninja" -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
@@ -33,10 +33,13 @@ cmake --build build --parallel
 cmake -S . -B build
 cmake --build build --parallel --config Release
 
-
+# !! Switch to a more trivial and clean env, so as to guarantee no dependencies on specific runtime 
+conda activate cpp_env  
 # Run tests
-conda activate cpp_env
 python run_tests.py
+
+# Run cases
+python run_cases.py
 ```
 
 ## Testing Guidelines

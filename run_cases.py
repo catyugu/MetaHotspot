@@ -3,7 +3,6 @@ import subprocess
 
 
 def main():
-    os.system("cmake --build build --parallel")
     subprocess.run(
         [
             "build/bin/metahotspot.exe",
