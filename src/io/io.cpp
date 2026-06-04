@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <tinyxml2.h>
 
 #include <stdexcept>
@@ -564,6 +565,11 @@ namespace mhs::io {
         types_arr->SetText(type_str.c_str());
         cells_elem->InsertEndChild(types_arr);
 
+        std::filesystem::path dirPath(path);
+        if (!std::filesystem::exists(dirPath.parent_path())) {
+            std::filesystem::create_directories(dirPath.parent_path());
+        }
+
         doc.SaveFile(path.c_str());
     }
 
@@ -644,7 +650,10 @@ namespace mhs::io {
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
             sz->SetText(node_nz);
-
+        std::filesystem::path dirPath(output_path);
+        if (!std::filesystem::exists(dirPath.parent_path())) {
+            std::filesystem::create_directories(dirPath.parent_path());
+        }
         doc.SaveFile(output_path.c_str());
     }
 

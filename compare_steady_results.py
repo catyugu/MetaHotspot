@@ -67,8 +67,8 @@ def main():
     threshold = 5
 
     for case_num in [1, 2, 3]:
-        ref_path = f"cases/original_steady_tests/case{case_num}.xml"
-        out_path = f"results/original_steady_tests/case{case_num}_output.xml"
+        ref_path = f"cases/simple_steady_tests/case{case_num}.xml"
+        out_path = f"results/simple_steady_tests/case{case_num}_output.xml"
 
         print(f"\n=== Case {case_num} (threshold = {threshold:g}K) ===")
         ref = extract_values(ref_path)

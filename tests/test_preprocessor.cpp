@@ -394,7 +394,7 @@ TEST(PreprocessorTest, OtherBCFallback)
 
 TEST(PreprocessorTest, Case1XMLLoad)
 {
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/original_steady_tests/case1.xml";
+    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_tests/case1.xml";
     if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found at " << case_path;
     }
@@ -580,15 +580,13 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_EQ(model->cells.material_id[idx_only_block1], 0)
-        << "Cell in only block1 must get copper material";
+    EXPECT_EQ(model->cells.material_id[idx_only_block1], 0) << "Cell in only block1 must get copper material";
 }
 
 TEST(PreprocessorTest, ParseFaceKey_XFormatSevenParts)
 {
     // case1 Boundary 5 (convection on X faces of the top die)
-    mhs::preprocessor::FaceKeyInfo fk
-        = mhs::preprocessor::parse_face_key("X|E|5|-7.5|7.5|26|29", 1.0);
+    mhs::preprocessor::FaceKeyInfo fk = mhs::preprocessor::parse_face_key("X|E|5|-7.5|7.5|26|29", 1.0);
     EXPECT_EQ(fk.axis, 'X');
     EXPECT_EQ(fk.side, 'E');
     EXPECT_NEAR(fk.coord_value, 5.0, 1e-12);
@@ -668,18 +666,15 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
         int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)FaceDir::YP],
-            BcType::ThirdType)
-            << "Y-format face key should assign ThirdType to YP face at ("
-            << ix << ",1,0)";
+        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)FaceDir::YP], BcType::ThirdType)
+            << "Y-format face key should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
 
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the other_bc (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
     int compact_out = (int)model->cells.index_map[idx_outside];
-    EXPECT_NE(model->cells.cell_bcs[compact_out].types[(size_t)FaceDir::YP],
-        BcType::ThirdType)
+    EXPECT_NE(model->cells.cell_bcs[compact_out].types[(size_t)FaceDir::YP], BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
 
@@ -753,10 +748,9 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     auto check_face = [&](int ix, int iy, int iz, FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
         int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)dir],
-            BcType::ThirdType)
-            << "Face " << (int)dir << " of cell (" << ix << "," << iy << ","
-            << iz << ") should be ThirdType from one of the boundary face_keys";
+        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)dir], BcType::ThirdType)
+            << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
+            << ") should be ThirdType from one of the boundary face_keys";
     };
 
     // X|E|10 -> XP face at x=10mm -> cells with ix=nx-1=1
