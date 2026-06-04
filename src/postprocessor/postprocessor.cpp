@@ -14,7 +14,6 @@ namespace mhs {
         };
 
         // 最小二乘法求解节点温度 (拟合 T(x,y,z) = T_node + gx*x + gy*y + gz*z)
-        // 自动还原真实三维热流梯度，比传统反距离加权具有更高的空间精度
         double solve_least_squares(const std::vector<DataPoint>& pts, double node_x, double node_y, double node_z)
         {
             int M = static_cast<int>(pts.size());
