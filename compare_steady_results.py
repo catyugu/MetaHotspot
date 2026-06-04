@@ -1,8 +1,8 @@
 """Compare simulation results with reference values from original XML files."""
 
+import argparse
 import xml.etree.ElementTree as ET
 import math
-import sys
 
 NS = {
     "ts": "http://schemas.datacontract.org/2004/07/ThermalSim.Models",
@@ -52,12 +52,25 @@ def extract_values(xml_path):
     return vals, (sx, sy, sz)
 
 
+def index_to_position(idx, size):
+    """Convert flat index to (vx, vy, vz) for layout index = vz + SizeZ*vy + SizeZ*SizeY*vx."""
+    sx, sy, sz = size
+    if sy <= 0 or sz <= 0:
+        return (idx, 0, 0)
+    vx = idx // (sy * sz)
+    vy = (idx // sz) % sy
+    vz = idx % sz
+    return (vx, vy, vz)
+
+
 def main():
+    threshold = 5
+
     for case_num in [1, 2, 3]:
         ref_path = f"cases/original_steady_tests/case{case_num}.xml"
         out_path = f"results/original_steady_tests/case{case_num}_output.xml"
 
-        print(f"\n=== Case {case_num} ===")
+        print(f"\n=== Case {case_num} (threshold = {threshold:g}K) ===")
         ref = extract_values(ref_path)
         out = extract_values(out_path)
 
@@ -84,6 +97,9 @@ def main():
             )
             continue
 
+        # Prefer reference size for position decoding; fall back to output size.
+        pos_size = ref_size if all(d > 0 for d in ref_size) else out_size
+
         errors = []
         worst = []
         for i in range(len(ref_vals)):
@@ -95,18 +111,23 @@ def main():
                 continue
             err = abs(rv - ov)
             errors.append(err)
-            if err > 5.0:
+            if err > threshold:
                 worst.append((i, rv, ov, err))
 
         if errors:
             print(f"  Max error: {max(errors):.4f}K")
             print(f"  Mean error: {sum(errors)/len(errors):.4f}K")
-            print(f"  Points >5K error: {len(worst)} / {len(errors)}")
+            print(f"  Points >{threshold:g}K error: {len(worst)} / {len(errors)}")
             if worst:
                 worst.sort(key=lambda x: x[3], reverse=True)
-                print(f"  Worst 5:")
-                for idx, rv, ov, err in worst[:5]:
-                    print(f"    idx={idx}: ref={rv:.2f}, out={ov:.2f}, err={err:.4f}")
+                to_print = worst
+                label = "All misaligned"
+                print(f"  {label} (position = (vx, vy, vz)):")
+                for idx, rv, ov, err in to_print:
+                    vx, vy, vz = index_to_position(idx, pos_size)
+                    print(
+                        f"    idx={idx} pos=({vx},{vy},{vz}): ref={rv:.2f}, out={ov:.2f}, err={err:.4f}"
+                    )
 
 
 if __name__ == "__main__":

@@ -56,9 +56,8 @@ namespace mhs {
                                 double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
                                     {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
 
-                                double d = std::sqrt(std::pow(mesh.cx[ix] - node_x, 2) + std::pow(mesh.cy[iy] - node_y, 2) + std::pow(mesh.cz[iz] - node_z, 2));
-
-                                double w = k / d;
+                                double v = std::abs((mesh.cx[ix] - node_x) * (mesh.cy[iy] - node_y) * (mesh.cz[iz] - node_z));
+                                double w = k / v;
 
                                 FaceDir dirs[3];
                                 int num_dirs = 0;
