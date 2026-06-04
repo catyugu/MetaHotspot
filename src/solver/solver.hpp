@@ -27,8 +27,7 @@ namespace mhs {
         virtual ~Solver() = default;
 
         // Solve A * x = b
-        virtual SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
-            = 0;
+        virtual SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) = 0;
 
         // Factory method
         static std::unique_ptr<Solver> create(SolverType type);

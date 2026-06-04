@@ -25,8 +25,7 @@ namespace mhs::preprocessor {
         }
     }
 
-    std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<Layer>& layers, double si_scale)
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<Layer>& layers, double si_scale)
     {
         int num_layers = (int)layers.size();
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
@@ -92,8 +91,7 @@ namespace mhs::preprocessor {
         return resolved;
     }
 
-    int find_block_for_cell(
-        const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
+    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
     {
         if (cz < resolved_layer.z_start - EPS || cz > resolved_layer.z_end + EPS) {
             return -1;
@@ -126,9 +124,8 @@ namespace mhs::preprocessor {
         return -1;
     }
 
-    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        CellFields& cells)
+    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const MeshGeometry& mesh,
+        const std::unordered_map<std::string, size_t>& name_to_idx, CellFields& cells)
     {
         int num_layers = (int)resolved_layers.size();
         int total = mesh.total_cell_count;
@@ -151,8 +148,7 @@ namespace mhs::preprocessor {
                     int block_idx = -1;
 
                     for (int l = 0; l < num_layers; l++) {
-                        if (cz >= resolved_layers[l].z_start - EPS
-                            && cz <= resolved_layers[l].z_end + EPS) {
+                        if (cz >= resolved_layers[l].z_start - EPS && cz <= resolved_layers[l].z_end + EPS) {
                             int b = find_block_for_cell(resolved_layers[l], cx, cy, cz);
                             if (b >= 0) {
                                 layer_idx = l;

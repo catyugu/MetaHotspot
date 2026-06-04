@@ -645,8 +645,7 @@ namespace {
                     expected = std::pow(T, 2.0) + t_time * 10.0;
 
                 EXPECT_NEAR(results[thread_id * num_iterations + i], expected, 1e-9)
-                    << "Mismatch at thread " << thread_id << ", iteration " << i
-                    << " with expr_idx " << expr_idx;
+                    << "Mismatch at thread " << thread_id << ", iteration " << i << " with expr_idx " << expr_idx;
             }
         }
     }

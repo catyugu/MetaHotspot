@@ -33,20 +33,17 @@ namespace mhs::preprocessor {
 
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
     // This eliminates repeated eval_geometry calls in the cell loops
-    std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<Layer>& layers, double si_scale);
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<Layer>& layers, double si_scale);
 
     // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
     // Uses pre-evaluated geometry values — no expression evaluation at runtime
     // Traverses blocks in reverse order (last block wins in overlap regions)
     // Returns block index or -1 if cell is virtual
-    int find_block_for_cell(
-        const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
+    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
 
     // Resolve cell validity, layer assignment, and material assignment
     // Populates valid_mask, index_map, layer_id, material_id in CellFields
-    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        CellFields& cells);
+    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const MeshGeometry& mesh,
+        const std::unordered_map<std::string, size_t>& name_to_idx, CellFields& cells);
 
 } // namespace mhs::preprocessor

@@ -209,9 +209,8 @@ namespace mhs::io {
 
         // Materials
         if (const XMLElement* mats = root->FirstChildElement("Materials")) {
-            for (const XMLElement* kv
-                = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz");
-                kv; kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
+            for (const XMLElement* kv = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz"); kv;
+                kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
                 Material mat;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     mat.name = get_text(key);
@@ -243,8 +242,7 @@ namespace mhs::io {
                 if (const XMLElement* name = layer_elem->FirstChildElement("Name")) {
                     layer.name = get_text(name);
                 }
-                if (const XMLElement* thickness
-                    = layer_elem->FirstChildElement("ThicknessExpression")) {
+                if (const XMLElement* thickness = layer_elem->FirstChildElement("ThicknessExpression")) {
                     layer.thickness_expr = get_text(thickness);
                 }
                 if (const XMLElement* xoff = layer_elem->FirstChildElement("XOffsetExpression")) {
@@ -262,8 +260,8 @@ namespace mhs::io {
 
                 // Blocks
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
-                    for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block");
-                        block_elem; block_elem = block_elem->NextSiblingElement("Block")) {
+                    for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
+                        block_elem = block_elem->NextSiblingElement("Block")) {
                         Block block;
 
                         if (const XMLElement* name = block_elem->FirstChildElement("Name")) {
@@ -275,63 +273,49 @@ namespace mhs::io {
                         if (const XMLElement* ti = block_elem->FirstChildElement("TiReyuan")) {
                             block.ti_reyuan_expr = get_text(ti);
                         }
-                        if (const XMLElement* xoff
-                            = block_elem->FirstChildElement("XOffsetExpression")) {
+                        if (const XMLElement* xoff = block_elem->FirstChildElement("XOffsetExpression")) {
                             block.x_offset_expr = get_text(xoff);
                         }
-                        if (const XMLElement* yoff
-                            = block_elem->FirstChildElement("YOffsetExpression")) {
+                        if (const XMLElement* yoff = block_elem->FirstChildElement("YOffsetExpression")) {
                             block.y_offset_expr = get_text(yoff);
                         }
-                        if (const XMLElement* normal
-                            = block_elem->FirstChildElement("IsNormalMaterial")) {
+                        if (const XMLElement* normal = block_elem->FirstChildElement("IsNormalMaterial")) {
                             block.is_normal_material = std::string(get_text(normal)) == "true";
                         }
 
                         // Rects (AllRects)
-                        if (const XMLElement* rects_elem
-                            = block_elem->FirstChildElement("AllRects")) {
-                            for (const XMLElement* rect_elem
-                                = rects_elem->FirstChildElement("Rect");
-                                rect_elem; rect_elem = rect_elem->NextSiblingElement("Rect")) {
+                        if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
+                            for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
+                                rect_elem = rect_elem->NextSiblingElement("Rect")) {
                                 Rect rect;
-                                if (const XMLElement* adds
-                                    = rect_elem->FirstChildElement("Add_sub")) {
+                                if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.add_sub = std::string(get_text(adds)) == "true";
                                 }
                                 if (const XMLElement* name = rect_elem->FirstChildElement("Name")) {
                                     rect.name = get_text(name);
                                 }
-                                if (const XMLElement* w
-                                    = rect_elem->FirstChildElement("WidthExpression")) {
+                                if (const XMLElement* w = rect_elem->FirstChildElement("WidthExpression")) {
                                     rect.width_expr = get_text(w);
                                 }
-                                if (const XMLElement* h
-                                    = rect_elem->FirstChildElement("HeightExpression")) {
+                                if (const XMLElement* h = rect_elem->FirstChildElement("HeightExpression")) {
                                     rect.height_expr = get_text(h);
                                 }
-                                if (const XMLElement* x
-                                    = rect_elem->FirstChildElement("XExpression")) {
+                                if (const XMLElement* x = rect_elem->FirstChildElement("XExpression")) {
                                     rect.x_expr = get_text(x);
                                 }
-                                if (const XMLElement* y
-                                    = rect_elem->FirstChildElement("YExpression")) {
+                                if (const XMLElement* y = rect_elem->FirstChildElement("YExpression")) {
                                     rect.y_expr = get_text(y);
                                 }
-                                if (const XMLElement* xs
-                                    = rect_elem->FirstChildElement("XSizeExpression")) {
+                                if (const XMLElement* xs = rect_elem->FirstChildElement("XSizeExpression")) {
                                     rect.x_size_expr = get_text(xs);
                                 }
-                                if (const XMLElement* ys
-                                    = rect_elem->FirstChildElement("YSizeExpression")) {
+                                if (const XMLElement* ys = rect_elem->FirstChildElement("YSizeExpression")) {
                                     rect.y_size_expr = get_text(ys);
                                 }
-                                if (const XMLElement* xi
-                                    = rect_elem->FirstChildElement("XIntervalExpression")) {
+                                if (const XMLElement* xi = rect_elem->FirstChildElement("XIntervalExpression")) {
                                     rect.x_interval_expr = get_text(xi);
                                 }
-                                if (const XMLElement* yi
-                                    = rect_elem->FirstChildElement("YIntervalExpression")) {
+                                if (const XMLElement* yi = rect_elem->FirstChildElement("YIntervalExpression")) {
                                     rect.y_interval_expr = get_text(yi);
                                 }
                                 block.all_rects.push_back(rect);
@@ -348,8 +332,8 @@ namespace mhs::io {
 
         // Boundaries
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
-            for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary");
-                bound_elem; bound_elem = bound_elem->NextSiblingElement("Boundary")) {
+            for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
+                bound_elem = bound_elem->NextSiblingElement("Boundary")) {
                 Boundary boundary;
                 boundary.category = BoundaryCategory::Electrical;
 
@@ -387,12 +371,10 @@ namespace mhs::io {
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
                         boundary.bc_type = ThermalBCType::ThirdType;
-                        if (const XMLElement* h
-                            = thermal->FirstChildElement("a:ConvectionCoefficient")) {
+                        if (const XMLElement* h = thermal->FirstChildElement("a:ConvectionCoefficient")) {
                             boundary.third.convection_coeff = get_text(h);
                         }
-                        if (const XMLElement* t
-                            = thermal->FirstChildElement("a:EnvironmentTemperature")) {
+                        if (const XMLElement* t = thermal->FirstChildElement("a:EnvironmentTemperature")) {
                             boundary.third.T_inf = get_text(t);
                         }
                     }
@@ -431,8 +413,7 @@ namespace mhs::io {
         return structure;
     }
 
-    void write_vtu(const std::string& path, const InternalModel& model,
-        const std::vector<double>& node_temperature)
+    void write_vtu(const std::string& path, const InternalModel& model, const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
@@ -447,9 +428,7 @@ namespace mhs::io {
         std::vector<double> active_coords;
         std::vector<double> active_temps;
 
-        auto node_idx = [](int vx, int vy, int vz, int nny, int nnz) {
-            return vx * nny * nnz + vy * nnz + vz;
-        };
+        auto node_idx = [](int vx, int vy, int vz, int nny, int nnz) { return vx * nny * nnz + vy * nnz + vz; };
 
         char buf[64];
         for (int vx = 0; vx < node_nx; vx++) {
@@ -475,8 +454,8 @@ namespace mhs::io {
                     int i = node_idx(vx, vy, vz, node_ny, node_nz);
                     if (node_remap[i] < 0)
                         continue;
-                    snprintf(buf, sizeof(buf), "%.8g %.8g %.8g\n", mesh.vertex_x[vx],
-                        mesh.vertex_y[vy], mesh.vertex_z[vz]);
+                    snprintf(
+                        buf, sizeof(buf), "%.8g %.8g %.8g\n", mesh.vertex_x[vx], mesh.vertex_y[vy], mesh.vertex_z[vz]);
                     coords_str += buf;
                 }
             }
@@ -503,19 +482,16 @@ namespace mhs::io {
 
                     // VTK hex ordering: 0-3 bottom face, 4-7 top face
                     // Node indices in original grid
-                    int n[8] = {node_idx(ix, iy, iz, node_ny, node_nz),
-                        node_idx(ix + 1, iy, iz, node_ny, node_nz),
-                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz),
-                        node_idx(ix, iy + 1, iz, node_ny, node_nz),
-                        node_idx(ix, iy, iz + 1, node_ny, node_nz),
-                        node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
+                    int n[8] = {node_idx(ix, iy, iz, node_ny, node_nz), node_idx(ix + 1, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz), node_idx(ix, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy, iz + 1, node_ny, node_nz), node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
                         node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
                         node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)};
 
                     // Remap to compact node indices
-                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n", node_remap[n[0]],
-                        node_remap[n[1]], node_remap[n[2]], node_remap[n[3]], node_remap[n[4]],
-                        node_remap[n[5]], node_remap[n[6]], node_remap[n[7]]);
+                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n", node_remap[n[0]], node_remap[n[1]],
+                        node_remap[n[2]], node_remap[n[3]], node_remap[n[4]], node_remap[n[5]], node_remap[n[6]],
+                        node_remap[n[7]]);
                     conn_str += buf;
 
                     cell_num++;
@@ -591,8 +567,8 @@ namespace mhs::io {
         doc.SaveFile(path.c_str());
     }
 
-    void write_xml(const std::string& input_path, const std::string& output_path,
-        const InternalModel& model, const std::vector<double>& node_temperature)
+    void write_xml(const std::string& input_path, const std::string& output_path, const InternalModel& model,
+        const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
 

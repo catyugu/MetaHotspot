@@ -177,8 +177,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     for (int vx = 0; vx < model->mesh.nx + 1; vx++) {
         for (int vy = 0; vy < model->mesh.ny + 1; vy++) {
             int idx = vx * node_ny * node_nz + vy * node_nz + 0;
-            EXPECT_NEAR(node_T[idx], 500.0, 1e-6)
-                << "Z=0 node at (vx=" << vx << ", vy=" << vy << ") must be 500K";
+            EXPECT_NEAR(node_T[idx], 500.0, 1e-6) << "Z=0 node at (vx=" << vx << ", vy=" << vy << ") must be 500K";
         }
     }
 }
@@ -277,8 +276,7 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
                 // Interior nodes should not equal Dirichlet value (unless coincidentally)
                 // At least check they are not NaN
                 EXPECT_FALSE(std::isnan(node_T[node_idx]))
-                    << "Interior node at (vx=" << vx << ", vy=" << vy << ", vz=" << vz
-                    << ") should not be NaN";
+                    << "Interior node at (vx=" << vx << ", vy=" << vy << ", vz=" << vz << ") should not be NaN";
             }
         }
     }

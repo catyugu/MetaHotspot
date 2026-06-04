@@ -16,7 +16,6 @@ namespace mhs::nonlinear {
         double tolerance = 1e-6;
     };
 
-    NonLinearResult solve(
-        const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg);
+    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg);
 
 } // namespace mhs::nonlinear

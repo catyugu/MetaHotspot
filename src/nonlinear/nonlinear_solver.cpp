@@ -6,8 +6,7 @@
 
 namespace mhs::nonlinear {
 
-    NonLinearResult solve(
-        const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg)
+    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg)
     {
         assembler::Assembler assembler(model);
 
@@ -34,8 +33,8 @@ namespace mhs::nonlinear {
                 max_residual = std::max(max_residual, std::abs(state.residual[i]));
             }
 
-            MHS_LOG_INFO("Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e}", iter,
-                max_update, max_residual);
+            MHS_LOG_INFO(
+                "Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e}", iter, max_update, max_residual);
 
             if (max_update < cfg.tolerance && max_residual < cfg.tolerance) {
                 return {true, iter + 1};

@@ -88,9 +88,7 @@ namespace mhs::expr {
         tbb::enumerable_thread_specific<ExprTKCompiled> tls;
 
         explicit ExprTKCompiledTLS(const std::string& formula)
-            : tls([formula]() { return ExprTKCompiled(formula); })
-        {
-        }
+            : tls([formula]() { return ExprTKCompiled(formula); }) { }
     };
 
     CompiledExpression::CompiledExpression() : is_const_(true), const_val_(0.0) { }
