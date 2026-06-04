@@ -61,7 +61,7 @@ XML 文件
 
 ### 1. 内部模型不含原始字符串
 
-所有表达式在预处理阶段编译为 `CompiledExpression`。
+所有表达式在预处理阶段编译为 `CompiledExpression`（类型定义在 `mhs::expr`；`mhs::CompiledExpression` 是 `types.hpp` 的 `using` 别名）。
 
 ### 2. 热源为字典化 per-cell 索引
 

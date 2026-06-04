@@ -102,10 +102,10 @@ struct CellFields {
 namespace mhs {
 
 struct BCParamTable {
-    std::vector<expr::CompiledExpression> dirichlet_T;  // N_dirichlet
-    std::vector<expr::CompiledExpression> neumann_q;    // N_neumann
-    std::vector<expr::CompiledExpression> cauchy_h;      // N_cauchy
-    std::vector<expr::CompiledExpression> cauchy_T_inf;  // N_cauchy
+    std::vector<CompiledExpression> dirichlet_T;  // N_dirichlet
+    std::vector<CompiledExpression> neumann_q;    // N_neumann
+    std::vector<CompiledExpression> cauchy_h;      // N_cauchy
+    std::vector<CompiledExpression> cauchy_T_inf;  // N_cauchy
 };
 
 } // namespace mhs
@@ -160,7 +160,7 @@ struct InternalModel {
 
     // 字典化的体热源：去重后的 CompiledExpression；CellFields::heat_source_idx 按单元引用
     // 索引 0 保留为默认值 CompiledExpression::make_constant(0.0)
-    std::vector<expr::CompiledExpression> heat_source_table;
+    std::vector<CompiledExpression> heat_source_table;
 
     double initial_temperature = 300.0;
     double ambient_temperature = 300.0;

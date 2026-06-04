@@ -118,6 +118,8 @@ struct IOStructure {
 
     // Native functions registered during preprocessing
     // Key = function name, Value = FieldEvaluator (std::function<double(FieldContext)>)
+    // FieldEvaluator 的权威定义在 mhs::expr（src/expr/expr.hpp），此处经由
+    // mhs::FieldEvaluator（src/common/types.hpp 的 using 重新导出）使用。
     std::unordered_map<std::string, FieldEvaluator> functions;
 };
 

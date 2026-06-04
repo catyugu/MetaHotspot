@@ -6,16 +6,29 @@
 
 ## FieldContext
 
-```cpp
-namespace mhs {
+`FieldContext` 是 expr 引擎向上层暴露的数据契约：调用方在求值时必须以这个结构提供 `(x, y, z, T, t)`。**类型定义在 `src/expr/expr.hpp`，命名空间 `mhs::expr`**；`src/common/types.hpp` 通过 `using` 别名将同名符号重新导出到 `mhs` 根命名空间，供 assembler/preprocessor 等上层代码直接使用而不必每次写 `expr::FieldContext`。
 
-// 表达式求值上下文（定义在 types.hpp，非 mhs::expr）
+```cpp
+// 定义位置：src/expr/expr.hpp
+namespace mhs::expr {
+
 struct FieldContext {
-    double x = 0.0, y = 0.0, z = 0.0;  // 空间位置（SI 单位）
-    double T = 0.0;                     // 该位置的温度
-    double t = 0.0;                     // 当前仿真时间
+    double x = 0.0;  // 空间位置（SI 单位）
+    double y = 0.0;
+    double z = 0.0;
+    double T = 0.0;  // 该位置的温度
+    double t = 0.0;  // 当前仿真时间
 };
 
+using FieldEvaluator = std::function<double(const FieldContext&)>;
+
+} // namespace mhs::expr
+
+// 重新导出位置：src/common/types.hpp
+namespace mhs {
+    using FieldContext = expr::FieldContext;
+    using FieldEvaluator = expr::FieldEvaluator;
+    // ...
 } // namespace mhs
 ```
 

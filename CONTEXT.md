@@ -46,6 +46,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Expr registry**: Global, thread-safe. `Preprocessor::load()` calls `clear_registry()` then populates from `IOStructure` variables/functions.
 - **Native functions**: C++ functions registered via `expr::register_native()`. Used for piecewise functions and other forms easier to express in code than strings.
 - **Expr eval concurrency**: `CompiledExpression` is a lightweight handle wrapping `shared_ptr<ExprTKCompiledTLS>`, which in turn holds a `tbb::enumerable_thread_specific<ExprTKCompiled>`. Each TBB worker thread that touches a given handle lazily instantiates its own private ExprTK AST on first `eval()`, and that AST's `x_/y_/z_/T_/t_` slots are written by that thread alone. `eval()` is therefore fully lock-free — no mutex, no false sharing. Constant expressions (`make_constant`) short-circuit before touching the TLS at all.
+- **Expr type ownership**: `FieldContext`, `FieldEvaluator`, and `CompiledExpression` are **defined** in `src/expr/expr.hpp` (namespace `mhs::expr`). `src/common/types.hpp` re-exports them as `mhs::FieldContext`, `mhs::FieldEvaluator`, and `mhs::CompiledExpression` via `using` aliases so call sites in `internal_model.hpp` / `assembler` / `preprocessor` keep the shorter name. `expr/expr.hpp` does not include any `common/` header; the dependency arrow is `common → expr`, never the reverse.
 
 ### Face Keys
 
@@ -86,7 +87,7 @@ Persistent state across simulation, stored in `GlobalState`:
 4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
 5. **Backward Euler** — transient time discretization (θ=1.0), the code uses `ρ*c*vol/dt * (T - T_prev)` mass term
 6. **TBB parallel assembly** — `tbb::parallel_for` over the full grid index range, with `tbb::enumerable_thread_specific<ThreadLocalData>` holding per-worker triplet lists and RHS vectors that are merged after the parallel region. `CompiledExpression::eval()` is lock-free, so the inner cell loop never serializes.
-7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`) and core types (`FieldContext`, `FaceDir`, `FieldEvaluator`); `io_model.hpp` includes it instead of redeclaring
+7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`, `FaceDir`) and re-exports the expression types (`FieldContext`, `FieldEvaluator`, `CompiledExpression`) from the `expr` module via `using` aliases. The **authoritative definitions** of the three expression types live in `src/expr/expr.hpp` (namespace `mhs::expr`); `internal_model.hpp` only includes `types.hpp` and never reaches into `expr/` directly.
 
 ## Glossary
 

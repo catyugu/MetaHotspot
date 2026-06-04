@@ -40,7 +40,7 @@ Keep two expression evaluation paths strictly separate:
 
 ## Notes
 
-- The `expr` module exposes a `CompiledExpression` type: a lightweight handle wrapping `shared_ptr<ExprTKCompiledTLS>`. The TLS wrapper holds a `tbb::enumerable_thread_specific<ExprTKCompiled>` so each thread sees its own private ExprTK AST. Evaluated by calling `eval(ctx)` with a `FieldContext`, returning a double. No mutex is taken on the eval hot path.
+- The `expr` module owns the expression runtime types: `FieldContext`, `FieldEvaluator`, and `CompiledExpression` are all defined in `src/expr/expr.hpp` under `mhs::expr`. `src/common/types.hpp` re-exports them to `mhs` so existing call sites in `internal_model.hpp` / `assembler` / `preprocessor` keep working with the shorter `mhs::CompiledExpression` name. The `CompiledExpression` type is a lightweight handle wrapping `shared_ptr<ExprTKCompiledTLS>`. The TLS wrapper holds a `tbb::enumerable_thread_specific<ExprTKCompiled>` so each thread sees its own private ExprTK AST. Evaluated by calling `eval(ctx)` with a `FieldContext`, returning a double. No mutex is taken on the eval hot path.
 - **Preprocessor compiles all expressions**: The preprocessor receives IO model structures containing raw expression strings and compiles them all into `CompiledExpression` objects:
     - Material properties (k, rho, c) → `MaterialProps` (each a `CompiledExpression`)
     - BC parameters (T_dirichlet, q_neumann, h_cauchy, T_inf_cauchy) → `BCParamTable` (each a `CompiledExpression`)
