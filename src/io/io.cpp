@@ -234,6 +234,116 @@ namespace mhs::io {
             }
         }
 
+        // Functions (5 类单变元函数)
+        if (const XMLElement* funcs = root->FirstChildElement("Functions")) {
+            for (const XMLElement* kv = funcs->FirstChildElement("a:KeyValueOfstringFunctionAdzryM2O"); kv;
+                kv = kv->NextSiblingElement("a:KeyValueOfstringFunctionAdzryM2O")) {
+                Function fn;
+                if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
+                    fn.key = get_text(key);
+                }
+                const XMLElement* val = kv->FirstChildElement("a:Value");
+                if (val) {
+                    const char* type = val->Attribute("i:type");
+                    std::string type_str = type ? type : "";
+                    if (type_str.find("ExpressionFunction") != std::string::npos) {
+                        fn.type = FunctionType::Expression;
+                        if (const XMLElement* expr = val->FirstChildElement("b:Expression")) {
+                            fn.expression.expression = get_text(expr);
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
+                            fn.expression.draw_min_x = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
+                            fn.expression.draw_max_x = parse_double(get_text(e));
+                        }
+                    }
+                    else if (type_str.find("DoubleExponentialFunction") != std::string::npos) {
+                        fn.type = FunctionType::DoubleExponential;
+                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
+                            fn.double_exp.a = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:Alpha")) {
+                            fn.double_exp.alpha = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:Beta")) {
+                            fn.double_exp.beta = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
+                            fn.double_exp.draw_min_x = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
+                            fn.double_exp.draw_max_x = parse_double(get_text(e));
+                        }
+                    }
+                    else if (type_str.find("GaussFunction") != std::string::npos) {
+                        fn.type = FunctionType::Gauss;
+                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
+                            fn.gauss.a = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:Tau")) {
+                            fn.gauss.tau = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:X0")) {
+                            fn.gauss.x0 = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
+                            fn.gauss.draw_min_x = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
+                            fn.gauss.draw_max_x = parse_double(get_text(e));
+                        }
+                    }
+                    else if (type_str.find("SineFunction") != std::string::npos) {
+                        fn.type = FunctionType::Sine;
+                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
+                            fn.sine.a = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:Omega")) {
+                            fn.sine.omega = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:Phi")) {
+                            fn.sine.phi = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
+                            fn.sine.draw_min_x = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
+                            fn.sine.draw_max_x = parse_double(get_text(e));
+                        }
+                    }
+                    else if (type_str.find("PieceWiseFunction") != std::string::npos) {
+                        fn.type = FunctionType::PieceWise;
+                        if (const XMLElement* points = val->FirstChildElement("b:Points")) {
+                            for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
+                                pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
+                                PieceWiseFunction::Point p;
+                                if (const XMLElement* x = pt->FirstChildElement("b:X")) {
+                                    p.x = parse_double(get_text(x));
+                                }
+                                if (const XMLElement* y = pt->FirstChildElement("b:Y")) {
+                                    p.y = parse_double(get_text(y));
+                                }
+                                fn.piecewise.points.push_back(p);
+                            }
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
+                            fn.piecewise.draw_min_x = parse_double(get_text(e));
+                        }
+                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
+                            fn.piecewise.draw_max_x = parse_double(get_text(e));
+                        }
+                    }
+                    else if (!type_str.empty()) {
+                        throw std::runtime_error("Unknown function i:type: " + type_str);
+                    }
+                }
+                if (!fn.key.empty()) {
+                    structure.functions[fn.key] = fn;
+                }
+            }
+        }
+
         // Layers
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;

@@ -121,7 +121,7 @@ namespace mhs::preprocessor {
     void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
         const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
         const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells, BCParamTable& bc_params,
-        double si_scale)
+        double si_scale, const ExprRewriter& rewriter)
     {
         // 1. 初始化所有 BC 为 None
         for (int c = 0; c < cells.cell_count; c++) {
@@ -137,16 +137,16 @@ namespace mhs::preprocessor {
         switch (other_bc_type) {
         case ThermalBCType::FirstType:
             other_bc_enum = BcType::FirstType;
-            bc_params.dirichlet_T.push_back(expr::parse(other_bc_first.temperature));
+            bc_params.dirichlet_T.push_back(expr::parse(rewriter(other_bc_first.temperature)));
             break;
         case ThermalBCType::SecondType:
             other_bc_enum = BcType::SecondType;
-            bc_params.neumann_q.push_back(expr::parse(other_bc_second.heat_flux));
+            bc_params.neumann_q.push_back(expr::parse(rewriter(other_bc_second.heat_flux)));
             break;
         case ThermalBCType::ThirdType:
             other_bc_enum = BcType::ThirdType;
-            bc_params.cauchy_h.push_back(expr::parse(other_bc_third.convection_coeff));
-            bc_params.cauchy_T_inf.push_back(expr::parse(other_bc_third.T_inf));
+            bc_params.cauchy_h.push_back(expr::parse(rewriter(other_bc_third.convection_coeff)));
+            bc_params.cauchy_T_inf.push_back(expr::parse(rewriter(other_bc_third.T_inf)));
             break;
         }
 
@@ -159,18 +159,18 @@ namespace mhs::preprocessor {
             case ThermalBCType::FirstType:
                 bc_enum = BcType::FirstType;
                 bc_param_idx = (uint16_t)bc_params.dirichlet_T.size();
-                bc_params.dirichlet_T.push_back(expr::parse(boundary.first.temperature));
+                bc_params.dirichlet_T.push_back(expr::parse(rewriter(boundary.first.temperature)));
                 break;
             case ThermalBCType::SecondType:
                 bc_enum = BcType::SecondType;
                 bc_param_idx = (uint16_t)bc_params.neumann_q.size();
-                bc_params.neumann_q.push_back(expr::parse(boundary.second.heat_flux));
+                bc_params.neumann_q.push_back(expr::parse(rewriter(boundary.second.heat_flux)));
                 break;
             case ThermalBCType::ThirdType:
                 bc_enum = BcType::ThirdType;
                 bc_param_idx = (uint16_t)bc_params.cauchy_h.size();
-                bc_params.cauchy_h.push_back(expr::parse(boundary.third.convection_coeff));
-                bc_params.cauchy_T_inf.push_back(expr::parse(boundary.third.T_inf));
+                bc_params.cauchy_h.push_back(expr::parse(rewriter(boundary.third.convection_coeff)));
+                bc_params.cauchy_T_inf.push_back(expr::parse(rewriter(boundary.third.T_inf)));
                 break;
             }
 

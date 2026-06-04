@@ -1,5 +1,6 @@
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
+#include "function_helpers.hpp"
 #include "layer_processor.hpp"
 #include "preprocessor.hpp"
 
@@ -20,6 +21,17 @@ namespace mhs {
             double val = expr::eval_geometry(var.value);
             expr::set_variable(var.name, val);
         }
+
+        // 1) 先注册所有 Function 为 expr 全局 native；记录名字用于诊断。
+        // 2) 构造两个 rewriter：体热源→t，材料/BC→T。
+        const auto& fns = ioStructure.functions;
+        model->function_names = preprocessor::register_all_functions(fns);
+        auto rewriter_T = [&fns](const std::string& s) {
+            return preprocessor::substitute_function_args(s, "T", fns);
+        };
+        auto rewriter_t = [&fns](const std::string& s) {
+            return preprocessor::substitute_function_args(s, "t", fns);
+        };
 
         double si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
 
@@ -77,9 +89,9 @@ namespace mhs {
         model->material_table.resize(material_names.size());
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
-            model->material_table[m].k = expr::parse(mat.daore_xishu);
-            model->material_table[m].rho = expr::parse(mat.midu);
-            model->material_table[m].c = expr::parse(mat.bi_rerong);
+            model->material_table[m].k = expr::parse(rewriter_T(mat.daore_xishu));
+            model->material_table[m].rho = expr::parse(rewriter_T(mat.midu));
+            model->material_table[m].c = expr::parse(rewriter_T(mat.bi_rerong));
         }
 
         auto& cells = model->cells;
@@ -99,7 +111,7 @@ namespace mhs {
             for (size_t b = 0; b < resolved_layers[l].blocks.size(); b++) {
                 uint16_t hs_idx = (uint16_t)model->heat_source_table.size();
                 model->heat_source_table.push_back(
-                    expr::parse(resolved_layers[l].blocks[b].ti_reyuan_expr));
+                    expr::parse(rewriter_t(resolved_layers[l].blocks[b].ti_reyuan_expr)));
                 block_hs_map[l][b] = hs_idx;
             }
         }
@@ -131,7 +143,7 @@ namespace mhs {
         auto& bc_params = model->bc_params;
         preprocessor::resolve_face_keys(ioStructure.boundaries, ioStructure.other_bc_type,
             ioStructure.other_bc_first, ioStructure.other_bc_second, ioStructure.other_bc_third,
-            mesh, cells, bc_params, si_scale);
+            mesh, cells, bc_params, si_scale, rewriter_T);
 
         return model;
     }

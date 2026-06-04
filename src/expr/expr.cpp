@@ -37,6 +37,44 @@ namespace mhs::expr {
         }
     } // namespace registry
 
+    namespace {
+        // Per-thread FieldContext for native function dispatch. Forward-declared
+        // so NativeFn's template body can call it.
+        FieldContext& thread_ctx_();
+    }
+
+    // Adapter that lets us register any FieldEvaluator (FieldContext -> double)
+    // as a 1-arg exprtk function. The argument is ignored — natives read from
+    // ctx.t at call time (per design).
+    template <typename T> class NativeFn : public exprtk::ifunction<T> {
+    public:
+        explicit NativeFn(FieldEvaluator fe)
+            : exprtk::ifunction<T>(1) // 1 argument
+            , fe_(std::move(fe))
+        {
+        }
+
+        T operator()(const T& /*arg0*/) override
+        {
+            // Native reads from a thread-local FieldContext (set by ExprTKCompiled::eval
+            // before invoking expr_->value()). Argument is intentionally ignored.
+            return static_cast<T>(fe_(thread_ctx_()));
+        }
+
+    private:
+        FieldEvaluator fe_;
+    };
+
+    namespace {
+        // Per-thread FieldContext for native function dispatch. The exprtk AST
+        // calls our function objects from a single thread, so a plain TLS works.
+        FieldContext& thread_ctx_()
+        {
+            thread_local FieldContext ctx {};
+            return ctx;
+        }
+    }
+
     class ExprTKCompiled {
     public:
         explicit ExprTKCompiled(const std::string& formula)
@@ -51,6 +89,17 @@ namespace mhs::expr {
             sym_table_->add_variable("z", z_);
             sym_table_->add_variable("T", T_);
             sym_table_->add_variable("t", t_);
+
+            // Bind every registered native function name as a 1-arg exprtk function.
+            // Slot lifetime must outlive the symbol table / expression.
+            {
+                std::lock_guard<std::mutex> lock(registry::mutex());
+                for (const auto& [name, fe] : registry::native_functions()) {
+                    auto slot = std::make_shared<NativeFn<double>>(fe);
+                    native_slots_[name] = slot;
+                    sym_table_->add_function(name, *slot);
+                }
+            }
 
             expr_->register_symbol_table(*sym_table_);
 
@@ -73,6 +122,9 @@ namespace mhs::expr {
             z_ = ctx.z;
             T_ = ctx.T;
             t_ = ctx.t;
+            // Native functions read from this thread-local ctx, so update it
+            // before driving the exprtk expression.
+            thread_ctx_() = ctx;
             return expr_->value();
         }
 
@@ -81,6 +133,9 @@ namespace mhs::expr {
         double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
         std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
         std::unique_ptr<exprtk::expression<double>> expr_;
+        // Owns the NativeFn objects bound into the symbol table. They must live
+        // as long as the symbol table is in use.
+        std::unordered_map<std::string, std::shared_ptr<void>> native_slots_;
     };
 
     // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST

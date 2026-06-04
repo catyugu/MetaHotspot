@@ -3,18 +3,16 @@ add_subdirectory(expr)
 add_subdirectory(assembler)
 add_subdirectory(common)
 add_subdirectory(solver)
+add_subdirectory(preprocessor)
 
 add_library(mhs_lib
     io/io.cpp
-    preprocessor/preprocessor.cpp
-    preprocessor/layer_processor.cpp
-    preprocessor/face_key_processor.cpp
     nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC expr_lib common_lib io_lib solver_lib assembler_lib)
+target_link_libraries(mhs_lib PUBLIC preprocessor_lib expr_lib common_lib io_lib solver_lib assembler_lib)
 
 if(VERBOSE)
     target_compile_definitions(mhs_lib PUBLIC VERBOSE)

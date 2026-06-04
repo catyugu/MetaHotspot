@@ -81,6 +81,61 @@ namespace mhs {
         std::string bi_rerong = "0.0"; // 比热容 c
     };
 
+    // 单变元函数类别（5 类），XML <Functions> 块解析为这些 POD 类型。
+    // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，InternalModel
+    // 不再持有这些类型，保持模块解耦。
+    enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
+
+    struct ExpressionFunction {
+        std::string expression; // exprtk 字符串，自变量名 `x`
+        double draw_min_x = 0.0;
+        double draw_max_x = 100.0;
+    };
+
+    struct DoubleExponentialFunction {
+        double a = 0.0;
+        double alpha = 0.0;
+        double beta = 0.0;
+        double draw_min_x = 0.0;
+        double draw_max_x = 100.0;
+    };
+
+    struct GaussFunction {
+        double a = 0.0;
+        double tau = 0.0;
+        double x0 = 0.0;
+        double draw_min_x = 0.0;
+        double draw_max_x = 100.0;
+    };
+
+    struct SineFunction {
+        double a = 0.0;
+        double omega = 0.0;
+        double phi = 0.0;
+        double draw_min_x = 0.0;
+        double draw_max_x = 100.0;
+    };
+
+    struct PieceWiseFunction {
+        struct Point {
+            double x = 0.0;
+            double y = 0.0;
+        };
+        std::vector<Point> points;
+        double draw_min_x = 0.0;
+        double draw_max_x = 100.0;
+    };
+
+    struct Function {
+        std::string key;
+        FunctionType type = FunctionType::Expression;
+        ExpressionFunction expression;
+        DoubleExponentialFunction double_exp;
+        GaussFunction gauss;
+        SineFunction sine;
+        PieceWiseFunction piecewise;
+    };
+
     enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
 
     enum class Dimension { Dimension2D, Dimension3D };
@@ -111,7 +166,7 @@ namespace mhs {
         std::vector<double> mesh_vertex_y;
         std::vector<double> mesh_vertex_z;
 
-        std::unordered_map<std::string, FieldEvaluator> functions;
+        std::unordered_map<std::string, Function> functions;
     };
 
 } // namespace mhs
