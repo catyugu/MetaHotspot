@@ -28,7 +28,7 @@ def main():
             "./results/simple_steady_tests/case3_output.xml",
         ]
     )
-    os.system("python ./compare_steady_results.py")
+    os.system("python ./scripts/compare_steady_results.py")
 
 
 if __name__ == "__main__":
