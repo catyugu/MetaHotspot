@@ -16,16 +16,21 @@ XML 文件
                           ├─> Build material_table (parse k/rho/c expressions)
                           ├─> preprocessor::resolve_layers()
                           │     └─> CellFields（valid_mask, index_map, material_id, layer_id）
-                          ├─> Compile heat_source per cell (find_block_for_cell again)
+                          ├─> Compile heat_source dictionary
+                          │     └─> per-block ti_reyuan_expr 去重 → heat_source_table[0] = make_constant(0.0)
+                          │         + cells.heat_source_idx[c_idx] = uint16_t
                           ├─> preprocessor::resolve_face_keys()
                           │     └─> CellFields.cell_bcs（每单元每面独立 BC）
                           │         + BCParamTable（编译后的表达式）
                           └─> mhs::InternalModel
                                 └─> Scheduler::run()
                                       ├─> Assembler::assemble(state)
-                                      │     ├─> MaterialProps.k/rho/c.eval(ctx)
-                                      │     ├─> CellBC types + BCParamTable eval(ctx)
-                                      │     ├─> heat_source[].eval(ctx)
+                                      │     ├─> tbb::parallel_for(0, total)  // 每线程独立 triplets + b
+                                      │     │     ├─> materials[mat_id].k/rho/c.eval(ctx)  // lock-free per-thread AST
+                                      │     │     ├─> cell_bcs.types + bc_params[param_idx].eval(ctx)
+                                      │     │     ├─> heat_source_table[hs_idx].eval(ctx)
+                                      │     │     └─> local.triplets + local.b
+                                      │     ├─> Merge: triplets.insert(...) + b += local.b
                                       │     └─> Solver::solve(A, b)
                                       └─> Postprocessor::interpolate_cell_to_node
                                             ├─> io::write_vtu（展开 T，虚拟区域 NaN）
@@ -58,9 +63,9 @@ XML 文件
 
 所有表达式在预处理阶段编译为 `CompiledExpression`。
 
-### 2. 热源为 per-cell
+### 2. 热源为字典化 per-cell 索引
 
-`CellFields.heat_source` 是 `vector<CompiledExpression>`，每个活跃单元一个。
+`InternalModel::heat_source_table` 是去重后的 `vector<CompiledExpression>`，每个活跃单元通过 `CellFields::heat_source_idx`（`vector<uint16_t>`，索引 0 留空为 `make_constant(0.0)`）查表求值。重复公式只编译一次，N 个单元 → N_active 个 2 字节索引 + 唯一公式数个 ExprTK AST。
 
 ### 3. Cell 级别 BC
 
@@ -89,7 +94,7 @@ struct CellFields {
 
     // Compact size (N_active): active cells only
     std::vector<CellBC> cell_bcs;
-    std::vector<CompiledExpression> heat_source;
+    std::vector<uint16_t> heat_source_idx;  // indices into InternalModel::heat_source_table
 };
 ```
 

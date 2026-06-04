@@ -37,7 +37,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Bottom layer**: PCB or heat spreader.
 - Each layer has a `ThicknessExpression` and mesh size hints. The layer thickness is the **only** Z-axis dimension — blocks inherit the full Z extent of their parent layer and have no independent Z thickness or offset.
 - **Block geometry**: Blocks define shape only in the XY plane via add/sub `Rect` operations. A block's Z range is always `[layer.z_start, layer.z_end]`.
-- **Block heat source**: Each block has one `ti_reyuan_expr` (体热源, [W/m³]). Preprocessor expands this to a per-cell `heat_source` array indexed by `cell_idx`.
+- **Block heat source**: Each block has one `ti_reyuan_expr` (体热源, [W/m³]). Preprocessor deduplicates per-block expressions into a shared `InternalModel::heat_source_table` (index `0` reserved for the default zero source) and stores a `uint16_t` index per cell in `CellFields::heat_source_idx`.
 
 ### Expressions
 
@@ -45,7 +45,7 @@ Thermal simulation engine for electronic packaging. Models heat transfer in mult
 - **Field expressions**: Material properties, BC parameters. Context: `{x, y, z, T, t}`. Pre-compiled to `CompiledExpression`.
 - **Expr registry**: Global, thread-safe. `Preprocessor::load()` calls `clear_registry()` then populates from `IOStructure` variables/functions.
 - **Native functions**: C++ functions registered via `expr::register_native()`. Used for piecewise functions and other forms easier to express in code than strings.
-- **Expr eval concurrency**: Cached ExprTK expressions share a singleton `ExprTKCompiled` per formula string. `eval()` uses a mutex to protect shared x_/y_/z_/T_/t_ members, which serializes evaluation. Constant expressions (`make_constant`) are lock-free.
+- **Expr eval concurrency**: `CompiledExpression` is a lightweight handle wrapping `shared_ptr<ExprTKCompiledTLS>`, which in turn holds a `tbb::enumerable_thread_specific<ExprTKCompiled>`. Each TBB worker thread that touches a given handle lazily instantiates its own private ExprTK AST on first `eval()`, and that AST's `x_/y_/z_/T_/t_` slots are written by that thread alone. `eval()` is therefore fully lock-free — no mutex, no false sharing. Constant expressions (`make_constant`) short-circuit before touching the TLS at all.
 
 ### Face Keys
 
@@ -82,10 +82,10 @@ Persistent state across simulation, stored in `GlobalState`:
 
 1. **No raw strings in internal model** — all expressions compiled to `CompiledExpression`
 2. **Expr registry is global** — `Preprocessor::load()` calls `clear_registry()` then populates; external code uses `parse()`/`eval()`
-3. **Thread-safe expr module** — `parse()`/`register_*()` mutex-protected; `eval()` is lock-free — each `CompiledExpression` owns its own `ExprTKCompiled` instance, no shared mutable state. Constant expressions (`make_constant`) are also lock-free.
+3. **Lockless expr module** — registry mutations (`set_variable`, `register_native`, `register_function`, `clear_registry`, `eval_geometry`) are mutex-protected; `parse()` is main-thread only and briefly takes the registry mutex during the trial compile; `CompiledExpression::eval()` is fully lock-free via `tbb::enumerable_thread_specific<ExprTKCompiled>` (each worker thread owns its own AST). Constant expressions (`make_constant`) are also lock-free.
 4. **Precomputed sparsity pattern** — assemble only fills values, does not rebuild structure
 5. **Backward Euler** — transient time discretization (θ=1.0), the code uses `ρ*c*vol/dt * (T - T_prev)` mass term
-6. **TBB parallel assembly** — `tbb::parallel_for` over cells. `CompiledExpression::eval()` is lock-free (per-instance ownership), so no serialization bottleneck.
+6. **TBB parallel assembly** — `tbb::parallel_for` over the full grid index range, with `tbb::enumerable_thread_specific<ThreadLocalData>` holding per-worker triplet lists and RHS vectors that are merged after the parallel region. `CompiledExpression::eval()` is lock-free, so the inner cell loop never serializes.
 7. **Single source of truth for internal types** — `types.hpp` defines all internal enums (`StudyType`, `BcType`) and core types (`FieldContext`, `FaceDir`, `FieldEvaluator`); `io_model.hpp` includes it instead of redeclaring
 
 ## Glossary
@@ -119,7 +119,8 @@ Structured grid creates `nx × ny × nz` cells, but not all cells are within val
 **CellFields layout:**
 
 - **Full-grid size** (nx*ny*nz): `index_map`, `valid_mask`, `material_id`, `layer_id`
-- **Compact size** (N_active): `cell_bcs`, `heat_source`
+- **Compact size** (N_active): `cell_bcs`
+- **Compact size** (N_active): `heat_source_idx` — `uint16_t` indices into `InternalModel::heat_source_table`
 
 Keeping full-grid arrays for material/layer IDs simplifies debugging and maintains consistent array style across the model.
 
@@ -144,7 +145,7 @@ struct CellFields {
 
     // Compact size (N_active): active cells only
     std::vector<CellBC> cell_bcs;
-    std::vector<CompiledExpression> heat_source;
+    std::vector<uint16_t> heat_source_idx;  // indices into InternalModel::heat_source_table
 };
 ```
 

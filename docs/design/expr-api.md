@@ -28,30 +28,35 @@ struct FieldContext {
 ```cpp
 namespace mhs::expr {
 
-// Move-only 独占类型，每个实例持有独立 ExprTKCompiled（pimpl）
+// 可复制 / 可移动的轻量句柄
+// 内部通过 shared_ptr<ExprTKCompiledTLS> 共享一份公式字符串，
+// 但每个线程通过 tbb::enumerable_thread_specific 自动获得独立 ExprTK AST
 class CompiledExpression {
 public:
     CompiledExpression();  // 默认构造为常数 0.0
     ~CompiledExpression();
 
-    // Move-only：每个实例独占 unique_ptr<ExprTKCompiled>，不可复制
-    CompiledExpression(CompiledExpression&&) noexcept;
-    CompiledExpression& operator=(CompiledExpression&&) noexcept;
-    CompiledExpression(const CompiledExpression&) = delete;
-    CompiledExpression& operator=(const CompiledExpression&) = delete;
+    // 浅复制：仅复制 shared_ptr，AST 在首次 eval 时按需懒构造
+    CompiledExpression(const CompiledExpression&) = default;
+    CompiledExpression& operator=(const CompiledExpression&) = default;
+    CompiledExpression(CompiledExpression&&) noexcept = default;
+    CompiledExpression& operator=(CompiledExpression&&) noexcept = default;
 
     double eval(const FieldContext& ctx) const;
 
     bool is_constant() const;
     double constant_value() const;
 
+    // 工厂：构造常数表达式（无锁、无 AST 分配）
     static CompiledExpression make_constant(double value);
-    static CompiledExpression make_evaluator(std::unique_ptr<ExprTKCompiled> impl);
+
+    // 工厂：构造求值器（懒构造 per-thread ExprTK AST）
+    static CompiledExpression make_evaluator(const std::string& formula);
 
 private:
-    std::unique_ptr<ExprTKCompiled> impl_;
     bool is_const_ = false;
     double const_val_ = 0.0;
+    std::shared_ptr<ExprTKCompiledTLS> tls_impl_;
 };
 
 } // namespace mhs::expr
@@ -59,10 +64,11 @@ private:
 
 特点：
 
-- **Move-only 独占类型**：每个实例持有 `unique_ptr<ExprTKCompiled>`，表达式编译后只传递所有权，不复制
-- **无虚函数**：`ExprTKCompiled` 为 pimpl 内部类，对外不可见
-- **独占实例**：每个 `CompiledExpression` 拥有独立的 `ExprTKCompiled`，不共享缓存
-- **eval() 无锁**：因为实例独立，`eval()` 天然线程安全，无需 mutex
+- **可复制 / 可移动的轻量句柄**：`shared_ptr` 共享公式字符串的句柄，单份公式在容器中（`vector<MaterialProps>`、`BCParamTable.*`）只产生一次字符串存储
+- **懒构造 per-thread AST**：底层 `tbb::enumerable_thread_specific<ExprTKCompiled>` 内部按需为每个访问线程构造独立的 ExprTK AST（formula 字符串作为构造参数捕获），无锁、无 false sharing
+- **无虚函数**：`ExprTKCompiled` 与 `ExprTKCompiledTLS` 均为 pimpl 内部类，对外不可见
+- **eval() 无锁**：通过 `tls.local()` 取得当前线程的私有 AST，`x_/y_/z_/T_/t_` 符号槽仅由本线程读写，无需任何同步
+- **常数表达式短路**：`is_const_` 为 true 时直接返回 `const_val_`，不触达 `tls_impl_`
 
 ---
 
@@ -116,7 +122,9 @@ FieldEvaluator get_native(const std::string& name);
 // Called at the start of Preprocessor::load() to reset state
 void clear_registry();
 
-// Parse a field expression string — creates a fresh ExprTKCompiled instance (no caching)
+// Parse a field expression string.
+// 若 formula 为纯数字字面量（如 "1.5"），返回 make_constant 短路结果；
+// 否则先在主线程做一次试编译（尽早暴露语法错误），再返回 make_evaluator 句柄。
 CompiledExpression parse(const std::string& formula);
 
 // Evaluate a geometry expression (no context needed, uses registered variables)
@@ -148,8 +156,8 @@ double k_val = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});  // FieldContext 字段顺
 
 `CompiledExpression::eval(ctx)` 在以下两个场景被调用：
 
-1. **预处理阶段**（一次性）：编译时做常量折叠
-2. **组装阶段**（高频）：每个迭代、每个单元调用一次
+1. **预处理阶段**（一次性）：`parse()` 内部做主线程试编译以捕获语法错误
+2. **组装阶段**（高频）：每个迭代、每个单元调用一次 —— 此时由 TBB 工作线程首次访问 `tls.local()`，触发该线程的 ExprTK AST 懒构造
 
 高频调用时，优先使用常数表达式（`parse("1.5")` 返回常数）避免求值开销。
 
@@ -157,12 +165,36 @@ double k_val = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});  // FieldContext 字段顺
 
 ### 线程安全
 
-- `set_variable()`, `register_native()`, `register_function()`: 互斥锁保护
-- `parse()`: 编译时读取注册表，互斥锁保护；每次 `parse()` 创建新实例，不做缓存
-- `CompiledExpression::eval()`: **无锁**——每个实例持有独立的 `ExprTKCompiled`，各实例天然线程安全。常数表达式（`make_constant`）同样无锁。
-- `eval_geometry()`: 互斥锁保护（访问注册表变量）
+- `set_variable()`, `register_native()`, `register_function()`, `clear_registry()`, `eval_geometry()`: 互斥锁保护
+- `parse()`: 主线程调用；持有 registry 互斥锁读取变量表以做语法试编译；每次 `parse()` 返回新的 `CompiledExpression` 句柄（共享同一 `shared_ptr<ExprTKCompiledTLS>` 等价于共享公式字符串）
+- `CompiledExpression::eval()`: **无锁**。`shared_ptr<ExprTKCompiledTLS>::tls.local()` 取得当前线程的私有 `ExprTKCompiled`，该 AST 的 `x_/y_/z_/T_/t_` 符号槽仅由本线程读写。常量表达式（`make_constant`）同样无锁
+- TBB 并行 for 内部：所有工作线程首次访问同一 `CompiledExpression` 时，各自懒构造自己的 ExprTK AST；之后整个模拟期间零同步开销
+
+### 实现原理（TBB enumerable_thread_specific）
+
+`ExprTKCompiledTLS` 是 expr 模块内部的 pimpl 包装：
+
+```cpp
+// 内部实现，对外不可见
+struct ExprTKCompiled {
+    // 持有 exprtk::symbol_table + expression + x_/y_/z_/T_/t_ 槽位
+    // 构造时绑定 formula，编译失败 valid_ = false
+};
+
+struct ExprTKCompiledTLS {
+    tbb::enumerable_thread_specific<ExprTKCompiled> tls;
+    explicit ExprTKCompiledTLS(const std::string& formula)
+        : tls([formula]() { return ExprTKCompiled(formula); }) {}
+};
+```
+
+- 公式字符串在 `tbb::enumerable_thread_specific` 的 lambda 构造器中被按值捕获一次
+- 每个 TBB 工作线程首次 `tls.local()` 时按公式构造独立 AST
+- 线程退出时 ETS 自动析构其专属 AST —— 无显式清理代码
+- 多个 `CompiledExpression` 持有同一公式时（即 `parse()` 同一字符串两次），由于各自持有独立 `shared_ptr<ExprTKCompiledTLS>`，TBB 仍为各线程各构造一份 AST；如需真正跨句柄共享 AST，可改造为进程级 `unordered_map<formula, shared_ptr<ExprTKCompiledTLS>>` 缓存 —— 当前实现优先保证单次 `parse()` 句柄的独立性
 
 ### 注意事项
 
 - `clear_registry()` 必须在每次 `Preprocessor::load()` 开头调用，以清除上一次运行残留的变量和函数
-- `CompiledExpression` 为 move-only 类型——表达式编译后只能通过 `std::move` 传递，不可复制。所有权转移发生在 `MaterialProps`、`BCParamTable`、`CellFields.heat_source` 等内部模型结构中
+- `CompiledExpression` 现在是**可复制**的轻量句柄（`shared_ptr`），可在 `vector`、`MaterialProps`、`BCParamTable` 中自由复制与移动，无需 `std::move`
+- 跨线程共享同一 `CompiledExpression` 句柄是安全的 —— 线程隔离发生在 ETS 层而非句柄层

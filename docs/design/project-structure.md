@@ -8,13 +8,13 @@
 MetaHotspot/
 ├── CMakeLists.txt            # 顶层入口，定义项目名、版本、C++ 标准
 ├── cmake/
-│   ├── Dependencies.cmake     # CPM 依赖声明（Eigen、spdlog、exprtk、tinyxml2 等）
+│   ├── Dependencies.cmake     # CPM 依赖声明（Eigen、spdlog、exprtk、tinyxml2、oneTBB 等）
 │   └── CompilerOptions.cmake  # 严格编译选项（/W4 /WX 或 -Wall -Wextra -Wpedantic -Werror）
 ├── src/
 │   ├── CMakeLists.txt         # 所有模块的源文件、include 目录、链接库
 │   ├── common/                # spdlog 封装、域类型、IO/内部模型数据结构 (namespace mhs::logger, mhs)
 │   ├── io/                    # XML 序列化/反序列化
-│   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册
+│   ├── expr/                  # exprtk 封装、CompiledExpression、native function 注册；TBB ETS 锁无关求值包装
 │   ├── preprocessor/          # 网格生成、BC 解析、表达式编译
 │   ├── assembler/             # Jacobian 和 RHS 组装
 │   ├── nonlinear/             # Anderson 加速非线性迭代（namespace mhs::nonlinear）

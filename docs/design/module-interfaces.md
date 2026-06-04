@@ -104,7 +104,11 @@ IOStructure（含字符串表达式 + mesh_vertex_x/y/z from XML）
         ├─> resolve_layers()
         │     ├─> 生成 valid_mask + index_map
         │     └─> 分配 material_id, layer_id（全网格大小）
-        ├─> Compile heat_source (find_block_for_cell per active cell)
+        ├─> Compile heat_source dictionary
+        │     ├─> 去重 block.ti_reyuan_expr 字符串
+        │     ├─> heat_source_table[0] = make_constant(0.0)
+        │     ├─> 每个唯一公式 → expr::parse() → heat_source_table.emplace_back()
+        │     └─> 按单元写入 heat_source_idx[c_idx] = uint16_t
         ├─> resolve_face_keys()
         │     ├─> 解析 face_key 字符串
         │     ├─> ThermalBCType → BcType conversion
@@ -143,18 +147,20 @@ private:
 
 ### 组装热循环说明
 
+`Assembler::assemble()` 使用 `tbb::parallel_for` 扫描全网格索引范围 `0..total`，跳过虚拟单元（`valid_mask[old_idx] == 0` 时直接 `return`）。每线程独立的 `tbb::enumerable_thread_specific<ThreadLocalData>` 持有 `std::vector<Eigen::Triplet<double>>` 与 `Eigen::VectorXd b`，并行结束后一次性合并到全局 `LinearSystem`（`triplets.insert(...)` + `b += local.b`）。
+
 对每个活跃单元 `cell_idx`：
 
 1. 获取 `material_id[cell_idx]` → `material_table[id]` → `MaterialProps {k, rho, c}`
 2. 对每个临面 `FaceDir`：
-   - 查 `cell_bcs[compact_idx].types[dir]` → BC 类型
-   - 查 `cell_bcs[compact_idx].param_idxs[dir]` → 参数索引
+   - 查 `cell_bcs[c_idx].types[dir]` → BC 类型
+   - 查 `cell_bcs[c_idx].param_idxs[dir]` → 参数索引
    - 调用 `bc_params.*[idx].eval(ctx)` 等
    - 施加 BC 贡献
-3. 获取 `heat_source[compact_idx].eval(ctx)` → 体热源 Q
+3. 获取 `heat_source_idx[c_idx]` → `heat_source_table[hs_idx].eval(ctx)` → 体热源 Q
 4. 组装扩散项 + 瞬态项
 
-**注意**：虚拟单元已在预处理阶段标记，Assembler 只处理活跃单元。
+**注意**：虚拟单元已在预处理阶段标记，Assembler 的并行 for 跳过它们。所有 `eval()` 路径都走 `tbb::enumerable_thread_specific<ExprTKCompiled>`，无锁 —— TBB 工作线程间无序列化瓶颈。
 
 ---
 

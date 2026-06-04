@@ -68,7 +68,7 @@ struct CellFields {
 
     // Compact size (N_active): active cells only
     std::vector<CellBC> cell_bcs;
-    std::vector<expr::CompiledExpression> heat_source;
+    std::vector<uint16_t> heat_source_idx;  // index into InternalModel::heat_source_table
 };
 
 } // namespace mhs
@@ -82,9 +82,17 @@ struct CellFields {
 - `index_map`: 全网格大小，映射旧网格索引 → 紧凑活跃索引。`SIZE_MAX` = 虚拟单元
 - `cell_count = N_active`: 矩阵维度为活跃单元数量
 
-### 3.2.3 热源
+### 3.2.3 热源（字典化）
 
-每个单元的体热源 `Q(x,y,z,T,t)` [W/m³]，由 `Block.ti_reyuan_expr` 预编译而来。紧凑存储，大小为 N_active。
+每个单元的体热源 `Q(x,y,z,T,t)` [W/m³] 由 `Block.ti_reyuan_expr` 预编译而来。为避免成百上千个活跃单元各持一份重复的 ExprTK AST，预处理器将所有出现过的 `ti_reyuan_expr` 字符串去重并编译到 `InternalModel::heat_source_table`（一个 `std::vector<CompiledExpression>`），`CellFields::heat_source_idx` 仅保存 16 位整型索引。
+
+- 索引 `0` 保留给默认值 `CompiledExpression::make_constant(0.0)`，未匹配到任何 block 的虚拟相邻单元直接指向 0
+- 重复公式（如多层芯片中大量单元共享同一 `1e6` 表达式）在表中只编译一次，热源评估走 TBB 友好的连续内存读取
+- 组装阶段通过 `model.heat_source_table[hs_idx].eval(ctx)` 取得当前热源值，语义与旧的 per-cell `vector<CompiledExpression>` 完全一致
+
+### 3.2.4 设计权衡
+
+旧的 per-cell `vector<CompiledExpression>` 实现把同一份公式复制 N 份，每份自带 `shared_ptr<ExprTKCompiledTLS>` 头部与 ETS 句柄；切到字典后每单元只占 2 字节，重复公式的去重也使 exprtk AST 总分配数下降到唯一公式数。`eval()` 路径不变 —— 仍然 lock-free（详见 §3.6）。
 
 ---
 
@@ -149,6 +157,10 @@ struct InternalModel {
     BCParamTable bc_params;
 
     std::vector<MaterialProps> material_table;
+
+    // 字典化的体热源：去重后的 CompiledExpression；CellFields::heat_source_idx 按单元引用
+    // 索引 0 保留为默认值 CompiledExpression::make_constant(0.0)
+    std::vector<expr::CompiledExpression> heat_source_table;
 
     double initial_temperature = 300.0;
     double ambient_temperature = 300.0;
