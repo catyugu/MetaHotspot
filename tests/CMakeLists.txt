@@ -16,24 +16,7 @@ target_include_directories(mhs_test_base INTERFACE ${CMAKE_BINARY_DIR})
 function(mhs_add_test_executable TEST_NAME)
     add_executable(${TEST_NAME} ${ARGN})
     target_link_libraries(${TEST_NAME} PRIVATE mhs_test_base)
-    add_custom_command(TARGET ${TEST_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:TBB::tbb>
-        $<TARGET_FILE_DIR:${TEST_NAME}>
-    )
-    if(MHS_HAS_PARDISO)
-        file(GLOB _mkl_runtime_dlls CONFIGURE_DEPENDS
-            "${MKL_BIN_DIR}/mkl_*.dll"
-            "${MKL_BIN_DIR}/libiomp5md.dll"
-        )
-        foreach(_dll IN LISTS _mkl_runtime_dlls)
-            add_custom_command(TARGET ${TEST_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${_dll}"
-                "$<TARGET_FILE_DIR:${TEST_NAME}>"
-            )
-        endforeach()
-    endif()
+    mhs_copy_runtime_dlls(${TEST_NAME})
     gtest_discover_tests(${TEST_NAME})
 endfunction()
 

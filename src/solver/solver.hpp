@@ -9,9 +9,13 @@ namespace mhs {
 
     // Solver configuration
     struct SolverConfig {
-        // Active solver. Pardiso is default when MHS_ENABLE_PARDISO is defined;
-        // otherwise falls back to SparseLU.
-        SolverType type = SolverType::Pardiso;
+        // Active solver. Defaults to the best available backend at build time.
+        SolverType type =
+#ifdef MHS_ENABLE_PARDISO
+            SolverType::Pardiso;
+#else
+            SolverType::SparseLU;
+#endif
 
         // BiCGSTAB-only knobs.
         double tolerance = 1e-8;

@@ -13,6 +13,7 @@ configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.
 
 include(cmake/CompilerOptions.cmake)
 include(cmake/Dependencies.cmake)
+include(cmake/Utilities.cmake)
 
 add_subdirectory(src)
 

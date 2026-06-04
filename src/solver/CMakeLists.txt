@@ -4,7 +4,7 @@ add_library(solver_lib STATIC
     sparse_lu_solver.cpp
 )
 
-if(MHS_HAS_PARDISO)
+if(MHS_ENABLE_PARDISO)
     target_sources(solver_lib PRIVATE pardiso_solver.cpp)
     target_link_libraries(solver_lib PUBLIC MKL::MKL)
     target_compile_definitions(solver_lib PUBLIC MHS_ENABLE_PARDISO)
