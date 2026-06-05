@@ -52,14 +52,6 @@ static IOStructure make_simple_cube_io()
     return io;
 }
 
-TEST(SchedulerTest, ConstructWithConfig)
-{
-    SchedulerConfig config;
-    config.is_steady = true;
-    config.max_nonlinear_iterations = 10;
-    Scheduler scheduler(config);
-}
-
 TEST(SchedulerTest, SetModelAndSolver)
 {
     auto io = make_simple_cube_io();
@@ -128,11 +120,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    SchedulerConfig config;
-    config.is_steady = true;
-    config.max_nonlinear_iterations = 50;
-
-    Scheduler scheduler(config);
+    Scheduler scheduler;
     scheduler.setModel(model.get());
     scheduler.setSolver(Solver::create(SolverType::Pardiso));
 
@@ -207,11 +195,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    SchedulerConfig config;
-    config.is_steady = true;
-    config.max_nonlinear_iterations = 50;
-
-    Scheduler scheduler(config);
+    Scheduler scheduler;
     scheduler.setModel(model.get());
     scheduler.setSolver(Solver::create(SolverType::Pardiso));
 
@@ -226,26 +210,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
         max_T = std::max(max_T, t);
     }
     EXPECT_GT(max_T, 300.0) << "Heat source should raise temperature above 300K";
-}
-
-TEST(SchedulerTest, SchedulerConfigDefaults)
-{
-    SchedulerConfig config;
-    EXPECT_EQ(config.max_nonlinear_iterations, 50);
-    EXPECT_NEAR(config.underrelaxation, 1.0, 1e-10);
-    EXPECT_FALSE(config.is_steady);
-}
-
-TEST(SchedulerTest, SchedulerConfigCustom)
-{
-    SchedulerConfig config;
-    config.is_steady = true;
-    config.max_nonlinear_iterations = 20;
-    config.underrelaxation = 0.7;
-
-    EXPECT_TRUE(config.is_steady);
-    EXPECT_EQ(config.max_nonlinear_iterations, 20);
-    EXPECT_NEAR(config.underrelaxation, 0.7, 1e-10);
 }
 
 TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
@@ -299,12 +263,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    SchedulerConfig config;
-    config.transient_duration = 5.0;
-    config.time_step = 1.0;
-    config.max_nonlinear_iterations = 20;
-
-    Scheduler scheduler(config);
+    Scheduler scheduler;
     scheduler.setModel(model.get());
     scheduler.setSolver(Solver::create(SolverType::Pardiso));
 

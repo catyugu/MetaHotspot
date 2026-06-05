@@ -147,33 +147,26 @@ namespace mhs::nonlinear {
     struct NonLinearResult { bool converged = false; int iterations = 0; };
 
     struct NonLinearConfig {
-        double underrelaxation = 1.0;
-        int    max_iterations  = 50;
-        double relative_tolerance = 1e-6;
-        double absolute_tolerance = 1e-12;
+        double underrelaxation      = 1.0;
+        int    max_iterations       = 50;
+        double relative_tolerance   = 1e-6;
+        double absolute_tolerance   = 1e-12;
     };
 
     NonLinearResult solve(const InternalModel& model,
                           GlobalState& state,
-                          Solver& solver,
-                          const NonLinearConfig& cfg);
+                          Solver& solver);
 }
 ```
 
 `nonlinear::solve()` 是 Anderson 加速的定点迭代：assemble → solve → underrelax 更新 → 收敛判据。**完整非线性循环在 `nonlinear` 内**，`Scheduler` 不持有私有非线性逻辑。
 
+非线性的所有控制参数（`underrelaxation` / `max_iterations` / 收敛容差）都由本模块**自己持有**——`solve()` 无 cfg 入参；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
+
 ## `scheduler`
 
 ```cpp
 namespace mhs {
-    struct SchedulerConfig {
-        double transient_duration       = 0.0;
-        double time_step                = 1.0;
-        int    max_nonlinear_iterations = 50;
-        double underrelaxation          = 1.0;
-        bool   is_steady                = false;
-    };
-
     class Scheduler {
     public:
         void setModel(InternalModel* model);
@@ -185,6 +178,12 @@ namespace mhs {
 ```
 
 **`scheduler` 在 `mhs` 根命名空间**，无子命名空间。时间状态（`current_time`, `time_step`, `dt`）在 `GlobalState`，非 `Scheduler` 私有成员。
+
+`Scheduler` 不持有任何专属配置；`run()` 全部从 `model_` 读取：
+
+- `study_type` — 决定是否进入时间循环
+- `transient_duration` / `transient_time_step` — 瞬态循环的 `duration` / `dt`
+- 非线性迭代参数 → `nonlinear::solve` 内部默认
 
 `run()` 行为：
 

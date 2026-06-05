@@ -7,14 +7,6 @@
 
 namespace mhs {
 
-    struct SchedulerConfig {
-        double transient_duration = 0.0;
-        double time_step = 1.0;
-        int max_nonlinear_iterations = 50;
-        double underrelaxation = 1.0;
-        bool is_steady = false;
-    };
-
     // 时间步 / 稳态求解完成后的回调。
     // - 瞬态: 在每步 nonlinear::solve 完成后、current_time += dt 之前触发。
     // - 稳态: 在 run() 末尾触发一次，保持接口统一。
@@ -25,7 +17,6 @@ namespace mhs {
     class Scheduler {
     public:
         Scheduler() = default;
-        explicit Scheduler(const SchedulerConfig& config) : config_(config) { }
         ~Scheduler() = default;
 
         void setModel(InternalModel* model) { model_ = model; }
@@ -40,7 +31,6 @@ namespace mhs {
     private:
         InternalModel* model_ = nullptr;
         std::unique_ptr<Solver> solver_;
-        SchedulerConfig config_;
         GlobalState state_;
         std::vector<double> solution_;
         StepCallback callback_;

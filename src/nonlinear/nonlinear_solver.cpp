@@ -6,9 +6,10 @@
 
 namespace mhs::nonlinear {
 
-    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg)
+    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver)
     {
         assembler::Assembler assembler(model);
+        NonLinearConfig cfg;
 
         double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
 

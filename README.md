@@ -29,8 +29,8 @@
 - **preprocessor**：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::preprocessor::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
 - **assembler**：消费内部模型配置和当前全局状态，给出组装后的线性系统 `A·T = b`。`mhs::assembler::{Assembler, LinearSystem, ThreadLocalData}`。TBB 并行。
 - **solver**：线性求解器，使用工厂设计模式选择并实例化不同求解器。命名空间为 `mhs`（没有独立的 `mhs::solver` 命名空间）。`mhs::{Solver, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver}`。
-- **nonlinear**：非线性迭代求解（`mhs::nonlinear::{NonLinearConfig, NonLinearResult, solve}`）。`Scheduler` 调用此模块在每个时间步内做非线性迭代直到收敛或达到 `max_nonlinear_iterations`。
-- **scheduler**：调度完整的求解流程，时间步推进 + 每步内的非线性迭代协调。`mhs::{Scheduler, SchedulerConfig}`，方法 `setModel / setSolver / run / solution`。
+- **nonlinear**：非线性迭代求解（`mhs::nonlinear::{NonLinearConfig, NonLinearResult, solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由本模块**自己持有**，调用方无 cfg 入参；`Scheduler` 在每个时间步内调用 `solve` 直到收敛或达到模块内部的迭代上限。
+- **scheduler**：调度完整的求解流程，时间步推进。`mhs::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `InternalModel` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `nonlinear` 模块自管。
 - **postprocessor**：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::Postprocessor`。
 
 ### 工具模块

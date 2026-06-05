@@ -21,21 +21,18 @@ namespace mhs {
         state_.residual.resize(N, 0.0);
         state_.current_time = 0.0;
         state_.time_step = 0;
-        state_.dt = config_.time_step;
-
-        const nonlinear::NonLinearConfig nl_cfg {config_.underrelaxation, config_.max_nonlinear_iterations};
+        state_.dt = model_->transient_time_step;
 
         if (model_->study_type == StudyType::Steady) {
-            nonlinear::solve(*model_, state_, *solver_, nl_cfg);
+            nonlinear::solve(*model_, state_, *solver_);
             solution_ = state_.T;
             if (callback_) {
                 callback_(state_.current_time, state_.time_step, state_.T);
             }
         }
         else {
-            double duration
-                = model_->transient_duration > 0.0 ? model_->transient_duration : config_.transient_duration;
-            double dt = model_->transient_time_step > 0.0 ? model_->transient_time_step : config_.time_step;
+            const double duration = model_->transient_duration;
+            const double dt = model_->transient_time_step;
             state_.dt = dt;
             if (callback_) {
                 callback_(state_.current_time, state_.time_step, state_.T);
@@ -43,7 +40,7 @@ namespace mhs {
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
-                auto result = nonlinear::solve(*model_, state_, *solver_, nl_cfg);
+                auto result = nonlinear::solve(*model_, state_, *solver_);
                 if (!result.converged) {
                     MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
                 }
