@@ -101,4 +101,4 @@ struct InternalModel {
 - **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **无 ring buffer**：当前仅支持 Backward Euler；多步法（`T_history` / `dt_history`）尚未实现
-- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。postprocessor 中的梯度外推使用三轴算术平均作为"软"权重——见 ADR-0006。
+- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::face_dir_tables`（`src/common/face_dir_tables.hpp`），由装配器和预处理器共享。

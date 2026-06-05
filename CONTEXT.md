@@ -69,15 +69,15 @@ XML → io::read_xml → IOStructure
 
 ## 命名空间速查
 
-| 命名空间            |     | 暴露类型 / 函数                                                            |
-| ------------------- | --- | -------------------------------------------------------------------------- |
-| `mhs`               |     | Preprocessor、Solver、Scheduler、Postprocessor、IOStructure、InternalModel |
-| `mhs::io`           |     | `read_xml` / `write_vtu` / `write_xml`                                     |
-| `mhs::expr`         |     | `CompiledExpression` / `parse` / 注册表                                    |
-| `mhs::preprocessor` |     | 自由函数 `resolve_*` / `parse_face_key` / `point_in_face_rects`            |
-| `mhs::assembler`    |     | `Assembler` / `LinearSystem`                                               |
-| `mhs::nonlinear`    |     | `solve()` / `NonLinearConfig` / `NonLinearResult`                          |
-| `mhs::logger`       |     | `init` / `flush` / `panic` + 模板 debug/info/warn/error                    |
+| 命名空间            |     | 暴露类型 / 函数                                                                                        |
+| ------------------- | --- | ------------------------------------------------------------------------------------------------------ |
+| `mhs`               |     | Preprocessor、Solver、Scheduler、Postprocessor、IOStructure、InternalModel、`face_dir_tables` 查表助手 |
+| `mhs::io`           |     | `read_xml` / `write_vtu` / `write_xml`                                                                 |
+| `mhs::expr`         |     | `CompiledExpression` / `parse` / 注册表                                                                |
+| `mhs::preprocessor` |     | 自由函数 `resolve_*` / `parse_face_key` / `point_in_face_rects`                                        |
+| `mhs::assembler`    |     | `Assembler` / `LinearSystem`                                                                           |
+| `mhs::nonlinear`    |     | `solve()` / `NonLinearConfig` / `NonLinearResult`                                                      |
+| `mhs::logger`       |     | `init` / `flush` / `panic` + 模板 debug/info/warn/error                                                |
 
 > `solver` / `scheduler` / `postprocessor` 没有独立子命名空间 — 类型直接挂在 `mhs::`。
 

@@ -12,7 +12,7 @@ MetaHotspot/
 ├── src/
 │   ├── io/                      # mhs::io        XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::expr      exprtk 封装, CompiledExpression
-│   ├── common/                  # mhs, mhs::logger  types, io_model, internal_model
+│   ├── common/                  # mhs, mhs::logger  types, io_model, internal_model, face_dir_tables
 │   ├── preprocessor/            # mhs::preprocessor (free fns) + mhs::Preprocessor
 │   ├── assembler/               # mhs::assembler TBB 并行组装
 │   ├── solver/                  # mhs           Eigen 求解器工厂
@@ -76,14 +76,14 @@ namespace mhs::logger {
 
 ## 命名空间
 
-| 命名空间            | 内容                                                                  |
-| ------------------- | --------------------------------------------------------------------- |
-| `mhs`               | 域类型、IO/内部模型、Preprocessor、Solver、Scheduler、Postprocessor   |
-| `mhs::io`           | XML/VTU 序列化                                                        |
-| `mhs::expr`         | exprtk 封装、CompiledExpression、注册表                               |
-| `mhs::preprocessor` | 自由函数：resolve_*, parse_face_key, …                                |
-| `mhs::assembler`    | Assembler、LinearSystem、ThreadLocalData                              |
-| `mhs::nonlinear`    | `solve()` 自由函数                                                    |
-| `mhs::logger`       | spdlog 封装 + `panic()`                                               |
+| 命名空间            | 内容                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `mhs`               | 域类型、IO/内部模型、Preprocessor、Solver、Scheduler、Postprocessor、`face_dir_tables` 查表助手 |
+| `mhs::io`           | XML/VTU 序列化                                                                                  |
+| `mhs::expr`         | exprtk 封装、CompiledExpression、注册表                                                         |
+| `mhs::preprocessor` | 自由函数：resolve_*, parse_face_key, …                                                          |
+| `mhs::assembler`    | Assembler、LinearSystem、ThreadLocalData                                                        |
+| `mhs::nonlinear`    | `solve()` 自由函数                                                                              |
+| `mhs::logger`       | spdlog 封装 + `panic()`                                                                         |
 
 `solver` / `scheduler` / `postprocessor` **没有**独立子命名空间 — 类型直接在 `mhs::`。

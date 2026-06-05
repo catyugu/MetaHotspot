@@ -78,7 +78,7 @@ IOStructure
         ├─> resolve_layers()       // valid_mask, index_map, material_id, layer_id
         ├─> heat_source_table      // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> resolve_face_keys()    // CellBC + BCParamTable
+        ├─> resolve_face_keys()    // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
         └─> InternalModel ready
 ```
 
@@ -100,7 +100,7 @@ namespace mhs::assembler {
 }
 ```
 
-`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。组装项：
+`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::face_dir_tables.hpp`，不再在 assembler 内定义 switch 分支。组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）

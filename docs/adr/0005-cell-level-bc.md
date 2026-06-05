@@ -35,8 +35,8 @@ IOStructure
         │     ├─> valid_mask, index_map
         │     └─> material_id, layer_id (full-grid)
         ├─> preprocessor::resolve_face_keys()
-        │     └─> CellBC per cell, per face (handles overlap)
-        ├─> Apply other_bc to unspecified faces
+        │     ├─> flatten (boundary, face_key) pairs
+        │     └─> single grid traversal → CellBC per cell, per face, with `other_bc` fallback (handles overlap)
         └─> Compile expressions → BCParamTable + heat_source_table
 ```
 

@@ -13,7 +13,7 @@ XML
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> resolve_layers           (valid_mask, index_map, material_id, layer_id)
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
-                      ├─> resolve_face_keys        (CellBC + BCParamTable + other_bc)
+                      ├─> resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
                       └─> InternalModel
                               └─> Scheduler::run
                                     ├─> Assembler::assemble(state)
@@ -80,3 +80,5 @@ XML
 ### 8. 各向异性热导率 — 面法向匹配与后处理退化
 
 `MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和梯度外推时使用三轴算术平均 `(kx+ky+kz)/3` 作为反距离权重，以避免对单一方向的偏置。详见 ADR-0006。
+
+`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/face_dir_tables.hpp`（`mhs` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。
