@@ -43,17 +43,17 @@
 ## 求解流程
 
 ```text
-XML → io::read_xml → IOStructure
-  → Preprocessor::load → InternalModel
-    → Scheduler::run
-        └─ Assembler::assemble(state)   [tbb::parallel_for + ETS, 锁无关]
-            → nonlinear::solve()        [Anderson 加速定点迭代]
-                → Solver::solve(A, b)   [SparseLU / BiCGSTAB]
-        → Postprocessor::interpolate_cell_to_node
+XML → core::IOStructure via io::read_xml
+  → sim::Preprocessor::load → core::InternalModel
+    → sim::Scheduler::run
+        └─ sim::Assembler::assemble(state)   [tbb::parallel_for + ETS, 锁无关]
+            → sim::nonlinear_solve()          [Anderson 加速定点迭代]
+                → sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        → post::interpolate_cell_to_node
             → io::write_vtu + io::write_xml
 ```
 
-时间状态（`current_time` / `time_step` / `dt`）存于 `GlobalState`，不在 `Scheduler` 私有成员。
+时间状态（`current_time` / `time_step` / `dt`）存于 `mhs::core::GlobalState`，不在 `mhs::sim::Scheduler` 私有成员。
 
 ## 关键设计原则
 
@@ -67,19 +67,24 @@ XML → io::read_xml → IOStructure
 8. 无虚函数（`Solver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `panic`）
 9. POD / 纯函数优先
 
-## 命名空间速查
+## 命名空间速查（领域驱动，ADR-0007）
 
-| 命名空间            |     | 暴露类型 / 函数                                                                                        |
-| ------------------- | --- | ------------------------------------------------------------------------------------------------------ |
-| `mhs`               |     | Preprocessor、Solver、Scheduler、Postprocessor、IOStructure、InternalModel、`face_dir_tables` 查表助手 |
-| `mhs::io`           |     | `read_xml` / `write_vtu` / `write_xml`                                                                 |
-| `mhs::expr`         |     | `CompiledExpression` / `parse` / 注册表                                                                |
-| `mhs::preprocessor` |     | 自由函数 `resolve_*` / `parse_face_key` / `point_in_face_rects`                                        |
-| `mhs::assembler`    |     | `Assembler` / `LinearSystem`                                                                           |
-| `mhs::nonlinear`    |     | `solve()` / `NonLinearConfig` / `NonLinearResult`                                                      |
-| `mhs::logger`       |     | `init` / `flush` / `panic` + 模板 debug/info/warn/error                                                |
+命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
-> `solver` / `scheduler` / `postprocessor` 没有独立子命名空间 — 类型直接挂在 `mhs::`。
+| 命名空间      | 源目录                                                           | 暴露类型 / 函数                                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mhs::core`   | `common/`（除 logger）+ `expr/`                                  | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、face_dir_tables 查表                                               |
+| `mhs::sim`    | `assembler/` `solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver（原 Solver）、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::io`     | `io/`                                                            | read_xml / write_vtu / write_xml                                                                                                                                                  |
+| `mhs::post`   | `postprocessor/`                                                 | interpolate_cell_to_node 及导出场函数                                                                                                                                             |
+| `mhs::logger` | `common/logger.*`                                                | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                 |
+
+### 铁律
+
+1. **`mhs` 壳不含类型** — 不重导出、不定义；纯品牌前缀。
+2. **core 不依赖兄弟** — core → 无 sim/io/post/logger include；sim/io/post 可依赖 core。依赖反转解决 core 需要 sim 行为的场景。
+3. **`.hpp` 绝不 `using namespace`** — 全限定名。`.cpp` 保持现状。
+4. **匿名 ns = 单文件私有，detail = 跨文件私有** — 公共符号不进第三层。
 
 ## 术语表
 
