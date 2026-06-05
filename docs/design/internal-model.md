@@ -83,7 +83,7 @@ struct InternalModel {
     MeshGeometry       mesh;
     CellFields         cells;
     BCParamTable       bc_params;
-    std::vector<MaterialProps> material_table;     // CompiledExpression { k, rho, c }
+    std::vector<MaterialProps> material_table;     // CompiledExpression { kx, ky, kz, rho, c }
 
     std::vector<CompiledExpression> heat_source_table;  // dedup; idx 0 = constant 0
 
@@ -101,3 +101,4 @@ struct InternalModel {
 - **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **无 ring buffer**：当前仅支持 Backward Euler；多步法（`T_history` / `dt_history`）尚未实现
+- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。postprocessor 中的梯度外推使用三轴算术平均作为"软"权重——见 ADR-0006。

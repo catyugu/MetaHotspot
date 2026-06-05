@@ -23,6 +23,8 @@
 | SecondType | `-k ∂T/∂n = q₀`         | 累入 RHS：`Σ q·A_face`          |
 | ThirdType  | `-k ∂T/∂n = h(T − T_∞)` | 对角 `h·A` 系数 + RHS `h·A·T_∞` |
 
+> 各项异性 `k`（ADR-0006）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
+
 `other_bc` 在预处理阶段填到所有未显式指定的面 + 虚拟邻居面。
 
 ## 表达式（ADR-0004）
@@ -88,9 +90,9 @@ XML → io::read_xml → IOStructure
 | Block           | 块       | XY 平面 add/sub Rect 几何；Z 范围继承父层                             |
 | Rect            | 矩形     | 块几何的 add/sub 单元                                                 |
 | FaceKey         | 面键     | 字符串 `Face\|Direction\|CoordValue\|RectList`，CoordValue 是空间坐标 |
-| Material        | 材料     | 含 k / ρ / c（均为字符串表达式）                                      |
+| Material        | 材料     | 含 kx/ky/kz / ρ / c（均为字符串表达式）                               |
 | BC / `other_bc` | 边界条件 | 三种类型 + 默认兜底                                                   |
-| Daore Xishu     | 导热系数 | k, W/(m·K)                                                            |
+| Daore Xishu     | 导热系数 | kx/ky/kz, W/(m·K); 1 或 3 段逗号分隔                                  |
 | Midu            | 密度     | ρ, kg/m³                                                              |
 | Bi Rerong       | 比热容   | c, J/(kg·K)                                                           |
 | ti_reyuan_expr  | 体热源   | Block 的体热源密度表达式 [W/m³]                                       |
@@ -103,4 +105,4 @@ XML → io::read_xml → IOStructure
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`
 - 项目结构 / Logger / 命名空间 → `docs/design/project-structure.md`
-- ADR 决策记录 → `docs/adr/0001-…0005`
+- ADR 决策记录 → `docs/adr/0001-…0006`

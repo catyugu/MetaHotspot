@@ -55,7 +55,9 @@ struct Boundary { BoundaryCategory category; std::string name;
 
 // 材料
 struct Material { std::string name;
-                  std::string daore_xishu = "0.0";   // k
+                  std::string kx = "0.0";   // 热导率 X 方向 [W/(m·K)]
+                  std::string ky = "0.0";   // 热导率 Y 方向 [W/(m·K)]
+                  std::string kz = "0.0";   // 热导率 Z 方向 [W/(m·K)]
                   std::string midu        = "0.0";   // rho
                   std::string bi_rerong   = "0.0"; }; // c
 
@@ -86,13 +88,7 @@ struct IOStructure {
     ThirdTypeThermalBC  other_bc_third;
 
     std::vector<double> mesh_vertex_x, mesh_vertex_y, mesh_vertex_z;
-
-    // 已注册为 native function 的 C++ 求值器。
-    // ⚠️ TODO(Function types): 当前为扁平 map；
-    //    计划从 XML 解析结构化函数定义（Gauss、PieceWise、…）→ 编译为 CompiledExpression / FieldEvaluator。
-    //    计划类型（未实现）：enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise }
-    //    + ExpressionFunction / DoubleExponentialFunction / GaussFunction / SineFunction / PieceWiseFunction / Function。
-    std::unordered_map<std::string, FieldEvaluator> functions;
+    std::unordered_map<std::string, Function> functions;
 };
 
 } // namespace mhs
@@ -185,6 +181,16 @@ Face|Direction|CoordValue|RectList
 ### `ti_reyuan_expr`（体热源）
 
 每个 Block 一个体热源密度表达式 `[W/m³]`，由 `preprocessor` 去重后编入 `heat_source_table`。可以是常数（`"1e9"`）、空间函数（`"1e8 + 0.5*x"`），或任意 exprtk 表达式。
+
+### `kx / ky / kz`（各向异性热导率）
+
+材料热导率按笛卡尔三轴拆分（**W/(m·K)**），与装配时面法向匹配（X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`）。`io` 模块在解析 `DaoreXishu` 节点时按以下规则拆分：
+
+- **单表达式**（如 `DaoreXishu>100</DaoreXishu>`）→ `kx = ky = kz = "100"`，退化为各向同性。
+- **三表达式**（`DaoreXishu>kx_expr, ky_expr, kz_expr</DaoreXishu>`）→ 按逗号分隔（容忍空白）分别赋给 `kx / ky / kz`。
+- 其它段数（2 段、4 段及以上）经 `MHS_LOG_ERROR` panic。
+
+> 设计动机与边界面取值策略见 ADR-0006。
 
 ### Block 不含 Z 字段
 

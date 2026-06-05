@@ -10,7 +10,7 @@ XML
                       ├─> expr::clear_registry + set_variable(几何) + register_native(ios.functions)
                       ├─> MeshGeometry (×si_scale)
                       ├─> resolve_geometry         (几何预求)
-                      ├─> material_table           (k/ρ/c 编译)
+                      ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> resolve_layers           (valid_mask, index_map, material_id, layer_id)
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
                       ├─> resolve_face_keys        (CellBC + BCParamTable + other_bc)
@@ -18,13 +18,16 @@ XML
                               └─> Scheduler::run
                                     ├─> Assembler::assemble(state)
                                     │     ├─> tbb::parallel_for(0, total)   // skip virtual
-                                    │     │     ├─> material_table[mat_id].{k,ρ,c}.eval(ctx)
+                                    │     │     ├─> material_table[mat_id].{kx,ky,kz,ρ,c}.eval(ctx)
+                                    │     │     ├─> k_along(dir) 选用该面法向对应的 k
                                     │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
                                     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     └─> thread-local triplets + b
                                     │     ├─> combine_each merge
                                     │     └─> nonlinear::solve → Solver::solve(A,b)
                                     └─> Postprocessor::interpolate_cell_to_node
+                                          ├─> cell 内 k 退化为三轴算术平均（软权重）
+                                          ├─> 面中心外推使用该面法向对应的 k
                                           └─> io::write_vtu + io::write_xml   (virtual → NaN)
 ```
 
@@ -73,3 +76,7 @@ XML
 ### 7. 无异常，panic 退出
 
 不可恢复错误经 `MHS_LOG_ERROR` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/exprtk 的 `std::exception` 并转 panic — 边界 entry 必需。
+
+### 8. 各向异性热导率 — 面法向匹配与后处理退化
+
+`MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和梯度外推时使用三轴算术平均 `(kx+ky+kz)/3` 作为反距离权重，以避免对单一方向的偏置。详见 ADR-0006。
