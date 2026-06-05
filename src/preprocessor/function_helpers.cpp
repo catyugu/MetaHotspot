@@ -1,9 +1,8 @@
+#include "common/logger.hpp"
+#include "expr/expr.hpp"
 #include "function_helpers.hpp"
 
-#include "expr/expr.hpp"
-
 #include <cmath>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -100,8 +99,8 @@ namespace mhs::preprocessor {
                 std::string_view name(expr_str.data() + start, i - start);
                 if (i < n && expr_str[i] == '(') {
                     if (!is_known_builtin(name) && fns.find(std::string(name)) == fns.end()) {
-                        throw std::runtime_error("unknown function '" + std::string(name) + "' referenced in '"
-                            + expr_str + "': must be declared in <Functions>");
+                        MHS_LOG_ERROR("unknown function {} referenced in {} : must be declared in <Functions>",
+                            std::string(name), expr_str);
                     }
                     out.append(expr_str, start, i - start);
                 }
