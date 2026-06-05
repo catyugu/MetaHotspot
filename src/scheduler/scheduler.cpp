@@ -29,6 +29,9 @@ namespace mhs {
         if (model_->study_type == StudyType::Steady) {
             nonlinear::solve(*model_, state_, *solver_, nl_cfg);
             solution_ = state_.T;
+            if (callback_.on_step_done) {
+                callback_.on_step_done(state_.current_time, state_.time_step, state_.T);
+            }
         }
         else {
             double duration = model_->transient_duration > 0.0 ? model_->transient_duration
@@ -36,6 +39,11 @@ namespace mhs {
             double dt = model_->transient_time_step > 0.0 ? model_->transient_time_step
                                                           : config_.time_step;
             state_.dt = dt;
+
+            // t=0 初始状态：单独触发一次回调，确保 trace 包含初始温度。
+            if (callback_.on_step_done) {
+                callback_.on_step_done(state_.current_time, state_.time_step, state_.T);
+            }
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
@@ -47,6 +55,12 @@ namespace mhs {
 
                 state_.current_time += dt;
                 state_.time_step++;
+
+                // 每步求解完成、current_time 已推进到本步末端后触发回调。
+                // 节点插值与探针采样应当基于本步收敛后的解。
+                if (callback_.on_step_done) {
+                    callback_.on_step_done(state_.current_time, state_.time_step, state_.T);
+                }
             }
 
             solution_ = state_.T;

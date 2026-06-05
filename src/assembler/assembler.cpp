@@ -200,10 +200,12 @@ namespace mhs::assembler {
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
             if (model_.study_type == StudyType::Transient && state.dt > 0.0) {
+                // 标准 backward Euler：质量项用 T_prev 求值（与 T 解耦），
+                // 这样 mass_coeff 在非线性迭代中是常数，避免在更新 T 时反复重算。
                 double rho = materials[mat_id].rho.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
                 double c_heat = materials[mat_id].c.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
 
                 double mass_coeff = rho * c_heat * vol / state.dt;
                 local.triplets.emplace_back(c_idx, c_idx, mass_coeff);

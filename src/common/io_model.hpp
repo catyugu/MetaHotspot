@@ -139,6 +139,21 @@ namespace mhs {
 
     enum class Dimension { Dimension2D, Dimension3D };
 
+    // 3D 探针（观察点）：用户坐标系下的固定位置，求解器在每个时间步记录该点温度。
+    struct ObservationPoint3D {
+        std::string name;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
+    // 探针温度时间序列：与 ObservationPoint3D::name 一一对应，times/values 等长。
+    struct ProbeTrace {
+        std::string name;
+        std::vector<double> times;
+        std::vector<double> values;
+    };
+
     struct IOStructure {
         StudyType study_type;
         Dimension dimension;
@@ -166,6 +181,9 @@ namespace mhs {
         std::vector<double> mesh_vertex_z;
 
         std::unordered_map<std::string, Function> functions;
+
+        // 3D 观察点（探针）列表，默认空：稳态 case 不会有此项。
+        std::vector<ObservationPoint3D> observation_points;
     };
 
 } // namespace mhs

@@ -101,6 +101,27 @@ namespace mhs {
             }
             return T_c;
         }
+
+        // 二分查找 vertex 数组中第一个 > value 的下标；点落在 [vertex[lo], vertex[hi]) 区间内。
+        // 若 value <= vertex[0] 返回 0；若 value >= vertex[n-1] 返回 n-1（调用方需另作越界判断）。
+        template <typename T>
+        int locate_cell_index(const std::vector<T>& vertex, T value)
+        {
+            int n = static_cast<int>(vertex.size());
+            if (n < 2)
+                return -1;
+            if (value < vertex.front() || value > vertex.back())
+                return -1;
+            int lo = 0, hi = n - 1;
+            while (hi - lo > 1) {
+                int mid = (lo + hi) / 2;
+                if (vertex[mid] <= value)
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+            return lo;
+        }
     }
 
     std::vector<double> Postprocessor::interpolate_cell_to_node(
@@ -244,6 +265,126 @@ namespace mhs {
                 min_val = v;
         }
         return std::isnan(min_val) ? 0.0 : min_val;
+    }
+
+    double Postprocessor::sample_point(
+        const std::vector<double>& node_T, const InternalModel& model, const ObservationPoint3D& point) const
+    {
+        const auto& mesh = model.mesh;
+        const auto& cells = model.cells;
+
+        const double px = point.x;
+        const double py = point.y;
+        const double pz = point.z;
+
+        // 在 vertex 数组中定位包围 cell：vertex[ix] ≤ px < vertex[ix+1]，对 Y/Z 同理。
+        int ix = locate_cell_index(mesh.vertex_x, px);
+        int iy = locate_cell_index(mesh.vertex_y, py);
+        int iz = locate_cell_index(mesh.vertex_z, pz);
+        if (ix < 0 || iy < 0 || iz < 0)
+            return std::numeric_limits<double>::quiet_NaN();
+
+        int cell_grid_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+        if (cells.valid_mask[cell_grid_idx] == 0)
+            return std::numeric_limits<double>::quiet_NaN();
+
+        int compact_idx = static_cast<int>(cells.index_map[cell_grid_idx]);
+
+        // Dirichlet 优先：若探针恰在 FirstType 边界面上，直接返回 Dirichlet 值。
+        std::array<bool, FACE_COUNT> on_face {};
+        if (std::abs(px - mesh.vertex_x[0]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::XM)] = true;
+        if (mesh.nx >= 1 && std::abs(px - mesh.vertex_x[mesh.nx]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::XP)] = true;
+        if (std::abs(py - mesh.vertex_y[0]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::YM)] = true;
+        if (mesh.ny >= 1 && std::abs(py - mesh.vertex_y[mesh.ny]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::YP)] = true;
+        if (std::abs(pz - mesh.vertex_z[0]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::ZM)] = true;
+        if (mesh.nz >= 1 && std::abs(pz - mesh.vertex_z[mesh.nz]) < 1e-12)
+            on_face[static_cast<size_t>(FaceDir::ZP)] = true;
+        for (size_t d = 0; d < FACE_COUNT; ++d) {
+            if (!on_face[d])
+                continue;
+            BcType bc = cells.cell_bcs[compact_idx].types[d];
+            if (bc == BcType::FirstType) {
+                uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[d];
+                // 取 cell 8 顶点平均作 T_c 上下文（BC 表达式可能用到 T）
+                int node_ny = mesh.ny + 1;
+                int node_nz = mesh.nz + 1;
+                double sum = 0.0;
+                int cnt = 0;
+                for (int dx = 0; dx <= 1; ++dx)
+                    for (int dy = 0; dy <= 1; ++dy)
+                        for (int dz = 0; dz <= 1; ++dz) {
+                            int nidx = (ix + dx) * node_ny * node_nz + (iy + dy) * node_nz + (iz + dz);
+                            if (nidx >= 0 && nidx < static_cast<int>(node_T.size()) && !std::isnan(node_T[nidx])) {
+                                sum += node_T[nidx];
+                                ++cnt;
+                            }
+                        }
+                double T_ctx = cnt > 0 ? sum / cnt : 0.0;
+                return model.bc_params.dirichlet_T[param_idx].eval({px, py, pz, T_ctx, 0.0});
+            }
+        }
+
+        // 构造 LSQ 数据点：cell 8 个顶点（温度来自 interpolate_cell_to_node 的输出）。
+        std::vector<DataPoint> pts;
+        int node_ny = mesh.ny + 1;
+        int node_nz = mesh.nz + 1;
+        // cell 中心温度用作 k 表达式求值的 T 上下文（取 8 顶点平均）
+        double sum_node = 0.0;
+        int cnt_node = 0;
+        for (int dx = 0; dx <= 1; ++dx)
+            for (int dy = 0; dy <= 1; ++dy)
+                for (int dz = 0; dz <= 1; ++dz) {
+                    int nidx = (ix + dx) * node_ny * node_nz + (iy + dy) * node_nz + (iz + dz);
+                    if (nidx >= 0 && nidx < static_cast<int>(node_T.size()) && !std::isnan(node_T[nidx])) {
+                        sum_node += node_T[nidx];
+                        ++cnt_node;
+                    }
+                }
+        if (cnt_node == 0)
+            return std::numeric_limits<double>::quiet_NaN();
+        double T_c = sum_node / cnt_node;
+
+        double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
+            {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+
+        for (int dx = 0; dx <= 1; ++dx) {
+            for (int dy = 0; dy <= 1; ++dy) {
+                for (int dz = 0; dz <= 1; ++dz) {
+                    double vx = mesh.vertex_x[ix + dx];
+                    double vy = mesh.vertex_y[iy + dy];
+                    double vz = mesh.vertex_z[iz + dz];
+                    int nidx = (ix + dx) * node_ny * node_nz + (iy + dy) * node_nz + (iz + dz);
+                    double Tv = (nidx >= 0 && nidx < static_cast<int>(node_T.size())) ? node_T[nidx] : T_c;
+                    if (std::isnan(Tv))
+                        Tv = T_c;
+                    double dist2 = (vx - px) * (vx - px) + (vy - py) * (vy - py) + (vz - pz) * (vz - pz);
+                    double w = k / (dist2 + 1e-16);
+                    pts.push_back({vx, vy, vz, Tv, w});
+                }
+            }
+        }
+
+        // 边界外推：对该 cell 6 个面，若为 Neumann/Cauchy BC 则追加面中心外推观测。
+        for (size_t d = 0; d < FACE_COUNT; ++d) {
+            BcType bc = cells.cell_bcs[compact_idx].types[d];
+            if (bc == BcType::None || bc == BcType::FirstType)
+                continue;
+            FaceDir dir = FACE_DIRS[d];
+            uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[d];
+            double fx, fy, fz;
+            get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
+            double T_f = extrapolate_face_temperature(dir, bc, param_idx, T_c, k, mesh, ix, iy, iz, model.bc_params);
+            double fdist2 = (fx - px) * (fx - px) + (fy - py) * (fy - py) + (fz - pz) * (fz - pz);
+            double w_face = k / (fdist2 + 1e-16);
+            pts.push_back({fx, fy, fz, T_f, w_face});
+        }
+
+        return solve_least_squares(pts, px, py, pz);
     }
 
 } // namespace mhs

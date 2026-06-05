@@ -1,10 +1,10 @@
 #include "expr/expr.hpp"
 #include "preprocessor/function_helpers.hpp"
 
+#include "gtest/gtest.h"
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <stdexcept>
 #include <unordered_map>
 
 #ifndef M_PI
@@ -39,14 +39,14 @@ namespace {
     TEST(FunctionHelpers, GaussEvaluatorAtCenter)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
-        FieldContext ctx {0,0,0,0,0};
+        FieldContext ctx {0, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(ctx), 1.0);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorAtOneTau)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
-        FieldContext ctx {0,0,0,0,1.0};
+        FieldContext ctx {0, 0, 0, 0, 1.0};
         EXPECT_NEAR(ev(ctx), std::exp(-1.0), 1e-12);
     }
 
@@ -54,14 +54,14 @@ namespace {
     {
         // A=5, tau=10, x0=20, t=20 → A*exp(0) = 5
         auto ev = make_gauss_evaluator(5.0, 10.0, 20.0);
-        FieldContext ctx {0,0,0,0,20.0};
+        FieldContext ctx {0, 0, 0, 0, 20.0};
         EXPECT_DOUBLE_EQ(ev(ctx), 5.0);
     }
 
     TEST(FunctionHelpers, SineEvaluatorAtHalfPi)
     {
         auto ev = make_sine_evaluator(1.0, 1.0, 0.0);
-        FieldContext ctx {0,0,0,0,M_PI / 2.0};
+        FieldContext ctx {0, 0, 0, 0, M_PI / 2.0};
         EXPECT_NEAR(ev(ctx), 1.0, 1e-12);
     }
 
@@ -69,7 +69,7 @@ namespace {
     {
         // A=5, omega=200, phi=1.57, t=0 → 5*sin(1.57) ≈ 5
         auto ev = make_sine_evaluator(5.0, 200.0, 1.57);
-        FieldContext ctx {0,0,0,0,0};
+        FieldContext ctx {0, 0, 0, 0, 0};
         EXPECT_NEAR(ev(ctx), 5.0 * std::sin(1.57), 1e-9);
     }
 
@@ -77,32 +77,32 @@ namespace {
     {
         // A*(exp(alpha*0) - exp(beta*0)) = A*(1-1) = 0
         auto ev = make_double_exp_evaluator(1.0, 0.5, 0.1);
-        FieldContext ctx {0,0,0,0,0};
+        FieldContext ctx {0, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(ctx), 0.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0,-1},{1,2},{5,3}};
+        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
-        FieldContext ctx {0,0,0,0,-1.0};
+        FieldContext ctx {0, 0, 0, 0, -1.0};
         EXPECT_DOUBLE_EQ(ev(ctx), -1.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0,-1},{1,2},{5,3}};
+        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
-        FieldContext ctx {0,0,0,0,10.0};
+        FieldContext ctx {0, 0, 0, 0, 10.0};
         EXPECT_DOUBLE_EQ(ev(ctx), 3.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0,-1},{1,2},{5,3}};
+        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
-        FieldContext ctx {0,0,0,0,3.0};
+        FieldContext ctx {0, 0, 0, 0, 3.0};
         EXPECT_DOUBLE_EQ(ev(ctx), 2.5);
     }
 
@@ -192,7 +192,7 @@ namespace {
     TEST(Substitute, UnknownFunctionPanics)
     {
         std::unordered_map<std::string, Function> fns;
-        EXPECT_THROW(substitute_function_args("foo(x)", "T", fns), std::runtime_error);
+        EXPECT_DEATH(substitute_function_args("foo(x)", "T", fns), "");
     }
 
     // ---- 注册 native + 端到端 eval --------------------------------------
@@ -218,7 +218,7 @@ namespace {
         auto compiled = mhs::expr::parse(out);
         // Native 接收 exprtk 绑定的 arg0（这里是 T 槽），广播到所有 ctx 槽；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
-        FieldContext ctx {0,0,0,20.0,0.0};
+        FieldContext ctx {0, 0, 0, 20.0, 0.0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }
 

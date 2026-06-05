@@ -281,3 +281,192 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
         }
     }
 }
+
+TEST(PostprocessorTest, SamplePointOnUniformFieldReturnsFieldValue)
+{
+    // 2x2x2 cell grid, all cells at 300K.
+    // Sample point at (3, 3, 3) (mm) — inside a single cell.
+    // sample_point uses cell-corner LSQ; for a uniform field every corner is 300K
+    // and the LSQ fit is constant → expect 300K.
+    auto io = make_simple_uniform_grid_io();
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int N = model->cells.cell_count;
+    std::vector<double> cell_T(N, 300.0);
+
+    Postprocessor postprocessor;
+    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+
+    ObservationPoint3D pt;
+    pt.name = "center";
+    // model->mesh 已是 SI 单位 (vertex_x = {0, 0.005, 0.01})
+    pt.x = 0.003;
+    pt.y = 0.003;
+    pt.z = 0.003;
+
+    double T = postprocessor.sample_point(node_T, *model, pt);
+    EXPECT_FALSE(std::isnan(T)) << "Interior point should not be NaN";
+    EXPECT_NEAR(T, 300.0, 1e-6);
+}
+
+TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
+{
+    // 5x5x5 cell grid, T = 300 + 100*z (linear in z). Sample at z=6mm
+    // should return ~ 300 + 100*0.006 = 300.6K (mesh vertex z range 0..10mm
+    // so vertex 6 mm → normalized t = 0.6 → T = 360K).
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0.0, 2.0, 4.0, 6.0, 8.0, 10.0};
+    io.mesh_vertex_y = {0.0, 2.0, 4.0, 6.0, 8.0, 10.0};
+    io.mesh_vertex_z = {0.0, 2.0, 4.0, 6.0, 8.0, 10.0};
+
+    Layer layer;
+    layer.name = "linear";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+
+    Block block;
+    block.name = "b";
+    block.material_name = "mat";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material mat;
+    mat.name = "mat";
+    mat.daore_xishu = "400";
+    io.materials["mat"] = mat;
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int node_ny = model->mesh.ny + 1;
+    int node_nz = model->mesh.nz + 1;
+    std::vector<double> node_T(node_ny * node_nz * node_ny, 0.0);
+
+    // Set node T = 300 + 6 * vertex_z  (in SI vertex_z range 0..0.01 → T 300..360)
+    for (int vx = 0; vx < node_ny; vx++)
+        for (int vy = 0; vy < node_ny; vy++)
+            for (int vz = 0; vz < node_nz; vz++) {
+                double z = model->mesh.vertex_z[vz];
+                node_T[vx * node_ny * node_nz + vy * node_nz + vz] = 300.0 + 6.0 * z;
+            }
+
+    ObservationPoint3D pt;
+    pt.name = "z6";
+    pt.x = 0.005; // 5 mm
+    pt.y = 0.005;
+    pt.z = 0.006; // 6 mm
+
+    Postprocessor postprocessor;
+    double T = postprocessor.sample_point(node_T, *model, pt);
+    EXPECT_FALSE(std::isnan(T));
+    // 1e-2 容差：LSQ + Tikhonov 正则化在线性场顶点处有微小偏差
+    EXPECT_NEAR(T, 300.0 + 6.0 * 0.006, 1e-2);
+}
+
+TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
+{
+    auto io = make_simple_uniform_grid_io();
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int N = model->cells.cell_count;
+    std::vector<double> cell_T(N, 300.0);
+    Postprocessor postprocessor;
+    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+
+    ObservationPoint3D pt;
+    pt.name = "outside";
+    // model->mesh 顶点范围 0..0.01 m (0..10 mm) — 0.1 m 在网格外
+    pt.x = 0.1;
+    pt.y = 0.005;
+    pt.z = 0.005;
+
+    double T = postprocessor.sample_point(node_T, *model, pt);
+    EXPECT_TRUE(std::isnan(T)) << "Out-of-mesh point must return NaN";
+}
+
+TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
+{
+    // Dirichlet on Z=0 face at 500K; point (5, 5, 0) sits exactly on that face.
+    IOStructure io;
+    io.study_type = StudyType::Steady;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 5.0, 10.0};
+    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+
+    Layer layer;
+    layer.name = "l";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+    Block block;
+    block.name = "b";
+    block.material_name = "mat";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material mat;
+    mat.name = "mat";
+    mat.daore_xishu = "400";
+    io.materials["mat"] = mat;
+
+    Boundary boundary;
+    boundary.name = "bc1";
+    boundary.bc_type = ThermalBCType::FirstType;
+    boundary.first.temperature = "500";
+    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    io.boundaries.push_back(boundary);
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+    int N = model->cells.cell_count;
+    std::vector<double> cell_T(static_cast<size_t>(N), 400.0);
+    Postprocessor postprocessor;
+    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+
+    ObservationPoint3D pt;
+    pt.name = "on_face";
+    pt.x = 0.005;
+    pt.y = 0.005;
+    pt.z = 0.0; // exactly on Dirichlet face (vertex_z[0] = 0)
+
+    double T = postprocessor.sample_point(node_T, *model, pt);
+    EXPECT_NEAR(T, 500.0, 1e-6) << "Probe on Dirichlet face must return the Dirichlet value";
+}

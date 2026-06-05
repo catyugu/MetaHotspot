@@ -499,6 +499,29 @@ namespace mhs::io {
             }
         }
 
+        // ObservePoints3D — 用户坐标系下的探针列表。3D 专用；2D 走 Dimension2D panic 路径。
+        if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
+            for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
+                pt = pt->NextSiblingElement("ObservePoint3D")) {
+                ObservationPoint3D op;
+                if (const XMLElement* name = pt->FirstChildElement("Name")) {
+                    op.name = get_text(name);
+                }
+                if (const XMLElement* x = pt->FirstChildElement("X")) {
+                    op.x = parse_double(get_text(x));
+                }
+                if (const XMLElement* y = pt->FirstChildElement("Y")) {
+                    op.y = parse_double(get_text(y));
+                }
+                if (const XMLElement* z = pt->FirstChildElement("Z")) {
+                    op.z = parse_double(get_text(z));
+                }
+                structure.observation_points.push_back(op);
+            }
+        }
+        // 2D 观察点暂不支持：与 Dimension2D 路径 panic 语义保持一致。
+        (void)root->FirstChildElement("ObservePoints2D");
+
         return structure;
     }
 
@@ -662,7 +685,7 @@ namespace mhs::io {
     }
 
     void write_xml(const std::string& input_path, const std::string& output_path, const InternalModel& model,
-        const std::vector<double>& node_temperature)
+        const std::vector<double>& node_temperature, const std::vector<ProbeTrace>& observation_traces)
     {
         using namespace tinyxml2;
 
@@ -738,6 +761,80 @@ namespace mhs::io {
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
             sz->SetText(node_nz);
+
+        // 注入 Result0DTransient 节点（每个观察点一个）。
+        // - 已有 PointName 节点：清空其 <Times>/<Values> 内的 <a:double>，重新填充。
+        // - 没有则：在 Results 末尾新建。
+        if (!observation_traces.empty()) {
+            for (const auto& trace : observation_traces) {
+                XMLElement* target = nullptr;
+                for (XMLElement* cand = results_elem->FirstChildElement("a:anyType"); cand;
+                    cand = cand->NextSiblingElement("a:anyType")) {
+                    const char* t = cand->Attribute("i:type");
+                    if (!t || std::string(t).find("Result0DTransient") == std::string::npos)
+                        continue;
+                    const XMLElement* pn = cand->FirstChildElement("PointName");
+                    if (pn && get_text(pn) == trace.name) {
+                        target = cand;
+                        break;
+                    }
+                }
+
+                if (!target) {
+                    target = doc.NewElement("a:anyType");
+                    target->SetAttribute("i:type", "Result0DTransient");
+                    // 顺序：PhysicsName / PointName / TimeUnit / Times / UnitName / Values
+                    // 与参考 XML 对齐，避免节点顺序变化引入差异。
+                    XMLElement* phys = doc.NewElement("PhysicsName");
+                    phys->SetText("温度");
+                    target->InsertEndChild(phys);
+                    XMLElement* pn = doc.NewElement("PointName");
+                    pn->SetText(trace.name.c_str());
+                    target->InsertEndChild(pn);
+                    XMLElement* tu = doc.NewElement("TimeUnit");
+                    tu->SetText("S");
+                    target->InsertEndChild(tu);
+                    XMLElement* times = doc.NewElement("Times");
+                    target->InsertEndChild(times);
+                    XMLElement* un = doc.NewElement("UnitName");
+                    un->SetText("K");
+                    target->InsertEndChild(un);
+                    XMLElement* values = doc.NewElement("Values");
+                    target->InsertEndChild(values);
+                    results_elem->InsertEndChild(target);
+                }
+
+                // 清空旧 Times/Values
+                if (XMLElement* t = target->FirstChildElement("Times")) {
+                    while (XMLElement* c = t->FirstChildElement("a:double"))
+                        t->DeleteChild(c);
+                    for (double time_val : trace.times) {
+                        XMLElement* d = doc.NewElement("a:double");
+                        char buf[64];
+                        snprintf(buf, sizeof(buf), "%.6f", time_val);
+                        d->SetText(buf);
+                        t->InsertEndChild(d);
+                    }
+                }
+                if (XMLElement* v = target->FirstChildElement("Values")) {
+                    while (XMLElement* c = v->FirstChildElement("a:double"))
+                        v->DeleteChild(c);
+                    for (double val : trace.values) {
+                        XMLElement* d = doc.NewElement("a:double");
+                        if (std::isnan(val)) {
+                            d->SetText("NaN");
+                        }
+                        else {
+                            char buf[64];
+                            snprintf(buf, sizeof(buf), "%.6f", val);
+                            d->SetText(buf);
+                        }
+                        v->InsertEndChild(d);
+                    }
+                }
+            }
+        }
+
         std::filesystem::path dirPath(output_path);
         if (!std::filesystem::exists(dirPath.parent_path())) {
             std::filesystem::create_directories(dirPath.parent_path());

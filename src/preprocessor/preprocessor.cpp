@@ -16,6 +16,15 @@ namespace mhs {
         model->transient_duration = ioStructure.transient_duration;
         model->transient_time_step = ioStructure.transient_time_step;
 
+        // 探针不参与方程求解：纯搬运 + 单位缩放（与 mesh 顶点一致）
+        model->observation_points = ioStructure.observation_points;
+        double obs_si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
+        for (auto& p : model->observation_points) {
+            p.x *= obs_si_scale;
+            p.y *= obs_si_scale;
+            p.z *= obs_si_scale;
+        }
+
         expr::clear_registry();
         for (const auto& var : ioStructure.variables) {
             double val = expr::eval_geometry(var.value);

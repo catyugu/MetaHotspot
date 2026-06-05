@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 
+#include "io_model.hpp"
 #include "types.hpp"
 
 namespace mhs {
@@ -79,6 +80,10 @@ namespace mhs {
         StudyType study_type = StudyType::Steady;
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
+
+        // 用户坐标系下的 3D 观察点列表（来自 IOStructure）。
+        // 探针不参与方程求解，仅用于输出温度时间序列。
+        std::vector<ObservationPoint3D> observation_points;
     };
 
 } // namespace mhs

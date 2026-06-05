@@ -252,3 +252,92 @@ TEST(SchedulerTest, SchedulerConfigCustom)
     EXPECT_NEAR(config.nonlinear_tolerance, 1e-4, 1e-10);
     EXPECT_NEAR(config.underrelaxation, 0.7, 1e-10);
 }
+
+TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
+{
+    // Transient 5 steps with heat source; callback should fire 6 times
+    // (t=0 initial + 5 step ends).
+    IOStructure io;
+    io.study_type = StudyType::Transient;
+    io.dimension = Dimension::Dimension3D;
+    io.length_unit = LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 5.0, 10.0};
+    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+
+    Layer layer;
+    layer.name = "l";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+    Block block;
+    block.name = "b";
+    block.material_name = "copper";
+    block.ti_reyuan_expr = "1e8"; // strong heat source to force T to rise
+    block.is_normal_material = true;
+    Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    Material mat;
+    mat.name = "copper";
+    mat.daore_xishu = "400";
+    mat.midu = "8920";
+    mat.bi_rerong = "385";
+    io.materials["copper"] = mat;
+
+    io.transient_duration = 5.0;
+    io.transient_time_step = 1.0;
+
+    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    SchedulerConfig config;
+    config.transient_duration = 5.0;
+    config.time_step = 1.0;
+    config.max_nonlinear_iterations = 20;
+    config.nonlinear_tolerance = 1e-6;
+
+    Scheduler scheduler(config);
+    scheduler.setModel(model.get());
+    scheduler.setSolver(Solver::create(SolverType::Pardiso));
+
+    std::vector<double> times_seen;
+    std::vector<double> temps_at_first_cell;
+    StepCallback cb;
+    cb.on_step_done = [&times_seen, &temps_at_first_cell](double t, int /*step*/,
+                          const std::vector<double>& cell_T) {
+        times_seen.push_back(t);
+        if (!cell_T.empty())
+            temps_at_first_cell.push_back(cell_T[0]);
+    };
+    scheduler.setCallback(std::move(cb));
+
+    scheduler.run();
+
+    // 6 fires expected: t=0, t=1, t=2, t=3, t=4, t=5
+    EXPECT_EQ(times_seen.size(), 6u);
+    EXPECT_NEAR(times_seen.front(), 0.0, 1e-9);
+    EXPECT_NEAR(times_seen.back(), 5.0, 1e-9);
+    for (size_t i = 1; i < times_seen.size(); ++i) {
+        EXPECT_GT(times_seen[i], times_seen[i - 1]) << "Times must be monotonically increasing";
+    }
+
+    // With 1e8 W/m^3 heat source in 10mm copper cube, T should rise from 300K
+    ASSERT_GE(temps_at_first_cell.size(), 2u);
+    EXPECT_GT(temps_at_first_cell.back(), temps_at_first_cell.front())
+        << "First cell temperature must rise over time with a strong heat source";
+    EXPECT_NEAR(temps_at_first_cell.front(), 300.0, 1e-3) << "t=0 must be initial temperature";
+}
