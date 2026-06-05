@@ -133,7 +133,15 @@ namespace mhs::preprocessor {
             break;
         }
 
-        // 3. 拾取并分配显式定义的 FaceKey 边界
+        // 3. 将所有 (boundary, face_key) 组合展平为 ParsedFaceKey 数组，
+        //    使得后续只需对网格做单次遍历。
+        struct ParsedFaceKey {
+            FaceKeyInfo fk;
+            BcType bc_enum;
+            uint16_t param_idx;
+        };
+        std::vector<ParsedFaceKey> parsed_keys;
+
         for (const auto& boundary : boundaries) {
             uint16_t bc_param_idx = 0;
             BcType bc_enum = BcType::None;
@@ -158,57 +166,13 @@ namespace mhs::preprocessor {
             }
 
             for (const auto& key_str : boundary.face_keys) {
-                FaceKeyInfo fk = parse_face_key(key_str, si_scale);
-
-                for (int ix = 0; ix < mesh.nx; ix++) {
-                    for (int iy = 0; iy < mesh.ny; iy++) {
-                        for (int iz = 0; iz < mesh.nz; iz++) {
-                            int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                            if (cells.valid_mask[old_idx] == 0)
-                                continue;
-                            int c_idx = (int)cells.index_map[old_idx];
-
-                            // 泛化迭代该活跃单元的 6 个面
-                            for (FaceDir dir : FACE_DIRS) {
-                                char face_axis;
-                                double face_coord, a_val, b_val;
-
-                                if (dir == FaceDir::XM || dir == FaceDir::XP) {
-                                    face_axis = 'X';
-                                    face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
-                                    a_val = mesh.cy[iy];
-                                    b_val = mesh.cz[iz];
-                                }
-                                else if (dir == FaceDir::YM || dir == FaceDir::YP) {
-                                    face_axis = 'Y';
-                                    face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
-                                    a_val = mesh.cx[ix];
-                                    b_val = mesh.cz[iz];
-                                }
-                                else { // ZM, ZP
-                                    face_axis = 'Z';
-                                    face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
-                                    a_val = mesh.cx[ix];
-                                    b_val = mesh.cy[iy];
-                                }
-
-                                // 严格条件验证：同轴 -> 坐标重合 -> 面朝外暴露 -> 落入指定框内
-                                if (fk.axis == face_axis && std::abs(face_coord - fk.coord_value) < 1e-10) {
-                                    if (is_face_exposed(dir, ix, iy, iz, mesh, cells)) {
-                                        if (point_in_face_rects(fk, a_val, b_val)) {
-                                            cells.cell_bcs[c_idx].types[(size_t)dir] = bc_enum;
-                                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = bc_param_idx;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                parsed_keys.push_back({parse_face_key(key_str, si_scale), bc_enum, bc_param_idx});
             }
         }
 
-        // 4. 为所有依然是 BcType::None 且【暴露在外/侧壁】的面，分配兜底的 other_bc
+        // 4. 单次遍历网格：对每个活跃单元的每个暴露面，
+        //    依次检查 parsed_keys 是否命中；若全部未命中且面暴露，则赋予 other_bc。
+        //    （原 Phase 2 + Phase 3 合并为一步。）
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
@@ -218,11 +182,49 @@ namespace mhs::preprocessor {
                     int c_idx = (int)cells.index_map[old_idx];
 
                     for (FaceDir dir : FACE_DIRS) {
-                        if (cells.cell_bcs[c_idx].types[(size_t)dir] == BcType::None) {
-                            if (is_face_exposed(dir, ix, iy, iz, mesh, cells)) {
-                                cells.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
-                                cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_idx;
+                        // 计算面属性（轴、坐标、矩形投影点）
+                        char face_axis;
+                        double face_coord, a_val, b_val;
+
+                        if (dir == FaceDir::XM || dir == FaceDir::XP) {
+                            face_axis = 'X';
+                            face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
+                            a_val = mesh.cy[iy];
+                            b_val = mesh.cz[iz];
+                        }
+                        else if (dir == FaceDir::YM || dir == FaceDir::YP) {
+                            face_axis = 'Y';
+                            face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
+                            a_val = mesh.cx[ix];
+                            b_val = mesh.cz[iz];
+                        }
+                        else { // ZM, ZP
+                            face_axis = 'Z';
+                            face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
+                            a_val = mesh.cx[ix];
+                            b_val = mesh.cy[iy];
+                        }
+
+                        if (!is_face_exposed(dir, ix, iy, iz, mesh, cells))
+                            continue;
+
+                        // 优先匹配 parsed_keys
+                        bool matched = false;
+                        for (const auto& pk : parsed_keys) {
+                            if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < 1e-10) {
+                                if (point_in_face_rects(pk.fk, a_val, b_val)) {
+                                    cells.cell_bcs[c_idx].types[(size_t)dir] = pk.bc_enum;
+                                    cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = pk.param_idx;
+                                    matched = true;
+                                    break;
+                                }
                             }
+                        }
+
+                        // 未命中 → 兜底 other_bc
+                        if (!matched && other_bc_enum != BcType::None) {
+                            cells.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
+                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_idx;
                         }
                     }
                 }
