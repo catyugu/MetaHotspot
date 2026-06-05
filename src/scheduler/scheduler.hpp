@@ -11,7 +11,6 @@ namespace mhs {
         double transient_duration = 0.0;
         double time_step = 1.0;
         int max_nonlinear_iterations = 50;
-        double nonlinear_tolerance = 1e-6;
         double underrelaxation = 1.0;
         bool is_steady = false;
     };

@@ -13,7 +13,8 @@ namespace mhs::nonlinear {
     struct NonLinearConfig {
         double underrelaxation = 1.0;
         int max_iterations = 50;
-        double tolerance = 1e-6;
+        double relative_tolerance = 1e-6;
+        double absolute_tolerance = 1e-12;
     };
 
     NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver, const NonLinearConfig& cfg);
