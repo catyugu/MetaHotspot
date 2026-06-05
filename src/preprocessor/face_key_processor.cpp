@@ -121,7 +121,7 @@ namespace mhs::preprocessor {
     void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
         const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
         const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells, BCParamTable& bc_params,
-        double si_scale, const ExprRewriter& rewriter)
+        double si_scale, const std::function<std::string(const std::string&)>& rewriter)
     {
         // 1. 初始化所有 BC 为 None
         for (int c = 0; c < cells.cell_count; c++) {

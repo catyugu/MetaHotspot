@@ -1,6 +1,4 @@
 #pragma once
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "types.hpp"
@@ -75,11 +73,6 @@ namespace mhs {
         std::vector<MaterialProps> material_table;
 
         std::vector<CompiledExpression> heat_source_table;
-
-        // 已注册到 expr 全局注册表的单变元函数名集合（用于诊断 / 日志）。
-        // 实际闭包不在此持有——它们在 expr::registry() 里、由 preprocessor 写入。
-        // InternalModel 因此不依赖 Function POD 类型，与 IOStructure 解耦。
-        std::unordered_map<std::string, std::string> function_names;
 
         double initial_temperature = 300.0;
         double ambient_temperature = 300.0;

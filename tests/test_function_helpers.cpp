@@ -113,10 +113,9 @@ namespace {
     {
         std::unordered_map<std::string, Function> fns;
         Function g;
-        g.key = "test_gaussian";
         g.type = FunctionType::Gauss;
         g.gauss = {5.0, 10.0, 20.0, 0.0, 100.0};
-        fns[g.key] = g;
+        fns["test_gaussian"] = g;
         return fns;
     }
 
@@ -202,27 +201,15 @@ namespace {
     TEST(RegisterAll, GaussNativeCompiles)
     {
         mhs::expr::clear_registry();
-        std::unordered_map<std::string, Function> fns;
-        Function g;
-        g.key = "test_gaussian";
-        g.type = FunctionType::Gauss;
-        g.gauss = {5.0, 10.0, 20.0, 0.0, 100.0};
-        fns[g.key] = g;
-
-        auto names = register_all_functions(fns);
-        EXPECT_EQ(names.size(), 1u);
+        auto fns = fns_with_gauss();
+        register_all_functions(fns);
         EXPECT_TRUE(mhs::expr::get_native("test_gaussian") != nullptr);
     }
 
     TEST(EndToEnd, ParseTakesRegisteredNative)
     {
         mhs::expr::clear_registry();
-        std::unordered_map<std::string, Function> fns;
-        Function g;
-        g.key = "test_gaussian";
-        g.type = FunctionType::Gauss;
-        g.gauss = {5.0, 10.0, 20.0, 0.0, 100.0};
-        fns[g.key] = g;
+        auto fns = fns_with_gauss();
         register_all_functions(fns);
 
         // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)

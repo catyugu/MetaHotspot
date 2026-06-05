@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <tinyxml2.h>
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "io.hpp"
@@ -32,6 +33,25 @@ namespace mhs::io {
             return 0.0;
         }
         return std::stod(s);
+    }
+
+    // Helpers for the <Functions> block: pull one double-typed child or no-op.
+    static void read_double_member(const XMLElement* parent, const char* tag, double& target)
+    {
+        if (const XMLElement* e = parent->FirstChildElement(tag)) {
+            target = parse_double(get_text(e));
+        }
+    }
+    static void read_string_member(const XMLElement* parent, const char* tag, std::string& target)
+    {
+        if (const XMLElement* e = parent->FirstChildElement(tag)) {
+            target = get_text(e);
+        }
+    }
+    static void read_draw_range(const XMLElement* parent, double& min_x, double& max_x)
+    {
+        read_double_member(parent, "b:DrawMinX", min_x);
+        read_double_member(parent, "b:DrawMaxX", max_x);
     }
 
     IOStructure read_xml(const std::string& xml_path)
@@ -238,79 +258,40 @@ namespace mhs::io {
         if (const XMLElement* funcs = root->FirstChildElement("Functions")) {
             for (const XMLElement* kv = funcs->FirstChildElement("a:KeyValueOfstringFunctionAdzryM2O"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringFunctionAdzryM2O")) {
-                Function fn;
+                std::string name;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
-                    fn.key = get_text(key);
+                    name = get_text(key);
                 }
                 const XMLElement* val = kv->FirstChildElement("a:Value");
+                Function fn;
                 if (val) {
                     const char* type = val->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("ExpressionFunction") != std::string::npos) {
                         fn.type = FunctionType::Expression;
-                        if (const XMLElement* expr = val->FirstChildElement("b:Expression")) {
-                            fn.expression.expression = get_text(expr);
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
-                            fn.expression.draw_min_x = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
-                            fn.expression.draw_max_x = parse_double(get_text(e));
-                        }
+                        read_string_member(val, "b:Expression", fn.expression.expression);
+                        read_draw_range(val, fn.expression.draw_min_x, fn.expression.draw_max_x);
                     }
                     else if (type_str.find("DoubleExponentialFunction") != std::string::npos) {
                         fn.type = FunctionType::DoubleExponential;
-                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
-                            fn.double_exp.a = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:Alpha")) {
-                            fn.double_exp.alpha = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:Beta")) {
-                            fn.double_exp.beta = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
-                            fn.double_exp.draw_min_x = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
-                            fn.double_exp.draw_max_x = parse_double(get_text(e));
-                        }
+                        read_double_member(val, "b:A", fn.double_exp.a);
+                        read_double_member(val, "b:Alpha", fn.double_exp.alpha);
+                        read_double_member(val, "b:Beta", fn.double_exp.beta);
+                        read_draw_range(val, fn.double_exp.draw_min_x, fn.double_exp.draw_max_x);
                     }
                     else if (type_str.find("GaussFunction") != std::string::npos) {
                         fn.type = FunctionType::Gauss;
-                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
-                            fn.gauss.a = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:Tau")) {
-                            fn.gauss.tau = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:X0")) {
-                            fn.gauss.x0 = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
-                            fn.gauss.draw_min_x = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
-                            fn.gauss.draw_max_x = parse_double(get_text(e));
-                        }
+                        read_double_member(val, "b:A", fn.gauss.a);
+                        read_double_member(val, "b:Tau", fn.gauss.tau);
+                        read_double_member(val, "b:X0", fn.gauss.x0);
+                        read_draw_range(val, fn.gauss.draw_min_x, fn.gauss.draw_max_x);
                     }
                     else if (type_str.find("SineFunction") != std::string::npos) {
                         fn.type = FunctionType::Sine;
-                        if (const XMLElement* e = val->FirstChildElement("b:A")) {
-                            fn.sine.a = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:Omega")) {
-                            fn.sine.omega = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:Phi")) {
-                            fn.sine.phi = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
-                            fn.sine.draw_min_x = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
-                            fn.sine.draw_max_x = parse_double(get_text(e));
-                        }
+                        read_double_member(val, "b:A", fn.sine.a);
+                        read_double_member(val, "b:Omega", fn.sine.omega);
+                        read_double_member(val, "b:Phi", fn.sine.phi);
+                        read_draw_range(val, fn.sine.draw_min_x, fn.sine.draw_max_x);
                     }
                     else if (type_str.find("PieceWiseFunction") != std::string::npos) {
                         fn.type = FunctionType::PieceWise;
@@ -318,28 +299,25 @@ namespace mhs::io {
                             for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
                                 pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
                                 PieceWiseFunction::Point p;
-                                if (const XMLElement* x = pt->FirstChildElement("b:X")) {
-                                    p.x = parse_double(get_text(x));
-                                }
-                                if (const XMLElement* y = pt->FirstChildElement("b:Y")) {
-                                    p.y = parse_double(get_text(y));
-                                }
+                                read_double_member(pt, "b:X", p.x);
+                                read_double_member(pt, "b:Y", p.y);
                                 fn.piecewise.points.push_back(p);
                             }
+                            // Pre-sort by X so the closure can binary-search without
+                            // sorting again at registration time.
+                            std::sort(fn.piecewise.points.begin(), fn.piecewise.points.end(),
+                                [](const PieceWiseFunction::Point& a, const PieceWiseFunction::Point& b) {
+                                    return a.x < b.x;
+                                });
                         }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMinX")) {
-                            fn.piecewise.draw_min_x = parse_double(get_text(e));
-                        }
-                        if (const XMLElement* e = val->FirstChildElement("b:DrawMaxX")) {
-                            fn.piecewise.draw_max_x = parse_double(get_text(e));
-                        }
+                        read_draw_range(val, fn.piecewise.draw_min_x, fn.piecewise.draw_max_x);
                     }
                     else if (!type_str.empty()) {
                         throw std::runtime_error("Unknown function i:type: " + type_str);
                     }
                 }
-                if (!fn.key.empty()) {
-                    structure.functions[fn.key] = fn;
+                if (!name.empty()) {
+                    structure.functions[name] = fn;
                 }
             }
         }

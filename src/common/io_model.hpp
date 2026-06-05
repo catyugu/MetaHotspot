@@ -127,7 +127,6 @@ namespace mhs {
     };
 
     struct Function {
-        std::string key;
         FunctionType type = FunctionType::Expression;
         ExpressionFunction expression;
         DoubleExponentialFunction double_exp;
