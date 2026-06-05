@@ -1,18 +1,19 @@
-#include "common/types.hpp"
 #include "common/face_dir_tables.hpp"
+#include "common/types.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include <cmath>
 
-namespace mhs::preprocessor {
+namespace mhs::sim {
 
     namespace {
         // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
-        bool is_face_exposed(FaceDir dir, int ix, int iy, int iz, const MeshGeometry& mesh, const CellFields& cells)
+        bool is_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
+            const mhs::core::CellFields& cells)
         {
-            int nix = neighbor_ix(dir, ix);
-            int niy = neighbor_iy(dir, iy);
-            int niz = neighbor_iz(dir, iz);
+            int nix = mhs::core::neighbor_ix(dir, ix);
+            int niy = mhs::core::neighbor_iy(dir, iy);
+            int niz = mhs::core::neighbor_iz(dir, iz);
 
             // 1. 如果超出网格边界，说明是域外，绝对暴露
             if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {
@@ -101,35 +102,36 @@ namespace mhs::preprocessor {
         return false;
     }
 
-    void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
-        const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
-        const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells, BCParamTable& bc_params,
-        double si_scale, const std::function<std::string(const std::string&)>& rewriter)
+    void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries, mhs::core::ThermalBCType other_bc_type,
+        const mhs::core::FirstTypeThermalBC& other_bc_first, const mhs::core::SecondTypeThermalBC& other_bc_second,
+        const mhs::core::ThirdTypeThermalBC& other_bc_third, const mhs::core::MeshGeometry& mesh,
+        mhs::core::CellFields& cells, mhs::core::BCParamTable& bc_params, double si_scale,
+        const std::function<std::string(const std::string&)>& rewriter)
     {
         // 1. 初始化所有 BC 为 None
         for (int c = 0; c < cells.cell_count; c++) {
-            for (size_t f = 0; f < FACE_COUNT; f++) {
-                cells.cell_bcs[c].types[f] = BcType::None;
+            for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+                cells.cell_bcs[c].types[f] = mhs::core::BcType::None;
                 cells.cell_bcs[c].param_idxs[f] = 0;
             }
         }
 
         // 2. 预存 other_bc 参数（索引始终为 0）
         uint16_t other_idx = 0;
-        BcType other_bc_enum = BcType::None;
+        mhs::core::BcType other_bc_enum = mhs::core::BcType::None;
         switch (other_bc_type) {
-        case ThermalBCType::FirstType:
-            other_bc_enum = BcType::FirstType;
-            bc_params.dirichlet_T.push_back(expr::parse(rewriter(other_bc_first.temperature)));
+        case mhs::core::ThermalBCType::FirstType:
+            other_bc_enum = mhs::core::BcType::FirstType;
+            bc_params.dirichlet_T.push_back(mhs::core::parse(rewriter(other_bc_first.temperature)));
             break;
-        case ThermalBCType::SecondType:
-            other_bc_enum = BcType::SecondType;
-            bc_params.neumann_q.push_back(expr::parse(rewriter(other_bc_second.heat_flux)));
+        case mhs::core::ThermalBCType::SecondType:
+            other_bc_enum = mhs::core::BcType::SecondType;
+            bc_params.neumann_q.push_back(mhs::core::parse(rewriter(other_bc_second.heat_flux)));
             break;
-        case ThermalBCType::ThirdType:
-            other_bc_enum = BcType::ThirdType;
-            bc_params.cauchy_h.push_back(expr::parse(rewriter(other_bc_third.convection_coeff)));
-            bc_params.cauchy_T_inf.push_back(expr::parse(rewriter(other_bc_third.T_inf)));
+        case mhs::core::ThermalBCType::ThirdType:
+            other_bc_enum = mhs::core::BcType::ThirdType;
+            bc_params.cauchy_h.push_back(mhs::core::parse(rewriter(other_bc_third.convection_coeff)));
+            bc_params.cauchy_T_inf.push_back(mhs::core::parse(rewriter(other_bc_third.T_inf)));
             break;
         }
 
@@ -137,31 +139,31 @@ namespace mhs::preprocessor {
         //    使得后续只需对网格做单次遍历。
         struct ParsedFaceKey {
             FaceKeyInfo fk;
-            BcType bc_enum;
+            mhs::core::BcType bc_enum;
             uint16_t param_idx;
         };
         std::vector<ParsedFaceKey> parsed_keys;
 
         for (const auto& boundary : boundaries) {
             uint16_t bc_param_idx = 0;
-            BcType bc_enum = BcType::None;
+            mhs::core::BcType bc_enum = mhs::core::BcType::None;
 
             switch (boundary.bc_type) {
-            case ThermalBCType::FirstType:
-                bc_enum = BcType::FirstType;
+            case mhs::core::ThermalBCType::FirstType:
+                bc_enum = mhs::core::BcType::FirstType;
                 bc_param_idx = (uint16_t)bc_params.dirichlet_T.size();
-                bc_params.dirichlet_T.push_back(expr::parse(rewriter(boundary.first.temperature)));
+                bc_params.dirichlet_T.push_back(mhs::core::parse(rewriter(boundary.first.temperature)));
                 break;
-            case ThermalBCType::SecondType:
-                bc_enum = BcType::SecondType;
+            case mhs::core::ThermalBCType::SecondType:
+                bc_enum = mhs::core::BcType::SecondType;
                 bc_param_idx = (uint16_t)bc_params.neumann_q.size();
-                bc_params.neumann_q.push_back(expr::parse(rewriter(boundary.second.heat_flux)));
+                bc_params.neumann_q.push_back(mhs::core::parse(rewriter(boundary.second.heat_flux)));
                 break;
-            case ThermalBCType::ThirdType:
-                bc_enum = BcType::ThirdType;
+            case mhs::core::ThermalBCType::ThirdType:
+                bc_enum = mhs::core::BcType::ThirdType;
                 bc_param_idx = (uint16_t)bc_params.cauchy_h.size();
-                bc_params.cauchy_h.push_back(expr::parse(rewriter(boundary.third.convection_coeff)));
-                bc_params.cauchy_T_inf.push_back(expr::parse(rewriter(boundary.third.T_inf)));
+                bc_params.cauchy_h.push_back(mhs::core::parse(rewriter(boundary.third.convection_coeff)));
+                bc_params.cauchy_T_inf.push_back(mhs::core::parse(rewriter(boundary.third.T_inf)));
                 break;
             }
 
@@ -181,26 +183,26 @@ namespace mhs::preprocessor {
                         continue;
                     int c_idx = (int)cells.index_map[old_idx];
 
-                    for (FaceDir dir : FACE_DIRS) {
+                    for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
                         // 计算面属性（轴、坐标、矩形投影点）
                         char face_axis;
                         double face_coord, a_val, b_val;
 
-                        if (dir == FaceDir::XM || dir == FaceDir::XP) {
+                        if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP) {
                             face_axis = 'X';
-                            face_coord = (dir == FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
+                            face_coord = (dir == mhs::core::FaceDir::XM) ? mesh.vertex_x[ix] : mesh.vertex_x[ix + 1];
                             a_val = mesh.cy[iy];
                             b_val = mesh.cz[iz];
                         }
-                        else if (dir == FaceDir::YM || dir == FaceDir::YP) {
+                        else if (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP) {
                             face_axis = 'Y';
-                            face_coord = (dir == FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
+                            face_coord = (dir == mhs::core::FaceDir::YM) ? mesh.vertex_y[iy] : mesh.vertex_y[iy + 1];
                             a_val = mesh.cx[ix];
                             b_val = mesh.cz[iz];
                         }
                         else { // ZM, ZP
                             face_axis = 'Z';
-                            face_coord = (dir == FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
+                            face_coord = (dir == mhs::core::FaceDir::ZM) ? mesh.vertex_z[iz] : mesh.vertex_z[iz + 1];
                             a_val = mesh.cx[ix];
                             b_val = mesh.cy[iy];
                         }
@@ -222,7 +224,7 @@ namespace mhs::preprocessor {
                         }
 
                         // 未命中 → 兜底 other_bc
-                        if (!matched && other_bc_enum != BcType::None) {
+                        if (!matched && other_bc_enum != mhs::core::BcType::None) {
                             cells.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
                             cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_idx;
                         }
@@ -232,4 +234,4 @@ namespace mhs::preprocessor {
         }
     }
 
-} // namespace mhs::preprocessor
+} // namespace mhs::sim

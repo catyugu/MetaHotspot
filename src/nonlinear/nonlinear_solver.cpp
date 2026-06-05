@@ -4,11 +4,12 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mhs::nonlinear {
+namespace mhs::sim {
 
-    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver)
+    NonLinearResult nonlinear_solve(
+        const mhs::core::InternalModel& model, mhs::core::GlobalState& state, LinearSolver& solver)
     {
-        assembler::Assembler assembler(model);
+        Assembler assembler(model);
         NonLinearConfig cfg;
 
         double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
@@ -63,4 +64,4 @@ namespace mhs::nonlinear {
         return {false, cfg.max_iterations};
     }
 
-} // namespace mhs::nonlinear
+} // namespace mhs::sim

@@ -3,7 +3,7 @@
 #include "common/internal_model.hpp"
 #include "solver/solver.hpp"
 
-namespace mhs::nonlinear {
+namespace mhs::sim {
 
     struct NonLinearResult {
         bool converged = false;
@@ -17,6 +17,9 @@ namespace mhs::nonlinear {
         double absolute_tolerance = 1e-12;
     };
 
-    NonLinearResult solve(const InternalModel& model, GlobalState& state, Solver& solver);
+    // Anderson-accelerated fixed-point iteration over `LinearSolver`.
+    // Renamed from `solve` to `nonlinear_solve` so that `mhs::sim::nonlinear_solve`
+    // is unambiguous in the flat sim domain.
+    NonLinearResult nonlinear_solve(const mhs::core::InternalModel& model, mhs::core::GlobalState& state, LinearSolver& solver);
 
-} // namespace mhs::nonlinear
+} // namespace mhs::sim

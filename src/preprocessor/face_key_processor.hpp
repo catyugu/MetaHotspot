@@ -6,7 +6,7 @@
 #include <functional>
 #include <string>
 
-namespace mhs::preprocessor {
+namespace mhs::sim {
 
     struct FaceKeyInfo {
         char axis = 'Z';
@@ -33,13 +33,13 @@ namespace mhs::preprocessor {
     // Check if a 2D point is inside any of the face key rectangles
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-    // Resolve BCs: assign CellBC per cell per face from boundaries + other_bc + virtual neighbors.
+    // Resolve BCs: assign mhs::core::CellBC per cell per face from boundaries + other_bc + virtual neighbors.
     // The `rewriter` is applied to every BC string (temperature / heat_flux / convection_coeff /
     // T_inf) before parsing — typically the 字面替换 that turns `name(x)` into `name(T)`.
-    void resolve_face_keys(const std::vector<Boundary>& boundaries, ThermalBCType other_bc_type,
-        const FirstTypeThermalBC& other_bc_first, const SecondTypeThermalBC& other_bc_second,
-        const ThirdTypeThermalBC& other_bc_third, const MeshGeometry& mesh, CellFields& cells,
-        BCParamTable& bc_params, double si_scale,
+    void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries, mhs::core::ThermalBCType other_bc_type,
+        const mhs::core::FirstTypeThermalBC& other_bc_first, const mhs::core::SecondTypeThermalBC& other_bc_second,
+        const mhs::core::ThirdTypeThermalBC& other_bc_third, const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+        mhs::core::BCParamTable& bc_params, double si_scale,
         const std::function<std::string(const std::string&)>& rewriter);
 
-} // namespace mhs::preprocessor
+} // namespace mhs::sim

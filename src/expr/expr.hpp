@@ -4,10 +4,10 @@
 #include <memory>
 #include <string>
 
-namespace mhs::expr {
+namespace mhs::core {
 
-    // FieldContext 是 expr 引擎向上层暴露的数据契约：调用方在求值时必须以
-    // 这个结构提供 (x, y, z, T, t)。
+    // FieldContext is the data contract that the expression engine exposes
+    // to its callers: at eval time the caller must supply (x, y, z, T, t).
     struct FieldContext {
         double x = 0.0;
         double y = 0.0;
@@ -61,4 +61,4 @@ namespace mhs::expr {
     // Evaluate a geometry expression (uses registered variables)
     double eval_geometry(const std::string& formula);
 
-} // namespace mhs::expr
+} // namespace mhs::core

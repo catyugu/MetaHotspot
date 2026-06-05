@@ -11,9 +11,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-using namespace mhs;
-using namespace mhs::expr;
-using namespace mhs::preprocessor;
+using namespace mhs::core;
+using namespace mhs::sim;
 
 namespace {
 
@@ -21,7 +20,7 @@ namespace {
 
     TEST(FunctionHelpers, ExpressionEvaluator)
     {
-        mhs::expr::clear_registry();
+        mhs::core::clear_registry();
         auto ev = make_expression_evaluator("2*x+1");
         // 内层表达式读 ctx.x；调用方负责把自变量放进 x 槽。
         FieldContext ctx {3, 0, 0, 0, 0};
@@ -30,7 +29,7 @@ namespace {
 
     TEST(FunctionHelpers, ExpressionEvaluatorBindsXToT)
     {
-        mhs::expr::clear_registry();
+        mhs::core::clear_registry();
         auto ev = make_expression_evaluator("x*x");
         FieldContext ctx {5, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(ctx), 25.0);
@@ -83,7 +82,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, -1.0};
         EXPECT_DOUBLE_EQ(ev(ctx), -1.0);
@@ -91,7 +90,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, 10.0};
         EXPECT_DOUBLE_EQ(ev(ctx), 3.0);
@@ -99,7 +98,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
     {
-        std::vector<PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
         FieldContext ctx {0, 0, 0, 0, 3.0};
@@ -108,11 +107,11 @@ namespace {
 
     // ---- 字面替换 --------------------------------------------------------
 
-    std::unordered_map<std::string, Function> fns_with_gauss()
+    std::unordered_map<std::string, mhs::core::Function> fns_with_gauss()
     {
-        std::unordered_map<std::string, Function> fns;
-        Function g;
-        g.type = FunctionType::Gauss;
+        std::unordered_map<std::string, mhs::core::Function> fns;
+        mhs::core::Function g;
+        g.type = mhs::core::FunctionType::Gauss;
         g.gauss = {5.0, 10.0, 20.0, 0.0, 100.0};
         fns["test_gaussian"] = g;
         return fns;
@@ -184,14 +183,14 @@ namespace {
     TEST(Substitute, NoFunctionsNoChange)
     {
         // 没有引用任何函数时，孤立 x 仍然替换
-        std::unordered_map<std::string, Function> fns;
+        std::unordered_map<std::string, mhs::core::Function> fns;
         auto out = substitute_function_args("x+1", "T", fns);
         EXPECT_EQ(out, "T+1");
     }
 
     TEST(Substitute, UnknownFunctionPanics)
     {
-        std::unordered_map<std::string, Function> fns;
+        std::unordered_map<std::string, mhs::core::Function> fns;
         EXPECT_DEATH(substitute_function_args("foo(x)", "T", fns), "");
     }
 
@@ -199,15 +198,15 @@ namespace {
 
     TEST(RegisterAll, GaussNativeCompiles)
     {
-        mhs::expr::clear_registry();
+        mhs::core::clear_registry();
         auto fns = fns_with_gauss();
         register_all_functions(fns);
-        EXPECT_TRUE(mhs::expr::get_native("test_gaussian") != nullptr);
+        EXPECT_TRUE(mhs::core::get_native("test_gaussian") != nullptr);
     }
 
     TEST(EndToEnd, ParseTakesRegisteredNative)
     {
-        mhs::expr::clear_registry();
+        mhs::core::clear_registry();
         auto fns = fns_with_gauss();
         register_all_functions(fns);
 
@@ -215,7 +214,7 @@ namespace {
         auto out = substitute_function_args("test_gaussian(x)", "T", fns);
         EXPECT_EQ(out, "test_gaussian(T)");
 
-        auto compiled = mhs::expr::parse(out);
+        auto compiled = mhs::core::parse(out);
         // Native 接收 exprtk 绑定的 arg0（这里是 T 槽），广播到所有 ctx 槽；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
         FieldContext ctx {0, 0, 0, 20.0, 0.0};
@@ -226,12 +225,12 @@ namespace {
     {
         // 通用性：future natives 可以读任何 ctx 槽。当前 natives 读 ctx.t，
         // 所以"绑定到 t"也能工作——验证 NativeFn 把 arg0 广播到了 ctx.t。
-        mhs::expr::clear_registry();
+        mhs::core::clear_registry();
         auto fns = fns_with_gauss();
         register_all_functions(fns);
 
         // 不做字面替换（"test_gaussian(x)" 直接编译），exprtk 把 x 槽绑定。
-        auto compiled = mhs::expr::parse("test_gaussian(x)");
+        auto compiled = mhs::core::parse("test_gaussian(x)");
         FieldContext ctx {20.0, 0, 0, 0, 0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }

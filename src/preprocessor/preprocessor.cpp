@@ -4,11 +4,11 @@
 #include "layer_processor.hpp"
 #include "preprocessor.hpp"
 
-namespace mhs {
+namespace mhs::sim {
 
-    std::unique_ptr<InternalModel> Preprocessor::load(const IOStructure& ioStructure)
+    std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(const mhs::core::IOStructure& ioStructure)
     {
-        auto model = std::make_unique<InternalModel>();
+        auto model = std::make_unique<mhs::core::InternalModel>();
 
         model->study_type = ioStructure.study_type;
         model->initial_temperature = ioStructure.initial_temperature;
@@ -18,23 +18,23 @@ namespace mhs {
 
         // 解析几何表达式上下文：变量注册到 expr 全局表，function 在下方 register。
         // 必须在 observation_points 求值前完成，因为后者可能引用变量。
-        expr::clear_registry();
+        mhs::core::clear_registry();
         for (const auto& var : ioStructure.variables) {
-            double val = expr::eval_geometry(var.value);
-            expr::set_variable(var.name, val);
+            double val = mhs::core::eval_geometry(var.value);
+            mhs::core::set_variable(var.name, val);
         }
         const auto& fns = ioStructure.functions;
-        preprocessor::register_all_functions(fns);
+        register_all_functions(fns);
 
-        const double si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
+        const double si_scale = length_unit_to_si(ioStructure.length_unit);
 
         // 探针不参与方程求解：把 IO 层的 exprtk 表达式字符串求值到 SI 单位的 double。
         for (const auto& src : ioStructure.observation_points) {
-            ProbePoint p;
+            mhs::core::ProbePoint p;
             p.name = src.name;
-            p.x = expr::eval_geometry(src.x) * si_scale;
-            p.y = expr::eval_geometry(src.y) * si_scale;
-            p.z = expr::eval_geometry(src.z) * si_scale;
+            p.x = mhs::core::eval_geometry(src.x) * si_scale;
+            p.y = mhs::core::eval_geometry(src.y) * si_scale;
+            p.z = mhs::core::eval_geometry(src.z) * si_scale;
             model->observation_points.push_back(std::move(p));
         }
 
@@ -75,7 +75,7 @@ namespace mhs {
             mesh.cz[k] = (mesh.vertex_z[k] + mesh.vertex_z[k + 1]) / 2.0;
         }
 
-        auto resolved_layers = preprocessor::resolve_geometry(ioStructure.layers, si_scale);
+        auto resolved_layers = resolve_geometry(ioStructure.layers, si_scale);
 
         std::vector<std::string> material_names;
         std::unordered_map<std::string, size_t> name_to_idx;
@@ -92,23 +92,22 @@ namespace mhs {
         model->material_table.resize(material_names.size());
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
-            model->material_table[m].kx = expr::parse(preprocessor::substitute_function_args(mat.kx, "T", fns));
-            model->material_table[m].ky = expr::parse(preprocessor::substitute_function_args(mat.ky, "T", fns));
-            model->material_table[m].kz = expr::parse(preprocessor::substitute_function_args(mat.kz, "T", fns));
-            model->material_table[m].rho = expr::parse(preprocessor::substitute_function_args(mat.midu, "T", fns));
-            model->material_table[m].c = expr::parse(preprocessor::substitute_function_args(mat.bi_rerong, "T", fns));
+            model->material_table[m].kx = mhs::core::parse(substitute_function_args(mat.kx, "T", fns));
+            model->material_table[m].ky = mhs::core::parse(substitute_function_args(mat.ky, "T", fns));
+            model->material_table[m].kz = mhs::core::parse(substitute_function_args(mat.kz, "T", fns));
+            model->material_table[m].rho = mhs::core::parse(substitute_function_args(mat.midu, "T", fns));
+            model->material_table[m].c = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", fns));
         }
 
         auto& cells = model->cells;
-        preprocessor::resolve_layers(resolved_layers, mesh, name_to_idx, cells);
+        resolve_layers(resolved_layers, mesh, name_to_idx, cells);
 
         cells.cell_bcs.resize(cells.cell_count);
         cells.heat_source_idx.resize(cells.cell_count, 0);
 
         // --- 热源字典构建 ---
         model->heat_source_table.clear();
-        model->heat_source_table.push_back(
-            expr::CompiledExpression::make_constant(0.0)); // 索引 0 留空为默认 0.0
+        model->heat_source_table.push_back(mhs::core::CompiledExpression::make_constant(0.0)); // 索引 0 留空为默认 0.0
 
         std::vector<std::vector<uint16_t>> block_hs_map(resolved_layers.size());
         for (size_t l = 0; l < resolved_layers.size(); l++) {
@@ -116,8 +115,7 @@ namespace mhs {
             for (size_t b = 0; b < resolved_layers[l].blocks.size(); b++) {
                 uint16_t hs_idx = (uint16_t)model->heat_source_table.size();
                 const std::string& raw = resolved_layers[l].blocks[b].ti_reyuan_expr;
-                model->heat_source_table.push_back(
-                    expr::parse(preprocessor::substitute_function_args(raw, "t", fns)));
+                model->heat_source_table.push_back(mhs::core::parse(substitute_function_args(raw, "t", fns)));
                 block_hs_map[l][b] = hs_idx;
             }
         }
@@ -132,8 +130,7 @@ namespace mhs {
                         double cx = mesh.cx[ix];
                         double cy = mesh.cy[iy];
                         double cz = mesh.cz[iz];
-                        int block_idx = preprocessor::find_block_for_cell(
-                            resolved_layers[layer_idx], cx, cy, cz);
+                        int block_idx = find_block_for_cell(resolved_layers[layer_idx], cx, cy, cz);
 
                         if (block_idx >= 0) {
                             cells.heat_source_idx[c_idx] = block_hs_map[layer_idx][block_idx];
@@ -147,14 +144,11 @@ namespace mhs {
         }
 
         auto& bc_params = model->bc_params;
-        auto bc_rewriter = [&fns](const std::string& s) {
-            return preprocessor::substitute_function_args(s, "T", fns);
-        };
-        preprocessor::resolve_face_keys(ioStructure.boundaries, ioStructure.other_bc_type,
-            ioStructure.other_bc_first, ioStructure.other_bc_second, ioStructure.other_bc_third,
-            mesh, cells, bc_params, si_scale, bc_rewriter);
+        auto bc_rewriter = [&fns](const std::string& s) { return substitute_function_args(s, "T", fns); };
+        resolve_face_keys(ioStructure.boundaries, ioStructure.other_bc_type, ioStructure.other_bc_first,
+            ioStructure.other_bc_second, ioStructure.other_bc_third, mesh, cells, bc_params, si_scale, bc_rewriter);
 
         return model;
     }
 
-} // namespace mhs
+} // namespace mhs::sim

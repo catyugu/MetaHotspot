@@ -4,7 +4,7 @@
 #include <limits>
 #include <vector>
 
-namespace mhs {
+namespace mhs::post {
 
     namespace {
         struct DataPoint {
@@ -53,47 +53,48 @@ namespace mhs {
         }
 
         // 获取体元指定面的中心世界坐标
-        void get_face_center(
-            FaceDir dir, int ix, int iy, int iz, const MeshGeometry& mesh, double& fx, double& fy, double& fz)
+        void get_face_center(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
+            double& fx, double& fy, double& fz)
         {
             fx = mesh.cx[ix];
             fy = mesh.cy[iy];
             fz = mesh.cz[iz];
-            if (dir == FaceDir::XM)
+            if (dir == mhs::core::FaceDir::XM)
                 fx -= mesh.dx[ix] / 2.0;
-            else if (dir == FaceDir::XP)
+            else if (dir == mhs::core::FaceDir::XP)
                 fx += mesh.dx[ix] / 2.0;
-            else if (dir == FaceDir::YM)
+            else if (dir == mhs::core::FaceDir::YM)
                 fy -= mesh.dy[iy] / 2.0;
-            else if (dir == FaceDir::YP)
+            else if (dir == mhs::core::FaceDir::YP)
                 fy += mesh.dy[iy] / 2.0;
-            else if (dir == FaceDir::ZM)
+            else if (dir == mhs::core::FaceDir::ZM)
                 fz -= mesh.dz[iz] / 2.0;
-            else if (dir == FaceDir::ZP)
+            else if (dir == mhs::core::FaceDir::ZP)
                 fz += mesh.dz[iz] / 2.0;
         }
 
         // 计算边界面的表面外推温度
-        double extrapolate_face_temperature(FaceDir dir, BcType bc_type, uint16_t param_idx, double T_c, double k,
-            const MeshGeometry& mesh, int ix, int iy, int iz, const BCParamTable& bc_params)
+        double extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type, uint16_t param_idx,
+            double T_c, double k, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz,
+            const mhs::core::BCParamTable& bc_params)
         {
             double fx, fy, fz;
             get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            FieldContext ctx {fx, fy, fz, T_c, 0.0};
+            mhs::core::FieldContext ctx {fx, fy, fz, T_c, 0.0};
 
             double half_dist = 0.0;
-            if (dir == FaceDir::XM || dir == FaceDir::XP)
+            if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP)
                 half_dist = mesh.dx[ix] / 2.0;
-            else if (dir == FaceDir::YM || dir == FaceDir::YP)
+            else if (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP)
                 half_dist = mesh.dy[iy] / 2.0;
             else
                 half_dist = mesh.dz[iz] / 2.0;
 
-            if (bc_type == BcType::SecondType) {
+            if (bc_type == mhs::core::BcType::SecondType) {
                 double q = bc_params.neumann_q[param_idx].eval(ctx);
                 return T_c + (q * half_dist) / k;
             }
-            else if (bc_type == BcType::ThirdType) {
+            else if (bc_type == mhs::core::BcType::ThirdType) {
                 double h = bc_params.cauchy_h[param_idx].eval(ctx);
                 double T_inf = bc_params.cauchy_T_inf[param_idx].eval(ctx);
                 double cond_h = k / half_dist;
@@ -124,7 +125,7 @@ namespace mhs {
     }
 
     std::vector<double> Postprocessor::interpolate_cell_to_node(
-        const InternalModel& model, const std::vector<double>& cell_temperature) const
+        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature) const
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -191,21 +192,21 @@ namespace mhs {
                                 pts.push_back({cx, cy, cz, T_c, w_cell});
 
                                 // 确认当前体元连接到该节点的 3 个面
-                                FaceDir f_x = (dx == -1) ? FaceDir::XP : FaceDir::XM;
-                                FaceDir f_y = (dy == -1) ? FaceDir::YP : FaceDir::YM;
-                                FaceDir f_z = (dz == -1) ? FaceDir::ZP : FaceDir::ZM;
+                                mhs::core::FaceDir f_x = (dx == -1) ? mhs::core::FaceDir::XP : mhs::core::FaceDir::XM;
+                                mhs::core::FaceDir f_y = (dy == -1) ? mhs::core::FaceDir::YP : mhs::core::FaceDir::YM;
+                                mhs::core::FaceDir f_z = (dz == -1) ? mhs::core::FaceDir::ZP : mhs::core::FaceDir::ZM;
 
-                                FaceDir dirs[3] = {f_x, f_y, f_z};
+                                mhs::core::FaceDir dirs[3] = {f_x, f_y, f_z};
 
                                 // 检查面上的边界条件
-                                for (FaceDir dir : dirs) {
-                                    BcType bc_type = cells.cell_bcs[compact_idx].types[(size_t)dir];
-                                    if (bc_type == BcType::None)
+                                for (mhs::core::FaceDir dir : dirs) {
+                                    mhs::core::BcType bc_type = cells.cell_bcs[compact_idx].types[(size_t)dir];
+                                    if (bc_type == mhs::core::BcType::None)
                                         continue;
 
                                     uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[(size_t)dir];
 
-                                    if (bc_type == BcType::FirstType) {
+                                    if (bc_type == mhs::core::BcType::FirstType) {
                                         dirichlet_sum += model.bc_params.dirichlet_T[param_idx].eval(
                                             {node_x, node_y, node_z, T_c, 0.0});
                                         dirichlet_count++;
@@ -214,9 +215,10 @@ namespace mhs {
                                         // 梯度边界：外推面中心温度并作为一个额外的"几何观测点"喂给最小二乘求解器
                                         double fx, fy, fz;
                                         get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-                                        double k_face = (dir == FaceDir::XM || dir == FaceDir::XP) ? kx_c
-                                            : (dir == FaceDir::YM || dir == FaceDir::YP)              ? ky_c
-                                                                                                      : kz_c;
+                                        double k_face = (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP)
+                                            ? kx_c
+                                            : (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP) ? ky_c
+                                                                                                               : kz_c;
                                         double T_f = extrapolate_face_temperature(
                                             dir, bc_type, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
 
@@ -273,8 +275,8 @@ namespace mhs {
         return std::isnan(min_val) ? 0.0 : min_val;
     }
 
-    double Postprocessor::sample_point(
-        const std::vector<double>& node_T, const InternalModel& model, const ProbePoint& point) const
+    double Postprocessor::sample_point(const std::vector<double>& node_T, const mhs::core::InternalModel& model,
+        const mhs::core::ProbePoint& point) const
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -327,17 +329,17 @@ namespace mhs {
 
         // 探针位于 cell 哪个边界面上（最多两个面），由 ix/iy/iz 端点直接判定。
         // 仅 FirstType (Dirichlet) 触发早返回；Neumann/Cauchy 在 LSQ 中作为外推观测。
-        for (size_t d = 0; d < FACE_COUNT; ++d) {
-            bool on_face = (d == static_cast<size_t>(FaceDir::XM) && ix == 0)
-                || (d == static_cast<size_t>(FaceDir::XP) && ix == mesh.nx - 1)
-                || (d == static_cast<size_t>(FaceDir::YM) && iy == 0)
-                || (d == static_cast<size_t>(FaceDir::YP) && iy == mesh.ny - 1)
-                || (d == static_cast<size_t>(FaceDir::ZM) && iz == 0)
-                || (d == static_cast<size_t>(FaceDir::ZP) && iz == mesh.nz - 1);
+        for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
+            bool on_face = (d == static_cast<size_t>(mhs::core::FaceDir::XM) && ix == 0)
+                || (d == static_cast<size_t>(mhs::core::FaceDir::XP) && ix == mesh.nx - 1)
+                || (d == static_cast<size_t>(mhs::core::FaceDir::YM) && iy == 0)
+                || (d == static_cast<size_t>(mhs::core::FaceDir::YP) && iy == mesh.ny - 1)
+                || (d == static_cast<size_t>(mhs::core::FaceDir::ZM) && iz == 0)
+                || (d == static_cast<size_t>(mhs::core::FaceDir::ZP) && iz == mesh.nz - 1);
             if (!on_face)
                 continue;
-            BcType bc = cells.cell_bcs[compact_idx].types[d];
-            if (bc == BcType::FirstType) {
+            mhs::core::BcType bc = cells.cell_bcs[compact_idx].types[d];
+            if (bc == mhs::core::BcType::FirstType) {
                 uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[d];
                 return model.bc_params.dirichlet_T[param_idx].eval({px, py, pz, T_c, 0.0});
             }
@@ -351,24 +353,25 @@ namespace mhs {
         double k = (kx_c + ky_c + kz_c) / 3.0;
 
         std::vector<DataPoint> pts;
-        pts.reserve(8 + FACE_COUNT);
+        pts.reserve(8 + mhs::core::FACE_COUNT);
         for (const auto& c : corners) {
             double Tv = std::isnan(c.Tv) ? T_c : c.Tv;
             double dist2 = (c.vx - px) * (c.vx - px) + (c.vy - py) * (c.vy - py) + (c.vz - pz) * (c.vz - pz);
             pts.push_back({c.vx, c.vy, c.vz, Tv, k / (dist2 + 1e-16)});
         }
-        for (size_t d = 0; d < FACE_COUNT; ++d) {
-            BcType bc = cells.cell_bcs[compact_idx].types[d];
-            if (bc == BcType::None || bc == BcType::FirstType)
+        for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
+            mhs::core::BcType bc = cells.cell_bcs[compact_idx].types[d];
+            if (bc == mhs::core::BcType::None || bc == mhs::core::BcType::FirstType)
                 continue;
-            FaceDir dir = FACE_DIRS[d];
+            mhs::core::FaceDir dir = mhs::core::FACE_DIRS[d];
             uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[d];
             double fx, fy, fz;
             get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            double k_face = (dir == FaceDir::XM || dir == FaceDir::XP) ? kx_c
-                : (dir == FaceDir::YM || dir == FaceDir::YP)              ? ky_c
-                                                                          : kz_c;
-            double T_f = extrapolate_face_temperature(dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
+            double k_face = (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP) ? kx_c
+                : (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP)           ? ky_c
+                                                                                             : kz_c;
+            double T_f
+                = extrapolate_face_temperature(dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
             double fdist2 = (fx - px) * (fx - px) + (fy - py) * (fy - py) + (fz - pz) * (fz - pz);
             pts.push_back({fx, fy, fz, T_f, k / (fdist2 + 1e-16)});
         }
@@ -376,4 +379,4 @@ namespace mhs {
         return solve_least_squares(pts, px, py, pz);
     }
 
-} // namespace mhs
+} // namespace mhs::post

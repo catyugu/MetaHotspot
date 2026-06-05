@@ -3,15 +3,15 @@
 #include "solver/solver.hpp"
 #include <gtest/gtest.h>
 
-using namespace mhs;
+using namespace mhs::sim;
 
-// Helper: build a minimal IOStructure for a simple uniform cube
-static IOStructure make_simple_cube_io()
+// Helper: build a minimal mhs::core::IOStructure for a simple uniform cube
+static mhs::core::IOStructure make_simple_cube_io()
 {
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -19,18 +19,18 @@ static IOStructure make_simple_cube_io()
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -41,12 +41,12 @@ static IOStructure make_simple_cube_io()
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     return io;
@@ -61,16 +61,16 @@ TEST(SchedulerTest, SetModelAndSolver)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::SparseLU));
+    scheduler.setSolver(LinearSolver::create(SolverType::SparseLU));
 }
 
 TEST(SchedulerTest, SteadyRunProducesSolution)
 {
     // Simple cube with Dirichlet BC on one face, Neumann(0) on others
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -78,18 +78,18 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -100,20 +100,20 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 500K on bottom face (Z=0)
-    Boundary boundary;
+    mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = ThermalBCType::FirstType;
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary.first.temperature = "500";
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -122,7 +122,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
 
     scheduler.run();
 
@@ -142,10 +142,10 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -153,18 +153,18 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e6"; // heat source
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -175,20 +175,20 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 300K on bottom face (Z=0)
-    Boundary boundary1;
+    mhs::core::Boundary boundary1;
     boundary1.name = "bc1";
-    boundary1.bc_type = ThermalBCType::FirstType;
+    boundary1.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary1.first.temperature = "300";
     boundary1.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary1);
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -197,7 +197,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
 
     scheduler.run();
 
@@ -216,10 +216,10 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
 {
     // Transient 5 steps with heat source; callback should fire 6 times
     // (t=0 initial + 5 step ends).
-    IOStructure io;
-    io.study_type = StudyType::Transient;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Transient;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -227,16 +227,16 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "l";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
-    Block block;
+    mhs::core::Block block;
     block.name = "b";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e8"; // strong heat source to force T to rise
     block.is_normal_material = true;
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -246,7 +246,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
@@ -256,7 +256,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     io.transient_duration = 5.0;
     io.transient_time_step = 1.0;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -265,7 +265,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(Solver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
 
     std::vector<double> times_seen;
     std::vector<double> temps_at_first_cell;

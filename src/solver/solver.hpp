@@ -3,11 +3,11 @@
 #include <Eigen/Sparse>
 #include <memory>
 
-namespace mhs {
+namespace mhs::sim {
 
     enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
 
-    // Solver configuration
+    // LinearSolver configuration
     struct SolverConfig {
         // Active solver. Defaults to the best available backend at build time.
         SolverType type =
@@ -30,10 +30,12 @@ namespace mhs {
         int iterations;
     };
 
-    // Base solver class (virtual interface)
-    class Solver {
+    // Base linear solver class (virtual interface).
+    // Renamed from `Solver` to disambiguate from the nonlinear iteration
+    // pathway (`mhs::sim::nonlinear_solve`).
+    class LinearSolver {
     public:
-        virtual ~Solver() = default;
+        virtual ~LinearSolver() = default;
 
         // Solve A * x = b
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) = 0;
@@ -42,7 +44,7 @@ namespace mhs {
         virtual void set_config(const SolverConfig& cfg) = 0;
 
         // Factory method
-        static std::unique_ptr<Solver> create(SolverType type);
+        static std::unique_ptr<LinearSolver> create(SolverType type);
     };
 
-} // namespace mhs
+} // namespace mhs::sim

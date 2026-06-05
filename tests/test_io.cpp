@@ -5,16 +5,16 @@
 #include <gtest/gtest.h>
 #include <string>
 
-using namespace mhs;
+using namespace mhs::io;
 
 // Build a small in-memory XML string with/without ObservePoints3D block.
 static std::string make_xml_with_observe_points(const std::string& obs_block)
 {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <StudyType>Transient</StudyType>
-    <Dimension>Dimension3D</Dimension>
-    <LengthUnit>Mm</LengthUnit>
+    <mhs::core::StudyType>Transient</mhs::core::StudyType>
+    <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
+    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -73,23 +73,23 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     </ObservePoints3D>)";
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
-    IOStructure io = io::read_xml(path.string());
-    ASSERT_EQ(io.observation_points.size(), 2u);
-    EXPECT_EQ(io.observation_points[0].name, "p1");
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    ASSERT_EQ(io_structure.observation_points.size(), 2u);
+    EXPECT_EQ(io_structure.observation_points[0].name, "p1");
     // 坐标保留为 exprtk 表达式字符串，由 preprocessor 在加载时统一求值。
-    EXPECT_EQ(io.observation_points[0].x, "1.5");
-    EXPECT_EQ(io.observation_points[0].y, "2.5");
-    EXPECT_EQ(io.observation_points[0].z, "3.5");
-    EXPECT_EQ(io.observation_points[1].name, "p2");
-    EXPECT_EQ(io.observation_points[1].x, "0.1");
+    EXPECT_EQ(io_structure.observation_points[0].x, "1.5");
+    EXPECT_EQ(io_structure.observation_points[0].y, "2.5");
+    EXPECT_EQ(io_structure.observation_points[0].z, "3.5");
+    EXPECT_EQ(io_structure.observation_points[1].name, "p2");
+    EXPECT_EQ(io_structure.observation_points[1].x, "0.1");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
-    IOStructure io = io::read_xml(path.string());
-    EXPECT_TRUE(io.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    EXPECT_TRUE(io_structure.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
 
@@ -97,9 +97,9 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
 {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <StudyType>Transient</StudyType>
-    <Dimension>Dimension3D</Dimension>
-    <LengthUnit>Mm</LengthUnit>
+    <mhs::core::StudyType>Transient</mhs::core::StudyType>
+    <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
+    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -124,20 +124,20 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto in_path = write_tmp_xml("io_write_input.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_output.xml";
 
-    InternalModel model;
+    mhs::core::InternalModel model;
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<ProbeTrace> traces;
-    ProbeTrace t1;
+    std::vector<mhs::core::ProbeTrace> traces;
+    mhs::core::ProbeTrace t1;
     t1.name = "probe_a";
     t1.times = {0.0, 1.0, 2.0};
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
-    io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
 
     std::string out_xml = read_file(out_path);
     EXPECT_NE(out_xml.find("Result0DTransient"), std::string::npos);
@@ -153,9 +153,9 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <StudyType>Steady</StudyType>
-    <Dimension>Dimension3D</Dimension>
-    <LengthUnit>Mm</LengthUnit>
+    <mhs::core::StudyType>Steady</mhs::core::StudyType>
+    <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
+    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondType"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -177,14 +177,14 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto in_path = write_tmp_xml("io_write_steady.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
-    InternalModel model;
+    mhs::core::InternalModel model;
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<ProbeTrace> traces;
-    io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
+    std::vector<mhs::core::ProbeTrace> traces;
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
 
     std::string out_xml = read_file(out_path);
     EXPECT_EQ(out_xml.find("Result0DTransient"), std::string::npos)
@@ -195,14 +195,14 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 }
 
 // Build a minimal in-memory XML that contains one material with the given
-// DaoreXishu text. Used to exercise io::read_xml's DaoreXishu parser.
+// DaoreXishu text. Used to exercise mhs::io::read_xml's DaoreXishu parser.
 static std::string make_xml_with_daore_xishu(const std::string& daore_text)
 {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <StudyType>Steady</StudyType>
-    <Dimension>Dimension3D</Dimension>
-    <LengthUnit>Mm</LengthUnit>
+    <mhs::core::StudyType>Steady</mhs::core::StudyType>
+    <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
+    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondTypeThermalBoundary"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -226,64 +226,64 @@ static std::string make_xml_with_daore_xishu(const std::string& daore_text)
 TEST(IoTest, ReadXmlDaoreXishuThreeExpressions)
 {
     auto path = write_tmp_xml("io_daore_3.xml", make_xml_with_daore_xishu("1,2,3"));
-    IOStructure io = io::read_xml(path.string());
-    ASSERT_TRUE(io.materials.count("mat")) << "Material 'mat' should be parsed";
-    EXPECT_EQ(io.materials.at("mat").kx, "1");
-    EXPECT_EQ(io.materials.at("mat").ky, "2");
-    EXPECT_EQ(io.materials.at("mat").kz, "3");
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    ASSERT_TRUE(io_structure.materials.count("mat")) << "mhs::core::Material 'mat' should be parsed";
+    EXPECT_EQ(io_structure.materials.at("mat").kx, "1");
+    EXPECT_EQ(io_structure.materials.at("mat").ky, "2");
+    EXPECT_EQ(io_structure.materials.at("mat").kz, "3");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuSingleExpressionSetsAllAxes)
 {
     auto path = write_tmp_xml("io_daore_1.xml", make_xml_with_daore_xishu("5"));
-    IOStructure io = io::read_xml(path.string());
-    ASSERT_TRUE(io.materials.count("mat"));
-    EXPECT_EQ(io.materials.at("mat").kx, "5");
-    EXPECT_EQ(io.materials.at("mat").ky, "5");
-    EXPECT_EQ(io.materials.at("mat").kz, "5");
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    ASSERT_TRUE(io_structure.materials.count("mat"));
+    EXPECT_EQ(io_structure.materials.at("mat").kx, "5");
+    EXPECT_EQ(io_structure.materials.at("mat").ky, "5");
+    EXPECT_EQ(io_structure.materials.at("mat").kz, "5");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
 {
     auto path = write_tmp_xml("io_daore_trim.xml", make_xml_with_daore_xishu("  5  "));
-    IOStructure io = io::read_xml(path.string());
-    ASSERT_TRUE(io.materials.count("mat"));
-    EXPECT_EQ(io.materials.at("mat").kx, "5");
-    EXPECT_EQ(io.materials.at("mat").ky, "5");
-    EXPECT_EQ(io.materials.at("mat").kz, "5");
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    ASSERT_TRUE(io_structure.materials.count("mat"));
+    EXPECT_EQ(io_structure.materials.at("mat").kx, "5");
+    EXPECT_EQ(io_structure.materials.at("mat").ky, "5");
+    EXPECT_EQ(io_structure.materials.at("mat").kz, "5");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
 {
     auto path = write_tmp_xml("io_daore_3trim.xml", make_xml_with_daore_xishu("  1.5e2 , 2.5 , 0 "));
-    IOStructure io = io::read_xml(path.string());
-    ASSERT_TRUE(io.materials.count("mat"));
-    EXPECT_EQ(io.materials.at("mat").kx, "1.5e2");
-    EXPECT_EQ(io.materials.at("mat").ky, "2.5");
-    EXPECT_EQ(io.materials.at("mat").kz, "0");
+    mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
+    ASSERT_TRUE(io_structure.materials.count("mat"));
+    EXPECT_EQ(io_structure.materials.at("mat").kx, "1.5e2");
+    EXPECT_EQ(io_structure.materials.at("mat").ky, "2.5");
+    EXPECT_EQ(io_structure.materials.at("mat").kz, "0");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuTwoExpressionsPanics)
 {
     auto path = write_tmp_xml("io_daore_2.xml", make_xml_with_daore_xishu("1, 2"));
-    EXPECT_DEATH(io::read_xml(path.string()), "");
+    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuFourExpressionsPanics)
 {
     auto path = write_tmp_xml("io_daore_4.xml", make_xml_with_daore_xishu("1,2,3,4"));
-    EXPECT_DEATH(io::read_xml(path.string()), "");
+    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuEmptySegmentPanics)
 {
     auto path = write_tmp_xml("io_daore_empty.xml", make_xml_with_daore_xishu("1,,3"));
-    EXPECT_DEATH(io::read_xml(path.string()), "");
+    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
     std::filesystem::remove(path);
 }

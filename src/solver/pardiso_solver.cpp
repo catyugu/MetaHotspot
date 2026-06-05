@@ -2,7 +2,7 @@
 
 #include <Eigen/PardisoSupport>
 
-namespace mhs {
+namespace mhs::sim {
 
     SolveResult PardisoSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
     {
@@ -16,13 +16,11 @@ namespace mhs {
         Eigen::VectorXd x = solver.solve(b);
 
         return {
-            x,
-            solver.info() == Eigen::Success,
-            (A * x - b).norm(),
+            x, solver.info() == Eigen::Success, (A * x - b).norm(),
             1 // direct solver, 1 iteration
         };
     }
 
     void PardisoSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
-} // namespace mhs
+} // namespace mhs::sim

@@ -2,9 +2,10 @@
 #include <string>
 #include <vector>
 
+#include "expr/expr.hpp"
 #include "types.hpp"
 
-namespace mhs {
+namespace mhs::core {
 
     struct CellBC {
         std::array<BcType, FACE_COUNT> types;
@@ -69,7 +70,7 @@ namespace mhs {
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
-    // 与 io_model::ObservationPoint3D（表达式字符串）一一对应，由 preprocessor 转换生成。
+    // 与 IOStructure::ObservationPoint3D（表达式字符串）一一对应，由 preprocessor 转换生成。
     struct ProbePoint {
         std::string name;
         double x = 0.0;
@@ -97,4 +98,4 @@ namespace mhs {
         std::vector<ProbePoint> observation_points;
     };
 
-} // namespace mhs
+} // namespace mhs::core

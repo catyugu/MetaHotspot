@@ -5,15 +5,16 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-using namespace mhs;
+using namespace mhs::post;
+using namespace mhs::sim;
 
-// Helper: build a minimal IOStructure with a uniform grid
-static IOStructure make_simple_uniform_grid_io()
+// Helper: build a minimal mhs::core::IOStructure with a uniform grid
+static mhs::core::IOStructure make_simple_uniform_grid_io()
 {
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -21,18 +22,18 @@ static IOStructure make_simple_uniform_grid_io()
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -43,12 +44,12 @@ static IOStructure make_simple_uniform_grid_io()
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     return io;
@@ -103,10 +104,10 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // touches both. Without Dirichlet priority, the result would be an
     // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
     // With Dirichlet priority, the result must be exactly 500K.
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -114,18 +115,18 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -136,21 +137,21 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material copper;
+    mhs::core::Material copper;
     copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
-    Boundary boundary_dirichlet;
+    mhs::core::Boundary boundary_dirichlet;
     boundary_dirichlet.name = "bc_dirichlet";
-    boundary_dirichlet.bc_type = ThermalBCType::FirstType;
+    boundary_dirichlet.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary_dirichlet.first.temperature = "500";
     boundary_dirichlet.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -187,10 +188,10 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     // A cube with Dirichlet BC on the bottom face (Z=0) at 500K.
     // All boundary nodes on the Z=0 face should have exactly 500K,
     // not the interpolated cell-center average.
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -198,18 +199,18 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -220,21 +221,21 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material copper;
+    mhs::core::Material copper;
     copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Dirichlet BC on bottom face (Z=0) at 500K
-    Boundary boundary;
+    mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = ThermalBCType::FirstType;
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary.first.temperature = "500";
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -299,7 +300,7 @@ TEST(PostprocessorTest, SamplePointOnUniformFieldReturnsFieldValue)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ProbePoint pt;
+    mhs::core::ProbePoint pt;
     pt.name = "center";
     // model->mesh 已是 SI 单位 (vertex_x = {0, 0.005, 0.01})
     pt.x = 0.003;
@@ -316,10 +317,10 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
     // 5x5x5 cell grid, T = 300 + 100*z (linear in z). Sample at z=6mm
     // should return ~ 300 + 100*0.006 = 300.6K (mesh vertex z range 0..10mm
     // so vertex 6 mm → normalized t = 0.6 → T = 360K).
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -327,17 +328,17 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
     io.mesh_vertex_y = {0.0, 2.0, 4.0, 6.0, 8.0, 10.0};
     io.mesh_vertex_z = {0.0, 2.0, 4.0, 6.0, 8.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "linear";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "b";
     block.material_name = "mat";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -347,12 +348,12 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "mat";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["mat"] = mat;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -371,7 +372,7 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
                 node_T[vx * node_ny * node_nz + vy * node_nz + vz] = 300.0 + 6.0 * z;
             }
 
-    ProbePoint pt;
+    mhs::core::ProbePoint pt;
     pt.name = "z6";
     pt.x = 0.005; // 5 mm
     pt.y = 0.005;
@@ -396,7 +397,7 @@ TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ProbePoint pt;
+    mhs::core::ProbePoint pt;
     pt.name = "outside";
     // model->mesh 顶点范围 0..0.01 m (0..10 mm) — 0.1 m 在网格外
     pt.x = 0.1;
@@ -410,26 +411,26 @@ TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
 TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
 {
     // Dirichlet on Z=0 face at 500K; point (5, 5, 0) sits exactly on that face.
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "l";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
-    Block block;
+    mhs::core::Block block;
     block.name = "b";
     block.material_name = "mat";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -439,18 +440,18 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "mat";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["mat"] = mat;
 
-    Boundary boundary;
+    mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = ThermalBCType::FirstType;
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary.first.temperature = "500";
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -461,7 +462,7 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ProbePoint pt;
+    mhs::core::ProbePoint pt;
     pt.name = "on_face";
     pt.x = 0.005;
     pt.y = 0.005;

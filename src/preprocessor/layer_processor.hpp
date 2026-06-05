@@ -3,7 +3,7 @@
 #include "common/internal_model.hpp"
 #include "common/io_model.hpp"
 
-namespace mhs::preprocessor {
+namespace mhs::sim {
 
     // Pre-resolved geometry for a single rect (all values in SI meters)
     struct ResolvedRect {
@@ -18,7 +18,7 @@ namespace mhs::preprocessor {
     struct ResolvedBlock {
         std::vector<ResolvedRect> rects;
         std::string material_name;
-        std::string ti_reyuan_expr; // kept as string for later expr::parse
+        std::string ti_reyuan_expr; // kept as string for later mhs::core::parse
     };
 
     // Pre-resolved geometry for a single layer
@@ -29,11 +29,11 @@ namespace mhs::preprocessor {
     };
 
     // Convert length unit to SI (meters) scale factor
-    double length_unit_to_si(LengthUnit unit);
+    double length_unit_to_si(mhs::core::LengthUnit unit);
 
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
     // This eliminates repeated eval_geometry calls in the cell loops
-    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<Layer>& layers, double si_scale);
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale);
 
     // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
     // Uses pre-evaluated geometry values — no expression evaluation at runtime
@@ -42,8 +42,8 @@ namespace mhs::preprocessor {
     int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
 
     // Resolve cell validity, layer assignment, and material assignment
-    // Populates valid_mask, index_map, layer_id, material_id in CellFields
-    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const MeshGeometry& mesh,
-        const std::unordered_map<std::string, size_t>& name_to_idx, CellFields& cells);
+    // Populates valid_mask, index_map, layer_id, material_id in mhs::core::CellFields
+    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh,
+        const std::unordered_map<std::string, size_t>& name_to_idx, mhs::core::CellFields& cells);
 
-} // namespace mhs::preprocessor
+} // namespace mhs::sim

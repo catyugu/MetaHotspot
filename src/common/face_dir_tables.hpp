@@ -1,6 +1,6 @@
 #pragma once
 
-/// Compile-time lookup tables and inline helpers for FaceDir (XM=0, XP=1, YM=2, YP=3, ZM=4, ZP=5).
+/// Compile-time lookup tables and inline helpers for mhs::core::FaceDir (XM=0, XP=1, YM=2, YP=3, ZM=4, ZP=5).
 /// Eliminates switch-case branches in assembler inner loops and preprocessor face logic.
 
 #include "common/types.hpp"
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace mhs {
+namespace mhs::core {
 
     // ── Axis mapping: XM/XP → 0 (X), YM/YP → 1 (Y), ZM/ZP → 2 (Z) ──
     constexpr size_t AXIS_OF_DIR[6] = {0, 0, 1, 1, 2, 2};
@@ -65,4 +65,4 @@ namespace mhs {
         return d[(a + 1) % 3] * d[(a + 2) % 3];
     }
 
-} // namespace mhs
+} // namespace mhs::core

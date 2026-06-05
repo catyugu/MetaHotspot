@@ -1,13 +1,9 @@
 #pragma once
 
-#include "expr/expr.hpp"
 #include <array>
 #include <cstdint>
 
-namespace mhs {
-    using FieldContext = expr::FieldContext;
-    using FieldEvaluator = expr::FieldEvaluator;
-    using CompiledExpression = expr::CompiledExpression;
+namespace mhs::core {
 
     enum class StudyType { Steady, Transient };
 
@@ -20,4 +16,4 @@ namespace mhs {
     constexpr std::array<FaceDir, FACE_COUNT> FACE_DIRS
         = {FaceDir::XM, FaceDir::XP, FaceDir::YM, FaceDir::YP, FaceDir::ZM, FaceDir::ZP};
 
-} // namespace mhs
+} // namespace mhs::core

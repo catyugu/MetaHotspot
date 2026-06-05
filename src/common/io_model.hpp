@@ -6,7 +6,7 @@
 
 #include "types.hpp"
 
-namespace mhs {
+namespace mhs::core {
 
     struct Variable {
         std::string name;
@@ -190,4 +190,4 @@ namespace mhs {
         std::vector<ObservationPoint3D> observation_points;
     };
 
-} // namespace mhs
+} // namespace mhs::core

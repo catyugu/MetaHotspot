@@ -5,12 +5,12 @@
 #include "solver/pardiso_solver.hpp"
 #endif
 
-namespace mhs {
+namespace mhs::sim {
 
     // Factory: explicit branches for each SolverType. The default and the
     // Pardiso branch are guarded by MHS_ENABLE_PARDISO; without it, both
     // fall back to SparseLUSolver.
-    std::unique_ptr<Solver> Solver::create(SolverType type)
+    std::unique_ptr<LinearSolver> LinearSolver::create(SolverType type)
     {
         switch (type) {
 #ifdef MHS_ENABLE_PARDISO
@@ -26,4 +26,4 @@ namespace mhs {
         }
     }
 
-} // namespace mhs
+} // namespace mhs::sim

@@ -4,7 +4,7 @@
 
 #include "common/internal_model.hpp"
 
-namespace mhs::assembler {
+namespace mhs::sim {
 
     struct LinearSystem {
         Eigen::SparseMatrix<double> A;
@@ -14,13 +14,13 @@ namespace mhs::assembler {
 
     class Assembler {
     public:
-        explicit Assembler(const InternalModel& model) : model_(model) { }
+        explicit Assembler(const mhs::core::InternalModel& model) : model_(model) { }
         ~Assembler() = default;
 
-        LinearSystem assemble(const GlobalState& state);
+        LinearSystem assemble(const mhs::core::GlobalState& state);
 
     private:
-        const InternalModel& model_;
+        const mhs::core::InternalModel& model_;
     };
 
-} // namespace mhs::assembler
+} // namespace mhs::sim

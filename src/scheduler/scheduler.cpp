@@ -2,9 +2,9 @@
 #include "nonlinear/nonlinear_solver.hpp"
 #include "scheduler.hpp"
 
-namespace mhs {
+namespace mhs::sim {
 
-    void Scheduler::setSolver(std::unique_ptr<Solver> solver) { solver_ = std::move(solver); }
+    void Scheduler::setSolver(std::unique_ptr<LinearSolver> solver) { solver_ = std::move(solver); }
 
     void Scheduler::run()
     {
@@ -23,8 +23,8 @@ namespace mhs {
         state_.time_step = 0;
         state_.dt = model_->transient_time_step;
 
-        if (model_->study_type == StudyType::Steady) {
-            nonlinear::solve(*model_, state_, *solver_);
+        if (model_->study_type == mhs::core::StudyType::Steady) {
+            nonlinear_solve(*model_, state_, *solver_);
             solution_ = state_.T;
             if (callback_) {
                 callback_(state_.current_time, state_.time_step, state_.T);
@@ -40,7 +40,7 @@ namespace mhs {
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
-                auto result = nonlinear::solve(*model_, state_, *solver_);
+                auto result = nonlinear_solve(*model_, state_, *solver_);
                 if (!result.converged) {
                     MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
                 }
@@ -59,4 +59,4 @@ namespace mhs {
 
     const std::vector<double>& Scheduler::solution() const { return solution_; }
 
-} // namespace mhs
+} // namespace mhs::sim

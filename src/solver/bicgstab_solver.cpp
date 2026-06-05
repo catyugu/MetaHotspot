@@ -1,7 +1,7 @@
 #include "solver/bicgstab_solver.hpp"
 #include <Eigen/Sparse>
 
-namespace mhs {
+namespace mhs::sim {
 
     SolveResult BiCGSTABSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
     {
@@ -12,14 +12,9 @@ namespace mhs {
 
         Eigen::VectorXd x = solver.solve(b);
 
-        return {
-            x,
-            solver.info() == Eigen::Success,
-            solver.error(),
-            static_cast<int>(solver.iterations())
-        };
+        return {x, solver.info() == Eigen::Success, solver.error(), static_cast<int>(solver.iterations())};
     }
 
     void BiCGSTABSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
-} // namespace mhs
+} // namespace mhs::sim

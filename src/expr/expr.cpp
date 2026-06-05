@@ -9,9 +9,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace mhs::expr {
+namespace mhs::core {
 
-    namespace registry {
+    namespace detail { // registry state: cross-file internal within mhs::core
         std::mutex& mutex()
         {
             static std::mutex m;
@@ -35,7 +35,7 @@ namespace mhs::expr {
             static std::unordered_map<std::string, std::string> funcs;
             return funcs;
         }
-    } // namespace registry
+    } // namespace detail
 
     namespace {
         // FieldContext 顺序: (x, y, z, T, t)
@@ -82,8 +82,8 @@ namespace mhs::expr {
             // Bind every registered native function name as a 1-arg exprtk function.
             // Slot lifetime must outlive the symbol table / expression.
             {
-                std::lock_guard<std::mutex> lock(registry::mutex());
-                for (const auto& [name, fe] : registry::native_functions()) {
+                std::lock_guard<std::mutex> lock(detail::mutex());
+                for (const auto& [name, fe] : detail::native_functions()) {
                     auto slot = std::make_shared<NativeFn<double>>(fe);
                     native_slots_[name] = slot;
                     sym_table_->add_function(name, *slot);
@@ -164,27 +164,27 @@ namespace mhs::expr {
 
     void set_variable(const std::string& name, double value)
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        registry::variables()[name] = value;
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        detail::variables()[name] = value;
     }
 
     void register_native(const std::string& name, FieldEvaluator func)
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        registry::native_functions()[name] = std::move(func);
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        detail::native_functions()[name] = std::move(func);
     }
 
     void register_function(const std::string& name, const std::string& expression)
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        registry::user_functions()[name] = expression;
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        detail::user_functions()[name] = expression;
     }
 
     FieldEvaluator get_native(const std::string& name)
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        auto it = registry::native_functions().find(name);
-        if (it != registry::native_functions().end()) {
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        auto it = detail::native_functions().find(name);
+        if (it != detail::native_functions().end()) {
             return it->second;
         }
         return nullptr;
@@ -192,10 +192,10 @@ namespace mhs::expr {
 
     void clear_registry()
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        registry::variables().clear();
-        registry::native_functions().clear();
-        registry::user_functions().clear();
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        detail::variables().clear();
+        detail::native_functions().clear();
+        detail::user_functions().clear();
     }
 
     CompiledExpression parse(const std::string& formula)
@@ -218,8 +218,8 @@ namespace mhs::expr {
 
     double eval_geometry(const std::string& formula)
     {
-        std::lock_guard<std::mutex> lock(registry::mutex());
-        const auto& vars = registry::variables();
+        std::lock_guard<std::mutex> lock(detail::mutex());
+        const auto& vars = detail::variables();
 
         auto var_it = vars.find(formula);
         if (var_it != vars.end()) {
@@ -248,4 +248,4 @@ namespace mhs::expr {
         return 0.0;
     }
 
-} // namespace mhs::expr
+} // namespace mhs::core

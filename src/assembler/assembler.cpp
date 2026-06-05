@@ -6,14 +6,16 @@
 #include "assembler.hpp"
 #include "common/face_dir_tables.hpp"
 
-namespace mhs::assembler {
+namespace mhs::sim {
 
-    static void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
-    {
-        ix = old_idx / (ny * nz);
-        iy = (old_idx % (ny * nz)) / nz;
-        iz = old_idx % nz;
-    }
+    namespace { // anonymous: file-private helpers
+        void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
+        {
+            ix = old_idx / (ny * nz);
+            iy = (old_idx % (ny * nz)) / nz;
+            iz = old_idx % nz;
+        }
+    } // namespace
 
     struct ThreadLocalData {
         std::vector<Eigen::Triplet<double>> triplets;
@@ -21,7 +23,7 @@ namespace mhs::assembler {
         explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)) { }
     };
 
-    LinearSystem Assembler::assemble(const GlobalState& state)
+    LinearSystem Assembler::assemble(const mhs::core::GlobalState& state)
     {
         const auto& mesh = model_.mesh;
         const auto& cells = model_.cells;
@@ -63,22 +65,22 @@ namespace mhs::assembler {
             const auto& cell_bc = cells.cell_bcs[c_idx];
             double diag = 0.0;
 
-            for (size_t f = 0; f < FACE_COUNT; f++) {
-                FaceDir dir = FACE_DIRS[f];
-                double A_f = face_area(dir, dx_cell, dy_cell, dz_cell);
-                BcType bc_type = cell_bc.types[f];
+            for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+                mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
+                double A_f = mhs::core::face_area(dir, dx_cell, dy_cell, dz_cell);
+                mhs::core::BcType bc_type = cell_bc.types[f];
                 uint16_t param_idx = cell_bc.param_idxs[f];
 
-                if (bc_type == BcType::None) {
+                if (bc_type == mhs::core::BcType::None) {
                     int neighbor_old
-                        = neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
+                        = mhs::core::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
                     if (neighbor_old < 0)
                         continue;
 
                     int n_idx = (int)cells.index_map[neighbor_old];
-                    int nix = neighbor_ix(dir, ix);
-                    int niy = neighbor_iy(dir, iy);
-                    int niz = neighbor_iz(dir, iz);
+                    int nix = mhs::core::neighbor_ix(dir, ix);
+                    int niy = mhs::core::neighbor_iy(dir, iy);
+                    int niz = mhs::core::neighbor_iz(dir, iz);
 
                     const auto& mp_n = materials[cells.material_id[neighbor_old]];
                     double kx_n
@@ -88,40 +90,41 @@ namespace mhs::assembler {
                     double kz_n
                         = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
 
-                    double d_half_cell = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
-                    double d_half_neighbor = half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
+                    double d_half_cell = mhs::core::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+                    double d_half_neighbor
+                        = mhs::core::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
-                    double k_cell = k_along(dir, kx_c, ky_c, kz_c);
-                    double k_neighbor = k_along(dir, kx_n, ky_n, kz_n);
+                    double k_cell = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
+                    double k_neighbor = mhs::core::k_along(dir, kx_n, ky_n, kz_n);
                     double cond = A_f / (d_half_cell / k_cell + d_half_neighbor / k_neighbor);
                     diag += cond;
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
-                else if (bc_type == BcType::FirstType) {
-                    double half_dist = half_length_along(dir, dx_cell, dy_cell, dz_cell);
+                else if (bc_type == mhs::core::BcType::FirstType) {
+                    double half_dist = mhs::core::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
                     double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double k_face = k_along(dir, kx_c, ky_c, kz_c);
+                    double k_face = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
                     double cond = k_face * A_f / half_dist;
                     diag += cond;
                     local.b(c_idx) += cond * T_bc_val;
                 }
-                else if (bc_type == BcType::SecondType) {
+                else if (bc_type == mhs::core::BcType::SecondType) {
                     double q = bc_params.neumann_q[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
                     local.b(c_idx) += q * A_f;
                 }
-                else if (bc_type == BcType::ThirdType) {
+                else if (bc_type == mhs::core::BcType::ThirdType) {
                     double h = bc_params.cauchy_h[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
                     double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double half_dist = half_length_along(dir, dx_cell, dy_cell, dz_cell);
+                    double half_dist = mhs::core::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
-                    double k_face = k_along(dir, kx_c, ky_c, kz_c);
+                    double k_face = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
                     double coeff = k_face * h * A_f / (k_face + h * half_dist);
                     diag += coeff;
                     local.b(c_idx) += coeff * T_inf;
@@ -130,7 +133,7 @@ namespace mhs::assembler {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            if (model_.study_type == StudyType::Transient && state.dt > 0.0) {
+            if (model_.study_type == mhs::core::StudyType::Transient && state.dt > 0.0) {
                 // 标准 backward Euler：质量项用 T_prev 求值（与 T 解耦），
                 // 这样 mass_coeff 在非线性迭代中是常数，避免在更新 T 时反复重算。
                 double rho = materials[mat_id].rho.eval(
@@ -163,4 +166,4 @@ namespace mhs::assembler {
         return {A, b, residual_vec};
     }
 
-} // namespace mhs::assembler
+} // namespace mhs::sim

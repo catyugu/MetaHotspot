@@ -6,40 +6,40 @@
 #include <string>
 #include <string_view>
 
-namespace mhs::preprocessor {
+namespace mhs::sim {
 
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
-    FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
+    mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
     {
 
-        auto ce = expr::parse(inner_expr);
-        return [ce](const expr::FieldContext& ctx) { return ce.eval(ctx); };
+        auto ce = mhs::core::parse(inner_expr);
+        return [ce](const mhs::core::FieldContext& ctx) { return ce.eval(ctx); };
     }
 
-    FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
+    mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
         return [A, alpha, beta](
-                   const expr::FieldContext& c) { return A * (std::exp(alpha * c.t) - std::exp(beta * c.t)); };
+                   const mhs::core::FieldContext& c) { return A * (std::exp(alpha * c.t) - std::exp(beta * c.t)); };
     }
 
-    FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
+    mhs::core::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
     {
-        return [A, tau, x0](const expr::FieldContext& c) {
+        return [A, tau, x0](const mhs::core::FieldContext& c) {
             double u = (c.t - x0) / tau;
             return A * std::exp(-u * u);
         };
     }
 
-    FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
+    mhs::core::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
-        return [A, omega, phi](const expr::FieldContext& c) { return A * std::sin(omega * c.t + phi); };
+        return [A, omega, phi](const mhs::core::FieldContext& c) { return A * std::sin(omega * c.t + phi); };
     }
 
-    FieldEvaluator make_piecewise_evaluator(std::vector<PieceWiseFunction::Point> pts)
+    mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::core::PieceWiseFunction::Point> pts)
     {
         // Points are pre-sorted by X in the IO parser, so no resort needed.
-        return [pts = std::move(pts)](const expr::FieldContext& c) {
+        return [pts = std::move(pts)](const mhs::core::FieldContext& c) {
             double x = c.t;
             if (pts.empty())
                 return 0.0;
@@ -47,8 +47,8 @@ namespace mhs::preprocessor {
                 return pts.front().y;
             if (x >= pts.back().x)
                 return pts.back().y;
-            auto it = std::upper_bound(
-                pts.begin(), pts.end(), x, [](double v, const PieceWiseFunction::Point& p) { return v < p.x; });
+            auto it = std::upper_bound(pts.begin(), pts.end(), x,
+                [](double v, const mhs::core::PieceWiseFunction::Point& p) { return v < p.x; });
             const auto& p1 = *(it - 1);
             const auto& p2 = *it;
             double t = (x - p1.x) / (p2.x - p1.x);
@@ -61,7 +61,7 @@ namespace mhs::preprocessor {
     namespace {
 
         // exprtk 内建符号（变量 + 常量），引用处出现这些名字不算"未注册函数"。
-        // 仅作宽松白名单；真正的语法校验由后续 expr::parse 负责。
+        // 仅作宽松白名单；真正的语法校验由后续 mhs::core::parse 负责。
         bool is_known_builtin(std::string_view name)
         {
             return name == "x" || name == "y" || name == "z" || name == "T" || name == "t" || name == "pi"
@@ -79,8 +79,8 @@ namespace mhs::preprocessor {
 
     } // namespace
 
-    std::string substitute_function_args(
-        const std::string& expr_str, const std::string& argname, const std::unordered_map<std::string, Function>& fns)
+    std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
+        const std::unordered_map<std::string, mhs::core::Function>& fns)
     {
         // 单次扫描：找到每个 identifier-start → 读到 identifier 末尾 →
         //   1) 若紧跟 `(` 且不在白名单也不在 fns → panic
@@ -121,29 +121,29 @@ namespace mhs::preprocessor {
 
     // ---- 注册全部 native --------------------------------------------------
 
-    void register_all_functions(const std::unordered_map<std::string, Function>& fns)
+    void register_all_functions(const std::unordered_map<std::string, mhs::core::Function>& fns)
     {
         for (const auto& [key, fn] : fns) {
-            FieldEvaluator ev = nullptr;
+            mhs::core::FieldEvaluator ev = nullptr;
             switch (fn.type) {
-            case FunctionType::Expression:
+            case mhs::core::FunctionType::Expression:
                 ev = make_expression_evaluator(fn.expression.expression);
                 break;
-            case FunctionType::DoubleExponential:
+            case mhs::core::FunctionType::DoubleExponential:
                 ev = make_double_exp_evaluator(fn.double_exp.a, fn.double_exp.alpha, fn.double_exp.beta);
                 break;
-            case FunctionType::Gauss:
+            case mhs::core::FunctionType::Gauss:
                 ev = make_gauss_evaluator(fn.gauss.a, fn.gauss.tau, fn.gauss.x0);
                 break;
-            case FunctionType::Sine:
+            case mhs::core::FunctionType::Sine:
                 ev = make_sine_evaluator(fn.sine.a, fn.sine.omega, fn.sine.phi);
                 break;
-            case FunctionType::PieceWise:
+            case mhs::core::FunctionType::PieceWise:
                 ev = make_piecewise_evaluator(fn.piecewise.points);
                 break;
             }
-            expr::register_native(key, std::move(ev));
+            mhs::core::register_native(key, std::move(ev));
         }
     }
 
-} // namespace mhs::preprocessor
+} // namespace mhs::sim

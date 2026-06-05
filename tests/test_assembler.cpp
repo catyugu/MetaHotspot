@@ -7,16 +7,17 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 
-using namespace mhs;
-using namespace mhs::assembler;
+using namespace mhs::sim;
+using namespace mhs::io;
+using namespace mhs::sim;
 
-// Helper: build a minimal IOStructure for a simple uniform cube
-static IOStructure make_simple_cube_io()
+// Helper: build a minimal mhs::core::IOStructure for a simple uniform cube
+static mhs::core::IOStructure make_simple_cube_io()
 {
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -24,18 +25,18 @@ static IOStructure make_simple_cube_io()
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -46,14 +47,14 @@ static IOStructure make_simple_cube_io()
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     return io;
@@ -77,7 +78,7 @@ TEST(AssemblerTest, AssembleReturnsCorrectSize)
     ASSERT_NE(model, nullptr);
 
     int N = model->cells.cell_count;
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
@@ -114,7 +115,7 @@ TEST(AssemblerTest, DiagonalIsNegativeAndSymmetricForInteriorCell)
     ASSERT_NE(model, nullptr);
 
     int N = model->cells.cell_count;
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
@@ -143,10 +144,10 @@ TEST(AssemblerTest, DiagonalIsNegativeAndSymmetricForInteriorCell)
 TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
 {
     // Simple cube with Dirichlet BC on one face
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -154,18 +155,18 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -176,21 +177,21 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet BC on bottom face (Z=0)
-    Boundary boundary;
+    mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = ThermalBCType::FirstType;
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
     boundary.first.temperature = "500";
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
     // Neumann(0) for all other faces
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -200,7 +201,7 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
     int N = model->cells.cell_count;
     EXPECT_EQ(N, 8);
 
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
@@ -222,10 +223,10 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
 TEST(AssemblerTest, HeatSourceContributesToRHS)
 {
     // Simple cube with a heat source
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -233,18 +234,18 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e6"; // 1e6 W/m^3 heat source
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -255,12 +256,12 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -268,7 +269,7 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
     ASSERT_NE(model, nullptr);
 
     int N = model->cells.cell_count;
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
@@ -290,10 +291,10 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
 TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
 {
     // Cube with Cauchy/Robin BC on top face
-    IOStructure io;
-    io.study_type = StudyType::Steady;
-    io.dimension = Dimension::Dimension3D;
-    io.length_unit = LengthUnit::Mm;
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
     io.ambient_temperature = 300.0;
 
@@ -301,18 +302,18 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
-    Layer layer;
+    mhs::core::Layer layer;
     layer.name = "test_layer";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
-    Block block;
+    mhs::core::Block block;
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
 
-    Rect rect;
+    mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
     rect.y_expr = "0";
@@ -323,21 +324,21 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    Material mat;
+    mhs::core::Material mat;
     mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Cauchy BC on top face (Z=10mm)
-    Boundary boundary;
+    mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = ThermalBCType::ThirdType;
+    boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
     boundary.third.convection_coeff = "10";
     boundary.third.T_inf = "300";
     boundary.face_keys.push_back("Z|E|10|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = ThermalBCType::SecondType;
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
     Preprocessor preprocessor;
@@ -345,7 +346,7 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     ASSERT_NE(model, nullptr);
 
     int N = model->cells.cell_count;
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
@@ -370,15 +371,15 @@ TEST(AssemblerTest, Case1AssemblyRuns)
         GTEST_SKIP() << "Case1 XML not found";
     }
 
-    auto io = io::read_xml(case_path);
+    auto io_data = mhs::io::read_xml(case_path);
     Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
+    auto model = preprocessor.load(io_data);
     ASSERT_NE(model, nullptr);
 
     int N = model->cells.cell_count;
     EXPECT_GT(N, 0);
 
-    GlobalState state;
+    mhs::core::GlobalState state;
     state.cell_count = N;
     state.T.resize(N, model->initial_temperature);
     state.T_prev.resize(N, model->initial_temperature);

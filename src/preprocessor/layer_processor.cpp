@@ -1,31 +1,31 @@
 #include "expr/expr.hpp"
 #include "layer_processor.hpp"
 
-namespace mhs::preprocessor {
+namespace mhs::sim {
 
     constexpr double EPS = 1e-9;
 
-    double length_unit_to_si(LengthUnit unit)
+    double length_unit_to_si(mhs::core::LengthUnit unit)
     {
         switch (unit) {
-        case LengthUnit::M:
+        case mhs::core::LengthUnit::M:
             return 1.0;
-        case LengthUnit::Mm:
+        case mhs::core::LengthUnit::Mm:
             return 1e-3;
-        case LengthUnit::Um:
+        case mhs::core::LengthUnit::Um:
             return 1e-6;
-        case LengthUnit::Nm:
+        case mhs::core::LengthUnit::Nm:
             return 1e-9;
-        case LengthUnit::Inch:
+        case mhs::core::LengthUnit::Inch:
             return 0.0254;
-        case LengthUnit::Mil:
+        case mhs::core::LengthUnit::Mil:
             return 2.54e-5;
         default:
             return 1e-3;
         }
     }
 
-    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<Layer>& layers, double si_scale)
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale)
     {
         int num_layers = (int)layers.size();
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
@@ -35,7 +35,7 @@ namespace mhs::preprocessor {
         std::vector<double> thickness(num_layers);
         double z_cursor = 0.0;
         for (int l = 0; l < num_layers; l++) {
-            thickness[l] = expr::eval_geometry(layers[l].thickness_expr) * si_scale;
+            thickness[l] = mhs::core::eval_geometry(layers[l].thickness_expr) * si_scale;
             z_cursor += thickness[l];
         }
         for (int l = 0; l < num_layers; l++) {
@@ -46,13 +46,13 @@ namespace mhs::preprocessor {
 
         for (int l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
-            double layer_x_off_si = expr::eval_geometry(layer.x_offset_expr) * si_scale;
-            double layer_y_off_si = expr::eval_geometry(layer.y_offset_expr) * si_scale;
+            double layer_x_off_si = mhs::core::eval_geometry(layer.x_offset_expr) * si_scale;
+            double layer_y_off_si = mhs::core::eval_geometry(layer.y_offset_expr) * si_scale;
 
             for (const auto& block : layer.blocks) {
                 ResolvedBlock rb;
-                double block_x_off_si = expr::eval_geometry(block.x_offset_expr) * si_scale;
-                double block_y_off_si = expr::eval_geometry(block.y_offset_expr) * si_scale;
+                double block_x_off_si = mhs::core::eval_geometry(block.x_offset_expr) * si_scale;
+                double block_y_off_si = mhs::core::eval_geometry(block.y_offset_expr) * si_scale;
                 rb.material_name = block.material_name;
                 rb.ti_reyuan_expr = block.ti_reyuan_expr;
 
@@ -60,10 +60,10 @@ namespace mhs::preprocessor {
                     ResolvedRect rr;
                     rr.add_sub = rect.add_sub;
 
-                    double x_val = expr::eval_geometry(rect.x_expr);
-                    double y_val = expr::eval_geometry(rect.y_expr);
-                    double w_val = expr::eval_geometry(rect.width_expr);
-                    double h_val = expr::eval_geometry(rect.height_expr);
+                    double x_val = mhs::core::eval_geometry(rect.x_expr);
+                    double y_val = mhs::core::eval_geometry(rect.y_expr);
+                    double w_val = mhs::core::eval_geometry(rect.width_expr);
+                    double h_val = mhs::core::eval_geometry(rect.height_expr);
 
                     // Normalize negative widths/heights
                     if (w_val < 0) {
@@ -124,8 +124,8 @@ namespace mhs::preprocessor {
         return -1;
     }
 
-    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const MeshGeometry& mesh,
-        const std::unordered_map<std::string, size_t>& name_to_idx, CellFields& cells)
+    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh,
+        const std::unordered_map<std::string, size_t>& name_to_idx, mhs::core::CellFields& cells)
     {
         int num_layers = (int)resolved_layers.size();
         int total = mesh.total_cell_count;
@@ -178,4 +178,4 @@ namespace mhs::preprocessor {
         cells.cell_count = compact_idx;
     }
 
-} // namespace mhs::preprocessor
+} // namespace mhs::sim

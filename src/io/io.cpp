@@ -78,7 +78,7 @@ namespace mhs::io {
         read_double_member(parent, "b:DrawMaxX", max_x);
     }
 
-    IOStructure read_xml(const std::string& xml_path)
+    mhs::core::IOStructure read_xml(const std::string& xml_path)
     {
         XMLDocument doc;
         XMLError err = doc.LoadFile(xml_path.c_str());
@@ -86,7 +86,7 @@ namespace mhs::io {
             throw std::runtime_error("Failed to load XML file: " + xml_path);
         }
 
-        IOStructure structure;
+        mhs::core::IOStructure structure;
 
         const XMLElement* root = doc.FirstChildElement("Structure");
         if (!root) {
@@ -97,10 +97,10 @@ namespace mhs::io {
         const char* study_type_str = root->Attribute("StudyType");
         if (study_type_str) {
             if (std::string(study_type_str) == "Steady") {
-                structure.study_type = StudyType::Steady;
+                structure.study_type = mhs::core::StudyType::Steady;
             }
             else {
-                structure.study_type = StudyType::Transient;
+                structure.study_type = mhs::core::StudyType::Transient;
             }
         }
         else {
@@ -109,10 +109,10 @@ namespace mhs::io {
             if (study_elem) {
                 std::string val = get_text(study_elem);
                 if (val == "Steady") {
-                    structure.study_type = StudyType::Steady;
+                    structure.study_type = mhs::core::StudyType::Steady;
                 }
                 else {
-                    structure.study_type = StudyType::Transient;
+                    structure.study_type = mhs::core::StudyType::Transient;
                 }
             }
         }
@@ -120,10 +120,10 @@ namespace mhs::io {
         const char* dim_str = root->Attribute("Dimension");
         if (dim_str) {
             if (std::string(dim_str) == "Dimension3D") {
-                structure.dimension = Dimension::Dimension3D;
+                structure.dimension = mhs::core::Dimension::Dimension3D;
             }
             else {
-                structure.dimension = Dimension::Dimension2D;
+                structure.dimension = mhs::core::Dimension::Dimension2D;
             }
         }
         else {
@@ -132,10 +132,10 @@ namespace mhs::io {
             if (dim_elem) {
                 std::string val = get_text(dim_elem);
                 if (val == "Dimension3D") {
-                    structure.dimension = Dimension::Dimension3D;
+                    structure.dimension = mhs::core::Dimension::Dimension3D;
                 }
                 else {
-                    structure.dimension = Dimension::Dimension2D;
+                    structure.dimension = mhs::core::Dimension::Dimension2D;
                 }
             }
         }
@@ -145,22 +145,22 @@ namespace mhs::io {
         if (unit_str) {
             std::string u = unit_str;
             if (u == "M") {
-                structure.length_unit = LengthUnit::M;
+                structure.length_unit = mhs::core::LengthUnit::M;
             }
             else if (u == "Mm") {
-                structure.length_unit = LengthUnit::Mm;
+                structure.length_unit = mhs::core::LengthUnit::Mm;
             }
             else if (u == "Um") {
-                structure.length_unit = LengthUnit::Um;
+                structure.length_unit = mhs::core::LengthUnit::Um;
             }
             else if (u == "Nm") {
-                structure.length_unit = LengthUnit::Nm;
+                structure.length_unit = mhs::core::LengthUnit::Nm;
             }
             else if (u == "Inch") {
-                structure.length_unit = LengthUnit::Inch;
+                structure.length_unit = mhs::core::LengthUnit::Inch;
             }
             else if (u == "Mil") {
-                structure.length_unit = LengthUnit::Mil;
+                structure.length_unit = mhs::core::LengthUnit::Mil;
             }
         }
         else {
@@ -169,22 +169,22 @@ namespace mhs::io {
             if (unit_elem) {
                 std::string u = get_text(unit_elem);
                 if (u == "M") {
-                    structure.length_unit = LengthUnit::M;
+                    structure.length_unit = mhs::core::LengthUnit::M;
                 }
                 else if (u == "Mm") {
-                    structure.length_unit = LengthUnit::Mm;
+                    structure.length_unit = mhs::core::LengthUnit::Mm;
                 }
                 else if (u == "Um") {
-                    structure.length_unit = LengthUnit::Um;
+                    structure.length_unit = mhs::core::LengthUnit::Um;
                 }
                 else if (u == "Nm") {
-                    structure.length_unit = LengthUnit::Nm;
+                    structure.length_unit = mhs::core::LengthUnit::Nm;
                 }
                 else if (u == "Inch") {
-                    structure.length_unit = LengthUnit::Inch;
+                    structure.length_unit = mhs::core::LengthUnit::Inch;
                 }
                 else if (u == "Mil") {
-                    structure.length_unit = LengthUnit::Mil;
+                    structure.length_unit = mhs::core::LengthUnit::Mil;
                 }
             }
         }
@@ -213,19 +213,19 @@ namespace mhs::io {
             const char* type = other->Attribute("i:type");
             std::string type_str = type ? type : "";
             if (type_str.find("FirstType") != std::string::npos) {
-                structure.other_bc_type = ThermalBCType::FirstType;
+                structure.other_bc_type = mhs::core::ThermalBCType::FirstType;
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
                     structure.other_bc_first.temperature = get_text(temp);
                 }
             }
             else if (type_str.find("SecondType") != std::string::npos) {
-                structure.other_bc_type = ThermalBCType::SecondType;
+                structure.other_bc_type = mhs::core::ThermalBCType::SecondType;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
                     structure.other_bc_second.heat_flux = get_text(flux);
                 }
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
-                structure.other_bc_type = ThermalBCType::ThirdType;
+                structure.other_bc_type = mhs::core::ThermalBCType::ThirdType;
                 if (const XMLElement* h = other->FirstChildElement("a:ConvectionCoefficient")) {
                     structure.other_bc_third.convection_coeff = get_text(h);
                 }
@@ -239,7 +239,7 @@ namespace mhs::io {
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement("a:KeyValueOfstringdouble"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringdouble")) {
-                Variable var;
+                mhs::core::Variable var;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     var.name = get_text(key);
                 }
@@ -256,7 +256,7 @@ namespace mhs::io {
         if (const XMLElement* mats = root->FirstChildElement("Materials")) {
             for (const XMLElement* kv = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
-                Material mat;
+                mhs::core::Material mat;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     mat.name = get_text(key);
                 }
@@ -294,9 +294,8 @@ namespace mhs::io {
                         }
                         else {
                             std::string preview = raw.substr(0, 200);
-                            MHS_LOG_ERROR(
-                                "DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'", segs.size(),
-                                preview);
+                            MHS_LOG_ERROR("DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'",
+                                segs.size(), preview);
                         }
                     }
                     if (const XMLElement* midu = val->FirstChildElement("Midu")) {
@@ -321,42 +320,42 @@ namespace mhs::io {
                     name = get_text(key);
                 }
                 const XMLElement* val = kv->FirstChildElement("a:Value");
-                Function fn;
+                mhs::core::Function fn;
                 if (val) {
                     const char* type = val->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("ExpressionFunction") != std::string::npos) {
-                        fn.type = FunctionType::Expression;
+                        fn.type = mhs::core::FunctionType::Expression;
                         read_string_member(val, "b:Expression", fn.expression.expression);
                         read_draw_range(val, fn.expression.draw_min_x, fn.expression.draw_max_x);
                     }
                     else if (type_str.find("DoubleExponentialFunction") != std::string::npos) {
-                        fn.type = FunctionType::DoubleExponential;
+                        fn.type = mhs::core::FunctionType::DoubleExponential;
                         read_double_member(val, "b:A", fn.double_exp.a);
                         read_double_member(val, "b:Alpha", fn.double_exp.alpha);
                         read_double_member(val, "b:Beta", fn.double_exp.beta);
                         read_draw_range(val, fn.double_exp.draw_min_x, fn.double_exp.draw_max_x);
                     }
                     else if (type_str.find("GaussFunction") != std::string::npos) {
-                        fn.type = FunctionType::Gauss;
+                        fn.type = mhs::core::FunctionType::Gauss;
                         read_double_member(val, "b:A", fn.gauss.a);
                         read_double_member(val, "b:Tau", fn.gauss.tau);
                         read_double_member(val, "b:X0", fn.gauss.x0);
                         read_draw_range(val, fn.gauss.draw_min_x, fn.gauss.draw_max_x);
                     }
                     else if (type_str.find("SineFunction") != std::string::npos) {
-                        fn.type = FunctionType::Sine;
+                        fn.type = mhs::core::FunctionType::Sine;
                         read_double_member(val, "b:A", fn.sine.a);
                         read_double_member(val, "b:Omega", fn.sine.omega);
                         read_double_member(val, "b:Phi", fn.sine.phi);
                         read_draw_range(val, fn.sine.draw_min_x, fn.sine.draw_max_x);
                     }
                     else if (type_str.find("PieceWiseFunction") != std::string::npos) {
-                        fn.type = FunctionType::PieceWise;
+                        fn.type = mhs::core::FunctionType::PieceWise;
                         if (const XMLElement* points = val->FirstChildElement("b:Points")) {
                             for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
                                 pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
-                                PieceWiseFunction::Point p;
+                                mhs::core::PieceWiseFunction::Point p;
                                 read_double_member(pt, "b:X", p.x);
                                 read_double_member(pt, "b:Y", p.y);
                                 fn.piecewise.points.push_back(p);
@@ -364,9 +363,8 @@ namespace mhs::io {
                             // Pre-sort by X so the closure can binary-search without
                             // sorting again at registration time.
                             std::sort(fn.piecewise.points.begin(), fn.piecewise.points.end(),
-                                [](const PieceWiseFunction::Point& a, const PieceWiseFunction::Point& b) {
-                                    return a.x < b.x;
-                                });
+                                [](const mhs::core::PieceWiseFunction::Point& a,
+                                    const mhs::core::PieceWiseFunction::Point& b) { return a.x < b.x; });
                         }
                         read_draw_range(val, fn.piecewise.draw_min_x, fn.piecewise.draw_max_x);
                     }
@@ -384,7 +382,7 @@ namespace mhs::io {
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
                 layer_elem = layer_elem->NextSiblingElement("Layer")) {
-                Layer layer;
+                mhs::core::Layer layer;
 
                 if (const XMLElement* name = layer_elem->FirstChildElement("Name")) {
                     layer.name = get_text(name);
@@ -409,7 +407,7 @@ namespace mhs::io {
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
                         block_elem = block_elem->NextSiblingElement("Block")) {
-                        Block block;
+                        mhs::core::Block block;
 
                         if (const XMLElement* name = block_elem->FirstChildElement("Name")) {
                             block.name = get_text(name);
@@ -434,7 +432,7 @@ namespace mhs::io {
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
-                                Rect rect;
+                                mhs::core::Rect rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.add_sub = std::string(get_text(adds)) == "true";
                                 }
@@ -481,8 +479,8 @@ namespace mhs::io {
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-                Boundary boundary;
-                boundary.category = BoundaryCategory::Electrical;
+                mhs::core::Boundary boundary;
+                boundary.category = mhs::core::BoundaryCategory::Electrical;
 
                 if (const XMLElement* name = bound_elem->FirstChildElement("Name")) {
                     boundary.name = get_text(name);
@@ -505,19 +503,19 @@ namespace mhs::io {
                     const char* type = thermal->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("FirstType") != std::string::npos) {
-                        boundary.bc_type = ThermalBCType::FirstType;
+                        boundary.bc_type = mhs::core::ThermalBCType::FirstType;
                         if (const XMLElement* t = thermal->FirstChildElement("a:Temperature")) {
                             boundary.first.temperature = get_text(t);
                         }
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
-                        boundary.bc_type = ThermalBCType::SecondType;
+                        boundary.bc_type = mhs::core::ThermalBCType::SecondType;
                         if (const XMLElement* q = thermal->FirstChildElement("a:HeatFlux")) {
                             boundary.second.heat_flux = get_text(q);
                         }
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
-                        boundary.bc_type = ThermalBCType::ThirdType;
+                        boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
                         if (const XMLElement* h = thermal->FirstChildElement("a:ConvectionCoefficient")) {
                             boundary.third.convection_coeff = get_text(h);
                         }
@@ -562,7 +560,7 @@ namespace mhs::io {
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
-                ObservationPoint3D op;
+                mhs::core::ObservationPoint3D op;
                 if (const XMLElement* name = pt->FirstChildElement("Name")) {
                     op.name = get_text(name);
                 }
@@ -582,7 +580,8 @@ namespace mhs::io {
         return structure;
     }
 
-    void write_vtu(const std::string& path, const InternalModel& model, const std::vector<double>& node_temperature)
+    void write_vtu(
+        const std::string& path, const mhs::core::InternalModel& model, const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
@@ -741,8 +740,8 @@ namespace mhs::io {
         doc.SaveFile(path.c_str());
     }
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const InternalModel& model,
-        const std::vector<double>& node_temperature, const std::vector<ProbeTrace>& observation_traces)
+    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::InternalModel& model,
+        const std::vector<double>& node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
     {
         using namespace tinyxml2;
 
@@ -861,8 +860,8 @@ namespace mhs::io {
                     results_elem->InsertEndChild(target);
                 }
 
-                refill_double_list(doc, target->FirstChildElement("Times"), trace.times, /*allow_nan=*/ false);
-                refill_double_list(doc, target->FirstChildElement("Values"), trace.values, /*allow_nan=*/ true);
+                refill_double_list(doc, target->FirstChildElement("Times"), trace.times, /*allow_nan=*/false);
+                refill_double_list(doc, target->FirstChildElement("Values"), trace.values, /*allow_nan=*/true);
             }
         }
 
