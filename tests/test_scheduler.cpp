@@ -43,7 +43,7 @@ static IOStructure make_simple_cube_io()
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -102,7 +102,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 500K on bottom face (Z=0)
@@ -177,7 +177,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 300K on bottom face (Z=0)
@@ -248,7 +248,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
     io.materials["copper"] = mat;

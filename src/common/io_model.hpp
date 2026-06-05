@@ -76,7 +76,9 @@ namespace mhs {
 
     struct Material {
         std::string name;
-        std::string daore_xishu = "0.0"; // 导热系数 k
+        std::string kx = "0.0"; // 导热系数 X 方向
+        std::string ky = "0.0"; // 导热系数 Y 方向
+        std::string kz = "0.0"; // 导热系数 Z 方向
         std::string midu = "0.0"; // 密度 rho
         std::string bi_rerong = "0.0"; // 比热容 c
     };

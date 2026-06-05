@@ -128,13 +128,13 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;
-    std::vector<double> node_temperature = { 300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0 };
+    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<ProbeTrace> traces;
     ProbeTrace t1;
     t1.name = "probe_a";
-    t1.times = { 0.0, 1.0, 2.0 };
-    t1.values = { 300.0, 310.0, 320.0 };
+    t1.times = {0.0, 1.0, 2.0};
+    t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
     io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
@@ -181,7 +181,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;
-    std::vector<double> node_temperature = { 300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0 };
+    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<ProbeTrace> traces;
     io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
@@ -192,4 +192,98 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 
     std::filesystem::remove(in_path);
     std::filesystem::remove(out_path);
+}
+
+// Build a minimal in-memory XML that contains one material with the given
+// DaoreXishu text. Used to exercise io::read_xml's DaoreXishu parser.
+static std::string make_xml_with_daore_xishu(const std::string& daore_text)
+{
+    std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
+<Structure>
+    <StudyType>Steady</StudyType>
+    <Dimension>Dimension3D</Dimension>
+    <LengthUnit>Mm</LengthUnit>
+    <AmbientTemperature>300</AmbientTemperature>
+    <InitialTemperature>300</InitialTemperature>
+    <OtherThermalBondary i:type="SecondTypeThermalBoundary"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
+    <Materials xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:KeyValueOfstringMaterialGyu7GfTz>
+            <a:Key>mat</a:Key>
+            <a:Value>
+                <BiRerong>385</BiRerong>
+                <DaoreXishu>)";
+    body += daore_text;
+    body += R"(</DaoreXishu>
+                <Midu>8920</Midu>
+            </a:Value>
+        </a:KeyValueOfstringMaterialGyu7GfTz>
+    </Materials>
+</Structure>
+)";
+    return body;
+}
+
+TEST(IoTest, ReadXmlDaoreXishuThreeExpressions)
+{
+    auto path = write_tmp_xml("io_daore_3.xml", make_xml_with_daore_xishu("1,2,3"));
+    IOStructure io = io::read_xml(path.string());
+    ASSERT_TRUE(io.materials.count("mat")) << "Material 'mat' should be parsed";
+    EXPECT_EQ(io.materials.at("mat").kx, "1");
+    EXPECT_EQ(io.materials.at("mat").ky, "2");
+    EXPECT_EQ(io.materials.at("mat").kz, "3");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuSingleExpressionSetsAllAxes)
+{
+    auto path = write_tmp_xml("io_daore_1.xml", make_xml_with_daore_xishu("5"));
+    IOStructure io = io::read_xml(path.string());
+    ASSERT_TRUE(io.materials.count("mat"));
+    EXPECT_EQ(io.materials.at("mat").kx, "5");
+    EXPECT_EQ(io.materials.at("mat").ky, "5");
+    EXPECT_EQ(io.materials.at("mat").kz, "5");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
+{
+    auto path = write_tmp_xml("io_daore_trim.xml", make_xml_with_daore_xishu("  5  "));
+    IOStructure io = io::read_xml(path.string());
+    ASSERT_TRUE(io.materials.count("mat"));
+    EXPECT_EQ(io.materials.at("mat").kx, "5");
+    EXPECT_EQ(io.materials.at("mat").ky, "5");
+    EXPECT_EQ(io.materials.at("mat").kz, "5");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
+{
+    auto path = write_tmp_xml("io_daore_3trim.xml", make_xml_with_daore_xishu("  1.5e2 , 2.5 , 0 "));
+    IOStructure io = io::read_xml(path.string());
+    ASSERT_TRUE(io.materials.count("mat"));
+    EXPECT_EQ(io.materials.at("mat").kx, "1.5e2");
+    EXPECT_EQ(io.materials.at("mat").ky, "2.5");
+    EXPECT_EQ(io.materials.at("mat").kz, "0");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuTwoExpressionsPanics)
+{
+    auto path = write_tmp_xml("io_daore_2.xml", make_xml_with_daore_xishu("1, 2"));
+    EXPECT_DEATH(io::read_xml(path.string()), "");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuFourExpressionsPanics)
+{
+    auto path = write_tmp_xml("io_daore_4.xml", make_xml_with_daore_xishu("1,2,3,4"));
+    EXPECT_DEATH(io::read_xml(path.string()), "");
+    std::filesystem::remove(path);
+}
+
+TEST(IoTest, ReadXmlDaoreXishuEmptySegmentPanics)
+{
+    auto path = write_tmp_xml("io_daore_empty.xml", make_xml_with_daore_xishu("1,,3"));
+    EXPECT_DEATH(io::read_xml(path.string()), "");
+    std::filesystem::remove(path);
 }

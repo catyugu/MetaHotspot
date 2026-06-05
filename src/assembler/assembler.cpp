@@ -87,6 +87,23 @@ namespace mhs::assembler {
         }
     }
 
+    static double k_along(FaceDir dir, double kx, double ky, double kz)
+    {
+        switch (dir) {
+        case FaceDir::XM:
+        case FaceDir::XP:
+            return kx;
+        case FaceDir::YM:
+        case FaceDir::YP:
+            return ky;
+        case FaceDir::ZM:
+        case FaceDir::ZP:
+            return kz;
+        default:
+            return kx;
+        }
+    }
+
     struct ThreadLocalData {
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd b;
@@ -121,8 +138,10 @@ namespace mhs::assembler {
 
             // 材料字典求值：底层已由 TLS 保证线程安全
             size_t mat_id = cells.material_id[old_idx];
-            double k
-                = materials[mat_id].k.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+            const auto& mp = materials[mat_id];
+            double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+            double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+            double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
             // 热源字典求值：利用 uint16_t 索引进行极速查表和计算
             uint16_t hs_idx = cells.heat_source_idx[c_idx];
@@ -149,8 +168,10 @@ namespace mhs::assembler {
                     int niy = neighbor_iy(dir, iy);
                     int niz = neighbor_iz(dir, iz);
 
-                    double k_neighbor = materials[cells.material_id[neighbor_old]].k.eval(
-                        {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    const auto& mp_n = materials[cells.material_id[neighbor_old]];
+                    double kx_n = mp_n.kx.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    double ky_n = mp_n.ky.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    double kz_n = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
 
                     double d_half_cell = (dir == FaceDir::XM || dir == FaceDir::XP) ? mesh.dx[ix] / 2.0
                         : (dir == FaceDir::YM || dir == FaceDir::YP)                ? mesh.dy[iy] / 2.0
@@ -160,7 +181,9 @@ namespace mhs::assembler {
                         : (dir == FaceDir::YM || dir == FaceDir::YP)                    ? mesh.dy[niy] / 2.0
                                                                                         : mesh.dz[niz] / 2.0;
 
-                    double cond = A_f / (d_half_cell / k + d_half_neighbor / k_neighbor);
+                    double k_cell = k_along(dir, kx_c, ky_c, kz_c);
+                    double k_neighbor = k_along(dir, kx_n, ky_n, kz_n);
+                    double cond = A_f / (d_half_cell / k_cell + d_half_neighbor / k_neighbor);
                     diag += cond;
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
@@ -172,7 +195,8 @@ namespace mhs::assembler {
                     double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double cond = k * A_f / half_dist;
+                    double k_face = k_along(dir, kx_c, ky_c, kz_c);
+                    double cond = k_face * A_f / half_dist;
                     diag += cond;
                     local.b(c_idx) += cond * T_bc_val;
                 }
@@ -191,7 +215,8 @@ namespace mhs::assembler {
                         : (dir == FaceDir::YM || dir == FaceDir::YP)              ? dy_cell / 2.0
                                                                                   : dz_cell / 2.0;
 
-                    double coeff = k * h * A_f / (k + h * half_dist);
+                    double k_face = k_along(dir, kx_c, ky_c, kz_c);
+                    double coeff = k_face * h * A_f / (k_face + h * half_dist);
                     diag += coeff;
                     local.b(c_idx) += coeff * T_inf;
                 }

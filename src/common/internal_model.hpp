@@ -29,7 +29,9 @@ namespace mhs {
     };
 
     struct MaterialProps {
-        CompiledExpression k;
+        CompiledExpression kx;
+        CompiledExpression ky;
+        CompiledExpression kz;
         CompiledExpression rho;
         CompiledExpression c;
     };

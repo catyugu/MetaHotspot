@@ -45,7 +45,7 @@ static IOStructure make_simple_uniform_grid_io()
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -138,7 +138,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
@@ -222,7 +222,7 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Dirichlet BC on bottom face (Z=0) at 500K
@@ -349,7 +349,7 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
 
     Material mat;
     mat.name = "mat";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["mat"] = mat;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -441,7 +441,7 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
 
     Material mat;
     mat.name = "mat";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["mat"] = mat;
 
     Boundary boundary;

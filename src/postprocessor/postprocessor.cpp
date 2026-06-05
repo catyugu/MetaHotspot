@@ -176,9 +176,13 @@ namespace mhs {
                                 double cy = mesh.cy[iy];
                                 double cz = mesh.cz[iz];
 
-                                // 提取该体元的热导率
-                                double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
-                                    {cx, cy, cz, T_c, 0.0});
+                                // 提取该体元的热导率：postprocessor 中 k 仅作反距离权重的"软"项，
+                                // 取三轴算术平均作各向同性退化，避免对单一方向的偏置。
+                                const auto& mp = model.material_table[cells.material_id[cell_grid_idx]];
+                                double kx_c = mp.kx.eval({cx, cy, cz, T_c, 0.0});
+                                double ky_c = mp.ky.eval({cx, cy, cz, T_c, 0.0});
+                                double kz_c = mp.kz.eval({cx, cy, cz, T_c, 0.0});
+                                double k = (kx_c + ky_c + kz_c) / 3.0;
 
                                 // 体元中心点入参 (采用反距离平方为基准权重)
                                 double dist2 = (cx - node_x) * (cx - node_x) + (cy - node_y) * (cy - node_y)
@@ -210,8 +214,11 @@ namespace mhs {
                                         // 梯度边界：外推面中心温度并作为一个额外的"几何观测点"喂给最小二乘求解器
                                         double fx, fy, fz;
                                         get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
+                                        double k_face = (dir == FaceDir::XM || dir == FaceDir::XP) ? kx_c
+                                            : (dir == FaceDir::YM || dir == FaceDir::YP)              ? ky_c
+                                                                                                      : kz_c;
                                         double T_f = extrapolate_face_temperature(
-                                            dir, bc_type, param_idx, T_c, k, mesh, ix, iy, iz, model.bc_params);
+                                            dir, bc_type, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
 
                                         double fdist2 = (fx - node_x) * (fx - node_x) + (fy - node_y) * (fy - node_y)
                                             + (fz - node_z) * (fz - node_z);
@@ -337,8 +344,11 @@ namespace mhs {
         }
 
         // LSQ 数据点：cell 8 顶点 + Neumann/Cauchy 面的面中心外推观测。
-        double k = model.material_table[cells.material_id[cell_grid_idx]].k.eval(
-            {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+        const auto& mp = model.material_table[cells.material_id[cell_grid_idx]];
+        double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+        double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+        double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
+        double k = (kx_c + ky_c + kz_c) / 3.0;
 
         std::vector<DataPoint> pts;
         pts.reserve(8 + FACE_COUNT);
@@ -355,7 +365,10 @@ namespace mhs {
             uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[d];
             double fx, fy, fz;
             get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            double T_f = extrapolate_face_temperature(dir, bc, param_idx, T_c, k, mesh, ix, iy, iz, model.bc_params);
+            double k_face = (dir == FaceDir::XM || dir == FaceDir::XP) ? kx_c
+                : (dir == FaceDir::YM || dir == FaceDir::YP)              ? ky_c
+                                                                          : kz_c;
+            double T_f = extrapolate_face_temperature(dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
             double fdist2 = (fx - px) * (fx - px) + (fy - py) * (fy - py) + (fz - pz) * (fz - pz);
             pts.push_back({fx, fy, fz, T_f, k / (fdist2 + 1e-16)});
         }

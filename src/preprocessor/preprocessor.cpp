@@ -92,7 +92,9 @@ namespace mhs {
         model->material_table.resize(material_names.size());
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
-            model->material_table[m].k = expr::parse(preprocessor::substitute_function_args(mat.daore_xishu, "T", fns));
+            model->material_table[m].kx = expr::parse(preprocessor::substitute_function_args(mat.kx, "T", fns));
+            model->material_table[m].ky = expr::parse(preprocessor::substitute_function_args(mat.ky, "T", fns));
+            model->material_table[m].kz = expr::parse(preprocessor::substitute_function_args(mat.kz, "T", fns));
             model->material_table[m].rho = expr::parse(preprocessor::substitute_function_args(mat.midu, "T", fns));
             model->material_table[m].c = expr::parse(preprocessor::substitute_function_args(mat.bi_rerong, "T", fns));
         }

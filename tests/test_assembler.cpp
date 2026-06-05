@@ -48,7 +48,7 @@ static IOStructure make_simple_cube_io()
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
     io.materials["copper"] = mat;
@@ -178,7 +178,7 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet BC on bottom face (Z=0)
@@ -257,7 +257,7 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -325,7 +325,7 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
 
     Material mat;
     mat.name = "copper";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Cauchy BC on top face (Z=10mm)

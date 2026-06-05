@@ -51,7 +51,7 @@ static IOStructure make_simple_io()
     // Material
     Material mat;
     mat.name = "test_material";
-    mat.daore_xishu = "400";
+    mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
     io.materials["test_material"] = mat;
@@ -137,8 +137,8 @@ TEST(PreprocessorTest, MaterialAssignment)
 
     // Material table should have one entry
     EXPECT_EQ(model->material_table.size(), 1);
-    EXPECT_TRUE(model->material_table[0].k.is_constant());
-    EXPECT_NEAR(model->material_table[0].k.constant_value(), 400.0, 1e-10);
+    EXPECT_TRUE(model->material_table[0].kx.is_constant());
+    EXPECT_NEAR(model->material_table[0].kx.constant_value(), 400.0, 1e-10);
 }
 
 TEST(PreprocessorTest, VirtualCellsFromSubRect)
@@ -221,12 +221,12 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     // Materials
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     Material silicon;
     silicon.name = "silicon";
-    silicon.daore_xishu = "130";
+    silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -315,7 +315,7 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Boundary: Dirichlet 500K on Z bottom face
@@ -466,7 +466,7 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -550,12 +550,12 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     Material silicon;
     silicon.name = "silicon";
-    silicon.daore_xishu = "130";
+    silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
     io.other_bc_type = ThermalBCType::SecondType;
@@ -637,7 +637,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Convection on the upper half of the y=10mm Y+ face
@@ -718,7 +718,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
 
     Material copper;
     copper.name = "copper";
-    copper.daore_xishu = "400";
+    copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // One boundary, three face_keys targeting three different exposed faces

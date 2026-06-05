@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "common/logger.hpp"
 #include "io.hpp"
 
 namespace mhs::io {
@@ -262,7 +263,41 @@ namespace mhs::io {
                 const XMLElement* val = kv->FirstChildElement("a:Value");
                 if (val) {
                     if (const XMLElement* daore = val->FirstChildElement("DaoreXishu")) {
-                        mat.daore_xishu = get_text(daore);
+                        std::string raw = get_text(daore);
+                        std::vector<std::string> segs;
+                        size_t start = 0;
+                        while (true) {
+                            size_t end = raw.find(',', start);
+                            std::string token
+                                = (end == std::string::npos) ? raw.substr(start) : raw.substr(start, end - start);
+                            size_t f = token.find_first_not_of(" \t\r\n");
+                            size_t l = (f == std::string::npos) ? std::string::npos : token.find_last_not_of(" \t\r\n");
+                            token = (f == std::string::npos) ? std::string() : token.substr(f, l - f + 1);
+                            segs.push_back(token);
+                            if (end == std::string::npos)
+                                break;
+                            start = end + 1;
+                        }
+                        if (segs.size() == 1) {
+                            mat.kx = mat.ky = mat.kz = segs[0];
+                        }
+                        else if (segs.size() == 3) {
+                            for (const auto& s : segs) {
+                                if (s.empty()) {
+                                    std::string preview = raw.substr(0, 200);
+                                    MHS_LOG_ERROR("DaoreXishu: empty segment in '{}'", preview);
+                                }
+                            }
+                            mat.kx = segs[0];
+                            mat.ky = segs[1];
+                            mat.kz = segs[2];
+                        }
+                        else {
+                            std::string preview = raw.substr(0, 200);
+                            MHS_LOG_ERROR(
+                                "DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'", segs.size(),
+                                preview);
+                        }
                     }
                     if (const XMLElement* midu = val->FirstChildElement("Midu")) {
                         mat.midu = get_text(midu);
