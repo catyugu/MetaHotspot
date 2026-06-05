@@ -2,6 +2,7 @@
 #include <tinyxml2.h>
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 #include "io.hpp"
@@ -33,6 +34,28 @@ namespace mhs::io {
             return 0.0;
         }
         return std::stod(s);
+    }
+
+    // 清空 parent 的全部 <a:double> 子节点（O(1) 调用 DeleteChildren），再依次追加 data。
+    // allow_nan=false 时遇到 NaN 写 "NaN"（参考 XML 风格）。
+    static void refill_double_list(
+        tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, const std::vector<double>& data, bool allow_nan)
+    {
+        if (!parent)
+            return;
+        parent->DeleteChildren();
+        for (double v : data) {
+            auto* d = doc.NewElement("a:double");
+            if (allow_nan && std::isnan(v)) {
+                d->SetText("NaN");
+            }
+            else {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%.6f", v);
+                d->SetText(buf);
+            }
+            parent->InsertEndChild(d);
+        }
     }
 
     // Helpers for the <Functions> block: pull one double-typed child or no-op.
@@ -499,7 +522,8 @@ namespace mhs::io {
             }
         }
 
-        // ObservePoints3D — 用户坐标系下的探针列表。3D 专用；2D 走 Dimension2D panic 路径。
+        // ObservePoints3D — 用户坐标系下的探针列表。3D 专用；2D 路径暂不支持。
+        // x/y/z 保留为 exprtk 表达式字符串，由 preprocessor 在加载时统一求值。
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
@@ -508,19 +532,17 @@ namespace mhs::io {
                     op.name = get_text(name);
                 }
                 if (const XMLElement* x = pt->FirstChildElement("X")) {
-                    op.x = parse_double(get_text(x));
+                    op.x = get_text(x);
                 }
                 if (const XMLElement* y = pt->FirstChildElement("Y")) {
-                    op.y = parse_double(get_text(y));
+                    op.y = get_text(y);
                 }
                 if (const XMLElement* z = pt->FirstChildElement("Z")) {
-                    op.z = parse_double(get_text(z));
+                    op.z = get_text(z);
                 }
                 structure.observation_points.push_back(op);
             }
         }
-        // 2D 观察点暂不支持：与 Dimension2D 路径 panic 语义保持一致。
-        (void)root->FirstChildElement("ObservePoints2D");
 
         return structure;
     }
@@ -804,34 +826,8 @@ namespace mhs::io {
                     results_elem->InsertEndChild(target);
                 }
 
-                // 清空旧 Times/Values
-                if (XMLElement* t = target->FirstChildElement("Times")) {
-                    while (XMLElement* c = t->FirstChildElement("a:double"))
-                        t->DeleteChild(c);
-                    for (double time_val : trace.times) {
-                        XMLElement* d = doc.NewElement("a:double");
-                        char buf[64];
-                        snprintf(buf, sizeof(buf), "%.6f", time_val);
-                        d->SetText(buf);
-                        t->InsertEndChild(d);
-                    }
-                }
-                if (XMLElement* v = target->FirstChildElement("Values")) {
-                    while (XMLElement* c = v->FirstChildElement("a:double"))
-                        v->DeleteChild(c);
-                    for (double val : trace.values) {
-                        XMLElement* d = doc.NewElement("a:double");
-                        if (std::isnan(val)) {
-                            d->SetText("NaN");
-                        }
-                        else {
-                            char buf[64];
-                            snprintf(buf, sizeof(buf), "%.6f", val);
-                            d->SetText(buf);
-                        }
-                        v->InsertEndChild(d);
-                    }
-                }
+                refill_double_list(doc, target->FirstChildElement("Times"), trace.times, /*allow_nan=*/ false);
+                refill_double_list(doc, target->FirstChildElement("Values"), trace.values, /*allow_nan=*/ true);
             }
         }
 

@@ -139,12 +139,14 @@ namespace mhs {
 
     enum class Dimension { Dimension2D, Dimension3D };
 
-    // 3D 探针（观察点）：用户坐标系下的固定位置，求解器在每个时间步记录该点温度。
+    // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 exprtk 表达式形式给出
+    // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
+    // 求解器在每个时间步记录该点温度。
     struct ObservationPoint3D {
         std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
+        std::string x;
+        std::string y;
+        std::string z;
     };
 
     // 探针温度时间序列：与 ObservationPoint3D::name 一一对应，times/values 等长。

@@ -16,26 +16,27 @@ namespace mhs {
         model->transient_duration = ioStructure.transient_duration;
         model->transient_time_step = ioStructure.transient_time_step;
 
-        // 探针不参与方程求解：纯搬运 + 单位缩放（与 mesh 顶点一致）
-        model->observation_points = ioStructure.observation_points;
-        double obs_si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
-        for (auto& p : model->observation_points) {
-            p.x *= obs_si_scale;
-            p.y *= obs_si_scale;
-            p.z *= obs_si_scale;
-        }
-
+        // 解析几何表达式上下文：变量注册到 expr 全局表，function 在下方 register。
+        // 必须在 observation_points 求值前完成，因为后者可能引用变量。
         expr::clear_registry();
         for (const auto& var : ioStructure.variables) {
             double val = expr::eval_geometry(var.value);
             expr::set_variable(var.name, val);
         }
-
-        // 注册所有 Function 为 expr 全局 native；后续 expr::parse 会用上。
         const auto& fns = ioStructure.functions;
         preprocessor::register_all_functions(fns);
 
-        double si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
+        const double si_scale = preprocessor::length_unit_to_si(ioStructure.length_unit);
+
+        // 探针不参与方程求解：把 IO 层的 exprtk 表达式字符串求值到 SI 单位的 double。
+        for (const auto& src : ioStructure.observation_points) {
+            ProbePoint p;
+            p.name = src.name;
+            p.x = expr::eval_geometry(src.x) * si_scale;
+            p.y = expr::eval_geometry(src.y) * si_scale;
+            p.z = expr::eval_geometry(src.z) * si_scale;
+            model->observation_points.push_back(std::move(p));
+        }
 
         auto& mesh = model->mesh;
         mesh.vertex_x = ioStructure.mesh_vertex_x;

@@ -21,9 +21,7 @@ namespace mhs {
     // - 稳态: 在 run() 末尾触发一次，保持接口统一。
     // - t=0 时刻（初始状态）会在循环开始前额外触发一次，以记录初值。
     // cell_T 与 GlobalState::T 同步（cell 中心温度）。
-    struct StepCallback {
-        std::function<void(double time, int step, const std::vector<double>& cell_T)> on_step_done;
-    };
+    using StepCallback = std::function<void(double time, int step, const std::vector<double>& cell_T)>;
 
     class Scheduler {
     public:

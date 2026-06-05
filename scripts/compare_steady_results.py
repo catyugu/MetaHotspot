@@ -1,55 +1,8 @@
 """Compare simulation results with reference values from original XML files."""
 
-import argparse
-import xml.etree.ElementTree as ET
 import math
 
-NS = {
-    "ts": "http://schemas.datacontract.org/2004/07/ThermalSim.Models",
-    "a": "http://schemas.microsoft.com/2003/10/Serialization/Arrays",
-    "b": "http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh",
-}
-
-
-def find_element(parent, local_tag):
-    for child in parent:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == local_tag:
-            return child
-    return None
-
-
-def extract_values(xml_path):
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    results = find_element(root, "Results")
-    if results is None:
-        return None
-    anytype = find_element(results, "anyType")
-    if anytype is None:
-        return None
-    values = find_element(anytype, "Values")
-    if values is None:
-        return None
-    data = find_element(values, "Data")
-    size_x_el = find_element(values, "SizeX")
-    size_y_el = find_element(values, "SizeY")
-    size_z_el = find_element(values, "SizeZ")
-
-    sx = int(size_x_el.text) if size_x_el is not None else 0
-    sy = int(size_y_el.text) if size_y_el is not None else 0
-    sz = int(size_z_el.text) if size_z_el is not None else 0
-
-    vals = []
-    for child in data:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == "double":
-            text = child.text.strip()
-            if text == "NaN" or text.lower() == "nan":
-                vals.append(float("nan"))
-            else:
-                vals.append(float(text))
-    return vals, (sx, sy, sz)
+from _xml_helpers import compare_field, extract_field, find_element
 
 
 def index_to_position(idx, size):
@@ -71,8 +24,8 @@ def main():
         out_path = f"results/simple_steady_tests/case{case_num}_output.xml"
 
         print(f"\n=== Case {case_num} (threshold = {threshold:g}K) ===")
-        ref = extract_values(ref_path)
-        out = extract_values(out_path)
+        ref = extract_field(ref_path)
+        out = extract_field(out_path)
 
         if not ref or not out:
             print("  Failed to extract values")
@@ -91,43 +44,37 @@ def main():
             f"  Out:  size={out_size}, total={len(out_vals)}, valid={len(out_valid)}, min={min(out_valid):.2f}, max={max(out_valid):.2f}"
         )
 
-        if len(ref_vals) != len(out_vals):
-            print(
-                f"  SIZE MISMATCH: ref has {len(ref_vals)} values, out has {len(out_vals)} values"
-            )
+        cmp = compare_field(ref_vals, out_vals, threshold)
+        if cmp is None:
+            print(f"  SIZE MISMATCH: ref has {len(ref_vals)} values, out has {len(out_vals)} values")
             continue
-
+        mx, mean, over, total = cmp
         # Prefer reference size for position decoding; fall back to output size.
         pos_size = ref_size if all(d > 0 for d in ref_size) else out_size
 
-        errors = []
+        # Re-walk the inputs to recover worst-point positions, preserving the original diagnostic output.
         worst = []
-        for i in range(len(ref_vals)):
-            rv = ref_vals[i]
-            ov = out_vals[i]
+        for i, (rv, ov) in enumerate(zip(ref_vals, out_vals)):
             if math.isnan(rv) and math.isnan(ov):
                 continue
             if math.isnan(rv) or math.isnan(ov):
                 continue
             err = abs(rv - ov)
-            errors.append(err)
             if err > threshold:
                 worst.append((i, rv, ov, err))
 
-        if errors:
-            print(f"  Max error: {max(errors):.4f}K")
-            print(f"  Mean error: {sum(errors)/len(errors):.4f}K")
-            print(f"  Points >{threshold:g}K error: {len(worst)} / {len(errors)}")
-            if worst:
-                worst.sort(key=lambda x: x[3], reverse=True)
-                to_print = worst
-                label = "All misaligned"
-                print(f"  {label} (position = (vx, vy, vz)):")
-                for idx, rv, ov, err in to_print:
-                    vx, vy, vz = index_to_position(idx, pos_size)
-                    print(
-                        f"    idx={idx} pos=({vx},{vy},{vz}): ref={rv:.2f}, out={ov:.2f}, err={err:.4f}"
-                    )
+        print(f"  Max error: {mx:.4f}K")
+        print(f"  Mean error: {mean:.4f}K")
+        print(f"  Points >{threshold:g}K error: {over} / {total}")
+        if worst:
+            worst.sort(key=lambda x: x[3], reverse=True)
+            label = "All misaligned"
+            print(f"  {label} (position = (vx, vy, vz)):")
+            for idx, rv, ov, err in worst:
+                vx, vy, vz = index_to_position(idx, pos_size)
+                print(
+                    f"    idx={idx} pos=({vx},{vy},{vz}): ref={rv:.2f}, out={ov:.2f}, err={err:.4f}"
+                )
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #pragma once
+#include <string>
 #include <vector>
 
-#include "io_model.hpp"
 #include "types.hpp"
 
 namespace mhs {
@@ -66,6 +66,15 @@ namespace mhs {
         std::vector<double> residual;
     };
 
+    // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
+    // 与 io_model::ObservationPoint3D（表达式字符串）一一对应，由 preprocessor 转换生成。
+    struct ProbePoint {
+        std::string name;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
     struct InternalModel {
         MeshGeometry mesh;
         CellFields cells;
@@ -81,9 +90,9 @@ namespace mhs {
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
 
-        // 用户坐标系下的 3D 观察点列表（来自 IOStructure）。
+        // 用户坐标系下的 3D 观察点列表（来自 IOStructure，已求值到 SI 单位）。
         // 探针不参与方程求解，仅用于输出温度时间序列。
-        std::vector<ObservationPoint3D> observation_points;
+        std::vector<ProbePoint> observation_points;
     };
 
 } // namespace mhs

@@ -316,9 +316,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
 
     std::vector<double> times_seen;
     std::vector<double> temps_at_first_cell;
-    StepCallback cb;
-    cb.on_step_done = [&times_seen, &temps_at_first_cell](double t, int /*step*/,
-                          const std::vector<double>& cell_T) {
+    StepCallback cb = [&times_seen, &temps_at_first_cell](double t, int /*step*/, const std::vector<double>& cell_T) {
         times_seen.push_back(t);
         if (!cell_T.empty())
             temps_at_first_cell.push_back(cell_T[0]);

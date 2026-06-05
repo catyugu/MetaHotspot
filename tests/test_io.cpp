@@ -76,11 +76,12 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     IOStructure io = io::read_xml(path.string());
     ASSERT_EQ(io.observation_points.size(), 2u);
     EXPECT_EQ(io.observation_points[0].name, "p1");
-    EXPECT_DOUBLE_EQ(io.observation_points[0].x, 1.5);
-    EXPECT_DOUBLE_EQ(io.observation_points[0].y, 2.5);
-    EXPECT_DOUBLE_EQ(io.observation_points[0].z, 3.5);
+    // 坐标保留为 exprtk 表达式字符串，由 preprocessor 在加载时统一求值。
+    EXPECT_EQ(io.observation_points[0].x, "1.5");
+    EXPECT_EQ(io.observation_points[0].y, "2.5");
+    EXPECT_EQ(io.observation_points[0].z, "3.5");
     EXPECT_EQ(io.observation_points[1].name, "p2");
-    EXPECT_DOUBLE_EQ(io.observation_points[1].x, 0.1);
+    EXPECT_EQ(io.observation_points[1].x, "0.1");
     std::filesystem::remove(path);
 }
 

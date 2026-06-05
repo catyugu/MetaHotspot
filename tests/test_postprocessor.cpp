@@ -299,7 +299,7 @@ TEST(PostprocessorTest, SamplePointOnUniformFieldReturnsFieldValue)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ObservationPoint3D pt;
+    ProbePoint pt;
     pt.name = "center";
     // model->mesh 已是 SI 单位 (vertex_x = {0, 0.005, 0.01})
     pt.x = 0.003;
@@ -371,7 +371,7 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
                 node_T[vx * node_ny * node_nz + vy * node_nz + vz] = 300.0 + 6.0 * z;
             }
 
-    ObservationPoint3D pt;
+    ProbePoint pt;
     pt.name = "z6";
     pt.x = 0.005; // 5 mm
     pt.y = 0.005;
@@ -396,7 +396,7 @@ TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ObservationPoint3D pt;
+    ProbePoint pt;
     pt.name = "outside";
     // model->mesh 顶点范围 0..0.01 m (0..10 mm) — 0.1 m 在网格外
     pt.x = 0.1;
@@ -461,7 +461,7 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
     Postprocessor postprocessor;
     auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
 
-    ObservationPoint3D pt;
+    ProbePoint pt;
     pt.name = "on_face";
     pt.x = 0.005;
     pt.y = 0.005;

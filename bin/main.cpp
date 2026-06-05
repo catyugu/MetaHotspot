@@ -4,6 +4,7 @@
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include "solver/solver.hpp"
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -39,14 +40,25 @@ int main(int argc, char* argv[])
             model->mesh.ny, model->mesh.nz);
 
         // 准备探针 traces：仅瞬态 + 存在观察点时启用
-        std::vector<mhs::ProbeTrace> traces;
-        for (const auto& p : model->observation_points) {
-            mhs::ProbeTrace t;
-            t.name = p.name;
-            traces.push_back(std::move(t));
-        }
         const bool probe_enabled
             = (model->study_type == mhs::StudyType::Transient) && !model->observation_points.empty();
+        std::vector<mhs::ProbeTrace> traces;
+        if (probe_enabled) {
+            // 预留步数容量：避免 push_back 反复 realloc
+            const double dur = model->transient_duration;
+            const double dt = model->transient_time_step;
+            const size_t est_steps = (dur > 0.0 && dt > 0.0) ? static_cast<size_t>(std::ceil(dur / dt)) + 1 : 0;
+            traces.reserve(model->observation_points.size());
+            for (const auto& p : model->observation_points) {
+                mhs::ProbeTrace t;
+                t.name = p.name;
+                if (est_steps > 0) {
+                    t.times.reserve(est_steps);
+                    t.values.reserve(est_steps);
+                }
+                traces.push_back(std::move(t));
+            }
+        }
 
         // Create solver
         auto solver = mhs::Solver::create(mhs::SolverType::Pardiso);
@@ -60,20 +72,17 @@ int main(int argc, char* argv[])
         // 复用 main 中的 Postprocessor（lambda 持有引用；main 生命周期覆盖 scheduler.run()）
         mhs::Postprocessor postprocessor;
         if (probe_enabled) {
-            mhs::StepCallback cb;
-            cb.on_step_done = [&postprocessor, &model = *model, &traces, &io_structure](
-                                  double time, int step, const std::vector<double>& cell_T) {
-                (void)step;
+            // traces 与 model.observation_points 等长，循环上界统一在 lambda 外计算一次。
+            const size_t n_probes = traces.size();
+            scheduler.setCallback([&postprocessor, &model = *model, &traces, n_probes](
+                                      double time, int /*step*/, const std::vector<double>& cell_T) {
                 auto node_T = postprocessor.interpolate_cell_to_node(model, cell_T);
-                // 检查 traces 容量
-                for (size_t i = 0; i < traces.size() && i < model.observation_points.size(); ++i) {
+                for (size_t i = 0; i < n_probes; ++i) {
                     double v = postprocessor.sample_point(node_T, model, model.observation_points[i]);
                     traces[i].times.push_back(time);
                     traces[i].values.push_back(v);
                 }
-                (void)io_structure;
-            };
-            scheduler.setCallback(std::move(cb));
+            });
         }
 
         // Run simulation

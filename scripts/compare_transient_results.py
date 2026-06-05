@@ -18,80 +18,7 @@ import math
 import os
 import xml.etree.ElementTree as ET
 
-NS = {
-    "ts": "http://schemas.datacontract.org/2004/07/ThermalSim.Models",
-    "a": "http://schemas.microsoft.com/2003/10/Serialization/Arrays",
-    "b": "http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh",
-}
-
-
-def find_element(parent, local_tag):
-    for child in parent:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == local_tag:
-            return child
-    return None
-
-
-def find_all(parent, local_tag):
-    out = []
-    for child in parent:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag == local_tag:
-            out.append(child)
-    return out
-
-
-def parse_doubles(elem):
-    if elem is None:
-        return []
-    out = []
-    for child in elem:
-        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
-        if tag != "double":
-            continue
-        text = (child.text or "").strip()
-        if text == "":
-            continue
-        if text == "NaN" or text.lower() == "nan":
-            out.append(float("nan"))
-        else:
-            out.append(float(text))
-    return out
-
-
-def extract_final_field(xml_path):
-    """Return (values, size) of the first a:anyType (the steady 3D field)."""
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    results = find_element(root, "Results")
-    if results is None:
-        return None
-    anytype = find_element(results, "anyType")
-    if anytype is None:
-        return None
-    values = find_element(anytype, "Values")
-    if values is None:
-        return None
-    data = find_element(values, "Data")
-    if data is None:
-        return None
-    sx = (
-        int(find_element(values, "SizeX").text)
-        if find_element(values, "SizeX") is not None
-        else 0
-    )
-    sy = (
-        int(find_element(values, "SizeY").text)
-        if find_element(values, "SizeY") is not None
-        else 0
-    )
-    sz = (
-        int(find_element(values, "SizeZ").text)
-        if find_element(values, "SizeZ") is not None
-        else 0
-    )
-    return parse_doubles(data), (sx, sy, sz)
+from _xml_helpers import compare_field, extract_field, find_all, find_element, parse_doubles
 
 
 def extract_probe_traces(xml_path):
@@ -116,26 +43,6 @@ def extract_probe_traces(xml_path):
         values = parse_doubles(find_element(anytype, "Values"))
         traces[name] = (times, values)
     return traces
-
-
-def compare_field(ref_vals, out_vals, threshold):
-    """Compare two flat value arrays index-by-index. Return (max, mean, over_threshold_count, total)."""
-    if len(ref_vals) != len(out_vals):
-        return None
-    errs = []
-    over = 0
-    for r, o in zip(ref_vals, out_vals):
-        if math.isnan(r) and math.isnan(o):
-            continue
-        if math.isnan(r) or math.isnan(o):
-            continue
-        e = abs(r - o)
-        errs.append(e)
-        if e > threshold:
-            over += 1
-    if not errs:
-        return 0.0, 0.0, 0, 0
-    return max(errs), sum(errs) / len(errs), over, len(errs)
 
 
 def compare_trace(ref_times, ref_vals, out_times, out_vals):
@@ -205,8 +112,8 @@ def main():
         )
 
         # 1) Final-step field
-        ref_field = extract_final_field(ref_path)
-        out_field = extract_final_field(out_path)
+        ref_field = extract_field(ref_path)
+        out_field = extract_field(out_path)
         if ref_field is None or out_field is None:
             print("  Failed to extract final-step field")
         else:
