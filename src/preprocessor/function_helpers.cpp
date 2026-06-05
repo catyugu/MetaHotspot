@@ -13,23 +13,15 @@ namespace mhs::preprocessor {
 
     FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
     {
-        // 内层 parse：自变量名仍叫 x（用户写的就是 x）。
-        // 闭包内：把 ctx.t 喂给内层 x 槽——这是 ExpressionFunction 的设计约定，
-        // 引用处字面 x 已被 preprocessor 替换为 t 或 T，exprtk 会绑到对应槽，
-        // 但 native 闭包只看 ctx.t。
+
         auto ce = expr::parse(inner_expr);
-        return [ce](const expr::FieldContext& ctx) {
-            // FieldContext 顺序: (x, y, z, T, t)
-            expr::FieldContext inner {ctx.t, 0.0, 0.0, 0.0, ctx.t};
-            return ce.eval(inner);
-        };
+        return [ce](const expr::FieldContext& ctx) { return ce.eval(ctx); };
     }
 
     FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
-        return [A, alpha, beta](const expr::FieldContext& c) {
-            return A * (std::exp(alpha * c.t) - std::exp(beta * c.t));
-        };
+        return [A, alpha, beta](
+                   const expr::FieldContext& c) { return A * (std::exp(alpha * c.t) - std::exp(beta * c.t)); };
     }
 
     FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
@@ -42,9 +34,7 @@ namespace mhs::preprocessor {
 
     FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
-        return [A, omega, phi](const expr::FieldContext& c) {
-            return A * std::sin(omega * c.t + phi);
-        };
+        return [A, omega, phi](const expr::FieldContext& c) { return A * std::sin(omega * c.t + phi); };
     }
 
     FieldEvaluator make_piecewise_evaluator(std::vector<PieceWiseFunction::Point> pts)
@@ -58,8 +48,8 @@ namespace mhs::preprocessor {
                 return pts.front().y;
             if (x >= pts.back().x)
                 return pts.back().y;
-            auto it = std::upper_bound(pts.begin(), pts.end(), x,
-                [](double v, const PieceWiseFunction::Point& p) { return v < p.x; });
+            auto it = std::upper_bound(
+                pts.begin(), pts.end(), x, [](double v, const PieceWiseFunction::Point& p) { return v < p.x; });
             const auto& p1 = *(it - 1);
             const auto& p2 = *it;
             double t = (x - p1.x) / (p2.x - p1.x);
@@ -75,27 +65,23 @@ namespace mhs::preprocessor {
         // 仅作宽松白名单；真正的语法校验由后续 expr::parse 负责。
         bool is_known_builtin(std::string_view name)
         {
-            return name == "x" || name == "y" || name == "z" || name == "T" || name == "t"
-                || name == "pi" || name == "e";
+            return name == "x" || name == "y" || name == "z" || name == "T" || name == "t" || name == "pi"
+                || name == "e";
         }
 
         // identifier-char 判定：[A-Za-z0-9_]
         bool is_id_char(char c)
         {
-            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-                || (c >= '0' && c <= '9') || c == '_';
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
         }
 
         // identifier-start 判定：[A-Za-z_]（与 is_id_char 的区别在数字）
-        bool is_id_start(char c)
-        {
-            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
-        }
+        bool is_id_start(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; }
 
     } // namespace
 
-    std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
-        const std::unordered_map<std::string, Function>& fns)
+    std::string substitute_function_args(
+        const std::string& expr_str, const std::string& argname, const std::unordered_map<std::string, Function>& fns)
     {
         // 单次扫描：找到每个 identifier-start → 读到 identifier 末尾 →
         //   1) 若紧跟 `(` 且不在白名单也不在 fns → panic
@@ -114,9 +100,8 @@ namespace mhs::preprocessor {
                 std::string_view name(expr_str.data() + start, i - start);
                 if (i < n && expr_str[i] == '(') {
                     if (!is_known_builtin(name) && fns.find(std::string(name)) == fns.end()) {
-                        throw std::runtime_error("unknown function '" + std::string(name)
-                            + "' referenced in '" + expr_str
-                            + "': must be declared in <Functions>");
+                        throw std::runtime_error("unknown function '" + std::string(name) + "' referenced in '"
+                            + expr_str + "': must be declared in <Functions>");
                     }
                     out.append(expr_str, start, i - start);
                 }

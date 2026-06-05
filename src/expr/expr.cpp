@@ -3,46 +3,61 @@
 #include <tbb/enumerable_thread_specific.h>
 
 #include <exprtk/exprtk.hpp>
-#include <list>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace mhs::expr {
 
+    namespace registry {
+        std::mutex& mutex()
+        {
+            static std::mutex m;
+            return m;
+        }
+
+        std::unordered_map<std::string, double>& variables()
+        {
+            static std::unordered_map<std::string, double> vars;
+            return vars;
+        }
+
+        std::unordered_map<std::string, FieldEvaluator>& native_functions()
+        {
+            static std::unordered_map<std::string, FieldEvaluator> funcs;
+            return funcs;
+        }
+
+        std::unordered_map<std::string, std::string>& user_functions()
+        {
+            static std::unordered_map<std::string, std::string> funcs;
+            return funcs;
+        }
+    } // namespace registry
+
     namespace {
-        // Centralized registry avoids boilerplate and multiple static function calls
-        struct Registry {
-            std::mutex mtx;
-            std::unordered_map<std::string, double> variables;
-            std::unordered_map<std::string, FieldEvaluator> native_functions;
-            std::unordered_map<std::string, std::string> user_functions;
-
-            static Registry& get()
-            {
-                static Registry instance;
-                return instance;
-            }
-        };
-
-        // Direct thread_local variable avoids the overhead of a function wrapper
-        thread_local FieldContext g_thread_ctx {};
+        // FieldContext 顺序: (x, y, z, T, t)
+        constexpr size_t kFieldSlots = 5;
     }
 
-    // Adapter for native functions
-    class NativeFn : public exprtk::ifunction<double> {
+    template <typename T> class NativeFn : public exprtk::ifunction<T> {
     public:
         explicit NativeFn(FieldEvaluator fe)
-            : exprtk::ifunction<double>(1) // 1 argument
+            : exprtk::ifunction<T>(1) // 1 argument
             , fe_(std::move(fe))
         {
         }
 
-        double operator()(const double& /*arg0*/) override
+        T operator()(const T& arg0) override
         {
-            // Read from thread-local context directly
-            return fe_(g_thread_ctx);
+            // Build a fresh ctx per call with arg0 in every slot. No hidden
+            // global / TLS state — the value flows through exprtk's argument
+            // mechanism, which is the right depth.
+            const T slots[kFieldSlots] = {arg0, arg0, arg0, arg0, arg0};
+            FieldContext ctx {slots[0], slots[1], slots[2], slots[3], slots[4]};
+            return static_cast<T>(fe_(ctx));
         }
 
     private:
@@ -53,27 +68,32 @@ namespace mhs::expr {
     public:
         explicit ExprTKCompiled(const std::string& formula)
         {
-            sym_table_.add_variable("x", x_);
-            sym_table_.add_variable("y", y_);
-            sym_table_.add_variable("z", z_);
-            sym_table_.add_variable("T", T_);
-            sym_table_.add_variable("t", t_);
+            using namespace exprtk;
 
-            auto& reg = Registry::get();
+            sym_table_ = std::make_unique<symbol_table<double>>();
+            expr_ = std::make_unique<expression<double>>();
+
+            sym_table_->add_variable("x", x_);
+            sym_table_->add_variable("y", y_);
+            sym_table_->add_variable("z", z_);
+            sym_table_->add_variable("T", T_);
+            sym_table_->add_variable("t", t_);
+
+            // Bind every registered native function name as a 1-arg exprtk function.
+            // Slot lifetime must outlive the symbol table / expression.
             {
-                std::lock_guard<std::mutex> lock(reg.mtx);
-                for (const auto& [name, fe] : reg.native_functions) {
-                    // std::list guarantees memory addresses remain stable,
-                    // which is required since sym_table_ takes a reference.
-                    native_slots_.emplace_back(fe);
-                    sym_table_.add_function(name, native_slots_.back());
+                std::lock_guard<std::mutex> lock(registry::mutex());
+                for (const auto& [name, fe] : registry::native_functions()) {
+                    auto slot = std::make_shared<NativeFn<double>>(fe);
+                    native_slots_[name] = slot;
+                    sym_table_->add_function(name, *slot);
                 }
             }
 
-            expr_.register_symbol_table(sym_table_);
+            expr_->register_symbol_table(*sym_table_);
 
-            exprtk::parser<double> parser;
-            valid_ = parser.compile(formula, expr_);
+            parser<double> parser;
+            valid_ = parser.compile(formula, *expr_);
         }
 
         ExprTKCompiled(ExprTKCompiled&&) = default;
@@ -85,27 +105,26 @@ namespace mhs::expr {
         {
             if (!valid_)
                 return 0.0;
-
+            // 这里的状态修改现在是线程安全的，因为每个线程拥有自己独立的 ExprTKCompiled 副本
             x_ = ctx.x;
             y_ = ctx.y;
             z_ = ctx.z;
             T_ = ctx.T;
             t_ = ctx.t;
-
-            g_thread_ctx = ctx; // Update thread-local before evaluation
-            return expr_.value();
+            return expr_->value();
         }
 
     private:
         bool valid_ = true;
         double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
-
-        // Stored as values rather than unique_ptrs to reduce heap indirection
-        exprtk::symbol_table<double> sym_table_;
-        exprtk::expression<double> expr_;
-        std::list<NativeFn> native_slots_;
+        std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
+        std::unique_ptr<exprtk::expression<double>> expr_;
+        // Owns the NativeFn objects bound into the symbol table. They must live
+        // as long as the symbol table is in use.
+        std::unordered_map<std::string, std::shared_ptr<NativeFn<double>>> native_slots_;
     };
 
+    // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST
     struct ExprTKCompiledTLS {
         tbb::enumerable_thread_specific<ExprTKCompiled> tls;
 
@@ -121,7 +140,10 @@ namespace mhs::expr {
     {
         if (is_const_)
             return const_val_;
-        return tls_impl_ ? tls_impl_->tls.local().eval(ctx) : 0.0;
+        if (!tls_impl_)
+            return 0.0;
+        // 无锁获取当前线程的专属 AST 副本进行求值
+        return tls_impl_->tls.local().eval(ctx);
     }
 
     CompiledExpression CompiledExpression::make_constant(double value)
@@ -142,30 +164,27 @@ namespace mhs::expr {
 
     void set_variable(const std::string& name, double value)
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
-        reg.variables[name] = value;
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        registry::variables()[name] = value;
     }
 
     void register_native(const std::string& name, FieldEvaluator func)
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
-        reg.native_functions[name] = std::move(func);
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        registry::native_functions()[name] = std::move(func);
     }
 
     void register_function(const std::string& name, const std::string& expression)
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
-        reg.user_functions[name] = expression;
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        registry::user_functions()[name] = expression;
     }
 
     FieldEvaluator get_native(const std::string& name)
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
-        if (auto it = reg.native_functions.find(name); it != reg.native_functions.end()) {
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        auto it = registry::native_functions().find(name);
+        if (it != registry::native_functions().end()) {
             return it->second;
         }
         return nullptr;
@@ -173,11 +192,10 @@ namespace mhs::expr {
 
     void clear_registry()
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
-        reg.variables.clear();
-        reg.native_functions.clear();
-        reg.user_functions.clear();
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        registry::variables().clear();
+        registry::native_functions().clear();
+        registry::user_functions().clear();
     }
 
     CompiledExpression parse(const std::string& formula)
@@ -188,34 +206,42 @@ namespace mhs::expr {
             return CompiledExpression::make_constant(val);
         }
 
-        // Test compilation
-        if (ExprTKCompiled test_compile(formula); !test_compile.valid()) {
-            return CompiledExpression::make_constant(0.0);
+        // 主线程进行一次试编译，尽早捕获语法错误
+        {
+            ExprTKCompiled test_compile(formula);
+            if (!test_compile.valid()) {
+                return CompiledExpression::make_constant(0.0);
+            }
         }
-
         return CompiledExpression::make_evaluator(formula);
     }
 
     double eval_geometry(const std::string& formula)
     {
-        auto& reg = Registry::get();
-        std::lock_guard<std::mutex> lock(reg.mtx);
+        std::lock_guard<std::mutex> lock(registry::mutex());
+        const auto& vars = registry::variables();
 
-        if (auto it = reg.variables.find(formula); it != reg.variables.end()) {
-            return it->second;
+        auto var_it = vars.find(formula);
+        if (var_it != vars.end()) {
+            return var_it->second;
         }
 
-        exprtk::symbol_table<double> sym_table;
+        using namespace exprtk;
+        expression<double> exprtk_expr;
+        symbol_table<double> sym_table;
 
-        // Add variables as constants to eliminate external referencing and substring matching
-        for (const auto& [name, val] : reg.variables) {
-            sym_table.add_constant(name, val);
+        std::vector<std::pair<std::string, double>> active_vars;
+        active_vars.reserve(vars.size());
+
+        for (const auto& [name, val] : vars) {
+            if (formula.find(name) != std::string::npos) {
+                active_vars.emplace_back(name, val);
+                sym_table.add_variable(active_vars.back().first, active_vars.back().second);
+            }
         }
 
-        exprtk::expression<double> exprtk_expr;
         exprtk_expr.register_symbol_table(sym_table);
-
-        exprtk::parser<double> parser;
+        parser<double> parser;
         if (parser.compile(formula, exprtk_expr)) {
             return exprtk_expr.value();
         }

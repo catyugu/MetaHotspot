@@ -23,8 +23,8 @@ namespace {
     {
         mhs::expr::clear_registry();
         auto ev = make_expression_evaluator("2*x+1");
-        // 内部把 ctx.t 喂给 x 槽：inner.x = ctx.t = 3 → 2*3+1 = 7
-        FieldContext ctx {0,0,0,0,3};
+        // 内层表达式读 ctx.x；调用方负责把自变量放进 x 槽。
+        FieldContext ctx {3, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(ctx), 7.0);
     }
 
@@ -32,8 +32,7 @@ namespace {
     {
         mhs::expr::clear_registry();
         auto ev = make_expression_evaluator("x*x");
-        // inner.x = ctx.t = 5 → 5*5 = 25
-        FieldContext ctx {0,0,0,0,5};
+        FieldContext ctx {5, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(ctx), 25.0);
     }
 
@@ -217,8 +216,23 @@ namespace {
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::expr::parse(out);
-        // native 读 ctx.t（per 设计）；t=20 → A·exp(0) = 5
-        FieldContext ctx {0,0,0,0,20.0};
+        // Native 接收 exprtk 绑定的 arg0（这里是 T 槽），广播到所有 ctx 槽；
+        // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
+        FieldContext ctx {0,0,0,20.0,0.0};
+        EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
+    }
+
+    TEST(EndToEnd, NativeReadsTheBoundSymbol)
+    {
+        // 通用性：future natives 可以读任何 ctx 槽。当前 natives 读 ctx.t，
+        // 所以"绑定到 t"也能工作——验证 NativeFn 把 arg0 广播到了 ctx.t。
+        mhs::expr::clear_registry();
+        auto fns = fns_with_gauss();
+        register_all_functions(fns);
+
+        // 不做字面替换（"test_gaussian(x)" 直接编译），exprtk 把 x 槽绑定。
+        auto compiled = mhs::expr::parse("test_gaussian(x)");
+        FieldContext ctx {20.0, 0, 0, 0, 0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }
 
