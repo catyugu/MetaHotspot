@@ -8,8 +8,8 @@
 
 ## 求解类型
 
-- **Steady**: `StudyType::Steady`。视为 t=0 的单次非线性迭代，scheduler 不做时间循环。
-- **Transient**: `StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `T_prev = T` + `nonlinear::solve()`。
+- **Steady**: `mhs::core::StudyType::Steady`。视为 t=0 的单次非线性迭代，scheduler 不做时间循环。
+- **Transient**: `mhs::core::StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `T_prev = T` + `mhs::sim::nonlinear_solve()`。
 
 ## 网格
 
@@ -31,10 +31,10 @@
 
 两种独立路径：
 
-- **几何** — `mhs::expr::eval_geometry()`，依赖已注册的命名变量（`w_top`、`h_middle` 等，SI 米）
-- **场 / BC / 热源** — `mhs::expr::parse()`，上下文 `{x, y, z, T, t}`，返回轻量句柄 `mhs::CompiledExpression`
+- **几何** — `mhs::core::eval_geometry()`，依赖已注册的命名变量（`w_top`、`h_middle` 等，SI 米）
+- **场 / BC / 热源** — `mhs::core::parse()`，上下文 `{x, y, z, T, t}`，返回轻量句柄 `mhs::core::CompiledExpression`
 
-`FieldContext` / `FieldEvaluator` / `CompiledExpression` **定义在 `mhs::expr`（`src/expr/expr.hpp`）**，`mhs::*` 是 `src/common/types.hpp` 的 `using` 重导出。依赖方向 `common → expr`，**从不超过此方向**。
+`FieldContext` / `FieldEvaluator` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
 
 **线程模型**：注册表变动互斥锁；`parse()` 主线程持锁试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 ExprTK AST。
 
@@ -63,8 +63,8 @@ XML → core::IOStructure via io::read_xml
 4. Precomputed sparsity — 组装只填值，不重建结构
 5. Backward Euler — 瞬态项 `ρc·vol/dt·(T − T_prev)`，θ=1.0
 6. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
-7. 域类型定义在 `src/common/types.hpp`（重导出 expr 类型）— 内部枚举 `StudyType` / `BcType` / `FaceDir` 的唯一真源
-8. 无虚函数（`Solver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `panic`）
+7. 域类型定义在 `src/common/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
+8. 无虚函数（`mhs::sim::LinearSolver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
 9. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动，ADR-0007）
@@ -110,4 +110,4 @@ XML → core::IOStructure via io::read_xml
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`
 - 项目结构 / Logger / 命名空间 → `docs/design/project-structure.md`
-- ADR 决策记录 → `docs/adr/0001-…0006`
+- ADR 决策记录 → `docs/adr/0001-…0007`

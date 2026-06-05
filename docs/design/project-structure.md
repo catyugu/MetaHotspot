@@ -10,17 +10,17 @@ MetaHotspot/
 │   ├── Dependencies.cmake       # CPM: Eigen, spdlog, exprtk, tinyxml2, oneTBB
 │   └── config.h.in
 ├── src/
-│   ├── io/                      # mhs::io        XML 读 + VTU/XML 写
-│   ├── expr/                    # mhs::expr      exprtk 封装, CompiledExpression
-│   ├── common/                  # mhs, mhs::logger  types, io_model, internal_model, face_dir_tables
-│   ├── preprocessor/            # mhs::preprocessor (free fns) + mhs::Preprocessor
-│   ├── assembler/               # mhs::assembler TBB 并行组装
-│   ├── solver/                  # mhs           Eigen 求解器工厂
-│   ├── nonlinear/               # mhs::nonlinear Anderson 加速
-│   ├── scheduler/               # mhs           时间 + 非线性调度
-│   └── postprocessor/           # mhs           单元→节点插值
+│   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
+│   ├── expr/                    # mhs::core (子组织)     exprtk 封装, CompiledExpression
+│   ├── common/                  # mhs::core / mhs::logger types, io_model, internal_model, face_dir_tables
+│   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
+│   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
+│   ├── solver/                  # mhs::sim (子组织)      Eigen 求解器工厂
+│   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
+│   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度
+│   └── postprocessor/           # mhs::post (子组织)     单元→节点插值
 ├── tests/                       # GTest, 每模块一个套件
-└── bin/                         # mhs           主程序入口
+└── bin/                         # 主程序入口
 ```
 
 ## CMake 顶层
@@ -61,29 +61,28 @@ namespace mhs::logger {
 
 宏：
 
-| 宏                | 含义                                                        |
-| ----------------- | ----------------------------------------------------------- |
-| `MHS_LOG_DEBUG`   | `VERBOSE=ON` 时启用，否则空展开                             |
-| `MHS_LOG_INFO`    | 始终启用                                                    |
-| `MHS_LOG_WARN`    | 记录警告 + 报告回退值                                       |
-| `MHS_LOG_ERROR`   | 记录后 `panic()` 退出                                       |
+| 宏              | 含义                            |
+| --------------- | ------------------------------- |
+| `MHS_LOG_DEBUG` | `VERBOSE=ON` 时启用，否则空展开 |
+| `MHS_LOG_INFO`  | 始终启用                        |
+| `MHS_LOG_WARN`  | 记录警告 + 报告回退值           |
+| `MHS_LOG_ERROR` | 记录后 `panic()` 退出           |
 
 `spdlog::flush_on(spdlog::level::warn)` — 警告及以上自动 flush，保证 panic 前不丢日志。
 
 ## 2D 支持
 
-**不支持。** `Dimension::Dimension2D` 在预处理阶段 `panic`。简化面 DOF 分支。
+**不支持。** `mhs::core::Dimension::Dimension2D` 在预处理阶段 `panic`。简化面 DOF 分支。
 
 ## 命名空间
 
-| 命名空间            | 内容                                                                                            |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
-| `mhs`               | 域类型、IO/内部模型、Preprocessor、Solver、Scheduler、Postprocessor、`face_dir_tables` 查表助手 |
-| `mhs::io`           | XML/VTU 序列化                                                                                  |
-| `mhs::expr`         | exprtk 封装、CompiledExpression、注册表                                                         |
-| `mhs::preprocessor` | 自由函数：resolve_*, parse_face_key, …                                                          |
-| `mhs::assembler`    | Assembler、LinearSystem、ThreadLocalData                                                        |
-| `mhs::nonlinear`    | `solve()` 自由函数                                                                              |
-| `mhs::logger`       | spdlog 封装 + `panic()`                                                                         |
+| 命名空间      | 源目录                                                           | 角色                                     |
+| ------------- | ---------------------------------------------------------------- | ---------------------------------------- |
+| `mhs`         | —                                                                | 库品牌前缀（壳，不含类型定义）           |
+| `mhs::core`   | `common/`（除 logger）+ `expr/`                                  | 数据模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::sim`    | `assembler/` `solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
+| `mhs::io`     | `io/`                                                            | XML I/O、VTU 输出                        |
+| `mhs::post`   | `postprocessor/`                                                 | 单元→节点插值、导出场                    |
+| `mhs::logger` | `common/logger.{hpp,cpp}`                                        | 独立日志服务（不并入 core）              |
 
-`solver` / `scheduler` / `postprocessor` **没有**独立子命名空间 — 类型直接在 `mhs::`。
+公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

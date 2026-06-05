@@ -17,7 +17,7 @@ Conflating them would force geometry constants into every assembly call.
 
 Two separate paths.
 
-**Geometry.** Evaluated by `mhs::expr::eval_geometry()` from a registry of pre-registered variables. All variables are resolved to concrete numbers *before* the expression runs. Grammar is `+ - * / ()` and numeric constants — no special functions.
+**Geometry.** Evaluated by `mhs::core::eval_geometry()` from a registry of pre-registered variables. All variables are resolved to concrete numbers *before* the expression runs. Grammar is `+ - * / ()` and numeric constants — no special functions.
 
 **Field / BC.** Handled by the `expr` module (exprtk-backed). Context: `{x, y, z, T, t}`. Material laws, BC parameters, and per-block heat sources all flow through this path.
 
@@ -45,5 +45,5 @@ Two separate paths.
 
 ## Notes
 
-- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `src/expr/expr.hpp` (namespace `mhs::expr`); `src/common/types.hpp` re-exports them as `mhs::FieldContext` etc. so internal_model / assembler / preprocessor keep using the short name without including `expr/` directly. The dependency arrow is `common → expr`, never the reverse.
+- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `src/expr/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
 - After preprocessing, no raw expression strings remain in the internal model.

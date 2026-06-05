@@ -3,7 +3,7 @@
 直接映射 XML schema，仅用于序列化/反序列化。`src/common/io_model.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
 
 ```cpp
-namespace mhs {
+namespace mhs::core {
 
 struct Variable { std::string name; std::string value; };
 
@@ -91,7 +91,7 @@ struct IOStructure {
     std::unordered_map<std::string, Function> functions;
 };
 
-} // namespace mhs
+} // namespace mhs::core
 ```
 
 ---
@@ -103,7 +103,7 @@ struct IOStructure {
 > 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
 
 ```cpp
-namespace mhs {
+namespace mhs::core {
 
 enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
@@ -148,7 +148,7 @@ struct Function {
     PieceWiseFunction piecewise;
 };
 
-} // namespace mhs
+} // namespace mhs::core
 ```
 
 ---

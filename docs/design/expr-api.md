@@ -6,10 +6,10 @@
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::expr` (`src/expr/expr.hpp`)。**重导出**：`mhs::FieldContext` / `mhs::FieldEvaluator` (`src/common/types.hpp`)。依赖方向 `common → expr`，从不超过这个方向。
+**定义**：`mhs::core` (`src/expr/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
 
 ```cpp
-namespace mhs::expr {
+namespace mhs::core {
     struct FieldContext { double x = 0.0, y = 0.0, z = 0.0, T = 0.0, t = 0.0; };
     using FieldEvaluator = std::function<double(const FieldContext&)>;
 }
@@ -20,7 +20,7 @@ namespace mhs::expr {
 轻量句柄。可复制 / 可移动。底层 `shared_ptr<ExprTKCompiledTLS>` 包装 `tbb::enumerable_thread_specific<ExprTKCompiled>`。
 
 ```cpp
-namespace mhs::expr {
+namespace mhs::core {
     class CompiledExpression {
     public:
         CompiledExpression() = default;                    // = make_constant(0.0)
@@ -56,7 +56,7 @@ namespace mhs::expr {
 线程安全；`Preprocessor::load()` 在每次开始时调 `clear_registry()` 清空。
 
 ```cpp
-namespace mhs::expr {
+namespace mhs::core {
     // 几何变量（mm/Mm/... 已在 Preprocessor 转换为 SI 米）
     void set_variable(const std::string& name, double value_in_SI);
 
@@ -88,7 +88,7 @@ namespace mhs::expr {
 ## 解析与求值
 
 ```cpp
-namespace mhs::expr {
+namespace mhs::core {
     // 纯数字字面量 → make_constant；否则主线程试编译后返回 make_evaluator 句柄
     CompiledExpression parse(const std::string& formula);
 
@@ -101,18 +101,18 @@ namespace mhs::expr {
 
 ```cpp
 // Preprocessor
-expr::clear_registry();
-expr::set_variable("w_top", 10.0);
-expr::set_variable("h_middle", 2.0);
+mhs::core::clear_registry();
+mhs::core::set_variable("w_top", 10.0);
+mhs::core::set_variable("h_middle", 2.0);
 for (auto& [name, ev] : ios.functions)
-    expr::register_native(name, std::move(ev));
-expr::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
+    mhs::core::register_native(name, std::move(ev));
+mhs::core::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
 
 // 几何
-double half_w = expr::eval_geometry("w_top/2");
+double half_w = mhs::core::eval_geometry("w_top/2");
 
 // 场
-auto k = expr::parse("k_copper + 0.01*T");
+auto k = mhs::core::parse("k_copper + 0.01*T");
 double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ```
 

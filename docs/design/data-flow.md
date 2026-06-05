@@ -4,19 +4,19 @@
 
 ```text
 XML
-  └─> io::read_xml                          (tinyxml2)
-        └─> mhs::IOStructure                (AoS, 含字符串)
-                └─> Preprocessor::load
-                      ├─> expr::clear_registry + set_variable(几何) + register_native(ios.functions)
-                      ├─> MeshGeometry (×si_scale)
-                      ├─> resolve_geometry         (几何预求)
+  └─> mhs::io::read_xml                          (tinyxml2)
+        └─> mhs::core::IOStructure               (AoS, 含字符串)
+                └─> mhs::sim::Preprocessor::load
+                      ├─> mhs::core::clear_registry + set_variable(几何) + register_native(ios.functions)
+                      ├─> mhs::core::MeshGeometry (×si_scale)
+                      ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> resolve_layers           (valid_mask, index_map, material_id, layer_id)
+                      ├─> mhs::sim::resolve_layers           (valid_mask, index_map, material_id, layer_id)
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
-                      ├─> resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
-                      └─> InternalModel
-                              └─> Scheduler::run
-                                    ├─> Assembler::assemble(state)
+                      ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
+                      └─> mhs::core::InternalModel
+                              └─> mhs::sim::Scheduler::run
+                                    ├─> mhs::sim::Assembler::assemble(state)
                                     │     ├─> tbb::parallel_for(0, total)   // skip virtual
                                     │     │     ├─> material_table[mat_id].{kx,ky,kz,ρ,c}.eval(ctx)
                                     │     │     ├─> k_along(dir) 选用该面法向对应的 k
@@ -24,11 +24,11 @@ XML
                                     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     └─> thread-local triplets + b
                                     │     ├─> combine_each merge
-                                    │     └─> nonlinear::solve → Solver::solve(A,b)
-                                    └─> Postprocessor::interpolate_cell_to_node
+                                    │     └─> mhs::sim::nonlinear_solve → mhs::sim::LinearSolver::solve(A,b)
+                                    └─> mhs::post::Postprocessor::interpolate_cell_to_node
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）
                                           ├─> 面中心外推使用该面法向对应的 k
-                                          └─> io::write_vtu + io::write_xml   (virtual → NaN)
+                                          └─> mhs::io::write_vtu + mhs::io::write_xml   (virtual → NaN)
 ```
 
 ## 各阶段
@@ -51,7 +51,7 @@ XML
 
 ### 1. 内部模型不含原始字符串
 
-所有表达式预编译为 `CompiledExpression`（`mhs::expr`，`mhs::CompiledExpression` 为别名）。
+所有表达式预编译为 `mhs::core::CompiledExpression`。
 
 ### 2. 热源字典化
 
@@ -81,4 +81,4 @@ XML
 
 `MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和梯度外推时使用三轴算术平均 `(kx+ky+kz)/3` 作为反距离权重，以避免对单一方向的偏置。详见 ADR-0006。
 
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/face_dir_tables.hpp`（`mhs` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。
+`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/face_dir_tables.hpp`（`mhs::core` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。

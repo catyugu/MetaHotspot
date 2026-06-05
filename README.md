@@ -4,7 +4,7 @@
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：主命名空间为 `mhs`, 每个模块一个命名空间例如 `mhs::preprocessor`。模块内部，无需暴露的实现应该用匿名空间。
+- 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
 - 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。无虚函数。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -20,22 +20,22 @@
 
 ### 核心模块
 
-- **common**：共享基础类型、IO 模型与内部模型、logger、单例 types（`FieldContext`、`StudyType`、`BcType` 等）。`model` 与 `logger` 已合并到此模块（参见 `5f7071a`）。
-    - `common/types.hpp` — `mhs::FieldContext`、`mhs::StudyType`、`mhs::BcType`、`mhs::FaceDir`、`mhs::FieldEvaluator` 等。
-    - `common/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`IOStructure`、`Variable`、`Rect`、`Block`、`Layer`、`Boundary`、`Material`、`FirstTypeThermalBC` 等）。
-    - `common/internal_model.hpp` — 扁平化 SoA 内部模型（`InternalModel`、`MeshGeometry`、`MaterialProps`、`CellFields`、`BCParamTable`、`GlobalState`）。
+- **common**（领域 `mhs::core`）：共享基础类型、IO 模型与内部模型、logger（领域 `mhs::logger`）。
+    - `common/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
+    - `common/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
+    - `common/internal_model.hpp` — 扁平化 SoA 内部模型（`mhs::core::InternalModel`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`、`mhs::core::GlobalState`）。
     - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
-- **io**：XML 读取与序列化（VTU/VTK 调试输出）。`xmlparser` 已合并到此模块。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
-- **preprocessor**：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::preprocessor::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
-- **assembler**：消费内部模型配置和当前全局状态，给出组装后的线性系统 `A·T = b`。`mhs::assembler::{Assembler, LinearSystem, ThreadLocalData}`。TBB 并行。
-- **solver**：线性求解器，使用工厂设计模式选择并实例化不同求解器。命名空间为 `mhs`（没有独立的 `mhs::solver` 命名空间）。`mhs::{Solver, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver}`。
-- **nonlinear**：非线性迭代求解（`mhs::nonlinear::{NonLinearConfig, NonLinearResult, solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由本模块**自己持有**，调用方无 cfg 入参；`Scheduler` 在每个时间步内调用 `solve` 直到收敛或达到模块内部的迭代上限。
-- **scheduler**：调度完整的求解流程，时间步推进。`mhs::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `InternalModel` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `nonlinear` 模块自管。
-- **postprocessor**：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::Postprocessor`。
+- **io**（领域 `mhs::io`）：XML 读取与序列化（VTU/VTK 调试输出）。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
+- **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::sim::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::sim::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
+- **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，给出组装后的线性系统 `A·T = b`。`mhs::sim::{Assembler, LinearSystem, ThreadLocalData}`。TBB 并行。
+- **solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver, PardisoSolver}`。
+- **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由本模块**自己持有**，调用方无 cfg 入参；`Scheduler` 在每个时间步内调用 `nonlinear_solve` 直到收敛或达到模块内部的迭代上限。
+- **scheduler**（领域 `mhs::sim`）：调度完整的求解流程，时间步推进。`mhs::sim::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `InternalModel` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `nonlinear` 模块自管。
+- **postprocessor**（领域 `mhs::post`）：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::post::Postprocessor`。
 
 ### 工具模块
 
-- **expr**：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::expr::{CompiledExpression, ExprTKCompiled, register_native, register_function, make_constant, make_evaluator, eval, ...}`。
+- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, ExprTKCompiled, register_native, register_function, make_constant, make_evaluator, eval, ...}`。
 
 ### 数据流
 
