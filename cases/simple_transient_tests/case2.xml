@@ -1,0 +1,560 @@
+<Structure xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models"
+    xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+    <AlphaDegree>0</AlphaDegree>
+    <AmbientTemperature>300</AmbientTemperature>
+    <BasicGeometries xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Dialogs" />
+    <BetaDegree>0</BetaDegree>
+    <Blocks />
+    <BottomThermalBoundary i:nil="true" />
+    <Boundaries />
+    <DieLayerNum>0</DieLayerNum>
+    <DieLayerSizeX>0</DieLayerSizeX>
+    <DieLayerSizeY>0</DieLayerSizeY>
+    <DieMaterialName />
+    <DielectricLossFactor>0</DielectricLossFactor>
+    <Dimension>Dimension3D</Dimension>
+    <EnabledPhysics>HeatTransfer</EnabledPhysics>
+    <Functions xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    <GammaDegree>0</GammaDegree>
+    <InitialTemperature>300</InitialTemperature>
+    <LayerPBResults xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    <Layers>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>150</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>150</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>150</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>150</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>201</a:B>
+                        <a:G>255</a:G>
+                        <a:R>29</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.584078431</a:ScB>
+                        <a:ScG>1</a:ScG>
+                        <a:ScR>0.0122864889</a:ScR>
+                    </Color>
+                    <HasBeenChanged>true</HasBeenChanged>
+                    <InitialName>块 1</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>test_material_anisotropic</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>50</ThicknessExpression>
+                    <TiReyuan>0</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>true</IsTopLayer>
+            <MeshSizeXExpression>0</MeshSizeXExpression>
+            <MeshSizeYExpression>0</MeshSizeYExpression>
+            <MeshSizeZExpression>0</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 1</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>50</ThicknessExpression>
+            <XOffsetExpression>0</XOffsetExpression>
+            <YOffsetExpression>0</YOffsetExpression>
+        </Layer>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>150</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect>
+                                <Add_sub>true</Add_sub>
+                                <ArrayDisguise>false</ArrayDisguise>
+                                <CreatedByArray>false</CreatedByArray>
+                                <HeightExpression>150</HeightExpression>
+                                <Name>加操作 1</Name>
+                                <NotOccupiedByArray>true</NotOccupiedByArray>
+                                <ParentRect i:nil="true" />
+                                <WidthExpression>150</WidthExpression>
+                                <XExpression>0</XExpression>
+                                <XIntervalExpression>0</XIntervalExpression>
+                                <XSizeExpression>150</XSizeExpression>
+                                <YExpression>0</YExpression>
+                                <YIntervalExpression>0</YIntervalExpression>
+                                <YSizeExpression>150</YSizeExpression>
+                            </ParentRect>
+                            <WidthExpression>150</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>150</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>150</YSizeExpression>
+                        </Rect>
+                        <Rect>
+                            <Add_sub>false</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>50</HeightExpression>
+                            <Name>减操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect>
+                                <Add_sub>false</Add_sub>
+                                <ArrayDisguise>false</ArrayDisguise>
+                                <CreatedByArray>false</CreatedByArray>
+                                <HeightExpression>50</HeightExpression>
+                                <Name>减操作 1</Name>
+                                <NotOccupiedByArray>true</NotOccupiedByArray>
+                                <ParentRect i:nil="true" />
+                                <WidthExpression>50</WidthExpression>
+                                <XExpression>50</XExpression>
+                                <XIntervalExpression>50</XIntervalExpression>
+                                <XSizeExpression>50</XSizeExpression>
+                                <YExpression>50</YExpression>
+                                <YIntervalExpression>50</YIntervalExpression>
+                                <YSizeExpression>50</YSizeExpression>
+                            </ParentRect>
+                            <WidthExpression>50</WidthExpression>
+                            <XExpression>50</XExpression>
+                            <XIntervalExpression>50</XIntervalExpression>
+                            <XSizeExpression>50</XSizeExpression>
+                            <YExpression>50</YExpression>
+                            <YIntervalExpression>50</YIntervalExpression>
+                            <YSizeExpression>50</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>35</a:B>
+                        <a:G>255</a:G>
+                        <a:R>62</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.0168073773</a:ScB>
+                        <a:ScG>1</a:ScG>
+                        <a:ScR>0.0481718257</a:ScR>
+                    </Color>
+                    <HasBeenChanged>false</HasBeenChanged>
+                    <InitialName>块 1（副本）</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>test_material_anisotropic</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1（副本）</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>50</ThicknessExpression>
+                    <TiReyuan>0</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>50</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect>
+                                <Add_sub>true</Add_sub>
+                                <ArrayDisguise>false</ArrayDisguise>
+                                <CreatedByArray>false</CreatedByArray>
+                                <HeightExpression>50</HeightExpression>
+                                <Name>加操作 1</Name>
+                                <NotOccupiedByArray>true</NotOccupiedByArray>
+                                <ParentRect i:nil="true" />
+                                <WidthExpression>50</WidthExpression>
+                                <XExpression>50</XExpression>
+                                <XIntervalExpression>50</XIntervalExpression>
+                                <XSizeExpression>50</XSizeExpression>
+                                <YExpression>50</YExpression>
+                                <YIntervalExpression>50</YIntervalExpression>
+                                <YSizeExpression>50</YSizeExpression>
+                            </ParentRect>
+                            <WidthExpression>50</WidthExpression>
+                            <XExpression>50</XExpression>
+                            <XIntervalExpression>50</XIntervalExpression>
+                            <XSizeExpression>50</XSizeExpression>
+                            <YExpression>50</YExpression>
+                            <YIntervalExpression>50</YIntervalExpression>
+                            <YSizeExpression>50</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>255</a:B>
+                        <a:G>141</a:G>
+                        <a:R>255</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>1</a:ScB>
+                        <a:ScG>0.266355634</a:ScG>
+                        <a:ScR>1</a:ScR>
+                    </Color>
+                    <HasBeenChanged>false</HasBeenChanged>
+                    <InitialName>块 2（副本）</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>test_material_anisotropic</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 2（副本）</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>50</ThicknessExpression>
+                    <TiReyuan>1e8</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>false</IsTopLayer>
+            <MeshSizeXExpression>0</MeshSizeXExpression>
+            <MeshSizeYExpression>0</MeshSizeYExpression>
+            <MeshSizeZExpression>0</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 2</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>50</ThicknessExpression>
+            <XOffsetExpression>0</XOffsetExpression>
+            <YOffsetExpression>0</YOffsetExpression>
+        </Layer>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>150</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect>
+                                <Add_sub>true</Add_sub>
+                                <ArrayDisguise>false</ArrayDisguise>
+                                <CreatedByArray>false</CreatedByArray>
+                                <HeightExpression>150</HeightExpression>
+                                <Name>加操作 1</Name>
+                                <NotOccupiedByArray>true</NotOccupiedByArray>
+                                <ParentRect i:nil="true" />
+                                <WidthExpression>150</WidthExpression>
+                                <XExpression>0</XExpression>
+                                <XIntervalExpression>0</XIntervalExpression>
+                                <XSizeExpression>150</XSizeExpression>
+                                <YExpression>0</YExpression>
+                                <YIntervalExpression>0</YIntervalExpression>
+                                <YSizeExpression>150</YSizeExpression>
+                            </ParentRect>
+                            <WidthExpression>150</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>150</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>150</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>47</a:B>
+                        <a:G>200</a:G>
+                        <a:R>255</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.02842604</a:ScB>
+                        <a:ScG>0.577580452</a:ScG>
+                        <a:ScR>1</a:ScR>
+                    </Color>
+                    <HasBeenChanged>false</HasBeenChanged>
+                    <InitialName>块 1（副本）</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>test_material_anisotropic</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1（副本）</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>50</ThicknessExpression>
+                    <TiReyuan>0</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>false</IsTopLayer>
+            <MeshSizeXExpression>0</MeshSizeXExpression>
+            <MeshSizeYExpression>0</MeshSizeYExpression>
+            <MeshSizeZExpression>0</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 3</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>50</ThicknessExpression>
+            <XOffsetExpression>0</XOffsetExpression>
+            <YOffsetExpression>0</YOffsetExpression>
+        </Layer>
+    </Layers>
+    <LengthUnit>Mm</LengthUnit>
+    <Materials xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:KeyValueOfstringMaterialGyu7GfTz>
+            <a:Key>test_material_anisotropic</a:Key>
+            <a:Value>
+                <BiRerong>385</BiRerong>
+                <Chi0 i:nil="true" />
+                <CouplingMatrixForSaw i:nil="true" />
+                <DaoreXishu>400,200,50</DaoreXishu>
+                <DielectricLossFactorForSaw i:nil="true" />
+                <Eg0 i:nil="true" />
+                <ElasticMatrixForSaw i:nil="true" />
+                <Epsilon i:nil="true" />
+                <EpsilonForSaw i:nil="true" />
+                <EpsilonVectorForSaw i:nil="true" />
+                <MaterialKindForSaw>压电材料</MaterialKindForSaw>
+                <MechanicalDampingFactorForSaw i:nil="true" />
+                <Midu>8920</Midu>
+                <MiduForSaw i:nil="true" />
+                <MuN i:nil="true" />
+                <MuP i:nil="true" />
+                <Nc i:nil="true" />
+                <Nv i:nil="true" />
+                <PoissonsRatioForSaw i:nil="true" />
+                <WaveSpeedForSaw i:nil="true" />
+                <YoungsModulusForSaw i:nil="true" />
+            </a:Value>
+        </a:KeyValueOfstringMaterialGyu7GfTz>
+    </Materials>
+    <MechanicalDampingFactor>0</MechanicalDampingFactor>
+    <ObservePoints2D />
+    <ObservePoints3D />
+    <OtherThermalBondary i:type="a:ThirdTypeThermalBoundary"
+        xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
+        <a:ConvectionCoefficient>20</a:ConvectionCoefficient>
+        <a:EnvironmentTemperature>300</a:EnvironmentTemperature>
+    </OtherThermalBondary>
+    <PreviewRowNum>0</PreviewRowNum>
+    <Results xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:anyType i:type="Result3D">
+            <Mesh xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh">
+                <b:XArray>
+                    <a:double>0</a:double>
+                    <a:double>50</a:double>
+                    <a:double>100</a:double>
+                    <a:double>150</a:double>
+                </b:XArray>
+                <b:YArray>
+                    <a:double>0</a:double>
+                    <a:double>50</a:double>
+                    <a:double>100</a:double>
+                    <a:double>150</a:double>
+                </b:YArray>
+                <b:ZArray>
+                    <a:double>0</a:double>
+                    <a:double>50</a:double>
+                    <a:double>100</a:double>
+                    <a:double>150</a:double>
+                </b:ZArray>
+            </Mesh>
+            <Name>温度</Name>
+            <Values>
+                <Data>
+                    <a:double>300.02120528806722</a:double>
+                    <a:double>301.95619412854387</a:double>
+                    <a:double>301.95619410085772</a:double>
+                    <a:double>300.02120526972362</a:double>
+                    <a:double>300.23129182201882</a:double>
+                    <a:double>310.34759768205816</a:double>
+                    <a:double>310.34759764497181</a:double>
+                    <a:double>300.23129191385772</a:double>
+                    <a:double>300.23129193165926</a:double>
+                    <a:double>310.3475976855504</a:double>
+                    <a:double>310.34759771207581</a:double>
+                    <a:double>300.2312919295149</a:double>
+                    <a:double>300.02120527726822</a:double>
+                    <a:double>301.95619411390413</a:double>
+                    <a:double>301.95619409998665</a:double>
+                    <a:double>300.02120527652505</a:double>
+                    <a:double>300.16845276752673</a:double>
+                    <a:double>303.612265555603</a:double>
+                    <a:double>303.61226555554373</a:double>
+                    <a:double>300.168452720087</a:double>
+                    <a:double>302.66493854551311</a:double>
+                    <a:double>331.31098820423711</a:double>
+                    <a:double>331.31098821997762</a:double>
+                    <a:double>302.66493855329242</a:double>
+                    <a:double>302.66493856592336</a:double>
+                    <a:double>331.31098824651087</a:double>
+                    <a:double>331.31098828003894</a:double>
+                    <a:double>302.66493856472334</a:double>
+                    <a:double>300.16845271664897</a:double>
+                    <a:double>303.61226553626057</a:double>
+                    <a:double>303.61226553449836</a:double>
+                    <a:double>300.16845271364144</a:double>
+                    <a:double>300.16845271421585</a:double>
+                    <a:double>303.61226553431106</a:double>
+                    <a:double>303.61226556088963</a:double>
+                    <a:double>300.16845272726033</a:double>
+                    <a:double>302.6649385524592</a:double>
+                    <a:double>331.31098821559362</a:double>
+                    <a:double>331.31098822394421</a:double>
+                    <a:double>302.66493856896454</a:double>
+                    <a:double>302.66493852553509</a:double>
+                    <a:double>331.31098813278845</a:double>
+                    <a:double>331.31098821119468</a:double>
+                    <a:double>302.664938562481</a:double>
+                    <a:double>300.16845270687463</a:double>
+                    <a:double>303.61226549802814</a:double>
+                    <a:double>303.61226551705079</a:double>
+                    <a:double>300.16845270744824</a:double>
+                    <a:double>300.02120527617581</a:double>
+                    <a:double>301.95619410080997</a:double>
+                    <a:double>301.956194105048</a:double>
+                    <a:double>300.02120527766323</a:double>
+                    <a:double>300.2312919252729</a:double>
+                    <a:double>310.34759768149053</a:double>
+                    <a:double>310.34759769094973</a:double>
+                    <a:double>300.231291927194</a:double>
+                    <a:double>300.23129192133365</a:double>
+                    <a:double>310.34759766370178</a:double>
+                    <a:double>310.34759767492568</a:double>
+                    <a:double>300.23129192438449</a:double>
+                    <a:double>300.02120527173122</a:double>
+                    <a:double>301.956194098052</a:double>
+                    <a:double>301.956194092645</a:double>
+                    <a:double>300.02120526978257</a:double>
+                </Data>
+                <SizeX>4</SizeX>
+                <SizeY>4</SizeY>
+                <SizeZ>4</SizeZ>
+            </Values>
+        </a:anyType>
+    </Results>
+    <SawFrequency>0</SawFrequency>
+    <SawFrequencySolveMode>SinglePoint</SawFrequencySolveMode>
+    <SawFrequencyStart>0</SawFrequencyStart>
+    <SawFrequencyStep>0</SawFrequencyStep>
+    <SawFrequencyStop>0</SawFrequencyStop>
+    <SawFrequencyUnit>GHz</SawFrequencyUnit>
+    <SoftwareMode>PTA</SoftwareMode>
+    <StudyType>Transient</StudyType>
+    <TIMMaterialName />
+    <ThermalMaskResults xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    <TopLayerIndex>0</TopLayerIndex>
+    <TopThermalBoundary i:nil="true" />
+    <TopoGeometries />
+    <TopoGeometryMaxNum>0</TopoGeometryMaxNum>
+    <TopoLayers />
+    <TransientStudyDuration>10</TransientStudyDuration>
+    <TransientStudyTimeStep>1</TransientStudyTimeStep>
+    <TransientTimeUnit>S</TransientTimeUnit>
+    <UseBlockBuildMode>false</UseBlockBuildMode>
+    <Variables xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+</Structure>
