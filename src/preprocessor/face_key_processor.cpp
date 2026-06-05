@@ -1,4 +1,5 @@
 #include "common/types.hpp"
+#include "common/face_dir_tables.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include <cmath>
@@ -9,27 +10,9 @@ namespace mhs::preprocessor {
         // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
         bool is_face_exposed(FaceDir dir, int ix, int iy, int iz, const MeshGeometry& mesh, const CellFields& cells)
         {
-            int nix = ix, niy = iy, niz = iz;
-            switch (dir) {
-            case FaceDir::XM:
-                nix--;
-                break;
-            case FaceDir::XP:
-                nix++;
-                break;
-            case FaceDir::YM:
-                niy--;
-                break;
-            case FaceDir::YP:
-                niy++;
-                break;
-            case FaceDir::ZM:
-                niz--;
-                break;
-            case FaceDir::ZP:
-                niz++;
-                break;
-            }
+            int nix = neighbor_ix(dir, ix);
+            int niy = neighbor_iy(dir, iy);
+            int niz = neighbor_iz(dir, iz);
 
             // 1. 如果超出网格边界，说明是域外，绝对暴露
             if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {

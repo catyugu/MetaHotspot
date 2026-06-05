@@ -4,104 +4,15 @@
 #include <Eigen/Sparse>
 
 #include "assembler.hpp"
+#include "common/face_dir_tables.hpp"
 
 namespace mhs::assembler {
-
-    static int grid_index(int ix, int iy, int iz, int ny, int nz) { return ix * ny * nz + iy * nz + iz; }
 
     static void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
     {
         ix = old_idx / (ny * nz);
         iy = (old_idx % (ny * nz)) / nz;
         iz = old_idx % nz;
-    }
-
-    static int neighbor_grid_index(int ix, int iy, int iz, FaceDir dir, int nx, int ny, int nz)
-    {
-        switch (dir) {
-        case FaceDir::XM:
-            return ix > 0 ? grid_index(ix - 1, iy, iz, ny, nz) : -1;
-        case FaceDir::XP:
-            return ix < nx - 1 ? grid_index(ix + 1, iy, iz, ny, nz) : -1;
-        case FaceDir::YM:
-            return iy > 0 ? grid_index(ix, iy - 1, iz, ny, nz) : -1;
-        case FaceDir::YP:
-            return iy < ny - 1 ? grid_index(ix, iy + 1, iz, ny, nz) : -1;
-        case FaceDir::ZM:
-            return iz > 0 ? grid_index(ix, iy, iz - 1, ny, nz) : -1;
-        case FaceDir::ZP:
-            return iz < nz - 1 ? grid_index(ix, iy, iz + 1, ny, nz) : -1;
-        default:
-            return -1;
-        }
-    }
-
-    static double face_area(FaceDir dir, double dx, double dy, double dz)
-    {
-        switch (dir) {
-        case FaceDir::XM:
-        case FaceDir::XP:
-            return dy * dz;
-        case FaceDir::YM:
-        case FaceDir::YP:
-            return dx * dz;
-        case FaceDir::ZM:
-        case FaceDir::ZP:
-            return dx * dy;
-        default:
-            return 0.0;
-        }
-    }
-
-    static int neighbor_ix(FaceDir dir, int ix)
-    {
-        switch (dir) {
-        case FaceDir::XM:
-            return ix - 1;
-        case FaceDir::XP:
-            return ix + 1;
-        default:
-            return ix;
-        }
-    }
-    static int neighbor_iy(FaceDir dir, int iy)
-    {
-        switch (dir) {
-        case FaceDir::YM:
-            return iy - 1;
-        case FaceDir::YP:
-            return iy + 1;
-        default:
-            return iy;
-        }
-    }
-    static int neighbor_iz(FaceDir dir, int iz)
-    {
-        switch (dir) {
-        case FaceDir::ZM:
-            return iz - 1;
-        case FaceDir::ZP:
-            return iz + 1;
-        default:
-            return iz;
-        }
-    }
-
-    static double k_along(FaceDir dir, double kx, double ky, double kz)
-    {
-        switch (dir) {
-        case FaceDir::XM:
-        case FaceDir::XP:
-            return kx;
-        case FaceDir::YM:
-        case FaceDir::YP:
-            return ky;
-        case FaceDir::ZM:
-        case FaceDir::ZP:
-            return kz;
-        default:
-            return kx;
-        }
     }
 
     struct ThreadLocalData {
@@ -159,8 +70,9 @@ namespace mhs::assembler {
                 uint16_t param_idx = cell_bc.param_idxs[f];
 
                 if (bc_type == BcType::None) {
-                    int neighbor_old = neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz);
-                    if (neighbor_old < 0 || cells.valid_mask[neighbor_old] == 0)
+                    int neighbor_old
+                        = neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
+                    if (neighbor_old < 0)
                         continue;
 
                     int n_idx = (int)cells.index_map[neighbor_old];
@@ -169,17 +81,15 @@ namespace mhs::assembler {
                     int niz = neighbor_iz(dir, iz);
 
                     const auto& mp_n = materials[cells.material_id[neighbor_old]];
-                    double kx_n = mp_n.kx.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
-                    double ky_n = mp_n.ky.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
-                    double kz_n = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    double kx_n
+                        = mp_n.kx.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    double ky_n
+                        = mp_n.ky.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    double kz_n
+                        = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
 
-                    double d_half_cell = (dir == FaceDir::XM || dir == FaceDir::XP) ? mesh.dx[ix] / 2.0
-                        : (dir == FaceDir::YM || dir == FaceDir::YP)                ? mesh.dy[iy] / 2.0
-                                                                                    : mesh.dz[iz] / 2.0;
-
-                    double d_half_neighbor = (dir == FaceDir::XM || dir == FaceDir::XP) ? mesh.dx[nix] / 2.0
-                        : (dir == FaceDir::YM || dir == FaceDir::YP)                    ? mesh.dy[niy] / 2.0
-                                                                                        : mesh.dz[niz] / 2.0;
+                    double d_half_cell = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+                    double d_half_neighbor = half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
                     double k_cell = k_along(dir, kx_c, ky_c, kz_c);
                     double k_neighbor = k_along(dir, kx_n, ky_n, kz_n);
@@ -188,9 +98,7 @@ namespace mhs::assembler {
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
                 else if (bc_type == BcType::FirstType) {
-                    double half_dist = (dir == FaceDir::XM || dir == FaceDir::XP) ? dx_cell / 2.0
-                        : (dir == FaceDir::YM || dir == FaceDir::YP)              ? dy_cell / 2.0
-                                                                                  : dz_cell / 2.0;
+                    double half_dist = half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
                     double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
@@ -211,9 +119,7 @@ namespace mhs::assembler {
                     double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double half_dist = (dir == FaceDir::XM || dir == FaceDir::XP) ? dx_cell / 2.0
-                        : (dir == FaceDir::YM || dir == FaceDir::YP)              ? dy_cell / 2.0
-                                                                                  : dz_cell / 2.0;
+                    double half_dist = half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
                     double k_face = k_along(dir, kx_c, ky_c, kz_c);
                     double coeff = k_face * h * A_f / (k_face + h * half_dist);
