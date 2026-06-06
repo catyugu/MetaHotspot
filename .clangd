@@ -5,8 +5,3 @@ CompileFlags:
     - -std=c++20
     - -I${workspaceFolder}/src
     - -I${workspaceFolder}/external
-    - -I${workspaceFolder}/build/_deps/spdlog-src/include
-    - -I${workspaceFolder}/build/_deps/eigen-src
-    - -I${workspaceFolder}/build/_deps/tinyxml2-src
-    - -I${workspaceFolder}/build/_deps/googletest-src/googletest/include
-    - -I${workspaceFolder}/build/_deps/googletest-src/googletest
