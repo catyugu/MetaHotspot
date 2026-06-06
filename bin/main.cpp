@@ -3,7 +3,7 @@
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
-#include "solver/solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 #include <cmath>
 #include <iostream>
 #include <string>

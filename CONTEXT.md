@@ -71,13 +71,13 @@ XML → core::IOStructure via io::read_xml
 
 命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
-| 命名空间      | 源目录                                                           | 暴露类型 / 函数                                                                                                                                                                   |
-| ------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`   | `common/`（除 logger）+ `expr/`                                  | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、face_dir_tables 查表                                               |
-| `mhs::sim`    | `assembler/` `solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver（原 Solver）、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::io`     | `io/`                                                            | read_xml / write_vtu / write_xml                                                                                                                                                  |
-| `mhs::post`   | `postprocessor/`                                                 | interpolate_cell_to_node 及导出场函数                                                                                                                                             |
-| `mhs::logger` | `common/logger.*`                                                | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                 |
+| 命名空间      | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mhs::core`   | `common/`（除 logger）+ `expr/`                                         | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、face_dir_tables 查表                                  |
+| `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::io`     | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                     |
+| `mhs::post`   | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                |
+| `mhs::logger` | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                    |
 
 ### 铁律
 
@@ -110,4 +110,4 @@ XML → core::IOStructure via io::read_xml
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`
 - 项目结构 / Logger / 命名空间 → `docs/design/project-structure.md`
-- ADR 决策记录 → `docs/adr/0001-…0007`
+- ADR 决策记录 → `docs/adr/0001-…0005`

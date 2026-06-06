@@ -110,7 +110,7 @@ namespace mhs::sim {
 
 所有 `eval()` 走 TBB ETS，无锁。
 
-## `solver`
+## `linear_solver`
 
 ```cpp
 namespace mhs::sim {

@@ -1,11 +1,12 @@
-#include "solver/sparse_lu_solver.hpp"
-#include <Eigen/Sparse>
+#include "linear_solver/pardiso_solver.hpp"
+
+#include <Eigen/PardisoSupport>
 
 namespace mhs::sim {
 
-    SolveResult SparseLUSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
+    SolveResult PardisoSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
     {
-        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+        Eigen::PardisoLU<Eigen::SparseMatrix<double>> solver;
         solver.compute(A);
 
         if (solver.info() != Eigen::Success) {
@@ -20,6 +21,6 @@ namespace mhs::sim {
         };
     }
 
-    void SparseLUSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
+    void PardisoSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
 } // namespace mhs::sim

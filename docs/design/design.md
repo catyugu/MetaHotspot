@@ -2,13 +2,13 @@
 
 本文档是模块接口的入口。各小节给出**当前代码**对应的接口契约（不含历史）。
 
-| 文件                                             | 内容                                                                                 |
-| ------------------------------------------------ | :----------------------------------------------------------------------------------- |
-| **[io-model.md](io-model.md)**                   | IO 模型结构（直接映射 XML schema）                                                   |
-| **[internal-model.md](internal-model.md)**       | 内部模型结构（SoA 布局，扁平化）                                                     |
-| **[module-interfaces.md](module-interfaces.md)** | 模块接口（io、preprocessor、assembler、solver、scheduler、nonlinear、postprocessor） |
-| **[expr-api.md](expr-api.md)**                   | expr 模块接口                                                                        |
-| **[project-structure.md](project-structure.md)** | 项目结构、CMake、Logger                                                              |
+| 文件                                             | 内容                                                                                        |
+| ------------------------------------------------ | :------------------------------------------------------------------------------------------ |
+| **[io-model.md](io-model.md)**                   | IO 模型结构（直接映射 XML schema）                                                          |
+| **[internal-model.md](internal-model.md)**       | 内部模型结构（SoA 布局，扁平化）                                                            |
+| **[module-interfaces.md](module-interfaces.md)** | 模块接口（io、preprocessor、assembler、linear_solver、scheduler、nonlinear、postprocessor） |
+| **[expr-api.md](expr-api.md)**                   | expr 模块接口                                                                               |
+| **[project-structure.md](project-structure.md)** | 项目结构、CMake、Logger                                                                     |
 
 ## 决策摘要（详见 `docs/adr/`）
 

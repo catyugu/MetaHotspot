@@ -1,8 +1,8 @@
-#include "solver/bicgstab_solver.hpp"
-#include "solver/solver.hpp"
-#include "solver/sparse_lu_solver.hpp"
+#include "linear_solver/bicgstab_solver.hpp"
+#include "linear_solver/linear_solver.hpp"
+#include "linear_solver/sparse_lu_solver.hpp"
 #ifdef MHS_ENABLE_PARDISO
-#include "solver/pardiso_solver.hpp"
+#include "linear_solver/pardiso_solver.hpp"
 #endif
 
 namespace mhs::sim {

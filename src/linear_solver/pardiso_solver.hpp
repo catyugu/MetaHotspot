@@ -1,6 +1,6 @@
 #pragma once
 
-#include "solver/solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 
 #include <Eigen/PardisoSupport>
 

@@ -1,6 +1,6 @@
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
-#include "solver/solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;

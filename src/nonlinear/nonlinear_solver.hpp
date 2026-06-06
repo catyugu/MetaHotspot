@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/internal_model.hpp"
-#include "solver/solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 
 namespace mhs::sim {
 
@@ -20,6 +20,6 @@ namespace mhs::sim {
     // Anderson-accelerated fixed-point iteration over `LinearSolver`.
     // Renamed from `solve` to `nonlinear_solve` so that `mhs::sim::nonlinear_solve`
     // is unambiguous in the flat sim domain.
-    NonLinearResult nonlinear_solve(const mhs::core::InternalModel& model, mhs::core::GlobalState& state, LinearSolver& solver);
+    NonLinearResult nonlinear_solve(const core::InternalModel& model, core::GlobalState& state, LinearSolver& solver);
 
 } // namespace mhs::sim

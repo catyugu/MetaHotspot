@@ -3,7 +3,7 @@
 #include <functional>
 
 #include "common/internal_model.hpp"
-#include "solver/solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 
 namespace mhs::sim {
 

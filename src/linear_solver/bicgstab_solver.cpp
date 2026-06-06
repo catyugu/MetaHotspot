@@ -1,4 +1,4 @@
-#include "solver/bicgstab_solver.hpp"
+#include "linear_solver/bicgstab_solver.hpp"
 #include <Eigen/Sparse>
 
 namespace mhs::sim {
