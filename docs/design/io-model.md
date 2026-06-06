@@ -96,11 +96,9 @@ struct IOStructure {
 
 ---
 
-## 2.2 表达式函数类型（TODO：尚未定义）
+## 2.2 表达式函数类型
 
-> **注意**：以下类型体系尚未定义——连头文件声明也不存在。当前 `IOStructure.functions` 为 `unordered_map<string, FieldEvaluator>` 的扁平 map。
-> 未来计划定义完整的 Function 类型体系，支持从 XML 解析结构化函数定义（Gauss、PieceWise 等），
-> 并在预处理阶段将它们转换为 `CompiledExpression` 或 `FieldEvaluator`。
+`IOStructure.functions` 是 `unordered_map<string, Function>`，按 `Function.type` 分发到 `mhs::sim::function_helpers` 的 5 个闭包构造器之一。预处理阶段用 `mhs::sim::register_all_functions` 把整张表注册为 expr 全局 native。
 
 ```cpp
 namespace mhs::core {

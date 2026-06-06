@@ -11,13 +11,18 @@
 ```cpp
 namespace mhs::core {
     struct FieldContext { double x = 0.0, y = 0.0, z = 0.0, T = 0.0, t = 0.0; };
-    using FieldEvaluator = std::function<double(const FieldContext&)>;
+    // args = ExprTk 已先行求值好的实参列表（如 fn(a, b) 中的 a, b）；
+    // ctx  = 当前物理上下文（x, y, z, T, t 的真实值），供 native 参考。
+    using FieldEvaluator = std::function<double(const std::vector<double>& args,
+                                               const FieldContext& ctx)>;
 }
 ```
 
 ## CompiledExpression
 
-轻量句柄。可复制 / 可移动。底层 `shared_ptr<ExprTKCompiledTLS>` 包装 `tbb::enumerable_thread_specific<ExprTKCompiled>`。
+轻量句柄。可复制 / 可移动。底层 `shared_ptr<ExprTKCompiledTLS>` 包装 `tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>>`——用 `unique_ptr` 包住 AST 是为了锁住 `ExprTKCompiled` 的内存地址（`NativeFn` 通过裸指针引用其 `current_ctx_` 槽，必须地址稳定）。
+
+`ExprTKCompiled` 自身禁用拷贝/移动；构造时 `current_ctx_` 入栈、ExprTk 符号表按引用绑定 `x/y/z/T/t`，之后每次 `eval(ctx)` 仅覆写 `current_ctx_`，ExprTk 自动读到新值。
 
 ```cpp
 namespace mhs::core {
@@ -47,8 +52,9 @@ namespace mhs::core {
 
 特点：
 
-- **可复制轻量句柄** — `shared_ptr` 共享公式字符串；可放 `vector<MaterialProps>` / `BCParamTable` / `heat_source_table` 中自由复制移动
+- **可复制轻量句柄** — `shared_ptr` 共享公式字符串与 ETS 基础设施；可放 `vector<MaterialProps>` / `BCParamTable` / `heat_source_table` 中自由复制移动
 - **懒构造 per-thread AST** — 公式字符串在 ETS 构造器中按值捕获；无锁、无 false sharing
+- **AST 地址稳定** — ETS 元素类型是 `unique_ptr<ExprTKCompiled>`，移动 `ExprTKCompiledTLS` 不会搬动内部 AST；`NativeFn` 持有的 `FieldContext*` 永远有效
 - **常数短路** — `is_const_` 为 true 时直接返回 `const_val_`，不触达 `tls_impl_`
 
 ## 注册表
@@ -60,9 +66,10 @@ namespace mhs::core {
     // 几何变量（mm/Mm/... 已在 Preprocessor 转换为 SI 米）
     void set_variable(const std::string& name, double value_in_SI);
 
-    // 注册 native C++ 函数。注册后可在字符串公式中调用：
-    //   register_native("piecewise_T", [](const FieldContext&){ ... });
-    //   parse("piecewise_T(x, y, z, T, t)");
+    // 注册 native C++ 函数。注册后可在字符串公式中调用，支持变参：
+    //   register_native("piecewise_T",
+    //       [](const std::vector<double>& args, const FieldContext& ctx){ ... });
+    //   parse("piecewise_T(x, T, t)");
     void register_native(const std::string& name, FieldEvaluator func);
 
     // 注册用户定义的 exprtk 公式（按名字查）
@@ -74,6 +81,8 @@ namespace mhs::core {
     void clear_registry();
 }
 ```
+
+Native 内部桥接：模块以 `exprtk::ivararg_function<T>` 注册到 ExprTk 的 `add_reserved_function()` 槽（与 string-registered 函数分离），ExprTk 调用时先把所有实参独立求值，再以 `std::vector<T>` 形式回调 `NativeFn::operator()`，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
 
 ### 使用场景
 
@@ -104,8 +113,7 @@ namespace mhs::core {
 mhs::core::clear_registry();
 mhs::core::set_variable("w_top", 10.0);
 mhs::core::set_variable("h_middle", 2.0);
-for (auto& [name, ev] : ios.functions)
-    mhs::core::register_native(name, std::move(ev));
+mhs::sim::register_all_functions(ios.functions);  // typed Function → FieldEvaluator
 mhs::core::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
 
 // 几何

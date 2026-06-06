@@ -64,7 +64,6 @@ void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
                        const mhs::core::ThirdTypeThermalBC&  other_bc_third,
                        const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
                        mhs::core::BCParamTable& bc_params, double si_scale);
-}
 ```
 
 ### 预处理流程
@@ -72,7 +71,7 @@ void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
 ```text
 mhs::core::IOStructure
   └─> Preprocessor::load()
-        ├─> mhs::core::clear_registry() + set_variable(几何变量) + register_native(ios.functions)
+        ├─> mhs::core::clear_registry() + set_variable(几何变量) + mhs::sim::register_all_functions(ios.functions)
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry()     // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table         // 解析 k/rho/c

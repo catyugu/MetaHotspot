@@ -7,7 +7,7 @@ XML
   └─> mhs::io::read_xml                          (tinyxml2)
         └─> mhs::core::IOStructure               (AoS, 含字符串)
                 └─> mhs::sim::Preprocessor::load
-                      ├─> mhs::core::clear_registry + set_variable(几何) + register_native(ios.functions)
+                      ├─> mhs::core::clear_registry + set_variable(几何) + mhs::sim::register_all_functions(ios.functions)
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
