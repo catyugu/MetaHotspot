@@ -24,7 +24,7 @@ namespace {
         auto ev = make_expression_evaluator("2*x+1");
         // 内层表达式读 ctx.x；调用方负责把自变量放进 x 槽。
         FieldContext ctx {3, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 7.0);
+        EXPECT_DOUBLE_EQ(ev({}, ctx), 7.0);
     }
 
     TEST(FunctionHelpers, ExpressionEvaluatorBindsXToT)
@@ -32,21 +32,21 @@ namespace {
         mhs::core::clear_registry();
         auto ev = make_expression_evaluator("x*x");
         FieldContext ctx {5, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 25.0);
+        EXPECT_DOUBLE_EQ(ev({}, ctx), 25.0);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorAtCenter)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 1.0);
+        EXPECT_DOUBLE_EQ(ev({0.0}, ctx), 1.0);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorAtOneTau)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, 1.0};
-        EXPECT_NEAR(ev(ctx), std::exp(-1.0), 1e-12);
+        EXPECT_NEAR(ev({1.0}, ctx), std::exp(-1.0), 1e-12);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorOffset)
@@ -54,14 +54,14 @@ namespace {
         // A=5, tau=10, x0=20, t=20 → A*exp(0) = 5
         auto ev = make_gauss_evaluator(5.0, 10.0, 20.0);
         FieldContext ctx {0, 0, 0, 0, 20.0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 5.0);
+        EXPECT_DOUBLE_EQ(ev({20.0}, ctx), 5.0);
     }
 
     TEST(FunctionHelpers, SineEvaluatorAtHalfPi)
     {
         auto ev = make_sine_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, M_PI / 2.0};
-        EXPECT_NEAR(ev(ctx), 1.0, 1e-12);
+        EXPECT_NEAR(ev({M_PI / 2.0}, ctx), 1.0, 1e-12);
     }
 
     TEST(FunctionHelpers, SineEvaluatorWithPhase)
@@ -69,7 +69,7 @@ namespace {
         // A=5, omega=200, phi=1.57, t=0 → 5*sin(1.57) ≈ 5
         auto ev = make_sine_evaluator(5.0, 200.0, 1.57);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_NEAR(ev(ctx), 5.0 * std::sin(1.57), 1e-9);
+        EXPECT_NEAR(ev({0.0}, ctx), 5.0 * std::sin(1.57), 1e-9);
     }
 
     TEST(FunctionHelpers, DoubleExpEvaluatorAtZero)
@@ -77,7 +77,7 @@ namespace {
         // A*(exp(alpha*0) - exp(beta*0)) = A*(1-1) = 0
         auto ev = make_double_exp_evaluator(1.0, 0.5, 0.1);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 0.0);
+        EXPECT_DOUBLE_EQ(ev({0.0}, ctx), 0.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
@@ -85,7 +85,7 @@ namespace {
         std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, -1.0};
-        EXPECT_DOUBLE_EQ(ev(ctx), -1.0);
+        EXPECT_DOUBLE_EQ(ev({-1.0}, ctx), -1.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
@@ -93,7 +93,7 @@ namespace {
         std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, 10.0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 3.0);
+        EXPECT_DOUBLE_EQ(ev({10.0}, ctx), 3.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
@@ -102,7 +102,7 @@ namespace {
         auto ev = make_piecewise_evaluator(pts);
         // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
         FieldContext ctx {0, 0, 0, 0, 3.0};
-        EXPECT_DOUBLE_EQ(ev(ctx), 2.5);
+        EXPECT_DOUBLE_EQ(ev({3.0}, ctx), 2.5);
     }
 
     // ---- 字面替换 --------------------------------------------------------
@@ -215,7 +215,7 @@ namespace {
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::core::parse(out);
-        // Native 接收 exprtk 绑定的 arg0（这里是 T 槽），广播到所有 ctx 槽；
+        // Native 接收 exprtk 绑定的参数向量 args 与当前 TLS 物理 ctx；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
         FieldContext ctx {0, 0, 0, 20.0, 0.0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
@@ -223,8 +223,6 @@ namespace {
 
     TEST(EndToEnd, NativeReadsTheBoundSymbol)
     {
-        // 通用性：future natives 可以读任何 ctx 槽。当前 natives 读 ctx.t，
-        // 所以"绑定到 t"也能工作——验证 NativeFn 把 arg0 广播到了 ctx.t。
         mhs::core::clear_registry();
         auto fns = fns_with_gauss();
         register_all_functions(fns);

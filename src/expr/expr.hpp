@@ -1,8 +1,10 @@
+// src/expr/expr.hpp
 #pragma once
 
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace mhs::core {
 
@@ -16,7 +18,7 @@ namespace mhs::core {
         double t = 0.0;
     };
 
-    using FieldEvaluator = std::function<double(const FieldContext&)>;
+    using FieldEvaluator = std::function<double(const std::vector<double>& args, const FieldContext& ctx)>;
 
     // Internal: Thread-Local Storage wrapper for ExprTK compiled instances
     struct ExprTKCompiledTLS;

@@ -1,3 +1,4 @@
+// src/expr/expr.cpp
 #include "expr.hpp"
 #define exprtk_disable_caseinsensitivity
 #include <tbb/enumerable_thread_specific.h>
@@ -37,31 +38,27 @@ namespace mhs::core {
         }
     } // namespace detail
 
-    namespace {
-        // FieldContext 顺序: (x, y, z, T, t)
-        constexpr size_t kFieldSlots = 5;
-    }
-
-    template <typename T> class NativeFn : public exprtk::ifunction<T> {
+    template <typename T> class NativeFn : public exprtk::ivararg_function<T> {
     public:
-        explicit NativeFn(FieldEvaluator fe)
-            : exprtk::ifunction<T>(1) // 1 argument
+        // 构造时注入当前 TLS 专属的上下文指针
+        explicit NativeFn(FieldEvaluator fe, const FieldContext* ctx_ptr)
+            : exprtk::ivararg_function<T>() // 启用变长/多参数支持
             , fe_(std::move(fe))
+            , ctx_ptr_(ctx_ptr)
         {
         }
 
-        T operator()(const T& arg0) override
+        // 当 ExprTk 计算诸如 test(sine(x), y) 时，会先独立算出 sine(x) 和 y，
+        // 然后打包成 args 传入这个重载函数。
+        T operator()(const std::vector<T>& args) override
         {
-            // Build a fresh ctx per call with arg0 in every slot. No hidden
-            // global / TLS state — the value flows through exprtk's argument
-            // mechanism, which is the right depth.
-            const T slots[kFieldSlots] = {arg0, arg0, arg0, arg0, arg0};
-            FieldContext ctx {slots[0], slots[1], slots[2], slots[3], slots[4]};
-            return static_cast<T>(fe_(ctx));
+            // 直接将 ExprTk 求值的参数与当前的物理上下文结合，传给用户回调
+            return static_cast<T>(fe_(args, *ctx_ptr_));
         }
 
     private:
         FieldEvaluator fe_;
+        const FieldContext* ctx_ptr_;
     };
 
     class ExprTKCompiled {
@@ -73,20 +70,19 @@ namespace mhs::core {
             sym_table_ = std::make_unique<symbol_table<double>>();
             expr_ = std::make_unique<expression<double>>();
 
-            sym_table_->add_variable("x", x_);
-            sym_table_->add_variable("y", y_);
-            sym_table_->add_variable("z", z_);
-            sym_table_->add_variable("T", T_);
-            sym_table_->add_variable("t", t_);
+            sym_table_->add_variable("x", current_ctx_.x);
+            sym_table_->add_variable("y", current_ctx_.y);
+            sym_table_->add_variable("z", current_ctx_.z);
+            sym_table_->add_variable("T", current_ctx_.T);
+            sym_table_->add_variable("t", current_ctx_.t);
 
-            // Bind every registered native function name as a 1-arg exprtk function.
-            // Slot lifetime must outlive the symbol table / expression.
             {
                 std::lock_guard<std::mutex> lock(detail::mutex());
                 for (const auto& [name, fe] : detail::native_functions()) {
-                    auto slot = std::make_shared<NativeFn<double>>(fe);
+                    auto slot = std::make_shared<NativeFn<double>>(fe, &current_ctx_);
                     native_slots_[name] = slot;
-                    sym_table_->add_function(name, *slot);
+                    // 强制路由至独立的变参函数存储区
+                    sym_table_->add_reserved_function(name, *slot);
                 }
             }
 
@@ -96,8 +92,11 @@ namespace mhs::core {
             valid_ = parser.compile(formula, *expr_);
         }
 
-        ExprTKCompiled(ExprTKCompiled&&) = default;
-        ExprTKCompiled& operator=(ExprTKCompiled&&) = default;
+        // 删除移动和拷贝构造，确保 current_ctx_ 内存地址绝对稳定，防止 ExprTk 野指针
+        ExprTKCompiled(const ExprTKCompiled&) = delete;
+        ExprTKCompiled& operator=(const ExprTKCompiled&) = delete;
+        ExprTKCompiled(ExprTKCompiled&&) = delete;
+        ExprTKCompiled& operator=(ExprTKCompiled&&) = delete;
 
         bool valid() const { return valid_; }
 
@@ -105,31 +104,32 @@ namespace mhs::core {
         {
             if (!valid_)
                 return 0.0;
-            // 这里的状态修改现在是线程安全的，因为每个线程拥有自己独立的 ExprTKCompiled 副本
-            x_ = ctx.x;
-            y_ = ctx.y;
-            z_ = ctx.z;
-            T_ = ctx.T;
-            t_ = ctx.t;
+
+            // 每次求值前，只更新这一个结构体。
+            // ExprTk 的 symbol_table 因为引用绑定，会自动读到最新值；
+            // 嵌套的 NativeFn 也会通过指针读到它。
+            current_ctx_ = ctx;
             return expr_->value();
         }
 
     private:
         bool valid_ = true;
-        double x_ = 0, y_ = 0, z_ = 0, T_ = 0, t_ = 0;
+        FieldContext current_ctx_; // 统一的 TLS 上下文状态
+
         std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
         std::unique_ptr<exprtk::expression<double>> expr_;
-        // Owns the NativeFn objects bound into the symbol table. They must live
-        // as long as the symbol table is in use.
         std::unordered_map<std::string, std::shared_ptr<NativeFn<double>>> native_slots_;
     };
 
-    // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST
+    // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST。
+    // 使用 std::unique_ptr 确保内部的 ExprTKCompiled 在移动时不改变内存地址。
     struct ExprTKCompiledTLS {
-        tbb::enumerable_thread_specific<ExprTKCompiled> tls;
+        tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>> tls;
 
         explicit ExprTKCompiledTLS(const std::string& formula)
-            : tls([formula]() { return ExprTKCompiled(formula); }) { }
+            : tls([formula]() { return std::make_unique<ExprTKCompiled>(formula); })
+        {
+        }
     };
 
     CompiledExpression::CompiledExpression() : is_const_(true), const_val_(0.0) { }
@@ -143,7 +143,7 @@ namespace mhs::core {
         if (!tls_impl_)
             return 0.0;
         // 无锁获取当前线程的专属 AST 副本进行求值
-        return tls_impl_->tls.local().eval(ctx);
+        return tls_impl_->tls.local()->eval(ctx);
     }
 
     CompiledExpression CompiledExpression::make_constant(double value)

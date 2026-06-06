@@ -456,23 +456,23 @@ namespace {
     {
         mhs::core::clear_registry();
 
-        // Register a piecewise function
-        mhs::core::register_native("piecewise", [](const mhs::core::FieldContext& ctx) {
-            if (ctx.x < 1.0)
-                return 0.0;
-            if (ctx.x < 2.0)
-                return 1.0;
-            return 2.0;
-        });
+        // Register a piecewise function that reads from args (ExprTK-evaluated arguments)
+        mhs::core::register_native(
+            "piecewise", [](const std::vector<double>& args, const mhs::core::FieldContext& /*ctx*/) {
+                double v = args[0];
+                if (v < 1.0)
+                    return 0.0;
+                if (v < 2.0)
+                    return 1.0;
+                return 2.0;
+            });
 
         auto native = mhs::core::get_native("piecewise");
         EXPECT_TRUE(native != nullptr);
 
-        mhs::core::FieldContext ctx {0.5, 0.0, 0.0, 0.0, 0.0};
-        EXPECT_EQ(native(ctx), 0.0);
-
-        ctx.x = 1.5;
-        EXPECT_EQ(native(ctx), 1.0);
+        mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        EXPECT_EQ(native({0.5}, ctx), 0.0);
+        EXPECT_EQ(native({1.5}, ctx), 1.0);
     }
 
     TEST(NativeFunction, GetUnregistered)
@@ -500,7 +500,8 @@ namespace {
     TEST(ClearRegistry, ClearsFunctions)
     {
         mhs::core::clear_registry();
-        mhs::core::register_native("f", [](const mhs::core::FieldContext&) { return 42.0; });
+        mhs::core::register_native(
+            "f", [](const std::vector<double>&, const mhs::core::FieldContext&) { return 42.0; });
         EXPECT_TRUE(mhs::core::get_native("f") != nullptr);
 
         mhs::core::clear_registry();

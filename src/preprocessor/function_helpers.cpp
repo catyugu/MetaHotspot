@@ -10,37 +10,51 @@ namespace mhs::sim {
 
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
+    // 闭包对每个 ExprTk 调用的约定：
+    //   - args[0] 是用户在表达式中传入的自变量值（如 test_gaussian(T) 中 ExprTk 先求 T 再传入）
+    //   - ctx 是当前物理上下文（x, y, z, T, t 的真实值），仅作为参考
+    // 单变元函数族从 args[0] 读取自变量，ctx 在该族下不参与计算。
+
     mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
     {
 
         auto ce = mhs::core::parse(inner_expr);
-        return [ce](const mhs::core::FieldContext& ctx) { return ce.eval(ctx); };
+        return [ce](const std::vector<double>& /*args*/, const mhs::core::FieldContext& ctx) {
+            mhs::core::FieldContext effective_ctx = ctx;
+            return ce.eval(effective_ctx);
+        };
     }
 
     mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
-        return [A, alpha, beta](
-                   const mhs::core::FieldContext& c) { return A * (std::exp(alpha * c.t) - std::exp(beta * c.t)); };
+        return [A, alpha, beta](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+            double t_val = args[0];
+            return A * (std::exp(alpha * t_val) - std::exp(beta * t_val));
+        };
     }
 
     mhs::core::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
     {
-        return [A, tau, x0](const mhs::core::FieldContext& c) {
-            double u = (c.t - x0) / tau;
+        return [A, tau, x0](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+            double t_val = args[0];
+            double u = (t_val - x0) / tau;
             return A * std::exp(-u * u);
         };
     }
 
     mhs::core::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
-        return [A, omega, phi](const mhs::core::FieldContext& c) { return A * std::sin(omega * c.t + phi); };
+        return [A, omega, phi](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+            double t_val = args[0];
+            return A * std::sin(omega * t_val + phi);
+        };
     }
 
     mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::core::PieceWiseFunction::Point> pts)
     {
         // Points are pre-sorted by X in the IO parser, so no resort needed.
-        return [pts = std::move(pts)](const mhs::core::FieldContext& c) {
-            double x = c.t;
+        return [pts = std::move(pts)](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+            double x = args[0];
             if (pts.empty())
                 return 0.0;
             if (x <= pts.front().x)
