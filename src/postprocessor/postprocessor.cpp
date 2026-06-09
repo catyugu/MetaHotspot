@@ -176,19 +176,15 @@ namespace mhs::post {
                                 double cx = mesh.cx[ix];
                                 double cy = mesh.cy[iy];
                                 double cz = mesh.cz[iz];
-
-                                // 提取该体元的热导率：postprocessor 中 k 仅作反距离权重的"软"项，
-                                // 取三轴算术平均作各向同性退化，避免对单一方向的偏置。
                                 const auto& mp = model.material_table[cells.material_id[cell_grid_idx]];
                                 double kx_c = mp.kx.eval({cx, cy, cz, T_c, 0.0});
                                 double ky_c = mp.ky.eval({cx, cy, cz, T_c, 0.0});
                                 double kz_c = mp.kz.eval({cx, cy, cz, T_c, 0.0});
-                                double k = (kx_c + ky_c + kz_c) / 3.0;
-
-                                // 体元中心点入参 (采用反距离平方为基准权重)
-                                double dist2 = (cx - node_x) * (cx - node_x) + (cy - node_y) * (cy - node_y)
-                                    + (cz - node_z) * (cz - node_z);
-                                double w_cell = k / (dist2 + 1e-16);
+                                double c_dx = cx - node_x;
+                                double c_dy = cy - node_y;
+                                double c_dz = cz - node_z;
+                                double dist_k = (c_dx * c_dx) / kx_c + (c_dy * c_dy) / ky_c + (c_dz * c_dz) / kz_c;
+                                double w_cell = 1.0 / dist_k;
                                 pts.push_back({cx, cy, cz, T_c, w_cell});
 
                                 // 确认当前体元连接到该节点的 3 个面
@@ -222,9 +218,13 @@ namespace mhs::post {
                                         double T_f = extrapolate_face_temperature(
                                             dir, bc_type, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
 
-                                        double fdist2 = (fx - node_x) * (fx - node_x) + (fy - node_y) * (fy - node_y)
-                                            + (fz - node_z) * (fz - node_z);
-                                        double w_face = k / (fdist2 + 1e-16);
+                                        // 【各向异性修正】同理，计算面中心到节点的等效各向异性距离权重
+                                        double f_dx = fx - node_x;
+                                        double f_dy = fy - node_y;
+                                        double f_dz = fz - node_z;
+                                        double fdist_k
+                                            = (f_dx * f_dx) / kx_c + (f_dy * f_dy) / ky_c + (f_dz * f_dz) / kz_c;
+                                        double w_face = 1.0 / fdist_k;
                                         pts.push_back({fx, fy, fz, T_f, w_face});
                                     }
                                 }
@@ -350,14 +350,16 @@ namespace mhs::post {
         double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
         double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
         double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], T_c, 0.0});
-        double k = (kx_c + ky_c + kz_c) / 3.0;
 
         std::vector<DataPoint> pts;
         pts.reserve(8 + mhs::core::FACE_COUNT);
         for (const auto& c : corners) {
             double Tv = std::isnan(c.Tv) ? T_c : c.Tv;
-            double dist2 = (c.vx - px) * (c.vx - px) + (c.vy - py) * (c.vy - py) + (c.vz - pz) * (c.vz - pz);
-            pts.push_back({c.vx, c.vy, c.vz, Tv, k / (dist2 + 1e-16)});
+            double cdx = c.vx - px;
+            double cdy = c.vy - py;
+            double cdz = c.vz - pz;
+            double dist_k = (cdx * cdx) / kx_c + (cdy * cdy) / ky_c + (cdz * cdz) / kz_c;
+            pts.push_back({c.vx, c.vy, c.vz, Tv, 1.0 / dist_k});
         }
         for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
             mhs::core::BcType bc = cells.cell_bcs[compact_idx].types[d];
@@ -372,8 +374,12 @@ namespace mhs::post {
                                                                                              : kz_c;
             double T_f
                 = extrapolate_face_temperature(dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
-            double fdist2 = (fx - px) * (fx - px) + (fy - py) * (fy - py) + (fz - pz) * (fz - pz);
-            pts.push_back({fx, fy, fz, T_f, k / (fdist2 + 1e-16)});
+
+            double fdx = fx - px;
+            double fdy = fy - py;
+            double fdz = fz - pz;
+            double fdist_k = (fdx * fdx) / kx_c + (fdy * fdy) / ky_c + (fdz * fdz) / kz_c;
+            pts.push_back({fx, fy, fz, T_f, 1.0 / fdist_k});
         }
 
         return solve_least_squares(pts, px, py, pz);
