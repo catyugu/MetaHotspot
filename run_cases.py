@@ -38,7 +38,6 @@ def main():
             "./results/simple_steady_tests/case3_output.xml",
         ]
     )
-    os.system("python ./scripts/compare_steady_results.py")
 
     # ==============================================================================
     # 瞬态 case 系列：观察点探针 + 末步温度场
@@ -64,8 +63,8 @@ def main():
                     xml_path,
                 ]
             )
-
-        os.system("python ./scripts/compare_transient_results.py")
+    os.system("python ./scripts/compare_steady_results.py")
+    os.system("python ./scripts/compare_transient_results.py")
 
 
 if __name__ == "__main__":
