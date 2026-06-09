@@ -23,7 +23,7 @@ Two separate paths.
 
 ### Thread safety
 
-- Registry mutations (`set_variable`, `register_native`, `register_function`, `clear_registry`) and `eval_geometry` are mutex-protected.
+- Registry mutations (`set_variable`, `register_native`, `clear_registry`) and `eval_geometry` are mutex-protected.
 - `parse()` is main-thread only; it briefly takes the registry mutex while doing a one-shot trial compile (to surface syntax errors early) and returns a `CompiledExpression` handle.
 - `CompiledExpression::eval()` is **lock-free**. Internally it holds a `shared_ptr<ExprTKCompiledTLS>`, which wraps a `tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>>`. Each TBB worker thread lazily instantiates its own private ExprTK AST on first `tls.local()`; the formula string is captured by value in the ETS constructor lambda, so there is no external lifetime dependency. The `unique_ptr` element type keeps each AST's heap address stable so that the `NativeFn` slots (registered with `add_reserved_function`) keep their raw `FieldContext*` valid even when the ETS grows or the wrapper is copied. Each AST's `current_ctx_` field is written by the calling thread only on every `eval()`.
 - Constant expressions (`make_constant`) short-circuit before touching the TLS.

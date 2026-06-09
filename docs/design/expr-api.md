@@ -72,9 +72,6 @@ namespace mhs::core {
     //   parse("piecewise_T(x, T, t)");
     void register_native(const std::string& name, FieldEvaluator func);
 
-    // 注册用户定义的 exprtk 公式（按名字查）
-    void register_function(const std::string& name, const std::string& expression);
-
     FieldEvaluator get_native(const std::string& name);
 
     // 清除全部变量、native、user function
@@ -114,7 +111,6 @@ mhs::core::clear_registry();
 mhs::core::set_variable("w_top", 10.0);
 mhs::core::set_variable("h_middle", 2.0);
 mhs::sim::register_all_functions(ios.functions);  // typed Function → FieldEvaluator
-mhs::core::register_function("test_gaussian", "exp(-((x-x0)^2+(y-y0)^2)/sigma)");
 
 // 几何
 double half_w = mhs::core::eval_geometry("w_top/2");
@@ -126,11 +122,11 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 
 ## 线程安全
 
-| 操作                                                                                      | 同步                           |
-| ----------------------------------------------------------------------------------------- | ------------------------------ |
-| `set_variable`, `register_native`, `register_function`, `clear_registry`, `eval_geometry` | 互斥锁                         |
-| `parse()`                                                                                 | 主线程；持锁做试编译           |
-| `CompiledExpression::eval()`                                                              | **无锁**（ETS 每线程独立 AST） |
+| 操作                                                                 | 同步                           |
+| -------------------------------------------------------------------- | ------------------------------ |
+| `set_variable`, `register_native`, `clear_registry`, `eval_geometry` | 互斥锁                         |
+| `parse()`                                                            | 主线程；持锁做试编译           |
+| `CompiledExpression::eval()`                                         | **无锁**（ETS 每线程独立 AST） |
 
 TBB 并行 `assemble()` 内部：所有工作线程首次 `tls.local()` 时懒构造自己线程专属的 ExprTK AST；之后整个仿真期间零同步。
 

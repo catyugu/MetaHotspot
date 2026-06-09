@@ -35,7 +35,7 @@
 
 ### 工具模块
 
-- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, ExprTKCompiled, register_native, register_function, make_constant, make_evaluator, eval, ...}`。
+- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, ExprTKCompiled, register_native, make_constant, make_evaluator, eval, ...}`。
 
 ### 数据流
 

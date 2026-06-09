@@ -53,7 +53,6 @@ namespace mhs::core {
     // Thread-safe registry operations (mutex-protected)
     void set_variable(const std::string& name, double value);
     void register_native(const std::string& name, FieldEvaluator func);
-    void register_function(const std::string& name, const std::string& expression);
     FieldEvaluator get_native(const std::string& name);
     void clear_registry();
 

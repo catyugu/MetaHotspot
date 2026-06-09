@@ -174,12 +174,6 @@ namespace mhs::core {
         detail::native_functions()[name] = std::move(func);
     }
 
-    void register_function(const std::string& name, const std::string& expression)
-    {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        detail::user_functions()[name] = expression;
-    }
-
     FieldEvaluator get_native(const std::string& name)
     {
         std::lock_guard<std::mutex> lock(detail::mutex());
