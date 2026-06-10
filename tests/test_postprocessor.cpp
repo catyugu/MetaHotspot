@@ -5,7 +5,6 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-using namespace mhs::post;
 using namespace mhs::sim;
 
 // Helper: build a minimal mhs::core::IOStructure with a uniform grid
@@ -71,8 +70,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
         cell_T[i] = 300.0 + i * 10.0; // 300, 310, 320, ...
     }
 
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     // On a uniform 5mm grid, the interior node at (vx=1, vy=1, vz=1)
     // is shared by all 8 cells. The node is at the geometric center
@@ -162,8 +160,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     int N = model->cells.cell_count;
     std::vector<double> cell_T(N, 400.0);
 
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     int node_ny = model->mesh.ny + 1;
     int node_nz = model->mesh.nz + 1;
@@ -252,8 +249,7 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     // what the cell temperatures are.
     std::vector<double> cell_T(N, 400.0); // All cells at 400K (doesn't matter for boundary test)
 
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     int node_ny = model->mesh.ny + 1;
     int node_nz = model->mesh.nz + 1;
@@ -297,8 +293,7 @@ TEST(PostprocessorTest, SamplePointOnUniformFieldReturnsFieldValue)
     int N = model->cells.cell_count;
     std::vector<double> cell_T(N, 300.0);
 
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     mhs::core::ProbePoint pt;
     pt.name = "center";
@@ -307,7 +302,7 @@ TEST(PostprocessorTest, SamplePointOnUniformFieldReturnsFieldValue)
     pt.y = 0.003;
     pt.z = 0.003;
 
-    double T = postprocessor.sample_point(node_T, *model, pt);
+    double T = mhs::post::sample_point(node_T, *model, pt);
     EXPECT_FALSE(std::isnan(T)) << "Interior point should not be NaN";
     EXPECT_NEAR(T, 300.0, 1e-6);
 }
@@ -378,8 +373,7 @@ TEST(PostprocessorTest, SamplePointOnLinearGradientInterpolates)
     pt.y = 0.005;
     pt.z = 0.006; // 6 mm
 
-    Postprocessor postprocessor;
-    double T = postprocessor.sample_point(node_T, *model, pt);
+    double T = mhs::post::sample_point(node_T, *model, pt);
     EXPECT_FALSE(std::isnan(T));
     // 1e-2 容差：LSQ + Tikhonov 正则化在线性场顶点处有微小偏差
     EXPECT_NEAR(T, 300.0 + 6.0 * 0.006, 1e-2);
@@ -394,8 +388,7 @@ TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
 
     int N = model->cells.cell_count;
     std::vector<double> cell_T(N, 300.0);
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     mhs::core::ProbePoint pt;
     pt.name = "outside";
@@ -404,7 +397,7 @@ TEST(PostprocessorTest, SamplePointOutsideMeshReturnsNaN)
     pt.y = 0.005;
     pt.z = 0.005;
 
-    double T = postprocessor.sample_point(node_T, *model, pt);
+    double T = mhs::post::sample_point(node_T, *model, pt);
     EXPECT_TRUE(std::isnan(T)) << "Out-of-mesh point must return NaN";
 }
 
@@ -459,8 +452,7 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
     ASSERT_NE(model, nullptr);
     int N = model->cells.cell_count;
     std::vector<double> cell_T(static_cast<size_t>(N), 400.0);
-    Postprocessor postprocessor;
-    auto node_T = postprocessor.interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
 
     mhs::core::ProbePoint pt;
     pt.name = "on_face";
@@ -468,6 +460,6 @@ TEST(PostprocessorTest, SamplePointOutsideOnDirichletFaceReturnsDirichlet)
     pt.y = 0.005;
     pt.z = 0.0; // exactly on Dirichlet face (vertex_z[0] = 0)
 
-    double T = postprocessor.sample_point(node_T, *model, pt);
+    double T = mhs::post::sample_point(node_T, *model, pt);
     EXPECT_NEAR(T, 500.0, 1e-6) << "Probe on Dirichlet face must return the Dirichlet value";
 }

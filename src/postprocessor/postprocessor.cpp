@@ -124,8 +124,8 @@ namespace mhs::post {
         }
     }
 
-    std::vector<double> Postprocessor::interpolate_cell_to_node(
-        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature) const
+    std::vector<double> interpolate_cell_to_node(
+        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -247,7 +247,7 @@ namespace mhs::post {
         return node_T;
     }
 
-    double Postprocessor::max_temperature(const std::vector<double>& T) const
+    double max_temperature(const std::vector<double>& T)
     {
         if (T.empty())
             return 0.0;
@@ -261,7 +261,7 @@ namespace mhs::post {
         return std::isnan(max_val) ? 0.0 : max_val;
     }
 
-    double Postprocessor::min_temperature(const std::vector<double>& T) const
+    double min_temperature(const std::vector<double>& T)
     {
         if (T.empty())
             return 0.0;
@@ -275,8 +275,8 @@ namespace mhs::post {
         return std::isnan(min_val) ? 0.0 : min_val;
     }
 
-    double Postprocessor::sample_point(const std::vector<double>& node_T, const mhs::core::InternalModel& model,
-        const mhs::core::ProbePoint& point) const
+    double sample_point(const std::vector<double>& node_T, const mhs::core::InternalModel& model,
+        const mhs::core::ProbePoint& point)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;

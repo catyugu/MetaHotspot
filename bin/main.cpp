@@ -70,15 +70,14 @@ int main(int argc, char* argv[])
 
         // 装配时间步回调：每步求解后做节点插值 + 探针采样。
         // 复用 main 中的 Postprocessor（lambda 持有引用；main 生命周期覆盖 scheduler.run()）
-        mhs::post::Postprocessor postprocessor;
         if (probe_enabled) {
             // traces 与 model.observation_points 等长，循环上界统一在 lambda 外计算一次。
             const size_t n_probes = traces.size();
-            scheduler.setCallback([&postprocessor, &model = *model, &traces, n_probes](
+            scheduler.setCallback([&model = *model, &traces, n_probes](
                                       double time, int /*step*/, const std::vector<double>& cell_T) {
-                auto node_T = postprocessor.interpolate_cell_to_node(model, cell_T);
+                auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T);
                 for (size_t i = 0; i < n_probes; ++i) {
-                    double v = postprocessor.sample_point(node_T, model, model.observation_points[i]);
+                    double v = mhs::post::sample_point(node_T, model, model.observation_points[i]);
                     traces[i].times.push_back(time);
                     traces[i].values.push_back(v);
                 }
@@ -94,7 +93,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Simulation complete. {} cells computed.", solution.size());
 
         // Postprocess
-        auto node_temperature = postprocessor.interpolate_cell_to_node(*model, solution);
+        auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution);
 
         // Write outputs
         mhs::io::write_vtu(output_vtu, *model, node_temperature);
@@ -104,8 +103,8 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics
-        double max_T = postprocessor.max_temperature(solution);
-        double min_T = postprocessor.min_temperature(solution);
+        double max_T = mhs::post::max_temperature(solution);
+        double min_T = mhs::post::min_temperature(solution);
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);
     }
     catch (const std::exception& e) {
