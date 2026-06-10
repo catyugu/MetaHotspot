@@ -1,10 +1,5 @@
 #pragma once
 
-/// Inline mesh-geometry helpers built on mhs::core::FaceDir (XM=0, XP=1, YM=2, YP=3, ZM=4, ZP=5).
-/// Look-up tables (AXIS_OF_DIR / DIR_DX/DY/DZ) live in `data/types.hpp` next to FaceDir itself;
-/// the helpers here consume them to avoid switch-case branches in the assembler inner loop
-/// and the preprocessor face logic.
-
 #include "data/types.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -18,8 +13,8 @@ namespace mhs::utils {
     inline int neighbor_iz(mhs::core::FaceDir dir, int iz) { return iz + mhs::core::DIR_DZ[static_cast<size_t>(dir)]; }
 
     /// Neighbor flat grid index with boundary check; returns -1 if out of bounds or invalid.
-    inline int neighbor_grid_index(int ix, int iy, int iz, mhs::core::FaceDir dir, int nx, int ny, int nz,
-        const std::vector<uint8_t>& valid_mask)
+    inline int neighbor_grid_index(
+        int ix, int iy, int iz, mhs::core::FaceDir dir, int nx, int ny, int nz, const std::vector<uint8_t>& valid_mask)
     {
         int nix = ix + mhs::core::DIR_DX[static_cast<size_t>(dir)];
         int niy = iy + mhs::core::DIR_DY[static_cast<size_t>(dir)];
@@ -42,13 +37,6 @@ namespace mhs::utils {
     {
         const double d[3] = {dx, dy, dz};
         return d[mhs::core::AXIS_OF_DIR[static_cast<size_t>(dir)]] / 2.0;
-    }
-
-    /// Full cell length along the face direction (convenience: half_length_along × 2).
-    inline double length_along(mhs::core::FaceDir dir, double dx, double dy, double dz)
-    {
-        const double d[3] = {dx, dy, dz};
-        return d[mhs::core::AXIS_OF_DIR[static_cast<size_t>(dir)]];
     }
 
     /// Cross-sectional face area perpendicular to the face direction — branchless.
