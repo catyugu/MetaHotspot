@@ -1,6 +1,6 @@
-#include "common/internal_model.hpp"
-#include "common/io_model.hpp"
 #include "config.h"
+#include "data/internal_model.hpp"
+#include "data/io_model.hpp"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
 #include "preprocessor/face_key_processor.hpp"

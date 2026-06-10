@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/internal_model.hpp"
+#include "data/internal_model.hpp"
 #include <vector>
 
 namespace mhs::post {

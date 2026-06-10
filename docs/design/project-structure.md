@@ -12,7 +12,7 @@ MetaHotspot/
 ├── src/
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::core (子组织)     exprtk 封装, CompiledExpression
-│   ├── common/                  # mhs::core / mhs::logger types, io_model, internal_model, face_dir_tables
+│   ├── common/                  # mhs::core / mhs::logger, mesh_utils. probe_recorder 等工具库
 │   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现

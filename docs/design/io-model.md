@@ -1,6 +1,6 @@
 # IO 模型结构
 
-直接映射 XML schema，仅用于序列化/反序列化。`src/common/io_model.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
+直接映射 XML schema，仅用于序列化/反序列化。`src/data/io_model.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
 
 ```cpp
 namespace mhs::core {

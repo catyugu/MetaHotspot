@@ -25,7 +25,7 @@
 
 3. **expr 模块改造**：重构了 expr 模块的原生函数注册机制，使绑定接口更加简单易用，同时解除了 command 与 expr 之间的循环依赖。
 
-4. **face_key_processor 简化**：引入 `face_dir_tables` 查表替代原先的方向枚举分支判断，`face_key_processor` 逻辑精简。
+4. **face_key_processor 简化**：引入 `mesh_utils` 查表替代原先的方向枚举分支判断，`face_key_processor` 逻辑精简。
 
 ## 未来计划
 

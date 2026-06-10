@@ -4,7 +4,7 @@
 #include <Eigen/Sparse>
 
 #include "assembler.hpp"
-#include "common/face_dir_tables.hpp"
+#include "common/mesh_utils.hpp"
 
 namespace mhs::sim {
 
@@ -67,20 +67,20 @@ namespace mhs::sim {
 
             for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                double A_f = mhs::core::face_area(dir, dx_cell, dy_cell, dz_cell);
+                double A_f = mhs::utils::face_area(dir, dx_cell, dy_cell, dz_cell);
                 mhs::core::BcType bc_type = cell_bc.types[f];
                 uint16_t param_idx = cell_bc.param_idxs[f];
 
                 if (bc_type == mhs::core::BcType::None) {
                     int neighbor_old
-                        = mhs::core::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
+                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
                     if (neighbor_old < 0)
                         continue;
 
                     int n_idx = (int)cells.index_map[neighbor_old];
-                    int nix = mhs::core::neighbor_ix(dir, ix);
-                    int niy = mhs::core::neighbor_iy(dir, iy);
-                    int niz = mhs::core::neighbor_iz(dir, iz);
+                    int nix = mhs::utils::neighbor_ix(dir, ix);
+                    int niy = mhs::utils::neighbor_iy(dir, iy);
+                    int niz = mhs::utils::neighbor_iz(dir, iz);
 
                     const auto& mp_n = materials[cells.material_id[n_idx]];
                     double kx_n
@@ -90,23 +90,23 @@ namespace mhs::sim {
                     double kz_n
                         = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
 
-                    double d_half_cell = mhs::core::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+                    double d_half_cell = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
                     double d_half_neighbor
-                        = mhs::core::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
+                        = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
-                    double k_cell = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
-                    double k_neighbor = mhs::core::k_along(dir, kx_n, ky_n, kz_n);
+                    double k_cell = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
+                    double k_neighbor = mhs::utils::k_along(dir, kx_n, ky_n, kz_n);
                     double cond = A_f / (d_half_cell / k_cell + d_half_neighbor / k_neighbor);
                     diag += cond;
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
                 else if (bc_type == mhs::core::BcType::FirstType) {
-                    double half_dist = mhs::core::half_length_along(dir, dx_cell, dy_cell, dz_cell);
+                    double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
                     double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double k_face = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
+                    double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double cond = k_face * A_f / half_dist;
                     diag += cond;
                     local.b(c_idx) += cond * T_bc_val;
@@ -122,9 +122,9 @@ namespace mhs::sim {
                     double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
                         {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-                    double half_dist = mhs::core::half_length_along(dir, dx_cell, dy_cell, dz_cell);
+                    double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
-                    double k_face = mhs::core::k_along(dir, kx_c, ky_c, kz_c);
+                    double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double coeff = k_face * h * A_f / (k_face + h * half_dist);
                     diag += coeff;
                     local.b(c_idx) += coeff * T_inf;

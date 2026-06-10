@@ -2,7 +2,7 @@
 
 #include <Eigen/Sparse>
 
-#include "common/internal_model.hpp"
+#include "data/internal_model.hpp"
 
 namespace mhs::sim {
 

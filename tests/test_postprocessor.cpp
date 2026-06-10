@@ -1,5 +1,5 @@
-#include "common/internal_model.hpp"
-#include "common/io_model.hpp"
+#include "data/internal_model.hpp"
+#include "data/io_model.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <cmath>

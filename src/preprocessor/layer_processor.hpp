@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/internal_model.hpp"
-#include "common/io_model.hpp"
+#include "data/internal_model.hpp"
+#include "data/io_model.hpp"
 
 namespace mhs::sim {
 

@@ -63,7 +63,7 @@ XML → core::IOStructure via io::read_xml
 4. Precomputed sparsity — 组装只填值，不重建结构
 5. Backward Euler — 瞬态项 `ρc·vol/dt·(T − T_prev)`，θ=1.0
 6. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
-7. 域类型定义在 `src/common/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
+7. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
 8. 无虚函数（`mhs::sim::LinearSolver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
 9. POD / 纯函数优先
 
@@ -73,7 +73,8 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间      | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                      |
 | ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`   | `common/`（除 logger）+ `expr/`                                         | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、face_dir_tables 查表                                  |
+| `mhs::core`   | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                        |
+| `mhs::utils`  | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                          |
 | `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
 | `mhs::io`     | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                     |
 | `mhs::post`   | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                |

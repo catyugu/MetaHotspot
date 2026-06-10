@@ -83,4 +83,4 @@ XML
 
 `MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和梯度外推时使用三轴算术平均 `(kx+ky+kz)/3` 作为反距离权重，以避免对单一方向的偏置。详见 ADR-0006。
 
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/face_dir_tables.hpp`（`mhs::core` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。
+`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/mesh_utils.hpp`（`mhs::utils` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。

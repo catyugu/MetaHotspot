@@ -20,11 +20,14 @@
 
 ### 核心模块
 
-- **common**（领域 `mhs::core`）：共享基础类型、IO 模型与内部模型、logger（领域 `mhs::logger`）。
-    - `common/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
-    - `common/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
-    - `common/internal_model.hpp` — 扁平化 SoA 内部模型（`mhs::core::InternalModel`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`、`mhs::core::GlobalState`）。
+- **data**（领域 `mhs::core`）：共享数据契约——域类型、IO 模型、内部模型。**不做库目标**，仅 header-only。
+    - `data/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
+    - `data/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
+    - `data/internal_model.hpp` — 扁平化 SoA 内部模型（`mhs::core::InternalModel`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`、`mhs::core::GlobalState`）。
+- **common**（领域 `mhs::logger` / `mhs::utils`）：logger 与横切辅助函数。
     - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
+    - `common/mesh_utils.hpp` — `mhs::utils::k_along` / `half_length_along` / `face_area` / `neighbor_*`，面法向查表。
+    - `common/sample_point.hpp` — `mhs::utils::sample_*`，局部 3D 采样与外推辅助。
 - **io**（领域 `mhs::io`）：XML 读取与序列化（VTU/VTK 调试输出）。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
 - **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::sim::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::sim::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
 - **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，给出组装后的线性系统 `A·T = b`。`mhs::sim::{Assembler, LinearSystem, ThreadLocalData}`。TBB 并行。

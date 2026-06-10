@@ -100,7 +100,7 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::core` 的 `face_dir_tables`，不再在 assembler 内定义 switch 分支。组装项：
+`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::core` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）

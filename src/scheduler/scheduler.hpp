@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/internal_model.hpp"
+#include "data/internal_model.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "scheduler/probe_recorder.hpp"
 

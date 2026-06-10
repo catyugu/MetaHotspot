@@ -1,5 +1,5 @@
-#include "common/face_dir_tables.hpp"
-#include "common/types.hpp"
+#include "common/mesh_utils.hpp"
+#include "data/types.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include <cmath>
@@ -11,9 +11,9 @@ namespace mhs::sim {
         bool is_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
             const mhs::core::CellFields& cells)
         {
-            int nix = mhs::core::neighbor_ix(dir, ix);
-            int niy = mhs::core::neighbor_iy(dir, iy);
-            int niz = mhs::core::neighbor_iz(dir, iz);
+            int nix = mhs::utils::neighbor_ix(dir, ix);
+            int niy = mhs::utils::neighbor_iy(dir, iy);
+            int niz = mhs::utils::neighbor_iz(dir, iz);
 
             // 1. 如果超出网格边界，说明是域外，绝对暴露
             if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {
