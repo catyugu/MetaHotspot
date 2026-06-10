@@ -22,7 +22,8 @@ namespace mhs::sim {
 
             double max_residual = 0.0;
             double max_b = 0.0;
-            for (int i = 0; i < state.cell_count; i++) {
+            const int N = static_cast<int>(state.T.size());
+            for (int i = 0; i < N; i++) {
                 state.residual[i] = linear_system.residual(i);
                 max_residual = std::max(max_residual, std::abs(state.residual[i]));
                 max_b = std::max(max_b, std::abs(linear_system.b(i)));
@@ -43,7 +44,7 @@ namespace mhs::sim {
 
             double max_update = 0.0;
             double max_T = 0.0;
-            for (int i = 0; i < state.cell_count; i++) {
+            for (int i = 0; i < N; i++) {
                 double update = solve_result.solution(i) - state.T[i];
                 max_update = std::max(max_update, std::abs(update));
                 max_T = std::max(max_T, std::abs(state.T[i]));

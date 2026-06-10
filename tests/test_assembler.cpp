@@ -77,9 +77,8 @@ TEST(AssemblerTest, AssembleReturnsCorrectSize)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
@@ -114,9 +113,8 @@ TEST(AssemblerTest, DiagonalIsNegativeAndSymmetricForInteriorCell)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
@@ -198,11 +196,10 @@ TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     EXPECT_EQ(N, 8);
 
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
@@ -268,9 +265,8 @@ TEST(AssemblerTest, HeatSourceContributesToRHS)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
@@ -345,9 +341,8 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, 300.0);
     state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
@@ -376,11 +371,10 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     auto model = preprocessor.load(io_data);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     EXPECT_GT(N, 0);
 
     mhs::core::GlobalState state;
-    state.cell_count = N;
     state.T.resize(N, model->initial_temperature);
     state.T_prev.resize(N, model->initial_temperature);
     state.current_time = 0.0;

@@ -23,8 +23,7 @@ namespace mhs::sim {
         }
 
         // Initialize state
-        int N = model_->cells.cell_count;
-        state_.cell_count = N;
+        int N = static_cast<int>(model_->cells.cell_bcs.size());
         state_.T.resize(N, model_->initial_temperature);
         state_.T_prev.resize(N, model_->initial_temperature);
         state_.residual.resize(N, 0.0);

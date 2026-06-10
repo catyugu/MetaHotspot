@@ -109,7 +109,8 @@ namespace mhs::sim {
         const std::function<std::string(const std::string&)>& rewriter)
     {
         // 1. 初始化所有 BC 为 None
-        for (int c = 0; c < cells.cell_count; c++) {
+        const int N = static_cast<int>(cells.cell_bcs.size());
+        for (int c = 0; c < N; c++) {
             for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                 cells.cell_bcs[c].types[f] = mhs::core::BcType::None;
                 cells.cell_bcs[c].param_idxs[f] = 0;

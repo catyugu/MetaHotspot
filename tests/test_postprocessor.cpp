@@ -63,7 +63,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     // Set cell temperatures to known values
     std::vector<double> cell_T(N);
     for (int i = 0; i < N; i++) {
@@ -157,7 +157,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     ASSERT_NE(model, nullptr);
 
     // Set all cell temperatures to something different from 500
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     std::vector<double> cell_T(N, 400.0);
 
     auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
@@ -239,7 +239,7 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     EXPECT_EQ(N, 8);
 
     // Solve for steady-state temperatures (use scheduler)
@@ -338,7 +338,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = model->cells.cell_count;
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     std::vector<double> cell_T(N, 400.0);
 
     int node_ny = model->mesh.ny + 1;

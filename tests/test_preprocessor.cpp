@@ -112,7 +112,7 @@ TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
     ASSERT_NE(model, nullptr);
 
     // All 8 cells should be valid
-    EXPECT_EQ(model->cells.cell_count, 8);
+    EXPECT_EQ(model->cells.cell_bcs.size(), 8u);
     for (int i = 0; i < 8; i++) {
         EXPECT_EQ(model->cells.valid_mask[i], 1);
         EXPECT_NE(model->cells.index_map[i], SIZE_MAX);
@@ -408,8 +408,8 @@ TEST(PreprocessorTest, Case1XMLLoad)
     EXPECT_EQ(model->mesh.ny, 20);
     EXPECT_EQ(model->mesh.nz, 9);
     // Should have some valid and some virtual cells
-    EXPECT_GT(model->cells.cell_count, 0);
-    EXPECT_LT(model->cells.cell_count, 3600);
+    EXPECT_GT(model->cells.cell_bcs.size(), 0u);
+    EXPECT_LT(model->cells.cell_bcs.size(), 3600u);
 
     // mhs::core::Material table should have copper and silicon
     EXPECT_EQ(model->material_table.size(), 2);

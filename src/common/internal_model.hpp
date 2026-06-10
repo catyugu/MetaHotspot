@@ -44,12 +44,9 @@ namespace mhs::core {
     };
 
     struct CellFields {
-        int cell_count = 0;
-
         std::vector<size_t> index_map;
         std::vector<uint8_t> valid_mask;
         std::vector<size_t> material_id;
-        std::vector<size_t> layer_id;
 
         std::vector<CellBC> cell_bcs;
 
@@ -65,7 +62,6 @@ namespace mhs::core {
     };
 
     struct GlobalState {
-        int cell_count = 0;
         double current_time = 0.0;
         int time_step = 0;
         double dt = 0.0;

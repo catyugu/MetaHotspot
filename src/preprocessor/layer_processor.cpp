@@ -124,16 +124,17 @@ namespace mhs::sim {
         return -1;
     }
 
-    void resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh,
-        const std::unordered_map<std::string, size_t>& name_to_idx, mhs::core::CellFields& cells)
+    LayerResolveResult resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx)
     {
         int num_layers = (int)resolved_layers.size();
         int total = mesh.nx * mesh.ny * mesh.nz;
 
-        cells.valid_mask.resize(total, 0);
-        cells.index_map.resize(total, SIZE_MAX);
-        cells.material_id.resize(total, SIZE_MAX);
-        cells.layer_id.resize(total, SIZE_MAX);
+        LayerResolveResult result;
+        result.cells.valid_mask.resize(total, 0);
+        result.cells.index_map.resize(total, SIZE_MAX);
+        result.cells.material_id.resize(total, SIZE_MAX); // old_idx sized for phase 1
+        result.layer_id_old.resize(total, SIZE_MAX);
 
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
@@ -159,23 +160,28 @@ namespace mhs::sim {
                     }
 
                     if (layer_idx >= 0 && block_idx >= 0) {
-                        cells.valid_mask[old_idx] = 1;
-                        cells.layer_id[old_idx] = layer_idx;
+                        result.cells.valid_mask[old_idx] = 1;
+                        result.layer_id_old[old_idx] = layer_idx;
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
-                        cells.material_id[old_idx] = name_to_idx.at(block.material_name);
+                        result.cells.material_id[old_idx] = name_to_idx.at(block.material_name);
                     }
                 }
             }
         }
 
-        // Build compact layout
+        // Build compact layout: index_map (old → compact) and resize compact-indexed
+        // arrays (cell_bcs, heat_source_idx) so active_cell_count() can return
+        // cell_bcs.size() from this point forward.
         int compact_idx = 0;
         for (int i = 0; i < total; i++) {
-            if (cells.valid_mask[i] == 1) {
-                cells.index_map[i] = compact_idx++;
+            if (result.cells.valid_mask[i] == 1) {
+                result.cells.index_map[i] = compact_idx++;
             }
         }
-        cells.cell_count = compact_idx;
+        result.cells.cell_bcs.resize(compact_idx);
+        result.cells.heat_source_idx.resize(compact_idx, 0);
+
+        return result;
     }
 
 } // namespace mhs::sim

@@ -97,11 +97,11 @@ namespace mhs::sim {
             model->material_table[m].c = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", fns));
         }
 
-        auto& cells = model->cells;
-        resolve_layers(resolved_layers, mesh, name_to_idx, cells);
-
-        cells.cell_bcs.resize(cells.cell_count);
-        cells.heat_source_idx.resize(cells.cell_count, 0);
+        auto layer_result = resolve_layers(resolved_layers, mesh, name_to_idx);
+        model->cells = std::move(layer_result.cells);
+        // 解引用 layer_id_old：仅在本次预处理中用于查找 block → heat_source，
+        // 函数返回时已无其他用途，离开作用域自动释放。
+        const std::vector<size_t>& layer_id_old = layer_result.layer_id_old;
 
         // --- 热源字典构建 ---
         model->heat_source_table.clear();
@@ -118,13 +118,14 @@ namespace mhs::sim {
             }
         }
 
+        auto& cells = model->cells;
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
                     int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
                     if (cells.valid_mask[old_idx] == 1) {
                         int c_idx = (int)cells.index_map[old_idx];
-                        int layer_idx = (int)cells.layer_id[old_idx];
+                        int layer_idx = (int)layer_id_old[old_idx];
                         double cx = mesh.cx[ix];
                         double cy = mesh.cy[iy];
                         double cz = mesh.cz[iz];

@@ -30,7 +30,7 @@ namespace mhs::sim {
         const auto& bc_params = model_.bc_params;
         const auto& materials = model_.material_table;
 
-        int N = cells.cell_count;
+        int N = static_cast<int>(cells.cell_bcs.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });

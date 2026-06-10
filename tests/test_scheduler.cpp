@@ -127,7 +127,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     scheduler.run();
 
     const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.cell_count);
+    EXPECT_EQ(solution.size(), model->cells.cell_bcs.size());
 
     // With Dirichlet 500K on bottom and Neumann(0) on all other faces,
     // and no heat source, steady state should be T=500K everywhere
@@ -202,7 +202,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     scheduler.run();
 
     const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.cell_count);
+    EXPECT_EQ(solution.size(), model->cells.cell_bcs.size());
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
