@@ -122,9 +122,9 @@ namespace mhs::post {
                 for (int vz = 0; vz < node_nz; vz++) {
                     int node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
                     // 节点坐标从 cx/dx 重建：vx=0 为左边界（左节点），vx=nx 为右边界（右节点）
-                    double node_x = (vx == 0) ? mesh.node_x_left(0) : mesh.node_x_right(vx - 1);
-                    double node_y = (vy == 0) ? mesh.node_y_left(0) : mesh.node_y_right(vy - 1);
-                    double node_z = (vz == 0) ? mesh.node_z_left(0) : mesh.node_z_right(vz - 1);
+                    double node_x = (vx == 0) ? mesh.cx[0] - mesh.dx[0] * 0.5 : mesh.cx[vx - 1] + mesh.dx[vx - 1] * 0.5;
+                    double node_y = (vy == 0) ? mesh.cy[0] - mesh.dy[0] * 0.5 : mesh.cy[vy - 1] + mesh.dy[vy - 1] * 0.5;
+                    double node_z = (vz == 0) ? mesh.cz[0] - mesh.dz[0] * 0.5 : mesh.cz[vz - 1] + mesh.dz[vz - 1] * 0.5;
 
                     double dirichlet_sum = 0.0;
                     int dirichlet_count = 0;

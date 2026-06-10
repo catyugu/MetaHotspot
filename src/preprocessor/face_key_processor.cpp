@@ -191,19 +191,22 @@ namespace mhs::sim {
 
                         if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP) {
                             face_axis = 'X';
-                            face_coord = (dir == mhs::core::FaceDir::XM) ? mesh.node_x_left(ix) : mesh.node_x_right(ix);
+                            face_coord = (dir == mhs::core::FaceDir::XM) ? mesh.cx[ix] - mesh.dx[ix] * 0.5
+                                                                         : mesh.cx[ix] + mesh.dx[ix] * 0.5;
                             a_val = mesh.cy[iy];
                             b_val = mesh.cz[iz];
                         }
                         else if (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP) {
                             face_axis = 'Y';
-                            face_coord = (dir == mhs::core::FaceDir::YM) ? mesh.node_y_left(iy) : mesh.node_y_right(iy);
+                            face_coord = (dir == mhs::core::FaceDir::YM) ? mesh.cy[iy] - mesh.dy[iy] * 0.5
+                                                                         : mesh.cy[iy] + mesh.dy[iy] * 0.5;
                             a_val = mesh.cx[ix];
                             b_val = mesh.cz[iz];
                         }
                         else { // ZM, ZP
                             face_axis = 'Z';
-                            face_coord = (dir == mhs::core::FaceDir::ZM) ? mesh.node_z_left(iz) : mesh.node_z_right(iz);
+                            face_coord = (dir == mhs::core::FaceDir::ZM) ? mesh.cz[iz] - mesh.dz[iz] * 0.5
+                                                                         : mesh.cz[iz] + mesh.dz[iz] * 0.5;
                             a_val = mesh.cx[ix];
                             b_val = mesh.cy[iy];
                         }

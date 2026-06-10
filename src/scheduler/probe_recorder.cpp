@@ -178,8 +178,7 @@ namespace mhs::sim {
 
         for (size_t i = 0; i < slots_.size(); ++i) {
             const ProbeSlot& slot = slots_[i];
-            double v
-                = slot.valid ? sample_one(slot, cell_T, time) : std::numeric_limits<double>::quiet_NaN();
+            double v = slot.valid ? sample_one(slot, cell_T, time) : std::numeric_limits<double>::quiet_NaN();
             traces_[i].times.push_back(time);
             traces_[i].values.push_back(v);
         }
