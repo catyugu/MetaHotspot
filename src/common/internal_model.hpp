@@ -35,12 +35,9 @@ namespace mhs::core {
     struct CellFields {
         std::vector<size_t> index_map;
         std::vector<uint8_t> valid_mask;
-        std::vector<size_t> material_id;
-
-        std::vector<CellBC> cell_bcs;
-
-        // 降维为 16 位整型字典索引，实现极速的连续内存读取
+        std::vector<uint16_t> material_id;
         std::vector<uint16_t> heat_source_idx;
+        std::vector<CellBC> cell_bcs;
     };
 
     struct BCParamTable {

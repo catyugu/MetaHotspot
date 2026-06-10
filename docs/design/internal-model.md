@@ -25,13 +25,10 @@ struct CellBC {
 };
 
 struct CellFields {
-    int cell_count = 0;                            // = N_active
-
     // Full-grid (nx*ny*nz): virtual + active
     std::vector<size_t>  index_map;                // grid → compact; SIZE_MAX = virtual
     std::vector<uint8_t> valid_mask;               // 1 = active, 0 = virtual
-    std::vector<size_t>  material_id, layer_id;
-
+    std::vector<uint16_t>  material_id;
     // Compact (N_active): active only
     std::vector<CellBC>        cell_bcs;
     std::vector<uint16_t>      heat_source_idx;    // index into heat_source_table

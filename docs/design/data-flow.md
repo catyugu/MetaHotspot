@@ -11,7 +11,7 @@ XML
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> mhs::sim::resolve_layers           (valid_mask, index_map, material_id, layer_id)
+                      ├─> mhs::sim::resolve_layers           (valid_mask, index_map, material_id)
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
                       ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
                       └─> mhs::core::InternalModel
@@ -40,7 +40,7 @@ XML
 | 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`             | si_scale, dx/dy/dz, cx/cy/cz                           |
 | 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`  | 预求 Z 范围 + Block XY                                 |
 | 预处理-虚拟单元   | mesh + 层几何                         | `valid_mask` + `index_map` | 标记 + 紧凑映射                                        |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id` + `layer_id` | cell → block 反向遍历（后写优先）                      |
+| 预处理-单元归属   | mesh + 层几何                         | `material_id`              | cell → block 反向遍历（后写优先）                      |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                             |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | exprtk 或 `make_constant`                              |
 | 组装              | `InternalModel` + `GlobalState`       | `LinearSystem`             | TBB 并行；`eval()` 锁无关                              |

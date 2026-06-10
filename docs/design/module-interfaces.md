@@ -75,7 +75,7 @@ mhs::core::IOStructure
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry()     // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table         // 解析 k/rho/c
-        ├─> resolve_layers()       // valid_mask, index_map, material_id, layer_id
+        ├─> resolve_layers()       // valid_mask, index_map, material_id
         ├─> heat_source_table      // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> resolve_face_keys()    // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
