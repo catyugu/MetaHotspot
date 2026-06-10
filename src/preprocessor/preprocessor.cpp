@@ -39,21 +39,13 @@ namespace mhs::sim {
         }
 
         auto& mesh = model->mesh;
-        mesh.vertex_x = ioStructure.mesh_vertex_x;
-        mesh.vertex_y = ioStructure.mesh_vertex_y;
-        mesh.vertex_z = ioStructure.mesh_vertex_z;
 
-        for (auto& v : mesh.vertex_x)
-            v *= si_scale;
-        for (auto& v : mesh.vertex_y)
-            v *= si_scale;
-        for (auto& v : mesh.vertex_z)
-            v *= si_scale;
-
-        mesh.nx = (int)mesh.vertex_x.size() - 1;
-        mesh.ny = (int)mesh.vertex_y.size() - 1;
-        mesh.nz = (int)mesh.vertex_z.size() - 1;
-        mesh.total_cell_count = mesh.nx * mesh.ny * mesh.nz;
+        // IOStructure::mesh_vertex_* 是用户输入的节点坐标；按 SI 单位缩放后直接计算
+        // dx/dy/dz 与 cx/cy/cz。MeshGeometry 不再持有 vertex_* 数组——它们在
+        // 预处理完成后就是死数据。
+        mesh.nx = (int)ioStructure.mesh_vertex_x.size() - 1;
+        mesh.ny = (int)ioStructure.mesh_vertex_y.size() - 1;
+        mesh.nz = (int)ioStructure.mesh_vertex_z.size() - 1;
 
         mesh.dx.resize(mesh.nx);
         mesh.dy.resize(mesh.ny);
@@ -63,16 +55,22 @@ namespace mhs::sim {
         mesh.cz.resize(mesh.nz);
 
         for (int i = 0; i < mesh.nx; i++) {
-            mesh.dx[i] = mesh.vertex_x[i + 1] - mesh.vertex_x[i];
-            mesh.cx[i] = (mesh.vertex_x[i] + mesh.vertex_x[i + 1]) / 2.0;
+            double v0 = ioStructure.mesh_vertex_x[i] * si_scale;
+            double v1 = ioStructure.mesh_vertex_x[i + 1] * si_scale;
+            mesh.dx[i] = v1 - v0;
+            mesh.cx[i] = (v0 + v1) * 0.5;
         }
         for (int j = 0; j < mesh.ny; j++) {
-            mesh.dy[j] = mesh.vertex_y[j + 1] - mesh.vertex_y[j];
-            mesh.cy[j] = (mesh.vertex_y[j] + mesh.vertex_y[j + 1]) / 2.0;
+            double v0 = ioStructure.mesh_vertex_y[j] * si_scale;
+            double v1 = ioStructure.mesh_vertex_y[j + 1] * si_scale;
+            mesh.dy[j] = v1 - v0;
+            mesh.cy[j] = (v0 + v1) * 0.5;
         }
         for (int k = 0; k < mesh.nz; k++) {
-            mesh.dz[k] = mesh.vertex_z[k + 1] - mesh.vertex_z[k];
-            mesh.cz[k] = (mesh.vertex_z[k] + mesh.vertex_z[k + 1]) / 2.0;
+            double v0 = ioStructure.mesh_vertex_z[k] * si_scale;
+            double v1 = ioStructure.mesh_vertex_z[k + 1] * si_scale;
+            mesh.dz[k] = v1 - v0;
+            mesh.cz[k] = (v0 + v1) * 0.5;
         }
 
         auto resolved_layers = resolve_geometry(ioStructure.layers, si_scale);

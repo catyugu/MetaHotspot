@@ -77,12 +77,6 @@ TEST(PreprocessorTest, MeshGeometryFromVertices)
     EXPECT_EQ(model->mesh.nx, 2);
     EXPECT_EQ(model->mesh.ny, 2);
     EXPECT_EQ(model->mesh.nz, 2);
-    EXPECT_EQ(model->mesh.total_cell_count, 8);
-
-    // Check vertex arrays
-    EXPECT_EQ(model->mesh.vertex_x.size(), 3);
-    EXPECT_EQ(model->mesh.vertex_y.size(), 3);
-    EXPECT_EQ(model->mesh.vertex_z.size(), 3);
 
     // Check cell sizes (dx, dy, dz)
     EXPECT_EQ(model->mesh.dx.size(), 2);
@@ -413,8 +407,6 @@ TEST(PreprocessorTest, Case1XMLLoad)
     EXPECT_EQ(model->mesh.nx, 20);
     EXPECT_EQ(model->mesh.ny, 20);
     EXPECT_EQ(model->mesh.nz, 9);
-    EXPECT_EQ(model->mesh.total_cell_count, 3600);
-
     // Should have some valid and some virtual cells
     EXPECT_GT(model->cells.cell_count, 0);
     EXPECT_LT(model->cells.cell_count, 3600);

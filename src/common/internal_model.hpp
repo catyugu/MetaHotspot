@@ -14,11 +14,6 @@ namespace mhs::core {
 
     struct MeshGeometry {
         int nx = 0, ny = 0, nz = 0;
-        int total_cell_count = 0;
-
-        std::vector<double> vertex_x;
-        std::vector<double> vertex_y;
-        std::vector<double> vertex_z;
 
         std::vector<double> dx;
         std::vector<double> dy;
@@ -27,6 +22,17 @@ namespace mhs::core {
         std::vector<double> cx;
         std::vector<double> cy;
         std::vector<double> cz;
+
+        // 节点坐标：从 cell 中心和间距实时重建
+        // 左节点（面 XM/YM/ZM 对应 cell i 的左面）= cx[i] - dx[i]/2
+        // 右节点（面 XP/YP/ZP 对应 cell i 的右面）= cx[i] + dx[i]/2
+        // 假设网格原点 vertex_*[0] = 0（已 SI 单位化），即 cx[0] - dx[0]/2 = 0。
+        double node_x_left(int i) const { return cx[i] - dx[i] * 0.5; }
+        double node_y_left(int j) const { return cy[j] - dy[j] * 0.5; }
+        double node_z_left(int k) const { return cz[k] - dz[k] * 0.5; }
+        double node_x_right(int i) const { return cx[i] + dx[i] * 0.5; }
+        double node_y_right(int j) const { return cy[j] + dy[j] * 0.5; }
+        double node_z_right(int k) const { return cz[k] + dz[k] * 0.5; }
     };
 
     struct MaterialProps {

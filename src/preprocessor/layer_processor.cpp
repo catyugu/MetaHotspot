@@ -128,7 +128,7 @@ namespace mhs::sim {
         const std::unordered_map<std::string, size_t>& name_to_idx, mhs::core::CellFields& cells)
     {
         int num_layers = (int)resolved_layers.size();
-        int total = mesh.total_cell_count;
+        int total = mesh.nx * mesh.ny * mesh.nz;
 
         cells.valid_mask.resize(total, 0);
         cells.index_map.resize(total, SIZE_MAX);

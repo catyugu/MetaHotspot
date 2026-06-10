@@ -35,8 +35,8 @@ int main(int argc, char* argv[])
         mhs::sim::Preprocessor preprocessor;
         auto model = preprocessor.load(io_structure);
 
-        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.total_cell_count, model->mesh.nx,
-            model->mesh.ny, model->mesh.nz);
+        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
+            model->mesh.nx, model->mesh.ny, model->mesh.nz);
 
         // Create solver
         auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::Pardiso);

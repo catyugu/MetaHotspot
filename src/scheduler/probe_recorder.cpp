@@ -104,23 +104,37 @@ namespace mhs::sim {
             return T_c;
         }
 
-        // 二分查找 vertex 数组：返回 cell 下标 lo，使得 vertex[lo] ≤ value < vertex[lo+1]。
-        // 越界时返回 -1。
-        template <typename T> int locate_cell_index(const std::vector<T>& vertex, T value)
+        // 二分查找 cell 中心数组：返回 cell 下标 lo，使得 cx[lo] ≤ value。
+        // 然后验证 value 落在 [cx[lo] - dx[lo]/2, cx[lo] + dx[lo]/2] 内；
+        // 边界情况检查下一个 cell 的左半部。越界返回 -1。
+        template <typename T> int locate_cell_index(const std::vector<T>& centers, const std::vector<T>& sizes, T value)
         {
-            int n = static_cast<int>(vertex.size());
-            if (n < 2)
+            int n = static_cast<int>(centers.size());
+            if (n == 0)
                 return -1;
-            if (value < vertex.front() || value > vertex.back())
+            // 域边界：第一个 cell 的左节点 ↔ 最后一个 cell 的右节点
+            T lo_bound = centers[0] - sizes[0] * T(0.5);
+            T hi_bound = centers[n - 1] + sizes[n - 1] * T(0.5);
+            if (value < lo_bound || value > hi_bound)
                 return -1;
+
+            // Binary search on centers to find the cell whose center is ≤ value
             int lo = 0, hi = n - 1;
-            while (hi - lo > 1) {
-                int mid = (lo + hi) / 2;
-                if (vertex[mid] <= value)
+            while (lo < hi) {
+                int mid = (lo + hi + 1) / 2;
+                if (centers[mid] <= value)
                     lo = mid;
                 else
-                    hi = mid;
+                    hi = mid - 1;
             }
+            // lo: largest cell index whose center ≤ value
+            T half = sizes[lo] * T(0.5);
+            // 上边界（value == centers[lo] + half）归下一个 cell，匹配旧 vertex 二分语义：
+            // vertex[lo] ≤ value < vertex[lo+1]（右端点属于下一格）
+            if (value >= centers[lo] + half && lo + 1 < n)
+                return lo + 1;
+            if (value >= centers[lo] - half)
+                return lo;
             return lo;
         }
     } // namespace
@@ -143,9 +157,9 @@ namespace mhs::sim {
             slot.px = op.x;
             slot.py = op.y;
             slot.pz = op.z;
-            slot.ix = locate_cell_index(model.mesh.vertex_x, op.x);
-            slot.iy = locate_cell_index(model.mesh.vertex_y, op.y);
-            slot.iz = locate_cell_index(model.mesh.vertex_z, op.z);
+            slot.ix = locate_cell_index(model.mesh.cx, model.mesh.dx, op.x);
+            slot.iy = locate_cell_index(model.mesh.cy, model.mesh.dy, op.y);
+            slot.iz = locate_cell_index(model.mesh.cz, model.mesh.dz, op.z);
             if (slot.ix < 0 || slot.iy < 0 || slot.iz < 0) {
                 slot.valid = false;
             }

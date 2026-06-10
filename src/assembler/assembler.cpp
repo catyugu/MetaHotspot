@@ -31,7 +31,7 @@ namespace mhs::sim {
         const auto& materials = model_.material_table;
 
         int N = cells.cell_count;
-        int total = mesh.total_cell_count;
+        int total = mesh.nx * mesh.ny * mesh.nz;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 

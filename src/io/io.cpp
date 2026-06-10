@@ -622,8 +622,10 @@ namespace mhs::io {
                     int i = node_idx(vx, vy, vz, node_ny, node_nz);
                     if (node_remap[i] < 0)
                         continue;
-                    snprintf(
-                        buf, sizeof(buf), "%.8g %.8g %.8g\n", mesh.vertex_x[vx], mesh.vertex_y[vy], mesh.vertex_z[vz]);
+                    double node_x = (vx == 0) ? mesh.node_x_left(0) : mesh.node_x_right(vx - 1);
+                    double node_y = (vy == 0) ? mesh.node_y_left(0) : mesh.node_y_right(vy - 1);
+                    double node_z = (vz == 0) ? mesh.node_z_left(0) : mesh.node_z_right(vz - 1);
+                    snprintf(buf, sizeof(buf), "%.8g %.8g %.8g\n", node_x, node_y, node_z);
                     coords_str += buf;
                 }
             }

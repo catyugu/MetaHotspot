@@ -121,9 +121,10 @@ namespace mhs::post {
             for (int vy = 0; vy < node_ny; vy++) {
                 for (int vz = 0; vz < node_nz; vz++) {
                     int node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
-                    double node_x = mesh.vertex_x[vx];
-                    double node_y = mesh.vertex_y[vy];
-                    double node_z = mesh.vertex_z[vz];
+                    // 节点坐标从 cx/dx 重建：vx=0 为左边界（左节点），vx=nx 为右边界（右节点）
+                    double node_x = (vx == 0) ? mesh.node_x_left(0) : mesh.node_x_right(vx - 1);
+                    double node_y = (vy == 0) ? mesh.node_y_left(0) : mesh.node_y_right(vy - 1);
+                    double node_z = (vz == 0) ? mesh.node_z_left(0) : mesh.node_z_right(vz - 1);
 
                     double dirichlet_sum = 0.0;
                     int dirichlet_count = 0;
