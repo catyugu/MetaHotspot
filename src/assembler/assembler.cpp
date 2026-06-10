@@ -50,7 +50,7 @@ namespace mhs::sim {
             double vol = dx_cell * dy_cell * dz_cell;
 
             // 材料字典求值：底层已由 TLS 保证线程安全
-            size_t mat_id = cells.material_id[old_idx];
+            size_t mat_id = cells.material_id[c_idx];
             const auto& mp = materials[mat_id];
             double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
@@ -82,7 +82,7 @@ namespace mhs::sim {
                     int niy = mhs::core::neighbor_iy(dir, iy);
                     int niz = mhs::core::neighbor_iz(dir, iz);
 
-                    const auto& mp_n = materials[cells.material_id[neighbor_old]];
+                    const auto& mp_n = materials[cells.material_id[n_idx]];
                     double kx_n
                         = mp_n.kx.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
                     double ky_n

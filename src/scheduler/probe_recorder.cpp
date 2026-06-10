@@ -244,7 +244,7 @@ namespace mhs::sim {
         }
 
         // 3. 局部 LSQ：8 cell 中心 + Neumann/Cauchy 面的面中心外推
-        const auto& mp = model_->material_table[cells.material_id[grid_idx]];
+        const auto& mp = model_->material_table[cells.material_id[compact_idx]];
         double kx_c = mp.kx.eval({px, py, pz, T_c, time});
         double ky_c = mp.ky.eval({px, py, pz, T_c, time});
         double kz_c = mp.kz.eval({px, py, pz, T_c, time});

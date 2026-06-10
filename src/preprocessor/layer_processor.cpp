@@ -133,8 +133,9 @@ namespace mhs::sim {
         LayerResolveResult result;
         result.cells.valid_mask.resize(total, 0);
         result.cells.index_map.resize(total, SIZE_MAX);
-        result.cells.material_id.resize(total, SIZE_MAX); // old_idx sized for phase 1
         result.layer_id_old.resize(total, SIZE_MAX);
+        // 临时 old_idx 索引的 material 数组：phase 1 写入，phase 2 压缩到 compact 后丢弃
+        std::vector<size_t> material_id_temp(total, SIZE_MAX);
 
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
@@ -163,19 +164,21 @@ namespace mhs::sim {
                         result.cells.valid_mask[old_idx] = 1;
                         result.layer_id_old[old_idx] = layer_idx;
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
-                        result.cells.material_id[old_idx] = name_to_idx.at(block.material_name);
+                        material_id_temp[old_idx] = name_to_idx.at(block.material_name);
                     }
                 }
             }
         }
 
-        // Build compact layout: index_map (old → compact) and resize compact-indexed
-        // arrays (cell_bcs, heat_source_idx) so active_cell_count() can return
-        // cell_bcs.size() from this point forward.
+        // Build compact layout: index_map (old → compact) and material_id (compact).
+        // cell_bcs / heat_source_idx 也 resize 到 compact 计数，使 cell_bcs.size()
+        // 成为活动 cell 计数的唯一来源。
         int compact_idx = 0;
         for (int i = 0; i < total; i++) {
             if (result.cells.valid_mask[i] == 1) {
-                result.cells.index_map[i] = compact_idx++;
+                result.cells.index_map[i] = compact_idx;
+                result.cells.material_id.push_back(material_id_temp[i]);
+                compact_idx++;
             }
         }
         result.cells.cell_bcs.resize(compact_idx);

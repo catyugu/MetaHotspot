@@ -157,7 +157,7 @@ namespace mhs::post {
                                 double cx = mesh.cx[ix];
                                 double cy = mesh.cy[iy];
                                 double cz = mesh.cz[iz];
-                                const auto& mp = model.material_table[cells.material_id[cell_grid_idx]];
+                                const auto& mp = model.material_table[cells.material_id[compact_idx]];
                                 double kx_c = mp.kx.eval({cx, cy, cz, T_c, time});
                                 double ky_c = mp.ky.eval({cx, cy, cz, T_c, time});
                                 double kz_c = mp.kz.eval({cx, cy, cz, T_c, time});

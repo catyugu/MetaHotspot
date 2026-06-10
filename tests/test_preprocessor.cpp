@@ -569,15 +569,17 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
     EXPECT_EQ(model->cells.valid_mask[idx_overlap], 1);
+    int c_overlap = (int)model->cells.index_map[idx_overlap];
 
     // mhs::core::Material should be silicon (block2), not copper (block1)
     // name_to_idx order: "copper" = 0, "silicon" = 1
-    EXPECT_EQ(model->cells.material_id[idx_overlap], 1)
+    EXPECT_EQ(model->cells.material_id[c_overlap], 1)
         << "Overlapping cell must get material from later block (silicon), not earlier (copper)";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_EQ(model->cells.material_id[idx_only_block1], 0) << "Cell in only block1 must get copper material";
+    int c_only_block1 = (int)model->cells.index_map[idx_only_block1];
+    EXPECT_EQ(model->cells.material_id[c_only_block1], 0) << "Cell in only block1 must get copper material";
 }
 
 TEST(PreprocessorTest, ParseFaceKey_XFormatSevenParts)
