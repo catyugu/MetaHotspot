@@ -4,6 +4,15 @@
 
 namespace mhs::sim {
 
+    void Scheduler::setModel(mhs::core::InternalModel* model)
+    {
+        model_ = model;
+        // 同步初始化探针记录器：空观察点时 recorder 内部 record() 是 no-op。
+        if (model) {
+            probe_recorder_.initialize(*model);
+        }
+    }
+
     void Scheduler::setSolver(std::unique_ptr<LinearSolver> solver) { solver_ = std::move(solver); }
 
     void Scheduler::run()
@@ -26,17 +35,14 @@ namespace mhs::sim {
         if (model_->study_type == mhs::core::StudyType::Steady) {
             nonlinear_solve(*model_, state_, *solver_);
             solution_ = state_.T;
-            if (callback_) {
-                callback_(state_.current_time, state_.time_step, state_.T);
-            }
+            probe_recorder_.record(state_.current_time, state_.T);
         }
         else {
             const double duration = model_->transient_duration;
             const double dt = model_->transient_time_step;
             state_.dt = dt;
-            if (callback_) {
-                callback_(state_.current_time, state_.time_step, state_.T);
-            }
+            // 记录 t=0 初始态探针温度
+            probe_recorder_.record(state_.current_time, state_.T);
 
             while (state_.current_time < duration) {
                 state_.T_prev = state_.T;
@@ -48,9 +54,7 @@ namespace mhs::sim {
                 state_.current_time += dt;
                 state_.time_step++;
                 MHS_LOG_INFO("Time: {} solved", state_.current_time);
-                if (callback_) {
-                    callback_(state_.current_time, state_.time_step, state_.T);
-                }
+                probe_recorder_.record(state_.current_time, state_.T);
             }
 
             solution_ = state_.T;

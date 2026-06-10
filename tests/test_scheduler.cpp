@@ -1,6 +1,6 @@
+#include "linear_solver/linear_solver.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
-#include "linear_solver/linear_solver.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
@@ -212,10 +212,9 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     EXPECT_GT(max_T, 300.0) << "Heat source should raise temperature above 300K";
 }
 
-TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
+TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
-    // Transient 5 steps with heat source; callback should fire 6 times
-    // (t=0 initial + 5 step ends).
+    // 瞬态 5 步，2 个观察点。ProbeRecorder 应在 t=0 起点 + 5 个步末各记录 1 次。
     mhs::core::IOStructure io;
     io.study_type = mhs::core::StudyType::Transient;
     io.dimension = mhs::core::Dimension::Dimension3D;
@@ -234,7 +233,7 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     mhs::core::Block block;
     block.name = "b";
     block.material_name = "copper";
-    block.ti_reyuan_expr = "1e8"; // strong heat source to force T to rise
+    block.ti_reyuan_expr = "1e8";
     block.is_normal_material = true;
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -259,6 +258,28 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
 
+    // 两个观察点：中心 (5,5,5) mm + Dirichlet 面 z=0 上的 (5,5,0)
+    mhs::core::ObservationPoint3D op1;
+    op1.name = "center";
+    op1.x = "5";
+    op1.y = "5";
+    op1.z = "5";
+    io.observation_points.push_back(op1);
+    mhs::core::ObservationPoint3D op2;
+    op2.name = "z0";
+    op2.x = "5";
+    op2.y = "5";
+    op2.z = "0";
+    io.observation_points.push_back(op2);
+
+    // z=0 设为 Dirichlet 500K，确保 op2 走 Dirichlet 早返回路径
+    mhs::core::Boundary boundary;
+    boundary.name = "bc_z0";
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
+    boundary.first.temperature = "500";
+    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    io.boundaries.push_back(boundary);
+
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
@@ -267,28 +288,31 @@ TEST(SchedulerTest, TransientStepCallbackFiresForEachStep)
     scheduler.setModel(model.get());
     scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
 
-    std::vector<double> times_seen;
-    std::vector<double> temps_at_first_cell;
-    StepCallback cb = [&times_seen, &temps_at_first_cell](double t, int /*step*/, const std::vector<double>& cell_T) {
-        times_seen.push_back(t);
-        if (!cell_T.empty())
-            temps_at_first_cell.push_back(cell_T[0]);
-    };
-    scheduler.setCallback(std::move(cb));
-
     scheduler.run();
 
-    // 6 fires expected: t=0, t=1, t=2, t=3, t=4, t=5
-    EXPECT_EQ(times_seen.size(), 6u);
-    EXPECT_NEAR(times_seen.front(), 0.0, 1e-9);
-    EXPECT_NEAR(times_seen.back(), 5.0, 1e-9);
-    for (size_t i = 1; i < times_seen.size(); ++i) {
-        EXPECT_GT(times_seen[i], times_seen[i - 1]) << "Times must be monotonically increasing";
+    const auto& traces = scheduler.probeTraces();
+    ASSERT_EQ(traces.size(), 2u);
+    EXPECT_EQ(traces[0].name, "center");
+    EXPECT_EQ(traces[1].name, "z0");
+
+    // 6 个采样：t=0 + 5 个步末 (1..5)
+    for (const auto& tr : traces) {
+        EXPECT_EQ(tr.times.size(), 6u);
+        EXPECT_EQ(tr.values.size(), 6u);
+        EXPECT_NEAR(tr.times.front(), 0.0, 1e-9);
+        EXPECT_NEAR(tr.times.back(), 5.0, 1e-9);
+        for (size_t i = 1; i < tr.times.size(); ++i) {
+            EXPECT_GT(tr.times[i], tr.times[i - 1]) << "Times must be monotonically increasing";
+        }
     }
 
-    // With 1e8 W/m^3 heat source in 10mm copper cube, T should rise from 300K
-    ASSERT_GE(temps_at_first_cell.size(), 2u);
-    EXPECT_GT(temps_at_first_cell.back(), temps_at_first_cell.front())
-        << "First cell temperature must rise over time with a strong heat source";
-    EXPECT_NEAR(temps_at_first_cell.front(), 300.0, 1e-3) << "t=0 must be initial temperature";
+    // op1 "center" 在体心；强热源下温度应随时间上升
+    EXPECT_NEAR(traces[0].values.front(), 300.0, 1e-3) << "t=0 must be initial temperature";
+    EXPECT_GT(traces[0].values.back(), traces[0].values.front())
+        << "Center probe must rise over time with strong heat source";
+
+    // op2 "z0" 落在 Dirichlet 面上 → 始终 500K（Dirichlet 是强约束，不随内部场变化）
+    for (double v : traces[1].values) {
+        EXPECT_NEAR(v, 500.0, 1e-6) << "z0 probe on Dirichlet face must stay at 500K";
+    }
 }

@@ -26,8 +26,7 @@ namespace {
         std::ifstream file(test_log);
         ASSERT_TRUE(file.is_open()) << "Log file should exist";
 
-        std::string content(
-            (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         EXPECT_TRUE(content.find("Log message to file") != std::string::npos);
 
         file.close();

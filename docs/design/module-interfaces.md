@@ -177,6 +177,17 @@ namespace mhs::sim {
         void setSolver(std::unique_ptr<LinearSolver> solver);
         void run();
         const std::vector<double>& solution() const;
+        // 探针温度时间序列：与 model.observation_points 一一对应。
+        // 仅 (Transient && !observation_points.empty()) 时非空；每个 trace 长度 = 步数 + 1（含 t=0）。
+        const std::vector<mhs::core::ProbeTrace>& probeTraces() const;
+    };
+
+    // 探针局部采样与时序记录器，专属于 Scheduler。仅依赖 mhs::core。
+    class ProbeRecorder {
+    public:
+        void initialize(const mhs::core::InternalModel& model);
+        void record(double time, const std::vector<double>& cell_T);
+        const std::vector<mhs::core::ProbeTrace>& traces() const;
     };
 }
 ```
@@ -198,21 +209,13 @@ namespace mhs::sim {
 
 ```cpp
 namespace mhs::post {
-    class Postprocessor {
-    public:
-        std::vector<double> interpolate_cell_to_node(
-            const mhs::core::InternalModel& model,
-            const std::vector<double>& cell_temperature) const;
+    std::vector<double> interpolate_cell_to_node(
+        const mhs::core::InternalModel& model,
+        const std::vector<double>& cell_temperature);
 
-        double sample_point(
-            const std::vector<double>& node_T,
-            const mhs::core::InternalModel& model,
-            const mhs::core::ProbePoint& point) const;
-
-        double max_temperature(const std::vector<double>& T) const;
-        double min_temperature(const std::vector<double>& T) const;
-    };
+    double max_temperature(const std::vector<double>& T);
+    double min_temperature(const std::vector<double>& T);
 }
 ```
 
-纯计算，无 IO。展开到全网格：虚拟位置写 NaN，由 `mhs::io::write_vtu` / `mhs::io::write_xml` 序列化。
+`interpolate_cell_to_node` 展开到全网格：虚拟位置写 NaN，由 `mhs::io::write_vtu` / `mhs::io::write_xml` 序列化。

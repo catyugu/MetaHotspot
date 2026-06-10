@@ -9,6 +9,7 @@ add_library(mhs_lib
     io/io.cpp
     nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
+    scheduler/probe_recorder.cpp
     postprocessor/postprocessor.cpp
 )
 
