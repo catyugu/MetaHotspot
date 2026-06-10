@@ -398,8 +398,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     // 会让 tr.values 恒为 500.0；修复后必须随时间线性增长。
     for (size_t i = 0; i < tr.times.size(); ++i) {
         double expected = 500.0 + 100.0 * tr.times[i];
-        EXPECT_NEAR(tr.values[i], expected, 1e-6)
-            << "Time-dependent Dirichlet eval failed at t=" << tr.times[i]
-            << " (expected " << expected << ", got " << tr.values[i] << ")";
+        EXPECT_NEAR(tr.values[i], expected, 1e-6) << "Time-dependent Dirichlet eval failed at t=" << tr.times[i]
+                                                  << " (expected " << expected << ", got " << tr.values[i] << ")";
     }
 }

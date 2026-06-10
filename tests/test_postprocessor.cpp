@@ -348,13 +348,11 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     // t=0 时刻：500 + 100*0 = 500
     auto node_T_0 = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
-    EXPECT_NEAR(node_T_0[node_idx], 500.0, 1e-6)
-        << "At t=0, time-dependent Dirichlet should evaluate to 500";
+    EXPECT_NEAR(node_T_0[node_idx], 500.0, 1e-6) << "At t=0, time-dependent Dirichlet should evaluate to 500";
 
     // t=10 时刻：500 + 100*10 = 1500
     auto node_T_10 = mhs::post::interpolate_cell_to_node(*model, cell_T, 10.0);
-    EXPECT_NEAR(node_T_10[node_idx], 1500.0, 1e-6)
-        << "At t=10, time-dependent Dirichlet should evaluate to 1500";
+    EXPECT_NEAR(node_T_10[node_idx], 1500.0, 1e-6) << "At t=10, time-dependent Dirichlet should evaluate to 1500";
 
     // 旧实现下两个时刻结果相等；修复后差异必须严格为 1000
     EXPECT_NEAR(node_T_10[node_idx] - node_T_0[node_idx], 1000.0, 1e-6)
