@@ -32,8 +32,8 @@ struct CellBC {
 IOStructure
   └─> Preprocessor::load()
         ├─> preprocessor::resolve_layers()
-        │     ├─> valid_mask, index_map
-        │     └─> material_id (full-grid)
+        │     ├─> valid_mask, index_map            (full-grid tier)
+        │     └─> material_id                      (compact tier; parallel to cell_bcs)
         ├─> preprocessor::resolve_face_keys()
         │     ├─> flatten (boundary, face_key) pairs
         │     └─> single grid traversal → CellBC per cell, per face, with `other_bc` fallback (handles overlap)

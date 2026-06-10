@@ -11,7 +11,7 @@ XML
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> mhs::sim::resolve_layers           (valid_mask, index_map, material_id)
+                      ├─> mhs::sim::resolve_layers           (valid_mask + index_map [full-grid]; material_id [compact])
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
                       ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
                       └─> mhs::core::InternalModel
@@ -34,20 +34,20 @@ XML
 
 ## 各阶段
 
-| 阶段              | 输入                                  | 输出                       | 关键                                                   |
-| ----------------- | ------------------------------------- | -------------------------- | ------------------------------------------------------ |
-| XML 解析          | XML 文件                              | `IOStructure`              | tinyxml2                                               |
-| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`             | si_scale, dx/dy/dz, cx/cy/cz                           |
-| 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`  | 预求 Z 范围 + Block XY                                 |
-| 预处理-虚拟单元   | mesh + 层几何                         | `valid_mask` + `index_map` | 标记 + 紧凑映射                                        |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`              | cell → block 反向遍历（后写优先）                      |
-| 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                             |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | exprtk 或 `make_constant`                              |
-| 组装              | `InternalModel` + `GlobalState`       | `LinearSystem`             | TBB 并行；`eval()` 锁无关                              |
-| 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                    |
-| 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                               |
-| 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开到全网格，虚拟位置 NaN                             |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`             | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护 |
+| 阶段              | 输入                                  | 输出                       | 关键                                                     |
+| ----------------- | ------------------------------------- | -------------------------- | -------------------------------------------------------- |
+| XML 解析          | XML 文件                              | `IOStructure`              | tinyxml2                                                 |
+| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`             | si_scale, dx/dy/dz, cx/cy/cz                             |
+| 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`  | 预求 Z 范围 + Block XY                                   |
+| 预处理-虚拟单元   | mesh + 层几何                         | `valid_mask` + `index_map` | full-grid；标记 + 紧凑映射                               |
+| 预处理-单元归属   | mesh + 层几何                         | `material_id`              | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
+| 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                               |
+| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | exprtk 或 `make_constant`                                |
+| 组装              | `InternalModel` + `GlobalState`       | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
+| 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                      |
+| 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                                 |
+| 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开到全网格，虚拟位置 NaN                               |
+| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`             | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护   |
 
 ## 关键设计原则
 

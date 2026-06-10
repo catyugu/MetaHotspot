@@ -25,25 +25,24 @@ struct CellBC {
 };
 
 struct CellFields {
-    // Full-grid (nx*ny*nz): virtual + active
-    std::vector<size_t>  index_map;                // grid → compact; SIZE_MAX = virtual
+  
+    std::vector<size_t>  index_map;                // old grid index → compact; SIZE_MAX = virtual
     std::vector<uint8_t> valid_mask;               // 1 = active, 0 = virtual
-    std::vector<uint16_t>  material_id;
-    // Compact (N_active): active only
-    std::vector<CellBC>        cell_bcs;
-    std::vector<uint16_t>      heat_source_idx;    // index into heat_source_table
+    std::vector<uint16_t> material_id;             // index into material_table
+    std::vector<uint16_t> heat_source_idx;         // index into heat_source_table
+    std::vector<CellBC>   cell_bcs;
 };
 ```
 
 ### 虚拟单元
 
-结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`valid_mask` + `index_map` 标记与映射；矩阵维度 = `N_active`。
+结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`valid_mask` + `index_map`（full-grid tier）标记与映射；矩阵维度 = `N_active`，由 `cell_bcs.size()` 唯一确定（`cell_bcs` 是 compact tier 字段）。
 
 ### 热源字典化
 
 `Block.ti_reyuan_expr` 字符串去重后编入 `InternalModel::heat_source_table`：
 
-- 索引 `0` 保留为 `make_constant(0.0)`，未匹配到任何 block 的虚拟相邻单元指向 0
+- `heat_source_idx` 是 compact 字段（与 `material_id` / `cell_bcs` 同索引空间），未匹配到任何 block 的活跃单元填 `0`（`make_constant(0.0)`）
 - 重复公式只编译一次，每单元 2 字节索引
 - `model.heat_source_table[hs_idx].eval(ctx)` 求值
 
