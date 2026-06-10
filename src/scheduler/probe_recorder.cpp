@@ -77,11 +77,11 @@ namespace mhs::sim {
         // 计算边界面的表面外推温度
         double extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type, uint16_t param_idx,
             double T_c, double k, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz,
-            const mhs::core::BCParamTable& bc_params)
+            const mhs::core::BCParamTable& bc_params, double time)
         {
             double fx, fy, fz;
             get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            mhs::core::FieldContext ctx {fx, fy, fz, T_c, 0.0};
+            mhs::core::FieldContext ctx {fx, fy, fz, T_c, time};
 
             double half_dist = 0.0;
             if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP)
@@ -164,13 +164,14 @@ namespace mhs::sim {
 
         for (size_t i = 0; i < slots_.size(); ++i) {
             const ProbeSlot& slot = slots_[i];
-            double v = slot.valid ? sample_one(slot, cell_T) : std::numeric_limits<double>::quiet_NaN();
+            double v
+                = slot.valid ? sample_one(slot, cell_T, time) : std::numeric_limits<double>::quiet_NaN();
             traces_[i].times.push_back(time);
             traces_[i].values.push_back(v);
         }
     }
 
-    double ProbeRecorder::sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T) const
+    double ProbeRecorder::sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T, double time) const
     {
         const auto& mesh = model_->mesh;
         const auto& cells = model_->cells;
@@ -224,15 +225,15 @@ namespace mhs::sim {
             const auto& cell_bc = cells.cell_bcs[compact_idx];
             if (cell_bc.types[d] == mhs::core::BcType::FirstType) {
                 uint16_t param_idx = cell_bc.param_idxs[d];
-                return model_->bc_params.dirichlet_T[param_idx].eval({px, py, pz, T_c, 0.0});
+                return model_->bc_params.dirichlet_T[param_idx].eval({px, py, pz, T_c, time});
             }
         }
 
         // 3. 局部 LSQ：8 cell 中心 + Neumann/Cauchy 面的面中心外推
         const auto& mp = model_->material_table[cells.material_id[grid_idx]];
-        double kx_c = mp.kx.eval({px, py, pz, T_c, 0.0});
-        double ky_c = mp.ky.eval({px, py, pz, T_c, 0.0});
-        double kz_c = mp.kz.eval({px, py, pz, T_c, 0.0});
+        double kx_c = mp.kx.eval({px, py, pz, T_c, time});
+        double ky_c = mp.ky.eval({px, py, pz, T_c, time});
+        double kz_c = mp.kz.eval({px, py, pz, T_c, time});
 
         for (int dx = 0; dx <= 1; ++dx) {
             for (int dy = 0; dy <= 1; ++dy) {
@@ -267,8 +268,8 @@ namespace mhs::sim {
             double k_face = (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP) ? kx_c
                 : (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP)           ? ky_c
                                                                                              : kz_c;
-            double T_f
-                = extrapolate_face_temperature(dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model_->bc_params);
+            double T_f = extrapolate_face_temperature(
+                dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model_->bc_params, time);
 
             double fdx = fx - px;
             double fdy = fy - py;

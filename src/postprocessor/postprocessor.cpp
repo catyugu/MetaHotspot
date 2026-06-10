@@ -76,11 +76,11 @@ namespace mhs::post {
         // 计算边界面的表面外推温度
         double extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type, uint16_t param_idx,
             double T_c, double k, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz,
-            const mhs::core::BCParamTable& bc_params)
+            const mhs::core::BCParamTable& bc_params, double time)
         {
             double fx, fy, fz;
             get_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            mhs::core::FieldContext ctx {fx, fy, fz, T_c, 0.0};
+            mhs::core::FieldContext ctx {fx, fy, fz, T_c, time};
 
             double half_dist = 0.0;
             if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP)
@@ -105,7 +105,7 @@ namespace mhs::post {
     }
 
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature)
+        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature, double time)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -157,9 +157,9 @@ namespace mhs::post {
                                 double cy = mesh.cy[iy];
                                 double cz = mesh.cz[iz];
                                 const auto& mp = model.material_table[cells.material_id[cell_grid_idx]];
-                                double kx_c = mp.kx.eval({cx, cy, cz, T_c, 0.0});
-                                double ky_c = mp.ky.eval({cx, cy, cz, T_c, 0.0});
-                                double kz_c = mp.kz.eval({cx, cy, cz, T_c, 0.0});
+                                double kx_c = mp.kx.eval({cx, cy, cz, T_c, time});
+                                double ky_c = mp.ky.eval({cx, cy, cz, T_c, time});
+                                double kz_c = mp.kz.eval({cx, cy, cz, T_c, time});
                                 double c_dx = cx - node_x;
                                 double c_dy = cy - node_y;
                                 double c_dz = cz - node_z;
@@ -184,7 +184,7 @@ namespace mhs::post {
 
                                     if (bc_type == mhs::core::BcType::FirstType) {
                                         dirichlet_sum += model.bc_params.dirichlet_T[param_idx].eval(
-                                            {node_x, node_y, node_z, T_c, 0.0});
+                                            {node_x, node_y, node_z, T_c, time});
                                         dirichlet_count++;
                                     }
                                     else {
@@ -195,8 +195,8 @@ namespace mhs::post {
                                             ? kx_c
                                             : (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP) ? ky_c
                                                                                                                : kz_c;
-                                        double T_f = extrapolate_face_temperature(
-                                            dir, bc_type, param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params);
+                                        double T_f = extrapolate_face_temperature(dir, bc_type, param_idx, T_c, k_face,
+                                            mesh, ix, iy, iz, model.bc_params, time);
 
                                         // 【各向异性修正】同理，计算面中心到节点的等效各向异性距离权重
                                         double f_dx = fx - node_x;

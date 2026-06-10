@@ -45,8 +45,9 @@ namespace mhs::sim {
         std::vector<ProbeSlot> slots_;
 
         // 在 cell 邻域内做局部 LSQ 拟合，返回探针点温度；越界或邻域无有效 cell
-        // 返回 NaN。
-        double sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T) const;
+        // 返回 NaN。`time` 注入 FieldContext.t，让时间依赖的 BC/材料表达式
+        // 在正确的时刻被求值。
+        double sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T, double time) const;
     };
 
 } // namespace mhs::sim

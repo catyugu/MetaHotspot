@@ -70,7 +70,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
         cell_T[i] = 300.0 + i * 10.0; // 300, 310, 320, ...
     }
 
-    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
 
     // On a uniform 5mm grid, the interior node at (vx=1, vy=1, vz=1)
     // is shared by all 8 cells. The node is at the geometric center
@@ -160,7 +160,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     int N = model->cells.cell_count;
     std::vector<double> cell_T(N, 400.0);
 
-    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
 
     int node_ny = model->mesh.ny + 1;
     int node_nz = model->mesh.nz + 1;
@@ -249,7 +249,7 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     // what the cell temperatures are.
     std::vector<double> cell_T(N, 400.0); // All cells at 400K (doesn't matter for boundary test)
 
-    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T);
+    auto node_T = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
 
     int node_ny = model->mesh.ny + 1;
     int node_nz = model->mesh.nz + 1;
@@ -277,4 +277,86 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
             }
         }
     }
+}
+
+TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
+{
+    // Regression: interpolate_cell_to_node 之前把 FieldContext.t 硬编码成 0.0，
+    // 导致时间依赖的 BC 表达式在任意时刻都被求值成 t=0 时的结果。
+    // 本测试对 z=0 面上 Dirichlet 表达式 "500 + 100*t" 在 t=0 和 t=10
+    // 两个时间点分别求值，验证两者差异严格为 1000K（旧实现会得到 0K 差异）。
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Steady;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 5.0, 10.0};
+    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+
+    mhs::core::Layer layer;
+    layer.name = "test";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+
+    mhs::core::Block block;
+    block.name = "b1";
+    block.material_name = "copper";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+
+    mhs::core::Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    mhs::core::Material copper;
+    copper.name = "copper";
+    copper.kx = copper.ky = copper.kz = "400";
+    io.materials["copper"] = copper;
+
+    // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
+    mhs::core::Boundary boundary;
+    boundary.name = "bc_time_dep";
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
+    boundary.first.temperature = "500 + 100*t";
+    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    io.boundaries.push_back(boundary);
+
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int N = model->cells.cell_count;
+    std::vector<double> cell_T(N, 400.0);
+
+    int node_ny = model->mesh.ny + 1;
+    int node_nz = model->mesh.nz + 1;
+    // z=0 面的中心节点 (vx=1, vy=1, vz=0)
+    int node_idx = 1 * node_ny * node_nz + 1 * node_nz + 0;
+
+    // t=0 时刻：500 + 100*0 = 500
+    auto node_T_0 = mhs::post::interpolate_cell_to_node(*model, cell_T, 0.0);
+    EXPECT_NEAR(node_T_0[node_idx], 500.0, 1e-6)
+        << "At t=0, time-dependent Dirichlet should evaluate to 500";
+
+    // t=10 时刻：500 + 100*10 = 1500
+    auto node_T_10 = mhs::post::interpolate_cell_to_node(*model, cell_T, 10.0);
+    EXPECT_NEAR(node_T_10[node_idx], 1500.0, 1e-6)
+        << "At t=10, time-dependent Dirichlet should evaluate to 1500";
+
+    // 旧实现下两个时刻结果相等；修复后差异必须严格为 1000
+    EXPECT_NEAR(node_T_10[node_idx] - node_T_0[node_idx], 1000.0, 1e-6)
+        << "Time must actually flow through the Dirichlet eval";
 }

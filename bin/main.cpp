@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Simulation complete. {} cells computed.", solution.size());
 
         // Postprocess
-        auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution);
+        auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution, scheduler.currentTime());
 
         // Write outputs
         mhs::io::write_vtu(output_vtu, *model, node_temperature);

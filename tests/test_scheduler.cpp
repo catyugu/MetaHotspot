@@ -316,3 +316,90 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
         EXPECT_NEAR(v, 500.0, 1e-6) << "z0 probe on Dirichlet face must stay at 500K";
     }
 }
+
+TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
+{
+    // Regression: ProbeRecorder::sample_one 之前把 FieldContext.t 硬编码成 0.0，
+    // 导致时间依赖的 BC 表达式在 t>0 时被错误求值。本测试在 z=0 面上用
+    // 时间依赖 Dirichlet "500 + 100*t"，跑 5 步瞬态 (dt=1)，验证每步末的
+    // 探针温度严格等于 500 + 100*t，而非恒为 500。
+    mhs::core::IOStructure io;
+    io.study_type = mhs::core::StudyType::Transient;
+    io.dimension = mhs::core::Dimension::Dimension3D;
+    io.length_unit = mhs::core::LengthUnit::Mm;
+    io.initial_temperature = 300.0;
+    io.ambient_temperature = 300.0;
+
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 5.0, 10.0};
+    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+
+    mhs::core::Layer layer;
+    layer.name = "l";
+    layer.is_top_layer = true;
+    layer.thickness_expr = "10";
+    mhs::core::Block block;
+    block.name = "b";
+    block.material_name = "copper";
+    block.ti_reyuan_expr = "0";
+    block.is_normal_material = true;
+    mhs::core::Rect rect;
+    rect.add_sub = true;
+    rect.x_expr = "0";
+    rect.y_expr = "0";
+    rect.width_expr = "10";
+    rect.height_expr = "10";
+    block.all_rects.push_back(rect);
+    layer.blocks.push_back(block);
+    io.layers.push_back(layer);
+
+    mhs::core::Material mat;
+    mat.name = "copper";
+    mat.kx = mat.ky = mat.kz = "400";
+    io.materials["copper"] = mat;
+
+    io.transient_duration = 5.0;
+    io.transient_time_step = 1.0;
+
+    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
+    io.other_bc_second.heat_flux = "0";
+
+    // Dirichlet 探针位于 z=0 面中心；BC 表达式随时间线性增长
+    mhs::core::ObservationPoint3D op;
+    op.name = "z0_dirichlet";
+    op.x = "5";
+    op.y = "5";
+    op.z = "0";
+    io.observation_points.push_back(op);
+
+    mhs::core::Boundary boundary;
+    boundary.name = "bc_z0_time_dep";
+    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
+    boundary.first.temperature = "500 + 100*t";
+    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    io.boundaries.push_back(boundary);
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    Scheduler scheduler;
+    scheduler.setModel(model.get());
+    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.run();
+
+    const auto& traces = scheduler.probeTraces();
+    ASSERT_EQ(traces.size(), 1u);
+    const auto& tr = traces[0];
+    ASSERT_EQ(tr.times.size(), 6u); // t=0 + 5 步末
+    ASSERT_EQ(tr.values.size(), 6u);
+
+    // 每步的时间值必须满足 T(t) = 500 + 100*t。旧实现把 t 写死 0，
+    // 会让 tr.values 恒为 500.0；修复后必须随时间线性增长。
+    for (size_t i = 0; i < tr.times.size(); ++i) {
+        double expected = 500.0 + 100.0 * tr.times[i];
+        EXPECT_NEAR(tr.values[i], expected, 1e-6)
+            << "Time-dependent Dirichlet eval failed at t=" << tr.times[i]
+            << " (expected " << expected << ", got " << tr.values[i] << ")";
+    }
+}

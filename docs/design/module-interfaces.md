@@ -177,12 +177,17 @@ namespace mhs::sim {
         void setSolver(std::unique_ptr<LinearSolver> solver);
         void run();
         const std::vector<double>& solution() const;
+        // 求解结束时的当前时刻（稳态恒为 0.0；瞬态为最后一个步末的时间）。
+        // postprocessor 调 FieldContext.t 时需要此值。
+        double currentTime() const;
         // 探针温度时间序列：与 model.observation_points 一一对应。
         // 仅 (Transient && !observation_points.empty()) 时非空；每个 trace 长度 = 步数 + 1（含 t=0）。
         const std::vector<mhs::core::ProbeTrace>& probeTraces() const;
     };
 
     // 探针局部采样与时序记录器，专属于 Scheduler。仅依赖 mhs::core。
+    // `record(time, ...)` 把 `time` 透传到 `sample_one` 的 FieldContext.t，
+    // 使时间依赖的 BC / 材料表达式（如 "500 + 100*t"）在正确的时刻被求值。
     class ProbeRecorder {
     public:
         void initialize(const mhs::core::InternalModel& model);
@@ -209,9 +214,12 @@ namespace mhs::sim {
 
 ```cpp
 namespace mhs::post {
+    // `time` 注入 FieldContext.t，使时间依赖的 BC 表达式在正确的时刻被求值。
+    // 稳态场景传 0.0 即可；瞬态由调用方提供当前求解时刻。
     std::vector<double> interpolate_cell_to_node(
         const mhs::core::InternalModel& model,
-        const std::vector<double>& cell_temperature);
+        const std::vector<double>& cell_temperature,
+        double time);
 
     double max_temperature(const std::vector<double>& T);
     double min_temperature(const std::vector<double>& T);
