@@ -28,7 +28,7 @@ namespace mhs::core {
 namespace mhs::core {
     class CompiledExpression {
     public:
-        CompiledExpression() = default;                    // = make_constant(0.0)
+        CompiledExpression();                          // = make_constant(0.0)
         CompiledExpression(const CompiledExpression&) = default;
         CompiledExpression& operator=(const CompiledExpression&) = default;
         CompiledExpression(CompiledExpression&&) noexcept = default;

@@ -12,12 +12,12 @@ MetaHotspot/
 ├── src/
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::core (子组织)     exprtk 封装, CompiledExpression
-│   ├── common/                  # mhs::core / mhs::logger, mesh_utils. probe_recorder 等工具库
+│   ├── common/                  # mhs::logger, mhs::utils (mesh_utils + sample_point)
 │   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
 │   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
-│   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度
+│   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度，ProbeRecorder
 │   └── postprocessor/           # mhs::post (子组织)     单元→节点插值
 ├── tests/                       # GTest, 每模块一个套件
 └── bin/                         # 主程序入口
@@ -72,17 +72,18 @@ namespace mhs::logger {
 
 ## 2D 支持
 
-**不支持。** `mhs::core::Dimension::Dimension2D` 在预处理阶段 `panic`。简化面 DOF 分支。
+**不支持。** `mhs::core::Dimension::Dimension2D` 在 IO 解析阶段会被赋值，但预处理阶段未实现 2D 网格构建，会导致路径异常。当前只支持 `Dimension3D`。
 
 ## 命名空间
 
 | 命名空间      | 源目录                                                                  | 角色                                     |
 | ------------- | ----------------------------------------------------------------------- | ---------------------------------------- |
 | `mhs`         | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
-| `mhs::core`   | `common/`（除 logger）+ `expr/`                                         | 数据模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::core`   | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`  | `common/mesh_utils.hpp`、`common/sample_point.{hpp,cpp}`                | 面法向查表、3D 局部采样辅助              |
 | `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
 | `mhs::io`     | `io/`                                                                   | XML I/O、VTU 输出                        |
 | `mhs::post`   | `postprocessor/`                                                        | 单元→节点插值、导出场                    |
-| `mhs::logger` | `common/logger.{hpp,cpp}`                                               | 独立日志服务（不并入 core）              |
+| `mhs::logger` | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

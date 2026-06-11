@@ -79,8 +79,14 @@ XML
 
 不可恢复错误经 `MHS_LOG_ERROR` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/exprtk 的 `std::exception` 并转 panic — 边界 entry 必需。
 
-### 8. 各向异性热导率 — 面法向匹配与后处理退化
+### 8. 各向异性热导率 — 面法向匹配与后处理距离权重
 
-`MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和梯度外推时使用三轴算术平均 `(kx+ky+kz)/3` 作为反距离权重，以避免对单一方向的偏置。详见 ADR-0006。
+`MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和面中心外推权重中使用各向异性逆距离
+
+```text
+w = 1 / (dx²/kx + dy²/ky + dz²/kz)
+```
+
+以使 k 大的方向传播得快的影响更显著，与扩散方程的各向异性一致。
 
 `k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/mesh_utils.hpp`（`mhs::utils` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。

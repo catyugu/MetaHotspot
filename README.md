@@ -34,7 +34,7 @@
 - **solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver, PardisoSolver}`。
 - **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由本模块**自己持有**，调用方无 cfg 入参；`Scheduler` 在每个时间步内调用 `nonlinear_solve` 直到收敛或达到模块内部的迭代上限。
 - **scheduler**（领域 `mhs::sim`）：调度完整的求解流程，时间步推进。`mhs::sim::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `InternalModel` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `nonlinear` 模块自管。
-- **postprocessor**（领域 `mhs::post`）：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::post::Postprocessor`。
+- **postprocessor**（领域 `mhs::post`）：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::post::interpolate_cell_to_node` / `max_temperature` / `min_temperature`（自由函数，非 class）。
 
 ### 工具模块
 

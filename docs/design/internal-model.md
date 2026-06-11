@@ -7,9 +7,7 @@
 ```cpp
 struct MeshGeometry {
     int nx = 0, ny = 0, nz = 0;
-    int total_cell_count = 0;            // nx * ny * nz
 
-    std::vector<double> vertex_x, vertex_y, vertex_z;   // sizes nx+1, ny+1, nz+1
     std::vector<double> dx, dy, dz;                    // sizes nx, ny, nz
     std::vector<double> cx, cy, cz;                    // sizes nx, ny, nz (centers)
 };
@@ -61,12 +59,11 @@ struct BCParamTable {
 
 ```cpp
 struct GlobalState {
-    int    cell_count    = 0;     // = N_active
     double current_time  = 0.0;
     int    time_step     = 0;
     double dt            = 0.0;   // current transient step size
 
-    std::vector<double> T;
+    std::vector<double> T;          // 长度 = N_active
     std::vector<double> T_prev;
     std::vector<double> residual;
 };
@@ -88,6 +85,7 @@ struct InternalModel {
     StudyType study_type = StudyType::Steady;
     double transient_duration    = 0.0;
     double transient_time_step   = 1.0;
+    std::vector<ProbePoint> observation_points;
 };
 ```
 

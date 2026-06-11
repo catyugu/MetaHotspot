@@ -64,7 +64,23 @@ struct Material { std::string name;
 // 元数据
 enum class StudyType  { Steady, Transient };
 enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
-enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 在预处理 panic
+enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 当前未实现，预处理不读取
+
+// 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 exprtk 表达式形式给出
+// （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
+struct ObservationPoint3D {
+    std::string name;
+    std::string x;
+    std::string y;
+    std::string z;
+};
+
+// 探针温度时间序列：与 ObservationPoint3D::name 一一对应。
+struct ProbeTrace {
+    std::string name;
+    std::vector<double> times;
+    std::vector<double> values;
+};
 
 struct IOStructure {
     StudyType  study_type;
@@ -89,6 +105,9 @@ struct IOStructure {
 
     std::vector<double> mesh_vertex_x, mesh_vertex_y, mesh_vertex_z;
     std::unordered_map<std::string, Function> functions;
+
+    // 3D 观察点（探针）列表，默认空：稳态 case 不会有此项。
+    std::vector<ObservationPoint3D> observation_points;
 };
 
 } // namespace mhs::core
@@ -137,8 +156,7 @@ struct PieceWiseFunction {
 };
 
 struct Function {
-    std::string key;
-    FunctionType type;
+    FunctionType type = FunctionType::Expression;
     ExpressionFunction expression;
     DoubleExponentialFunction double_exp;
     GaussFunction gauss;
@@ -187,8 +205,6 @@ Face|Direction|CoordValue|RectList
 - **单表达式**（如 `DaoreXishu>100</DaoreXishu>`）→ `kx = ky = kz = "100"`，退化为各向同性。
 - **三表达式**（`DaoreXishu>kx_expr, ky_expr, kz_expr</DaoreXishu>`）→ 按逗号分隔（容忍空白）分别赋给 `kx / ky / kz`。
 - 其它段数（2 段、4 段及以上）经 `MHS_LOG_ERROR` panic。
-
-> 设计动机与边界面取值策略见 ADR-0006。
 
 ### Block 不含 Z 字段
 

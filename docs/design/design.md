@@ -30,4 +30,4 @@
 6. SoA 贯穿内部模型
 7. expr 预编译，`eval()` 锁无关
 8. 复杂形式用 native function — `register_native()` 注册 C++ 函数字段
-9. **不支持 2D** — `Dimension::Dimension2D` 在预处理阶段 `panic`
+9. **不支持 2D** — `Dimension::Dimension2D` 在 IO 解析阶段会被赋值，但预处理阶段未实现 2D 网格构建。

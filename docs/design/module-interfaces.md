@@ -63,7 +63,8 @@ void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
                        const mhs::core::SecondTypeThermalBC& other_bc_second,
                        const mhs::core::ThirdTypeThermalBC&  other_bc_third,
                        const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
-                       mhs::core::BCParamTable& bc_params, double si_scale);
+                       mhs::core::BCParamTable& bc_params, double si_scale,
+                       const std::function<std::string(const std::string&)>& rewriter);
 ```
 
 ### 预处理流程
@@ -100,7 +101,7 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::core` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
+`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
@@ -133,6 +134,8 @@ namespace mhs::sim {
         virtual ~LinearSolver() = default;
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
                                   const Eigen::VectorXd& b) = 0;
+        // 在 solve() 之前注入配置（如 BiCGSTAB 的容差 / 迭代上限）。
+        virtual void set_config(const SolverConfig& cfg) = 0;
         static std::unique_ptr<LinearSolver> create(SolverType type);
     };
 

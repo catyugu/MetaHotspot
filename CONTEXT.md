@@ -13,7 +13,7 @@
 
 ## 网格
 
-结构化 3D `nx × ny × nz`。**不支持 Dimension2D**（panic）。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
+结构化 3D `nx × ny × nz`。**当前不支持 Dimension2D**（IO 会解析但预处理未实现 2D 路径）。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
 
 ## 边界条件（cell-level，ADR-0005）
 
@@ -23,7 +23,7 @@
 | SecondType | `-k ∂T/∂n = q₀`         | 累入 RHS：`Σ q·A_face`          |
 | ThirdType  | `-k ∂T/∂n = h(T − T_∞)` | 对角 `h·A` 系数 + RHS `h·A·T_∞` |
 
-> 各项异性 `k`（ADR-0006）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
+> 各项异性 `k`（ADR-0005 cell-level-bc 中讨论）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
 
 `other_bc` 在预处理阶段填到所有未显式指定的面 + 虚拟邻居面。
 
@@ -67,7 +67,7 @@ XML → core::IOStructure via io::read_xml
 8. 无虚函数（`mhs::sim::LinearSolver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
 9. POD / 纯函数优先
 
-## 命名空间速查（领域驱动，ADR-0007）
+## 命名空间速查（领域驱动）
 
 命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
