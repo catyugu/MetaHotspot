@@ -1,71 +1,75 @@
+"""Run all registered test cases and compare results against their references.
+
+Cases are registered as a list of (case_dir, results_subdir, kind) tuples,
+where kind is "steady" or "transient".
+Thresholds live in compare_lib.py — they are the regression bar, not a
+per-invocation knob.
+
+The case group list is the single source of truth for what exists; both the
+metahotspot runs and the comparisons iterate it.
+"""
+
 import os
 import subprocess
 import sys
 
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
+EXE = os.path.join(REPO_ROOT, "build", "bin", "metahotspot.exe")
 
-def announce(msg):
-    print(msg, flush=True)
+# (case_dir, results_subdir, kind)
+CASE_GROUPS = [
+    ("cases/simple_steady_tests", "simple_steady_tests", "steady"),
+    ("cases/nonlinear_steady_tests", "nonlinear_steady_tests", "steady"),
+    ("cases/simple_transient_tests", "simple_transient_tests", "transient"),
+]
+
+
+def _run_one(input_path, vtu_path, xml_path):
+    print(f">>> Running {os.path.basename(input_path)}", flush=True)
+    subprocess.run([EXE, input_path, vtu_path, xml_path], check=False)
+
+
+def _run_group(case_dir, results_subdir, _kind=""):
+    if not os.path.isdir(case_dir):
+        return
+    os.makedirs(os.path.join("results", results_subdir), exist_ok=True)
+    for case_file in sorted(f for f in os.listdir(case_dir) if f.endswith(".xml")):
+        case_name = case_file[:-4]
+        _run_one(
+            os.path.join(case_dir, case_file),
+            os.path.join("results", results_subdir, f"{case_name}_output.vtu"),
+            os.path.join("results", results_subdir, f"{case_name}_output.xml"),
+        )
+
+
+def _compare_group(case_dir, results_subdir, kind):
+    if not os.path.isdir(case_dir):
+        return True
+    return (
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "compare_lib.py"),
+                os.path.join(REPO_ROOT, case_dir),
+                os.path.join(REPO_ROOT, "results", results_subdir),
+                kind,
+            ],
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def main():
-    # ==============================================================================
-    # 稳态 case 系列：与原版完全一致
-    # ==============================================================================
-    announce(">>> Running steady case: case1")
-    subprocess.run(
-        [
-            "build/bin/metahotspot.exe",
-            "./cases/simple_steady_tests/case1.xml",
-            "./results/simple_steady_tests/case1_output.vtu",
-            "./results/simple_steady_tests/case1_output.xml",
-        ]
-    )
-    announce(">>> Running steady case: case2")
-    subprocess.run(
-        [
-            "build/bin/metahotspot.exe",
-            "./cases/simple_steady_tests/case2.xml",
-            "./results/simple_steady_tests/case2_output.vtu",
-            "./results/simple_steady_tests/case2_output.xml",
-        ]
-    )
-    announce(">>> Running steady case: case3")
-    subprocess.run(
-        [
-            "build/bin/metahotspot.exe",
-            "./cases/simple_steady_tests/case3.xml",
-            "./results/simple_steady_tests/case3_output.vtu",
-            "./results/simple_steady_tests/case3_output.xml",
-        ]
-    )
+    for group in CASE_GROUPS:
+        _run_group(*group)
 
-    # ==============================================================================
-    # 瞬态 case 系列：观察点探针 + 末步温度场
-    # ==============================================================================
-    transient_dir = "./cases/simple_transient_tests"
-    if os.path.isdir(transient_dir):
-        # 在调用前确保 results 目录存在
-        os.makedirs("./results/simple_transient_tests", exist_ok=True)
-
-        for case_file in sorted(os.listdir(transient_dir)):
-            if not case_file.endswith(".xml"):
-                continue
-            case_name = case_file[:-4]  # strip ".xml"
-            input_path = os.path.join(transient_dir, case_file)
-            vtu_path = f"./results/simple_transient_tests/{case_name}_output.vtu"
-            xml_path = f"./results/simple_transient_tests/{case_name}_output.xml"
-            announce(f">>> Running transient case: {case_name}")
-            subprocess.run(
-                [
-                    "build/bin/metahotspot.exe",
-                    input_path,
-                    vtu_path,
-                    xml_path,
-                ]
-            )
-    os.system("python ./scripts/compare_steady_results.py")
-    os.system("python ./scripts/compare_transient_results.py")
+    all_ok = True
+    for group in CASE_GROUPS:
+        all_ok &= _compare_group(*group)
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -69,13 +69,38 @@ def extract_field(xml_path):
     return parse_doubles(data), size
 
 
-def compare_field(ref_vals, out_vals, threshold):
-    """Compare two flat value arrays index-by-index. Return (max, mean, over, total) or None on length mismatch."""
+VALID_ABS_LIMIT = 1e10
+
+
+def valid_values(vals):
+    """Filter out NaN and unphysically-large values; used for diagnostic min/max."""
+    return [v for v in vals if not math.isnan(v) and abs(v) < VALID_ABS_LIMIT]
+
+
+def index_to_position(idx, size):
+    """Convert flat index to (vx, vy, vz) for layout index = vz + SizeZ*vy + SizeZ*SizeY*vx."""
+    sx, sy, sz = size
+    if sy <= 0 or sz <= 0:
+        return (idx, 0, 0)
+    vx = idx // (sy * sz)
+    vy = (idx // sz) % sy
+    vz = idx % sz
+    return (vx, vy, vz)
+
+
+def compare_field(ref_vals, out_vals, threshold, keep_worst=False):
+    """Compare two flat value arrays index-by-index.
+
+    Returns (max, mean, over, total, worst) on success, or None on length mismatch.
+    `worst` is a list of (idx, ref, out, err) tuples for entries exceeding
+    threshold, sorted by error descending. Empty when keep_worst=False.
+    """
     if len(ref_vals) != len(out_vals):
         return None
     errs = []
     over = 0
-    for r, o in zip(ref_vals, out_vals):
+    worst = [] if keep_worst else None
+    for i, (r, o) in enumerate(zip(ref_vals, out_vals)):
         if math.isnan(r) and math.isnan(o):
             continue
         if math.isnan(r) or math.isnan(o):
@@ -84,6 +109,10 @@ def compare_field(ref_vals, out_vals, threshold):
         errs.append(e)
         if e > threshold:
             over += 1
+            if worst is not None:
+                worst.append((i, r, o, e))
+    if worst is not None:
+        worst.sort(key=lambda x: x[3], reverse=True)
     if not errs:
-        return 0.0, 0.0, 0, 0
-    return max(errs), sum(errs) / len(errs), over, len(errs)
+        return 0.0, 0.0, 0, 0, worst or []
+    return max(errs), sum(errs) / len(errs), over, len(errs), worst or []
