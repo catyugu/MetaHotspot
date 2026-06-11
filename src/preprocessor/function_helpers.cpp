@@ -17,14 +17,15 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
     {
-
         auto ce = mhs::core::parse(inner_expr);
-        return [ce](const std::vector<double>& /*args*/, const mhs::core::FieldContext& ctx) {
+        return [ce](const std::vector<double>& args, const mhs::core::FieldContext& ctx) {
             mhs::core::FieldContext effective_ctx = ctx;
+            if (!args.empty()) {
+                effective_ctx.x = args[0];
+            }
             return ce.eval(effective_ctx);
         };
     }
-
     mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
         return [A, alpha, beta](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
