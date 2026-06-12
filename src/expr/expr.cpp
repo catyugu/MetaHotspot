@@ -1,10 +1,9 @@
 // src/expr/expr.cpp
 #include "expr.hpp"
-#define exprtk_disable_caseinsensitivity
 #include <tbb/enumerable_thread_specific.h>
 
-#include <exprtk/exprtk.hpp>
 #include <memory>
+#include <muParser.h>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -38,65 +37,71 @@ namespace mhs::core {
         }
     } // namespace detail
 
-    template <typename T> class NativeFn : public exprtk::ivararg_function<T> {
-    public:
-        // 构造时注入当前 TLS 专属的上下文指针
-        explicit NativeFn(FieldEvaluator fe, const FieldContext* ctx_ptr)
-            : exprtk::ivararg_function<T>() // 启用变长/多参数支持
-            , fe_(std::move(fe))
-            , ctx_ptr_(ctx_ptr)
-        {
-        }
-
-        // 当 ExprTk 计算诸如 test(sine(x), y) 时，会先独立算出 sine(x) 和 y，
-        // 然后打包成 args 传入这个重载函数。
-        T operator()(const std::vector<T>& args) override
-        {
-            // 直接将 ExprTk 求值的参数与当前的物理上下文结合，传给用户回调
-            return static_cast<T>(fe_(args, *ctx_ptr_));
-        }
-
-    private:
-        FieldEvaluator fe_;
-        const FieldContext* ctx_ptr_;
+    // Bridge state carried alongside every native function registration.
+    // muparser hands us a void* to this struct on every native call.
+    struct NativeFnCtx {
+        FieldEvaluator fe;
+        const FieldContext* ctx_ptr;
     };
 
-    class ExprTKCompiled {
+    // Bridge entry: muparser evaluates each argument independently, then calls this
+    // with (user_data, args_array, nargs). We pack the args back into a vector and
+    // forward to the user's FieldEvaluator together with the current TLS context.
+    static double native_fn_bridge(void* pUserData, const mu::value_type* args, int nargs)
+    {
+        auto* ctx = static_cast<NativeFnCtx*>(pUserData);
+        std::vector<double> args_vec(args, args + nargs);
+        return ctx->fe(args_vec, *ctx->ctx_ptr);
+    }
+
+    class MuCompiled {
     public:
-        explicit ExprTKCompiled(const std::string& formula)
+        explicit MuCompiled(const std::string& formula)
         {
-            using namespace exprtk;
+            // Bind x/y/z/T/t to the addresses of current_ctx_ — muparser dereferences
+            // the pointer on every Eval(), so writing current_ctx_ before Eval() updates
+            // all five variables in one shot, just like the muparser symbol table did.
+            parser_.DefineVar("x", &current_ctx_.x);
+            parser_.DefineVar("y", &current_ctx_.y);
+            parser_.DefineVar("z", &current_ctx_.z);
+            parser_.DefineVar("T", &current_ctx_.T);
+            parser_.DefineVar("t", &current_ctx_.t);
 
-            sym_table_ = std::make_unique<symbol_table<double>>();
-            expr_ = std::make_unique<expression<double>>();
-
-            sym_table_->add_variable("x", current_ctx_.x);
-            sym_table_->add_variable("y", current_ctx_.y);
-            sym_table_->add_variable("z", current_ctx_.z);
-            sym_table_->add_variable("T", current_ctx_.T);
-            sym_table_->add_variable("t", current_ctx_.t);
+            // muparser exposes pi/e as _pi/_e by default. Re-export under the familiar names
+            // (matching exprtk's behavior) so existing expressions keep working.
+            parser_.DefineConst("pi", mu::MathImpl<mu::value_type>::CONST_PI);
+            parser_.DefineConst("e", mu::MathImpl<mu::value_type>::CONST_E);
 
             {
                 std::lock_guard<std::mutex> lock(detail::mutex());
                 for (const auto& [name, fe] : detail::native_functions()) {
-                    auto slot = std::make_shared<NativeFn<double>>(fe, &current_ctx_);
+                    auto slot = std::make_shared<NativeFnCtx>();
+                    slot->fe = fe;
+                    slot->ctx_ptr = &current_ctx_;
                     native_slots_[name] = slot;
-                    // 强制路由至独立的变参函数存储区
-                    sym_table_->add_reserved_function(name, *slot);
+                    // muparser requires user data pointer to be non-null; our slot is.
+                    parser_.DefineFunUserData(name, &native_fn_bridge, slot.get(), false);
                 }
             }
 
-            expr_->register_symbol_table(*sym_table_);
-
-            parser<double> parser;
-            valid_ = parser.compile(formula, *expr_);
+            try {
+                parser_.SetExpr(formula);
+                // Force compilation up front so the caller learns about syntax errors
+                // synchronously, mirroring the old `parser.compile(...)` bool contract.
+                (void)parser_.Eval();
+                valid_ = true;
+            }
+            catch (const mu::ParserError&) {
+                valid_ = false;
+            }
         }
 
-        // 删除移动和拷贝构造，确保 current_ctx_ 内存地址绝对稳定，防止 ExprTk 野指针
-        ExprTKCompiled(const ExprTKCompiled&) = delete;
-        ExprTKCompiled& operator=(const ExprTKCompiled&) = delete;
-        ExprTKCompiled(ExprTKCompiled&&) = delete;
-        ExprTKCompiled& operator=(ExprTKCompiled&&) = delete;
+        // Disable copy/move to guarantee current_ctx_'s address is stable — same
+        // contract as before, since native slots hold a raw `FieldContext*`.
+        MuCompiled(const MuCompiled&) = delete;
+        MuCompiled& operator=(const MuCompiled&) = delete;
+        MuCompiled(MuCompiled&&) = delete;
+        MuCompiled& operator=(MuCompiled&&) = delete;
 
         bool valid() const { return valid_; }
 
@@ -104,30 +109,33 @@ namespace mhs::core {
         {
             if (!valid_)
                 return 0.0;
-
-            // 每次求值前，只更新这一个结构体。
-            // ExprTk 的 symbol_table 因为引用绑定，会自动读到最新值；
-            // 嵌套的 NativeFn 也会通过指针读到它。
             current_ctx_ = ctx;
-            return expr_->value();
+            try {
+                return parser_.Eval();
+            }
+            catch (const mu::ParserError&) {
+                return 0.0;
+            }
         }
 
     private:
         bool valid_ = true;
-        FieldContext current_ctx_; // 统一的 TLS 上下文状态
+        FieldContext current_ctx_; // single TLS-backing state for x/y/z/T/t
 
-        std::unique_ptr<exprtk::symbol_table<double>> sym_table_;
-        std::unique_ptr<exprtk::expression<double>> expr_;
-        std::unordered_map<std::string, std::shared_ptr<NativeFn<double>>> native_slots_;
+        mu::Parser parser_;
+        // Heap-allocated so the address we hand to DefineFunUserData stays valid even
+        // if `this` moves — though we delete move ops, the slot's identity is independent.
+        std::unordered_map<std::string, std::shared_ptr<NativeFnCtx>> native_slots_;
     };
 
-    // TLS 包装器：确保每个访问表达式的线程都能获得一个独立的 AST。
-    // 使用 std::unique_ptr 确保内部的 ExprTKCompiled 在移动时不改变内存地址。
-    struct ExprTKCompiledTLS {
-        tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>> tls;
+    // TLS wrapper: each thread that touches this expression gets its own MuCompiled.
+    // unique_ptr keeps the AST heap address stable across ETS growth, and the formula
+    // string is captured by value so the wrapper has no external lifetime dependency.
+    struct MuCompiledTLS {
+        tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>> tls;
 
-        explicit ExprTKCompiledTLS(const std::string& formula)
-            : tls([formula]() { return std::make_unique<ExprTKCompiled>(formula); })
+        explicit MuCompiledTLS(const std::string& formula)
+            : tls([formula]() { return std::make_unique<MuCompiled>(formula); })
         {
         }
     };
@@ -142,7 +150,7 @@ namespace mhs::core {
             return const_val_;
         if (!tls_impl_)
             return 0.0;
-        // 无锁获取当前线程的专属 AST 副本进行求值
+        // Lock-free grab of this thread's dedicated AST
         return tls_impl_->tls.local()->eval(ctx);
     }
 
@@ -158,7 +166,7 @@ namespace mhs::core {
     {
         CompiledExpression e;
         e.is_const_ = false;
-        e.tls_impl_ = std::make_shared<ExprTKCompiledTLS>(formula);
+        e.tls_impl_ = std::make_shared<MuCompiledTLS>(formula);
         return e;
     }
 
@@ -200,9 +208,9 @@ namespace mhs::core {
             return CompiledExpression::make_constant(val);
         }
 
-        // 主线程进行一次试编译，尽早捕获语法错误
+        // Main-thread trial compile: catch syntax errors early
         {
-            ExprTKCompiled test_compile(formula);
+            MuCompiled test_compile(formula);
             if (!test_compile.valid()) {
                 return CompiledExpression::make_constant(0.0);
             }
@@ -220,26 +228,24 @@ namespace mhs::core {
             return var_it->second;
         }
 
-        using namespace exprtk;
-        expression<double> exprtk_expr;
-        symbol_table<double> sym_table;
-
+        mu::Parser parser;
         std::vector<std::pair<std::string, double>> active_vars;
         active_vars.reserve(vars.size());
 
         for (const auto& [name, val] : vars) {
             if (formula.find(name) != std::string::npos) {
                 active_vars.emplace_back(name, val);
-                sym_table.add_variable(active_vars.back().first, active_vars.back().second);
+                parser.DefineVar(active_vars.back().first, &active_vars.back().second);
             }
         }
 
-        exprtk_expr.register_symbol_table(sym_table);
-        parser<double> parser;
-        if (parser.compile(formula, exprtk_expr)) {
-            return exprtk_expr.value();
+        try {
+            parser.SetExpr(formula);
+            return parser.Eval();
         }
-        return 0.0;
+        catch (const mu::ParserError&) {
+            return 0.0;
+        }
     }
 
 } // namespace mhs::core

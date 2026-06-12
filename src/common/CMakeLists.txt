@@ -5,5 +5,4 @@ target_link_libraries(common_lib
 )
 target_include_directories(common_lib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>
 )

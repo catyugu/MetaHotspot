@@ -36,7 +36,7 @@
 
 `FieldContext` / `FieldEvaluator` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
 
-**线程模型**：注册表变动互斥锁；`parse()` 主线程持锁试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 ExprTK AST。
+**线程模型**：注册表变动互斥锁；`parse()` 主线程持锁试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。
 
 复杂形式用 `register_native(name, FieldEvaluator)` 注册 C++ 函数字段。`IOStructure.functions` 是当前 native 入口。
 

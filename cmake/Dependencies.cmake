@@ -19,7 +19,22 @@ CPMAddPackage(
     "BUILD_TESTING OFF"
 )
 
-# exprtk - header-only, local copy in external/exprtk/exprtk.hpp (no CPM needed)
+# muparser - mathematical expression parser (https://github.com/beltoforion/muparser)
+CPMAddPackage(
+    NAME muparser
+    GITHUB_REPOSITORY beltoforion/muparser
+    GIT_TAG v2.3.5
+    OPTIONS
+    "ENABLE_SAMPLES OFF"
+    "ENABLE_OPENMP OFF"
+    "BUILD_SHARED_LIBS OFF"
+    "BUILD_TESTING OFF"
+)
+# muparser's GLOB_RECURSE picks up its own muParserTest.cpp which fails under
+# our -Werror / -Wunused-parameter. Relax warnings for that target only.
+if(TARGET muparser)
+    target_compile_options(muparser PRIVATE -Wno-unused-parameter -Wno-error)
+endif()
 
 # tinyxml2
 CPMAddPackage(

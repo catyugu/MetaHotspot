@@ -38,7 +38,7 @@
 
 ### 工具模块
 
-- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 exprtk。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, ExprTKCompiled, register_native, make_constant, make_evaluator, eval, ...}`。
+- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 muparser。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, MuCompiled, register_native, make_constant, make_evaluator, eval, ...}`。
 
 ### 数据流
 
@@ -89,7 +89,7 @@ flowchart TD
 - **CPM**：用于引入其余依赖项。
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
 - **spdlog**：结构化、快速的日志记录，支持多种接收器（控制台、文件、系统日志）。由 `common` 模块（`mhs::logger`）封装。
-- **exprtk**：数学表达式解析和即时编译。由 `expr` 用于评估用户定义的函数、材料律、边界条件。
+- **muparser**：数学表达式解析和即时编译。由 `expr` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：线性代数核心：稠密向量、稀疏矩阵（Eigen::SparseMatrix），以及内置求解器（SparseLU、ConjugateGradient、BiCGSTAB），可通过 `solver` 工厂选择。同时提供 SIMD 向量化和无矩阵功能。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。

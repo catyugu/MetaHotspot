@@ -42,7 +42,7 @@ XML
 | 预处理-虚拟单元   | mesh + 层几何                         | `valid_mask` + `index_map` | full-grid；标记 + 紧凑映射                               |
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`              | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                               |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | exprtk 或 `make_constant`                                |
+| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | muparser 或 `make_constant`                              |
 | 组装              | `InternalModel` + `GlobalState`       | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
 | 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                      |
 | 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                                 |
@@ -77,7 +77,7 @@ XML
 
 ### 7. 无异常，panic 退出
 
-不可恢复错误经 `MHS_LOG_ERROR` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/exprtk 的 `std::exception` 并转 panic — 边界 entry 必需。
+不可恢复错误经 `MHS_LOG_ERROR` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/muparser 的 `std::exception` 并转 panic — 边界 entry 必需。
 
 ### 8. 各向异性热导率 — 面法向匹配与后处理距离权重
 

@@ -13,5 +13,4 @@ endif()
 target_link_libraries(linear_solver_lib PUBLIC Eigen3::Eigen)
 target_include_directories(linear_solver_lib PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/external>
 )

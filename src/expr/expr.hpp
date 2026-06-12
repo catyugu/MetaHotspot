@@ -20,11 +20,11 @@ namespace mhs::core {
 
     using FieldEvaluator = std::function<double(const std::vector<double>& args, const FieldContext& ctx)>;
 
-    // Internal: Thread-Local Storage wrapper for ExprTK compiled instances
-    struct ExprTKCompiledTLS;
+    // Internal: Thread-Local Storage wrapper for muparser compiled instances
+    struct MuCompiledTLS;
 
     // Precompiled expression (Copyable, thread-safe eval via TLS)
-    // Each thread accessing this expression will instantiate its own ExprTK AST on-demand.
+    // Each thread accessing this expression will instantiate its own muparser instance on-demand.
     class CompiledExpression {
     public:
         CompiledExpression();
@@ -47,7 +47,7 @@ namespace mhs::core {
     private:
         bool is_const_ = false;
         double const_val_ = 0.0;
-        std::shared_ptr<ExprTKCompiledTLS> tls_impl_;
+        std::shared_ptr<MuCompiledTLS> tls_impl_;
     };
 
     // Thread-safe registry operations (mutex-protected)

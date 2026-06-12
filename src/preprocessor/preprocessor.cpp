@@ -28,7 +28,7 @@ namespace mhs::sim {
 
         const double si_scale = length_unit_to_si(ioStructure.length_unit);
 
-        // 探针不参与方程求解：把 IO 层的 exprtk 表达式字符串求值到 SI 单位的 double。
+        // 探针不参与方程求解：把 IO 层的 muparser 表达式字符串求值到 SI 单位的 double。
         for (const auto& src : ioStructure.observation_points) {
             mhs::core::ProbePoint p;
             p.name = src.name;

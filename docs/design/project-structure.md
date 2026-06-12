@@ -7,11 +7,11 @@ MetaHotspot/
 ├── CMakeLists.txt
 ├── cmake/
 │   ├── CompilerOptions.cmake    # /W4 /WX 或 -Wall -Wextra -Wpedantic -Werror
-│   ├── Dependencies.cmake       # CPM: Eigen, spdlog, exprtk, tinyxml2, oneTBB
+│   ├── Dependencies.cmake       # CPM: Eigen, spdlog, muparser, tinyxml2, oneTBB
 │   └── config.h.in
 ├── src/
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
-│   ├── expr/                    # mhs::core (子组织)     exprtk 封装, CompiledExpression
+│   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
 │   ├── common/                  # mhs::logger, mhs::utils (mesh_utils + sample_point)
 │   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装

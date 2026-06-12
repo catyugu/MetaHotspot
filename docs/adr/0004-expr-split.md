@@ -19,13 +19,13 @@ Two separate paths.
 
 **Geometry.** Evaluated by `mhs::core::eval_geometry()` from a registry of pre-registered variables. All variables are resolved to concrete numbers *before* the expression runs. Grammar is `+ - * / ()` and numeric constants — no special functions.
 
-**Field / BC.** Handled by the `expr` module (exprtk-backed). Context: `{x, y, z, T, t}`. Material laws, BC parameters, and per-block heat sources all flow through this path.
+**Field / BC.** Handled by the `expr` module (muparser-backed). Context: `{x, y, z, T, t}`. Material laws, BC parameters, and per-block heat sources all flow through this path.
 
 ### Thread safety
 
 - Registry mutations (`set_variable`, `register_native`, `clear_registry`) and `eval_geometry` are mutex-protected.
 - `parse()` is main-thread only; it briefly takes the registry mutex while doing a one-shot trial compile (to surface syntax errors early) and returns a `CompiledExpression` handle.
-- `CompiledExpression::eval()` is **lock-free**. Internally it holds a `shared_ptr<ExprTKCompiledTLS>`, which wraps a `tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>>`. Each TBB worker thread lazily instantiates its own private ExprTK AST on first `tls.local()`; the formula string is captured by value in the ETS constructor lambda, so there is no external lifetime dependency. The `unique_ptr` element type keeps each AST's heap address stable so that the `NativeFn` slots (registered with `add_reserved_function`) keep their raw `FieldContext*` valid even when the ETS grows or the wrapper is copied. Each AST's `current_ctx_` field is written by the calling thread only on every `eval()`.
+- `CompiledExpression::eval()` is **lock-free**. Internally it holds a `shared_ptr<MuCompiledTLS>`, which wraps a `tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>>`. Each TBB worker thread lazily instantiates its own private muparser instance on first `tls.local()`; the formula string is captured by value in the ETS constructor lambda, so there is no external lifetime dependency. The `unique_ptr` element type keeps each AST's heap address stable so that the `NativeFnCtx` slots (registered with `DefineFunUserData`) keep their raw `FieldContext*` valid even when the ETS grows or the wrapper is copied. Each AST's `current_ctx_` field is written by the calling thread only on every `eval()`.
 - Constant expressions (`make_constant`) short-circuit before touching the TLS.
 
 ### Heat source dictionary
@@ -34,12 +34,12 @@ Two separate paths.
 
 ### Native functions
 
-`register_native(name, func)` registers a `FieldEvaluator` — `std::function<double(const std::vector<double>& args, const FieldContext& ctx)>` — for cases awkward to express as strings (piecewise spatial, tabulated data). When ExprTk evaluates an expression like `fn(a, b)`, it first resolves each argument independently, then passes them as a `std::vector<double>` (`args`) to the `NativeFn` bridge, which also injects the current TLS `FieldContext` pointer. They are bound into the symbol table via `add_reserved_function()` (separate storage from string-registered functions) and resolved by name during `parse()`.
+`register_native(name, func)` registers a `FieldEvaluator` — `std::function<double(const std::vector<double>& args, const FieldContext& ctx)>` — for cases awkward to express as strings (piecewise spatial, tabulated data). When muparser evaluates an expression like `fn(a, b)`, it first resolves each argument independently, then passes them as a raw `double*` + `int nargs` to the `native_fn_bridge` static, which packs them into `std::vector<double>` (`args`) and forwards to the user's `FieldEvaluator` together with the current TLS `FieldContext*`. They are bound into the parser via `DefineFunUserData()` (with a non-null `NativeFnCtx*` as user data) and resolved by name during `parse()`.
 
 ## Rationale
 
-- Geometry expressions have trivial grammar — exprtk overhead is unjustified.
-- Field/BC expressions need exprtk's full power (trig, exp, user functions, symbol table).
+- Geometry expressions have trivial grammar — muparser overhead is unjustified.
+- Field/BC expressions need muparser's full power (trig, exp, user functions, symbol table).
 - The TBB ETS pattern keeps the inner cell loop serialization-free, which matters because every nonlinear iteration re-evaluates every cell's materials, BC, and heat source.
 - Heat source deduplication is a memory win with zero semantic change.
 

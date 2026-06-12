@@ -89,7 +89,7 @@ namespace mhs::core {
     enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
     struct ExpressionFunction {
-        std::string expression; // exprtk 字符串，自变量名 `x`
+        std::string expression; // muparser 字符串，自变量名 `x`
         double draw_min_x = 0.0;
         double draw_max_x = 100.0;
     };
@@ -141,7 +141,7 @@ namespace mhs::core {
 
     enum class Dimension { Dimension2D, Dimension3D };
 
-    // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 exprtk 表达式形式给出
+    // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
     // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
     // 求解器在每个时间步记录该点温度。
     struct ObservationPoint3D {

@@ -10,8 +10,8 @@ namespace mhs::sim {
 
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
-    // 闭包对每个 ExprTk 调用的约定：
-    //   - args[0] 是用户在表达式中传入的自变量值（如 test_gaussian(T) 中 ExprTk 先求 T 再传入）
+    // 闭包对每次 muparser 调用的约定：
+    //   - args[0] 是用户在表达式中传入的自变量值（如 test_gaussian(T) 中 muparser 先求 T 再传入）
     //   - ctx 是当前物理上下文（x, y, z, T, t 的真实值），仅作为参考
     // 单变元函数族从 args[0] 读取自变量，ctx 在该族下不参与计算。
 
@@ -75,7 +75,7 @@ namespace mhs::sim {
 
     namespace {
 
-        // exprtk 内建符号（变量 + 常量），引用处出现这些名字不算"未注册函数"。
+        // muparser 内建符号（变量 + 常量），引用处出现这些名字不算"未注册函数"。
         // 仅作宽松白名单；真正的语法校验由后续 mhs::core::parse 负责。
         bool is_known_builtin(std::string_view name)
         {

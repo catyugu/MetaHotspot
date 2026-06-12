@@ -4,4 +4,3 @@ CompileFlags:
   Add:
     - -std=c++20
     - -I${workspaceFolder}/src
-    - -I${workspaceFolder}/external

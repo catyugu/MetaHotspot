@@ -76,7 +76,7 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     mhs::core::IOStructure io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.observation_points.size(), 2u);
     EXPECT_EQ(io_structure.observation_points[0].name, "p1");
-    // 坐标保留为 exprtk 表达式字符串，由 preprocessor 在加载时统一求值。
+    // 坐标保留为 muparser 表达式字符串，由 preprocessor 在加载时统一求值。
     EXPECT_EQ(io_structure.observation_points[0].x, "1.5");
     EXPECT_EQ(io_structure.observation_points[0].y, "2.5");
     EXPECT_EQ(io_structure.observation_points[0].z, "3.5");

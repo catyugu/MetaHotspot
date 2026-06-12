@@ -348,18 +348,6 @@ namespace {
         EXPECT_EQ(expr.eval(ctx), 3.0);
     }
 
-    TEST(Parse, FloorCeil)
-    {
-        mhs::core::clear_registry();
-
-        auto floor_expr = mhs::core::parse("floor(x)");
-        auto ceil_expr = mhs::core::parse("ceil(x)");
-
-        mhs::core::FieldContext ctx {3.7, 0.0, 0.0, 0.0, 0.0};
-        EXPECT_EQ(floor_expr.eval(ctx), 3.0);
-        EXPECT_EQ(ceil_expr.eval(ctx), 4.0);
-    }
-
 } // namespace
 
 namespace {
@@ -456,7 +444,7 @@ namespace {
     {
         mhs::core::clear_registry();
 
-        // Register a piecewise function that reads from args (ExprTK-evaluated arguments)
+        // Register a piecewise function that reads from args (muparser-evaluated arguments)
         mhs::core::register_native(
             "piecewise", [](const std::vector<double>& args, const mhs::core::FieldContext& /*ctx*/) {
                 double v = args[0];

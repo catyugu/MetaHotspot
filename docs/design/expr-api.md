@@ -1,6 +1,6 @@
 # expr 模块接口
 
-封装 exprtk。`src/expr/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()` 走同名注册表但语法更窄。
+封装 muparser。`src/expr/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()` 走同名注册表但语法更窄。
 
 ---
 
@@ -11,7 +11,7 @@
 ```cpp
 namespace mhs::core {
     struct FieldContext { double x = 0.0, y = 0.0, z = 0.0, T = 0.0, t = 0.0; };
-    // args = ExprTk 已先行求值好的实参列表（如 fn(a, b) 中的 a, b）；
+    // args = muparser 已先行求值好的实参列表（如 fn(a, b) 中的 a, b）；
     // ctx  = 当前物理上下文（x, y, z, T, t 的真实值），供 native 参考。
     using FieldEvaluator = std::function<double(const std::vector<double>& args,
                                                const FieldContext& ctx)>;
@@ -20,9 +20,9 @@ namespace mhs::core {
 
 ## CompiledExpression
 
-轻量句柄。可复制 / 可移动。底层 `shared_ptr<ExprTKCompiledTLS>` 包装 `tbb::enumerable_thread_specific<std::unique_ptr<ExprTKCompiled>>`——用 `unique_ptr` 包住 AST 是为了锁住 `ExprTKCompiled` 的内存地址（`NativeFn` 通过裸指针引用其 `current_ctx_` 槽，必须地址稳定）。
+轻量句柄。可复制 / 可移动。底层 `shared_ptr<MuCompiledTLS>` 包装 `tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>>`——用 `unique_ptr` 包住 AST 是为了锁住 `MuCompiled` 的内存地址（`NativeFnCtx` 通过裸指针引用其 `current_ctx_` 槽，必须地址稳定）。
 
-`ExprTKCompiled` 自身禁用拷贝/移动；构造时 `current_ctx_` 入栈、ExprTk 符号表按引用绑定 `x/y/z/T/t`，之后每次 `eval(ctx)` 仅覆写 `current_ctx_`，ExprTk 自动读到新值。
+`MuCompiled` 自身禁用拷贝/移动；构造时 `current_ctx_` 入栈、muparser 通过 `DefineVar` 按指针绑定 `x/y/z/T/t`，之后每次 `eval(ctx)` 仅覆写 `current_ctx_`，muparser 在 `Eval()` 中自动读到新值。
 
 ```cpp
 namespace mhs::core {
@@ -45,7 +45,7 @@ namespace mhs::core {
     private:
         bool is_const_ = false;
         double const_val_ = 0.0;
-        std::shared_ptr<ExprTKCompiledTLS> tls_impl_;
+        std::shared_ptr<MuCompiledTLS> tls_impl_;
     };
 }
 ```
@@ -54,7 +54,7 @@ namespace mhs::core {
 
 - **可复制轻量句柄** — `shared_ptr` 共享公式字符串与 ETS 基础设施；可放 `vector<MaterialProps>` / `BCParamTable` / `heat_source_table` 中自由复制移动
 - **懒构造 per-thread AST** — 公式字符串在 ETS 构造器中按值捕获；无锁、无 false sharing
-- **AST 地址稳定** — ETS 元素类型是 `unique_ptr<ExprTKCompiled>`，移动 `ExprTKCompiledTLS` 不会搬动内部 AST；`NativeFn` 持有的 `FieldContext*` 永远有效
+- **AST 地址稳定** — ETS 元素类型是 `unique_ptr<MuCompiled>`，移动 `MuCompiledTLS` 不会搬动内部 AST；`NativeFnCtx` 持有的 `FieldContext*` 永远有效
 - **常数短路** — `is_const_` 为 true 时直接返回 `const_val_`，不触达 `tls_impl_`
 
 ## 注册表
@@ -79,7 +79,7 @@ namespace mhs::core {
 }
 ```
 
-Native 内部桥接：模块以 `exprtk::ivararg_function<T>` 注册到 ExprTk 的 `add_reserved_function()` 槽（与 string-registered 函数分离），ExprTk 调用时先把所有实参独立求值，再以 `std::vector<T>` 形式回调 `NativeFn::operator()`，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
+Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void*, const value_type*, int)`) 注册到 muparser 的 `DefineFunUserData()` 槽，muparser 调用时先把所有实参独立求值，再以 `double* + int` 形式回调 `native_fn_bridge` 静态函数，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
 
 ### 使用场景
 
@@ -128,7 +128,7 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 | `parse()`                                                            | 主线程；持锁做试编译           |
 | `CompiledExpression::eval()`                                         | **无锁**（ETS 每线程独立 AST） |
 
-TBB 并行 `assemble()` 内部：所有工作线程首次 `tls.local()` 时懒构造自己线程专属的 ExprTK AST；之后整个仿真期间零同步。
+TBB 并行 `assemble()` 内部：所有工作线程首次 `tls.local()` 时懒构造自己线程专属的 muparser 实例；之后整个仿真期间零同步。
 
 ## 注意事项
 

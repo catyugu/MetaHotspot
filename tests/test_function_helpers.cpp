@@ -215,7 +215,7 @@ namespace {
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::core::parse(out);
-        // Native 接收 exprtk 绑定的参数向量 args 与当前 TLS 物理 ctx；
+        // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
         FieldContext ctx {0, 0, 0, 20.0, 0.0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);

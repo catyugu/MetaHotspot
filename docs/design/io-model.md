@@ -66,7 +66,7 @@ enum class StudyType  { Steady, Transient };
 enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
 enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 当前未实现，预处理不读取
 
-// 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 exprtk 表达式形式给出
+// 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
 // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
 struct ObservationPoint3D {
     std::string name;
@@ -196,7 +196,7 @@ Face|Direction|CoordValue|RectList
 
 ### `ti_reyuan_expr`（体热源）
 
-每个 Block 一个体热源密度表达式 `[W/m³]`，由 `preprocessor` 去重后编入 `heat_source_table`。可以是常数（`"1e9"`）、空间函数（`"1e8 + 0.5*x"`），或任意 exprtk 表达式。
+每个 Block 一个体热源密度表达式 `[W/m³]`，由 `preprocessor` 去重后编入 `heat_source_table`。可以是常数（`"1e9"`）、空间函数（`"1e8 + 0.5*x"`），或任意 muparser 表达式。
 
 ### `kx / ky / kz`（各向异性热导率）
 

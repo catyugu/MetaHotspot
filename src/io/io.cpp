@@ -556,7 +556,7 @@ namespace mhs::io {
         }
 
         // ObservePoints3D — 用户坐标系下的探针列表。3D 专用；2D 路径暂不支持。
-        // x/y/z 保留为 exprtk 表达式字符串，由 preprocessor 在加载时统一求值。
+        // x/y/z 保留为 muparser 表达式字符串，由 preprocessor 在加载时统一求值。
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
