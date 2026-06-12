@@ -1,4 +1,6 @@
 #include "expr/expr.hpp"
+
+#include <cmath>
 #include <gtest/gtest.h>
 using namespace mhs::core;
 namespace {
