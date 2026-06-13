@@ -14,6 +14,7 @@ function(mhs_copy_runtime_dlls TARGET_NAME)
         file(GLOB _mkl_runtime_dlls CONFIGURE_DEPENDS
             "${MKL_BIN_DIR}/mkl_*.dll"
             "${MKL_BIN_DIR}/libiomp5md.dll"
+            "${MKL_BIN_DIR}/libomp.dll"
         )
         foreach(_dll IN LISTS _mkl_runtime_dlls)
             add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
