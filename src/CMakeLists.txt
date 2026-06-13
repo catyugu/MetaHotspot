@@ -6,6 +6,7 @@ add_subdirectory(linear_solver)
 add_subdirectory(preprocessor)
 
 add_library(mhs_lib
+    data/time_step_buffer.cpp
     io/io.cpp
     nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
