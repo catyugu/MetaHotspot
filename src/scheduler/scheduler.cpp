@@ -75,11 +75,28 @@ namespace mhs::sim {
             if (!result.converged) {
                 MHS_LOG_WARN("Non-Linear iteration did not converge at time step {}", state_.time_step);
             }
-
-            std::vector<double> error_estimate(N);
+            std::vector<double> error_estimate(N, 0.0);
             const auto& T_prev = state_.history.latest();
-            for (int i = 0; i < N; ++i) {
-                error_estimate[i] = std::abs(state_.T[i] - T_prev[i]) / std::max(1.0, std::abs(T_prev[i]));
+
+            if (state_.history.size() >= 2) {
+                const auto& T_prev2 = state_.history.at(1);
+                double dt_n = state_.dt;
+                double dt_prev = state_.history.dt_to(1);
+                double ratio = (dt_prev > 1e-12) ? (dt_n / dt_prev) : 1.0;
+
+                for (int i = 0; i < N; ++i) {
+                    double diff_current = state_.T[i] - T_prev[i];
+                    double diff_prev = T_prev[i] - T_prev2[i];
+                    // 真正的局部截断误差(LTE)：当前步变化与按照上一步斜率线性预测的变化之间的偏差
+                    double lte = std::abs(diff_current - ratio * diff_prev);
+                    error_estimate[i] = lte / std::max(1.0, std::abs(state_.T[i]));
+                }
+            }
+            else {
+                // 第一步时退化为一阶差分
+                for (int i = 0; i < N; ++i) {
+                    error_estimate[i] = std::abs(state_.T[i] - T_prev[i]) / std::max(1.0, std::abs(state_.T[i]));
+                }
             }
 
             scheme->accept_or_reject(error_estimate);

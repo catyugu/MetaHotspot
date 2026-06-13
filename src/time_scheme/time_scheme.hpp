@@ -16,8 +16,8 @@ namespace mhs::sim::time_scheme {
         double initial_dt = 1.0;
         double min_dt = 1e-9;
         double max_dt = 1.0;
-        double abs_tol = 1e-3;
-        double rel_tol = 1e-3;
+        double abs_tol = 1e-4;
+        double rel_tol = 1e-6;
         std::size_t max_order = 2;
         double safety = 0.9;
         double output_dt = 0.0;
