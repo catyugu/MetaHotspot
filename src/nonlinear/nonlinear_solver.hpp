@@ -1,7 +1,10 @@
 #pragma once
 
+#include "assembler/assembler.hpp"
 #include "data/internal_model.hpp"
 #include "linear_solver/linear_solver.hpp"
+
+#include <functional>
 
 namespace mhs::sim {
 
@@ -17,9 +20,9 @@ namespace mhs::sim {
         double absolute_tolerance = 1e-12;
     };
 
-    // Anderson-accelerated fixed-point iteration over `LinearSolver`.
-    // Renamed from `solve` to `nonlinear_solve` so that `mhs::sim::nonlinear_solve`
-    // is unambiguous in the flat sim domain.
-    NonLinearResult nonlinear_solve(const core::InternalModel& model, core::GlobalState& state, LinearSolver& solver);
+    using LinearSystemProvider = std::function<LinearSystem()>;
+
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::GlobalState& state,
+        LinearSolver& solver, const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim
