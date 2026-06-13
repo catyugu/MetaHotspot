@@ -15,12 +15,9 @@ namespace mhs::sim::time_scheme {
     }
 
     LinearSystem AdaptiveBdfScheme::build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
-        const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
+        const mhs::core::TimeStepBuffer& history, std::size_t /*order*/, double dt) const
     {
-        if (order == 1 || history.size() <= order) {
-            return detail::build_bdf1_ls(sops, mops, history, dt);
-        }
-        return detail::build_bdf2_ls(sops, mops, history, dt);
+        return detail::build_bdf1_ls(sops, mops, history, dt);
     }
 
     AcceptDecision AdaptiveBdfScheme::accept_or_reject(const mhs::core::TimeStepBuffer& /*history_before*/,

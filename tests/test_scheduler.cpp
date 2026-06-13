@@ -295,10 +295,10 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     EXPECT_EQ(traces[0].name, "center");
     EXPECT_EQ(traces[1].name, "z0");
 
-    // 6 个采样：t=0 + 5 个步末 (1..5)
+    // Sub-stepping 允许内部步比输出网格更细，因此采样点 ≥ duration/dt。
     for (const auto& tr : traces) {
-        EXPECT_EQ(tr.times.size(), 6u);
-        EXPECT_EQ(tr.values.size(), 6u);
+        EXPECT_GE(tr.times.size(), 6u);
+        EXPECT_GE(tr.values.size(), 6u);
         EXPECT_NEAR(tr.times.front(), 0.0, 1e-9);
         EXPECT_NEAR(tr.times.back(), 5.0, 1e-9);
         for (size_t i = 1; i < tr.times.size(); ++i) {
@@ -391,8 +391,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     const auto& traces = scheduler.probeTraces();
     ASSERT_EQ(traces.size(), 1u);
     const auto& tr = traces[0];
-    ASSERT_EQ(tr.times.size(), 6u); // t=0 + 5 步末
-    ASSERT_EQ(tr.values.size(), 6u);
+    ASSERT_GE(tr.times.size(), 6u); // t=0 + 5 步末（内部可 sub-stepping）
+    ASSERT_GE(tr.values.size(), 6u);
 
     // 每步的时间值必须满足 T(t) = 500 + 100*t。旧实现把 t 写死 0，
     // 会让 tr.values 恒为 500.0；修复后必须随时间线性增长。
