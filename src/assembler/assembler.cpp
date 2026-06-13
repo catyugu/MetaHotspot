@@ -159,6 +159,14 @@ namespace mhs::sim {
         int N = static_cast<int>(cells.cell_bcs.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
 
+        // Mass coefficients are evaluated at the previous-step temperature
+        // to keep them constant across Newton iterations (matches legacy
+        // BDF1 stability).  history.latest() is the previous step's T; if
+        // history is empty (startup), fall back to the current T.
+        const std::vector<double>* T_eval = (state.history.size() > 0)
+                                               ? &state.history.latest()
+                                               : &state.T;
+
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 
         tbb::parallel_for(0, total, [&](int old_idx) {
@@ -175,14 +183,12 @@ namespace mhs::sim {
             double dz_cell = mesh.dz[iz];
             double vol = dx_cell * dy_cell * dz_cell;
 
-            // Mass coefficients are evaluated at T_prev to keep them constant
-            // across Newton iterations (matches legacy BDF1 stability).
             size_t mat_id = cells.material_id[c_idx];
             const auto& mp = materials[mat_id];
             double rho = mp.rho.eval(
-                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval)[c_idx], state.current_time});
             double c_heat = mp.c.eval(
-                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval)[c_idx], state.current_time});
 
             local.mass(c_idx) += rho * c_heat * vol;
         });

@@ -31,7 +31,6 @@ namespace mhs::sim {
         // Initialize state
         int N = static_cast<int>(model_->cells.cell_bcs.size());
         state_.T.resize(N, model_->initial_temperature);
-        state_.T_prev.resize(N, model_->initial_temperature);
         state_.residual.resize(N, 0.0);
         state_.current_time = 0.0;
         state_.time_step    = 0;
@@ -114,7 +113,6 @@ namespace mhs::sim {
             double t_new = state_.current_time + dt;
             state_.current_time = t_new;
             state_.time_step++;
-            state_.T_prev = state_.T;
             state_.history.push(state_.T, t_new);
 
             // 5) Record probe at the step boundary.

@@ -51,8 +51,7 @@ namespace mhs::core {
 
     /// Mutable, per-step state owned by Scheduler::run().
     /// Invariant: state.T is the most recent accepted solution; it mirrors
-    /// history.latest() at the end of every accepted step.  T_prev is the
-    /// legacy alias kept for transient mass evaluation (see comment below).
+    /// history.latest() at the end of every accepted step.
     struct GlobalState {
         double current_time = 0.0;
         int    time_step    = 0;
@@ -73,12 +72,6 @@ namespace mhs::core {
 
         // Per-cell residual snapshot (last nonlinear iteration).
         std::vector<double> residual;
-
-        // Legacy single-step-previous vector, retained because the assembler
-        // evaluates mass coefficients at this state for stability (see
-        // assemble_mass in src/assembler/assembler.cpp).  This will be
-        // superseded by history.at(1) in slice 9 (cleanup).
-        std::vector<double> T_prev;
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。

@@ -80,7 +80,6 @@ TEST(AssemblerTest, AssembleStaticReturnsKAndFStatic)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
     state.dt = 0.0;
 
@@ -106,7 +105,6 @@ TEST(AssemblerTest, AssembleStaticHasNoTransient)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
 
     Assembler assembler(*model);
@@ -136,7 +134,6 @@ TEST(AssemblerTest, AssembleMassReturnsDiag)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
 
     Assembler assembler(*model);
@@ -202,12 +199,10 @@ TEST(AssemblerTest, AssembleStaticReadsTemperature)
 
     mhs::core::GlobalState s1;
     s1.T.assign(N, 300.0);
-    s1.T_prev.assign(N, 300.0);
     auto k1 = assembler.assemble_static(s1).K;
 
     mhs::core::GlobalState s2;
     s2.T.assign(N, 500.0);
-    s2.T_prev.assign(N, 500.0);
     auto k2 = assembler.assemble_static(s2).K;
 
     bool differs = false;
@@ -234,7 +229,6 @@ TEST(AssemblerTest, AssembleStaticMatchesOldAssembleForSteady)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
     state.dt = 0.0;
 
@@ -266,7 +260,6 @@ TEST(AssemblerTest, Case1AssemblyRuns)
 
     mhs::core::GlobalState state;
     state.T.resize(N, model->initial_temperature);
-    state.T_prev.resize(N, model->initial_temperature);
     state.current_time = 0.0;
     state.dt = 0.0;
 

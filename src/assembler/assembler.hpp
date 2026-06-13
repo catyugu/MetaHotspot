@@ -23,9 +23,9 @@ namespace mhs::sim {
     };
 
     /// Mass operator result: lumped diagonal mass vector M_diag, length N_active.
-    /// M_diag[c] = rho(c) * c_p(c) * vol(c), evaluated at the T_prev state to
-    /// keep the coefficient constant across Newton iterations (per legacy
-    /// comment in the old assemble()).
+    /// M_diag[c] = rho(c) * c_p(c) * vol(c), evaluated at the previous-step
+    /// temperature (history.latest() at the call site) to keep the coefficient
+    /// constant across Newton iterations.
     struct MassOpsResult {
         Eigen::VectorXd M_diag;
     };
@@ -40,8 +40,7 @@ namespace mhs::sim {
         StaticOpsResult assemble_static(const mhs::core::GlobalState& state) const;
 
         /// Build the lumped diagonal mass vector M_diag for transient terms.
-        /// M_diag[c] = rho(c) * c_p(c) * vol(c) (evaluated at state.T_prev to
-        /// match the legacy BDF1 coefficient stability).
+        /// M_diag[c] = rho(c) * c_p(c) * vol(c) (evaluated at history.latest()).
         MassOpsResult assemble_mass(const mhs::core::GlobalState& state) const;
 
     private:
