@@ -19,8 +19,8 @@ namespace mhs::sim::time_scheme {
 
     namespace {
         // BDF1 system builder reused by the startup path
-        LinearSystem build_bdf1_ls(const StaticOpsResult& sops, const MassOpsResult& mops,
-            const mhs::core::TimeStepBuffer& history, double dt)
+        LinearSystem build_bdf1_ls(
+            const StaticOpsResult& sops, const MassOpsResult& mops, const mhs::core::TimeStepBuffer& history, double dt)
         {
             const int N = static_cast<int>(sops.f_static.size());
             const auto& T_prev = history.latest();
@@ -55,8 +55,8 @@ namespace mhs::sim::time_scheme {
         //   α0=3/(2h), α1=-2/h, α2=1/(2h)
 
         const int N = static_cast<int>(sops.f_static.size());
-        const double h_n   = dt;                              // current step length
-        const double h_np1 = history.dt_to(1);                // previous step length
+        const double h_n = dt; // current step length
+        const double h_np1 = history.dt_to(1); // previous step length
 
         // Guard against degenerate step (e.g. first call where history timestamps
         // haven't been set distinctly).  Falls back to fixed-step BDF2.
@@ -70,7 +70,7 @@ namespace mhs::sim::time_scheme {
         const double alpha1 = -(1.0 + delta) / (h_n * delta);
         const double alpha2 = delta / (h_n * (1.0 + delta));
 
-        const auto& T_n   = history.latest();
+        const auto& T_n = history.latest();
         const auto& T_nm1 = history.at(1);
         const auto& T_nm2 = history.at(2);
 
@@ -78,9 +78,8 @@ namespace mhs::sim::time_scheme {
         Eigen::VectorXd b = sops.f_static;
         for (int i = 0; i < N; ++i) {
             A.coeffRef(i, i) += alpha0 * mops.M_diag(i);
-            b(i) += alpha0 * mops.M_diag(i) * T_n[i]
-                  + alpha1 * mops.M_diag(i) * T_nm1[i]
-                  + alpha2 * mops.M_diag(i) * T_nm2[i];
+            b(i) += alpha0 * mops.M_diag(i) * T_n[i] + alpha1 * mops.M_diag(i) * T_nm1[i]
+                + alpha2 * mops.M_diag(i) * T_nm2[i];
         }
 
         return {A, b, b - A * Eigen::Map<const Eigen::VectorXd>(T_n.data(), N)};

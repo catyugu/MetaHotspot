@@ -242,7 +242,8 @@ namespace mhs::io {
             }
             if (const XMLElement* o = ts->FirstChildElement("MaxOrder")) {
                 int v = std::atoi(get_text(o).c_str());
-                if (v >= 1) structure.time_scheme.max_order = static_cast<std::size_t>(v);
+                if (v >= 1)
+                    structure.time_scheme.max_order = static_cast<std::size_t>(v);
             }
             if (const XMLElement* d = ts->FirstChildElement("OutputDt")) {
                 structure.time_scheme.output_dt = parse_double(get_text(d));

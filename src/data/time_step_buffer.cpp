@@ -11,17 +11,17 @@ namespace mhs::core {
     {
         // Reset writes the initial snapshot into slot 0; future push()es will
         // land in slot 1, 2, ... wrapping around if capacity is exceeded.
-        head_   = 1;
+        head_ = 1;
         stored_ = 1;
-        slots_[0]  = T_initial;
-        times_[0]  = 0.0;
+        slots_[0] = T_initial;
+        times_[0] = 0.0;
     }
 
     void TimeStepBuffer::push(const std::vector<double>& T_new, double time)
     {
         if (stored_ < cap_) {
-            slots_[head_]  = T_new;
-            times_[head_]  = time;
+            slots_[head_] = T_new;
+            times_[head_] = time;
             ++stored_;
             ++head_;
             if (head_ == cap_)

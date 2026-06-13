@@ -20,8 +20,8 @@ namespace mhs::sim::time_scheme {
 
         // Fixed step (BDF1/BDF2) and adaptive control
         double initial_dt = 1.0;
-        double min_dt     = 1e-9;
-        double max_dt     = 1.0;
+        double min_dt = 1e-9;
+        double max_dt = 1.0;
 
         // Adaptive error tolerances
         double abs_tol = 1e-6;
@@ -41,8 +41,8 @@ namespace mhs::sim::time_scheme {
     };
 
     struct StepDecision {
-        double       dt    = 0.0;
-        std::size_t  order = 1;
+        double dt = 0.0;
+        std::size_t order = 1;
     };
 
     enum class AcceptDecision { Accept, Reject };
@@ -55,25 +55,25 @@ namespace mhs::sim::time_scheme {
 
         /// Seed history with the initial temperature (called once at the start
         /// of the transient loop).
-        virtual void initialize(
-            mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const = 0;
+        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const = 0;
 
         /// Decide the next (dt, order) given the current time and the history
         /// snapshots available so far.
-        virtual StepDecision select_step(
-            const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
+        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
 
         /// Build the LinearSystem for a given order/dt from a (K, f_static)
         /// and (M_diag) decomposition.  The time scheme fills in the
         /// discretization-specific coefficients.
         virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
-            const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;
+            const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
+            = 0;
 
         /// Decide whether to accept the candidate T.  For BDF1, always Accept.
         /// Implementations may also return an error estimate to feed into the
         /// controller's next-step dt choice.
         virtual AcceptDecision accept_or_reject(const mhs::core::TimeStepBuffer& history_before,
-            const std::vector<double>& T_candidate, const std::vector<double>& error_estimate) const = 0;
+            const std::vector<double>& T_candidate, const std::vector<double>& error_estimate) const
+            = 0;
 
         virtual const TimeSchemeConfig& config() const = 0;
     };

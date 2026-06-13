@@ -13,8 +13,7 @@ namespace mhs::sim::time_scheme {
         return mx;
     }
 
-    StepController::StepResult StepController::decide(
-        double current_dt, std::size_t order, double err) const
+    StepController::StepResult StepController::decide(double current_dt, std::size_t order, double err) const
     {
         // tol = abs_tol + rel_tol * ||T||∞  — but for simplicity we use
         // abs_tol only (rel_tol is reserved for mixed scaling).

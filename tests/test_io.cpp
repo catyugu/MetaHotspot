@@ -334,8 +334,7 @@ TEST(IoTest, SchemeDefaultsToBdf1)
 
 TEST(IoTest, ParsesSchemeNode)
 {
-    auto path = write_tmp_xml("io_ts_bdf2.xml",
-        make_xml_with_time_scheme("  <Scheme>Bdf2</Scheme>"));
+    auto path = write_tmp_xml("io_ts_bdf2.xml", make_xml_with_time_scheme("  <Scheme>Bdf2</Scheme>"));
     auto io = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io.has_time_scheme_override);
     EXPECT_EQ(io.time_scheme.kind, mhs::core::TimeSchemeKind::Bdf2);
@@ -344,8 +343,7 @@ TEST(IoTest, ParsesSchemeNode)
 
 TEST(IoTest, ParsesSchemeNodeAdaptive)
 {
-    auto path = write_tmp_xml("io_ts_adaptive.xml",
-        make_xml_with_time_scheme("  <Scheme>AdaptiveBdf</Scheme>"));
+    auto path = write_tmp_xml("io_ts_adaptive.xml", make_xml_with_time_scheme("  <Scheme>AdaptiveBdf</Scheme>"));
     auto io = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io.has_time_scheme_override);
     EXPECT_EQ(io.time_scheme.kind, mhs::core::TimeSchemeKind::AdaptiveBdf);
@@ -380,8 +378,7 @@ TEST(IoTest, OutputDtDefaultsToDuration)
 {
     // <TimeScheme> present but no <OutputDt>: preprocessor fills it.
     // The XML parser itself doesn't fill it (that's the preprocessor's job).
-    auto path = write_tmp_xml("io_ts_no_output.xml",
-        make_xml_with_time_scheme("  <Scheme>Bdf2</Scheme>"));
+    auto path = write_tmp_xml("io_ts_no_output.xml", make_xml_with_time_scheme("  <Scheme>Bdf2</Scheme>"));
     auto io = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io.has_time_scheme_override);
     EXPECT_DOUBLE_EQ(io.time_scheme.output_dt, 0.0); // absent in XML
