@@ -20,9 +20,8 @@ namespace mhs::sim::time_scheme::detail {
         A.diagonal() += mops.M_diag / dt;
 
         Eigen::VectorXd b = sops.f_static + mops.M_diag.cwiseProduct(T_n) / dt;
-        Eigen::VectorXd residual = b - A * T_n;
 
-        return {std::move(A), std::move(b), std::move(residual)};
+        return {std::move(A), std::move(b)};
     }
 
     /// Build the BDF2 (variable-step) linear system:
@@ -48,9 +47,8 @@ namespace mhs::sim::time_scheme::detail {
 
         // 修正后的标准 BDF2 右端项
         Eigen::VectorXd b = sops.f_static - mops.M_diag.cwiseProduct(alpha1 * T_n + alpha2 * T_nm1);
-        Eigen::VectorXd residual = b - A * T_n;
 
-        return {std::move(A), std::move(b), std::move(residual)};
+        return {std::move(A), std::move(b)};
     }
 
 } // namespace mhs::sim::time_scheme::detail

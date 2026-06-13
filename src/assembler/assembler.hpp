@@ -9,7 +9,6 @@ namespace mhs::sim {
     struct LinearSystem {
         Eigen::SparseMatrix<double> A;
         Eigen::VectorXd b;
-        Eigen::VectorXd residual;
     };
 
     /// Static (time-independent) operator result: stiffness K and static load

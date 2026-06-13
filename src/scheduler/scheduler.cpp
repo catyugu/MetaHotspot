@@ -40,7 +40,7 @@ namespace mhs::sim {
                 auto sops = assembler.assemble_static(state_);
                 Eigen::Map<const Eigen::VectorXd> T_map(state_.T.data(), N);
                 Eigen::VectorXd res = sops.f_static - sops.K * T_map;
-                return {std::move(sops.K), std::move(sops.f_static), std::move(res)};
+                return {std::move(sops.K), std::move(sops.f_static)};
             };
             nonlinear_solve(build_ls, state_, *solver_);
             solution_ = state_.T;
