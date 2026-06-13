@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 
-#include "data/io_model.hpp"
 #include "data/time_step_buffer.hpp"
 #include "expr/expr.hpp"
 #include "types.hpp"
@@ -54,14 +53,14 @@ namespace mhs::core {
     /// history.latest() at the end of every accepted step.
     struct GlobalState {
         double current_time = 0.0;
-        int    time_step    = 0;
-        double dt           = 0.0;
+        int time_step = 0;
+        double dt = 0.0;
 
         // BDF-k history buffer.  history.latest() == T (after accept).
         // The buffer capacity matches the time scheme's max_order (typically
         // 2 for BDF2 / AdaptiveBdf).  Reset via history.reset(T) before the
         // first push.
-        TimeStepBuffer history{0, 1};
+        TimeStepBuffer history {0, 1};
 
         // 0-based counter of the next output frame (used by adaptive schemes
         // for output-time alignment).
@@ -97,17 +96,6 @@ namespace mhs::core {
         StudyType study_type = StudyType::Steady;
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
-
-        // Time-scheme configuration (translated from IOStructure::time_scheme
-        // by the preprocessor).  Default to Bdf1 if not specified.
-        TimeSchemeKind time_scheme_kind = TimeSchemeKind::Bdf1;
-        double ts_initial_dt = 0.0;
-        double ts_min_dt     = 1e-9;
-        double ts_max_dt     = 0.0;
-        double ts_abs_tol    = 1e-6;
-        double ts_rel_tol    = 1e-3;
-        std::size_t ts_max_order = 2;
-        double ts_output_dt  = 0.0;
 
         // 用户坐标系下的 3D 观察点列表（来自 IOStructure，已求值到 SI 单位）。
         // 探针不参与方程求解，仅用于输出温度时间序列。

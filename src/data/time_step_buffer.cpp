@@ -39,47 +39,24 @@ namespace mhs::core {
 
     const std::vector<double>& TimeStepBuffer::latest() const noexcept
     {
-        // Index of latest in the ring:
-        //   if stored_ < cap_: stored_ - 1
-        //   if stored_ == cap_: head_ - 1 (mod cap_); head_ points to oldest
-        std::size_t idx;
         if (stored_ == 0)
             return slots_[0]; // empty buffer; UB documented
-        if (stored_ < cap_) {
-            idx = stored_ - 1;
-        }
-        else {
-            idx = (head_ == 0) ? cap_ - 1 : head_ - 1;
-        }
-        return slots_[idx];
+        return at(0);
     }
 
-    const std::vector<double>& TimeStepBuffer::at(std::size_t i) const noexcept
+    std::size_t TimeStepBuffer::ring_index(std::size_t i) const noexcept
     {
-        std::size_t idx;
         if (stored_ < cap_) {
-            idx = stored_ - 1 - i;
+            return stored_ - 1 - i;
         }
-        else {
-            // head_ points to oldest in this branch (stored_ == cap_)
-            std::size_t head_to_latest = (head_ == 0) ? cap_ - 1 : head_ - 1;
-            idx = (head_to_latest + cap_ - i) % cap_;
-        }
-        return slots_[idx];
+        // stored_ == cap_: head_ points to the oldest slot.
+        std::size_t head_to_latest = (head_ == 0) ? cap_ - 1 : head_ - 1;
+        return (head_to_latest + cap_ - i) % cap_;
     }
 
-    double TimeStepBuffer::time_at(std::size_t i) const noexcept
-    {
-        std::size_t idx;
-        if (stored_ < cap_) {
-            idx = stored_ - 1 - i;
-        }
-        else {
-            std::size_t head_to_latest = (head_ == 0) ? cap_ - 1 : head_ - 1;
-            idx = (head_to_latest + cap_ - i) % cap_;
-        }
-        return times_[idx];
-    }
+    const std::vector<double>& TimeStepBuffer::at(std::size_t i) const noexcept { return slots_[ring_index(i)]; }
+
+    double TimeStepBuffer::time_at(std::size_t i) const noexcept { return times_[ring_index(i)]; }
 
     double TimeStepBuffer::dt_to(std::size_t i) const noexcept { return time_at(0) - time_at(i); }
 

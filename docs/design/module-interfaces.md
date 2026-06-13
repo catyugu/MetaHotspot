@@ -142,7 +142,6 @@ namespace mhs::sim::time_scheme {
         std::size_t max_order = 2;
         double safety    = 0.9;
         double output_dt = 0.0;
-        int max_internal_steps = 100000;
     };
 
     struct StepDecision { double dt; std::size_t order; };
@@ -151,7 +150,10 @@ namespace mhs::sim::time_scheme {
     class TimeScheme {
     public:
         virtual ~TimeScheme() = default;
-        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const = 0;
+        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const
+        {
+            history.reset(state.T);
+        }
         virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
         virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;

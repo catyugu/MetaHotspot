@@ -49,6 +49,11 @@ public:
     std::size_t capacity() const noexcept;
 
 private:
+    /// Compute the ring-buffer slot index for the i-th snapshot before latest.
+    /// i == 0 returns latest, i == 1 returns one step before, etc.
+    /// Precondition: i < stored_.
+    std::size_t ring_index(std::size_t i) const noexcept;
+
     std::vector<std::vector<double>> slots_;
     std::vector<double> times_;
     std::size_t head_   = 0;   // next write position (ring)

@@ -9,12 +9,7 @@
 #include <vector>
 
 namespace mhs::sim::time_scheme {
-
-    // Re-exported from mhs::core for code in the time_scheme namespace.
-    using TimeSchemeKind = mhs::core::TimeSchemeKind;
-
-    /// Time-scheme parameters.  Values are read from IO; the algorithm
-    /// implementation clamps internal usage to physical bounds.
+    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
     struct TimeSchemeConfig {
         TimeSchemeKind kind = TimeSchemeKind::Bdf1;
 
@@ -35,9 +30,6 @@ namespace mhs::sim::time_scheme {
 
         // Output cadence
         double output_dt = 0.0; // 0 == single output at t_end
-
-        // Termination guard
-        int max_internal_steps = 100000;
     };
 
     struct StepDecision {
@@ -54,8 +46,11 @@ namespace mhs::sim::time_scheme {
         virtual ~TimeScheme() = default;
 
         /// Seed history with the initial temperature (called once at the start
-        /// of the transient loop).
-        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const = 0;
+        /// of the transient loop).  Default: reset to state.T at t=0.
+        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const
+        {
+            history.reset(state.T);
+        }
 
         /// Decide the next (dt, order) given the current time and the history
         /// snapshots available so far.

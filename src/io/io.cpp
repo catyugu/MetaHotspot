@@ -208,48 +208,6 @@ namespace mhs::io {
             structure.transient_time_unit = get_text(unit);
         }
 
-        // Time-scheme settings (optional <TimeScheme>/<Scheme> sub-block).
-        // When absent: defaults to Bdf1 with dt = transient_time_step.
-        if (const XMLElement* ts = root->FirstChildElement("TimeScheme")) {
-            structure.has_time_scheme_override = true;
-
-            if (const XMLElement* k = ts->FirstChildElement("Scheme")) {
-                std::string kind = get_text(k);
-                if (kind == "Bdf2") {
-                    structure.time_scheme.kind = mhs::core::TimeSchemeKind::Bdf2;
-                }
-                else if (kind == "AdaptiveBdf") {
-                    structure.time_scheme.kind = mhs::core::TimeSchemeKind::AdaptiveBdf;
-                }
-                else {
-                    structure.time_scheme.kind = mhs::core::TimeSchemeKind::Bdf1;
-                }
-            }
-            if (const XMLElement* d = ts->FirstChildElement("InitialDt")) {
-                structure.time_scheme.initial_dt = parse_double(get_text(d));
-            }
-            if (const XMLElement* d = ts->FirstChildElement("MinDt")) {
-                structure.time_scheme.min_dt = parse_double(get_text(d));
-            }
-            if (const XMLElement* d = ts->FirstChildElement("MaxDt")) {
-                structure.time_scheme.max_dt = parse_double(get_text(d));
-            }
-            if (const XMLElement* d = ts->FirstChildElement("AbsTol")) {
-                structure.time_scheme.abs_tol = parse_double(get_text(d));
-            }
-            if (const XMLElement* d = ts->FirstChildElement("RelTol")) {
-                structure.time_scheme.rel_tol = parse_double(get_text(d));
-            }
-            if (const XMLElement* o = ts->FirstChildElement("MaxOrder")) {
-                int v = std::atoi(get_text(o).c_str());
-                if (v >= 1)
-                    structure.time_scheme.max_order = static_cast<std::size_t>(v);
-            }
-            if (const XMLElement* d = ts->FirstChildElement("OutputDt")) {
-                structure.time_scheme.output_dt = parse_double(get_text(d));
-            }
-        }
-
         // OtherThermalBoundary (default BC)
         if (const XMLElement* other = root->FirstChildElement("OtherThermalBondary")) {
             const char* type = other->Attribute("i:type");

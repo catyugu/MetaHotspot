@@ -21,8 +21,6 @@ namespace mhs::sim {
 
     void Scheduler::setSolver(std::unique_ptr<LinearSolver> solver) { solver_ = std::move(solver); }
 
-    void Scheduler::setTimeSchemeConfig(time_scheme::TimeSchemeConfig cfg) { scheme_cfg_ = std::move(cfg); }
-
     void Scheduler::run()
     {
         if (!model_ || !solver_) {
@@ -39,20 +37,7 @@ namespace mhs::sim {
         state_.dt = model_->transient_time_step;
         state_.output_step = 0;
 
-        // Resolve the effective TimeSchemeConfig: explicit setTimeSchemeConfig
-        // call wins; otherwise pull from InternalModel.
         time_scheme::TimeSchemeConfig effective_cfg = scheme_cfg_;
-        if (effective_cfg.initial_dt == 1.0 && model_->ts_initial_dt > 0.0
-            && std::abs(effective_cfg.initial_dt - model_->ts_initial_dt) > 1e-12) {
-            effective_cfg.kind = model_->time_scheme_kind;
-            effective_cfg.initial_dt = model_->ts_initial_dt;
-            effective_cfg.min_dt = model_->ts_min_dt;
-            effective_cfg.max_dt = model_->ts_max_dt;
-            effective_cfg.abs_tol = model_->ts_abs_tol;
-            effective_cfg.rel_tol = model_->ts_rel_tol;
-            effective_cfg.max_order = model_->ts_max_order;
-            effective_cfg.output_dt = model_->ts_output_dt;
-        }
 
         std::size_t history_cap = std::max<std::size_t>(1, effective_cfg.max_order + 1);
         state_.history = mhs::core::TimeStepBuffer(static_cast<std::size_t>(N), history_cap);
@@ -62,10 +47,8 @@ namespace mhs::sim {
         if (model_->study_type == mhs::core::StudyType::Steady) {
             auto build_ls = [&]() -> LinearSystem {
                 auto sops = assembler.assemble_static(state_);
-                Eigen::VectorXd T_vec(static_cast<Eigen::Index>(state_.T.size()));
-                for (int i = 0; i < static_cast<int>(state_.T.size()); ++i)
-                    T_vec(i) = state_.T[i];
-                return {sops.K, sops.f_static, sops.f_static - sops.K * T_vec};
+                Eigen::Map<const Eigen::VectorXd> T_map(state_.T.data(), static_cast<Eigen::Index>(state_.T.size()));
+                return {sops.K, sops.f_static, sops.f_static - sops.K * T_map};
             };
             nonlinear_solve(build_ls, state_, *solver_);
             solution_ = state_.T;
@@ -81,16 +64,10 @@ namespace mhs::sim {
         const double output_dt = effective_cfg.output_dt;
 
         // 1) Initialize history with the initial state at t=0.
-        state_.history.reset(state_.T);
         scheme->initialize(state_.history, state_);
 
         // 2) Record probe at t=0.
         probe_recorder_.record(state_.current_time, state_.T);
-
-        // 3) Track the *previous* T snapshot for linear interpolation when an
-        //    output time falls strictly inside a step.
-        double t_last = state_.current_time;
-        std::vector<double> T_at_t_last = state_.T;
 
         while (state_.current_time < duration) {
             auto step = scheme->select_step(state_.history, state_.current_time);
@@ -139,9 +116,6 @@ namespace mhs::sim {
                     state_.output_step++;
                 }
             }
-
-            (void)t_last;
-            (void)T_at_t_last;
         }
 
         solution_ = state_.T;

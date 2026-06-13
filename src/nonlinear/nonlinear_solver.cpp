@@ -18,10 +18,8 @@ namespace mhs::sim {
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
             LinearSystem linear_system = ls_provider();
-            Eigen::VectorXd T_vec(N);
-            for (int i = 0; i < N; ++i)
-                T_vec(i) = state.T[i];
-            Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_vec;
+            Eigen::Map<const Eigen::VectorXd> T_map(state.T.data(), N);
+            Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
 
             double max_residual = 0.0;
             double max_b = 0.0;

@@ -44,6 +44,7 @@ namespace mhs::sim {
         ProbeRecorder probe_recorder_;
 
         time_scheme::TimeSchemeConfig scheme_cfg_{};
+        bool scheme_cfg_explicitly_set_ = false;
     };
 
 } // namespace mhs::sim

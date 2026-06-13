@@ -10,7 +10,6 @@ namespace mhs::sim::time_scheme {
     public:
         explicit Bdf2Scheme(TimeSchemeConfig cfg) : cfg_(std::move(cfg)) { }
 
-        void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const override;
         StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const override;
         LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const override;

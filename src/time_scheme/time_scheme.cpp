@@ -3,6 +3,7 @@
 #include "adaptive_bdf_scheme.hpp"
 #include "bdf1_scheme.hpp"
 #include "bdf2_scheme.hpp"
+#include "common/logger.hpp"
 
 namespace mhs::sim::time_scheme {
 
@@ -16,8 +17,7 @@ namespace mhs::sim::time_scheme {
         case TimeSchemeKind::AdaptiveBdf:
             return std::make_unique<AdaptiveBdfScheme>(cfg);
         }
-        // unreachable
-        return std::make_unique<Bdf1Scheme>(cfg);
+        MHS_LOG_ERROR("create_scheme: unknown TimeSchemeKind {}", static_cast<int>(cfg.kind));
     }
 
 } // namespace mhs::sim::time_scheme
