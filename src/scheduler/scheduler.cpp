@@ -39,7 +39,13 @@ namespace mhs::sim {
 
         time_scheme::TimeSchemeConfig time_scheme_config;
 
-        time_scheme_config.initial_dt = model_->transient_time_step;
+        // Use adaptive BDF with fine-grained startup step.
+        // The output_dt ensures probe recording lands exactly on the
+        // XML-required time-step boundaries regardless of internal sub-stepping.
+        time_scheme_config.kind = time_scheme::TimeSchemeKind::AdaptiveBdf;
+        time_scheme_config.initial_dt = model_->transient_time_step / 10.0;
+        time_scheme_config.max_dt = model_->transient_time_step;
+        time_scheme_config.output_dt = model_->transient_time_step;
 
         std::size_t history_cap = std::max<std::size_t>(1, time_scheme_config.max_order + 1);
         state_.history = mhs::core::TimeStepBuffer(static_cast<std::size_t>(N), history_cap);
@@ -110,13 +116,23 @@ namespace mhs::sim {
             state_.history.push(state_.T, t_new);
 
             MHS_LOG_INFO("Time: {} solved (dt={})", t_new, dt);
-            probe_recorder_.record(t_new, state_.T);
 
+            // Record probe at output boundaries (t where t % output_dt ≈ 0),
+            // or at every step when output_dt == 0.  This ensures probe traces
+            // match the XML-required cadence without sub-step bloating.
+            bool at_output = false;
             if (output_dt > 0.0) {
                 double t_next_out = (state_.output_step + 1) * output_dt;
                 if (std::abs(t_new - t_next_out) <= 1e-9 * std::max(1.0, t_new)) {
                     state_.output_step++;
+                    at_output = true;
                 }
+            }
+            else {
+                at_output = true;
+            }
+            if (at_output) {
+                probe_recorder_.record(t_new, state_.T);
             }
         }
 
