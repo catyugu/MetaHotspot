@@ -37,9 +37,11 @@ namespace mhs::sim {
         state_.dt = model_->transient_time_step;
         state_.output_step = 0;
 
-        time_scheme::TimeSchemeConfig effective_cfg = scheme_cfg_;
+        time_scheme::TimeSchemeConfig time_scheme_config;
 
-        std::size_t history_cap = std::max<std::size_t>(1, effective_cfg.max_order + 1);
+        time_scheme_config.initial_dt = model_->transient_time_step;
+
+        std::size_t history_cap = std::max<std::size_t>(1, time_scheme_config.max_order + 1);
         state_.history = mhs::core::TimeStepBuffer(static_cast<std::size_t>(N), history_cap);
 
         Assembler assembler(*model_);
@@ -57,11 +59,11 @@ namespace mhs::sim {
         }
 
         // --- Transient main loop driven by the time scheme ---
-        auto scheme = time_scheme::create_scheme(effective_cfg);
+        auto scheme = time_scheme::create_scheme(time_scheme_config);
 
         const double duration = model_->transient_duration;
         const double dt_init = model_->transient_time_step;
-        const double output_dt = effective_cfg.output_dt;
+        const double output_dt = time_scheme_config.output_dt;
 
         // 1) Initialize history with the initial state at t=0.
         scheme->initialize(state_.history, state_);
