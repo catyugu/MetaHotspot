@@ -5,7 +5,8 @@
 
 namespace mhs::sim::time_scheme {
 
-    StepDecision Bdf2Scheme::select_step(const mhs::core::TimeStepBuffer& history, double /*current_t*/) const
+    StepDecision Bdf2Scheme::select_step(
+        const mhs::core::TimeStepBuffer& history, double /*current_t*/, double /*duration*/) const
     {
         std::size_t order = (history.size() >= 3) ? 2 : 1;
         return {cfg_.initial_dt, order};

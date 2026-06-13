@@ -5,7 +5,8 @@
 
 namespace mhs::sim::time_scheme {
 
-    StepDecision Bdf1Scheme::select_step(const mhs::core::TimeStepBuffer& /*history*/, double /*current_t*/) const
+    StepDecision Bdf1Scheme::select_step(
+        const mhs::core::TimeStepBuffer& /*history*/, double /*current_t*/, double /*duration*/) const
     {
         return {cfg_.initial_dt, 1};
     }

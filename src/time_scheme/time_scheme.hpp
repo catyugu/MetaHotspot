@@ -19,7 +19,7 @@ namespace mhs::sim::time_scheme {
         double max_dt = 1.0;
 
         // Adaptive error tolerances
-        double abs_tol = 1e-6;
+        double abs_tol = 1e-3;
         double rel_tol = 1e-3;
 
         // Order cap for adaptive runs
@@ -52,9 +52,13 @@ namespace mhs::sim::time_scheme {
             history.reset(state.T);
         }
 
-        /// Decide the next (dt, order) given the current time and the history
-        /// snapshots available so far.
-        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
+        /// Decide the next (dt, order) given the current time, simulation
+        /// duration, and the history snapshots available so far.
+        /// The returned dt already accounts for output-time alignment and is
+        /// clamped to the remaining duration — the caller applies it directly.
+        virtual StepDecision select_step(
+            const mhs::core::TimeStepBuffer& history, double current_t, double duration) const
+            = 0;
 
         /// Build the LinearSystem for a given order/dt from a (K, f_static)
         /// and (M_diag) decomposition.  The time scheme fills in the
@@ -71,6 +75,15 @@ namespace mhs::sim::time_scheme {
             = 0;
 
         virtual const TimeSchemeConfig& config() const = 0;
+
+        /// Returns true when `t` lands on an output boundary
+        /// (t % output_dt ≈ 0).  Used by the scheduler to decide when to
+        /// record probes.  Default: always true (record every step).
+        virtual bool is_output_boundary(double t) const
+        {
+            (void)t;
+            return true;
+        }
     };
 
     /// Backward Euler (1st order) with fixed step.  Declared in bdf1_scheme.hpp.
