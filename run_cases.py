@@ -22,6 +22,8 @@ CASE_GROUPS = [
     ("cases/simple_steady_tests", "simple_steady_tests", "steady"),
     ("cases/nonlinear_steady_tests", "nonlinear_steady_tests", "steady"),
     ("cases/simple_transient_tests", "simple_transient_tests", "transient"),
+    ("cases/bdf2_transient_tests", "bdf2_transient_tests", "transient"),
+    ("cases/adaptive_transient_tests", "adaptive_transient_tests", "transient"),
 ]
 
 
