@@ -11,6 +11,8 @@ CPMAddPackage(
     "BUILD_SHARED_LIBS OFF"
     "BUILD_TESTING OFF"
 )
-if(TARGET muparser)
+if(MSVC)
+    target_compile_options(muparser PRIVATE -W0)
+else()
     target_compile_options(muparser PRIVATE -Wno-unused-parameter -Wno-error)
 endif()

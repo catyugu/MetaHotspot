@@ -1,5 +1,7 @@
 #include "expr/expr.hpp"
 #include "layer_processor.hpp"
+#include <cstdint>
+
 
 namespace mhs::sim {
 
@@ -177,7 +179,7 @@ namespace mhs::sim {
         for (int i = 0; i < total; i++) {
             if (result.cells.valid_mask[i] == 1) {
                 result.cells.index_map[i] = compact_idx;
-                result.cells.material_id.push_back(material_id_temp[i]);
+                result.cells.material_id.push_back(static_cast<uint16_t>(material_id_temp[i]));
                 compact_idx++;
             }
         }

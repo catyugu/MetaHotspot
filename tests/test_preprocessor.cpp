@@ -335,7 +335,7 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     int ny_bc = model->mesh.ny;
     int nz_bc = model->mesh.nz;
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    int compact = model->cells.index_map[idx_bc];
+    size_t compact = model->cells.index_map[idx_bc];
     ASSERT_NE(compact, SIZE_MAX);
 
     EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::ZM], mhs::core::BcType::FirstType);
@@ -365,7 +365,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     int ny = model->mesh.ny;
     int nz = model->mesh.nz;
     int idx = 0 * ny * nz + 0 * nz + 0;
-    int compact = model->cells.index_map[idx];
+    size_t compact = model->cells.index_map[idx];
     ASSERT_NE(compact, SIZE_MAX);
 
     EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::SecondType);
@@ -375,7 +375,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> None
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
-    int compact_inner = model->cells.index_map[idx_inner];
+    size_t compact_inner = model->cells.index_map[idx_inner];
     ASSERT_NE(compact_inner, SIZE_MAX);
 
     EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::None);
