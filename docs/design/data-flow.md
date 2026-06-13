@@ -16,15 +16,21 @@ XML
                       ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
                       └─> mhs::core::InternalModel
                               └─> mhs::sim::Scheduler::run
-                                    ├─> mhs::sim::Assembler::assemble(state)
-                                    │     ├─> tbb::parallel_for(0, total)   // skip virtual
-                                    │     │     ├─> material_table[mat_id].{kx,ky,kz,ρ,c}.eval(ctx)
-                                    │     │     ├─> k_along(dir) 选用该面法向对应的 k
-                                    │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
-                                    │     │     ├─> heat_source_table[hs_idx].eval
-                                    │     │     └─> thread-local triplets + b
-                                    │     ├─> combine_each merge
-                                    │     └─> mhs::sim::nonlinear_solve → mhs::sim::LinearSolver::solve(A,b)
+                                    ├─> mhs::sim::time_scheme::create_scheme(cfg)   // Bdf1 | Bdf2 | AdaptiveBdf
+                                    │     ├─> select_step(history, t) → (dt, order)
+                                    │     ├─> dt = clamp(dt, remaining, t_next_output - t)
+                                    │     ├─> mhs::sim::Assembler::assemble_static(state)
+                                    │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
+                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)
+                                    │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
+                                    │     │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
+                                    │     │     │     ├─> heat_source_table[hs_idx].eval
+                                    │     │     │     └─> thread-local triplets + b
+                                    │     │     └─> combine_each merge → StaticOpsResult {K, f_static}
+                                    │     ├─> mhs::sim::Assembler::assemble_mass(state)
+                                    │     │     └─> M_diag[c] = ρ·c_p·vol evaluated at history.latest()
+                                    │     ├─> scheme->build_system(sops, mops, history, order, dt) → LinearSystem
+                                    │     └─> mhs::sim::nonlinear_solve(ls, state, solver) → mhs::sim::LinearSolver::solve(A,b)
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
                                     └─> mhs::post::interpolate_cell_to_node           // run() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）

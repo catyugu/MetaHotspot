@@ -93,22 +93,99 @@ namespace mhs::sim {
         Eigen::VectorXd residual;     // b - A * T  (snapshot at assemble time)
     };
 
+    /// Time-independent (static) operator result: stiffness K + static load
+    /// vector f_static (BC fluxes / heat sources / convective terms).
+    struct StaticOpsResult {
+        Eigen::SparseMatrix<double> K;
+        Eigen::VectorXd f_static;
+    };
+
+    /// Lumped diagonal mass vector M_diag (length N_active).  Evaluated at
+    /// history.latest() to keep the coefficient constant across Newton
+    /// iterations (legacy BDF1 stability).
+    struct MassOpsResult {
+        Eigen::VectorXd M_diag;
+    };
+
     class Assembler {
     public:
         explicit Assembler(const mhs::core::InternalModel& model);
-        LinearSystem assemble(const mhs::core::GlobalState& state);
+        StaticOpsResult assemble_static(const mhs::core::GlobalState& state) const;
+        MassOpsResult   assemble_mass  (const mhs::core::GlobalState& state) const;
     };
 }
 ```
 
-`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
+`assemble_static()` / `assemble_mass()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
-- 瞬态项（仅 `StudyType::Transient && dt > 0`）：`ρc·vol/dt·(T − T_prev)`
+
+瞬态项（`ρc·vol/dt`）**不**在这里累加；由 `mhs::sim::time_scheme::TimeScheme::build_system` 在 `Scheduler::run` 的主循环里按算法（BDF1 / BDF2 / 自适应 BDF）合成。
 
 所有 `eval()` 走 TBB ETS，无锁。
+
+## `time_scheme`
+
+```cpp
+namespace mhs::sim::time_scheme {
+    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
+
+    struct TimeSchemeConfig {
+        TimeSchemeKind kind = TimeSchemeKind::Bdf1;
+        double initial_dt = 1.0;
+        double min_dt     = 1e-9;
+        double max_dt     = 1.0;
+        double abs_tol    = 1e-6;
+        double rel_tol    = 1e-3;
+        std::size_t max_order = 2;
+        double safety    = 0.9;
+        double output_dt = 0.0;
+        int max_internal_steps = 100000;
+    };
+
+    struct StepDecision { double dt; std::size_t order; };
+    enum class AcceptDecision { Accept, Reject };
+
+    class TimeScheme {
+    public:
+        virtual ~TimeScheme() = default;
+        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const = 0;
+        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
+        virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
+            const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;
+        virtual AcceptDecision accept_or_reject(const mhs::core::TimeStepBuffer& history_before,
+            const std::vector<double>& T_candidate, const std::vector<double>& error_estimate) const = 0;
+        virtual const TimeSchemeConfig& config() const = 0;
+    };
+
+    class Bdf1Scheme         : public TimeScheme { ... };  // fixed-step backward Euler
+    class Bdf2Scheme         : public TimeScheme { ... };  // fixed-step BDF2 + startup fallback
+    class AdaptiveBdfScheme  : public TimeScheme { ... };  // variable-order, variable-step
+    class StepController;                                  // HNW-style accept/reject + dt update
+
+    std::unique_ptr<TimeScheme> create_scheme(const TimeSchemeConfig& cfg);
+}
+```
+
+The `Scheduler::run()` main loop is:
+
+```text
+while (current_time < duration):
+    step = scheme->select_step(history, t)
+    dt   = clamp(step.dt, remaining, t_next_output - t)
+    sops = assembler.assemble_static(state)
+    mops = assembler.assemble_mass(state)
+    ls   = scheme->build_system(sops, mops, history, step.order, dt)
+    nonlinear_solve_with_external_ls(ls, state, solver)
+    history.push(T, t + dt)
+    t += dt
+```
+
+The TimeStepBuffer (`mhs::core::TimeStepBuffer`) is a ring buffer storing
+the k most recent (T, time) pairs.  Capacity is `max_order + 1`.  See
+`docs/adr/0006-time-stepping.md` for the full design.
 
 ## `linear_solver`
 

@@ -46,14 +46,19 @@
 XML → core::IOStructure via io::read_xml
   → sim::Preprocessor::load → core::InternalModel
     → sim::Scheduler::run
-        └─ sim::Assembler::assemble(state)   [tbb::parallel_for + ETS, 锁无关]
-            → sim::nonlinear_solve()          [Anderson 加速定点迭代]
-                → sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        ├─ sim::time_scheme::TimeScheme (Bdf1Scheme | Bdf2Scheme | AdaptiveBdfScheme)
+        │   ├─ select_step(history, t) → (dt, order)
+        │   ├─ build_system(sops, mops, history, order, dt) → LinearSystem
+        │   └─ accept_or_reject(history, T_candidate, error)
+        ├─ sim::Assembler::assemble_static(state)   [K, f_static]
+        ├─ sim::Assembler::assemble_mass(state)     [M_diag]
+        └─ sim::nonlinear_solve(ls, state, *solver_) [Anderson 加速定点迭代]
+            → sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
         → post::interpolate_cell_to_node
             → io::write_vtu + io::write_xml
 ```
 
-时间状态（`current_time` / `time_step` / `dt`）存于 `mhs::core::GlobalState`，不在 `mhs::sim::Scheduler` 私有成员。
+Time-scheme state (history / output_step / dt) lives in `mhs::core::GlobalState` (with `TimeStepBuffer history`); the Scheduler drives the loop.  See `docs/adr/0006-time-stepping.md` for the architecture.
 
 ## 关键设计原则
 
@@ -61,11 +66,12 @@ XML → core::IOStructure via io::read_xml
 2. 热源字典化 — `heat_source_table`（去重）+ 每单元 `uint16_t` 索引
 3. Cell-level BC — 每单元存 6 面 BC（`CellBC`）
 4. Precomputed sparsity — 组装只填值，不重建结构
-5. Backward Euler — 瞬态项 `ρc·vol/dt·(T − T_prev)`，θ=1.0
-6. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
-7. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
-8. 无虚函数（`mhs::sim::LinearSolver` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
-9. POD / 纯函数优先
+5. Backward Euler 默认；可选 BDF2 / 自适应 BDF（`TimeScheme` 抽象）
+6. 算法与组装解耦 — `Assembler` 暴露 `assemble_static` + `assemble_mass`；时间离散由 `TimeScheme::build_system` 注入
+7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
+8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
+9. 无虚函数（`mhs::sim::LinearSolver` 与 `mhs::sim::time_scheme::TimeScheme` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
+10. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动）
 
@@ -73,9 +79,10 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间      | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                      |
 | ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`   | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                        |
+| `mhs::core`   | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、TimeSchemeKind        |
 | `mhs::utils`  | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                          |
-| `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、StaticOpsResult、MassOpsResult、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::time_scheme` | `time_scheme/`                                              | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + StepController + TimeSchemeConfig / StepDecision / AcceptDecision                                 |
 | `mhs::io`     | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                     |
 | `mhs::post`   | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                |
 | `mhs::logger` | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                    |
