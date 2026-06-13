@@ -15,15 +15,17 @@ namespace mhs::sim {
             iy = (old_idx % (ny * nz)) / nz;
             iz = old_idx % nz;
         }
+
+        // Per-thread scratch for the TBB parallel_for over grid cells.
+        struct ThreadLocalData {
+            std::vector<Eigen::Triplet<double>> triplets;
+            Eigen::VectorXd b;
+            Eigen::VectorXd mass;
+            explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)), mass(Eigen::VectorXd::Zero(N)) { }
+        };
     } // namespace
 
-    struct ThreadLocalData {
-        std::vector<Eigen::Triplet<double>> triplets;
-        Eigen::VectorXd b;
-        explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)) { }
-    };
-
-    LinearSystem Assembler::assemble(const mhs::core::GlobalState& state)
+    StaticOpsResult Assembler::assemble_static(const mhs::core::GlobalState& state) const
     {
         const auto& mesh = model_.mesh;
         const auto& cells = model_.cells;
@@ -49,14 +51,14 @@ namespace mhs::sim {
             double dz_cell = mesh.dz[iz];
             double vol = dx_cell * dy_cell * dz_cell;
 
-            // 材料字典求值：底层已由 TLS 保证线程安全
+            // Material dictionary evaluation; thread-safe via per-thread TLS instance.
             size_t mat_id = cells.material_id[c_idx];
             const auto& mp = materials[mat_id];
             double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
 
-            // 热源字典求值：利用 uint16_t 索引进行极速查表和计算
+            // Heat source dictionary evaluation: uint16_t index into the table.
             uint16_t hs_idx = cells.heat_source_idx[c_idx];
             double Q = model_.heat_source_table[hs_idx].eval(
                 {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
@@ -132,19 +134,6 @@ namespace mhs::sim {
             }
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
-
-            if (model_.study_type == mhs::core::StudyType::Transient && state.dt > 0.0) {
-                // 标准 backward Euler：质量项用 T_prev 求值（与 T 解耦），
-                // 这样 mass_coeff 在非线性迭代中是常数，避免在更新 T 时反复重算。
-                double rho = materials[mat_id].rho.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
-                double c_heat = materials[mat_id].c.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
-
-                double mass_coeff = rho * c_heat * vol / state.dt;
-                local.triplets.emplace_back(c_idx, c_idx, mass_coeff);
-                local.b(c_idx) += mass_coeff * state.T_prev[c_idx];
-            }
         });
 
         std::vector<Eigen::Triplet<double>> triplets;
@@ -155,15 +144,53 @@ namespace mhs::sim {
             b += local.b;
         });
 
-        Eigen::SparseMatrix<double> A(N, N);
-        A.setFromTriplets(triplets.begin(), triplets.end());
+        Eigen::SparseMatrix<double> K(N, N);
+        K.setFromTriplets(triplets.begin(), triplets.end());
 
-        Eigen::VectorXd T_vec(N);
-        for (int i = 0; i < N; i++)
-            T_vec(i) = state.T[i];
+        return {K, b};
+    }
 
-        Eigen::VectorXd residual_vec = b - A * T_vec;
-        return {A, b, residual_vec};
+    MassOpsResult Assembler::assemble_mass(const mhs::core::GlobalState& state) const
+    {
+        const auto& mesh = model_.mesh;
+        const auto& cells = model_.cells;
+        const auto& materials = model_.material_table;
+
+        int N = static_cast<int>(cells.cell_bcs.size());
+        int total = mesh.nx * mesh.ny * mesh.nz;
+
+        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
+
+        tbb::parallel_for(0, total, [&](int old_idx) {
+            if (cells.valid_mask[old_idx] == 0)
+                return;
+
+            auto& local = thread_data.local();
+            int ix, iy, iz;
+            decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
+
+            int c_idx = (int)cells.index_map[old_idx];
+            double dx_cell = mesh.dx[ix];
+            double dy_cell = mesh.dy[iy];
+            double dz_cell = mesh.dz[iz];
+            double vol = dx_cell * dy_cell * dz_cell;
+
+            // Mass coefficients are evaluated at T_prev to keep them constant
+            // across Newton iterations (matches legacy BDF1 stability).
+            size_t mat_id = cells.material_id[c_idx];
+            const auto& mp = materials[mat_id];
+            double rho = mp.rho.eval(
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
+            double c_heat = mp.c.eval(
+                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T_prev[c_idx], state.current_time});
+
+            local.mass(c_idx) += rho * c_heat * vol;
+        });
+
+        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
+        thread_data.combine_each([&](const ThreadLocalData& local) { M_diag += local.mass; });
+
+        return {M_diag};
     }
 
 } // namespace mhs::sim

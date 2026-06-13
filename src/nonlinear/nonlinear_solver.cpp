@@ -6,6 +6,34 @@
 
 namespace mhs::sim {
 
+    /// Temporary BDF1-based LinearSystem builder for slice 1.
+    /// This will be replaced by TimeScheme::build_system in slice 2–3.
+    static LinearSystem build_bdf1_linear_system(
+        const StaticOpsResult& sops, const MassOpsResult& mops, const mhs::core::GlobalState& state)
+    {
+        // BDF1 (Backward Euler):
+        //   A = K + M_diag/dt
+        //   b = f_static + M_diag * T_prev / dt
+        const int N = static_cast<int>(sops.f_static.size());
+        const double dt = state.dt;
+
+        Eigen::SparseMatrix<double> A = sops.K;
+        Eigen::VectorXd b = sops.f_static;
+
+        for (int i = 0; i < N; ++i) {
+            A.coeffRef(i, i) += mops.M_diag(i) / dt;
+            b(i) += mops.M_diag(i) * state.T_prev[i] / dt;
+        }
+
+        // Compute residual = b - A * T (snapshot of the residual at solve time)
+        Eigen::VectorXd T_vec(N);
+        for (int i = 0; i < N; ++i)
+            T_vec(i) = state.T[i];
+        Eigen::VectorXd residual_vec = b - A * T_vec;
+
+        return {A, b, residual_vec};
+    }
+
     NonLinearResult nonlinear_solve(
         const mhs::core::InternalModel& model, mhs::core::GlobalState& state, LinearSolver& solver)
     {
@@ -17,8 +45,26 @@ namespace mhs::sim {
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
 
+        // For Steady: dt=0, so no mass term — assemble_static alone is the full system.
+        // For Transient: dt>0, we build A = K + M/dt*I, b = f_static + M*T_prev/dt.
+        bool is_transient = (model.study_type == mhs::core::StudyType::Transient && state.dt > 0.0);
+
         for (int iter = 0; iter < cfg.max_iterations; iter++) {
-            auto linear_system = assembler.assemble(state);
+            auto sops = assembler.assemble_static(state);
+
+            LinearSystem linear_system;
+            if (is_transient) {
+                auto mops = assembler.assemble_mass(state);
+                linear_system = build_bdf1_linear_system(sops, mops, state);
+            }
+            else {
+                // Steady: A = K, b = f_static. Compute residual = b - K*T.
+                Eigen::VectorXd T_vec(static_cast<int>(state.T.size()));
+                for (int i = 0; i < static_cast<int>(state.T.size()); ++i)
+                    T_vec(i) = state.T[i];
+                Eigen::VectorXd residual_vec = sops.f_static - sops.K * T_vec;
+                linear_system = {sops.K, sops.f_static, residual_vec};
+            }
 
             double max_residual = 0.0;
             double max_b = 0.0;
@@ -29,7 +75,7 @@ namespace mhs::sim {
                 max_b = std::max(max_b, std::abs(linear_system.b(i)));
             }
 
-            // 结合右端项规模的相对容差与绝对容差
+            // Combined relative + absolute tolerance
             double residual_threshold = rel_tol * max_b + abs_tol;
 
             if (iter > 0 && max_residual <= residual_threshold) {
