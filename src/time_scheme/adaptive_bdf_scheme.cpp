@@ -9,7 +9,7 @@ namespace mhs::sim::time_scheme {
 
     StepDecision AdaptiveBdfScheme::select_step(const mhs::core::TimeStepBuffer& history, double /*current_t*/) const
     {
-        std::size_t order = (history.size() >= 2) ? cfg_.max_order : 1;
+        std::size_t order = (history.size() > cfg_.max_order) ? cfg_.max_order : 1;
         double dt = std::clamp(cfg_.initial_dt, cfg_.min_dt, cfg_.max_dt);
         return {dt, order};
     }
@@ -17,7 +17,7 @@ namespace mhs::sim::time_scheme {
     LinearSystem AdaptiveBdfScheme::build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
         const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
     {
-        if (order == 1 || history.size() < 2) {
+        if (order == 1 || history.size() <= order) {
             return detail::build_bdf1_ls(sops, mops, history, dt);
         }
         return detail::build_bdf2_ls(sops, mops, history, dt);

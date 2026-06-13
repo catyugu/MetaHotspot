@@ -7,14 +7,14 @@ namespace mhs::sim::time_scheme {
 
     StepDecision Bdf2Scheme::select_step(const mhs::core::TimeStepBuffer& history, double /*current_t*/) const
     {
-        std::size_t order = (history.size() >= 2) ? 2 : 1;
+        std::size_t order = (history.size() >= 3) ? 2 : 1;
         return {cfg_.initial_dt, order};
     }
 
     LinearSystem Bdf2Scheme::build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
         const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
     {
-        if (order == 1 || history.size() < 2) {
+        if (order == 1 || history.size() <= order) {
             return detail::build_bdf1_ls(sops, mops, history, dt);
         }
         return detail::build_bdf2_ls(sops, mops, history, dt);
