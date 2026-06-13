@@ -15,6 +15,8 @@ namespace mhs::sim {
 
     void Scheduler::setSolver(std::unique_ptr<LinearSolver> solver) { solver_ = std::move(solver); }
 
+    void Scheduler::setTimeSchemeConfig(time_scheme::TimeSchemeConfig cfg) { scheme_cfg_ = std::move(cfg); }
+
     void Scheduler::run()
     {
         if (!model_ || !solver_) {

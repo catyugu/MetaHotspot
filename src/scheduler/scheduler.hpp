@@ -3,6 +3,7 @@
 #include "data/internal_model.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "scheduler/probe_recorder.hpp"
+#include "time_scheme/time_scheme.hpp"
 
 #include <memory>
 #include <vector>
@@ -16,6 +17,12 @@ namespace mhs::sim {
 
         void setModel(mhs::core::InternalModel* model);
         void setSolver(std::unique_ptr<LinearSolver> solver);
+
+        /// Install a time-scheme configuration.  The actual scheme instance is
+        /// built lazily inside run() from this config; calling run() with no
+        /// config (or with the default TimeSchemeConfig, kind=Bdf1) is the
+        /// historical fixed-step backward-Euler behaviour.
+        void setTimeSchemeConfig(time_scheme::TimeSchemeConfig cfg);
 
         void run();
         const std::vector<double>& solution() const;
@@ -35,6 +42,8 @@ namespace mhs::sim {
         mhs::core::GlobalState state_;
         std::vector<double> solution_;
         ProbeRecorder probe_recorder_;
+
+        time_scheme::TimeSchemeConfig scheme_cfg_{};
     };
 
 } // namespace mhs::sim

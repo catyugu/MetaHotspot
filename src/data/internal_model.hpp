@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "data/time_step_buffer.hpp"
 #include "expr/expr.hpp"
 #include "types.hpp"
 
@@ -47,14 +48,36 @@ namespace mhs::core {
         std::vector<CompiledExpression> cauchy_T_inf;
     };
 
+    /// Mutable, per-step state owned by Scheduler::run().
+    /// Invariant: state.T is the most recent accepted solution; it mirrors
+    /// history.latest() at the end of every accepted step.  T_prev is the
+    /// legacy alias kept for transient mass evaluation (see comment below).
     struct GlobalState {
         double current_time = 0.0;
-        int time_step = 0;
-        double dt = 0.0;
+        int    time_step    = 0;
+        double dt           = 0.0;
 
+        // BDF-k history buffer.  history.latest() == T (after accept).
+        // The buffer capacity matches the time scheme's max_order (typically
+        // 2 for BDF2 / AdaptiveBdf).  Reset via history.reset(T) before the
+        // first push.
+        TimeStepBuffer history{0, 1};
+
+        // 0-based counter of the next output frame (used by adaptive schemes
+        // for output-time alignment).
+        int output_step = 0;
+
+        // Active temperature field, length = N_active (== cells.cell_bcs.size()).
         std::vector<double> T;
-        std::vector<double> T_prev;
+
+        // Per-cell residual snapshot (last nonlinear iteration).
         std::vector<double> residual;
+
+        // Legacy single-step-previous vector, retained because the assembler
+        // evaluates mass coefficients at this state for stability (see
+        // assemble_mass in src/assembler/assembler.cpp).  This will be
+        // superseded by history.at(1) in slice 9 (cleanup).
+        std::vector<double> T_prev;
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
