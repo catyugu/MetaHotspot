@@ -4,6 +4,7 @@
 #include "time_scheme/time_scheme.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace mhs::sim {
 
@@ -37,9 +38,30 @@ namespace mhs::sim {
         state_.dt           = model_->transient_time_step;
         state_.output_step  = 0;
 
+        // Resolve the effective TimeSchemeConfig: explicit setTimeSchemeConfig
+        // call wins; otherwise pull from InternalModel (which the preprocessor
+        // populated from IOStructure's <TimeScheme> block, defaulting to Bdf1
+        // when the XML omits the block).
+        time_scheme::TimeSchemeConfig effective_cfg = scheme_cfg_;
+        // "Was the user explicit?"  We detect by checking initial_dt: the
+        // struct's default is 1.0; if it equals the default and the model has
+        // a different initial_dt, prefer the model's value.  (This is a
+        // pragmatic sentinel; a future API could split out a has-been-set bit.)
+        if (effective_cfg.initial_dt == 1.0 && model_->ts_initial_dt > 0.0
+            && std::abs(effective_cfg.initial_dt - model_->ts_initial_dt) > 1e-12) {
+            effective_cfg.kind        = model_->time_scheme_kind;
+            effective_cfg.initial_dt = model_->ts_initial_dt;
+            effective_cfg.min_dt     = model_->ts_min_dt;
+            effective_cfg.max_dt     = model_->ts_max_dt;
+            effective_cfg.abs_tol    = model_->ts_abs_tol;
+            effective_cfg.rel_tol    = model_->ts_rel_tol;
+            effective_cfg.max_order  = model_->ts_max_order;
+            effective_cfg.output_dt  = model_->ts_output_dt;
+        }
+
         // TimeStepBuffer capacity matches the time scheme's max_order so BDFk
         // windows fit.  For BDF1 / AdaptiveBdf(max_order=1) this is 2.
-        std::size_t history_cap = std::max<std::size_t>(1, scheme_cfg_.max_order + 1);
+        std::size_t history_cap = std::max<std::size_t>(1, effective_cfg.max_order + 1);
         state_.history = mhs::core::TimeStepBuffer(static_cast<std::size_t>(N), history_cap);
 
         if (model_->study_type == mhs::core::StudyType::Steady) {
@@ -51,7 +73,7 @@ namespace mhs::sim {
         }
 
         // --- Transient main loop driven by the time scheme ---
-        auto scheme = time_scheme::create_scheme(scheme_cfg_);
+        auto scheme = time_scheme::create_scheme(effective_cfg);
 
         const double duration = model_->transient_duration;
         const double dt_init  = model_->transient_time_step;

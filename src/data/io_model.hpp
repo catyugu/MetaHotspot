@@ -158,6 +158,24 @@ namespace mhs::core {
         std::vector<double> values;
     };
 
+    /// Time-scheme selection (per ADR-0006 §3.2.2).  IO layer; preprocessor
+    /// copies to InternalModel.  Declared in mhs::core so the enum is
+    /// available to the time-scheme subsystem without dragging io_model.hpp
+    /// in.  This is the canonical enum; the alias in
+    /// mhs::sim::time_scheme is a compatibility re-export.
+    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
+
+    struct TimeSchemeSpec {
+        TimeSchemeKind kind = TimeSchemeKind::Bdf1;
+        double initial_dt   = 0.0;   // 0 = use transient_time_step
+        double min_dt       = 1e-9;
+        double max_dt       = 0.0;   // 0 = use transient_duration / initial_dt
+        double abs_tol      = 1e-6;
+        double rel_tol      = 1e-3;
+        std::size_t max_order = 2;
+        double output_dt    = 0.0;   // 0 = use transient_duration (single output)
+    };
+
     struct IOStructure {
         StudyType study_type;
         Dimension dimension;
@@ -173,6 +191,13 @@ namespace mhs::core {
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
         std::string transient_time_unit = "s";
+
+        // Optional time-scheme override.  When empty, defaults to Bdf1 with
+        // initial_dt = transient_time_step and output_dt = transient_duration.
+        // The XML <Transient> sub-block may specify <Scheme>, <InitialDt>,
+        // <MinDt>, <MaxDt>, <AbsTol>, <RelTol>, <MaxOrder>, <OutputDt>.
+        TimeSchemeSpec time_scheme;
+        bool has_time_scheme_override = false;
 
         ThermalBCType other_bc_type = ThermalBCType::SecondType;
         FirstTypeThermalBC other_bc_first;

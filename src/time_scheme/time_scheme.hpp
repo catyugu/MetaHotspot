@@ -10,7 +10,8 @@
 
 namespace mhs::sim::time_scheme {
 
-    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
+    // Re-exported from mhs::core for code in the time_scheme namespace.
+    using TimeSchemeKind = mhs::core::TimeSchemeKind;
 
     /// Time-scheme parameters.  Values are read from IO; the algorithm
     /// implementation clamps internal usage to physical bounds.
