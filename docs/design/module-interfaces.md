@@ -184,8 +184,7 @@ while (current_time < duration):
 ```
 
 The TimeStepBuffer (`mhs::core::TimeStepBuffer`) is a ring buffer storing
-the k most recent (T, time) pairs.  Capacity is `max_order + 1`.  See
-`docs/adr/0006-time-stepping.md` for the full design.
+the k most recent (T, time) pairs.  Capacity is `max_order + 1`.
 
 ## `linear_solver`
 

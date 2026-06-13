@@ -58,8 +58,6 @@ XML → core::IOStructure via io::read_xml
             → io::write_vtu + io::write_xml
 ```
 
-Time-scheme state (history / output_step / dt) lives in `mhs::core::GlobalState` (with `TimeStepBuffer history`); the Scheduler drives the loop.  See `docs/adr/0006-time-stepping.md` for the architecture.
-
 ## 关键设计原则
 
 1. 内部模型不含原始字符串 — 表达式预编译为 `CompiledExpression`
@@ -77,15 +75,15 @@ Time-scheme state (history / output_step / dt) lives in `mhs::core::GlobalState`
 
 命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
-| 命名空间      | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                      |
-| ------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`   | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、TimeSchemeKind        |
-| `mhs::utils`  | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                          |
-| `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、StaticOpsResult、MassOpsResult、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::sim::time_scheme` | `time_scheme/`                                              | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + StepController + TimeSchemeConfig / StepDecision / AcceptDecision                                 |
-| `mhs::io`     | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                     |
-| `mhs::post`   | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                |
-| `mhs::logger` | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                    |
+| 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、TimeSchemeKind                                         |
+| `mhs::utils`            | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                                                          |
+| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、StaticOpsResult、MassOpsResult、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + StepController + TimeSchemeConfig / StepDecision / AcceptDecision                                                                |
+| `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                     |
+| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                                                |
+| `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                    |
 
 ### 铁律
 

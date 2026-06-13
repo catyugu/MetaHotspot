@@ -158,7 +158,7 @@ namespace mhs::core {
         std::vector<double> values;
     };
 
-    /// Time-scheme selection (per ADR-0006 §3.2.2).  IO layer; preprocessor
+    /// Time-scheme selection. IO layer; preprocessor
     /// copies to InternalModel.  Declared in mhs::core so the enum is
     /// available to the time-scheme subsystem without dragging io_model.hpp
     /// in.  This is the canonical enum; the alias in
@@ -167,13 +167,13 @@ namespace mhs::core {
 
     struct TimeSchemeSpec {
         TimeSchemeKind kind = TimeSchemeKind::Bdf1;
-        double initial_dt   = 0.0;   // 0 = use transient_time_step
-        double min_dt       = 1e-9;
-        double max_dt       = 0.0;   // 0 = use transient_duration / initial_dt
-        double abs_tol      = 1e-6;
-        double rel_tol      = 1e-3;
+        double initial_dt = 0.0; // 0 = use transient_time_step
+        double min_dt = 1e-9;
+        double max_dt = 0.0; // 0 = use transient_duration / initial_dt
+        double abs_tol = 1e-6;
+        double rel_tol = 1e-3;
         std::size_t max_order = 2;
-        double output_dt    = 0.0;   // 0 = use transient_duration (single output)
+        double output_dt = 0.0; // 0 = use transient_duration (single output)
     };
 
     struct IOStructure {

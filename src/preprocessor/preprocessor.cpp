@@ -16,34 +16,28 @@ namespace mhs::sim {
         model->transient_duration = ioStructure.transient_duration;
         model->transient_time_step = ioStructure.transient_time_step;
 
-        // Translate time-scheme spec (defaulting when the XML omits the block).
-        // Per ADR-0006 §3.2.2: absent <Scheme> ⇒ Bdf1 + initial_dt = transient_time_step,
-        // output_dt = transient_duration.
         if (ioStructure.has_time_scheme_override) {
             model->time_scheme_kind = ioStructure.time_scheme.kind;
-            model->ts_initial_dt = ioStructure.time_scheme.initial_dt > 0.0
-                                       ? ioStructure.time_scheme.initial_dt
-                                       : ioStructure.transient_time_step;
-            model->ts_min_dt     = ioStructure.time_scheme.min_dt;
-            model->ts_max_dt     = ioStructure.time_scheme.max_dt > 0.0
-                                       ? ioStructure.time_scheme.max_dt
-                                       : ioStructure.transient_duration;
-            model->ts_abs_tol    = ioStructure.time_scheme.abs_tol;
-            model->ts_rel_tol    = ioStructure.time_scheme.rel_tol;
-            model->ts_max_order  = ioStructure.time_scheme.max_order;
-            model->ts_output_dt  = ioStructure.time_scheme.output_dt > 0.0
-                                       ? ioStructure.time_scheme.output_dt
-                                       : ioStructure.transient_duration;
+            model->ts_initial_dt = ioStructure.time_scheme.initial_dt > 0.0 ? ioStructure.time_scheme.initial_dt
+                                                                            : ioStructure.transient_time_step;
+            model->ts_min_dt = ioStructure.time_scheme.min_dt;
+            model->ts_max_dt = ioStructure.time_scheme.max_dt > 0.0 ? ioStructure.time_scheme.max_dt
+                                                                    : ioStructure.transient_duration;
+            model->ts_abs_tol = ioStructure.time_scheme.abs_tol;
+            model->ts_rel_tol = ioStructure.time_scheme.rel_tol;
+            model->ts_max_order = ioStructure.time_scheme.max_order;
+            model->ts_output_dt = ioStructure.time_scheme.output_dt > 0.0 ? ioStructure.time_scheme.output_dt
+                                                                          : ioStructure.transient_duration;
         }
         else {
             model->time_scheme_kind = mhs::core::TimeSchemeKind::Bdf1;
-            model->ts_initial_dt    = ioStructure.transient_time_step;
-            model->ts_min_dt        = 1e-9;
-            model->ts_max_dt        = ioStructure.transient_duration;
-            model->ts_abs_tol       = 1e-6;
-            model->ts_rel_tol       = 1e-3;
-            model->ts_max_order     = 1;
-            model->ts_output_dt     = ioStructure.transient_duration;
+            model->ts_initial_dt = ioStructure.transient_time_step;
+            model->ts_min_dt = 1e-9;
+            model->ts_max_dt = ioStructure.transient_duration;
+            model->ts_abs_tol = 1e-6;
+            model->ts_rel_tol = 1e-3;
+            model->ts_max_order = 1;
+            model->ts_output_dt = ioStructure.transient_duration;
         }
 
         // 解析几何表达式上下文：变量注册到 expr 全局表，function 在下方 register。
