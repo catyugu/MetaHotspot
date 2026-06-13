@@ -6,13 +6,8 @@
 
 namespace mhs::sim {
 
-    /// BDF1-based LinearSystem builder (slice 9: replaced by the time-scheme
-    /// build_system path when slice 3+ routes a scheme; this glue is kept
-    /// as the fallback for direct nonlinear_solve calls in steady / startup
-    /// scenarios).
-    static LinearSystem build_bdf1_linear_system(
-        const StaticOpsResult& sops, const MassOpsResult& mops, double dt,
-        const std::vector<double>& T_prev)
+    static LinearSystem build_bdf1_linear_system(const StaticOpsResult& sops, const MassOpsResult& mops, double dt,
+        const std::vector<double>& T_prev, const std::vector<double>& T_current)
     {
         const int N = static_cast<int>(sops.f_static.size());
 
@@ -26,7 +21,7 @@ namespace mhs::sim {
 
         Eigen::VectorXd T_vec(N);
         for (int i = 0; i < N; ++i)
-            T_vec(i) = T_prev[i];
+            T_vec(i) = T_current[i];
         Eigen::VectorXd residual_vec = b - A * T_vec;
 
         return {A, b, residual_vec};
@@ -51,9 +46,7 @@ namespace mhs::sim {
         // the Scheduler has pushed the most recent accepted step).  The
         // global GlobalState::T_prev field is being phased out; the local
         // alias here keeps the slice-1 glue self-contained.
-        const std::vector<double>& T_prev = state.history.size() > 0
-                                               ? state.history.latest()
-                                               : state.T;
+        const std::vector<double>& T_prev = state.history.size() > 0 ? state.history.latest() : state.T;
 
         for (int iter = 0; iter < cfg.max_iterations; iter++) {
             auto sops = assembler.assemble_static(state);
@@ -61,7 +54,7 @@ namespace mhs::sim {
             LinearSystem linear_system;
             if (is_transient) {
                 auto mops = assembler.assemble_mass(state);
-                linear_system = build_bdf1_linear_system(sops, mops, state.dt, T_prev);
+                linear_system = build_bdf1_linear_system(sops, mops, state.dt, T_prev, state.T);
             }
             else {
                 Eigen::VectorXd T_vec(static_cast<int>(state.T.size()));
