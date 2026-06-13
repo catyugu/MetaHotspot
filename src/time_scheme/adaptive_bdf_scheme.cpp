@@ -1,4 +1,5 @@
 #include "adaptive_bdf_scheme.hpp"
+#include "step_controller.hpp"
 
 #include <Eigen/Sparse>
 
@@ -55,7 +56,7 @@ namespace mhs::sim::time_scheme {
     {
         // Start at order 1, then promote to max_order as history grows.
         std::size_t order = (history.size() >= 2) ? cfg_.max_order : 1;
-        // Clamp to [min_dt, max_dt]
+        // Clamp initial dt to [min_dt, max_dt]
         double dt = cfg_.initial_dt;
         if (dt < cfg_.min_dt) dt = cfg_.min_dt;
         if (dt > cfg_.max_dt) dt = cfg_.max_dt;
@@ -74,13 +75,10 @@ namespace mhs::sim::time_scheme {
     AcceptDecision AdaptiveBdfScheme::accept_or_reject(const mhs::core::TimeStepBuffer& /*history_before*/,
         const std::vector<double>& /*T_candidate*/, const std::vector<double>& error_estimate) const
     {
-        // Find max |e| over all cells
-        double max_err = 0.0;
-        for (double e : error_estimate)
-            max_err = std::max(max_err, std::abs(e));
-        if (max_err <= cfg_.abs_tol)
-            return AcceptDecision::Accept;
-        return AcceptDecision::Reject;
+        StepController ctrl(cfg_);
+        double e = StepController::error_norm(error_estimate);
+        auto r = ctrl.decide(/*current_dt=*/1.0, /*order=*/1, e);
+        return r.accepted ? AcceptDecision::Accept : AcceptDecision::Reject;
     }
 
 } // namespace mhs::sim::time_scheme
