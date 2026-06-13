@@ -63,11 +63,22 @@ struct GlobalState {
     int    time_step     = 0;
     double dt            = 0.0;   // current transient step size
 
+    TimeStepBuffer history{0, 1};  // BDF-k ring buffer (cap = max_order+1)
+    int output_step = 0;          // next output frame (adaptive schemes)
+
     std::vector<double> T;          // 长度 = N_active
-    std::vector<double> T_prev;
     std::vector<double> residual;
 };
 ```
+
+**Invariants:**
+
+- `history.latest() == T` at the end of every accepted step.
+- `T_prev` was removed in slice 9; read `history.at(1)` for the
+  previous-step snapshot.
+- `history.capacity()` is set to `max_order + 1` in `Scheduler::run()`.
+- `dt` is the **most recently committed** step length (not the
+  upcoming one — use the time-scheme's `StepDecision` for that).
 
 ## InternalModel
 

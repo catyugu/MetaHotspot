@@ -4,8 +4,10 @@ add_subdirectory(assembler)
 add_subdirectory(common)
 add_subdirectory(linear_solver)
 add_subdirectory(preprocessor)
+add_subdirectory(time_scheme)
 
 add_library(mhs_lib
+    data/time_step_buffer.cpp
     io/io.cpp
     nonlinear/nonlinear_solver.cpp
     scheduler/scheduler.cpp
@@ -13,7 +15,8 @@ add_library(mhs_lib
     postprocessor/postprocessor.cpp
 )
 
-target_link_libraries(mhs_lib PUBLIC preprocessor_lib expr_lib common_lib io_lib linear_solver_lib assembler_lib)
+target_link_libraries(mhs_lib PUBLIC
+    preprocessor_lib expr_lib common_lib io_lib linear_solver_lib assembler_lib time_scheme_lib)
 
 if(VERBOSE)
     target_compile_definitions(mhs_lib PUBLIC VERBOSE)

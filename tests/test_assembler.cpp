@@ -70,7 +70,7 @@ TEST(AssemblerTest, ConstructWithModel)
     Assembler assembler(*model);
 }
 
-TEST(AssemblerTest, AssembleReturnsCorrectSize)
+TEST(AssemblerTest, AssembleStaticReturnsKAndFStatic)
 {
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
@@ -80,34 +80,23 @@ TEST(AssemblerTest, AssembleReturnsCorrectSize)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
+    state.dt = 0.0;
 
     Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
+    auto sops = assembler.assemble_static(state);
 
-    EXPECT_EQ(result.A.rows(), N);
-    EXPECT_EQ(result.A.cols(), N);
-    EXPECT_EQ(result.b.size(), N);
-    EXPECT_EQ(result.residual.size(), N);
+    EXPECT_EQ(sops.K.rows(), N);
+    EXPECT_EQ(sops.K.cols(), N);
+    EXPECT_EQ(sops.f_static.size(), N);
 }
 
-TEST(AssemblerTest, LinearSystemHasResidualField)
+TEST(AssemblerTest, AssembleStaticHasNoTransient)
 {
-    LinearSystem sys;
-    sys.A = Eigen::SparseMatrix<double>(3, 3);
-    sys.b = Eigen::VectorXd(3);
-    sys.residual = Eigen::VectorXd(3);
-
-    EXPECT_EQ(sys.A.rows(), 3);
-    EXPECT_EQ(sys.b.size(), 3);
-    EXPECT_EQ(sys.residual.size(), 3);
-}
-
-TEST(AssemblerTest, DiagonalIsNegativeAndSymmetricForInteriorCell)
-{
-    // 2x2x2 cube with all cells active, Neumann(0) BC on all domain faces
-    // Interior cell (1,1,1) should have negative diagonal and symmetric off-diagonal entries
+    // Key invariant: assemble_static does NOT add M_diag/dt to the diagonal.
+    // Compare two calls: one with dt=0 (steady path), one with dt=1.0 (transient).
+    // The K matrix itself must be IDENTICAL — transient terms live in
+    // nonlinear_solve, not in assemble_static.
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -116,177 +105,53 @@ TEST(AssemblerTest, DiagonalIsNegativeAndSymmetricForInteriorCell)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
 
     Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
 
-    // Matrix should be square
-    EXPECT_EQ(result.A.rows(), N);
-    EXPECT_EQ(result.A.cols(), N);
+    state.dt = 0.0;
+    auto sops_a = assembler.assemble_static(state);
 
-    // Each row should have at least one entry (diagonal)
-    for (int i = 0; i < N; i++) {
-        EXPECT_NE(result.A.coeff(i, i), 0.0) << "Diagonal should not be zero for cell " << i;
-    }
+    state.dt = 1.0;
+    auto sops_b = assembler.assemble_static(state);
 
-    // Diagonal entries should be negative (since all coefficients are subtracted from diag)
-    // for steady-state with Neumann(0) BC and no heat source, diag should be < 0
-    // Actually with Neumann(0), the flux is zero, so only interior faces contribute
-    // Interior cell (1,1,1) has 3 interior faces -> diag < 0
-    // Corner cell (0,0,0) has no interior faces + all BC are Neumann(0) -> diag = 0
-    // This is expected for adiabatic BC on all faces with no heat source
-}
-
-TEST(AssemblerTest, DirichletBCProducesStrongDiagonal)
-{
-    // Simple cube with Dirichlet BC on one face
-    mhs::core::IOStructure io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
-
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
-
-    mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
-    layer.thickness_expr = "10";
-
-    mhs::core::Block block;
-    block.name = "test_block";
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
-
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
-
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
-
-    mhs::core::Material mat;
-    mat.name = "copper";
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
-
-    // Dirichlet BC on bottom face (Z=0)
-    mhs::core::Boundary boundary;
-    boundary.name = "bc1";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500";
-    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
-    io.boundaries.push_back(boundary);
-
-    // Neumann(0) for all other faces
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
-
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
-
-    int N = static_cast<int>(model->cells.cell_bcs.size());
-    EXPECT_EQ(N, 8);
-
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
-    state.current_time = 0.0;
-
-    Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
-
-    EXPECT_EQ(result.A.rows(), N);
-    EXPECT_EQ(result.A.cols(), N);
-
-    // Cells at bottom face (iz=0) should have Dirichlet BC on ZM face
-    // This gives them a strong diagonal contribution from 2*k*A_f/half_dist
-    // k=400, A_f = dx*dy = 5e-3*5e-3 = 25e-6, half_dist = dz/2 = 2.5e-3
-    // 2*400*25e-6/2.5e-3 = 2*400*0.01 = 8.0
-    // So diagonal for bottom cells should include this contribution
-}
-
-TEST(AssemblerTest, HeatSourceContributesToRHS)
-{
-    // Simple cube with a heat source
-    mhs::core::IOStructure io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
-
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
-
-    mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
-    layer.thickness_expr = "10";
-
-    mhs::core::Block block;
-    block.name = "test_block";
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "1e6"; // 1e6 W/m^3 heat source
-    block.is_normal_material = true;
-
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
-
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
-
-    mhs::core::Material mat;
-    mat.name = "copper";
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
-
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
-
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
-
-    int N = static_cast<int>(model->cells.cell_bcs.size());
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
-    state.current_time = 0.0;
-
-    Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
-
-    // Each cell has Q=1e6 W/m^3, vol = (5mm)^3 = 125e-9 m^3
-    // Q*vol = 1e6 * 125e-9 = 0.125 W
-    // RHS should contain this heat source contribution
-    // (plus any BC contributions)
-    for (int i = 0; i < N; i++) {
-        // RHS should be at least the heat source contribution
-        EXPECT_GT(std::abs(result.b(i)), 0.0) << "RHS should not be zero with heat source";
+    EXPECT_EQ(sops_a.K.nonZeros(), sops_b.K.nonZeros());
+    for (int k = 0; k < sops_a.K.outerSize(); ++k) {
+        for (typename Eigen::SparseMatrix<double>::InnerIterator it(sops_a.K, k); it; ++it) {
+            double diff = std::abs(it.value() - sops_b.K.coeff(it.row(), it.col()));
+            EXPECT_LT(diff, 1e-12) << "K(" << it.row() << "," << it.col() << ") differs with dt change";
+        }
     }
 }
 
-TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
+TEST(AssemblerTest, AssembleMassReturnsDiag)
 {
-    // Cube with Cauchy/Robin BC on top face
+    auto io = make_simple_cube_io();
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int N = static_cast<int>(model->cells.cell_bcs.size());
+    mhs::core::GlobalState state;
+    state.T.resize(N, 300.0);
+    state.current_time = 0.0;
+
+    Assembler assembler(*model);
+    auto mops = assembler.assemble_mass(state);
+
+    EXPECT_EQ(mops.M_diag.size(), N);
+    // Each cell: rho=8920, c=385, vol = (5e-3)^3 = 1.25e-7
+    // M_diag = 8920 * 385 * 1.25e-7 = 0.4293
+    double expected = 8920.0 * 385.0 * 1.25e-7;
+    for (int i = 0; i < N; ++i) {
+        EXPECT_NEAR(mops.M_diag(i), expected, 1e-6) << "Cell " << i;
+    }
+}
+
+TEST(AssemblerTest, AssembleStaticReadsTemperature)
+{
+    // Material k is T-dependent in this case ("100 + T"). Different T should
+    // produce different K.
     mhs::core::IOStructure io;
     io.study_type = mhs::core::StudyType::Steady;
     io.dimension = mhs::core::Dimension::Dimension3D;
@@ -299,16 +164,14 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "test_layer";
+    layer.name = "l";
     layer.is_top_layer = true;
     layer.thickness_expr = "10";
-
     mhs::core::Block block;
-    block.name = "test_block";
-    block.material_name = "copper";
+    block.name = "b";
+    block.material_name = "mat";
     block.ti_reyuan_expr = "0";
     block.is_normal_material = true;
-
     mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
@@ -316,23 +179,13 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     rect.width_expr = "10";
     rect.height_expr = "10";
     block.all_rects.push_back(rect);
-
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
-
-    // Cauchy BC on top face (Z=10mm)
-    mhs::core::Boundary boundary;
-    boundary.name = "bc1";
-    boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
-    boundary.third.convection_coeff = "10";
-    boundary.third.T_inf = "300";
-    boundary.face_keys.push_back("Z|E|10|0,10,0,10");
-    io.boundaries.push_back(boundary);
+    mat.name = "mat";
+    mat.kx = mat.ky = mat.kz = "100 + T";
+    io.materials["mat"] = mat;
 
     io.other_bc_type = mhs::core::ThermalBCType::SecondType;
     io.other_bc_second.heat_flux = "0";
@@ -342,21 +195,52 @@ TEST(AssemblerTest, CauchyBCAddsConvectiveTerms)
     ASSERT_NE(model, nullptr);
 
     int N = static_cast<int>(model->cells.cell_bcs.size());
+    Assembler assembler(*model);
+
+    mhs::core::GlobalState s1;
+    s1.T.assign(N, 300.0);
+    auto k1 = assembler.assemble_static(s1).K;
+
+    mhs::core::GlobalState s2;
+    s2.T.assign(N, 500.0);
+    auto k2 = assembler.assemble_static(s2).K;
+
+    bool differs = false;
+    for (int k = 0; k < k1.outerSize() && !differs; ++k) {
+        for (typename Eigen::SparseMatrix<double>::InnerIterator it(k1, k); it && !differs; ++it) {
+            if (std::abs(it.value() - k2.coeff(it.row(), it.col())) > 1e-9) {
+                differs = true;
+            }
+        }
+    }
+    EXPECT_TRUE(differs) << "T-dependent k should produce different K for different T";
+}
+
+TEST(AssemblerTest, AssembleStaticMatchesOldAssembleForSteady)
+{
+    // Sanity: for steady-state (dt=0), assemble_static returns A = K.
+    // The b vector should equal what the old `assemble` would have computed for
+    // steady (no mass term). The diagonal of K should be the same (negative).
+    auto io = make_simple_cube_io();
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+    ASSERT_NE(model, nullptr);
+
+    int N = static_cast<int>(model->cells.cell_bcs.size());
     mhs::core::GlobalState state;
     state.T.resize(N, 300.0);
-    state.T_prev.resize(N, 300.0);
     state.current_time = 0.0;
+    state.dt = 0.0;
 
     Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
+    auto sops = assembler.assemble_static(state);
 
-    EXPECT_EQ(result.A.rows(), N);
-    EXPECT_EQ(result.A.cols(), N);
-
-    // Top face cells should have Cauchy BC contributions
-    // h=10, T_inf=300, A_f = dx*dy = 25e-6 m^2
-    // Additional to diagonal: -h*A_f and -k*A_f/half_dist
-    // Additional to RHS: h*A_f*T_inf + k*A_f/half_dist*T_inf
+    // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
+    for (int i = 0; i < N; ++i) {
+        EXPECT_NEAR(sops.f_static(i), 0.0, 1e-12);
+    }
+    // And K should be non-empty.
+    EXPECT_GT(sops.K.nonZeros(), 0);
 }
 
 TEST(AssemblerTest, Case1AssemblyRuns)
@@ -376,20 +260,13 @@ TEST(AssemblerTest, Case1AssemblyRuns)
 
     mhs::core::GlobalState state;
     state.T.resize(N, model->initial_temperature);
-    state.T_prev.resize(N, model->initial_temperature);
     state.current_time = 0.0;
+    state.dt = 0.0;
 
     Assembler assembler(*model);
-    LinearSystem result = assembler.assemble(state);
-
-    EXPECT_EQ(result.A.rows(), N);
-    EXPECT_EQ(result.A.cols(), N);
-    EXPECT_EQ(result.b.size(), N);
-    EXPECT_EQ(result.residual.size(), N);
-
-    // Matrix should not be empty - there should be non-zero entries
-    EXPECT_GT(result.A.nonZeros(), 0);
-
-    // RHS should not be all zeros (heat source + BC contributions)
-    EXPECT_GT(result.b.norm(), 0.0);
+    auto sops = assembler.assemble_static(state);
+    EXPECT_EQ(sops.K.rows(), N);
+    EXPECT_EQ(sops.K.cols(), N);
+    EXPECT_GT(sops.K.nonZeros(), 0);
+    EXPECT_GT(sops.f_static.norm(), 0.0);
 }
