@@ -63,6 +63,7 @@ records the architecture and trade-offs.
 
 6. **`Scheduler::run()` transient loop** is driven by a
    `time_scheme::create_scheme(cfg)` instance:
+
    ```text
    while (current_time < duration):
        step = scheme->select_step(history, t)
@@ -74,10 +75,12 @@ records the architecture and trade-offs.
        history.push(T, t + dt)
        t += dt
    ```
+
    Steady problems bypass the scheme and go straight to
    `nonlinear_solve(model, state, solver)`.
 
 7. **IO** — a new `<TimeScheme>` sub-block under `<Structure>`:
+
    ```xml
    <TimeScheme>
        <Scheme>Bdf2</Scheme>
@@ -90,6 +93,7 @@ records the architecture and trade-offs.
        <OutputDt>0.2</OutputDt>
    </TimeScheme>
    ```
+
    Absent block ⇒ `Bdf1` with `initial_dt = transient_time_step` and
    `output_dt = transient_duration`.  The preprocessor copies the spec
    into `InternalModel`; the scheduler uses the model values unless
@@ -131,11 +135,11 @@ records the architecture and trade-offs.
 ## Consequences
 
 - All 149 unit tests pass.  Cases:
-  - `cases/simple_steady_tests/*` — steady: unchanged.
-  - `cases/simple_transient_tests/*` — BDF1: max field diff 0.05K
+    - `cases/simple_steady_tests/*` — steady: unchanged.
+    - `cases/simple_transient_tests/*` — BDF1: max field diff 0.05K
     (1K threshold), reference numerics preserved.
-  - `cases/bdf2_transient_tests/case1.xml` — new BDF2 case.
-  - `cases/adaptive_transient_tests/{case1,case2,case3}.xml` — new
+    - `cases/bdf2_transient_tests/case1.xml` — new BDF2 case.
+    - `cases/adaptive_transient_tests/{case1,case2,case3}.xml` — new
     adaptive cases, including incommensurate `output_dt` vs internal
     dt.
 

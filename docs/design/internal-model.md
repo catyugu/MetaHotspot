@@ -72,6 +72,7 @@ struct GlobalState {
 ```
 
 **Invariants:**
+
 - `history.latest() == T` at the end of every accepted step.
 - `T_prev` was removed in slice 9; read `history.at(1)` for the
   previous-step snapshot.

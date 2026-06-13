@@ -173,11 +173,11 @@ struct Function {
 
 ### BC 类型
 
-| 类型       | 数学                          | XML 元素                       |
-| ---------- | ----------------------------- | ------------------------------ |
-| FirstType  | `T = T₀`                      | `FirstTypeThermalBoundary`     |
-| SecondType | `-k ∂T/∂n = q₀`               | `SecondTypeThermalBoundary`    |
-| ThirdType  | `-k ∂T/∂n = h(T - T_∞)`       | `ThirdTypeThermalBoundary`     |
+| 类型       | 数学                    | XML 元素                    |
+|------------|-------------------------|-----------------------------|
+| FirstType  | `T = T₀`                | `FirstTypeThermalBoundary`  |
+| SecondType | `-k ∂T/∂n = q₀`         | `SecondTypeThermalBoundary` |
+| ThirdType  | `-k ∂T/∂n = h(T - T_∞)` | `ThirdTypeThermalBoundary`  |
 
 ### Face key 格式
 
