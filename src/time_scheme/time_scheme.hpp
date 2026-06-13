@@ -28,6 +28,10 @@ namespace mhs::sim::time_scheme {
         std::size_t order = 1;
     };
 
+    struct StepResult {
+        bool accepted = true;
+    };
+
     class TimeScheme {
     public:
         virtual ~TimeScheme() = default;
@@ -40,16 +44,22 @@ namespace mhs::sim::time_scheme {
         virtual StepDecision select_step(
             const mhs::core::TimeStepBuffer& history, double current_t, double duration) const
             = 0;
+
         virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
             = 0;
 
-        virtual void accept_or_reject(const std::vector<double>& error_estimate) const { (void)error_estimate; }
+        // 统一处理误差评估、步长接受或拒绝，更新内部的自适应策略参数
+        virtual StepResult evaluate_step(
+            const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T, double current_dt) const
+            = 0;
+
         virtual bool is_output_boundary(double t) const
         {
             (void)t;
             return true;
         }
+
         virtual const TimeSchemeConfig& config() const = 0;
     };
 
