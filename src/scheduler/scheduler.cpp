@@ -1,3 +1,4 @@
+#include "assembler/assembler.hpp"
 #include "common/logger.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
 #include "scheduler.hpp"

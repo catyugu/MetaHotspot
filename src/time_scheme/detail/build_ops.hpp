@@ -1,5 +1,5 @@
 #pragma once
-#include "assembler/assembler.hpp"
+#include "data/linear_system.hpp"
 #include "data/time_step_buffer.hpp"
 #include <Eigen/Sparse>
 

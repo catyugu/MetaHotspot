@@ -1,7 +1,7 @@
 #pragma once
 
-#include "assembler/assembler.hpp"
 #include "data/internal_model.hpp"
+#include "data/linear_system.hpp"
 #include "linear_solver/linear_solver.hpp"
 
 #include <functional>
