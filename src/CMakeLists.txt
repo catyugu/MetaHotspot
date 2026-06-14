@@ -12,6 +12,7 @@ add_library(mhs_lib
     scheduler/scheduler.cpp
     scheduler/probe_recorder.cpp
     postprocessor/postprocessor.cpp
+    postprocessor/sample_point.cpp
 )
 
 target_link_libraries(mhs_lib PUBLIC

@@ -1,11 +1,11 @@
 #include "common/mesh_utils.hpp"
-#include "common/sample_point.hpp"
+#include "postprocessor/sample_point.hpp"
 
 #include <Eigen/Dense>
 #include <cmath>
 #include <limits>
 
-namespace mhs::utils {
+namespace mhs::post {
 
     double sample_solve_least_squares(
         const std::vector<SampleDataPoint>& pts, double node_x, double node_y, double node_z)
@@ -48,7 +48,7 @@ namespace mhs::utils {
         fx = mesh.cx[ix];
         fy = mesh.cy[iy];
         fz = mesh.cz[iz];
-        double half = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+        double half = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
         switch (dir) {
         case mhs::core::FaceDir::XM:
             fx -= half;
@@ -79,7 +79,7 @@ namespace mhs::utils {
         sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
         mhs::core::FieldContext ctx {fx, fy, fz, T_c, time};
 
-        double half_dist = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+        double half_dist = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
 
         if (bc_type == mhs::core::BcType::SecondType) {
             double q = bc_params.neumann_q[param_idx].eval(ctx);
@@ -94,4 +94,4 @@ namespace mhs::utils {
         return T_c;
     }
 
-} // namespace mhs::utils
+} // namespace mhs::post

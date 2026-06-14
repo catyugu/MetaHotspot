@@ -20,14 +20,14 @@ MetaHotspot/
 │   ├── data/                    # mhs::core               数据契约（types, io_model, internal_model）
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
-│   ├── common/                  # mhs::logger, mhs::utils (mesh_utils + sample_point)
+│   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
 │   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
 │   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
 │   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度，ProbeRecorder
 │   ├── time_scheme/            # mhs::sim::time_scheme   BDF1/BDF2/AdaptiveBdf
-│   └── postprocessor/           # mhs::post (子组织)     单元→节点插值
+│   └── postprocessor/           # mhs::post (子组织)     单元→节点插值、局部采样
 ├── tests/                       # GTest, 每模块一个套件
 └── bin/                         # 主程序入口
 ```
@@ -92,10 +92,10 @@ namespace mhs::logger {
 |---------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`         | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::core`   | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`  | `common/mesh_utils.hpp`、`common/sample_point.{hpp,cpp}`                | 面法向查表、3D 局部采样辅助              |
+| `mhs::utils`  | `common/mesh_utils.hpp`                                                 | 面法向查表                               |
 | `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
 | `mhs::io`     | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`   | `postprocessor/`                                                        | 单元→节点插值、导出场                    |
+| `mhs::post`   | `postprocessor/*`                                                       | 单元→节点插值、局部采样辅助、导出场      |
 | `mhs::logger` | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

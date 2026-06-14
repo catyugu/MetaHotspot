@@ -8,14 +8,14 @@
 // The math — least-squares plane fit on cell centers + extrapolated face
 // temperatures — is the same in both. Only the aggregation scope differs.
 //
-// Heavy implementation lives in sample_point.cpp (built into common_lib).
+// Heavy implementation lives in sample_point.cpp (built into mhs_lib).
 
 #include "data/internal_model.hpp"
 
 #include <cstdint>
 #include <vector>
 
-namespace mhs::utils {
+namespace mhs::post {
 
     struct SampleDataPoint {
         double x = 0.0, y = 0.0, z = 0.0;
@@ -39,4 +39,4 @@ namespace mhs::utils {
         double T_c, double k, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz,
         const mhs::core::BCParamTable& bc_params, double time);
 
-} // namespace mhs::utils
+} // namespace mhs::post
