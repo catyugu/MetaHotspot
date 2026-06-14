@@ -9,7 +9,7 @@
 ## 求解类型
 
 - **Steady**: `mhs::core::StudyType::Steady`。视为 t=0 的单次非线性迭代，scheduler 不做时间循环。
-- **Transient**: `mhs::core::StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `T_prev = T` + `mhs::sim::nonlinear_solve()`。
+- **Transient**: `mhs::core::StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `assemble → build_system → nonlinear_solve → evaluate_step`。
 
 ## 网格
 
@@ -47,9 +47,9 @@ XML → core::IOStructure via io::read_xml
   → sim::Preprocessor::load → core::InternalModel
     → sim::Scheduler::run
         ├─ sim::time_scheme::TimeScheme (Bdf1Scheme | Bdf2Scheme | AdaptiveBdfScheme)
-        │   ├─ select_step(history, t) → (dt, order)
+        │   ├─ select_step(history, t, duration) → (dt, order)
         │   ├─ build_system(sops, mops, history, order, dt) → LinearSystem
-        │   └─ accept_or_reject(history, T_candidate, error)
+        │   └─ evaluate_step(history, current_T, dt) → StepResult
         ├─ sim::Assembler::assemble_static(state)   [K, f_static]
         ├─ sim::Assembler::assemble_mass(state)     [M_diag]
         └─ sim::nonlinear_solve(ls, state, *solver_) [Anderson 加速定点迭代]
@@ -77,10 +77,10 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                      |
 | ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material、TimeSchemeKind                                         |
+| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                         |
 | `mhs::utils`            | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                                                          |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、StaticOpsResult、MassOpsResult、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + StepController + TimeSchemeConfig / StepDecision / AcceptDecision                                                                |
+| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + TimeSchemeConfig / StepDecision / StepResult                                                                                     |
 | `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                     |
 | `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                                                |
 | `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                    |

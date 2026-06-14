@@ -27,7 +27,7 @@ struct Block {
     std::string y_offset_expr;
     std::string ti_reyuan_expr;  // 体热源表达式 [W/m³]，如 "1e9" 或 "1e8+0.5*x"
     std::string name;
-    bool is_normal_material = true;
+    std::string thickness_expr;  // Block 自己的厚度表达式（layer 0 可变厚度）
 };
 
 struct Layer {
@@ -206,6 +206,6 @@ Face|Direction|CoordValue|RectList
 - **三表达式**（`DaoreXishu>kx_expr, ky_expr, kz_expr</DaoreXishu>`）→ 按逗号分隔（容忍空白）分别赋给 `kx / ky / kz`。
 - 其它段数（2 段、4 段及以上）经 `MHS_LOG_ERROR` panic。
 
-### Block 不含 Z 字段
+### Block 不含 XY 以外的空间字段
 
-Block 仅在 XY 平面通过 add/sub Rect 定义形状，Z 范围完全继承父 Layer 的 `z_start/z_end`。
+Block 仅在 XY 平面通过 add/sub Rect 定义形状，Z 范围默认继承父 Layer 的 `z_start/z_end`（layer 0 支持 Block 级 `thickness_expr` 实现可变 Z 厚度）。

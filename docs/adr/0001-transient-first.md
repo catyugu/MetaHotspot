@@ -13,11 +13,12 @@ Cases include both steady and transient studies. CLAUDE.md mandates treating all
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
 - `Scheduler::run()` 根据 `InternalModel::study_type` 分支：`Steady` 跳过时间循环，调用一次 `mhs::sim::nonlinear_solve()`；`Transient` 进入时间步循环至 `current_time >= transient_duration`。
+- 瞬态使用 `TimeScheme`（默认 `AdaptiveBdf`）控制步长选择与误差评估。
 - Nonlinear iteration lives inside each time step.
-- `GlobalState` always carries `T`, `T_prev`, and `dt` so future time-derivative terms fit without structural change.
+- `GlobalState` 始终携带 `T`、`history`（`TimeStepBuffer`）和 `dt`，以支持未来时间导数项。
 
 ## Notes
 
 - **Steady evaluation context**: when `study_type == Steady`, expressions are evaluated with `t = 0`. Steady means equilibrium, not time advancing.
 - **Steady behavior**: `Scheduler::run()` 在 `study_type == Steady` 分支下跳过时间循环，仅对初始 `T = initial_temperature` 调用一次 `mhs::sim::nonlinear_solve()` 至收敛。
-- **Transient behavior**: 标准时间步进 `t₀ → t₁ → … → t_end`，每步 `T_prev = T` 后调用 `mhs::sim::nonlinear_solve()`，收敛后 `current_time += dt`。
+- **Transient behavior**: 标准时间步进 `t₀ → t₁ → … → t_end`，每步 `assemble → build_system → nonlinear_solve → evaluate_step`，接受后 `history.push(T, t)`，收敛后 `current_time += dt`。

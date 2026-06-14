@@ -17,7 +17,7 @@ XML
                       └─> mhs::core::InternalModel
                               └─> mhs::sim::Scheduler::run
                                     ├─> mhs::sim::time_scheme::create_scheme(cfg)   // Bdf1 | Bdf2 | AdaptiveBdf
-                                    │     ├─> select_step(history, t) → (dt, order)
+                                    │     ├─> select_step(history, t, duration) → (dt, order)
                                     │     ├─> dt = clamp(dt, remaining, t_next_output - t)
                                     │     ├─> mhs::sim::Assembler::assemble_static(state)
                                     │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
@@ -30,7 +30,8 @@ XML
                                     │     ├─> mhs::sim::Assembler::assemble_mass(state)
                                     │     │     └─> M_diag[c] = ρ·c_p·vol evaluated at history.latest()
                                     │     ├─> scheme->build_system(sops, mops, history, order, dt) → LinearSystem
-                                    │     └─> mhs::sim::nonlinear_solve(ls, state, solver) → mhs::sim::LinearSolver::solve(A,b)
+                                    │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
+                                    │     └─> scheme->evaluate_step(history, T, dt) → StepResult
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
                                     └─> mhs::post::interpolate_cell_to_node           // run() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）

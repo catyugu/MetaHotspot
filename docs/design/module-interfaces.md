@@ -45,10 +45,15 @@ std::vector<ResolvedLayerGeometry> resolve_geometry(
 int find_block_for_cell(const ResolvedLayerGeometry& layer,
                         double cx, double cy, double cz);  // -1 = virtual
 
-void resolve_layers(const std::vector<ResolvedLayerGeometry>& layers,
-                    const mhs::core::MeshGeometry& mesh,
-                    const std::unordered_map<std::string, size_t>& name_to_idx,
-                    mhs::core::CellFields& cells);
+struct LayerResolveResult {
+    mhs::core::CellFields cells;
+    std::vector<size_t> layer_id_old;
+};
+
+LayerResolveResult resolve_layers(
+    const std::vector<ResolvedLayerGeometry>& resolved_layers,
+    const mhs::core::MeshGeometry& mesh,
+    const std::unordered_map<std::string, size_t>& name_to_idx);
 
 struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
                      double coord_value = 0.0;
@@ -136,15 +141,15 @@ namespace mhs::sim::time_scheme {
         double initial_dt = 1.0;
         double min_dt     = 1e-9;
         double max_dt     = 1.0;
-        double abs_tol    = 1e-6;
-        double rel_tol    = 1e-3;
+        double abs_tol    = 1e-4;
+        double rel_tol    = 1e-6;
         std::size_t max_order = 2;
         double safety    = 0.9;
         double output_dt = 0.0;
     };
 
     struct StepDecision { double dt; std::size_t order; };
-    enum class AcceptDecision { Accept, Reject };
+    struct StepResult { bool accepted = true; };
 
     class TimeScheme {
     public:
@@ -153,18 +158,18 @@ namespace mhs::sim::time_scheme {
         {
             history.reset(state.T);
         }
-        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t) const = 0;
+        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t, double duration) const = 0;
         virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;
-        virtual AcceptDecision accept_or_reject(const mhs::core::TimeStepBuffer& history_before,
-            const std::vector<double>& T_candidate, const std::vector<double>& error_estimate) const = 0;
+        virtual StepResult evaluate_step(
+            const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T, double current_dt) const = 0;
+        virtual bool is_output_boundary(double t) const;
         virtual const TimeSchemeConfig& config() const = 0;
     };
 
     class Bdf1Scheme         : public TimeScheme { ... };  // fixed-step backward Euler
     class Bdf2Scheme         : public TimeScheme { ... };  // fixed-step BDF2 + startup fallback
     class AdaptiveBdfScheme  : public TimeScheme { ... };  // variable-order, variable-step
-    class StepController;                                  // HNW-style accept/reject + dt update
 
     std::unique_ptr<TimeScheme> create_scheme(const TimeSchemeConfig& cfg);
 }
@@ -174,14 +179,16 @@ The `Scheduler::run()` main loop is:
 
 ```text
 while (current_time < duration):
-    step = scheme->select_step(history, t)
+    step = scheme->select_step(history, t, duration)
     dt   = clamp(step.dt, remaining, t_next_output - t)
     sops = assembler.assemble_static(state)
     mops = assembler.assemble_mass(state)
     ls   = scheme->build_system(sops, mops, history, step.order, dt)
-    nonlinear_solve_with_external_ls(ls, state, solver)
-    history.push(T, t + dt)
-    t += dt
+    nonlinear_solve(ls, state, solver)
+    step_result = scheme->evaluate_step(history, T, dt)
+    if step_result.accepted:
+        history.push(T, t + dt)
+        t += dt
 ```
 
 The TimeStepBuffer (`mhs::core::TimeStepBuffer`) is a ring buffer storing
@@ -237,15 +244,16 @@ namespace mhs::sim {
         double absolute_tolerance   = 1e-12;
     };
 
-    NonLinearResult nonlinear_solve(const mhs::core::InternalModel& model,
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider,
                                     mhs::core::GlobalState& state,
-                                    LinearSolver& solver);
+                                    LinearSolver& solver,
+                                    const NonLinearConfig& cfg = {});
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：assemble → solve → underrelax 更新 → 收敛判据。**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
+`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider` 获取线性系统 → solve → underrelax 更新 → 收敛判据。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
 
-非线性的所有控制参数（`underrelaxation` / `max_iterations` / 收敛容差）都由本模块**自己持有**——`nonlinear_solve` 无 cfg 入参；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
+非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
 
 ## `scheduler`
 
@@ -288,7 +296,7 @@ namespace mhs::sim {
 `run()` 行为：
 
 - `Steady`：跳过时间循环，单次调用 `nonlinear_solve()`
-- `Transient`：循环至 `current_time < duration`，每步 `T_prev = T` 后调用 `nonlinear_solve()`
+- `Transient`：按 `TimeScheme`（默认 `AdaptiveBdf`）循环至 `current_time >= duration`，每步 `assemble → build_system → nonlinear_solve → evaluate_step`，接受后 `history.push(T, t)`。
 
 ## `postprocessor`
 

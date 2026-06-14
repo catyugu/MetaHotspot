@@ -74,8 +74,7 @@ struct GlobalState {
 **Invariants:**
 
 - `history.latest() == T` at the end of every accepted step.
-- `T_prev` was removed in slice 9; read `history.at(1)` for the
-  previous-step snapshot.
+- The previous-step snapshot is at `history.at(1)`.
 - `history.capacity()` is set to `max_order + 1` in `Scheduler::run()`.
 - `dt` is the **most recently committed** step length (not the
   upcoming one — use the time-scheme's `StepDecision` for that).
@@ -105,5 +104,5 @@ struct InternalModel {
 - **虚拟单元**：assembler 跳过 `valid_mask[idx]==0`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
 - **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
-- **无 ring buffer**：当前仅支持 Backward Euler；多步法（`T_history` / `dt_history`）尚未实现
+- **Ring buffer (`TimeStepBuffer`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`history.latest() == T` 在每步接受后成立。
 - **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::utils`（`src/common/mesh_utils.hpp`），由装配器和预处理器共享。
