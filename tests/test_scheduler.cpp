@@ -28,7 +28,6 @@ static mhs::core::IOStructure make_simple_cube_io()
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -87,7 +86,6 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -162,7 +160,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e6"; // heat source
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -234,7 +231,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     block.name = "b";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e8";
-    block.is_normal_material = true;
+
     mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";
@@ -342,7 +339,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     block.name = "b";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
+
     mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";

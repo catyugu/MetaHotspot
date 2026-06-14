@@ -19,6 +19,10 @@ namespace mhs::sim {
         std::vector<ResolvedRect> rects;
         std::string material_name;
         std::string ti_reyuan_expr; // kept as string for later mhs::core::parse
+
+        // 该 Block 在世界坐标系中的 Z 范围
+        double z_start = 0.0;
+        double z_end = 0.0;
     };
 
     // Pre-resolved geometry for a single layer

@@ -34,7 +34,6 @@ static mhs::core::IOStructure make_simple_cube_io()
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -171,7 +170,7 @@ TEST(AssemblerTest, AssembleStaticReadsTemperature)
     block.name = "b";
     block.material_name = "mat";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
+
     mhs::core::Rect rect;
     rect.add_sub = true;
     rect.x_expr = "0";

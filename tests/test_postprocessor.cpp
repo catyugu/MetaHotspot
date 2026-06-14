@@ -30,7 +30,6 @@ static mhs::core::IOStructure make_simple_uniform_grid_io()
     block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -122,7 +121,6 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -205,7 +203,6 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -305,7 +302,6 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;

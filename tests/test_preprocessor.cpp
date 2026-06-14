@@ -37,7 +37,6 @@ static mhs::core::IOStructure make_simple_io()
     block.name = "test_block";
     block.material_name = "test_material";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -162,7 +161,6 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     block1.name = "b1";
     block1.material_name = "copper";
     block1.ti_reyuan_expr = "0";
-    block1.is_normal_material = true;
 
     mhs::core::Rect r1;
     r1.add_sub = true;
@@ -193,7 +191,6 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     block2.name = "b2";
     block2.material_name = "silicon";
     block2.ti_reyuan_expr = "0";
-    block2.is_normal_material = true;
 
     mhs::core::Rect r3;
     r3.add_sub = true;
@@ -296,7 +293,6 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -448,7 +444,6 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -516,7 +511,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     block1.name = "substrate";
     block1.material_name = "copper";
     block1.ti_reyuan_expr = "0";
-    block1.is_normal_material = true;
 
     mhs::core::Rect rect1;
     rect1.add_sub = true;
@@ -531,7 +525,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     block2.name = "chip";
     block2.material_name = "silicon";
     block2.ti_reyuan_expr = "1e7";
-    block2.is_normal_material = true;
 
     mhs::core::Rect rect2;
     rect2.add_sub = true;
@@ -622,7 +615,6 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;
@@ -703,7 +695,6 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
-    block.is_normal_material = true;
 
     mhs::core::Rect rect;
     rect.add_sub = true;

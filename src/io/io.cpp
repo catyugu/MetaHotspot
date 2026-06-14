@@ -424,8 +424,8 @@ namespace mhs::io {
                         if (const XMLElement* yoff = block_elem->FirstChildElement("YOffsetExpression")) {
                             block.y_offset_expr = get_text(yoff);
                         }
-                        if (const XMLElement* normal = block_elem->FirstChildElement("IsNormalMaterial")) {
-                            block.is_normal_material = std::string(get_text(normal)) == "true";
+                        if (const XMLElement* thickness = block_elem->FirstChildElement("ThicknessExpression")) {
+                            block.thickness_expr = get_text(thickness);
                         }
 
                         // Rects (AllRects)

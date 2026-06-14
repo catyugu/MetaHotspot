@@ -26,6 +26,7 @@ namespace mhs::core {
         std::string name;
     };
 
+    // 找到 struct Block 定义并修改：
     struct Block {
         std::vector<Rect> all_rects;
         std::string material_name;
@@ -33,9 +34,8 @@ namespace mhs::core {
         std::string y_offset_expr;
         std::string ti_reyuan_expr; // 体热源表达式 [W/m³]
         std::string name;
-        bool is_normal_material = true;
+        std::string thickness_expr; // 新增：Block 自己的厚度表达式
     };
-
     struct Layer {
         std::vector<Block> blocks;
         std::string name;

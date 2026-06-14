@@ -2,7 +2,6 @@
 #include "layer_processor.hpp"
 #include <cstdint>
 
-
 namespace mhs::sim {
 
     constexpr double EPS = 1e-9;
@@ -37,7 +36,23 @@ namespace mhs::sim {
         std::vector<double> thickness(num_layers);
         double z_cursor = 0.0;
         for (int l = 0; l < num_layers; l++) {
-            thickness[l] = mhs::core::eval_geometry(layers[l].thickness_expr) * si_scale;
+            if (l == 0) {
+                double max_t = 0.0;
+                for (const auto& b : layers[l].blocks) {
+                    if (!b.thickness_expr.empty()) {
+                        double t = mhs::core::eval_geometry(b.thickness_expr) * si_scale;
+                        if (t > max_t)
+                            max_t = t;
+                    }
+                }
+                double layer_t = layers[l].thickness_expr.empty()
+                    ? 0.0
+                    : mhs::core::eval_geometry(layers[l].thickness_expr) * si_scale;
+                thickness[l] = std::max(max_t, layer_t); // 第0层厚度由最大 block 决定
+            }
+            else {
+                thickness[l] = mhs::core::eval_geometry(layers[l].thickness_expr) * si_scale;
+            }
             z_cursor += thickness[l];
         }
         for (int l = 0; l < num_layers; l++) {
@@ -57,6 +72,17 @@ namespace mhs::sim {
                 double block_y_off_si = mhs::core::eval_geometry(block.y_offset_expr) * si_scale;
                 rb.material_name = block.material_name;
                 rb.ti_reyuan_expr = block.ti_reyuan_expr;
+
+                if (l == 0 && !block.thickness_expr.empty()) {
+                    double b_thick = mhs::core::eval_geometry(block.thickness_expr) * si_scale;
+                    rb.z_start = resolved[l].z_start;
+                    rb.z_end = resolved[l].z_start + b_thick;
+                }
+                else {
+                    // 其他层或未指定厚度的 block，默认铺满整层
+                    rb.z_start = resolved[l].z_start;
+                    rb.z_end = resolved[l].z_end;
+                }
 
                 for (const auto& rect : block.all_rects) {
                     ResolvedRect rr;
@@ -93,36 +119,28 @@ namespace mhs::sim {
         return resolved;
     }
 
+    // 找到 find_block_for_cell 函数，在遍历 block 时引入 Z 的校验
     int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
     {
         if (cz < resolved_layer.z_start - EPS || cz > resolved_layer.z_end + EPS) {
             return -1;
         }
-
-        // Traverse blocks in reverse order: last block wins in overlap regions
         for (int b = (int)resolved_layer.blocks.size() - 1; b >= 0; b--) {
             const auto& block = resolved_layer.blocks[b];
-
-            // ================= 核心布尔逻辑优化 =================
-            // 采用单一状态机变量，严格遵循 CAD 特征树的顺序求值
+            if (cz < block.z_start - EPS || cz > block.z_end + EPS) {
+                continue;
+            }
             bool is_inside = false;
-
             for (const auto& rect : block.rects) {
-                // 如果当前网格点落在该矩形内，则此矩形的操作会覆盖之前的状态
                 if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS && cy >= rect.y - EPS
                     && cy <= rect.y + rect.height + EPS) {
-                    // 若是加操作，点变为实心(true)；若是减操作，点变为空洞(false)
-                    // 因为是顺次执行，后面的加操作可以完美填补前面减操作挖出来的洞
                     is_inside = rect.add_sub;
                 }
             }
-
             if (is_inside) {
                 return b;
             }
-            // ====================================================
         }
-
         return -1;
     }
 
