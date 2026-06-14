@@ -15,8 +15,8 @@ int main(int argc, char* argv[])
     }
 
     std::string input_path = argv[1];
-    std::string output_vtu = argc > 2 ? argv[2] : "output.vtu";
-    std::string output_xml = argc > 3 ? argv[3] : "output.xml";
+    std::string output_vtu = argc > 2 ? argv[2] : "./output.vtu";
+    std::string output_xml = argc > 3 ? argv[3] : "./output.xml";
 
     // Initialize logger
     mhs::logger::init("metahotspot.log", true);
