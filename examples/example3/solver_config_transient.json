@@ -1,6 +1,6 @@
 {
     "simulation_type": "transient",
-    "time": 0.01,
+    "time": 2.9997e-05,
     "timestep": 3.333e-06,
     "sampling_intvl": 3.333e-06,
     "proc_freq": 3000000000.0,
