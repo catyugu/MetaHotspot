@@ -45,7 +45,7 @@ namespace mhs::sim::time_scheme {
             const mhs::core::TimeStepBuffer& history, double current_t, double duration) const
             = 0;
 
-        virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
+        virtual LinearSystem build_system(const AssemblyResult& ops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
             = 0;
 

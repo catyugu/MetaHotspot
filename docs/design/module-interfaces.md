@@ -97,36 +97,30 @@ namespace mhs::sim {
         Eigen::VectorXd b;
     };
 
-    /// Time-independent (static) operator result: stiffness K + static load
-    /// vector f_static (BC fluxes / heat sources / convective terms).
-    struct StaticOpsResult {
+    /// Result of a single assembler sweep over the active grid.
+    /// Diffusion and BC terms are evaluated at state.T (current Newton
+    /// iterate); the mass term is evaluated at history.latest() to keep
+    /// it constant across Newton iterations (legacy BDF1 stability).
+    struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
-        Eigen::VectorXd f_static;
-    };
-
-    /// Lumped diagonal mass vector M_diag (length N_active).  Evaluated at
-    /// history.latest() to keep the coefficient constant across Newton
-    /// iterations (legacy BDF1 stability).
-    struct MassOpsResult {
+        Eigen::VectorXd f;
         Eigen::VectorXd M_diag;
     };
 
     class Assembler {
     public:
         explicit Assembler(const mhs::core::InternalModel& model);
-        StaticOpsResult assemble_static(const mhs::core::GlobalState& state) const;
-        MassOpsResult   assemble_mass  (const mhs::core::GlobalState& state) const;
+        AssemblyResult assemble(const mhs::core::GlobalState& state) const;
     };
 }
 ```
 
-`assemble_static()` / `assemble_mass()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量，并行结束后 `combine_each` 合并。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
+`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量 + 质量向量，并行结束后 `combine_each` 合并为 `AssemblyResult {K, f, M_diag}`。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
-
-瞬态项（`ρc·vol/dt`）**不**在这里累加；由 `mhs::sim::time_scheme::TimeScheme::build_system` 在 `Scheduler::run` 的主循环里按算法（BDF1 / BDF2 / 自适应 BDF）合成。
+- 质量项 `M_diag[c] = ρ·c·vol`，在 `history.latest()` 处求值
 
 所有 `eval()` 走 TBB ETS，无锁。
 
@@ -159,7 +153,7 @@ namespace mhs::sim::time_scheme {
             history.reset(state.T);
         }
         virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t, double duration) const = 0;
-        virtual LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
+        virtual LinearSystem build_system(const AssemblyResult& ops,
             const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;
         virtual StepResult evaluate_step(
             const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T, double current_dt) const = 0;
@@ -181,9 +175,8 @@ The `Scheduler::run()` main loop is:
 while (current_time < duration):
     step = scheme->select_step(history, t, duration)
     dt   = clamp(step.dt, remaining, t_next_output - t)
-    sops = assembler.assemble_static(state)
-    mops = assembler.assemble_mass(state)
-    ls   = scheme->build_system(sops, mops, history, step.order, dt)
+    ops  = assembler.assemble(state)
+    ls   = scheme->build_system(ops, history, step.order, dt)
     nonlinear_solve(ls, state, solver)
     step_result = scheme->evaluate_step(history, T, dt)
     if step_result.accepted:
@@ -251,7 +244,7 @@ namespace mhs::sim {
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider` 获取线性系统 → solve → underrelax 更新 → 收敛判据。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
+`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(const mhs::core::GlobalState&)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的 `GlobalState`（按 `const&`），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
 
 非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
 

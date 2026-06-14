@@ -25,7 +25,7 @@ namespace mhs::sim {
         };
     } // namespace
 
-    StaticOpsResult Assembler::assemble_static(const mhs::core::GlobalState& state) const
+    AssemblyResult Assembler::assemble(const mhs::core::GlobalState& state) const
     {
         const auto& mesh = model_.mesh;
         const auto& cells = model_.cells;
@@ -34,6 +34,8 @@ namespace mhs::sim {
 
         int N = static_cast<int>(cells.cell_bcs.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
+
+        const std::vector<double>* T_eval_mass = (state.history.size() > 0) ? &state.history.latest() : &state.T;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 
@@ -57,6 +59,13 @@ namespace mhs::sim {
             double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
             double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+
+            // Mass coefficients on history.latest() — see comment above.
+            double rho
+                = mp.rho.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time});
+            double c_heat
+                = mp.c.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time});
+            local.mass(c_idx) += rho * c_heat * vol;
 
             // Heat source dictionary evaluation: uint16_t index into the table.
             uint16_t hs_idx = cells.heat_source_idx[c_idx];
@@ -138,61 +147,18 @@ namespace mhs::sim {
 
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
+        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
 
         thread_data.combine_each([&](const ThreadLocalData& local) {
             triplets.insert(triplets.end(), local.triplets.begin(), local.triplets.end());
             b += local.b;
+            M_diag += local.mass;
         });
 
         Eigen::SparseMatrix<double> K(N, N);
         K.setFromTriplets(triplets.begin(), triplets.end());
 
-        return {K, b};
-    }
-
-    MassOpsResult Assembler::assemble_mass(const mhs::core::GlobalState& state) const
-    {
-        const auto& mesh = model_.mesh;
-        const auto& cells = model_.cells;
-        const auto& materials = model_.material_table;
-
-        int N = static_cast<int>(cells.cell_bcs.size());
-        int total = mesh.nx * mesh.ny * mesh.nz;
-
-        // Mass coefficients are evaluated at the previous-step temperature
-        // to keep them constant across Newton iterations (matches legacy
-        // BDF1 stability).  history.latest() is the previous step's T; if
-        // history is empty (startup), fall back to the current T.
-        const std::vector<double>* T_eval = (state.history.size() > 0) ? &state.history.latest() : &state.T;
-
-        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
-
-        tbb::parallel_for(0, total, [&](int old_idx) {
-            if (cells.valid_mask[old_idx] == 0)
-                return;
-
-            auto& local = thread_data.local();
-            int ix, iy, iz;
-            decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
-
-            int c_idx = (int)cells.index_map[old_idx];
-            double dx_cell = mesh.dx[ix];
-            double dy_cell = mesh.dy[iy];
-            double dz_cell = mesh.dz[iz];
-            double vol = dx_cell * dy_cell * dz_cell;
-
-            size_t mat_id = cells.material_id[c_idx];
-            const auto& mp = materials[mat_id];
-            double rho = mp.rho.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval)[c_idx], state.current_time});
-            double c_heat = mp.c.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval)[c_idx], state.current_time});
-
-            local.mass(c_idx) += rho * c_heat * vol;
-        });
-
-        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
-        thread_data.combine_each([&](const ThreadLocalData& local) { M_diag += local.mass; });
-
-        return {M_diag};
+        return {std::move(K), std::move(b), std::move(M_diag)};
     }
 
 } // namespace mhs::sim

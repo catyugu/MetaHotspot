@@ -48,11 +48,10 @@ XML → core::IOStructure via io::read_xml
     → sim::Scheduler::run
         ├─ sim::time_scheme::TimeScheme (Bdf1Scheme | Bdf2Scheme | AdaptiveBdfScheme)
         │   ├─ select_step(history, t, duration) → (dt, order)
-        │   ├─ build_system(sops, mops, history, order, dt) → LinearSystem
+        │   ├─ build_system(ops, history, order, dt) → LinearSystem
         │   └─ evaluate_step(history, current_T, dt) → StepResult
-        ├─ sim::Assembler::assemble_static(state)   [K, f_static]
-        ├─ sim::Assembler::assemble_mass(state)     [M_diag]
-        └─ sim::nonlinear_solve(ls, state, *solver_) [Anderson 加速定点迭代]
+        ├─ sim::Assembler::assemble(state)            [K, f, M_diag] (单次 TBB 遍历)
+        └─ sim::nonlinear_solve(provider, state, *solver_) [Anderson 加速定点迭代]
             → sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
         → post::interpolate_cell_to_node
             → io::write_vtu + io::write_xml
@@ -65,7 +64,7 @@ XML → core::IOStructure via io::read_xml
 3. Cell-level BC — 每单元存 6 面 BC（`CellBC`）
 4. Precomputed sparsity — 组装只填值，不重建结构
 5. Backward Euler 默认；可选 BDF2 / 自适应 BDF（`TimeScheme` 抽象）
-6. 算法与组装解耦 — `Assembler` 暴露 `assemble_static` + `assemble_mass`；时间离散由 `TimeScheme::build_system` 注入
+6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `TimeScheme::build_system` 注入（`K` 用当前 T，`M_diag` 仍取 `history.latest()` 保持 Newton 内冻结）
 7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
 8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
 9. 无虚函数（`mhs::sim::LinearSolver` 与 `mhs::sim::time_scheme::TimeScheme` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
@@ -75,15 +74,15 @@ XML → core::IOStructure via io::read_xml
 
 命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
-| 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                      |
-| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                         |
-| `mhs::utils`            | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                                                          |
-| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、StaticOpsResult、MassOpsResult、LinearSystem、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + TimeSchemeConfig / StepDecision / StepResult                                                                                     |
-| `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                     |
-| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                                                |
-| `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                    |
+| 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `TimeStepBuffer history`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                               |
+| `mhs::utils`            | `common/`                                                               | mesh_utils 查表 + sample_point 局部采样辅助                                                                                                                                                                |
+| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + TimeSchemeConfig / StepDecision / StepResult                                                                                           |
+| `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                           |
+| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数                                                                                                                                                                      |
+| `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                          |
 
 ### 铁律
 

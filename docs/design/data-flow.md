@@ -19,17 +19,16 @@ XML
                                     ├─> mhs::sim::time_scheme::create_scheme(cfg)   // Bdf1 | Bdf2 | AdaptiveBdf
                                     │     ├─> select_step(history, t, duration) → (dt, order)
                                     │     ├─> dt = clamp(dt, remaining, t_next_output - t)
-                                    │     ├─> mhs::sim::Assembler::assemble_static(state)
+                                    │     ├─> mhs::sim::Assembler::assemble(state)
                                     │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
-                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)
+                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ state.T
+                                    │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ history.latest()
                                     │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
                                     │     │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
-                                    │     │     │     └─> thread-local triplets + b
-                                    │     │     └─> combine_each merge → StaticOpsResult {K, f_static}
-                                    │     ├─> mhs::sim::Assembler::assemble_mass(state)
-                                    │     │     └─> M_diag[c] = ρ·c_p·vol evaluated at history.latest()
-                                    │     ├─> scheme->build_system(sops, mops, history, order, dt) → LinearSystem
+                                    │     │     │     └─> thread-local triplets + b + mass
+                                    │     │     └─> combine_each merge → AssemblyResult {K, f, M_diag}
+                                    │     ├─> scheme->build_system(ops, history, order, dt) → LinearSystem
                                     │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
                                     │     └─> scheme->evaluate_step(history, T, dt) → StepResult
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样

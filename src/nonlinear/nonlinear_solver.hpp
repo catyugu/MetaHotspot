@@ -20,7 +20,12 @@ namespace mhs::sim {
         double absolute_tolerance = 1e-12;
     };
 
-    using LinearSystemProvider = std::function<LinearSystem()>;
+    // The provider receives the current iteration's GlobalState by const
+    // reference; the solver owns the mutable state and is responsible for
+    // applying the update each iteration.  Decoupling the data flow this
+    // way makes the contract explicit and removes any hidden state
+    // captured by the provider closure.
+    using LinearSystemProvider = std::function<LinearSystem(const mhs::core::GlobalState&)>;
 
     NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::GlobalState& state,
         LinearSolver& solver, const NonLinearConfig& cfg = {});

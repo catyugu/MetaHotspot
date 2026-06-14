@@ -17,7 +17,7 @@ namespace mhs::sim {
 
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
-            LinearSystem linear_system = ls_provider();
+            LinearSystem linear_system = ls_provider(state);
             Eigen::Map<const Eigen::VectorXd> T_map(state.T.data(), N);
             Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
 

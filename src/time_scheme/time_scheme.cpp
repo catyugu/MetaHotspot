@@ -19,10 +19,10 @@ namespace mhs::sim::time_scheme {
             return {cfg_.initial_dt, 1};
         }
 
-        LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
-            const mhs::core::TimeStepBuffer& h, std::size_t, double dt) const override
+        LinearSystem build_system(
+            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t, double dt) const override
         {
-            return detail::build_bdf1_ls(sops, mops, h, dt);
+            return detail::build_bdf1_ls(ops, h, dt);
         }
 
         StepResult evaluate_step(const mhs::core::TimeStepBuffer&, const std::vector<double>&, double) const override
@@ -44,11 +44,11 @@ namespace mhs::sim::time_scheme {
             return {cfg_.initial_dt, h.size() >= 3 ? 2 : 1ull};
         }
 
-        LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
-            const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
+        LinearSystem build_system(
+            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
         {
-            return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(sops, mops, h, dt)
-                                                     : detail::build_bdf2_ls(sops, mops, h, dt);
+            return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(ops, h, dt)
+                                                     : detail::build_bdf2_ls(ops, h, dt);
         }
 
         StepResult evaluate_step(const mhs::core::TimeStepBuffer&, const std::vector<double>&, double) const override
@@ -93,12 +93,12 @@ namespace mhs::sim::time_scheme {
             return {dt, std::min(h.size() > cfg_.max_order ? cfg_.max_order : 1, 1ull)};
         }
 
-        LinearSystem build_system(const StaticOpsResult& sops, const MassOpsResult& mops,
-            const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
+        LinearSystem build_system(
+            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
         {
             // 自适应算法现在会基于 order 在 BDF1 和 BDF2 之间切换
-            return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(sops, mops, h, dt)
-                                                     : detail::build_bdf2_ls(sops, mops, h, dt);
+            return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(ops, h, dt)
+                                                     : detail::build_bdf2_ls(ops, h, dt);
         }
 
         StepResult evaluate_step(const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T,

@@ -11,12 +11,9 @@ namespace mhs::sim {
         Eigen::VectorXd b;
     };
 
-    struct StaticOpsResult {
+    struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
-        Eigen::VectorXd f_static;
-    };
-
-    struct MassOpsResult {
+        Eigen::VectorXd f;
         Eigen::VectorXd M_diag;
     };
 

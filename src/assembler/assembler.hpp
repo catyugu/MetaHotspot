@@ -10,13 +10,11 @@ namespace mhs::sim {
         explicit Assembler(const mhs::core::InternalModel& model) : model_(model) { }
         ~Assembler() = default;
 
-        /// Build only the static (time-independent) operator: K + f_static.
-        /// Steady-state and time-scheme-aware code paths both start here.
-        StaticOpsResult assemble_static(const mhs::core::GlobalState& state) const;
-
-        /// Build the lumped diagonal mass vector M_diag for transient terms.
-        /// M_diag[c] = rho(c) * c_p(c) * vol(c) (evaluated at history.latest()).
-        MassOpsResult assemble_mass(const mhs::core::GlobalState& state) const;
+        /// Build K, f, M_diag in a single sweep over the active grid.
+        /// Diffusion and BC terms use state.T; the mass term uses
+        /// state.history.latest() (or state.T if history is empty) to stay
+        /// constant across Newton iterations.
+        AssemblyResult assemble(const mhs::core::GlobalState& state) const;
 
     private:
         const mhs::core::InternalModel& model_;

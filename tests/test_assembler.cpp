@@ -69,7 +69,7 @@ TEST(AssemblerTest, ConstructWithModel)
     Assembler assembler(*model);
 }
 
-TEST(AssemblerTest, AssembleStaticReturnsKAndFStatic)
+TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
 {
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
@@ -83,19 +83,20 @@ TEST(AssemblerTest, AssembleStaticReturnsKAndFStatic)
     state.dt = 0.0;
 
     Assembler assembler(*model);
-    auto sops = assembler.assemble_static(state);
+    auto ops = assembler.assemble(state);
 
-    EXPECT_EQ(sops.K.rows(), N);
-    EXPECT_EQ(sops.K.cols(), N);
-    EXPECT_EQ(sops.f_static.size(), N);
+    EXPECT_EQ(ops.K.rows(), N);
+    EXPECT_EQ(ops.K.cols(), N);
+    EXPECT_EQ(ops.f.size(), N);
+    EXPECT_EQ(ops.M_diag.size(), N);
 }
 
-TEST(AssemblerTest, AssembleStaticHasNoTransient)
+TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
 {
-    // Key invariant: assemble_static does NOT add M_diag/dt to the diagonal.
+    // Key invariant: assemble does NOT add M_diag/dt to the diagonal.
     // Compare two calls: one with dt=0 (steady path), one with dt=1.0 (transient).
     // The K matrix itself must be IDENTICAL — transient terms live in
-    // nonlinear_solve, not in assemble_static.
+    // nonlinear_solve, not in assemble.
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -109,21 +110,21 @@ TEST(AssemblerTest, AssembleStaticHasNoTransient)
     Assembler assembler(*model);
 
     state.dt = 0.0;
-    auto sops_a = assembler.assemble_static(state);
+    auto ops_a = assembler.assemble(state);
 
     state.dt = 1.0;
-    auto sops_b = assembler.assemble_static(state);
+    auto ops_b = assembler.assemble(state);
 
-    EXPECT_EQ(sops_a.K.nonZeros(), sops_b.K.nonZeros());
-    for (int k = 0; k < sops_a.K.outerSize(); ++k) {
-        for (typename Eigen::SparseMatrix<double>::InnerIterator it(sops_a.K, k); it; ++it) {
-            double diff = std::abs(it.value() - sops_b.K.coeff(it.row(), it.col()));
+    EXPECT_EQ(ops_a.K.nonZeros(), ops_b.K.nonZeros());
+    for (int k = 0; k < ops_a.K.outerSize(); ++k) {
+        for (typename Eigen::SparseMatrix<double>::InnerIterator it(ops_a.K, k); it; ++it) {
+            double diff = std::abs(it.value() - ops_b.K.coeff(it.row(), it.col()));
             EXPECT_LT(diff, 1e-12) << "K(" << it.row() << "," << it.col() << ") differs with dt change";
         }
     }
 }
 
-TEST(AssemblerTest, AssembleMassReturnsDiag)
+TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
 {
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
@@ -136,18 +137,18 @@ TEST(AssemblerTest, AssembleMassReturnsDiag)
     state.current_time = 0.0;
 
     Assembler assembler(*model);
-    auto mops = assembler.assemble_mass(state);
+    auto ops = assembler.assemble(state);
 
-    EXPECT_EQ(mops.M_diag.size(), N);
+    EXPECT_EQ(ops.M_diag.size(), N);
     // Each cell: rho=8920, c=385, vol = (5e-3)^3 = 1.25e-7
     // M_diag = 8920 * 385 * 1.25e-7 = 0.4293
     double expected = 8920.0 * 385.0 * 1.25e-7;
     for (int i = 0; i < N; ++i) {
-        EXPECT_NEAR(mops.M_diag(i), expected, 1e-6) << "Cell " << i;
+        EXPECT_NEAR(ops.M_diag(i), expected, 1e-6) << "Cell " << i;
     }
 }
 
-TEST(AssemblerTest, AssembleStaticReadsTemperature)
+TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
@@ -198,11 +199,11 @@ TEST(AssemblerTest, AssembleStaticReadsTemperature)
 
     mhs::core::GlobalState s1;
     s1.T.assign(N, 300.0);
-    auto k1 = assembler.assemble_static(s1).K;
+    auto k1 = assembler.assemble(s1).K;
 
     mhs::core::GlobalState s2;
     s2.T.assign(N, 500.0);
-    auto k2 = assembler.assemble_static(s2).K;
+    auto k2 = assembler.assemble(s2).K;
 
     bool differs = false;
     for (int k = 0; k < k1.outerSize() && !differs; ++k) {
@@ -215,9 +216,9 @@ TEST(AssemblerTest, AssembleStaticReadsTemperature)
     EXPECT_TRUE(differs) << "T-dependent k should produce different K for different T";
 }
 
-TEST(AssemblerTest, AssembleStaticMatchesOldAssembleForSteady)
+TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
-    // Sanity: for steady-state (dt=0), assemble_static returns A = K.
+    // Sanity: for steady-state (dt=0), assemble returns A = K.
     // The b vector should equal what the old `assemble` would have computed for
     // steady (no mass term). The diagonal of K should be the same (negative).
     auto io = make_simple_cube_io();
@@ -232,14 +233,14 @@ TEST(AssemblerTest, AssembleStaticMatchesOldAssembleForSteady)
     state.dt = 0.0;
 
     Assembler assembler(*model);
-    auto sops = assembler.assemble_static(state);
+    auto ops = assembler.assemble(state);
 
     // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
     for (int i = 0; i < N; ++i) {
-        EXPECT_NEAR(sops.f_static(i), 0.0, 1e-12);
+        EXPECT_NEAR(ops.f(i), 0.0, 1e-12);
     }
     // And K should be non-empty.
-    EXPECT_GT(sops.K.nonZeros(), 0);
+    EXPECT_GT(ops.K.nonZeros(), 0);
 }
 
 TEST(AssemblerTest, Case1AssemblyRuns)
@@ -263,9 +264,9 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     state.dt = 0.0;
 
     Assembler assembler(*model);
-    auto sops = assembler.assemble_static(state);
-    EXPECT_EQ(sops.K.rows(), N);
-    EXPECT_EQ(sops.K.cols(), N);
-    EXPECT_GT(sops.K.nonZeros(), 0);
-    EXPECT_GT(sops.f_static.norm(), 0.0);
+    auto ops = assembler.assemble(state);
+    EXPECT_EQ(ops.K.rows(), N);
+    EXPECT_EQ(ops.K.cols(), N);
+    EXPECT_GT(ops.K.nonZeros(), 0);
+    EXPECT_GT(ops.f.norm(), 0.0);
 }

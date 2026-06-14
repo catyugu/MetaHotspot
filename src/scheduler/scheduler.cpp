@@ -37,11 +37,9 @@ namespace mhs::sim {
 
         // 稳态求解分支
         if (model_->study_type == mhs::core::StudyType::Steady) {
-            auto build_ls = [&]() -> LinearSystem {
-                auto sops = assembler.assemble_static(state_);
-                Eigen::Map<const Eigen::VectorXd> T_map(state_.T.data(), N);
-                Eigen::VectorXd res = sops.f_static - sops.K * T_map;
-                return {std::move(sops.K), std::move(sops.f_static)};
+            LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
+                auto ops = assembler.assemble(s);
+                return {std::move(ops.K), std::move(ops.f)};
             };
             nonlinear_solve(build_ls, state_, *solver_);
             solution_ = state_.T;
@@ -69,9 +67,8 @@ namespace mhs::sim {
             auto step = scheme->select_step(state_.history, state_.current_time, duration);
             state_.dt = step.dt;
 
-            auto build_ls = [&]() -> LinearSystem {
-                return scheme->build_system(assembler.assemble_static(state_), assembler.assemble_mass(state_),
-                    state_.history, step.order, state_.dt);
+            LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
+                return scheme->build_system(assembler.assemble(s), s.history, step.order, s.dt);
             };
 
             auto result = nonlinear_solve(build_ls, state_, *solver_);
