@@ -52,7 +52,7 @@ namespace mhs::sim {
 
             const double update_threshold = rel_tol * max_T + abs_tol;
 
-            MHS_LOG_INFO(
+            MHS_LOG_DEBUG(
                 "\t->Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e}", iter, max_update, max_residual);
 
             if (max_update <= update_threshold && max_residual <= residual_threshold) {

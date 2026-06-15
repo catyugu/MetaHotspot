@@ -46,12 +46,7 @@ namespace mhs::logger {
 // 极简易用的日志宏
 // ---------------------------------------------------------
 
-#ifdef VERBOSE
 #define MHS_LOG_DEBUG(...) ::mhs::logger::debug(__VA_ARGS__)
-#else
-#define MHS_LOG_DEBUG(...) (void)0
-#endif
-
 #define MHS_LOG_INFO(...) ::mhs::logger::info(__VA_ARGS__)
 #define MHS_LOG_WARN(...) ::mhs::logger::warn(__VA_ARGS__)
 #define MHS_LOG_ERROR(...) (::mhs::logger::error(__VA_ARGS__), ::mhs::logger::panic())

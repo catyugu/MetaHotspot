@@ -47,12 +47,6 @@ namespace mhs::logger {
 #else
         spdlog::set_level(spdlog::level::info);
 #endif
-
-        if (const char* env = std::getenv("MHS_LOG_LEVEL")) {
-            if (std::string_view(env) == "DEBUG") {
-                spdlog::set_level(spdlog::level::debug);
-            }
-        }
     }
 
     void flush()

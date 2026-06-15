@@ -21,7 +21,3 @@ mhs_add_library(mhs_lib
     linear_solver_lib
     assembler_lib
 )
-
-if(VERBOSE)
-    target_compile_definitions(mhs_lib PUBLIC VERBOSE)
-endif()

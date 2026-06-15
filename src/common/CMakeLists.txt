@@ -3,3 +3,7 @@ mhs_add_library(common_lib
     PUBLIC_LINKS spdlog
     PRIVATE_LINKS Eigen3::Eigen
 )
+
+if(VERBOSE)
+    target_compile_definitions(common_lib PRIVATE VERBOSE)
+endif()

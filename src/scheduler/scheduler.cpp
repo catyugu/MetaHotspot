@@ -84,7 +84,7 @@ namespace mhs::sim {
                 state_.time_step++;
                 state_.history.push(state_.T, state_.current_time);
 
-                MHS_LOG_INFO("Time: {} solved (dt={})", state_.current_time, state_.dt);
+                MHS_LOG_DEBUG("Time: {} solved (dt={})", state_.current_time, state_.dt);
 
                 if (scheme->is_output_boundary(state_.current_time)) {
                     probe_recorder_.record(state_.current_time, state_.T);
