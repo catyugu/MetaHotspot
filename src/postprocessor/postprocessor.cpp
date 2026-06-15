@@ -1,6 +1,6 @@
 #include "common/mesh_utils.hpp"
-#include "postprocessor/sample_point.hpp"
 #include "postprocessor.hpp"
+#include "postprocessor/sample_point.hpp"
 #include <cmath>
 #include <limits>
 #include <vector>
