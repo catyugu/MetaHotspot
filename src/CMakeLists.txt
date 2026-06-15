@@ -4,7 +4,6 @@ add_subdirectory(common)
 add_subdirectory(assembler)
 add_subdirectory(linear_solver)
 add_subdirectory(preprocessor)
-add_subdirectory(time_scheme)
 
 mhs_add_library(mhs_lib
     SOURCES
@@ -13,6 +12,7 @@ mhs_add_library(mhs_lib
     scheduler/probe_recorder.cpp
     postprocessor/postprocessor.cpp
     postprocessor/sample_point.cpp
+    time_scheme/time_scheme.cpp
     PUBLIC_LINKS
     preprocessor_lib
     expr_lib
@@ -20,7 +20,6 @@ mhs_add_library(mhs_lib
     io_lib
     linear_solver_lib
     assembler_lib
-    time_scheme_lib
 )
 
 if(VERBOSE)
