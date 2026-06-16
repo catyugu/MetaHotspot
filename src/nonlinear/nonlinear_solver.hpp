@@ -15,7 +15,7 @@ namespace mhs::sim {
 
     struct NonLinearConfig {
         double underrelaxation = 1.0;
-        int max_iterations = 50;
+        int max_iterations = 200;
         double relative_tolerance = 1e-6;
         double absolute_tolerance = 1e-12;
     };
