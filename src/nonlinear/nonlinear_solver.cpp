@@ -28,12 +28,6 @@ namespace mhs::sim {
             int hist_len = 0;
             int iter_count = 0;
 
-            // Diagnostic counters; useful in debug logs and tests.
-            int warmup_skips = 0;
-            int fallback_skips = 0;
-            int divergence_resets = 0;
-            int aa_applications = 0;
-
             // Returns the next iterate proposal, or std::nullopt to fall back
             // to a plain damped Picard step. Caller is responsible for the
             // finite-value check on the returned vector.
@@ -41,12 +35,6 @@ namespace mhs::sim {
             {
                 // Disabled, in warm-up, or no history -> plain Picard path.
                 if (depth == 0 || iter_count < warmup_iters || hist_len == 0) {
-                    if (depth > 0 && iter_count < warmup_iters) {
-                        ++warmup_skips;
-                    }
-                    else {
-                        ++fallback_skips;
-                    }
                     return std::nullopt;
                 }
 
@@ -86,14 +74,10 @@ namespace mhs::sim {
                             G_hist.clear();
                             x_hist.clear();
                             hist_len = 0;
-                            ++divergence_resets;
                         }
-                        ++fallback_skips;
                         return std::nullopt;
                     }
                 }
-
-                ++aa_applications;
                 return x_prop;
             }
 
