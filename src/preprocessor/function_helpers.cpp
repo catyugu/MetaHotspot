@@ -11,16 +11,16 @@ namespace mhs::sim {
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
     // 闭包对每次 muparser 调用的约定：
-    //   - args[0] 是用户在表达式中传入的自变量值（如 test_gaussian(T) 中 muparser 先求 T 再传入）
+    //   - args 是 muparser 已求好值的实参数组（nargs >= 1），单变元函数族从 args[0] 读自变量
     //   - ctx 是当前物理上下文（x, y, z, T, t 的真实值），仅作为参考
-    // 单变元函数族从 args[0] 读取自变量，ctx 在该族下不参与计算。
+    // 单变元函数族（除 make_expression_evaluator 外）不参考 ctx。
 
     mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
     {
         auto ce = mhs::core::parse(inner_expr);
-        return [ce](const std::vector<double>& args, const mhs::core::FieldContext& ctx) {
+        return [ce](const double* args, int nargs, const mhs::core::FieldContext& ctx) {
             mhs::core::FieldContext effective_ctx = ctx;
-            if (!args.empty()) {
+            if (nargs > 0) {
                 effective_ctx.x = args[0];
             }
             return ce.eval(effective_ctx);
@@ -28,7 +28,7 @@ namespace mhs::sim {
     }
     mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
-        return [A, alpha, beta](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+        return [A, alpha, beta](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * (std::exp(alpha * t_val) - std::exp(beta * t_val));
         };
@@ -36,7 +36,7 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
     {
-        return [A, tau, x0](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+        return [A, tau, x0](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             double u = (t_val - x0) / tau;
             return A * std::exp(-u * u);
@@ -45,7 +45,7 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
-        return [A, omega, phi](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+        return [A, omega, phi](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * std::sin(omega * t_val + phi);
         };
@@ -54,7 +54,7 @@ namespace mhs::sim {
     mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::core::PieceWiseFunction::Point> pts)
     {
         // Points are pre-sorted by X in the IO parser, so no resort needed.
-        return [pts = std::move(pts)](const std::vector<double>& args, const mhs::core::FieldContext& /*c*/) {
+        return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double x = args[0];
             if (pts.empty())
                 return 0.0;

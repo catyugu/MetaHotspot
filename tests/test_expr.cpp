@@ -448,7 +448,7 @@ namespace {
 
         // Register a piecewise function that reads from args (muparser-evaluated arguments)
         mhs::core::register_native(
-            "piecewise", [](const std::vector<double>& args, const mhs::core::FieldContext& /*ctx*/) {
+            "piecewise", [](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*ctx*/) {
                 double v = args[0];
                 if (v < 1.0)
                     return 0.0;
@@ -461,8 +461,10 @@ namespace {
         EXPECT_TRUE(native != nullptr);
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
-        EXPECT_EQ(native({0.5}, ctx), 0.0);
-        EXPECT_EQ(native({1.5}, ctx), 1.0);
+        const double arg = 0.5;
+        EXPECT_EQ(native(&arg, 1, ctx), 0.0);
+        const double arg2 = 1.5;
+        EXPECT_EQ(native(&arg2, 1, ctx), 1.0);
     }
 
     TEST(NativeFunction, GetUnregistered)
@@ -491,7 +493,7 @@ namespace {
     {
         mhs::core::clear_registry();
         mhs::core::register_native(
-            "f", [](const std::vector<double>&, const mhs::core::FieldContext&) { return 42.0; });
+            "f", [](const double* /*args*/, int /*nargs*/, const mhs::core::FieldContext&) { return 42.0; });
         EXPECT_TRUE(mhs::core::get_native("f") != nullptr);
 
         mhs::core::clear_registry();

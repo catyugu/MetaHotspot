@@ -120,15 +120,12 @@ namespace mhs::sim {
 
             LinearSystem linear_system = ls_provider(state);
             Eigen::Map<const Eigen::VectorXd> T_map(state.T.data(), N);
-            Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
+            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
 
-            double max_residual = 0.0;
-            double max_b = 0.0;
-            for (int i = 0; i < N; ++i) {
-                state.residual[i] = residual_vec(i);
-                max_residual = std::max(max_residual, std::abs(residual_vec(i)));
-                max_b = std::max(max_b, std::abs(linear_system.b(i)));
-            }
+            // 一次性拷出残差（同时把逐元素 std::abs + max 的标量循环换成 Eigen SIMD）
+            Eigen::Map<Eigen::VectorXd>(state.residual.data(), N) = residual_vec;
+            const double max_residual = residual_vec.cwiseAbs().maxCoeff();
+            const double max_b = linear_system.b.cwiseAbs().maxCoeff();
 
             // Combined relative + absolute tolerance
             const double residual_threshold = rel_tol * max_b + abs_tol;
@@ -158,14 +155,9 @@ namespace mhs::sim {
                 }
             }
 
-            double max_update = 0.0;
-            double max_T = 0.0;
-            for (int i = 0; i < N; ++i) {
-                const double update = next(i) - x_k(i);
-                max_update = std::max(max_update, std::abs(update));
-                max_T = std::max(max_T, std::abs(next(i)));
-                state.T[i] = next(i);
-            }
+            const double max_update = (next - x_k).cwiseAbs().maxCoeff();
+            const double max_T = next.cwiseAbs().maxCoeff();
+            Eigen::Map<Eigen::VectorXd>(state.T.data(), N) = next;
 
             const double update_threshold = rel_tol * max_T + abs_tol;
 

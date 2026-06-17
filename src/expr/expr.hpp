@@ -4,7 +4,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace mhs::core {
 
@@ -17,8 +16,7 @@ namespace mhs::core {
         double T = 0.0;
         double t = 0.0;
     };
-
-    using FieldEvaluator = std::function<double(const std::vector<double>& args, const FieldContext& ctx)>;
+    using FieldEvaluator = std::function<double(const double* args, int nargs, const FieldContext& ctx)>;
 
     // Internal: Thread-Local Storage wrapper for muparser compiled instances
     struct MuCompiledTLS;

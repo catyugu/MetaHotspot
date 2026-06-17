@@ -45,13 +45,13 @@ namespace mhs::core {
     };
 
     // Bridge entry: muparser evaluates each argument independently, then calls this
-    // with (user_data, args_array, nargs). We pack the args back into a vector and
-    // forward to the user's FieldEvaluator together with the current TLS context.
+    // with (user_data, args_array, nargs). Forward the raw pointer straight to
+    // the user's FieldEvaluator — no per-call allocation, muparser's array is
+    // already in registers.
     static double native_fn_bridge(void* pUserData, const mu::value_type* args, int nargs)
     {
         auto* ctx = static_cast<NativeFnCtx*>(pUserData);
-        std::vector<double> args_vec(args, args + nargs);
-        return ctx->fe(args_vec, *ctx->ctx_ptr);
+        return ctx->fe(args, nargs, *ctx->ctx_ptr);
     }
 
     class MuCompiled {

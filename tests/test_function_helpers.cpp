@@ -24,7 +24,7 @@ namespace {
         auto ev = make_expression_evaluator("2*x+1");
         // 内层表达式读 ctx.x；调用方负责把自变量放进 x 槽。
         FieldContext ctx {3, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev({}, ctx), 7.0);
+        EXPECT_DOUBLE_EQ(ev(nullptr, 0, ctx), 7.0);
     }
 
     TEST(FunctionHelpers, ExpressionEvaluatorBindsXToT)
@@ -32,21 +32,23 @@ namespace {
         mhs::core::clear_registry();
         auto ev = make_expression_evaluator("x*x");
         FieldContext ctx {5, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev({}, ctx), 25.0);
+        EXPECT_DOUBLE_EQ(ev(nullptr, 0, ctx), 25.0);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorAtCenter)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev({0.0}, ctx), 1.0);
+        const double t = 0.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 1.0);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorAtOneTau)
     {
         auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, 1.0};
-        EXPECT_NEAR(ev({1.0}, ctx), std::exp(-1.0), 1e-12);
+        const double t = 1.0;
+        EXPECT_NEAR(ev(&t, 1, ctx), std::exp(-1.0), 1e-12);
     }
 
     TEST(FunctionHelpers, GaussEvaluatorOffset)
@@ -54,14 +56,16 @@ namespace {
         // A=5, tau=10, x0=20, t=20 → A*exp(0) = 5
         auto ev = make_gauss_evaluator(5.0, 10.0, 20.0);
         FieldContext ctx {0, 0, 0, 0, 20.0};
-        EXPECT_DOUBLE_EQ(ev({20.0}, ctx), 5.0);
+        const double t = 20.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 5.0);
     }
 
     TEST(FunctionHelpers, SineEvaluatorAtHalfPi)
     {
         auto ev = make_sine_evaluator(1.0, 1.0, 0.0);
         FieldContext ctx {0, 0, 0, 0, M_PI / 2.0};
-        EXPECT_NEAR(ev({M_PI / 2.0}, ctx), 1.0, 1e-12);
+        const double t = M_PI / 2.0;
+        EXPECT_NEAR(ev(&t, 1, ctx), 1.0, 1e-12);
     }
 
     TEST(FunctionHelpers, SineEvaluatorWithPhase)
@@ -69,7 +73,8 @@ namespace {
         // A=5, omega=200, phi=1.57, t=0 → 5*sin(1.57) ≈ 5
         auto ev = make_sine_evaluator(5.0, 200.0, 1.57);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_NEAR(ev({0.0}, ctx), 5.0 * std::sin(1.57), 1e-9);
+        const double t = 0.0;
+        EXPECT_NEAR(ev(&t, 1, ctx), 5.0 * std::sin(1.57), 1e-9);
     }
 
     TEST(FunctionHelpers, DoubleExpEvaluatorAtZero)
@@ -77,7 +82,8 @@ namespace {
         // A*(exp(alpha*0) - exp(beta*0)) = A*(1-1) = 0
         auto ev = make_double_exp_evaluator(1.0, 0.5, 0.1);
         FieldContext ctx {0, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev({0.0}, ctx), 0.0);
+        const double t = 0.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 0.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
@@ -85,7 +91,8 @@ namespace {
         std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, -1.0};
-        EXPECT_DOUBLE_EQ(ev({-1.0}, ctx), -1.0);
+        const double t = -1.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), -1.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
@@ -93,7 +100,8 @@ namespace {
         std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, 10.0};
-        EXPECT_DOUBLE_EQ(ev({10.0}, ctx), 3.0);
+        const double t = 10.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 3.0);
     }
 
     TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
@@ -102,7 +110,8 @@ namespace {
         auto ev = make_piecewise_evaluator(pts);
         // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
         FieldContext ctx {0, 0, 0, 0, 3.0};
-        EXPECT_DOUBLE_EQ(ev({3.0}, ctx), 2.5);
+        const double t = 3.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 2.5);
     }
 
     // ---- 字面替换 --------------------------------------------------------

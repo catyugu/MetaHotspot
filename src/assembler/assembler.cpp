@@ -53,24 +53,25 @@ namespace mhs::sim {
             double dz_cell = mesh.dz[iz];
             double vol = dx_cell * dy_cell * dz_cell;
 
-            // Material dictionary evaluation; thread-safe via per-thread TLS instance.
+            // 缓存 cell 上下文：kx/ky/kz 共享一次构造，BC 分支也复用同一 ctx。
             size_t mat_id = cells.material_id[c_idx];
             const auto& mp = materials[mat_id];
-            double kx_c = mp.kx.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
-            double ky_c = mp.ky.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
-            double kz_c = mp.kz.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+            const mhs::core::FieldContext ctx_c {
+                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time};
+            const double kx_c = mp.kx.eval(ctx_c);
+            const double ky_c = mp.ky.eval(ctx_c);
+            const double kz_c = mp.kz.eval(ctx_c);
 
             // Mass coefficients on history.latest() — see comment above.
-            double rho
-                = mp.rho.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time});
-            double c_heat
-                = mp.c.eval({mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time});
+            const mhs::core::FieldContext ctx_m {
+                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time};
+            const double rho = mp.rho.eval(ctx_m);
+            const double c_heat = mp.c.eval(ctx_m);
             local.mass(c_idx) += rho * c_heat * vol;
 
             // Heat source dictionary evaluation: uint16_t index into the table.
             uint16_t hs_idx = cells.heat_source_idx[c_idx];
-            double Q = model_.heat_source_table[hs_idx].eval(
-                {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+            const double Q = model_.heat_source_table[hs_idx].eval(ctx_c);
             local.b(c_idx) += Q * vol;
 
             const auto& cell_bc = cells.cell_bcs[c_idx];
@@ -94,12 +95,11 @@ namespace mhs::sim {
                     int niz = mhs::utils::neighbor_iz(dir, iz);
 
                     const auto& mp_n = materials[cells.material_id[n_idx]];
-                    double kx_n
-                        = mp_n.kx.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
-                    double ky_n
-                        = mp_n.ky.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
-                    double kz_n
-                        = mp_n.kz.eval({mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    const mhs::core::FieldContext ctx_n {
+                        mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
+                    const double kx_n = mp_n.kx.eval(ctx_n);
+                    const double ky_n = mp_n.ky.eval(ctx_n);
+                    const double kz_n = mp_n.kz.eval(ctx_n);
 
                     double d_half_cell = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
                     double d_half_neighbor
@@ -114,8 +114,7 @@ namespace mhs::sim {
                 else if (bc_type == mhs::core::BcType::FirstType) {
                     double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
-                    double T_bc_val = bc_params.dirichlet_T[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    double T_bc_val = bc_params.dirichlet_T[param_idx].eval(ctx_c);
 
                     double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double cond = k_face * A_f / half_dist;
@@ -123,15 +122,12 @@ namespace mhs::sim {
                     local.b(c_idx) += cond * T_bc_val;
                 }
                 else if (bc_type == mhs::core::BcType::SecondType) {
-                    double q = bc_params.neumann_q[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    double q = bc_params.neumann_q[param_idx].eval(ctx_c);
                     local.b(c_idx) += q * A_f;
                 }
                 else if (bc_type == mhs::core::BcType::ThirdType) {
-                    double h = bc_params.cauchy_h[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
-                    double T_inf = bc_params.cauchy_T_inf[param_idx].eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    double h = bc_params.cauchy_h[param_idx].eval(ctx_c);
+                    double T_inf = bc_params.cauchy_T_inf[param_idx].eval(ctx_c);
 
                     double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
 
