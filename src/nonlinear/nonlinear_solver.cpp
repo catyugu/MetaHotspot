@@ -6,7 +6,6 @@
 #include <Eigen/QR>
 
 #include <algorithm>
-#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -122,8 +121,6 @@ namespace mhs::sim {
             Eigen::Map<const Eigen::VectorXd> T_map(state.T.data(), N);
             const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
 
-            // 一次性拷出残差（同时把逐元素 std::abs + max 的标量循环换成 Eigen SIMD）
-            Eigen::Map<Eigen::VectorXd>(state.residual.data(), N) = residual_vec;
             const double max_residual = residual_vec.cwiseAbs().maxCoeff();
             const double max_b = linear_system.b.cwiseAbs().maxCoeff();
 

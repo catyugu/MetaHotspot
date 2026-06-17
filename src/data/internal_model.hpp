@@ -68,9 +68,6 @@ namespace mhs::core {
 
         // Active temperature field, length = N_active (== cells.cell_bcs.size()).
         std::vector<double> T;
-
-        // Per-cell residual snapshot (last nonlinear iteration).
-        std::vector<double> residual;
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。

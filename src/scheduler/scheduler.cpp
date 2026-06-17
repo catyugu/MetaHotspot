@@ -28,7 +28,6 @@ namespace mhs::sim {
 
         const int N = static_cast<int>(model_->cells.cell_bcs.size());
         state_.T.assign(N, model_->initial_temperature);
-        state_.residual.assign(N, 0.0);
         state_.current_time = 0.0;
         state_.time_step = 0;
         state_.dt = model_->transient_time_step;
