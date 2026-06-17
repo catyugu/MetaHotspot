@@ -83,7 +83,7 @@ XML
 
 ### 7. 无异常，panic 退出
 
-不可恢复错误经 `MHS_LOG_ERROR` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/muparser 的 `std::exception` 并转 panic — 边界 entry 必需。
+不可恢复错误经 `MHS_FATAL` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/muparser 的 `std::exception` 并转 panic — 边界 entry 必需。
 
 ### 8. 各向异性热导率 — 面法向匹配与后处理距离权重
 

@@ -64,7 +64,7 @@ namespace {
     TEST(LoggerPanic, ErrorThenPanic)
     {
         mhs::logger::init("", true);
-        EXPECT_DEATH(MHS_LOG_ERROR("Fatal error test"), "");
+        EXPECT_DEATH(MHS_FATAL("Fatal error test"), "");
     }
 
 } // namespace

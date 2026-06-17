@@ -22,7 +22,7 @@ namespace mhs::sim {
     void Scheduler::run()
     {
         if (!model_ || !solver_) {
-            MHS_LOG_ERROR("Scheduler: model or solver not set");
+            MHS_FATAL("Scheduler: model or solver not set");
             return;
         }
 

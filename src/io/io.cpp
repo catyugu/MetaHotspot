@@ -285,7 +285,7 @@ namespace mhs::io {
                             for (const auto& s : segs) {
                                 if (s.empty()) {
                                     std::string preview = raw.substr(0, 200);
-                                    MHS_LOG_ERROR("DaoreXishu: empty segment in '{}'", preview);
+                                    MHS_FATAL("DaoreXishu: empty segment in '{}'", preview);
                                 }
                             }
                             mat.kx = segs[0];
@@ -294,7 +294,7 @@ namespace mhs::io {
                         }
                         else {
                             std::string preview = raw.substr(0, 200);
-                            MHS_LOG_ERROR("DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'",
+                            MHS_FATAL("DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'",
                                 segs.size(), preview);
                         }
                     }

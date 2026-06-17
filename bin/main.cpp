@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);
     }
     catch (const std::exception& e) {
-        MHS_LOG_ERROR("Simulation failed: {}", e.what());
+        MHS_FATAL("Simulation failed: {}", e.what());
         return 1;
     }
 

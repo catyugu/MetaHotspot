@@ -13,7 +13,7 @@ namespace mhs::logger {
     // 手动刷新日志缓冲
     void flush();
 
-    // 记录错误、刷新缓冲并退出进程 (由 MHS_LOG_ERROR 宏调用)
+    // 记录错误、刷新缓冲并退出进程 (由 MHS_FATAL 宏调用)
     [[noreturn]] void panic();
 
     // ---------------------------------------------------------
@@ -49,4 +49,4 @@ namespace mhs::logger {
 #define MHS_LOG_DEBUG(...) ::mhs::logger::debug(__VA_ARGS__)
 #define MHS_LOG_INFO(...) ::mhs::logger::info(__VA_ARGS__)
 #define MHS_LOG_WARN(...) ::mhs::logger::warn(__VA_ARGS__)
-#define MHS_LOG_ERROR(...) (::mhs::logger::error(__VA_ARGS__), ::mhs::logger::panic())
+#define MHS_FATAL(...) (::mhs::logger::error(__VA_ARGS__), ::mhs::logger::panic())

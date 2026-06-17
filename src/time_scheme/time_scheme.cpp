@@ -166,7 +166,7 @@ namespace mhs::sim::time_scheme {
         case TimeSchemeKind::AdaptiveBdf:
             return std::make_unique<AdaptiveBdfScheme>(cfg);
         }
-        MHS_LOG_ERROR("Unknown TimeSchemeKind");
+        MHS_FATAL("Unknown TimeSchemeKind");
     }
 
 } // namespace mhs::sim::time_scheme

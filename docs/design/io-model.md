@@ -204,7 +204,7 @@ Face|Direction|CoordValue|RectList
 
 - **单表达式**（如 `DaoreXishu>100</DaoreXishu>`）→ `kx = ky = kz = "100"`，退化为各向同性。
 - **三表达式**（`DaoreXishu>kx_expr, ky_expr, kz_expr</DaoreXishu>`）→ 按逗号分隔（容忍空白）分别赋给 `kx / ky / kz`。
-- 其它段数（2 段、4 段及以上）经 `MHS_LOG_ERROR` panic。
+- 其它段数（2 段、4 段及以上）经 `MHS_FATAL` panic。
 
 ### Block 不含 XY 以外的空间字段
 
