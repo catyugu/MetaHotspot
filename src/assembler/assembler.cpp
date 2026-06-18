@@ -79,7 +79,9 @@ namespace mhs::sim {
 
             for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                double A_f = mhs::utils::face_area(dir, dx_cell, dy_cell, dz_cell);
+                const double A_f = mhs::utils::face_area(dir, dx_cell, dy_cell, dz_cell);
+                const double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
+                const double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                 mhs::core::BcType bc_type = cell_bc.types[f];
                 uint16_t param_idx = cell_bc.param_idxs[f];
 
@@ -101,22 +103,16 @@ namespace mhs::sim {
                     const double ky_n = mp_n.ky.eval(ctx_n);
                     const double kz_n = mp_n.kz.eval(ctx_n);
 
-                    double d_half_cell = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
                     double d_half_neighbor
                         = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
-                    double k_cell = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double k_neighbor = mhs::utils::k_along(dir, kx_n, ky_n, kz_n);
-                    double cond = A_f / (d_half_cell / k_cell + d_half_neighbor / k_neighbor);
+                    double cond = A_f / (half_dist / k_face + d_half_neighbor / k_neighbor);
                     diag += cond;
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
                 }
                 else if (bc_type == mhs::core::BcType::FirstType) {
-                    double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
-
                     double T_bc_val = bc_params.dirichlet_T[param_idx].eval(ctx_c);
-
-                    double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double cond = k_face * A_f / half_dist;
                     diag += cond;
                     local.b(c_idx) += cond * T_bc_val;
@@ -128,10 +124,6 @@ namespace mhs::sim {
                 else if (bc_type == mhs::core::BcType::ThirdType) {
                     double h = bc_params.cauchy_h[param_idx].eval(ctx_c);
                     double T_inf = bc_params.cauchy_T_inf[param_idx].eval(ctx_c);
-
-                    double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
-
-                    double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                     double coeff = k_face * h * A_f / (k_face + h * half_dist);
                     diag += coeff;
                     local.b(c_idx) += coeff * T_inf;
