@@ -137,7 +137,7 @@ namespace mhs::sim::time_scheme {
             }
 
             next_dt_ = std::clamp(calculated_dt, cfg_.min_dt, cfg_.max_dt);
-            bool accept = (err <= cfg_.abs_tol);
+            bool accept = (err <= cfg_.abs_tol) || (trial_dt <= cfg_.min_dt * 1.0001);
             return {accept};
         }
 
