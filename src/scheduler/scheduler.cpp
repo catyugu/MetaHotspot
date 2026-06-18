@@ -47,6 +47,7 @@ namespace mhs::sim {
 
         // 瞬态求解分支
         time_scheme::TimeSchemeConfig cfg;
+        cfg.max_order = 1;
         cfg.kind = time_scheme::TimeSchemeKind::AdaptiveBdf;
         cfg.initial_dt = model_->transient_time_step / 10.0;
         cfg.max_dt = model_->transient_time_step * 10.0;
