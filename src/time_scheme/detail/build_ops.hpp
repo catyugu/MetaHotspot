@@ -8,26 +8,26 @@ namespace mhs::sim::time_scheme::detail {
     /// Build the BDF1 (Backward Euler) linear system:
     /// A = K + M_diag / dt
     /// b = f + M_diag * T_prev / dt
-    inline LinearSystem build_bdf1_ls(
-        const AssemblyResult& ops, const mhs::core::TimeStepBuffer& history, double dt)
+    inline LinearSystem build_bdf1_ls(const AssemblyResult& ops, const mhs::core::TimeStepBuffer& history, double dt)
     {
         const int N = static_cast<int>(ops.f.size());
         const auto& T_prev = history.latest();
         Eigen::Map<const Eigen::VectorXd> T_n(T_prev.data(), N);
 
+        const Eigen::VectorXd m_over_dt = ops.M_diag / dt;
+
         Eigen::SparseMatrix<double> A = ops.K;
         // 对角线更新：O(N) 无需破坏稀疏结构
-        A.diagonal() += ops.M_diag / dt;
+        A.diagonal() += m_over_dt;
 
-        Eigen::VectorXd b = ops.f + ops.M_diag.cwiseProduct(T_n) / dt;
+        Eigen::VectorXd b = ops.f + m_over_dt.cwiseProduct(T_n);
 
         return {std::move(A), std::move(b)};
     }
 
     /// Build the BDF2 (variable-step) linear system:
     /// (\alpha_0 M + K) T_{n+1} = f - \alpha_1 M T_n - \alpha_2 M T_{n-1}
-    inline LinearSystem build_bdf2_ls(
-        const AssemblyResult& ops, const mhs::core::TimeStepBuffer& history, double dt)
+    inline LinearSystem build_bdf2_ls(const AssemblyResult& ops, const mhs::core::TimeStepBuffer& history, double dt)
     {
         const int N = static_cast<int>(ops.f.size());
         const double h_n = dt;

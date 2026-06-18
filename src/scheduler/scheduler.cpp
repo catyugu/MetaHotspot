@@ -23,7 +23,6 @@ namespace mhs::sim {
     {
         if (!model_ || !solver_) {
             MHS_FATAL("Scheduler: model or solver not set");
-            return;
         }
 
         const int N = static_cast<int>(model_->cells.cell_bcs.size());
