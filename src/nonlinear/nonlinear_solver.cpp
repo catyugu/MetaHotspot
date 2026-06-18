@@ -37,31 +37,32 @@ namespace mhs::sim {
                     return std::nullopt;
                 }
 
-                const int N = static_cast<int>(x_k.size());
                 const Eigen::VectorXd f_k = G_k - x_k;
                 const int m_k = std::min(hist_len, depth);
 
-                // Build F (N x m_k) and target b = f_k.
-                Eigen::MatrixXd F(N, m_k);
-                for (int j = 0; j < m_k; ++j) {
-                    F.col(j) = f_k - (G_hist[j] - x_hist[j]);
+                // AA solve: F * alpha = f_k  (LS, m_k columns).
+                // Build the m_k x m_k normal-equation system FᵀF · α = Fᵀ·f_k
+                // to avoid a full N x m_k QR (m_k is O(5), N is the cell count).
+                Eigen::MatrixXd FtF(m_k, m_k);
+                Eigen::VectorXd Ftf(m_k);
+                for (int i = 0; i < m_k; ++i) {
+                    const Eigen::VectorXd& f_i = f_k - (G_hist[i] - x_hist[i]);
+                    Ftf(i) = f_i.dot(f_k);
+                    for (int j = i; j < m_k; ++j) {
+                        const Eigen::VectorXd& f_j = f_k - (G_hist[j] - x_hist[j]);
+                        FtF(i, j) = f_i.dot(f_j);
+                        FtF(j, i) = FtF(i, j);
+                    }
+                }
+                Eigen::VectorXd alpha = FtF.colPivHouseholderQr().solve(Ftf);
+
+                if (dampening < 1.0) {
+                    alpha *= dampening;
                 }
 
-                // Solve F * alpha = f_k in the least-squares sense.
-                Eigen::VectorXd alpha = F.colPivHouseholderQr().solve(f_k);
-
-                // Mix G_k and the historical G's. Equivalently:
-                //   x_prop = G_k - sum_i alpha_i * (G_k - G_{k-i})
                 Eigen::VectorXd x_prop = (1.0 - alpha.sum()) * G_k;
                 for (int j = 0; j < m_k; ++j) {
                     x_prop.noalias() += alpha(j) * G_hist[j];
-                }
-
-                // Optional outer blending with naive Picard (0 = Picard, 1 = AA).
-                if (dampening < 1.0) {
-                    const double omega = 1.0; // local omega for the blend; the caller's omega is applied after
-                    const Eigen::VectorXd x_picard = x_k + omega * (G_k - x_k);
-                    x_prop = (1.0 - dampening) * x_picard + dampening * x_prop;
                 }
 
                 // Divergence guard: compare infinity norms.
