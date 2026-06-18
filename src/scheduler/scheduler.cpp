@@ -52,21 +52,21 @@ namespace mhs::sim {
         cfg.max_dt = model_->transient_time_step * 10.0;
         cfg.output_dt = model_->transient_time_step;
 
-        state_.history
-            = mhs::core::TimeStepBuffer(static_cast<std::size_t>(N), std::max<std::size_t>(1, cfg.max_order + 1));
+        state_.accepted
+            = mhs::core::SolutionHistory(static_cast<std::size_t>(N), std::max<std::size_t>(1, cfg.max_order + 1));
 
         auto scheme = time_scheme::create_scheme(cfg);
-        scheme->initialize(state_.history, state_);
+        scheme->initialize(state_.accepted, state_);
         probe_recorder_.record(state_.current_time, state_.T);
 
         const double duration = model_->transient_duration;
 
         while (state_.current_time < duration) {
-            auto step = scheme->select_step(state_.history, state_.current_time, duration);
+            auto step = scheme->select_step(state_.accepted, state_.current_time, duration);
             state_.dt = step.dt;
 
             LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
-                return scheme->build_system(assembler.assemble(s), s.history, step.order, s.dt);
+                return scheme->build_system(assembler.assemble(s), s.accepted, step.order, s.dt);
             };
 
             auto result = nonlinear_solve(build_ls, state_, *solver_);
@@ -75,12 +75,12 @@ namespace mhs::sim {
             }
 
             // 核心变动：评估步长及截断误差的业务完全交由 time_scheme 处理
-            auto step_result = scheme->evaluate_step(state_.history, state_.T, state_.dt);
+            auto step_result = scheme->evaluate_step(state_.accepted, state_.T, state_.dt);
 
             if (step_result.accepted) {
                 state_.current_time += state_.dt;
                 state_.time_step++;
-                state_.history.push(state_.T, state_.current_time);
+                state_.accepted.accept(state_.T, state_.current_time);
 
                 MHS_LOG_DEBUG("Time: {} solved (dt={})", state_.current_time, state_.dt);
 
@@ -90,7 +90,7 @@ namespace mhs::sim {
             }
             else {
                 // 回退状态，时间步未被接受（当前自适应实现中默认不拒绝）
-                state_.T = state_.history.latest();
+                state_.T = state_.accepted.current();
             }
         }
 

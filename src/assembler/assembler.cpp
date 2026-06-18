@@ -35,7 +35,7 @@ namespace mhs::sim {
         int N = static_cast<int>(cells.cell_bcs.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
 
-        const std::vector<double>* T_eval_mass = (state.history.size() > 0) ? &state.history.latest() : &state.T;
+        const std::vector<double>* T_eval_mass = (state.accepted.size() > 0) ? &state.accepted.current() : &state.T;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 
@@ -62,7 +62,7 @@ namespace mhs::sim {
             const double ky_c = mp.ky.eval(ctx_c);
             const double kz_c = mp.kz.eval(ctx_c);
 
-            // Mass coefficients on history.latest() — see comment above.
+            // Mass coefficients on accepted.current() — see comment above.
             const mhs::core::FieldContext ctx_m {
                 mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time};
             const double rho = mp.rho.eval(ctx_m);

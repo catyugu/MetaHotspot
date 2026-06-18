@@ -2,7 +2,7 @@
 
 #include "data/internal_model.hpp"
 #include "data/linear_system.hpp"
-#include "data/time_step_buffer.hpp"
+#include "data/solution_history.hpp"
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -36,22 +36,22 @@ namespace mhs::sim::time_scheme {
     public:
         virtual ~TimeScheme() = default;
 
-        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const
+        virtual void initialize(mhs::core::SolutionHistory& accepted, mhs::core::GlobalState& state) const
         {
-            history.reset(state.T);
+            accepted.initialize(state.T);
         }
 
         virtual StepDecision select_step(
-            const mhs::core::TimeStepBuffer& history, double current_t, double duration) const
+            const mhs::core::SolutionHistory& accepted, double current_t, double duration) const
             = 0;
 
         virtual LinearSystem build_system(const AssemblyResult& ops,
-            const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const
+            const mhs::core::SolutionHistory& accepted, std::size_t order, double dt) const
             = 0;
 
         // 统一处理误差评估、步长接受或拒绝，更新内部的自适应策略参数
         virtual StepResult evaluate_step(
-            const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T, double current_dt) const
+            const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T, double trial_dt) const
             = 0;
 
         virtual bool is_output_boundary(double t) const

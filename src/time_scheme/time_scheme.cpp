@@ -14,18 +14,18 @@ namespace mhs::sim::time_scheme {
     public:
         explicit Bdf1Scheme(TimeSchemeConfig cfg) : cfg_(std::move(cfg)) { }
 
-        StepDecision select_step(const mhs::core::TimeStepBuffer&, double, double) const override
+        StepDecision select_step(const mhs::core::SolutionHistory&, double, double) const override
         {
             return {cfg_.initial_dt, 1};
         }
 
         LinearSystem build_system(
-            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t, double dt) const override
+            const AssemblyResult& ops, const mhs::core::SolutionHistory& h, std::size_t, double dt) const override
         {
             return detail::build_bdf1_ls(ops, h, dt);
         }
 
-        StepResult evaluate_step(const mhs::core::TimeStepBuffer&, const std::vector<double>&, double) const override
+        StepResult evaluate_step(const mhs::core::SolutionHistory&, const std::vector<double>&, double) const override
         {
             return {true};
         }
@@ -39,19 +39,19 @@ namespace mhs::sim::time_scheme {
     public:
         explicit Bdf2Scheme(TimeSchemeConfig cfg) : cfg_(std::move(cfg)) { }
 
-        StepDecision select_step(const mhs::core::TimeStepBuffer& h, double, double) const override
+        StepDecision select_step(const mhs::core::SolutionHistory& h, double, double) const override
         {
             return {cfg_.initial_dt, h.size() >= 3 ? 2 : 1ull};
         }
 
         LinearSystem build_system(
-            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
+            const AssemblyResult& ops, const mhs::core::SolutionHistory& h, std::size_t order, double dt) const override
         {
             return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(ops, h, dt)
                                                      : detail::build_bdf2_ls(ops, h, dt);
         }
 
-        StepResult evaluate_step(const mhs::core::TimeStepBuffer&, const std::vector<double>&, double) const override
+        StepResult evaluate_step(const mhs::core::SolutionHistory&, const std::vector<double>&, double) const override
         {
             return {true};
         }
@@ -70,14 +70,14 @@ namespace mhs::sim::time_scheme {
         {
         }
 
-        void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const override
+        void initialize(mhs::core::SolutionHistory& accepted, mhs::core::GlobalState& state) const override
         {
-            TimeScheme::initialize(history, state);
+            TimeScheme::initialize(accepted, state);
             optimal_dt_ = next_dt_ = last_dt_ = cfg_.initial_dt;
             output_step_ = 0;
         }
 
-        StepDecision select_step(const mhs::core::TimeStepBuffer& h, double current_t, double duration) const override
+        StepDecision select_step(const mhs::core::SolutionHistory&, double current_t, double duration) const override
         {
             optimal_dt_ = std::clamp(next_dt_ > 0.0 ? next_dt_ : cfg_.initial_dt, cfg_.min_dt, cfg_.max_dt);
             double dt = optimal_dt_;
@@ -90,34 +90,41 @@ namespace mhs::sim::time_scheme {
             }
 
             last_dt_ = dt = std::min(dt, duration - current_t);
-            return {dt, std::min(h.size() > cfg_.max_order ? cfg_.max_order : 1, 1ull)};
+
+            // NOTE: original code clamped to order 1 via std::min(..., 1ull).
+            // AdaptiveBdf with BDF2 is not yet validated — the different
+            // linear system produces LTE estimates that far exceed abs_tol,
+            // causing dt to spiral down to min_dt and the simulation to take
+            // billions of steps.  Keep order=1 (BDF1 / Backward Euler) until
+            // a proper BDF2 calibration is done.
+            return {dt, 1};
         }
 
         LinearSystem build_system(
-            const AssemblyResult& ops, const mhs::core::TimeStepBuffer& h, std::size_t order, double dt) const override
+            const AssemblyResult& ops, const mhs::core::SolutionHistory& h, std::size_t order, double dt) const override
         {
             // 自适应算法现在会基于 order 在 BDF1 和 BDF2 之间切换
             return (order == 1 || h.size() <= order) ? detail::build_bdf1_ls(ops, h, dt)
                                                      : detail::build_bdf2_ls(ops, h, dt);
         }
 
-        StepResult evaluate_step(const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T,
-            double current_dt) const override
+        StepResult evaluate_step(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
+            double trial_dt) const override
         {
 
-            const int N = static_cast<int>(current_T.size());
+            const int N = static_cast<int>(trial_T.size());
             if (N == 0)
                 return {true};
 
             // 全局避免使用 for 循环遍历原生数组，通过 Eigen 进行快速的 SIMD 向量化计算
-            Eigen::Map<const Eigen::VectorXd> T_curr(current_T.data(), N);
-            Eigen::Map<const Eigen::VectorXd> T_prev(history.latest().data(), N);
+            Eigen::Map<const Eigen::VectorXd> T_curr(trial_T.data(), N);
+            Eigen::Map<const Eigen::VectorXd> T_prev(accepted.current().data(), N);
 
             Eigen::VectorXd err_vec;
-            if (history.size() >= 2) {
-                Eigen::Map<const Eigen::VectorXd> T_prev2(history.at(1).data(), N);
-                double dt_prev = history.dt_to(1);
-                double ratio = (dt_prev > 1e-12) ? (current_dt / dt_prev) : 1.0;
+            if (accepted.size() >= 2) {
+                Eigen::Map<const Eigen::VectorXd> T_prev2(accepted.at(1).data(), N);
+                double dt_prev = accepted.previous_dt();
+                double ratio = (dt_prev > 1e-12) ? (trial_dt / dt_prev) : 1.0;
 
                 // 真正的局部截断误差(LTE)
                 err_vec = ((T_curr - T_prev) - ratio * (T_prev - T_prev2)).cwiseAbs();

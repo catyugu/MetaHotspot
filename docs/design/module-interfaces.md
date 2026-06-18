@@ -148,15 +148,15 @@ namespace mhs::sim::time_scheme {
     class TimeScheme {
     public:
         virtual ~TimeScheme() = default;
-        virtual void initialize(mhs::core::TimeStepBuffer& history, mhs::core::GlobalState& state) const
+        virtual void initialize(mhs::core::SolutionHistory& accepted, mhs::core::GlobalState& state) const
         {
-            history.reset(state.T);
+            accepted.initialize(state.T);
         }
-        virtual StepDecision select_step(const mhs::core::TimeStepBuffer& history, double current_t, double duration) const = 0;
+        virtual StepDecision select_step(const mhs::core::SolutionHistory& accepted, double current_t, double duration) const = 0;
         virtual LinearSystem build_system(const AssemblyResult& ops,
-            const mhs::core::TimeStepBuffer& history, std::size_t order, double dt) const = 0;
+            const mhs::core::SolutionHistory& accepted, std::size_t order, double dt) const = 0;
         virtual StepResult evaluate_step(
-            const mhs::core::TimeStepBuffer& history, const std::vector<double>& current_T, double current_dt) const = 0;
+            const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T, double trial_dt) const = 0;
         virtual bool is_output_boundary(double t) const;
         virtual const TimeSchemeConfig& config() const = 0;
     };
@@ -173,19 +173,19 @@ The `Scheduler::run()` main loop is:
 
 ```text
 while (current_time < duration):
-    step = scheme->select_step(history, t, duration)
+    step = scheme->select_step(accepted, t, duration)
     dt   = clamp(step.dt, remaining, t_next_output - t)
     ops  = assembler.assemble(state)
-    ls   = scheme->build_system(ops, history, step.order, dt)
+    ls   = scheme->build_system(ops, accepted, step.order, dt)
     nonlinear_solve(ls, state, solver)
-    step_result = scheme->evaluate_step(history, T, dt)
+    step_result = scheme->evaluate_step(accepted, T, dt)
     if step_result.accepted:
-        history.push(T, t + dt)
+        accepted.accept(T, t + dt)
         t += dt
 ```
 
-The TimeStepBuffer (`mhs::core::TimeStepBuffer`) is a ring buffer storing
-the k most recent (T, time) pairs.  Capacity is `max_order + 1`.
+The `SolutionHistory` (`mhs::core::SolutionHistory`) is a ring buffer storing
+the k most recently *accepted* (T, time) pairs.  Capacity is `max_order + 1`.
 
 ## `linear_solver`
 

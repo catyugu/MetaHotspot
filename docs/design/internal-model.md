@@ -63,18 +63,17 @@ struct GlobalState {
     int    time_step     = 0;
     double dt            = 0.0;   // current transient step size
 
-    TimeStepBuffer history{0, 1};  // BDF-k ring buffer (cap = max_order+1)
+    SolutionHistory accepted{0, 1};  // BDF-k ring buffer (cap = max_order+1)
 
     std::vector<double> T;          // 长度 = N_active
-    std::vector<double> residual;
 };
 ```
 
 **Invariants:**
 
-- `history.latest() == T` at the end of every accepted step.
-- The previous-step snapshot is at `history.at(1)`.
-- `history.capacity()` is set to `max_order + 1` in `Scheduler::run()`.
+- `accepted.current() == T` at the end of every accepted step.
+- The previous-step snapshot is at `accepted.at(1)`.
+- `accepted.capacity()` is set to `max_order + 1` in `Scheduler::run()`.
 - `dt` is the **most recently committed** step length (not the
   upcoming one — use the time-scheme's `StepDecision` for that).
 
@@ -103,5 +102,5 @@ struct InternalModel {
 - **虚拟单元**：assembler 跳过 `valid_mask[idx]==0`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
 - **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
-- **Ring buffer (`TimeStepBuffer`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`history.latest() == T` 在每步接受后成立。
+- **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。
 - **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::utils`（`src/common/mesh_utils.hpp`），由装配器和预处理器共享。

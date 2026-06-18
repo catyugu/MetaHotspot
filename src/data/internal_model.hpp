@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-#include "data/time_step_buffer.hpp"
+#include "data/solution_history.hpp"
 #include "expr/expr.hpp"
 #include "types.hpp"
 
@@ -50,17 +50,17 @@ namespace mhs::core {
 
     /// Mutable, per-step state owned by Scheduler::run().
     /// Invariant: state.T is the most recent accepted solution; it mirrors
-    /// history.latest() at the end of every accepted step.
+    /// accepted.current() at the end of every accepted step.
     struct GlobalState {
         double current_time = 0.0;
         int time_step = 0;
         double dt = 0.0;
 
-        // BDF-k history buffer.  history.latest() == T (after accept).
+        // BDF-k history buffer.  accepted.current() == T (after accept).
         // The buffer capacity matches the time scheme's max_order (typically
-        // 2 for BDF2 / AdaptiveBdf).  Reset via history.reset(T) before the
-        // first push.
-        TimeStepBuffer history {0, 1};
+        // 2 for BDF2 / AdaptiveBdf).  Populated via accepted.initialize(T)
+        // before the first step.
+        SolutionHistory accepted {0, 1};
 
         // Active temperature field, length = N_active (== cells.cell_bcs.size()).
         std::vector<double> T;
