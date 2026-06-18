@@ -77,27 +77,24 @@ namespace mhs::sim::time_scheme {
             output_step_ = 0;
         }
 
-        StepDecision select_step(const mhs::core::SolutionHistory&, double current_t, double duration) const override
+        StepDecision select_step(const mhs::core::SolutionHistory& h, double current_t, double duration) const override
         {
             optimal_dt_ = std::clamp(next_dt_ > 0.0 ? next_dt_ : cfg_.initial_dt, cfg_.min_dt, cfg_.max_dt);
             double dt = optimal_dt_;
-
             if (cfg_.output_dt > 0.0) {
                 double t_next = (output_step_ + 1) * cfg_.output_dt;
-                if (t_next > current_t + 1e-12 && t_next < current_t + dt) {
+                // 修复：将固定的 1e-12 绝对容差替换为自适应相对容差，防止浮点停滞
+                double tol = 1e-9 * std::max(1.0, current_t);
+                if (t_next > current_t + tol && t_next < current_t + dt) {
                     dt = t_next - current_t;
                 }
             }
-
             last_dt_ = dt = std::min(dt, duration - current_t);
-
-            // NOTE: original code clamped to order 1 via std::min(..., 1ull).
-            // AdaptiveBdf with BDF2 is not yet validated — the different
-            // linear system produces LTE estimates that far exceed abs_tol,
-            // causing dt to spiral down to min_dt and the simulation to take
-            // billions of steps.  Keep order=1 (BDF1 / Backward Euler) until
-            // a proper BDF2 calibration is done.
-            return {dt, 1};
+            // Select order: use BDF2 once we have 3+ points and max_order ≥ 2.
+            std::size_t order = 1;
+            if (h.size() > cfg_.max_order)
+                order = cfg_.max_order;
+            return {dt, order};
         }
 
         LinearSystem build_system(
@@ -115,8 +112,6 @@ namespace mhs::sim::time_scheme {
             const int N = static_cast<int>(trial_T.size());
             if (N == 0)
                 return {true};
-
-            // 全局避免使用 for 循环遍历原生数组，通过 Eigen 进行快速的 SIMD 向量化计算
             Eigen::Map<const Eigen::VectorXd> T_curr(trial_T.data(), N);
             Eigen::Map<const Eigen::VectorXd> T_prev(accepted.current().data(), N);
 
@@ -125,8 +120,6 @@ namespace mhs::sim::time_scheme {
                 Eigen::Map<const Eigen::VectorXd> T_prev2(accepted.at(1).data(), N);
                 double dt_prev = accepted.previous_dt();
                 double ratio = (dt_prev > 1e-12) ? (trial_dt / dt_prev) : 1.0;
-
-                // 真正的局部截断误差(LTE)
                 err_vec = ((T_curr - T_prev) - ratio * (T_prev - T_prev2)).cwiseAbs();
             }
             else {
@@ -139,14 +132,13 @@ namespace mhs::sim::time_scheme {
             double fac = cfg_.safety * std::pow(cfg_.abs_tol / std::max(err, 1e-30), 0.5);
             double calculated_dt = last_dt_ * std::clamp(fac, 0.5, 2.0);
 
-            // 补偿逻辑：如果强制被输出边界切断步长，则在条件安全下恢复最优步长势能
             if (last_dt_ < optimal_dt_ && fac >= 1.0) {
                 calculated_dt = std::max(calculated_dt, optimal_dt_);
             }
 
             next_dt_ = std::clamp(calculated_dt, cfg_.min_dt, cfg_.max_dt);
-
-            return {true};
+            bool accept = (err <= cfg_.abs_tol);
+            return {accept};
         }
 
         bool is_output_boundary(double t) const override

@@ -32,12 +32,12 @@ namespace mhs::sim::time_scheme::detail {
         const int N = static_cast<int>(ops.f.size());
         const double h_n = dt;
         const double h_nm1 = history.previous_dt();
-        // 防止退化，退化时跌落回定步长处理
-        const double delta = (h_nm1 > 0.0) ? h_n / h_nm1 : 1.0;
+        const double delta = h_n / h_nm1;
 
         const double alpha0 = (1.0 + 2.0 * delta) / (h_n * (1.0 + delta));
-        const double alpha1 = -(1.0 + delta) / (h_n * delta);
-        const double alpha2 = delta / (h_n * (1.0 + delta));
+
+        const double alpha1 = -(1.0 + delta) / h_n;
+        const double alpha2 = (delta * delta) / (h_n * (1.0 + delta));
 
         Eigen::Map<const Eigen::VectorXd> T_n(history.current().data(), N);
         Eigen::Map<const Eigen::VectorXd> T_nm1(history.at(1).data(), N);
@@ -45,7 +45,6 @@ namespace mhs::sim::time_scheme::detail {
         Eigen::SparseMatrix<double> A = ops.K;
         A.diagonal() += alpha0 * ops.M_diag;
 
-        // 修正后的标准 BDF2 右端项
         Eigen::VectorXd b = ops.f - ops.M_diag.cwiseProduct(alpha1 * T_n + alpha2 * T_nm1);
 
         return {std::move(A), std::move(b)};
