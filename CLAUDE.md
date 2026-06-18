@@ -33,8 +33,6 @@ cmake --build build --parallel
 cmake -S . -B build
 cmake --build build --parallel --config Release
 
-# !! Switch to a more trivial and clean env, so as to guarantee no dependencies on specific runtime 
-conda activate cpp_env  
 # Run tests
 python run_tests.py
 
