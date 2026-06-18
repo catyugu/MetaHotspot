@@ -64,7 +64,6 @@ struct GlobalState {
     double dt            = 0.0;   // current transient step size
 
     TimeStepBuffer history{0, 1};  // BDF-k ring buffer (cap = max_order+1)
-    int output_step = 0;          // next output frame (adaptive schemes)
 
     std::vector<double> T;          // 长度 = N_active
     std::vector<double> residual;

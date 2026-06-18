@@ -62,10 +62,6 @@ namespace mhs::core {
         // first push.
         TimeStepBuffer history {0, 1};
 
-        // 0-based counter of the next output frame (used by adaptive schemes
-        // for output-time alignment).
-        int output_step = 0;
-
         // Active temperature field, length = N_active (== cells.cell_bcs.size()).
         std::vector<double> T;
     };
