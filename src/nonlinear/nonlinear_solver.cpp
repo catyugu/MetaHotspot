@@ -148,9 +148,7 @@ namespace mhs::sim {
                 next = std::move(*x_prop);
             }
             else {
-                for (int i = 0; i < N; ++i) {
-                    next(i) = x_k(i) + omega * (G_k(i) - x_k(i));
-                }
+                next = x_k + omega * (G_k - x_k);
             }
 
             const double max_update = (next - x_k).cwiseAbs().maxCoeff();
