@@ -112,17 +112,43 @@ namespace mhs::sim {
             }
         }
 
-        // 一次遍历完成 index_map + material_id + heat_source_idx（compact）；
+        // 一次遍历完成 index_map + material_id + heat_source_idx + cell_bcs（compact）；
         // index_map 的 invalidIndex 值标记虚拟单元（无 valid_mask 字段）。
-        // 不再有第二次全网格遍历去填 heat_source_idx——layer/block 归属判定时一并写入。
-        model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
-
-        auto& cells = model->cells;
-
+        // 不再有第二次全网格遍历去填 heat_source_idx 或 face BCs —— layer/block 归属判定时一并写入
+        // cell_bcs 由零初始化保证全 None（不是之前的三重循环）。
         auto& bc_params = model->bc_params;
         auto bc_rewriter = [&fns](const std::string& s) { return substitute_function_args(s, "T", fns); };
-        resolve_face_keys(ioStructure.boundaries, ioStructure.other_bc_type, ioStructure.other_bc_first,
-            ioStructure.other_bc_second, ioStructure.other_bc_third, mesh, cells, bc_params, si_scale, bc_rewriter);
+
+        // 先展平所有 boundary face keys（不依赖 CellFields）。
+        auto parsed_keys = parse_all_face_keys(ioStructure.boundaries, bc_params, si_scale, bc_rewriter);
+
+        // 构建 other_bc 参数并决定兜底类型的索引。
+        mhs::core::BcType other_bc_enum = mhs::core::BcType::None;
+        uint16_t other_bc_idx = 0;
+        switch (ioStructure.other_bc_type) {
+        case mhs::core::ThermalBCType::FirstType: {
+            other_bc_enum = mhs::core::BcType::FirstType;
+            bc_params.dirichlet_T.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_first.temperature)));
+            other_bc_idx = (uint16_t)(bc_params.dirichlet_T.size() - 1);
+            break;
+        }
+        case mhs::core::ThermalBCType::SecondType: {
+            other_bc_enum = mhs::core::BcType::SecondType;
+            bc_params.neumann_q.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_second.heat_flux)));
+            other_bc_idx = (uint16_t)(bc_params.neumann_q.size() - 1);
+            break;
+        }
+        case mhs::core::ThermalBCType::ThirdType: {
+            other_bc_enum = mhs::core::BcType::ThirdType;
+            bc_params.cauchy_h.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.convection_coeff)));
+            bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.T_inf)));
+            other_bc_idx = (uint16_t)(bc_params.cauchy_h.size() - 1);
+            break;
+        }
+        }
+
+        model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map,
+            parsed_keys, other_bc_enum, other_bc_idx);
 
         return model;
     }

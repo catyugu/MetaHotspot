@@ -15,6 +15,12 @@ namespace mhs::sim {
         std::vector<std::array<double, 4>> rects; // {a_min, a_max, b_min, b_max} in SI
     };
 
+    struct ParsedFaceKey {
+        FaceKeyInfo fk;
+        mhs::core::BcType bc_enum;
+        uint16_t param_idx;
+    };
+
     // Parse a face key string. Two formats are supported, selected by axis:
     //
     //   Z-face (4 parts, comma/semicolon rect list):
@@ -33,12 +39,15 @@ namespace mhs::sim {
     // Check if a 2D point is inside any of the face key rectangles
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-    // Resolve BCs: assign mhs::core::CellBC per cell per face from boundaries + other_bc + virtual neighbors.
-    // The `rewriter` is applied to every BC string (temperature / heat_flux / convection_coeff /
-    // T_inf) before parsing — typically the 字面替换 that turns `name(x)` into `name(T)`.
-    void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries, mhs::core::ThermalBCType other_bc_type,
-        const mhs::core::FirstTypeThermalBC& other_bc_first, const mhs::core::SecondTypeThermalBC& other_bc_second,
-        const mhs::core::ThirdTypeThermalBC& other_bc_third, const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+    // Flatten all (boundary, face_key) pairs and push their BC params into
+    // bc_params.  Returns the flattened ParsedFaceKey vector used by the
+    // single-pass grid traversal inside resolve_layers.
+    //
+    // The `rewriter` is applied to every BC string (temperature / heat_flux /
+    // convection_coeff / T_inf) before parsing — typically the 字面替换 that
+    // turns `name(x)` into `name(T)`.
+    std::vector<ParsedFaceKey> parse_all_face_keys(
+        const std::vector<mhs::core::Boundary>& boundaries,
         mhs::core::BCParamTable& bc_params, double si_scale,
         const std::function<std::string(const std::string&)>& rewriter);
 

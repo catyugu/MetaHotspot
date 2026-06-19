@@ -1,38 +1,10 @@
-#include "common/mesh_utils.hpp"
 #include "data/types.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
-#include <cmath>
 
 namespace mhs::sim {
 
     namespace {
-        // 核心抽象：判断一个面的外侧是否”暴露”（即邻居是域外或者虚拟单元）
-        bool is_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
-            const mhs::core::CellFields& cells)
-        {
-            int nix = mhs::utils::neighbor_ix(dir, ix);
-            int niy = mhs::utils::neighbor_iy(dir, iy);
-            int niz = mhs::utils::neighbor_iz(dir, iz);
-
-            // 1. 如果超出网格边界，说明是域外，绝对暴露
-            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz) {
-                return true;
-            }
-
-            // 2. 如果内部对应邻居是空洞（虚拟单元），说明面暴露在了内部孔隙中
-            int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
-            return cells.index_map[neighbor] == mhs::core::invalidIndex;
-        }
-
-        // Lightweight “axis letter” lookup matching the face-direction letter used by face keys.
-        // XM/XP → 'X', YM/YP → 'Y', ZM/ZP → 'Z'.
-        inline char face_axis_letter(mhs::core::FaceDir dir)
-        {
-            static constexpr char k[6] = {'X', 'X', 'Y', 'Y', 'Z', 'Z'};
-            return k[static_cast<size_t>(dir)];
-        }
-
         // Split a string by a single-character delimiter.
         std::vector<std::string> split(const std::string& s, char delim)
         {
@@ -110,47 +82,10 @@ namespace mhs::sim {
         return false;
     }
 
-    void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries, mhs::core::ThermalBCType other_bc_type,
-        const mhs::core::FirstTypeThermalBC& other_bc_first, const mhs::core::SecondTypeThermalBC& other_bc_second,
-        const mhs::core::ThirdTypeThermalBC& other_bc_third, const mhs::core::MeshGeometry& mesh,
-        mhs::core::CellFields& cells, mhs::core::BCParamTable& bc_params, double si_scale,
+    std::vector<ParsedFaceKey> parse_all_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
+        mhs::core::BCParamTable& bc_params, double si_scale,
         const std::function<std::string(const std::string&)>& rewriter)
     {
-        // 1. 初始化所有 BC 为 None
-        const int N = static_cast<int>(cells.cell_bcs.size());
-        for (int c = 0; c < N; c++) {
-            for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
-                cells.cell_bcs[c].types[f] = mhs::core::BcType::None;
-                cells.cell_bcs[c].param_idxs[f] = 0;
-            }
-        }
-
-        // 2. 预存 other_bc 参数（索引始终为 0）
-        uint16_t other_idx = 0;
-        mhs::core::BcType other_bc_enum = mhs::core::BcType::None;
-        switch (other_bc_type) {
-        case mhs::core::ThermalBCType::FirstType:
-            other_bc_enum = mhs::core::BcType::FirstType;
-            bc_params.dirichlet_T.push_back(mhs::core::parse(rewriter(other_bc_first.temperature)));
-            break;
-        case mhs::core::ThermalBCType::SecondType:
-            other_bc_enum = mhs::core::BcType::SecondType;
-            bc_params.neumann_q.push_back(mhs::core::parse(rewriter(other_bc_second.heat_flux)));
-            break;
-        case mhs::core::ThermalBCType::ThirdType:
-            other_bc_enum = mhs::core::BcType::ThirdType;
-            bc_params.cauchy_h.push_back(mhs::core::parse(rewriter(other_bc_third.convection_coeff)));
-            bc_params.cauchy_T_inf.push_back(mhs::core::parse(rewriter(other_bc_third.T_inf)));
-            break;
-        }
-
-        // 3. 将所有 (boundary, face_key) 组合展平为 ParsedFaceKey 数组，
-        //    使得后续只需对网格做单次遍历。
-        struct ParsedFaceKey {
-            FaceKeyInfo fk;
-            mhs::core::BcType bc_enum;
-            uint16_t param_idx;
-        };
         std::vector<ParsedFaceKey> parsed_keys;
 
         for (const auto& boundary : boundaries) {
@@ -181,52 +116,7 @@ namespace mhs::sim {
             }
         }
 
-        // 4. 单次遍历网格：对每个活跃单元的每个暴露面，
-        //    依次检查 parsed_keys 是否命中；若全部未命中且面暴露，则赋予 other_bc。
-        //    （原 Phase 2 + Phase 3 合并为一步。）
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.index_map[old_idx] == mhs::core::invalidIndex)
-                        continue;
-                    int c_idx = (int)cells.index_map[old_idx];
-
-                    for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                        // Compute face attributes via mhs::utils lookup tables — no per-axis switch.
-                        const char face_axis = face_axis_letter(dir);
-                        const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
-                        const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
-                        const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
-                        const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
-                        const double a_val = centers[ta];
-                        const double b_val = centers[tb];
-
-                        if (!is_face_exposed(dir, ix, iy, iz, mesh, cells))
-                            continue;
-
-                        // 优先匹配 parsed_keys
-                        bool matched = false;
-                        for (const auto& pk : parsed_keys) {
-                            if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < 1e-10) {
-                                if (point_in_face_rects(pk.fk, a_val, b_val)) {
-                                    cells.cell_bcs[c_idx].types[(size_t)dir] = pk.bc_enum;
-                                    cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = pk.param_idx;
-                                    matched = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 未命中 → 兜底 other_bc
-                        if (!matched && other_bc_enum != mhs::core::BcType::None) {
-                            cells.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
-                            cells.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_idx;
-                        }
-                    }
-                }
-            }
-        }
+        return parsed_keys;
     }
 
 } // namespace mhs::sim

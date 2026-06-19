@@ -1,4 +1,6 @@
+#include "common/mesh_utils.hpp"
 #include "expr/expr.hpp"
+#include "face_key_processor.hpp"
 #include "layer_processor.hpp"
 #include <cstdint>
 
@@ -144,9 +146,74 @@ namespace mhs::sim {
         return -1;
     }
 
+    namespace {
+        // True iff the cell face at (ix, iy, iz) on dir is "exposed" — i.e., the
+        // neighbor is outside the grid or is a virtual cell (via index_map).
+        bool is_cell_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
+            const mhs::core::CellFields& cells)
+        {
+            int nix = mhs::utils::neighbor_ix(dir, ix);
+            int niy = mhs::utils::neighbor_iy(dir, iy);
+            int niz = mhs::utils::neighbor_iz(dir, iz);
+
+            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz)
+                return true;
+
+            int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
+            return cells.index_map[neighbor] == mhs::core::invalidIndex;
+        }
+
+        // Apply parsed face keys and other_bc to one cell's faces in place.
+        void apply_face_bcs_to_cell(int c_idx, int ix, int iy, int iz,
+            const mhs::core::MeshGeometry& mesh,
+            const mhs::core::CellFields& cells,
+            const std::vector<ParsedFaceKey>& parsed_keys,
+            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+            mhs::core::CellFields& cells_out)
+        {
+            for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
+                // Axis letter from the direction table — replaces the old face_axis_letter helper.
+                static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
+                const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
+                const char face_axis = AXIS_LETTER[axis];
+
+                const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
+                const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
+                const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
+                const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
+                const double a_val = centers[ta];
+                const double b_val = centers[tb];
+
+                if (!is_cell_face_exposed(dir, ix, iy, iz, mesh, cells))
+                    continue;
+
+                // 优先匹配 parsed_keys
+                bool matched = false;
+                for (const auto& pk : parsed_keys) {
+                    if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < 1e-10) {
+                        if (point_in_face_rects(pk.fk, a_val, b_val)) {
+                            cells_out.cell_bcs[c_idx].types[(size_t)dir] = pk.bc_enum;
+                            cells_out.cell_bcs[c_idx].param_idxs[(size_t)dir] = pk.param_idx;
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+
+                // 未命中 → 兜底 other_bc
+                if (!matched && other_bc_enum != mhs::core::BcType::None) {
+                    cells_out.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
+                    cells_out.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_bc_idx;
+                }
+            }
+        }
+    } // anonymous namespace
+
     mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map)
+        const std::vector<std::vector<uint16_t>>& block_hs_map,
+        const std::vector<ParsedFaceKey>& parsed_face_keys,
+        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
     {
         const int num_layers = (int)resolved_layers.size();
         const int total = mesh.nx * mesh.ny * mesh.nz;
@@ -154,11 +221,10 @@ namespace mhs::sim {
         mhs::core::CellFields cells;
         cells.index_map.resize(total, mhs::core::invalidIndex);
 
-        // 临时 old_idx 索引的 material 数组：phase 1 写入，phase 2 压缩到 compact 后丢弃
-        // Use uint16_t — material_table 实际 < 65536 entries; no full-grid uint32_t needed.
-        std::vector<uint16_t> material_id_temp(total, 0);
-        // Same reasoning for heat_source_idx — deduplicated table is also tiny.
-        std::vector<uint16_t> heat_source_idx_temp(total, 0);
+        // Single full-grid traversal: write index_map + push material/heat-source
+        // into compact vectors directly.  No full-grid temp arrays needed.
+        cells.material_id.reserve(total);
+        cells.heat_source_idx.reserve(total);
 
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
@@ -184,27 +250,37 @@ namespace mhs::sim {
                     }
 
                     if (layer_idx >= 0 && block_idx >= 0) {
-                        cells.index_map[old_idx] = 1; // will be overwritten in the compact pass below
+                        const int c_idx = (int)cells.material_id.size(); // compact index grows here
+                        cells.index_map[old_idx] = c_idx;
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
-                        material_id_temp[old_idx] = static_cast<uint16_t>(name_to_idx.at(block.material_name));
-                        heat_source_idx_temp[old_idx] = block_hs_map[layer_idx][block_idx];
+                        cells.material_id.push_back(static_cast<uint16_t>(name_to_idx.at(block.material_name)));
+                        cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
+
+                        // BC fill deferred: we need the full cell_bcs array first.
+                        // cell_bcs is resized below after we know the count.
                     }
                 }
             }
         }
 
-        // Build compact layout: index_map (old → compact) and material_id / heat_source_idx
-        // (both compact, parallel to cell_bcs). cell_bcs.size() is the canonical active-cell count.
-        int compact_idx = 0;
-        for (int i = 0; i < total; i++) {
-            if (cells.index_map[i] != mhs::core::invalidIndex) {
-                cells.index_map[i] = compact_idx;
-                cells.material_id.push_back(material_id_temp[i]);
-                cells.heat_source_idx.push_back(heat_source_idx_temp[i]);
-                compact_idx++;
+        const int compact_count = (int)cells.material_id.size();
+        cells.cell_bcs.resize(compact_count);
+
+        // Second pass: fill BCs for every active cell.
+        // Must use index_map to map old grid position back to compact index.
+        // This avoids storing an intermediate old_idx→compact map.
+        for (int ix = 0; ix < mesh.nx; ix++) {
+            for (int iy = 0; iy < mesh.ny; iy++) {
+                for (int iz = 0; iz < mesh.nz; iz++) {
+                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    uint32_t c_idx = cells.index_map[old_idx];
+                    if (c_idx == mhs::core::invalidIndex)
+                        continue;
+                    apply_face_bcs_to_cell((int)c_idx, ix, iy, iz, mesh, cells,
+                        parsed_face_keys, other_bc_enum, other_bc_idx, cells);
+                }
             }
         }
-        cells.cell_bcs.resize(compact_idx);
 
         return cells;
     }

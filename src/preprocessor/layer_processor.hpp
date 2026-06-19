@@ -2,6 +2,7 @@
 
 #include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "face_key_processor.hpp" // for ParsedFaceKey
 
 namespace mhs::sim {
 
@@ -45,17 +46,18 @@ namespace mhs::sim {
     // Returns block index or -1 if cell is virtual
     int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
 
-    // Resolve cell validity, material, and heat-source assignment in a single
-    // grid traversal. Returns CellFields (index_map full-grid, with invalidIndex
-    // marking virtual cells; material_id + heat_source_idx + cell_bcs compact by
-    // cell_bcs.size()).
+    // Resolve cell validity, material, heat-source assignment, and BCs in a single pass.
+    // Returns CellFields (index_map full-grid, with invalidIndex marking virtual cells;
+    // material_id + heat_source_idx + cell_bcs compact by cell_bcs.size()).
     //
     // `block_hs_map[l][b]` = heat_source_table index for layer l / block b.
-    // Passing it in lets resolve_layers skip the second full-grid pass that the
-    // preprocessor used to do for heat-source assignment — the same `find_block_for_cell`
-    // call already tells us which block (and therefore which heat source) a cell uses.
+    // `parsed_face_keys` comes from parse_all_face_keys() — the flattened boundary list.
+    // BCs are assigned in-rect via face key matching; exposed faces not matched receive other_bc.
+    // cell_bcs is default-zero-initialized (BcType::None = 0) before BC assignment.
     mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map);
+        const std::vector<std::vector<uint16_t>>& block_hs_map,
+        const std::vector<ParsedFaceKey>& parsed_face_keys,
+        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx);
 
 } // namespace mhs::sim
