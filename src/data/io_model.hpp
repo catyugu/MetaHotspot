@@ -162,7 +162,6 @@ namespace mhs::core {
     struct FluidMaterialOverlay {
         std::string name;           // 与 IOStructure::materials 中已有材料同名
         std::string dynamic_viscosity; // 动力粘度 μ [Pa·s], 表达式字符串
-        double hydraulic_diameter = 0.0; // 水力直径 [m]，用于多孔介质渗透率与 Nusselt
     };
 
     struct PressureBoundaryOverlay {

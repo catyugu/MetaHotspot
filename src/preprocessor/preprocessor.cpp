@@ -188,14 +188,11 @@ namespace mhs::sim {
         model.is_fluid.assign(N, 0);
         model.cells.fluid_material_id.assign(N, static_cast<uint16_t>(std::numeric_limits<uint16_t>::max()));
         model.dynamic_viscosity.assign(N, 0.0);
-        model.hydraulic_diameter.assign(N, 0.0); // 在 cell 标记循环写入前初始化
 
-        // Build fluid material property maps (viscosity + hydraulic diameter)
+        // Build fluid material property maps
         std::unordered_map<std::string, std::string> fluidViscosityMap;
-        std::unordered_map<std::string, double> fluidDhMap;
         for (const auto& fm : fluidOverlay.fluid_materials) {
             fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
-            fluidDhMap[fm.name] = fm.hydraulic_diameter;
         }
 
         for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
@@ -215,12 +212,6 @@ namespace mhs::sim {
                 model.is_fluid[c] = 1;
                 model.cells.fluid_material_id[c] = matIdx;
                 model.dynamic_viscosity[c] = model.material_table[matIdx].dynamic_viscosity.constant_value();
-                // Store hydraulic diameter for porous-medium permeability and Nusselt
-                const auto& matName = matNamesByTableIdx[matIdx];
-                auto dhIt = fluidDhMap.find(matName);
-                if (dhIt != fluidDhMap.end()) {
-                    model.hydraulic_diameter[c] = dhIt->second;
-                }
             }
         }
 
@@ -238,6 +229,7 @@ namespace mhs::sim {
         model.is_pressure_boundary.assign(N, 0);
         model.boundary_pressure.assign(N, 0.0);
         model.boundary_temperature_fluid.assign(N, std::numeric_limits<double>::quiet_NaN());
+        model.hydraulic_diameter.assign(N, 0.0); // overwritten in Step 4 from geometry
 
         // --- Step 3: Parse pressure boundaries from overlay ---
         // Scan the full grid to match face keys against fluid cell centers.
@@ -284,6 +276,50 @@ namespace mhs::sim {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // --- Step 4: Derive hydraulic diameter from boundary cell geometry ---
+        // D_h is a channel property, not a material property. Compute it from
+        // the bounding box of pressure-boundary cells (inlet/outlet cross-section).
+        // Handles single-cell-thick channels (z_min == z_max) by using dz.
+        {
+            double y_min = std::numeric_limits<double>::max();
+            double y_max = -std::numeric_limits<double>::max();
+            double z_min = std::numeric_limits<double>::max();
+            double z_max = -std::numeric_limits<double>::max();
+            int iy_min = 0, iy_max = 0, iz_sample = 0;
+            bool has_bc = false;
+
+            int totalGrid = model.mesh.nx * model.mesh.ny * model.mesh.nz;
+            for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
+                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                if (c_idx < 0 || c_idx >= N || !model.is_pressure_boundary[c_idx])
+                    continue;
+
+                int iy = (old_idx % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
+                int iz = old_idx % model.mesh.nz;
+                double cy = model.mesh.cy[iy];
+                double cz = model.mesh.cz[iz];
+                if (cy < y_min) { y_min = cy; iy_min = iy; }
+                if (cy > y_max) { y_max = cy; iy_max = iy; }
+                if (cz < z_min) { z_min = cz; iz_sample = iz; }
+                if (cz > z_max) { z_max = cz; }
+                has_bc = true;
+            }
+
+            if (has_bc) {
+                double width = y_max - y_min + (model.mesh.dy[iy_min] + model.mesh.dy[iy_max]) * 0.5;
+                double height = (z_max > z_min)
+                    ? z_max - z_min + model.mesh.dz[iz_sample]  // multiple cells
+                    : model.mesh.dz[iz_sample];                  // single-cell thickness
+                double d_h = 2.0 * width * height / (width + height);
+
+                for (int c = 0; c < N; ++c) {
+                    if (model.is_fluid[c]) {
+                        model.hydraulic_diameter[c] = d_h;
                     }
                 }
             }

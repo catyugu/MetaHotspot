@@ -2,7 +2,6 @@
 <FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
     <FluidMaterial name="water">
         <DynamicViscosity>0.00089</DynamicViscosity>
-        <HydraulicDiameter>0.000333</HydraulicDiameter>
     </FluidMaterial>
     <Boundary>
         <BoundaryCategory>Fluidic</BoundaryCategory>

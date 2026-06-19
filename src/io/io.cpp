@@ -607,9 +607,6 @@ namespace mhs::io {
             if (const XMLElement* visc = mat_elem->FirstChildElement("DynamicViscosity")) {
                 fm.dynamic_viscosity = get_text(visc);
             }
-            if (const XMLElement* dh = mat_elem->FirstChildElement("HydraulicDiameter")) {
-                fm.hydraulic_diameter = parse_double(get_text(dh));
-            }
             if (!fm.name.empty()) {
                 overlay.fluid_materials.push_back(std::move(fm));
             }
