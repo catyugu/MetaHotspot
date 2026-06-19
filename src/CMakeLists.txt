@@ -4,8 +4,6 @@ add_subdirectory(common)
 add_subdirectory(assembler)
 add_subdirectory(linear_solver)
 add_subdirectory(preprocessor)
-add_subdirectory(fluid)
-
 mhs_add_library(mhs_lib
     SOURCES
     nonlinear/nonlinear_solver.cpp
@@ -16,7 +14,6 @@ mhs_add_library(mhs_lib
     time_scheme/time_scheme.cpp
     PUBLIC_LINKS
     preprocessor_lib
-    fluid_lib
     expr_lib
     common_lib
     io_lib
