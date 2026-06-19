@@ -194,13 +194,15 @@ namespace mhs::sim {
                 if (C_eff < 1e-30)
                     continue;
 
-                // Both c and n are fluid
+                // Both c and n are fluid.
+                // FVM for ∇·(K∇P)=0: sum C_eff·(P_n − P_c) = 0 over all neighbor faces.
+                // Matrix contribution: diag = −sum(C_eff),  off-diag = +C_eff.
                 if (!model.is_pressure_boundary[c]) {
-                    triplets.emplace_back(fi, fn, -C_eff);
+                    triplets.emplace_back(fi, fn, C_eff);
                     diagSum += C_eff;
                 }
                 if (!model.is_pressure_boundary[n]) {
-                    triplets.emplace_back(fn, fi, -C_eff);
+                    triplets.emplace_back(fn, fi, C_eff);
                     diagSum += C_eff;
                 }
             }
