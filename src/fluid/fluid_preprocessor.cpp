@@ -37,38 +37,18 @@ namespace mhs::sim {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
         const int N = static_cast<int>(model.is_fluid.size());
+        const int totalGrid = mesh.nx * mesh.ny * mesh.nz;
 
-        for (int c = 0; c < N; ++c) {
-            if (!model.is_fluid[c])
-                continue;
-
-            // Decode compact index to grid coords
-            // Build an inverse map: compact_idx -> (ix, iy, iz)
-            // For efficiency we scan the grid once below, but for correctness
-            // let's build a helper. Since this runs once at startup, O(N*total) is fine.
-        }
-
-        // Build compact-index -> grid-coord map
-        struct GridPos {
-            int ix, iy, iz;
-        };
-        std::vector<GridPos> compactToGrid(N);
-        int totalGrid = mesh.nx * mesh.ny * mesh.nz;
+        // Single pass over the grid: decode grid coords inline, compute hydro properties
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
-            int c_idx = static_cast<int>(cells.index_map[old_idx]);
-            if (c_idx < 0 || c_idx >= N)
+            int c = static_cast<int>(cells.index_map[old_idx]);
+            if (c < 0 || c >= N || !model.is_fluid[c])
                 continue;
+
             int ix = old_idx / (mesh.ny * mesh.nz);
             int iy = (old_idx % (mesh.ny * mesh.nz)) / mesh.nz;
             int iz = old_idx % mesh.nz;
-            compactToGrid[c_idx] = {ix, iy, iz};
-        }
 
-        for (int c = 0; c < N; ++c) {
-            if (!model.is_fluid[c])
-                continue;
-
-            auto [ix, iy, iz] = compactToGrid[c];
             double dx_cell = mesh.dx[ix];
             double dy_cell = mesh.dy[iy];
             double dz_cell = mesh.dz[iz];
@@ -197,12 +177,10 @@ namespace mhs::sim {
                 // Both c and n are fluid.
                 // FVM for ∇·(K∇P)=0: sum C_eff·(P_n − P_c) = 0 over all neighbor faces.
                 // Matrix contribution: diag = −sum(C_eff),  off-diag = +C_eff.
+                // Only write the equation for the current cell (c).
+                // The neighbor (n) builds its own row when the grid scan reaches it.
                 if (!model.is_pressure_boundary[c]) {
                     triplets.emplace_back(fi, fn, C_eff);
-                    diagSum += C_eff;
-                }
-                if (!model.is_pressure_boundary[n]) {
-                    triplets.emplace_back(fn, fi, C_eff);
                     diagSum += C_eff;
                 }
             }
@@ -245,10 +223,11 @@ namespace mhs::sim {
         const int N = static_cast<int>(model.is_fluid.size());
         int totalGrid = mesh.nx * mesh.ny * mesh.nz;
 
-        // Compute per-axis max |Δp| for each fluid cell
-        std::vector<double> maxDeltaP_x(N, 0.0);
-        std::vector<double> maxDeltaP_y(N, 0.0);
-        std::vector<double> maxDeltaP_z(N, 0.0);
+        // Single pass: compute dominant flow axis per fluid cell.
+        // Pre-initialize all to -1 (solid/virtual — no flow axis).
+        for (int c = 0; c < N; ++c) {
+            model.flow_axes[c] = -1;
+        }
 
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
             int c = static_cast<int>(cells.index_map[old_idx]);
@@ -258,6 +237,9 @@ namespace mhs::sim {
             int ix = old_idx / (mesh.ny * mesh.nz);
             int iy = (old_idx % (mesh.ny * mesh.nz)) / mesh.nz;
             int iz = old_idx % mesh.nz;
+
+            double maxVal = -1.0;
+            int bestAxis = 0;
 
             for (size_t f = 0; f < 6; ++f) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
@@ -271,37 +253,13 @@ namespace mhs::sim {
                     continue;
 
                 double dp = std::fabs(model.pressure[c] - model.pressure[n]);
-                int axis = mhs::utils::AXIS_OF_DIR[f];
-                switch (axis) {
-                case 0:
-                    maxDeltaP_x[c] = std::max(maxDeltaP_x[c], dp);
-                    break;
-                case 1:
-                    maxDeltaP_y[c] = std::max(maxDeltaP_y[c], dp);
-                    break;
-                default:
-                    maxDeltaP_z[c] = std::max(maxDeltaP_z[c], dp);
-                    break;
+                int ax = mhs::utils::AXIS_OF_DIR[f];
+                if (dp > maxVal) {
+                    maxVal = dp;
+                    bestAxis = ax;
                 }
             }
-        }
-
-        // argmax
-        for (int c = 0; c < N; ++c) {
-            if (!model.is_fluid[c]) {
-                model.flow_axes[c] = -1;
-                continue;
-            }
-            int axis = 0;
-            double maxVal = maxDeltaP_x[c];
-            if (maxDeltaP_y[c] > maxVal) {
-                maxVal = maxDeltaP_y[c];
-                axis = 1;
-            }
-            if (maxDeltaP_z[c] > maxVal) {
-                axis = 2;
-            }
-            model.flow_axes[c] = static_cast<int8_t>(axis);
+            model.flow_axes[c] = static_cast<int8_t>(bestAxis);
         }
     }
 

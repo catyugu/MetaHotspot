@@ -229,11 +229,11 @@ namespace mhs::sim {
         if (!hasFluid)
             return;
 
-        // Thread-local scratch: (triplets, net_outflux)
+        // Thread-local scratch: triplets + RHS contributions
         struct AdvScratch {
             std::vector<Eigen::Triplet<double>> triplets;
-            Eigen::VectorXd netOutflux;
-            AdvScratch(int n) : netOutflux(n) { }
+            Eigen::VectorXd b;
+            AdvScratch(int n) : b(Eigen::VectorXd::Zero(n)) { }
         };
 
         auto adv_data = tbb::enumerable_thread_specific<AdvScratch>([N]() { return AdvScratch(N); });
@@ -251,7 +251,7 @@ namespace mhs::sim {
                 return;
 
             auto& local = adv_data.local();
-            auto& local_triplets = local.triplets;
+            double netOutflux = 0.0; // per-cell net mass outflow over all faces
 
             for (size_t f = 0; f < 6; ++f) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
@@ -303,75 +303,55 @@ namespace mhs::sim {
                 double dP = model_.pressure[c_idx] - model_.pressure[n_idx];
                 double massFlux = dP * C_eff * rho_avg;
 
-                local.netOutflux[c_idx] += massFlux;
-                local.netOutflux[n_idx] -= massFlux;
+                netOutflux += massFlux;
 
                 if (std::fabs(massFlux) < 1e-30)
                     continue;
 
-                int up = (massFlux > 0) ? c_idx : n_idx;
-                int dn = (massFlux > 0) ? n_idx : c_idx;
-
-                // Get upstream cell grid coords for cp evaluation
-                int up_ix = ix, up_iy = iy, up_iz = iz;
-                if (up == n_idx) {
-                    up_ix = nix;
-                    up_iy = niy;
-                    up_iz = niz;
+                if (massFlux > 0) {
+                    // Outflow: c loses enthalpy at its own temperature
+                    // K[c,c] += massFlux * cp_c
+                    double cp_c = materials[cells.material_id[c_idx]].c.eval(
+                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
+                } else {
+                    // Inflow: c gains enthalpy at neighbor's temperature
+                    // K[c,n] += massFlux * cp_n  (massFlux < 0 → effectively −|massFlux| at column n)
+                    double cp_n = materials[cells.material_id[n_idx]].c.eval(
+                        {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    local.triplets.emplace_back(c_idx, n_idx, massFlux * cp_n);
                 }
-                double cp = materials[cells.material_id[up]].c.eval(
-                    {mesh.cx[up_ix], mesh.cy[up_iy], mesh.cz[up_iz], state.T[up], state.current_time});
+            }
 
-                double adv = std::fabs(massFlux) * cp;
-
-                // Upwind: flow from up→dn carries enthalpy |ṁ|·cp·T_up out of
-                // the upwind cell and into the downwind cell.
-                // Matrix: K[up,up] += +adv  (upwind loses energy)
-                //         K[dn,up] += −adv  (downwind gains energy at T_up)
-                local_triplets.emplace_back(up, up, adv);
-                local_triplets.emplace_back(dn, up, -adv);
+            // Boundary temperature injection: for cells with prescribed inlet temperature
+            // and non-zero net flow, impose the incoming enthalpy on the RHS.
+            // no > 0  → net outflow (inlet cell):  RHS += no * cp * T_boundary
+            // no < 0  → net inflow (outlet cell):   RHS += no * cp * T_boundary (no is negative,
+            //                                         adds negative contribution — handled by matrix)
+            if (std::fabs(netOutflux) >= 1e-30) {
+                double T_boundary = model_.boundary_temperature_fluid[c_idx];
+                if (!std::isnan(T_boundary)) {
+                    double cp = materials[cells.material_id[c_idx]].c.eval(
+                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    local.b(c_idx) += netOutflux * cp * T_boundary;
+                }
             }
         });
 
-        // Combine triplets and net_outflux
+        // Combine triplets and RHS
         std::vector<Eigen::Triplet<double>> allAdvTriplets;
-        Eigen::VectorXd totalNetOutflux = Eigen::VectorXd::Zero(N);
+        Eigen::VectorXd adv_b = Eigen::VectorXd::Zero(N);
 
         adv_data.combine_each([&](const AdvScratch& local) {
             allAdvTriplets.insert(allAdvTriplets.end(), local.triplets.begin(), local.triplets.end());
-            totalNetOutflux += local.netOutflux;
+            adv_b += local.b;
         });
 
-        // Merge advection matrix into K
+        // Merge advection matrix and RHS into K and f
         Eigen::SparseMatrix<double> K_adv(N, N);
         K_adv.setFromTriplets(allAdvTriplets.begin(), allAdvTriplets.end());
         K += K_adv;
-
-        // Outlet temperature injection:
-        // For inlet cells (boundary_temperature_fluid != NaN) with net inflow,
-        // add convective heat input to RHS
-        for (int c = 0; c < N; ++c) {
-            double no = totalNetOutflux(c);
-            if (std::fabs(no) < 1e-30)
-                continue;
-
-            double T_boundary = model_.boundary_temperature_fluid[c];
-            if (!std::isnan(T_boundary)) {
-                int c_ix = 0, c_iy = 0, c_iz = 0;
-                // Find grid coords for this compact index
-                for (int gi = 0; gi < total; ++gi) {
-                    if ((int)cells.index_map[gi] == c) {
-                        c_ix = gi / (mesh.ny * mesh.nz);
-                        c_iy = (gi % (mesh.ny * mesh.nz)) / mesh.nz;
-                        c_iz = gi % mesh.nz;
-                        break;
-                    }
-                }
-                double cp = materials[cells.material_id[c]].c.eval(
-                    {mesh.cx[c_ix], mesh.cy[c_iy], mesh.cz[c_iz], state.T[c], state.current_time});
-                f(c) += no * cp * T_boundary;
-            }
-        }
+        f += adv_b;
     }
 
 } // namespace mhs::sim
