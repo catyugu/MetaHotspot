@@ -23,18 +23,17 @@ struct CellBC {
 };
 
 struct CellFields {
-  
-    std::vector<size_t>  index_map;                // old grid index → compact; SIZE_MAX = virtual
-    std::vector<uint8_t> valid_mask;               // 1 = active, 0 = virtual
-    std::vector<uint16_t> material_id;             // index into material_table
-    std::vector<uint16_t> heat_source_idx;         // index into heat_source_table
+
+    std::vector<uint32_t> index_map;             // old grid index → compact; invalidIndex = virtual
+    std::vector<uint16_t> material_id;           // index into material_table
+    std::vector<uint16_t> heat_source_idx;       // index into heat_source_table
     std::vector<CellBC>   cell_bcs;
 };
 ```
 
 ### 虚拟单元
 
-结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`valid_mask` + `index_map`（full-grid tier）标记与映射；矩阵维度 = `N_active`，由 `cell_bcs.size()` 唯一确定（`cell_bcs` 是 compact tier 字段）。
+结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`index_map`（full-grid tier）的 `invalidIndex` 值即标记虚拟单元，矩阵维度 = `N_active`，由 `cell_bcs.size()` 唯一确定（`cell_bcs` 是 compact tier 字段）。
 
 ### 热源字典化
 
@@ -89,7 +88,6 @@ struct InternalModel {
     std::vector<CompiledExpression> heat_source_table;  // dedup; idx 0 = constant 0
 
     double initial_temperature = 300.0;
-    double ambient_temperature = 300.0;
     StudyType study_type = StudyType::Steady;
     double transient_duration    = 0.0;
     double transient_time_step   = 1.0;
@@ -99,7 +97,7 @@ struct InternalModel {
 
 ## 设计要点
 
-- **虚拟单元**：assembler 跳过 `valid_mask[idx]==0`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
+- **虚拟单元**：assembler 跳过 `index_map[idx]==invalidIndex`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
 - **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。

@@ -40,7 +40,7 @@ namespace mhs::utils {
 
     /// Neighbor flat grid index with boundary check; returns -1 if out of bounds or invalid.
     inline int neighbor_grid_index(
-        int ix, int iy, int iz, mhs::core::FaceDir dir, int nx, int ny, int nz, const std::vector<uint8_t>& valid_mask)
+        int ix, int iy, int iz, mhs::core::FaceDir dir, int nx, int ny, int nz, const std::vector<uint32_t>& index_map)
     {
         int nix = ix + DIR_DX[static_cast<size_t>(dir)];
         int niy = iy + DIR_DY[static_cast<size_t>(dir)];
@@ -48,7 +48,7 @@ namespace mhs::utils {
         if (nix < 0 || nix >= nx || niy < 0 || niy >= ny || niz < 0 || niz >= nz)
             return -1;
         int idx = nix * ny * nz + niy * nz + niz;
-        return valid_mask[idx] ? idx : -1;
+        return index_map[idx] != mhs::core::invalidIndex ? idx : -1;
     }
 
     // ── Face-axis-relative geometric lookups ───────────────────────────

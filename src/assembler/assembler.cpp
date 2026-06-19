@@ -40,7 +40,7 @@ namespace mhs::sim {
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 
         tbb::parallel_for(0, total, [&](int old_idx) {
-            if (cells.valid_mask[old_idx] == 0)
+            if (cells.index_map[old_idx] == mhs::core::invalidIndex)
                 return;
 
             auto& local = thread_data.local();
@@ -87,7 +87,7 @@ namespace mhs::sim {
 
                 if (bc_type == mhs::core::BcType::None) {
                     int neighbor_old
-                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.valid_mask);
+                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
                     if (neighbor_old < 0)
                         continue;
 

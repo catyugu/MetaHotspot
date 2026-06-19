@@ -87,7 +87,6 @@ struct IOStructure {
     Dimension  dimension;
     LengthUnit length_unit;
     double initial_temperature  = 300.0;
-    double ambient_temperature  = 300.0;
 
     std::vector<Variable> variables;
     std::vector<Layer>    layers;

@@ -12,7 +12,6 @@ namespace mhs::sim {
 
         model->study_type = ioStructure.study_type;
         model->initial_temperature = ioStructure.initial_temperature;
-        model->ambient_temperature = ioStructure.ambient_temperature;
         model->transient_duration = ioStructure.transient_duration;
         model->transient_time_step = ioStructure.transient_time_step;
 
@@ -113,7 +112,8 @@ namespace mhs::sim {
             }
         }
 
-        // 一次遍历完成 valid_mask + index_map + material_id + heat_source_idx（compact）。
+        // 一次遍历完成 index_map + material_id + heat_source_idx（compact）；
+        // index_map 的 invalidIndex 值标记虚拟单元（无 valid_mask 字段）。
         // 不再有第二次全网格遍历去填 heat_source_idx——layer/block 归属判定时一并写入。
         model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
 

@@ -67,7 +67,7 @@ namespace mhs::sim {
             }
             else {
                 slot.grid_idx = slot.ix * model.mesh.ny * model.mesh.nz + slot.iy * model.mesh.nz + slot.iz;
-                slot.valid = (model.cells.valid_mask[slot.grid_idx] != 0);
+                slot.valid = (model.cells.index_map[slot.grid_idx] != mhs::core::invalidIndex);
             }
             slots_.push_back(std::move(slot));
         }
@@ -116,7 +116,7 @@ namespace mhs::sim {
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
                     int ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.valid_mask[ng] == 0)
+                    if (cells.index_map[ng] == mhs::core::invalidIndex)
                         continue;
                     sum_T += cell_T[cells.index_map[ng]];
                     ++cnt;
@@ -154,7 +154,7 @@ namespace mhs::sim {
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
                     int ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.valid_mask[ng] == 0)
+                    if (cells.index_map[ng] == mhs::core::invalidIndex)
                         continue;
                     double T_i = cell_T[cells.index_map[ng]];
                     double cdx = mesh.cx[ngx] - px;

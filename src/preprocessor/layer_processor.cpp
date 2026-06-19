@@ -152,7 +152,6 @@ namespace mhs::sim {
         const int total = mesh.nx * mesh.ny * mesh.nz;
 
         mhs::core::CellFields cells;
-        cells.valid_mask.resize(total, 0);
         cells.index_map.resize(total, mhs::core::invalidIndex);
 
         // 临时 old_idx 索引的 material 数组：phase 1 写入，phase 2 压缩到 compact 后丢弃
@@ -185,7 +184,7 @@ namespace mhs::sim {
                     }
 
                     if (layer_idx >= 0 && block_idx >= 0) {
-                        cells.valid_mask[old_idx] = 1;
+                        cells.index_map[old_idx] = 1; // will be overwritten in the compact pass below
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
                         material_id_temp[old_idx] = static_cast<uint16_t>(name_to_idx.at(block.material_name));
                         heat_source_idx_temp[old_idx] = block_hs_map[layer_idx][block_idx];
@@ -198,7 +197,7 @@ namespace mhs::sim {
         // (both compact, parallel to cell_bcs). cell_bcs.size() is the canonical active-cell count.
         int compact_idx = 0;
         for (int i = 0; i < total; i++) {
-            if (cells.valid_mask[i] == 1) {
+            if (cells.index_map[i] != mhs::core::invalidIndex) {
                 cells.index_map[i] = compact_idx;
                 cells.material_id.push_back(material_id_temp[i]);
                 cells.heat_source_idx.push_back(heat_source_idx_temp[i]);

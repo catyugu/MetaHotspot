@@ -51,7 +51,7 @@ namespace mhs::post {
                                     continue;
 
                                 int cell_grid_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                                if (cells.valid_mask[cell_grid_idx] == 0)
+                                if (cells.index_map[cell_grid_idx] == mhs::core::invalidIndex)
                                     continue;
 
                                 int compact_idx = (int)cells.index_map[cell_grid_idx];

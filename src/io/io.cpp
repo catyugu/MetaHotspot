@@ -190,9 +190,6 @@ namespace mhs::io {
         }
 
         // Temperature settings
-        if (const XMLElement* amb = root->FirstChildElement("AmbientTemperature")) {
-            structure.ambient_temperature = parse_double(get_text(amb));
-        }
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
             structure.initial_temperature = parse_double(get_text(init));
         }
@@ -647,7 +644,7 @@ namespace mhs::io {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
                     int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 0)
+                    if (cells.index_map[old_idx] == mhs::core::invalidIndex)
                         continue;
 
                     // VTK hex ordering: 0-3 bottom face, 4-7 top face

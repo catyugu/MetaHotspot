@@ -39,7 +39,7 @@ namespace mhs::sim {
             double px = 0.0, py = 0.0, pz = 0.0; // 用户坐标系下的探针坐标（用于 LSQ 锚点）
             int ix = -1, iy = -1, iz = -1; // 包围 cell 在网格中的下标
             int grid_idx = -1; // ix*ny*nz + iy*nz + iz
-            bool valid = false; // 网格内 + valid_mask==1
+            bool valid = false; // 网格内 + index_map[grid_idx] != invalidIndex
         };
         std::vector<ProbeSlot> slots_;
 

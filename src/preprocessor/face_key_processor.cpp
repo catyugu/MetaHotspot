@@ -22,7 +22,7 @@ namespace mhs::sim {
 
             // 2. 如果内部对应邻居是空洞（虚拟单元），说明面暴露在了内部孔隙中
             int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
-            return cells.valid_mask[neighbor] == 0;
+            return cells.index_map[neighbor] == mhs::core::invalidIndex;
         }
 
         // Lightweight “axis letter” lookup matching the face-direction letter used by face keys.
@@ -188,7 +188,7 @@ namespace mhs::sim {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
                     int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 0)
+                    if (cells.index_map[old_idx] == mhs::core::invalidIndex)
                         continue;
                     int c_idx = (int)cells.index_map[old_idx];
 

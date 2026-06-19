@@ -15,7 +15,6 @@ static mhs::core::IOStructure make_simple_uniform_grid_io()
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
@@ -106,7 +105,6 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
@@ -188,7 +186,6 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
     io.mesh_vertex_y = {0.0, 5.0, 10.0};
@@ -287,7 +284,6 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
     io.mesh_vertex_y = {0.0, 5.0, 10.0};

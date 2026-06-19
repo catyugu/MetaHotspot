@@ -20,7 +20,6 @@ static mhs::core::IOStructure make_simple_io()
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     // Simple 10x10x10 mm cube, 2 cells each direction
     io.mesh_vertex_x = {0.0, 5.0, 10.0};
@@ -113,8 +112,7 @@ TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
     // All 8 cells should be valid
     EXPECT_EQ(model->cells.cell_bcs.size(), 8u);
     for (int i = 0; i < 8; i++) {
-        EXPECT_EQ(model->cells.valid_mask[i], 1);
-        EXPECT_NE(model->cells.index_map[i], SIZE_MAX);
+        EXPECT_NE(model->cells.index_map[i], mhs::core::invalidIndex);
     }
 }
 
@@ -143,7 +141,6 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     // 100x100x30mm, with cells at x:0,50,100 y:0,50,100 z:0,2,4,6,8,10,15,20,25,30
     io.mesh_vertex_x = {0, 50, 100};
@@ -255,18 +252,17 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     // Check cell (ix=0, iy=1, iz=0) -> layer2, not subtracted, in (0,0,100,100) -> valid
     // Actually cell at cy=75e-3 is NOT in sub-rect (0,0,50,50), so it IS valid
     int idx_01_0 = 0 * ny * nz + 1 * nz + 0;
-    EXPECT_EQ(model->cells.valid_mask[idx_01_0], 1); // valid in layer2
-    EXPECT_NE(model->cells.index_map[idx_01_0], SIZE_MAX);
+    EXPECT_NE(model->cells.index_map[idx_01_0], mhs::core::invalidIndex); // valid in layer2
 
     // Check cell (ix=0, iy=0, iz=5) -> layer0 (top), (ix=0, iy=0) cx=25mm, cy=25mm in rect1 -> valid
     // iz=5 means cz=12.5mm, which is in top layer (z=10..30mm)
     int idx_00_5 = 0 * ny * nz + 0 * nz + 5;
-    EXPECT_EQ(model->cells.valid_mask[idx_00_5], 1);
+    EXPECT_NE(model->cells.index_map[idx_00_5], mhs::core::invalidIndex);
 
     // Cell (ix=0, iy=0, iz=4) -> layer1 (substrate), cx=25mm cy=25mm -> subtracted -> virtual
     // iz=4 means cz=9mm, in substrate layer (z=0..10mm)
     int idx_00_4 = 0 * ny * nz + 0 * nz + 4;
-    EXPECT_EQ(model->cells.valid_mask[idx_00_4], 0);
+    EXPECT_EQ(model->cells.index_map[idx_00_4], mhs::core::invalidIndex);
 }
 
 // ---- FaceKey / BC Tests ----
@@ -278,7 +274,6 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0, 50, 100};
     io.mesh_vertex_y = {0, 50, 100};
@@ -332,7 +327,7 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     int nz_bc = model->mesh.nz;
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
     size_t compact = model->cells.index_map[idx_bc];
-    ASSERT_NE(compact, SIZE_MAX);
+    ASSERT_NE(compact, mhs::core::invalidIndex);
 
     EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::ZM], mhs::core::BcType::FirstType);
 
@@ -362,7 +357,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     int nz = model->mesh.nz;
     int idx = 0 * ny * nz + 0 * nz + 0;
     size_t compact = model->cells.index_map[idx];
-    ASSERT_NE(compact, SIZE_MAX);
+    ASSERT_NE(compact, mhs::core::invalidIndex);
 
     EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::SecondType);
     EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::YM], mhs::core::BcType::SecondType);
@@ -372,7 +367,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     // XM, YM, ZM are interior -> None
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
     size_t compact_inner = model->cells.index_map[idx_inner];
-    ASSERT_NE(compact_inner, SIZE_MAX);
+    ASSERT_NE(compact_inner, mhs::core::invalidIndex);
 
     EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::None);
     EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::YM], mhs::core::BcType::None);
@@ -429,7 +424,6 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0, 50, 100};
     io.mesh_vertex_y = {0, 50, 100};
@@ -473,12 +467,12 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm >= rx=25mm, should be valid
     int idx0 = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_EQ(model->cells.valid_mask[idx0], 1);
+    EXPECT_NE(model->cells.index_map[idx0], mhs::core::invalidIndex);
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm exactly equals rx+rw=75mm
     // Without epsilon tolerance, this cell is incorrectly classified as virtual
     int idx1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_EQ(model->cells.valid_mask[idx1], 1);
+    EXPECT_NE(model->cells.index_map[idx1], mhs::core::invalidIndex);
 }
 
 TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
@@ -495,7 +489,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0, 50, 100};
     io.mesh_vertex_y = {0, 50, 100};
@@ -561,7 +554,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_EQ(model->cells.valid_mask[idx_overlap], 1);
+    EXPECT_NE(model->cells.index_map[idx_overlap], mhs::core::invalidIndex);
     int c_overlap = (int)model->cells.index_map[idx_overlap];
 
     // mhs::core::Material should be silicon (block2), not copper (block1)
@@ -600,7 +593,6 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0, 5, 10};
     io.mesh_vertex_y = {0, 5, 10};
@@ -680,7 +672,6 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
-    io.ambient_temperature = 300.0;
 
     io.mesh_vertex_x = {0, 5, 10};
     io.mesh_vertex_y = {0, 5, 10};

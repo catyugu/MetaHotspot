@@ -42,7 +42,6 @@ namespace mhs::core {
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
         std::vector<CellBC> cell_bcs;
         std::vector<uint32_t> index_map; // old grid index → compact; invalidIndex = virtual
-        std::vector<uint8_t> valid_mask; // 1 = active, 0 = virtual
     };
 
     struct BCParamTable {
@@ -89,7 +88,6 @@ namespace mhs::core {
         std::vector<CompiledExpression> heat_source_table;
 
         double initial_temperature = 300.0;
-        double ambient_temperature = 300.0;
         StudyType study_type = StudyType::Steady;
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
