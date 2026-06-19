@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -35,11 +36,15 @@ namespace mhs::core {
         CompiledExpression kz;
         CompiledExpression rho;
         CompiledExpression c;
+        // 流体-固体耦合扩展
+        bool is_fluid = false;
+        CompiledExpression dynamic_viscosity; // μ; 非 fluid = make_constant(0)
     };
 
     struct CellFields {
         std::vector<uint16_t> material_id; // index into material_table
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
+        std::vector<uint16_t> fluid_material_id; // fluid material index; max() when non-fluid
         std::vector<CellBC> cell_bcs;
         std::vector<uint32_t> index_map; // old grid index → compact; invalidIndex = virtual
     };
@@ -49,6 +54,8 @@ namespace mhs::core {
         std::vector<CompiledExpression> neumann_q;
         std::vector<CompiledExpression> cauchy_h;
         std::vector<CompiledExpression> cauchy_T_inf;
+        // 流体-固体耦合扩展: 压力边界参数值 (不需要表达式, 直接 double)
+        std::vector<double> pressure_bc_values; // index by PressureBC idx
     };
 
     /// Mutable, per-step state owned by Scheduler::run().
@@ -95,6 +102,21 @@ namespace mhs::core {
         // 用户坐标系下的 3D 观察点列表（来自 IOStructure，已求值到 SI 单位）。
         // 探针不参与方程求解，仅用于输出温度时间序列。
         std::vector<ProbePoint> observation_points;
+
+        // ============================================================
+        // 流体-固体耦合传热 (fluid-algorithm) 扩展字段
+        // 所有字段零初始化；无 overlay 时全部为空/零值，不参与求解。
+        // ============================================================
+        std::vector<uint8_t> is_fluid;                // [N_active] 标记流体 cell
+        std::vector<double> dynamic_viscosity;        // [N_active] 流体 cell 的 μ [Pa·s]；非 fluid = 0
+        std::vector<double> pressure;                 // [N_active] 求解后的压力场；非 fluid = 0
+        std::vector<int8_t> flow_axes;                // [N_active] 主导流轴 [0=X,1=Y,2=Z]；非 fluid = -1
+        std::vector<double> hydroC_x;                 // [N_active] hydraulic conductance 沿 X
+        std::vector<double> hydroC_y;                 // [N_active] hydraulic conductance 沿 Y
+        std::vector<double> hydroC_z;                 // [N_active] hydraulic conductance 沿 Z
+        std::vector<uint8_t> is_pressure_boundary;    // [N_active] 压力边界标记
+        std::vector<double> boundary_pressure;        // [N_active] 压力边界值 [Pa]
+        std::vector<double> boundary_temperature_fluid;// [N_active] 流体入口温度 [K]；非入口 = NaN
     };
 
 } // namespace mhs::core

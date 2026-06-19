@@ -5,18 +5,31 @@
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include <iostream>
+#include <optional>
 #include <string>
+#include <vector>
 
 int main(int argc, char* argv[])
 {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input.xml> [output.vtu] [output.xml]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input.xml> [output.vtu] [output.xml] [--fluid-overlay <path>]"
+                  << std::endl;
         return 1;
     }
 
     std::string input_path = argv[1];
     std::string output_vtu = argc > 2 ? argv[2] : "./output.vtu";
     std::string output_xml = argc > 3 ? argv[3] : "./output.xml";
+
+    // Parse optional --fluid-overlay argument
+    std::optional<std::string> fluidOverlayPath;
+    for (int i = 4; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--fluid-overlay" && i + 1 < argc) {
+            fluidOverlayPath = argv[i + 1];
+            break;
+        }
+    }
 
     // Initialize logger
     mhs::logger::init("metahotspot.log", true);
@@ -34,6 +47,30 @@ int main(int argc, char* argv[])
         // Preprocess
         mhs::sim::Preprocessor preprocessor;
         auto model = preprocessor.load(io_structure);
+
+        // Apply fluid overlay if provided
+        std::optional<mhs::core::FluidOverlay> fluidOverlay;
+        if (fluidOverlayPath.has_value()) {
+            fluidOverlay = mhs::io::read_fluid_overlay_xml(*fluidOverlayPath);
+            if (fluidOverlay.has_value()) {
+                preprocessor.applyFluidOverlay(*model, fluidOverlay, io_structure);
+                MHS_LOG_INFO("Applied fluid overlay with {} materials, {} boundaries",
+                    fluidOverlay->fluid_materials.size(), fluidOverlay->boundaries.size());
+            }
+            else {
+                MHS_LOG_WARN("Fluid overlay file loaded but contained no FluidOverlay element; skipping");
+            }
+        }
+
+        // Count fluid cells for diagnostics
+        if (fluidOverlay.has_value()) {
+            int fluidCount = 0;
+            for (uint8_t v : model->is_fluid) {
+                if (v)
+                    ++fluidCount;
+            }
+            MHS_LOG_INFO("Fluid cells: {} / {}", fluidCount, model->is_fluid.size());
+        }
 
         MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
             model->mesh.nx, model->mesh.ny, model->mesh.nz);

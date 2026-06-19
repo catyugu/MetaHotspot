@@ -577,6 +577,76 @@ namespace mhs::io {
         return structure;
     }
 
+    // =========================================================================
+    // Fluid overlay XML parser
+    // =========================================================================
+
+    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path)
+    {
+        XMLDocument doc;
+        XMLError err = doc.LoadFile(xml_path.c_str());
+        if (err != XML_SUCCESS) {
+            return std::nullopt;
+        }
+
+        const XMLElement* root = doc.FirstChildElement("FluidOverlay");
+        if (!root) {
+            return std::nullopt;
+        }
+
+        mhs::core::FluidOverlay overlay;
+
+        // Parse FluidMaterial nodes
+        for (const XMLElement* mat_elem = root->FirstChildElement("FluidMaterial"); mat_elem;
+             mat_elem = mat_elem->NextSiblingElement("FluidMaterial")) {
+            mhs::core::FluidMaterialOverlay fm;
+            // name is an XML attribute, not a child element
+            if (const char* attr = mat_elem->Attribute("name")) {
+                fm.name = attr;
+            }
+            if (const XMLElement* visc = mat_elem->FirstChildElement("DynamicViscosity")) {
+                fm.dynamic_viscosity = get_text(visc);
+            }
+            if (!fm.name.empty()) {
+                overlay.fluid_materials.push_back(std::move(fm));
+            }
+        }
+
+        // Parse Boundary nodes (fluidic)
+        for (const XMLElement* bound_elem = root->FirstChildElement("Boundary"); bound_elem;
+             bound_elem = bound_elem->NextSiblingElement("Boundary")) {
+            mhs::core::FluidBoundaryOverlay fb;
+
+            if (const XMLElement* name = bound_elem->FirstChildElement("Name")) {
+                fb.name = get_text(name);
+            }
+
+            // FaceKeys
+            if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
+                for (const XMLElement* fk = fkeys->FirstChildElement("string"); fk;
+                     fk = fk->NextSiblingElement("string")) {
+                    std::string key = get_text(fk);
+                    if (!key.empty()) {
+                        fb.face_keys.push_back(key);
+                    }
+                }
+            }
+
+            // PressureBoundary
+            if (const XMLElement* pb = bound_elem->FirstChildElement("PressureBoundary")) {
+                if (const XMLElement* p = pb->FirstChildElement("Pressure")) {
+                    fb.pressure_bc.pressure = parse_double(get_text(p));
+                }
+            }
+
+            if (!fb.name.empty()) {
+                overlay.boundaries.push_back(std::move(fb));
+            }
+        }
+
+        return overlay;
+    }
+
     void write_vtu(
         const std::string& path, const mhs::core::InternalModel& model, const std::vector<double>& node_temperature)
     {

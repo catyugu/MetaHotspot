@@ -4,6 +4,8 @@
 #include "layer_processor.hpp"
 #include "preprocessor.hpp"
 
+#include <algorithm>
+
 namespace mhs::sim {
 
     std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(const mhs::core::IOStructure& ioStructure)
@@ -147,10 +149,155 @@ namespace mhs::sim {
         }
         }
 
-        model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map,
-            parsed_keys, other_bc_enum, other_bc_idx);
+        model->cells = resolve_layers(
+            resolved_layers, mesh, name_to_idx, block_hs_map, parsed_keys, other_bc_enum, other_bc_idx);
 
         return model;
+    }
+
+    void Preprocessor::applyFluidOverlay(mhs::core::InternalModel& model,
+        const std::optional<mhs::core::FluidOverlay>& overlay, const mhs::core::IOStructure& ioStructure)
+    {
+        if (!overlay.has_value())
+            return;
+
+        const auto& fluidOverlay = overlay.value();
+        if (fluidOverlay.fluid_materials.empty())
+            return;
+
+        const double si_scale = length_unit_to_si(ioStructure.length_unit);
+        const int N = static_cast<int>(model.cells.cell_bcs.size());
+
+        // --- Step 1: Build fluid material name → index mapping ---
+        std::unordered_map<std::string, uint16_t> fluid_mat_name_to_idx;
+        for (const auto& fm : fluidOverlay.fluid_materials) {
+            fluid_mat_name_to_idx[fm.name] = 0; // placeholder, filled below
+        }
+
+        // Match fluid material names to material_table indices
+        // model.material_table indices correspond to material_names populated in load()
+        for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
+            // We need the original name from IOStructure
+            for (const auto& fm : fluidOverlay.fluid_materials) {
+                // Find the matching material in ioStructure
+                auto it = ioStructure.materials.find(fm.name);
+                if (it != ioStructure.materials.end()) {
+                    // Check if this material name is in our material_table
+                    // We reconstruct the name mapping from the load() logic
+                    // Since material_table is ordered by first-seen materials from layers,
+                    // we need to cross-reference differently.
+                }
+            }
+        }
+
+        // Simpler approach: rebuild the material name → table index mapping
+        std::unordered_map<std::string, uint16_t> matNameToTableIdx;
+        // Reconstruct from the same logic as load(): iterate layers then blocks
+        std::vector<std::string> materialNames;
+        for (const auto& layer : ioStructure.layers) {
+            for (const auto& block : layer.blocks) {
+                if (matNameToTableIdx.find(block.material_name) == matNameToTableIdx.end()) {
+                    matNameToTableIdx[block.material_name] = static_cast<uint16_t>(materialNames.size());
+                    materialNames.push_back(block.material_name);
+                }
+            }
+        }
+
+        // Mark is_fluid and fill fluid_material_id
+        model.is_fluid.assign(N, 0);
+        model.cells.fluid_material_id.assign(N, static_cast<uint16_t>(std::numeric_limits<uint16_t>::max()));
+        model.dynamic_viscosity.assign(N, 0.0);
+
+        // Build fluid material name → viscosity expression map
+        std::unordered_map<std::string, std::string> fluidViscosityMap;
+        for (const auto& fm : fluidOverlay.fluid_materials) {
+            fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
+        }
+
+        for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
+            const auto& matName = materialNames[matIdx];
+            auto visIt = fluidViscosityMap.find(matName);
+            if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
+                model.material_table[matIdx].is_fluid = true;
+                model.material_table[matIdx].dynamic_viscosity
+                    = mhs::core::CompiledExpression::make_constant(std::stod(visIt->second));
+            }
+        }
+
+        // Mark fluid cells based on material_table
+        for (int c = 0; c < N; ++c) {
+            uint16_t matIdx = model.cells.material_id[c];
+            if (matIdx < model.material_table.size() && model.material_table[matIdx].is_fluid) {
+                model.is_fluid[c] = 1;
+                model.cells.fluid_material_id[c] = matIdx;
+                model.dynamic_viscosity[c] = model.material_table[matIdx].dynamic_viscosity.constant_value();
+            }
+        }
+
+        // Check if any fluid cells exist
+        bool hasFluid = std::any_of(model.is_fluid.begin(), model.is_fluid.end(), [](uint8_t v) { return v != 0; });
+        if (!hasFluid)
+            return;
+
+        // --- Step 2: Initialize fluid solver fields ---
+        model.pressure.assign(N, 0.0);
+        model.flow_axes.assign(N, -1);
+        model.hydroC_x.assign(N, 0.0);
+        model.hydroC_y.assign(N, 0.0);
+        model.hydroC_z.assign(N, 0.0);
+        model.is_pressure_boundary.assign(N, 0);
+        model.boundary_pressure.assign(N, 0.0);
+        model.boundary_temperature_fluid.assign(N, std::numeric_limits<double>::quiet_NaN());
+
+        // --- Step 3: Parse pressure boundaries from overlay ---
+        // Scan the full grid to match face keys against fluid cell centers.
+        // X-face keys match on (cy, cz), Y-face keys on (cx, cz).
+        for (const auto& fb : fluidOverlay.boundaries) {
+            for (const auto& keyStr : fb.face_keys) {
+                FaceKeyInfo fk = parse_face_key(keyStr, si_scale);
+
+                if (fk.axis == 'X') {
+                    // X-face: match on (cy, cz) → tangents are Y, Z
+                    for (int ix = 0; ix < model.mesh.nx; ++ix) {
+                        for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                            for (int iz = 0; iz < model.mesh.nz; ++iz) {
+                                int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                                if (c_idx < 0 || c_idx >= N || !model.is_fluid[c_idx])
+                                    continue;
+
+                                double cy = model.mesh.cy[iy];
+                                double cz = model.mesh.cz[iz];
+                                if (point_in_face_rects(fk, cy, cz)) {
+                                    model.is_pressure_boundary[c_idx] = 1;
+                                    model.boundary_pressure[c_idx] = fb.pressure_bc.pressure;
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (fk.axis == 'Y') {
+                    // Y-face: match on (cx, cz)
+                    for (int ix = 0; ix < model.mesh.nx; ++ix) {
+                        for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                            for (int iz = 0; iz < model.mesh.nz; ++iz) {
+                                int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                                if (c_idx < 0 || c_idx >= N || !model.is_fluid[c_idx])
+                                    continue;
+
+                                double cx = model.mesh.cx[ix];
+                                double cz = model.mesh.cz[iz];
+                                if (point_in_face_rects(fk, cx, cz)) {
+                                    model.is_pressure_boundary[c_idx] = 1;
+                                    model.boundary_pressure[c_idx] = fb.pressure_bc.pressure;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
 } // namespace mhs::sim
