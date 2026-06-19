@@ -106,32 +106,25 @@ namespace mhs::sim {
                     if (!model_.is_fluid.empty() && model_.is_fluid[c_idx] != model_.is_fluid[n_idx]) {
                         // Identify fluid and solid sides
                         int f_id = model_.is_fluid[c_idx] ? c_idx : n_idx;
+                        int f_idx = model_.global_to_fluid[f_id]; // compact fluid index
                         int s_id = model_.is_fluid[c_idx] ? n_idx : c_idx;
-                        int f_ax = static_cast<int>(model_.flow_axes[f_id]);
+                        int f_ax = static_cast<int>(model_.flow_axes[f_idx]);
                         if (f_ax < 0 || f_ax > 2) {
-                            // Fallback to standard conduction if flow_axes not yet computed
                             double k_face_val = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                             cond = A_f / (half_dist / k_face_val + d_half_neighbor / k_neighbor);
                         }
                         else {
-                            // Fluid-side thermal conductivity along flow axis.
-                            // Use the fluid cell's real spatial coordinates and temperature.
-                            // The k_along call picks the correct axis from kx/ky/kz.
                             const auto& mp_f = materials[cells.material_id[f_id]];
                             const mhs::core::FieldContext ctx_f {
                                 mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[f_id], state.current_time};
                             double kf = mhs::utils::k_along(static_cast<mhs::core::FaceDir>(f_ax), mp_f.kx.eval(ctx_f),
                                 mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
 
-                            // Porous-medium convection coefficient.
-                            // Uses stored channel geometry (width × height from Step 4) for
-                            // the Nusselt aspect ratio, and hydraulic diameter for h_f.
-                            // Mesh-independent — correlation sees the physical channel.
-                            double d_h = model_.hydraulic_diameter[f_id];
-                            double ch_w = model_.channel_width[f_id];
-                            double ch_h = model_.channel_height[f_id];
+                            double d_h = model_.hydraulic_diameter[f_idx];
+                            double ch_w = model_.channel_width[f_idx];
+                            double ch_h = model_.channel_height[f_idx];
                             double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
-                            double h_f = Nu * kf / d_h; // convection coefficient
+                            double h_f = Nu * kf / d_h;
 
                             // Solid-side conduction half-distance
                             double half_dist_solid = (s_id == c_idx) ? half_dist : d_half_neighbor;
@@ -178,6 +171,7 @@ namespace mhs::sim {
             // Inlined into the main loop to avoid a second full-grid traversal
             // (saves TLS allocation + combine_each + sparse merge).
             if (!model_.is_fluid.empty() && c_idx < (int)model_.is_fluid.size() && model_.is_fluid[c_idx]) {
+                int f_idx = model_.global_to_fluid[c_idx];
                 const double rho_a = materials[cells.material_id[c_idx]].rho.eval(ctx_c);
                 const double cp_c = materials[cells.material_id[c_idx]].c.eval(ctx_c);
                 double netOutflux = 0.0;
@@ -190,25 +184,18 @@ namespace mhs::sim {
                         continue;
 
                     int n_idx = (int)cells.index_map[neighborOld];
-                    if (n_idx < 0 || n_idx >= N || !model_.is_fluid[n_idx])
+                    int fn_idx = (n_idx >= 0 && n_idx < (int)model_.global_to_fluid.size())
+                        ? model_.global_to_fluid[n_idx] : -1;
+                    if (fn_idx < 0)
                         continue;
 
                     int axis = mhs::utils::AXIS_OF_DIR[f];
 
                     double hc_a = 0.0, hc_b = 0.0;
                     switch (axis) {
-                    case 0:
-                        hc_a = model_.hydroC_x[c_idx];
-                        hc_b = model_.hydroC_x[n_idx];
-                        break;
-                    case 1:
-                        hc_a = model_.hydroC_y[c_idx];
-                        hc_b = model_.hydroC_y[n_idx];
-                        break;
-                    default:
-                        hc_a = model_.hydroC_z[c_idx];
-                        hc_b = model_.hydroC_z[n_idx];
-                        break;
+                    case 0: hc_a = model_.hydroC_x[f_idx]; hc_b = model_.hydroC_x[fn_idx]; break;
+                    case 1: hc_a = model_.hydroC_y[f_idx]; hc_b = model_.hydroC_y[fn_idx]; break;
+                    default: hc_a = model_.hydroC_z[f_idx]; hc_b = model_.hydroC_z[fn_idx]; break;
                     }
                     if (hc_a < 1e-30 || hc_b < 1e-30)
                         continue;
@@ -226,7 +213,7 @@ namespace mhs::sim {
                     if (rho_avg < 1e-30)
                         rho_avg = 1e-30;
 
-                    double dP = model_.pressure[c_idx] - model_.pressure[n_idx];
+                    double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];
                     double massFlux = dP * C_eff * rho_avg;
                     netOutflux += massFlux;
 
@@ -244,7 +231,7 @@ namespace mhs::sim {
 
                 // Temperature injection / outlet loss
                 if (std::fabs(netOutflux) >= 1e-30) {
-                    double T_boundary = model_.boundary_temperature_fluid[c_idx];
+                    double T_boundary = model_.boundary_temperature_fluid[f_idx];
                     if (!std::isnan(T_boundary)) {
                         local.b(c_idx) += netOutflux * cp_c * T_boundary;
                     }
