@@ -126,19 +126,25 @@ namespace mhs::sim {
                             double kf = mhs::utils::k_along(static_cast<mhs::core::FaceDir>(f_ax), mp_f.kx.eval(ctx_f),
                                 mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
 
-                            // Fluid cell cross-section dimensions perpendicular to flow.
-                            // CRITICAL: must use the FLUID cell's grid coordinates, not the
-                            // current cell's (which may be the SOLID side).
-                            int fix = model_.is_fluid[c_idx] ? ix : nix;
-                            int fiy = model_.is_fluid[c_idx] ? iy : niy;
-                            int fiz = model_.is_fluid[c_idx] ? iz : niz;
-                            int ax_w = (f_ax + 1) % 3;
-                            int ax_h = (f_ax + 2) % 3;
-                            double w = (ax_w == 0) ? mesh.dx[fix] : ((ax_w == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
-                            double h = (ax_h == 0) ? mesh.dx[fix] : ((ax_h == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
-
-                            double Nu = mhs::utils::nusselt_rectangular(w, h);
-                            double d_h = 2.0 * w * h / (w + h);
+                            // Porous-medium convection coefficient.
+                            // Uses the channel-level hydraulic diameter (from overlay) for
+                            // both the Nusselt correlation and the convective coefficient.
+                            // This is mesh-independent — the correlation sees the physical
+                            // channel, not individual cell dimensions.
+                            double d_h = model_.hydraulic_diameter[f_id];
+                            if (d_h < 1e-30) {
+                                // No hydraulic diameter available: use cell-level geometry
+                                // as a coarse fallback (produces cell-size-dependent Nu).
+                                int fix = model_.is_fluid[c_idx] ? ix : nix;
+                                int fiy = model_.is_fluid[c_idx] ? iy : niy;
+                                int fiz = model_.is_fluid[c_idx] ? iz : niz;
+                                int ax_w = (f_ax + 1) % 3;
+                                int ax_h = (f_ax + 2) % 3;
+                                double w_fallback = (ax_w == 0) ? mesh.dx[fix] : ((ax_w == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
+                                double h_fallback = (ax_h == 0) ? mesh.dx[fix] : ((ax_h == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
+                                d_h = 2.0 * w_fallback * h_fallback / (w_fallback + h_fallback);
+                            }
+                            double Nu = mhs::utils::nusselt_rectangular(d_h, d_h); // square-duct approximation
                             double h_f = Nu * kf / d_h; // convection coefficient
 
                             // Solid-side conduction half-distance

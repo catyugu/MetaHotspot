@@ -22,7 +22,7 @@ namespace mhs::sim {
     }
 
     // ---------------------------------------------------------------------------
-    // Phase 1: Hydraulic conductance (Hele-Shaw / rectangular duct)
+    // Phase 1: Hydraulic conductance (porous-medium permeability)
     // ---------------------------------------------------------------------------
 
     void FluidPreprocessor::initCellHydroProperties(mhs::core::InternalModel& model)
@@ -32,7 +32,22 @@ namespace mhs::sim {
         const int N = static_cast<int>(model.is_fluid.size());
         const int totalGrid = mesh.nx * mesh.ny * mesh.nz;
 
-        // Single pass over the grid: decode grid coords inline, compute hydro properties
+        // Single pass over the grid.
+        // Uses the Darcy / porous-medium permeability K = D_h² / 32 derived
+        // from the user-provided hydraulic diameter.  The cell's hydraulic
+        // conductance along each axis is:
+        //
+        //     hydroC[axis] = K * A_face / (μ * L_cell)
+        //
+        // where A_face is the cross-sectional face area perpendicular to the
+        // axis and L_cell is the cell's length along the axis.  The existing
+        // series combination of two half-cell conductances via
+        // harmonicConductance() produces the correct face flux coefficient
+        // regardless of mesh resolution, because K is a material property,
+        // not a function of cell geometry.
+        //
+        // This replaces the previous Hele-Shaw / rectangular duct formula
+        // that assumed 1 cell = 1 full channel cross-section.
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
             int c = static_cast<int>(cells.index_map[old_idx]);
             if (c < 0 || c >= N || !model.is_fluid[c])
@@ -46,41 +61,31 @@ namespace mhs::sim {
             double dz_cell = mesh.dz[iz];
             double mu = model.dynamic_viscosity[c];
             if (mu < 1e-30)
-                mu = 1e-30; // guard against zero viscosity
+                mu = 1e-30;
 
-            double hydroC[3] = {0.0, 0.0, 0.0};
-
-            // Three axes
-            for (int axis = 0; axis < 3; ++axis) {
-                double L = (axis == 0) ? dx_cell : ((axis == 1) ? dy_cell : dz_cell);
-                int ax_w = (axis + 1) % 3;
-                int ax_h = (axis + 2) % 3;
-                double w = (ax_w == 0) ? dx_cell : ((ax_w == 1) ? dy_cell : dz_cell);
-                double h = (ax_h == 0) ? dx_cell : ((ax_h == 1) ? dy_cell : dz_cell);
-
-                if (L < 1e-30)
-                    continue;
-
-                double ar = std::min(w, h) / std::max(w, h);
-                double hydroC_val;
-
-                if (std::fabs(h - w) < 1e-10) {
-                    // Square
-                    hydroC_val = 0.42229 * h * h * h * h / (12.0 * mu * L);
-                }
-                else if (h > w) {
-                    hydroC_val = (1.0 - 0.63 * ar) * w * w * w * h / (12.0 * mu * L);
-                }
-                else {
-                    hydroC_val = (1.0 - 0.63 * ar) * h * h * h * w / (12.0 * mu * L);
-                }
-
-                hydroC[axis] = hydroC_val;
+            double dh = model.hydraulic_diameter[c];
+            if (dh < 1e-30) {
+                // No hydraulic diameter → zero permeability (stagnant)
+                model.hydroC_x[c] = 0.0;
+                model.hydroC_y[c] = 0.0;
+                model.hydroC_z[c] = 0.0;
+                continue;
             }
 
-            model.hydroC_x[c] = hydroC[0];
-            model.hydroC_y[c] = hydroC[1];
-            model.hydroC_z[c] = hydroC[2];
+            // Permeability for laminar duct flow: K = D_h² / 32
+            double K_perm = (dh * dh) / 32.0;
+            if (K_perm < 1e-30)
+                K_perm = 1e-30;
+
+            // Face areas and cell lengths along each axis
+            double A_xy = dx_cell * dy_cell; // perpendicular to Z
+            double A_xz = dx_cell * dz_cell; // perpendicular to Y
+            double A_yz = dy_cell * dz_cell; // perpendicular to X
+
+            // hydroC[axis] = K_perm * A_perp / (μ * L_cell)
+            model.hydroC_x[c] = K_perm * A_yz / (mu * dx_cell);
+            model.hydroC_y[c] = K_perm * A_xz / (mu * dy_cell);
+            model.hydroC_z[c] = K_perm * A_xy / (mu * dz_cell);
         }
     }
 
@@ -133,8 +138,8 @@ namespace mhs::sim {
             // Iterate 6 faces
             for (size_t f = 0; f < 6; ++f) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                int neighborOld = mhs::utils::neighbor_grid_index(
-                    ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                int neighborOld
+                    = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
                 if (neighborOld < 0)
                     continue;
 
@@ -235,8 +240,8 @@ namespace mhs::sim {
 
             for (size_t f = 0; f < 6; ++f) {
                 mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                int neighborOld = mhs::utils::neighbor_grid_index(
-                    ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                int neighborOld
+                    = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
                 if (neighborOld < 0)
                     continue;
 

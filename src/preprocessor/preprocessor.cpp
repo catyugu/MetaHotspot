@@ -188,11 +188,14 @@ namespace mhs::sim {
         model.is_fluid.assign(N, 0);
         model.cells.fluid_material_id.assign(N, static_cast<uint16_t>(std::numeric_limits<uint16_t>::max()));
         model.dynamic_viscosity.assign(N, 0.0);
+        model.hydraulic_diameter.assign(N, 0.0); // 在 cell 标记循环写入前初始化
 
-        // Build fluid material name → viscosity expression map
+        // Build fluid material property maps (viscosity + hydraulic diameter)
         std::unordered_map<std::string, std::string> fluidViscosityMap;
+        std::unordered_map<std::string, double> fluidDhMap;
         for (const auto& fm : fluidOverlay.fluid_materials) {
             fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
+            fluidDhMap[fm.name] = fm.hydraulic_diameter;
         }
 
         for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
@@ -212,6 +215,12 @@ namespace mhs::sim {
                 model.is_fluid[c] = 1;
                 model.cells.fluid_material_id[c] = matIdx;
                 model.dynamic_viscosity[c] = model.material_table[matIdx].dynamic_viscosity.constant_value();
+                // Store hydraulic diameter for porous-medium permeability and Nusselt
+                const auto& matName = matNamesByTableIdx[matIdx];
+                auto dhIt = fluidDhMap.find(matName);
+                if (dhIt != fluidDhMap.end()) {
+                    model.hydraulic_diameter[c] = dhIt->second;
+                }
             }
         }
 

@@ -117,6 +117,7 @@ namespace mhs::core {
         std::vector<uint8_t> is_pressure_boundary;    // [N_active] 压力边界标记
         std::vector<double> boundary_pressure;        // [N_active] 压力边界值 [Pa]
         std::vector<double> boundary_temperature_fluid;// [N_active] 流体入口温度 [K]；非入口 = NaN
+        std::vector<double> hydraulic_diameter;        // [N_active] 水力直径 [m]；非 fluid = 0
     };
 
 } // namespace mhs::core
