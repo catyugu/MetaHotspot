@@ -1,7 +1,7 @@
 #include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "fluid/fluid_preprocessor.hpp"
-#include "linear_solver/sparse_lu_solver.hpp"
+#include "linear_solver/linear_solver.hpp"
 
 #include <Eigen/Sparse>
 
@@ -173,22 +173,24 @@ namespace mhs::sim {
 
                 // Both c and n are fluid.
                 // FVM for ∇·(K∇P)=0: sum C_eff·(P_n − P_c) = 0 over all neighbor faces.
-                // Matrix contribution: diag = −sum(C_eff),  off-diag = +C_eff.
-                // Only write the equation for the current cell (c).
-                // The neighbor (n) builds its own row when the grid scan reaches it.
+                // Matrix equation: -diagSum * P_c + Σ C_eff * P_n = 0.
+                // Multiply both sides by -1 for positive diagonal:
+                //   diagSum * P_c - Σ C_eff * P_n = 0
+                // This gives a symmetric positive-definite matrix suitable for
+                // iterative solvers (BiCGSTAB).
                 if (!model.is_pressure_boundary[c]) {
-                    triplets.emplace_back(fi, fn, C_eff);
+                    triplets.emplace_back(fi, fn, -C_eff); // off-diag = -C_eff
                     diagSum += C_eff;
                 }
             }
 
-            // Diagonal
+            // Diagonal (positive after sign-flip for SPD matrix)
             if (model.is_pressure_boundary[c]) {
                 triplets.emplace_back(fi, fi, 1.0);
                 rhs(fi) = model.boundary_pressure[c];
             }
             else {
-                triplets.emplace_back(fi, fi, -diagSum);
+                triplets.emplace_back(fi, fi, diagSum); // positive diagonal
             }
         }
 
@@ -196,8 +198,9 @@ namespace mhs::sim {
         Eigen::SparseMatrix<double> A(nf, nf);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
-        SparseLUSolver solver;
-        auto result = solver.solve(A, rhs);
+        // Use the project's abstract solver factory (BiCGSTAB for SPD Poisson).
+        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::BiCGSTAB);
+        auto result = solver->solve(A, rhs);
         if (!result.success) {
             MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", nf, (int)A.nonZeros());
             return;

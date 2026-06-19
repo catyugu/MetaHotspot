@@ -1,8 +1,6 @@
+#include <Eigen/Sparse>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
-
-#include <Eigen/Sparse>
-#include <algorithm>
 
 #include "assembler.hpp"
 #include "common/mesh_utils.hpp"
@@ -126,26 +124,13 @@ namespace mhs::sim {
                                 mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
 
                             // Porous-medium convection coefficient.
-                            // Uses the channel-level hydraulic diameter (from overlay) for
-                            // both the Nusselt correlation and the convective coefficient.
-                            // This is mesh-independent — the correlation sees the physical
-                            // channel, not individual cell dimensions.
+                            // Uses stored channel geometry (width × height from Step 4) for
+                            // the Nusselt aspect ratio, and hydraulic diameter for h_f.
+                            // Mesh-independent — correlation sees the physical channel.
                             double d_h = model_.hydraulic_diameter[f_id];
-                            if (d_h < 1e-30) {
-                                // No hydraulic diameter available: use cell-level geometry
-                                // as a coarse fallback (produces cell-size-dependent Nu).
-                                int fix = model_.is_fluid[c_idx] ? ix : nix;
-                                int fiy = model_.is_fluid[c_idx] ? iy : niy;
-                                int fiz = model_.is_fluid[c_idx] ? iz : niz;
-                                int ax_w = (f_ax + 1) % 3;
-                                int ax_h = (f_ax + 2) % 3;
-                                double w_fallback
-                                    = (ax_w == 0) ? mesh.dx[fix] : ((ax_w == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
-                                double h_fallback
-                                    = (ax_h == 0) ? mesh.dx[fix] : ((ax_h == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
-                                d_h = 2.0 * w_fallback * h_fallback / (w_fallback + h_fallback);
-                            }
-                            double Nu = mhs::utils::nusselt_rectangular(d_h, d_h); // square-duct approximation
+                            double ch_w = model_.channel_width[f_id];
+                            double ch_h = model_.channel_height[f_id];
+                            double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
                             double h_f = Nu * kf / d_h; // convection coefficient
 
                             // Solid-side conduction half-distance
@@ -188,6 +173,86 @@ namespace mhs::sim {
             }
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
+
+            // ── Advection: upwind assembly for fluid-fluid faces ──────────────
+            // Inlined into the main loop to avoid a second full-grid traversal
+            // (saves TLS allocation + combine_each + sparse merge).
+            if (!model_.is_fluid.empty() && c_idx < (int)model_.is_fluid.size() && model_.is_fluid[c_idx]) {
+                const double rho_a = materials[cells.material_id[c_idx]].rho.eval(ctx_c);
+                const double cp_c = materials[cells.material_id[c_idx]].c.eval(ctx_c);
+                double netOutflux = 0.0;
+
+                for (size_t f = 0; f < 6; ++f) {
+                    mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
+                    int neighborOld
+                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                    if (neighborOld < 0)
+                        continue;
+
+                    int n_idx = (int)cells.index_map[neighborOld];
+                    if (n_idx < 0 || n_idx >= N || !model_.is_fluid[n_idx])
+                        continue;
+
+                    int axis = mhs::utils::AXIS_OF_DIR[f];
+
+                    double hc_a = 0.0, hc_b = 0.0;
+                    switch (axis) {
+                    case 0:
+                        hc_a = model_.hydroC_x[c_idx];
+                        hc_b = model_.hydroC_x[n_idx];
+                        break;
+                    case 1:
+                        hc_a = model_.hydroC_y[c_idx];
+                        hc_b = model_.hydroC_y[n_idx];
+                        break;
+                    default:
+                        hc_a = model_.hydroC_z[c_idx];
+                        hc_b = model_.hydroC_z[n_idx];
+                        break;
+                    }
+                    if (hc_a < 1e-30 || hc_b < 1e-30)
+                        continue;
+                    // hc uses full cell length L → half-cell conductance = 2*hc.
+                    // Series: 1/(1/(2*hc_a)+1/(2*hc_b)) = 2*hc_a*hc_b/(hc_a+hc_b).
+                    double C_eff = 2.0 * hc_a * hc_b / (hc_a + hc_b);
+
+                    int nix = mhs::utils::neighbor_ix(dir, ix);
+                    int niy = mhs::utils::neighbor_iy(dir, iy);
+                    int niz = mhs::utils::neighbor_iz(dir, iz);
+                    const mhs::core::FieldContext ctx_n {
+                        mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
+                    double rho_b = materials[cells.material_id[n_idx]].rho.eval(ctx_n);
+                    double rho_avg = 0.5 * (rho_a + rho_b);
+                    if (rho_avg < 1e-30)
+                        rho_avg = 1e-30;
+
+                    double dP = model_.pressure[c_idx] - model_.pressure[n_idx];
+                    double massFlux = dP * C_eff * rho_avg;
+                    netOutflux += massFlux;
+
+                    if (std::fabs(massFlux) < 1e-30)
+                        continue;
+
+                    if (massFlux > 0) {
+                        local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
+                    }
+                    else {
+                        double cp_n = materials[cells.material_id[n_idx]].c.eval(ctx_n);
+                        local.triplets.emplace_back(c_idx, n_idx, massFlux * cp_n);
+                    }
+                }
+
+                // Temperature injection / outlet loss
+                if (std::fabs(netOutflux) >= 1e-30) {
+                    double T_boundary = model_.boundary_temperature_fluid[c_idx];
+                    if (!std::isnan(T_boundary)) {
+                        local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                    }
+                    else if (netOutflux < 0) {
+                        local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
+                    }
+                }
+            }
         });
 
         std::vector<Eigen::Triplet<double>> triplets;
@@ -203,155 +268,7 @@ namespace mhs::sim {
         Eigen::SparseMatrix<double> K(N, N);
         K.setFromTriplets(triplets.begin(), triplets.end());
 
-        // Merge advection contributions (upwind) if fluid cells exist
-        assembleAdvection(K, b, state);
-
         return {std::move(K), std::move(b), std::move(M_diag)};
-    }
-
-    // ---------------------------------------------------------------------------
-    // Advection: upwind formulation on fluid-fluid internal faces
-    // ---------------------------------------------------------------------------
-
-    void Assembler::assembleAdvection(
-        Eigen::SparseMatrix<double>& K, Eigen::VectorXd& f, const mhs::core::GlobalState& state) const
-    {
-        const auto& mesh = model_.mesh;
-        const auto& cells = model_.cells;
-        const auto& materials = model_.material_table;
-        const int N = static_cast<int>(cells.cell_bcs.size());
-        const int total = mesh.nx * mesh.ny * mesh.nz;
-
-        if (model_.is_fluid.empty() || model_.is_fluid.size() != static_cast<size_t>(N))
-            return;
-
-        if (std::none_of(model_.is_fluid.begin(), model_.is_fluid.end(), [](uint8_t v) { return v != 0; }))
-            return;
-
-        // Thread-local scratch: triplets + RHS contributions
-        struct AdvScratch {
-            std::vector<Eigen::Triplet<double>> triplets;
-            Eigen::VectorXd b;
-            AdvScratch(int n) : b(Eigen::VectorXd::Zero(n)) { }
-        };
-
-        auto adv_data = tbb::enumerable_thread_specific<AdvScratch>([N]() { return AdvScratch(N); });
-
-        tbb::parallel_for(0, total, [&](int old_idx) {
-            if (cells.index_map[old_idx] == mhs::core::invalidIndex)
-                return;
-
-            int ix, iy, iz;
-            mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
-            int c_idx = (int)cells.index_map[old_idx];
-
-            if (!model_.is_fluid[c_idx])
-                return;
-
-            // Hoist c-dependent properties outside the 6-face loop
-            auto& local = adv_data.local();
-            const mhs::core::FieldContext ctx_c {
-                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time};
-            const double rho_a = materials[cells.material_id[c_idx]].rho.eval(ctx_c);
-            const double cp_c = materials[cells.material_id[c_idx]].c.eval(ctx_c);
-            double netOutflux = 0.0; // per-cell net mass outflow over all faces
-
-            for (size_t f = 0; f < 6; ++f) {
-                mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                int neighborOld
-                    = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
-                if (neighborOld < 0)
-                    continue;
-
-                int n_idx = (int)cells.index_map[neighborOld];
-                if (n_idx < 0 || n_idx >= N || !model_.is_fluid[n_idx])
-                    continue;
-
-                int axis = mhs::utils::AXIS_OF_DIR[f];
-
-                // Get conductance along this axis
-                double hc_a = 0.0, hc_b = 0.0;
-                switch (axis) {
-                case 0:
-                    hc_a = model_.hydroC_x[c_idx];
-                    hc_b = model_.hydroC_x[n_idx];
-                    break;
-                case 1:
-                    hc_a = model_.hydroC_y[c_idx];
-                    hc_b = model_.hydroC_y[n_idx];
-                    break;
-                default:
-                    hc_a = model_.hydroC_z[c_idx];
-                    hc_b = model_.hydroC_z[n_idx];
-                    break;
-                }
-
-                if (hc_a < 1e-30 || hc_b < 1e-30)
-                    continue;
-                // Note: hc_a and hc_b use the full cell length L.
-                // Half-cell conductance = 2*hc.  Series combination of two half-cells:
-                // 1/(1/(2*hc_a) + 1/(2*hc_b)) = 2*hc_a*hc_b/(hc_a+hc_b).
-                double C_eff = 2.0 * hc_a * hc_b / (hc_a + hc_b);
-
-                // Neighbor-side density (rho_a hoisted above)
-                int nix = mhs::utils::neighbor_ix(dir, ix);
-                int niy = mhs::utils::neighbor_iy(dir, iy);
-                int niz = mhs::utils::neighbor_iz(dir, iz);
-                const mhs::core::FieldContext ctx_n {
-                    mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
-                double rho_b = materials[cells.material_id[n_idx]].rho.eval(ctx_n);
-                double rho_avg = 0.5 * (rho_a + rho_b);
-                if (rho_avg < 1e-30)
-                    rho_avg = 1e-30;
-
-                // Mass flux = ΔP * C_eff * ρ_avg
-                double dP = model_.pressure[c_idx] - model_.pressure[n_idx];
-                double massFlux = dP * C_eff * rho_avg;
-
-                netOutflux += massFlux;
-
-                if (std::fabs(massFlux) < 1e-30)
-                    continue;
-
-                if (massFlux > 0) {
-                    // Outflow: c loses enthalpy at its own temperature
-                    // K[c,c] += massFlux * cp_c  (cp_c hoisted above)
-                    local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
-                }
-                else {
-                    // Inflow: c gains enthalpy at neighbor's temperature
-                    // K[c,n] += massFlux * cp_n  (massFlux < 0 → −|massFlux| at column n)
-                    double cp_n = materials[cells.material_id[n_idx]].c.eval(ctx_n);
-                    local.triplets.emplace_back(c_idx, n_idx, massFlux * cp_n);
-                }
-            }
-            if (std::fabs(netOutflux) >= 1e-30) {
-                double T_boundary = model_.boundary_temperature_fluid[c_idx];
-                if (!std::isnan(T_boundary)) {
-                    // Inlet: incoming enthalpy at prescribed T_boundary
-                    local.b(c_idx) += netOutflux * cp_c * T_boundary;
-                }
-                else if (netOutflux < 0) {
-                    // Outlet: advective loss on diagonal — fluid exits at T_c
-                    local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
-                }
-            }
-        });
-
-        // Combine triplets and RHS
-        std::vector<Eigen::Triplet<double>> allAdvTriplets;
-        Eigen::VectorXd adv_b = Eigen::VectorXd::Zero(N);
-
-        adv_data.combine_each([&](const AdvScratch& local) {
-            allAdvTriplets.insert(allAdvTriplets.end(), local.triplets.begin(), local.triplets.end());
-            adv_b += local.b;
-        });
-
-        // Merge advection matrix and RHS into K and f
-        Eigen::SparseMatrix<double> K_adv(N, N);
-        K_adv.setFromTriplets(allAdvTriplets.begin(), allAdvTriplets.end());
-        K += K_adv;
-        f += adv_b;
     }
 
 } // namespace mhs::sim

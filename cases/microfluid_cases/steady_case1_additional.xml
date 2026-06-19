@@ -11,9 +11,9 @@
             <string>X|E|0|2.5|3.5|0.3|0.5</string>
         </FaceKeys>
         <PressureBoundary>
-            <Pressure>500</Pressure>
+            <Pressure>1000</Pressure>
         </PressureBoundary>
-        <InletTemperature>300</InletTemperature>
+        <InletTemperature>298.15</InletTemperature>
     </Boundary>
 
     <Boundary>

@@ -201,7 +201,7 @@ namespace mhs::sim {
             if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
                 model.material_table[matIdx].is_fluid = true;
                 model.material_table[matIdx].dynamic_viscosity
-                    = mhs::core::CompiledExpression::make_constant(std::stod(visIt->second));
+                    = mhs::core::parse(substitute_function_args(visIt->second, "T", ioStructure.functions));
             }
         }
 
@@ -211,7 +211,8 @@ namespace mhs::sim {
             if (matIdx < model.material_table.size() && model.material_table[matIdx].is_fluid) {
                 model.is_fluid[c] = 1;
                 model.cells.fluid_material_id[c] = matIdx;
-                model.dynamic_viscosity[c] = model.material_table[matIdx].dynamic_viscosity.constant_value();
+                model.dynamic_viscosity[c] = model.material_table[matIdx].dynamic_viscosity.eval(
+                    {0, 0, 0, model.initial_temperature, 0}); // reference value at initial T
             }
         }
 
@@ -230,6 +231,8 @@ namespace mhs::sim {
         model.boundary_pressure.assign(N, 0.0);
         model.boundary_temperature_fluid.assign(N, std::numeric_limits<double>::quiet_NaN());
         model.hydraulic_diameter.assign(N, 0.0); // overwritten in Step 4 from geometry
+        model.channel_width.assign(N, 0.0);
+        model.channel_height.assign(N, 0.0);
 
         // --- Step 3: Parse pressure boundaries from overlay ---
         // Scan the full grid to match face keys against fluid cell centers.
@@ -320,23 +323,35 @@ namespace mhs::sim {
                 int iz = old_idx % model.mesh.nz;
                 double cy = model.mesh.cy[iy];
                 double cz = model.mesh.cz[iz];
-                if (cy < y_min) { y_min = cy; iy_min = iy; }
-                if (cy > y_max) { y_max = cy; iy_max = iy; }
-                if (cz < z_min) { z_min = cz; iz_sample = iz; }
-                if (cz > z_max) { z_max = cz; }
+                if (cy < y_min) {
+                    y_min = cy;
+                    iy_min = iy;
+                }
+                if (cy > y_max) {
+                    y_max = cy;
+                    iy_max = iy;
+                }
+                if (cz < z_min) {
+                    z_min = cz;
+                    iz_sample = iz;
+                }
+                if (cz > z_max) {
+                    z_max = cz;
+                }
                 has_bc = true;
             }
 
             if (has_bc) {
                 double width = y_max - y_min + (model.mesh.dy[iy_min] + model.mesh.dy[iy_max]) * 0.5;
-                double height = (z_max > z_min)
-                    ? z_max - z_min + model.mesh.dz[iz_sample]  // multiple cells
-                    : model.mesh.dz[iz_sample];                  // single-cell thickness
+                double height = (z_max > z_min) ? z_max - z_min + model.mesh.dz[iz_sample] // multiple cells
+                                                : model.mesh.dz[iz_sample]; // single-cell thickness
                 double d_h = 2.0 * width * height / (width + height);
 
                 for (int c = 0; c < N; ++c) {
                     if (model.is_fluid[c]) {
                         model.hydraulic_diameter[c] = d_h;
+                        model.channel_width[c] = width;
+                        model.channel_height[c] = height;
                     }
                 }
             }

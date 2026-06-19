@@ -118,6 +118,8 @@ namespace mhs::core {
         std::vector<double> boundary_pressure;        // [N_active] 压力边界值 [Pa]
         std::vector<double> boundary_temperature_fluid;// [N_active] 流体入口温度 [K]；非入口 = NaN
         std::vector<double> hydraulic_diameter;        // [N_active] 水力直径 [m]；非 fluid = 0
+        std::vector<double> channel_width;             // [N_active] 通道宽度 [m]；用于 Nu 长宽比
+        std::vector<double> channel_height;            // [N_active] 通道高度 [m]；用于 Nu 长宽比
     };
 
 } // namespace mhs::core
