@@ -1,5 +1,6 @@
 #include "assembler/assembler.hpp"
 #include "common/logger.hpp"
+#include "fluid/fluid_preprocessor.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
 #include "scheduler.hpp"
 #include "time_scheme/time_scheme.hpp"
@@ -35,6 +36,10 @@ namespace mhs::sim {
 
         // 稳态求解分支
         if (model_->study_type == mhs::core::StudyType::Steady) {
+            // 流体压力求解(若模型含流体): pressure → flow_axes 在 T 求解前计算一次
+            FluidPreprocessor fluidPrep;
+            fluidPrep.solveFlow(*model_);
+
             LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
                 auto ops = assembler.assemble(s);
                 return {std::move(ops.K), std::move(ops.f)};
