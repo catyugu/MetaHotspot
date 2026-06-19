@@ -5,21 +5,14 @@
 
 #include <Eigen/Sparse>
 
+#include <algorithm>
 #include <cmath>
 
 namespace mhs::sim {
 
     void FluidPreprocessor::solveFlow(mhs::core::InternalModel& model)
     {
-        const int N = static_cast<int>(model.is_fluid.size());
-        bool hasFluid = false;
-        for (int i = 0; i < N; ++i) {
-            if (model.is_fluid[i]) {
-                hasFluid = true;
-                break;
-            }
-        }
-        if (!hasFluid)
+        if (std::none_of(model.is_fluid.begin(), model.is_fluid.end(), [](uint8_t v) { return v != 0; }))
             return;
 
         initCellHydroProperties(model);
@@ -45,9 +38,8 @@ namespace mhs::sim {
             if (c < 0 || c >= N || !model.is_fluid[c])
                 continue;
 
-            int ix = old_idx / (mesh.ny * mesh.nz);
-            int iy = (old_idx % (mesh.ny * mesh.nz)) / mesh.nz;
-            int iz = old_idx % mesh.nz;
+            int ix, iy, iz;
+            mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
             double dx_cell = mesh.dx[ix];
             double dy_cell = mesh.dy[iy];

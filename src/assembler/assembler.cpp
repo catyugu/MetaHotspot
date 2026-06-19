@@ -1,6 +1,7 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
+#include <algorithm>
 #include <Eigen/Sparse>
 
 #include "assembler.hpp"
@@ -10,13 +11,6 @@
 namespace mhs::sim {
 
     namespace { // anonymous: file-private helpers
-        void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
-        {
-            ix = old_idx / (ny * nz);
-            iy = (old_idx % (ny * nz)) / nz;
-            iz = old_idx % nz;
-        }
-
         // Per-thread scratch for the TBB parallel_for over grid cells.
         struct ThreadLocalData {
             std::vector<Eigen::Triplet<double>> triplets;
@@ -46,7 +40,7 @@ namespace mhs::sim {
 
             auto& local = thread_data.local();
             int ix, iy, iz;
-            decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
+            mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
             int c_idx = (int)cells.index_map[old_idx];
             double dx_cell = mesh.dx[ix];
@@ -124,11 +118,12 @@ namespace mhs::sim {
                             cond = A_f / (half_dist / k_face_val + d_half_neighbor / k_neighbor);
                         }
                         else {
-                            // Fluid-side thermal conductivity along flow axis
+                            // Fluid-side thermal conductivity along flow axis.
+                            // Use the fluid cell's real spatial coordinates and temperature.
+                            // The k_along call picks the correct axis from kx/ky/kz.
                             const auto& mp_f = materials[cells.material_id[f_id]];
-                            const mhs::core::FieldContext ctx_f {mesh.cx[(f_ax == 0) ? ix : ((f_ax == 1) ? iy : iz)],
-                                mesh.cy[(f_ax == 1) ? iy : ((f_ax == 0 || f_ax == 2) ? iz : ix)],
-                                mesh.cz[(f_ax == 2) ? iz : ((f_ax == 0) ? iy : ix)], 0.0, 0.0};
+                            const mhs::core::FieldContext ctx_f {
+                                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[f_id], state.current_time};
                             double kf = mhs::utils::k_along(static_cast<mhs::core::FaceDir>(f_ax), mp_f.kx.eval(ctx_f),
                                 mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
 
@@ -219,14 +214,7 @@ namespace mhs::sim {
         if (model_.is_fluid.empty() || model_.is_fluid.size() != static_cast<size_t>(N))
             return;
 
-        bool hasFluid = false;
-        for (uint8_t v : model_.is_fluid) {
-            if (v) {
-                hasFluid = true;
-                break;
-            }
-        }
-        if (!hasFluid)
+        if (std::none_of(model_.is_fluid.begin(), model_.is_fluid.end(), [](uint8_t v) { return v != 0; }))
             return;
 
         // Thread-local scratch: triplets + RHS contributions
@@ -242,15 +230,19 @@ namespace mhs::sim {
             if (cells.index_map[old_idx] == mhs::core::invalidIndex)
                 return;
 
-            int ix = old_idx / (mesh.ny * mesh.nz);
-            int iy = (old_idx % (mesh.ny * mesh.nz)) / mesh.nz;
-            int iz = old_idx % mesh.nz;
+            int ix, iy, iz;
+            mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
             int c_idx = (int)cells.index_map[old_idx];
 
             if (!model_.is_fluid[c_idx])
                 return;
 
+            // Hoist c-dependent properties outside the 6-face loop
             auto& local = adv_data.local();
+            const mhs::core::FieldContext ctx_c {
+                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time};
+            const double rho_a = materials[cells.material_id[c_idx]].rho.eval(ctx_c);
+            const double cp_c = materials[cells.material_id[c_idx]].c.eval(ctx_c);
             double netOutflux = 0.0; // per-cell net mass outflow over all faces
 
             for (size_t f = 0; f < 6; ++f) {
@@ -287,14 +279,13 @@ namespace mhs::sim {
                     continue;
                 double C_eff = 2.0 * hc_a * hc_b / (hc_a + hc_b);
 
-                // Average density
-                double rho_a = materials[cells.material_id[c_idx]].rho.eval(
-                    {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                // Neighbor-side density (rho_a hoisted above)
                 int nix = mhs::utils::neighbor_ix(dir, ix);
                 int niy = mhs::utils::neighbor_iy(dir, iy);
                 int niz = mhs::utils::neighbor_iz(dir, iz);
-                double rho_b = materials[cells.material_id[n_idx]].rho.eval(
-                    {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                const mhs::core::FieldContext ctx_n {
+                    mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
+                double rho_b = materials[cells.material_id[n_idx]].rho.eval(ctx_n);
                 double rho_avg = 0.5 * (rho_a + rho_b);
                 if (rho_avg < 1e-30)
                     rho_avg = 1e-30;
@@ -310,30 +301,35 @@ namespace mhs::sim {
 
                 if (massFlux > 0) {
                     // Outflow: c loses enthalpy at its own temperature
-                    // K[c,c] += massFlux * cp_c
-                    double cp_c = materials[cells.material_id[c_idx]].c.eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
+                    // K[c,c] += massFlux * cp_c  (cp_c hoisted above)
                     local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
                 } else {
                     // Inflow: c gains enthalpy at neighbor's temperature
-                    // K[c,n] += massFlux * cp_n  (massFlux < 0 → effectively −|massFlux| at column n)
-                    double cp_n = materials[cells.material_id[n_idx]].c.eval(
-                        {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time});
+                    // K[c,n] += massFlux * cp_n  (massFlux < 0 → −|massFlux| at column n)
+                    double cp_n = materials[cells.material_id[n_idx]].c.eval(ctx_n);
                     local.triplets.emplace_back(c_idx, n_idx, massFlux * cp_n);
                 }
             }
 
-            // Boundary temperature injection: for cells with prescribed inlet temperature
-            // and non-zero net flow, impose the incoming enthalpy on the RHS.
-            // no > 0  → net outflow (inlet cell):  RHS += no * cp * T_boundary
-            // no < 0  → net inflow (outlet cell):   RHS += no * cp * T_boundary (no is negative,
-            //                                         adds negative contribution — handled by matrix)
+            // Boundary temperature / outlet loss:
+            //
+            //   netOutflux > 0  → net outflow from c to interior faces.
+            //                      If T_boundary is set (inlet), inflow from boundary
+            //                      enters at T_boundary → RHS += no * cp * T_boundary.
+            //
+            //   netOutflux < 0  → net inflow from interior (outlet / exit cell).
+            //                      If T_boundary is NOT set (plain outlet), the fluid
+            //                      leaving through the boundary carries T_c's enthalpy.
+            //                      This advective loss needs a diagonal LHS entry,
+            //                      not a boundary temperature injection.
             if (std::fabs(netOutflux) >= 1e-30) {
                 double T_boundary = model_.boundary_temperature_fluid[c_idx];
                 if (!std::isnan(T_boundary)) {
-                    double cp = materials[cells.material_id[c_idx]].c.eval(
-                        {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time});
-                    local.b(c_idx) += netOutflux * cp * T_boundary;
+                    // Inlet: incoming enthalpy at prescribed T_boundary
+                    local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                } else if (netOutflux < 0) {
+                    // Outlet: advective loss on diagonal — fluid exits at T_c
+                    local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                 }
             }
         });

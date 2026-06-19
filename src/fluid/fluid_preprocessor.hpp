@@ -30,13 +30,9 @@ namespace mhs::sim {
         /// Harmonic mean of two conductances
         static double harmonicConductance(double a, double b)
         {
-            if (a < 1e-30 && b < 1e-30)
+            if (a < 1e-30 || b < 1e-30)
                 return 0.0;
-            if (a < 1e-30)
-                return 0.0;
-            if (b < 1e-30)
-                return 0.0;
-            return 2.0 / (1.0 / a + 1.0 / b);
+            return (2.0 * a * b) / (a + b);
         }
     };
 
