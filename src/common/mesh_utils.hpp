@@ -31,6 +31,14 @@ namespace mhs::utils {
     /// X-faces → Z (2), Y-faces → Z (2), Z-faces → Y (1).
     inline constexpr int TANGENT_B_OF_DIR[mhs::core::FACE_COUNT] = {2, 2, 2, 2, 1, 1};
 
+    /// Decode flat grid index to (ix, iy, iz) coordinates.
+    inline void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
+    {
+        ix = old_idx / (ny * nz);
+        iy = (old_idx % (ny * nz)) / nz;
+        iz = old_idx % nz;
+    }
+
     // ── Neighbor coordinate lookups ─────────────────────────────────────
 
     /// Neighbor grid-coordinate along each axis — branchless via DIR_DX/DY/DZ.

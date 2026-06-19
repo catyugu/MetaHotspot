@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -9,6 +10,9 @@
 namespace mhs::io {
 
     mhs::core::IOStructure read_xml(const std::string& xml_path);
+
+    // Read fluid overlay XML; returns std::nullopt if file doesn't exist or has no FluidOverlay element.
+    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path);
 
     void write_vtu(
         const std::string& path, const mhs::core::InternalModel& model, const std::vector<double>& node_temperature);

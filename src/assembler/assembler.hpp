@@ -18,6 +18,11 @@ namespace mhs::sim {
 
     private:
         const mhs::core::InternalModel& model_;
+
+        /// Merge advection contributions (upwind) into K and f.
+        /// Called after the main diffusion assembly when fluid cells exist.
+        void assembleAdvection(Eigen::SparseMatrix<double>& K, Eigen::VectorXd& f,
+            const mhs::core::GlobalState& state) const;
     };
 
 } // namespace mhs::sim

@@ -4,6 +4,8 @@
 #include "layer_processor.hpp"
 #include "preprocessor.hpp"
 
+#include <algorithm>
+
 namespace mhs::sim {
 
     std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(const mhs::core::IOStructure& ioStructure)
@@ -147,10 +149,229 @@ namespace mhs::sim {
         }
         }
 
-        model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map,
-            parsed_keys, other_bc_enum, other_bc_idx);
+        model->cells = resolve_layers(
+            resolved_layers, mesh, name_to_idx, block_hs_map, parsed_keys, other_bc_enum, other_bc_idx);
 
         return model;
+    }
+
+    void Preprocessor::applyFluidOverlay(mhs::core::InternalModel& model,
+        const std::optional<mhs::core::FluidOverlay>& overlay, const mhs::core::IOStructure& ioStructure)
+    {
+        if (!overlay.has_value())
+            return;
+
+        const auto& fluidOverlay = overlay.value();
+        if (fluidOverlay.fluid_materials.empty())
+            return;
+
+        const double si_scale = length_unit_to_si(ioStructure.length_unit);
+        const int N = static_cast<int>(model.cells.cell_bcs.size());
+
+        // --- Step 1: Build material name → table index mapping ---
+        // Reconstruct from the same first-seen order as load().
+        std::unordered_map<std::string, uint16_t> matNameToTableIdx;
+        for (const auto& layer : ioStructure.layers) {
+            for (const auto& block : layer.blocks) {
+                if (matNameToTableIdx.find(block.material_name) == matNameToTableIdx.end()) {
+                    matNameToTableIdx[block.material_name] = static_cast<uint16_t>(matNameToTableIdx.size());
+                }
+            }
+        }
+        // Reverse map: table index → name (matching load()'s material_names order)
+        std::vector<std::string> matNamesByTableIdx(matNameToTableIdx.size());
+        for (const auto& [name, idx] : matNameToTableIdx) {
+            matNamesByTableIdx[idx] = name;
+        }
+
+        // Mark is_fluid and fill fluid_material_id (temporary N_active viscosity)
+        model.is_fluid.assign(N, 0);
+        model.cells.fluid_material_id.assign(N, static_cast<uint16_t>(std::numeric_limits<uint16_t>::max()));
+        std::vector<double> visc_temp(N, 0.0);
+
+        // Build fluid material property maps
+        std::unordered_map<std::string, std::string> fluidViscosityMap;
+        for (const auto& fm : fluidOverlay.fluid_materials) {
+            fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
+        }
+
+        for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
+            const auto& matName = matNamesByTableIdx[matIdx];
+            auto visIt = fluidViscosityMap.find(matName);
+            if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
+                model.material_table[matIdx].is_fluid = true;
+                model.material_table[matIdx].dynamic_viscosity
+                    = mhs::core::parse(substitute_function_args(visIt->second, "T", ioStructure.functions));
+            }
+        }
+
+        // Mark fluid cells based on material_table
+        for (int c = 0; c < N; ++c) {
+            uint16_t matIdx = model.cells.material_id[c];
+            if (matIdx < model.material_table.size() && model.material_table[matIdx].is_fluid) {
+                model.is_fluid[c] = 1;
+                model.cells.fluid_material_id[c] = matIdx;
+                visc_temp[c] = model.material_table[matIdx].dynamic_viscosity.eval(
+                    {0, 0, 0, model.initial_temperature, 0}); // reference value at initial T
+            }
+        }
+
+        // Check if any fluid cells exist
+        bool hasFluid = std::any_of(model.is_fluid.begin(), model.is_fluid.end(), [](uint8_t v) { return v != 0; });
+        if (!hasFluid)
+            return;
+
+        // ── Build fluid indirection mapping: global compact ←→ N_fluid ──
+        model.fluid_to_global.clear();
+        model.global_to_fluid.assign(N, -1);
+        for (int c = 0; c < N; ++c) {
+            if (model.is_fluid[c]) {
+                model.global_to_fluid[c] = static_cast<int>(model.fluid_to_global.size());
+                model.fluid_to_global.push_back(c);
+            }
+        }
+        model.n_fluid = static_cast<int>(model.fluid_to_global.size());
+
+        // ── Compact fluid arrays to [n_fluid] ──
+        model.dynamic_viscosity.assign(model.n_fluid, 0.0);
+        model.pressure.assign(model.n_fluid, 0.0);
+        model.flow_axes.assign(model.n_fluid, -1);
+        model.hydroC_x.assign(model.n_fluid, 0.0);
+        model.hydroC_y.assign(model.n_fluid, 0.0);
+        model.hydroC_z.assign(model.n_fluid, 0.0);
+        model.is_pressure_boundary.assign(model.n_fluid, 0);
+        model.boundary_pressure.assign(model.n_fluid, 0.0);
+        model.boundary_temperature_fluid.assign(model.n_fluid, std::numeric_limits<double>::quiet_NaN());
+        model.hydraulic_diameter.assign(model.n_fluid, 0.0);
+        model.channel_width.assign(model.n_fluid, 0.0);
+        model.channel_height.assign(model.n_fluid, 0.0);
+        for (int f = 0; f < model.n_fluid; ++f) {
+            model.dynamic_viscosity[f] = visc_temp[model.fluid_to_global[f]];
+        }
+
+        // --- Step 3: Parse pressure boundaries from overlay ---
+        // Scan the full grid to match face keys against fluid cell centers.
+        // X-face keys match on (cy, cz), Y-face keys on (cx, cz).
+        for (const auto& fb : fluidOverlay.boundaries) {
+            for (const auto& keyStr : fb.face_keys) {
+                FaceKeyInfo fk = parse_face_key(keyStr, si_scale);
+
+                if (fk.axis == 'X') {
+                    // X-face: match on face X-coordinate + (cy, cz) tangents.
+                    // Must check face_coord against fk.coord_value, same as the
+                    // thermal boundary resolution does — otherwise ALL cells along
+                    // the channel with matching (cy, cz) are wrongly marked.
+                    for (int ix = 0; ix < model.mesh.nx; ++ix) {
+                        double fx_w = model.mesh.cx[ix] - model.mesh.dx[ix] * 0.5;
+                        double fx_e = model.mesh.cx[ix] + model.mesh.dx[ix] * 0.5;
+                        if (std::abs(fx_w - fk.coord_value) >= 1e-8 && std::abs(fx_e - fk.coord_value) >= 1e-8)
+                            continue;
+                        for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                            for (int iz = 0; iz < model.mesh.nz; ++iz) {
+                                int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                                if (c_idx < 0 || c_idx >= N || !model.is_fluid[c_idx])
+                                    continue;
+
+                                double cy = model.mesh.cy[iy];
+                                double cz = model.mesh.cz[iz];
+                                if (point_in_face_rects(fk, cy, cz)) {
+                                    int f_idx = model.global_to_fluid[c_idx]; // compact index
+                                    model.is_pressure_boundary[f_idx] = 1;
+                                    model.boundary_pressure[f_idx] = fb.pressure_bc.pressure;
+                                    if (!std::isnan(fb.inlet_temperature)) {
+                                        model.boundary_temperature_fluid[f_idx] = fb.inlet_temperature;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (fk.axis == 'Y') {
+                    // Y-face: match on face Y-coordinate + (cx, cz) tangents.
+                    for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                        double fy_s = model.mesh.cy[iy] - model.mesh.dy[iy] * 0.5;
+                        double fy_n = model.mesh.cy[iy] + model.mesh.dy[iy] * 0.5;
+                        if (std::abs(fy_s - fk.coord_value) >= 1e-8 && std::abs(fy_n - fk.coord_value) >= 1e-8)
+                            continue;
+                        for (int ix = 0; ix < model.mesh.nx; ++ix) {
+                            for (int iz = 0; iz < model.mesh.nz; ++iz) {
+                                int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                                if (c_idx < 0 || c_idx >= N || !model.is_fluid[c_idx])
+                                    continue;
+
+                                double cx = model.mesh.cx[ix];
+                                double cz = model.mesh.cz[iz];
+                                if (point_in_face_rects(fk, cx, cz)) {
+                                    int f_idx = model.global_to_fluid[c_idx]; // compact index
+                                    model.is_pressure_boundary[f_idx] = 1;
+                                    model.boundary_pressure[f_idx] = fb.pressure_bc.pressure;
+                                    if (!std::isnan(fb.inlet_temperature)) {
+                                        model.boundary_temperature_fluid[f_idx] = fb.inlet_temperature;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Step 4: Derive hydraulic diameter from boundary cell geometry ---
+        // D_h is a channel property, not a material property. Compute it from
+        // the bounding box of pressure-boundary cells (inlet/outlet cross-section).
+        // Handles single-cell-thick channels (z_min == z_max) by using dz.
+        {
+            double y_min = std::numeric_limits<double>::max();
+            double y_max = -std::numeric_limits<double>::max();
+            double z_min = std::numeric_limits<double>::max();
+            double z_max = -std::numeric_limits<double>::max();
+            int iy_min = 0, iy_max = 0, iz_sample = 0;
+            bool has_bc = false;
+
+            int totalGrid = model.mesh.nx * model.mesh.ny * model.mesh.nz;
+            for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
+                int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                int f_bc = model.global_to_fluid[c_idx];
+                if (c_idx < 0 || c_idx >= N || f_bc < 0 || !model.is_pressure_boundary[f_bc])
+                    continue;
+
+                int iy = (old_idx % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
+                int iz = old_idx % model.mesh.nz;
+                double cy = model.mesh.cy[iy];
+                double cz = model.mesh.cz[iz];
+                if (cy < y_min) {
+                    y_min = cy;
+                    iy_min = iy;
+                }
+                if (cy > y_max) {
+                    y_max = cy;
+                    iy_max = iy;
+                }
+                if (cz < z_min) {
+                    z_min = cz;
+                    iz_sample = iz;
+                }
+                if (cz > z_max) {
+                    z_max = cz;
+                }
+                has_bc = true;
+            }
+
+            if (has_bc) {
+                double width = y_max - y_min + (model.mesh.dy[iy_min] + model.mesh.dy[iy_max]) * 0.5;
+                double height = (z_max > z_min) ? z_max - z_min + model.mesh.dz[iz_sample] // multiple cells
+                                                : model.mesh.dz[iz_sample]; // single-cell thickness
+                double d_h = 2.0 * width * height / (width + height);
+
+                for (int f = 0; f < model.n_fluid; ++f) {
+                    model.hydraulic_diameter[f] = d_h;
+                    model.channel_width[f] = width;
+                    model.channel_height[f] = height;
+                }
+            }
+        }
     }
 
 } // namespace mhs::sim

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -156,6 +157,28 @@ namespace mhs::core {
         std::string name;
         std::vector<double> times;
         std::vector<double> values;
+    };
+
+    // 流体-固体耦合: 流体 overlay 类型 (从额外 XML 解析, 不侵入主 IOStructure)
+    struct FluidMaterialOverlay {
+        std::string name;           // 与 IOStructure::materials 中已有材料同名
+        std::string dynamic_viscosity; // 动力粘度 μ [Pa·s], 表达式字符串
+    };
+
+    struct PressureBoundaryOverlay {
+        double pressure = 0.0;      // 压力值 [Pa]
+    };
+
+    struct FluidBoundaryOverlay {
+        std::string name;
+        std::vector<std::string> face_keys; // 同格式: X|E|8|...
+        PressureBoundaryOverlay pressure_bc;
+        double inlet_temperature = std::numeric_limits<double>::quiet_NaN(); // [K], NaN=未指定
+    };
+
+    struct FluidOverlay {
+        std::vector<FluidMaterialOverlay> fluid_materials;
+        std::vector<FluidBoundaryOverlay> boundaries;
     };
 
     struct IOStructure {

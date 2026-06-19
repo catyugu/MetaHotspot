@@ -1,3 +1,4 @@
+#include "config.h"
 #include "data/io_model.hpp"
 #include "io/io.hpp"
 #include <filesystem>
@@ -286,4 +287,73 @@ TEST(IoTest, ReadXmlDaoreXishuEmptySegmentPanics)
     auto path = write_tmp_xml("io_daore_empty.xml", make_xml_with_daore_xishu("1,,3"));
     EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
     std::filesystem::remove(path);
+}
+
+// Helper: write overlay XML to a temp file and return its path.
+static std::filesystem::path write_tmp_overlay(const std::string& content)
+{
+    auto path = std::filesystem::temp_directory_path() / "fluid_overlay_test.xml";
+    std::ofstream ofs(path);
+    ofs << content;
+    return path;
+}
+
+TEST(IoTest, ReadFluidOverlayParsesMaterialsAndBoundaries)
+{
+    std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
+    <FluidMaterial name="water">
+        <DynamicViscosity>0.00089</DynamicViscosity>
+    </FluidMaterial>
+    <Boundary>
+        <BoundaryCategory>Fluidic</BoundaryCategory>
+        <Name>inlet</Name>
+        <FaceKeys>
+            <string>X|E|0|0.5|1.5|0.3|0.5</string>
+        </FaceKeys>
+        <PressureBoundary>
+            <Pressure>500</Pressure>
+        </PressureBoundary>
+    </Boundary>
+    <Boundary>
+        <BoundaryCategory>Fluidic</BoundaryCategory>
+        <Name>outlet</Name>
+        <FaceKeys>
+            <string>X|E|8|0.5|1.5|0.3|0.5</string>
+        </FaceKeys>
+        <PressureBoundary>
+            <Pressure>0</Pressure>
+        </PressureBoundary>
+    </Boundary>
+</FluidOverlay>)";
+
+    auto path = write_tmp_overlay(xml);
+    auto overlay = mhs::io::read_fluid_overlay_xml(path.string());
+    std::filesystem::remove(path);
+
+    ASSERT_TRUE(overlay.has_value());
+    EXPECT_EQ(overlay->fluid_materials.size(), 1u);
+    EXPECT_EQ(overlay->fluid_materials[0].name, "water");
+    EXPECT_EQ(overlay->fluid_materials[0].dynamic_viscosity, "0.00089");
+    EXPECT_EQ(overlay->boundaries.size(), 2u);
+    EXPECT_EQ(overlay->boundaries[0].name, "inlet");
+    EXPECT_DOUBLE_EQ(overlay->boundaries[0].pressure_bc.pressure, 500.0);
+    EXPECT_EQ(overlay->boundaries[1].name, "outlet");
+    EXPECT_DOUBLE_EQ(overlay->boundaries[1].pressure_bc.pressure, 0.0);
+}
+
+TEST(IoTest, ReadFluidOverlayMissingElementReturnsNullopt)
+{
+    std::string xml = "<?xml version=\"1.0\"?><Root/>";
+    auto path = write_tmp_overlay(xml);
+    auto overlay = mhs::io::read_fluid_overlay_xml(path.string());
+    std::filesystem::remove(path);
+
+    EXPECT_FALSE(overlay.has_value());
+}
+
+TEST(IoTest, ReadFluidOverlayNonexistentFileReturnsNullopt)
+{
+    auto overlay = mhs::io::read_fluid_overlay_xml("nonexistent_overlay.xml");
+    EXPECT_FALSE(overlay.has_value());
 }
