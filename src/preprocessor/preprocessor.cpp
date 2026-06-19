@@ -89,6 +89,7 @@ namespace mhs::sim {
         }
 
         model->material_table.resize(material_names.size());
+        model->material_names = material_names; // for DRY cross-reference in applyFluidOverlay
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
             model->material_table[m].kx = mhs::core::parse(substitute_function_args(mat.kx, "T", fns));
@@ -168,39 +169,10 @@ namespace mhs::sim {
         const double si_scale = length_unit_to_si(ioStructure.length_unit);
         const int N = static_cast<int>(model.cells.cell_bcs.size());
 
-        // --- Step 1: Build fluid material name → index mapping ---
-        std::unordered_map<std::string, uint16_t> fluid_mat_name_to_idx;
-        for (const auto& fm : fluidOverlay.fluid_materials) {
-            fluid_mat_name_to_idx[fm.name] = 0; // placeholder, filled below
-        }
-
-        // Match fluid material names to material_table indices
-        // model.material_table indices correspond to material_names populated in load()
-        for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
-            // We need the original name from IOStructure
-            for (const auto& fm : fluidOverlay.fluid_materials) {
-                // Find the matching material in ioStructure
-                auto it = ioStructure.materials.find(fm.name);
-                if (it != ioStructure.materials.end()) {
-                    // Check if this material name is in our material_table
-                    // We reconstruct the name mapping from the load() logic
-                    // Since material_table is ordered by first-seen materials from layers,
-                    // we need to cross-reference differently.
-                }
-            }
-        }
-
-        // Simpler approach: rebuild the material name → table index mapping
+        // --- Step 1: Build fluid material name → table index mapping ---
         std::unordered_map<std::string, uint16_t> matNameToTableIdx;
-        // Reconstruct from the same logic as load(): iterate layers then blocks
-        std::vector<std::string> materialNames;
-        for (const auto& layer : ioStructure.layers) {
-            for (const auto& block : layer.blocks) {
-                if (matNameToTableIdx.find(block.material_name) == matNameToTableIdx.end()) {
-                    matNameToTableIdx[block.material_name] = static_cast<uint16_t>(materialNames.size());
-                    materialNames.push_back(block.material_name);
-                }
-            }
+        for (uint16_t i = 0; i < static_cast<uint16_t>(model.material_names.size()); ++i) {
+            matNameToTableIdx[model.material_names[i]] = i;
         }
 
         // Mark is_fluid and fill fluid_material_id
@@ -215,7 +187,7 @@ namespace mhs::sim {
         }
 
         for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
-            const auto& matName = materialNames[matIdx];
+            const auto& matName = model.material_names[matIdx];
             auto visIt = fluidViscosityMap.find(matName);
             if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
                 model.material_table[matIdx].is_fluid = true;

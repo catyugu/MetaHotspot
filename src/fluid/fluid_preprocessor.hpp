@@ -27,7 +27,7 @@ namespace mhs::sim {
         void solvePressure(mhs::core::InternalModel& model);
         void precomputeFlowAxes(mhs::core::InternalModel& model);
 
-        /// Harmonic mean of two conductances
+        /// Harmonic mean of two conductances.
         static double harmonicConductance(double a, double b)
         {
             if (a < 1e-30 || b < 1e-30)
