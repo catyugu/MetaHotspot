@@ -97,13 +97,8 @@ namespace mhs::sim {
             model->material_table[m].c = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", fns));
         }
 
-        auto layer_result = resolve_layers(resolved_layers, mesh, name_to_idx);
-        model->cells = std::move(layer_result.cells);
-        // 解引用 layer_id_old：仅在本次预处理中用于查找 block → heat_source，
-        // 函数返回时已无其他用途，离开作用域自动释放。
-        const std::vector<size_t>& layer_id_old = layer_result.layer_id_old;
-
-        // --- 热源字典构建 ---
+        // --- 热源字典构建（必须在 resolve_layers 之前完成，因 resolve_layers
+        //     在层归属遍历中同步消费 block_hs_map 来填 heat_source_idx） ---
         model->heat_source_table.clear();
         model->heat_source_table.push_back(mhs::core::CompiledExpression::make_constant(0.0)); // 索引 0 留空为默认 0.0
 
@@ -118,29 +113,11 @@ namespace mhs::sim {
             }
         }
 
-        auto& cells = model->cells;
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.valid_mask[old_idx] == 1) {
-                        int c_idx = (int)cells.index_map[old_idx];
-                        int layer_idx = (int)layer_id_old[old_idx];
-                        double cx = mesh.cx[ix];
-                        double cy = mesh.cy[iy];
-                        double cz = mesh.cz[iz];
-                        int block_idx = find_block_for_cell(resolved_layers[layer_idx], cx, cy, cz);
+        // 一次遍历完成 valid_mask + index_map + material_id + heat_source_idx（compact）。
+        // 不再有第二次全网格遍历去填 heat_source_idx——layer/block 归属判定时一并写入。
+        model->cells = resolve_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
 
-                        if (block_idx >= 0) {
-                            cells.heat_source_idx[c_idx] = block_hs_map[layer_idx][block_idx];
-                        }
-                        else {
-                            cells.heat_source_idx[c_idx] = 0;
-                        }
-                    }
-                }
-            }
-        }
+        auto& cells = model->cells;
 
         auto& bc_params = model->bc_params;
         auto bc_rewriter = [&fns](const std::string& s) { return substitute_function_args(s, "T", fns); };

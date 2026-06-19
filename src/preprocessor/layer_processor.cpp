@@ -144,18 +144,22 @@ namespace mhs::sim {
         return -1;
     }
 
-    LayerResolveResult resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx)
+    mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
+        const std::vector<std::vector<uint16_t>>& block_hs_map)
     {
-        int num_layers = (int)resolved_layers.size();
-        int total = mesh.nx * mesh.ny * mesh.nz;
+        const int num_layers = (int)resolved_layers.size();
+        const int total = mesh.nx * mesh.ny * mesh.nz;
 
-        LayerResolveResult result;
-        result.cells.valid_mask.resize(total, 0);
-        result.cells.index_map.resize(total, SIZE_MAX);
-        result.layer_id_old.resize(total, SIZE_MAX);
+        mhs::core::CellFields cells;
+        cells.valid_mask.resize(total, 0);
+        cells.index_map.resize(total, mhs::core::invalidIndex);
+
         // 临时 old_idx 索引的 material 数组：phase 1 写入，phase 2 压缩到 compact 后丢弃
-        std::vector<size_t> material_id_temp(total, SIZE_MAX);
+        // Use uint16_t — material_table 实际 < 65536 entries; no full-grid uint32_t needed.
+        std::vector<uint16_t> material_id_temp(total, 0);
+        // Same reasoning for heat_source_idx — deduplicated table is also tiny.
+        std::vector<uint16_t> heat_source_idx_temp(total, 0);
 
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
@@ -181,30 +185,29 @@ namespace mhs::sim {
                     }
 
                     if (layer_idx >= 0 && block_idx >= 0) {
-                        result.cells.valid_mask[old_idx] = 1;
-                        result.layer_id_old[old_idx] = layer_idx;
+                        cells.valid_mask[old_idx] = 1;
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
-                        material_id_temp[old_idx] = name_to_idx.at(block.material_name);
+                        material_id_temp[old_idx] = static_cast<uint16_t>(name_to_idx.at(block.material_name));
+                        heat_source_idx_temp[old_idx] = block_hs_map[layer_idx][block_idx];
                     }
                 }
             }
         }
 
-        // Build compact layout: index_map (old → compact) and material_id (compact).
-        // cell_bcs / heat_source_idx 也 resize 到 compact 计数，使 cell_bcs.size()
-        // 成为活动 cell 计数的唯一来源。
+        // Build compact layout: index_map (old → compact) and material_id / heat_source_idx
+        // (both compact, parallel to cell_bcs). cell_bcs.size() is the canonical active-cell count.
         int compact_idx = 0;
         for (int i = 0; i < total; i++) {
-            if (result.cells.valid_mask[i] == 1) {
-                result.cells.index_map[i] = compact_idx;
-                result.cells.material_id.push_back(static_cast<uint16_t>(material_id_temp[i]));
+            if (cells.valid_mask[i] == 1) {
+                cells.index_map[i] = compact_idx;
+                cells.material_id.push_back(material_id_temp[i]);
+                cells.heat_source_idx.push_back(heat_source_idx_temp[i]);
                 compact_idx++;
             }
         }
-        result.cells.cell_bcs.resize(compact_idx);
-        result.cells.heat_source_idx.resize(compact_idx, 0);
+        cells.cell_bcs.resize(compact_idx);
 
-        return result;
+        return cells;
     }
 
 } // namespace mhs::sim

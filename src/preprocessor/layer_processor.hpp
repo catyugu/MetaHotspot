@@ -45,16 +45,16 @@ namespace mhs::sim {
     // Returns block index or -1 if cell is virtual
     int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
 
-    // Resolve cell validity and material assignment.
-    // Returns CellFields (with valid_mask, index_map, material_id) and a temporary
-    // layer_id vector (old_idx indexed) used by the preprocessor for heat-source
-    // resolution. The layer_id vector is freed by the caller when no longer needed.
-    struct LayerResolveResult {
-        mhs::core::CellFields cells;
-        std::vector<size_t> layer_id_old; // SIZE_MAX for invalid; kept local to caller
-    };
-
-    LayerResolveResult resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx);
+    // Resolve cell validity, material, and heat-source assignment in a single
+    // grid traversal. Returns CellFields (valid_mask + index_map full-grid;
+    // material_id + heat_source_idx + cell_bcs compact by cell_bcs.size()).
+    //
+    // `block_hs_map[l][b]` = heat_source_table index for layer l / block b.
+    // Passing it in lets resolve_layers skip the second full-grid pass that the
+    // preprocessor used to do for heat-source assignment — the same `find_block_for_cell`
+    // call already tells us which block (and therefore which heat source) a cell uses.
+    mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
+        const std::vector<std::vector<uint16_t>>& block_hs_map);
 
 } // namespace mhs::sim

@@ -129,13 +129,7 @@ namespace mhs::sim {
 
         // 2. Dirichlet 面早返回（探针位于 cell 网格边界面上、且该面对应 FirstType）
         for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
-            bool on_face = (d == static_cast<size_t>(mhs::core::FaceDir::XM) && ix == 0)
-                || (d == static_cast<size_t>(mhs::core::FaceDir::XP) && ix == mesh.nx - 1)
-                || (d == static_cast<size_t>(mhs::core::FaceDir::YM) && iy == 0)
-                || (d == static_cast<size_t>(mhs::core::FaceDir::YP) && iy == mesh.ny - 1)
-                || (d == static_cast<size_t>(mhs::core::FaceDir::ZM) && iz == 0)
-                || (d == static_cast<size_t>(mhs::core::FaceDir::ZP) && iz == mesh.nz - 1);
-            if (!on_face)
+            if (!mhs::utils::is_grid_boundary_face(mhs::core::FACE_DIRS[d], ix, iy, iz, mesh))
                 continue;
             const auto& cell_bc = cells.cell_bcs[compact_idx];
             if (cell_bc.types[d] == mhs::core::BcType::FirstType) {

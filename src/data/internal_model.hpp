@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -7,6 +9,8 @@
 #include "types.hpp"
 
 namespace mhs::core {
+
+    inline constexpr uint32_t invalidIndex = std::numeric_limits<uint32_t>::max();
 
     struct CellBC {
         std::array<BcType, FACE_COUNT> types;
@@ -34,11 +38,11 @@ namespace mhs::core {
     };
 
     struct CellFields {
-        std::vector<size_t> index_map;
-        std::vector<uint8_t> valid_mask;
-        std::vector<uint16_t> material_id;
-        std::vector<uint16_t> heat_source_idx;
+        std::vector<uint16_t> material_id; // index into material_table
+        std::vector<uint16_t> heat_source_idx; // index into heat_source_table
         std::vector<CellBC> cell_bcs;
+        std::vector<uint32_t> index_map; // old grid index → compact; invalidIndex = virtual
+        std::vector<uint8_t> valid_mask; // 1 = active, 0 = virtual
     };
 
     struct BCParamTable {

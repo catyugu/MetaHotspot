@@ -7,7 +7,7 @@
 namespace mhs::sim {
 
     namespace {
-        // 核心抽象：判断一个面的外侧是否“暴露”（即邻居是域外或者虚拟单元）
+        // 核心抽象：判断一个面的外侧是否”暴露”（即邻居是域外或者虚拟单元）
         bool is_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
             const mhs::core::CellFields& cells)
         {
@@ -23,6 +23,14 @@ namespace mhs::sim {
             // 2. 如果内部对应邻居是空洞（虚拟单元），说明面暴露在了内部孔隙中
             int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
             return cells.valid_mask[neighbor] == 0;
+        }
+
+        // Lightweight “axis letter” lookup matching the face-direction letter used by face keys.
+        // XM/XP → 'X', YM/YP → 'Y', ZM/ZP → 'Z'.
+        inline char face_axis_letter(mhs::core::FaceDir dir)
+        {
+            static constexpr char k[6] = {'X', 'X', 'Y', 'Y', 'Z', 'Z'};
+            return k[static_cast<size_t>(dir)];
         }
 
         // Split a string by a single-character delimiter.
@@ -185,31 +193,14 @@ namespace mhs::sim {
                     int c_idx = (int)cells.index_map[old_idx];
 
                     for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                        // 计算面属性（轴、坐标、矩形投影点）
-                        char face_axis;
-                        double face_coord, a_val, b_val;
-
-                        if (dir == mhs::core::FaceDir::XM || dir == mhs::core::FaceDir::XP) {
-                            face_axis = 'X';
-                            face_coord = (dir == mhs::core::FaceDir::XM) ? mesh.cx[ix] - mesh.dx[ix] * 0.5
-                                                                         : mesh.cx[ix] + mesh.dx[ix] * 0.5;
-                            a_val = mesh.cy[iy];
-                            b_val = mesh.cz[iz];
-                        }
-                        else if (dir == mhs::core::FaceDir::YM || dir == mhs::core::FaceDir::YP) {
-                            face_axis = 'Y';
-                            face_coord = (dir == mhs::core::FaceDir::YM) ? mesh.cy[iy] - mesh.dy[iy] * 0.5
-                                                                         : mesh.cy[iy] + mesh.dy[iy] * 0.5;
-                            a_val = mesh.cx[ix];
-                            b_val = mesh.cz[iz];
-                        }
-                        else { // ZM, ZP
-                            face_axis = 'Z';
-                            face_coord = (dir == mhs::core::FaceDir::ZM) ? mesh.cz[iz] - mesh.dz[iz] * 0.5
-                                                                         : mesh.cz[iz] + mesh.dz[iz] * 0.5;
-                            a_val = mesh.cx[ix];
-                            b_val = mesh.cy[iy];
-                        }
+                        // Compute face attributes via mhs::utils lookup tables — no per-axis switch.
+                        const char face_axis = face_axis_letter(dir);
+                        const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
+                        const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
+                        const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
+                        const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
+                        const double a_val = centers[ta];
+                        const double b_val = centers[tb];
 
                         if (!is_face_exposed(dir, ix, iy, iz, mesh, cells))
                             continue;
