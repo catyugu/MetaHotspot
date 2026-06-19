@@ -639,6 +639,11 @@ namespace mhs::io {
                 }
             }
 
+            // InletTemperature (optional)
+            if (const XMLElement* tin = bound_elem->FirstChildElement("InletTemperature")) {
+                fb.inlet_temperature = parse_double(get_text(tin));
+            }
+
             if (!fb.name.empty()) {
                 overlay.boundaries.push_back(std::move(fb));
             }

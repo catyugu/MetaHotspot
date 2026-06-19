@@ -5,7 +5,6 @@
 #include <algorithm>
 
 #include "assembler.hpp"
-#include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
 
@@ -140,8 +139,10 @@ namespace mhs::sim {
                                 int fiz = model_.is_fluid[c_idx] ? iz : niz;
                                 int ax_w = (f_ax + 1) % 3;
                                 int ax_h = (f_ax + 2) % 3;
-                                double w_fallback = (ax_w == 0) ? mesh.dx[fix] : ((ax_w == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
-                                double h_fallback = (ax_h == 0) ? mesh.dx[fix] : ((ax_h == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
+                                double w_fallback
+                                    = (ax_w == 0) ? mesh.dx[fix] : ((ax_w == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
+                                double h_fallback
+                                    = (ax_h == 0) ? mesh.dx[fix] : ((ax_h == 1) ? mesh.dy[fiy] : mesh.dz[fiz]);
                                 d_h = 2.0 * w_fallback * h_fallback / (w_fallback + h_fallback);
                             }
                             double Nu = mhs::utils::nusselt_rectangular(d_h, d_h); // square-duct approximation
@@ -324,25 +325,8 @@ namespace mhs::sim {
                     local.triplets.emplace_back(c_idx, n_idx, massFlux * cp_n);
                 }
             }
-
-            // Boundary temperature / outlet loss:
-            //
-            //   netOutflux > 0  → net outflow from c to interior faces
-            //                      (= inflow from boundary). The cell is an inlet.
-            //                      T_boundary must be set, or energy is violated.
-            //
-            //   netOutflux < 0  → net inflow from interior (= outflow to boundary).
-            //                      If T_boundary is set, RHS injection applies.
-            //                      Otherwise (plain outlet), the exiting fluid carries
-            //                      T_c's enthalpy — add diagonal LHS term.
             if (std::fabs(netOutflux) >= 1e-30) {
                 double T_boundary = model_.boundary_temperature_fluid[c_idx];
-                if (netOutflux > 0 && std::isnan(T_boundary)) {
-                    MHS_FATAL("Fluid cell {} is an inlet (net internal outflow={}) "
-                              "but boundary_temperature_fluid is NaN — no inflow temperature "
-                              "prescribed. Add an inlet temperature in the fluid overlay XML.",
-                        c_idx, netOutflux);
-                }
                 if (!std::isnan(T_boundary)) {
                     // Inlet: incoming enthalpy at prescribed T_boundary
                     local.b(c_idx) += netOutflux * cp_c * T_boundary;

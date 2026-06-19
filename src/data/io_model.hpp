@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -172,6 +173,7 @@ namespace mhs::core {
         std::string name;
         std::vector<std::string> face_keys; // 同格式: X|E|8|...
         PressureBoundaryOverlay pressure_bc;
+        double inlet_temperature = std::numeric_limits<double>::quiet_NaN(); // [K], NaN=未指定
     };
 
     struct FluidOverlay {

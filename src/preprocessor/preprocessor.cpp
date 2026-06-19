@@ -239,8 +239,15 @@ namespace mhs::sim {
                 FaceKeyInfo fk = parse_face_key(keyStr, si_scale);
 
                 if (fk.axis == 'X') {
-                    // X-face: match on (cy, cz) → tangents are Y, Z
+                    // X-face: match on face X-coordinate + (cy, cz) tangents.
+                    // Must check face_coord against fk.coord_value, same as the
+                    // thermal boundary resolution does — otherwise ALL cells along
+                    // the channel with matching (cy, cz) are wrongly marked.
                     for (int ix = 0; ix < model.mesh.nx; ++ix) {
+                        double fx_w = model.mesh.cx[ix] - model.mesh.dx[ix] * 0.5;
+                        double fx_e = model.mesh.cx[ix] + model.mesh.dx[ix] * 0.5;
+                        if (std::abs(fx_w - fk.coord_value) >= 1e-8 && std::abs(fx_e - fk.coord_value) >= 1e-8)
+                            continue;
                         for (int iy = 0; iy < model.mesh.ny; ++iy) {
                             for (int iz = 0; iz < model.mesh.nz; ++iz) {
                                 int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
@@ -253,15 +260,22 @@ namespace mhs::sim {
                                 if (point_in_face_rects(fk, cy, cz)) {
                                     model.is_pressure_boundary[c_idx] = 1;
                                     model.boundary_pressure[c_idx] = fb.pressure_bc.pressure;
+                                    if (!std::isnan(fb.inlet_temperature)) {
+                                        model.boundary_temperature_fluid[c_idx] = fb.inlet_temperature;
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 else if (fk.axis == 'Y') {
-                    // Y-face: match on (cx, cz)
-                    for (int ix = 0; ix < model.mesh.nx; ++ix) {
-                        for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                    // Y-face: match on face Y-coordinate + (cx, cz) tangents.
+                    for (int iy = 0; iy < model.mesh.ny; ++iy) {
+                        double fy_s = model.mesh.cy[iy] - model.mesh.dy[iy] * 0.5;
+                        double fy_n = model.mesh.cy[iy] + model.mesh.dy[iy] * 0.5;
+                        if (std::abs(fy_s - fk.coord_value) >= 1e-8 && std::abs(fy_n - fk.coord_value) >= 1e-8)
+                            continue;
+                        for (int ix = 0; ix < model.mesh.nx; ++ix) {
                             for (int iz = 0; iz < model.mesh.nz; ++iz) {
                                 int old_idx = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
                                 int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
@@ -273,6 +287,9 @@ namespace mhs::sim {
                                 if (point_in_face_rects(fk, cx, cz)) {
                                     model.is_pressure_boundary[c_idx] = 1;
                                     model.boundary_pressure[c_idx] = fb.pressure_bc.pressure;
+                                    if (!std::isnan(fb.inlet_temperature)) {
+                                        model.boundary_temperature_fluid[c_idx] = fb.inlet_temperature;
+                                    }
                                 }
                             }
                         }

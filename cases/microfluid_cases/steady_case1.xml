@@ -33,19 +33,6 @@
                 <a:EnvironmentTemperature>320</a:EnvironmentTemperature>
             </ThermalBoundary>
         </Boundary>
-        <Boundary>
-            <BoundaryCategory>Electrical</BoundaryCategory>
-            <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
-            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-                <a:string>X|E|8|2.5|3.5|0.2|0.4</a:string>
-                <a:string>X|E|8|0.5|1.5|0.2|0.4</a:string>
-            </FaceKeys>
-            <Name>边界 3</Name>
-            <ThermalBoundary i:type="a:FirstTypeThermalBoundary"
-                xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
-                <a:Temperature>298.15</a:Temperature>
-            </ThermalBoundary>
-        </Boundary>
     </Boundaries>
     <DieLayerNum>0</DieLayerNum>
     <DieLayerSizeX>0</DieLayerSizeX>

@@ -13,6 +13,7 @@
         <PressureBoundary>
             <Pressure>500</Pressure>
         </PressureBoundary>
+        <InletTemperature>300</InletTemperature>
     </Boundary>
 
     <Boundary>
