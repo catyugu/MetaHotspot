@@ -1,8 +1,8 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
-#include <algorithm>
 #include <Eigen/Sparse>
+#include <algorithm>
 
 #include "assembler.hpp"
 #include "common/logger.hpp"
@@ -310,7 +310,8 @@ namespace mhs::sim {
                     // Outflow: c loses enthalpy at its own temperature
                     // K[c,c] += massFlux * cp_c  (cp_c hoisted above)
                     local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
-                } else {
+                }
+                else {
                     // Inflow: c gains enthalpy at neighbor's temperature
                     // K[c,n] += massFlux * cp_n  (massFlux < 0 → −|massFlux| at column n)
                     double cp_n = materials[cells.material_id[n_idx]].c.eval(ctx_n);
@@ -334,12 +335,13 @@ namespace mhs::sim {
                     MHS_FATAL("Fluid cell {} is an inlet (net internal outflow={}) "
                               "but boundary_temperature_fluid is NaN — no inflow temperature "
                               "prescribed. Add an inlet temperature in the fluid overlay XML.",
-                              c_idx, netOutflux);
+                        c_idx, netOutflux);
                 }
                 if (!std::isnan(T_boundary)) {
                     // Inlet: incoming enthalpy at prescribed T_boundary
                     local.b(c_idx) += netOutflux * cp_c * T_boundary;
-                } else if (netOutflux < 0) {
+                }
+                else if (netOutflux < 0) {
                     // Outlet: advective loss on diagonal — fluid exits at T_c
                     local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                 }

@@ -89,7 +89,6 @@ namespace mhs::sim {
         }
 
         model->material_table.resize(material_names.size());
-        model->material_names = material_names; // for DRY cross-reference in applyFluidOverlay
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
             model->material_table[m].kx = mhs::core::parse(substitute_function_args(mat.kx, "T", fns));
@@ -169,10 +168,20 @@ namespace mhs::sim {
         const double si_scale = length_unit_to_si(ioStructure.length_unit);
         const int N = static_cast<int>(model.cells.cell_bcs.size());
 
-        // --- Step 1: Build fluid material name → table index mapping ---
+        // --- Step 1: Build material name → table index mapping ---
+        // Reconstruct from the same first-seen order as load().
         std::unordered_map<std::string, uint16_t> matNameToTableIdx;
-        for (uint16_t i = 0; i < static_cast<uint16_t>(model.material_names.size()); ++i) {
-            matNameToTableIdx[model.material_names[i]] = i;
+        for (const auto& layer : ioStructure.layers) {
+            for (const auto& block : layer.blocks) {
+                if (matNameToTableIdx.find(block.material_name) == matNameToTableIdx.end()) {
+                    matNameToTableIdx[block.material_name] = static_cast<uint16_t>(matNameToTableIdx.size());
+                }
+            }
+        }
+        // Reverse map: table index → name (matching load()'s material_names order)
+        std::vector<std::string> matNamesByTableIdx(matNameToTableIdx.size());
+        for (const auto& [name, idx] : matNameToTableIdx) {
+            matNamesByTableIdx[idx] = name;
         }
 
         // Mark is_fluid and fill fluid_material_id
@@ -187,7 +196,7 @@ namespace mhs::sim {
         }
 
         for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
-            const auto& matName = model.material_names[matIdx];
+            const auto& matName = matNamesByTableIdx[matIdx];
             auto visIt = fluidViscosityMap.find(matName);
             if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
                 model.material_table[matIdx].is_fluid = true;

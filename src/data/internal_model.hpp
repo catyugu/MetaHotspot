@@ -91,7 +91,6 @@ namespace mhs::core {
         BCParamTable bc_params;
 
         std::vector<MaterialProps> material_table;
-        std::vector<std::string> material_names; // ordered same as material_table, populated by Preprocessor::load()
 
         std::vector<CompiledExpression> heat_source_table;
 
