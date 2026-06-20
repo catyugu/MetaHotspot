@@ -98,14 +98,20 @@ namespace mhs::sim {
                     const auto& mp_n = materials[cells.material_id[n_idx]];
                     const mhs::core::FieldContext ctx_n {
                         mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
-                    const double kx_n = mp_n.kx.eval(ctx_n);
-                    const double ky_n = mp_n.ky.eval(ctx_n);
-                    const double kz_n = mp_n.kz.eval(ctx_n);
-
+                    double k_neighbor = 0.0;
+                    switch (mhs::utils::AXIS_OF_DIR[f]) {
+                    case 0:
+                        k_neighbor = mp_n.kx.eval(ctx_n);
+                        break;
+                    case 1:
+                        k_neighbor = mp_n.ky.eval(ctx_n);
+                        break;
+                    case 2:
+                        k_neighbor = mp_n.kz.eval(ctx_n);
+                        break;
+                    }
                     double d_half_neighbor
                         = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
-
-                    double k_neighbor = mhs::utils::k_along(dir, kx_n, ky_n, kz_n);
 
                     double cond = 0.0;
                     bool n_is_fluid = (n_idx >= 0 && n_idx < (int)model_.is_fluid.size()) && model_.is_fluid[n_idx];
@@ -118,7 +124,8 @@ namespace mhs::sim {
                         if (f_ax < 0 || f_ax > 2) {
                             double k_face_val = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                             cond = A_f / (half_dist / k_face_val + d_half_neighbor / k_neighbor);
-                        } else {
+                        }
+                        else {
                             // Reuse already-evaluated k_face/k_neighbor — no need to re-eval.
                             double kf = cell_is_fluid ? k_face : k_neighbor;
                             double d_h = model_.hydraulic_diameter[f_idx];
