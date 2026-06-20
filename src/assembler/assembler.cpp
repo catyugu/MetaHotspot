@@ -209,23 +209,23 @@ namespace mhs::sim {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            // Temperature injection / outlet loss — uses netOutflux accumulated
-            // from the merged advection inside the face loop above.
-            if (cell_is_fluid && std::fabs(netOutflux) >= 1e-30) {
+            // netOutflux > 0  → 流体进入域内 (Inlet)  → 可选用 T_boundary
+            // netOutflux < 0  → 流体流出域外 (Outlet) → 强制内部迎风
+            if (cell_is_fluid && std::fabs(netOutflux) >= 1e-12) {
                 int f_idx = model_.global_to_fluid[c_idx];
-                double T_boundary = model_.boundary_temperature_fluid[f_idx];
-                if (!std::isnan(T_boundary)) {
-                    local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                if (netOutflux > 0) { // 流体进入 (Inlet)
+                    double T_boundary = model_.boundary_temperature_fluid[f_idx];
+                    if (!std::isnan(T_boundary)) {
+                        local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                    }
+                    else if (f_idx < (int)model_.is_pressure_boundary.size() && model_.is_pressure_boundary[f_idx]) {
+                        MHS_LOG_WARN("Fluid enters near cell {}, no InletTemperature — 0K.", c_idx);
+                    }
                 }
-                else if (netOutflux > 0 && f_idx < (int)model_.is_pressure_boundary.size()
-                    && model_.is_pressure_boundary[f_idx]) {
-                    MHS_LOG_WARN("Fluid enters near cell {}, no InletTemperature — 0K.", c_idx);
-                }
-                else if (netOutflux < 0) {
+                else if (netOutflux < 0) { // 流体流出 (Outlet)
                     local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                 }
             }
-            // ── End advection (merged into single face loop) ────────────────
         });
 
         std::vector<Eigen::Triplet<double>> triplets;
