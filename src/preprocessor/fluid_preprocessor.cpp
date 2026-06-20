@@ -238,7 +238,7 @@ namespace mhs::sim {
                 double flux = dp * (2.0 * hc_a * hc_b / (hc_a + hc_b));
                 int ax = mhs::utils::AXIS_OF_DIR[f];
                 if (flux > maxVal) {
-                    maxVal = dp;
+                    maxVal = flux;
                     bestAxis = ax;
                 }
             }
