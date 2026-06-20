@@ -317,61 +317,97 @@ namespace mhs::sim {
                 }
             }
         }
-
-        // --- Step 4: Derive hydraulic diameter from boundary cell geometry ---
-        // D_h is a channel property, not a material property. Compute it from
-        // the bounding box of pressure-boundary cells (inlet/outlet cross-section).
-        // Handles single-cell-thick channels (z_min == z_max) by using dz.
         {
-            double y_min = std::numeric_limits<double>::max();
-            double y_max = -std::numeric_limits<double>::max();
-            double z_min = std::numeric_limits<double>::max();
-            double z_max = -std::numeric_limits<double>::max();
-            int iy_min = 0, iy_max = 0, iz_sample = 0;
-            bool has_bc = false;
-
+            // 建立 compact_idx 到 old_idx 的反向映射，以便将当前流体单元还原至 3D 空间中进行探索
+            std::vector<int> compact_to_old(N, -1);
             int totalGrid = model.mesh.nx * model.mesh.ny * model.mesh.nz;
             for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
                 int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
-                if (c_idx < 0 || c_idx >= N)
-                    continue;
-                int f_bc = model.global_to_fluid[c_idx];
-                if (f_bc < 0 || !model.is_pressure_boundary[f_bc])
-                    continue;
-
-                int iy = (old_idx % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
-                int iz = old_idx % model.mesh.nz;
-                double cy = model.mesh.cy[iy];
-                double cz = model.mesh.cz[iz];
-                if (cy < y_min) {
-                    y_min = cy;
-                    iy_min = iy;
+                if (c_idx >= 0 && c_idx < N) {
+                    compact_to_old[c_idx] = old_idx;
                 }
-                if (cy > y_max) {
-                    y_max = cy;
-                    iy_max = iy;
-                }
-                if (cz < z_min) {
-                    z_min = cz;
-                    iz_sample = iz;
-                }
-                if (cz > z_max) {
-                    z_max = cz;
-                }
-                has_bc = true;
             }
 
-            if (has_bc) {
-                double width = y_max - y_min + (model.mesh.dy[iy_min] + model.mesh.dy[iy_max]) * 0.5;
-                double height = (z_max > z_min) ? z_max - z_min + model.mesh.dz[iz_sample] // multiple cells
-                                                : model.mesh.dz[iz_sample]; // single-cell thickness
-                double d_h = 2.0 * width * height / (width + height);
+            for (int f = 0; f < model.n_fluid; ++f) {
+                int c_idx = model.fluid_to_global[f];
+                int old_idx = compact_to_old[c_idx];
+                int ix = old_idx / (model.mesh.ny * model.mesh.nz);
+                int iy = (old_idx % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
+                int iz = old_idx % model.mesh.nz;
 
-                for (int f = 0; f < model.n_fluid; ++f) {
-                    model.hydraulic_diameter[f] = d_h;
-                    model.channel_width[f] = width;
-                    model.channel_height[f] = height;
+                // 1. 在 X 方向上寻找连通的流体区间
+                int min_ix = ix, max_ix = ix;
+                while (min_ix > 0) {
+                    int n_old = (min_ix - 1) * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    min_ix--;
                 }
+                while (max_ix < model.mesh.nx - 1) {
+                    int n_old = (max_ix + 1) * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    max_ix++;
+                }
+                double len_x = (model.mesh.cx[max_ix] + model.mesh.dx[max_ix] * 0.5)
+                    - (model.mesh.cx[min_ix] - model.mesh.dx[min_ix] * 0.5);
+
+                // 2. 在 Y 方向上寻找连通的流体区间
+                int min_iy = iy, max_iy = iy;
+                while (min_iy > 0) {
+                    int n_old = ix * model.mesh.ny * model.mesh.nz + (min_iy - 1) * model.mesh.nz + iz;
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    min_iy--;
+                }
+                while (max_iy < model.mesh.ny - 1) {
+                    int n_old = ix * model.mesh.ny * model.mesh.nz + (max_iy + 1) * model.mesh.nz + iz;
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    max_iy++;
+                }
+                double len_y = (model.mesh.cy[max_iy] + model.mesh.dy[max_iy] * 0.5)
+                    - (model.mesh.cy[min_iy] - model.mesh.dy[min_iy] * 0.5);
+
+                // 3. 在 Z 方向上寻找连通的流体区间
+                int min_iz = iz, max_iz = iz;
+                while (min_iz > 0) {
+                    int n_old = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + (min_iz - 1);
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    min_iz--;
+                }
+                while (max_iz < model.mesh.nz - 1) {
+                    int n_old = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + (max_iz + 1);
+                    int n_c = static_cast<int>(model.cells.index_map[n_old]);
+                    if (n_c < 0 || n_c >= N || !model.is_fluid[n_c])
+                        break;
+                    max_iz++;
+                }
+                double len_z = (model.mesh.cz[max_iz] + model.mesh.dz[max_iz] * 0.5)
+                    - (model.mesh.cz[min_iz] - model.mesh.dz[min_iz] * 0.5);
+
+                // 4. 对三个维度的连通长度进行排序，取最小的两个维度作为横截面的宽和高
+                double lengths[3] = {len_x, len_y, len_z};
+                std::sort(lengths, lengths + 3);
+                double cross_w = lengths[0];
+                double cross_h = lengths[1];
+
+                // 5. 计算局部水力直径 Dh = 2 * W * H / (W + H)
+                double dh = 0.0;
+                if (cross_w + cross_h > 1e-12) {
+                    dh = 2.0 * cross_w * cross_h / (cross_w + cross_h);
+                }
+
+                // 赋值时，使用流体数组专用的索引 f
+                model.hydraulic_diameter[f] = dh;
+                model.channel_width[f] = cross_w;
+                model.channel_height[f] = cross_h;
             }
         }
     }
