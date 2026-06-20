@@ -108,34 +108,26 @@ namespace mhs::sim {
                     double k_neighbor = mhs::utils::k_along(dir, kx_n, ky_n, kz_n);
 
                     double cond = 0.0;
-                    bool c_is_fluid
-                        = !model_.is_fluid.empty() && c_idx < (int)model_.is_fluid.size() && model_.is_fluid[c_idx];
                     bool n_is_fluid = (n_idx >= 0 && n_idx < (int)model_.is_fluid.size()) && model_.is_fluid[n_idx];
 
                     // Fluid-solid interface: Nusselt-based convection correction
-                    if (c_is_fluid != n_is_fluid) {
-                        bool cf = c_is_fluid;
-                        int f_id = cf ? c_idx : n_idx;
+                    if (cell_is_fluid != n_is_fluid) {
+                        int f_id = cell_is_fluid ? c_idx : n_idx;
                         int f_idx = model_.global_to_fluid[f_id];
                         int f_ax = static_cast<int>(model_.flow_axes[f_idx]);
                         if (f_ax < 0 || f_ax > 2) {
                             double k_face_val = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
                             cond = A_f / (half_dist / k_face_val + d_half_neighbor / k_neighbor);
-                        }
-                        else {
-                            const auto& mp_f = materials[cells.material_id[f_id]];
-                            const mhs::core::FieldContext ctx_f {
-                                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[f_id], state.current_time};
-                            double kf = mhs::utils::k_along(
-                                dir, mp_f.kx.eval(ctx_f), mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
+                        } else {
+                            // Reuse already-evaluated k_face/k_neighbor — no need to re-eval.
+                            double kf = cell_is_fluid ? k_face : k_neighbor;
                             double d_h = model_.hydraulic_diameter[f_idx];
                             double ch_w = model_.channel_width[f_idx];
                             double ch_h = model_.channel_height[f_idx];
                             double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
                             double h_f = Nu * kf / d_h;
-                            // Solid side: if c is fluid, neighbor is solid, and vice versa
-                            double half_dist_solid = cf ? d_half_neighbor : half_dist;
-                            double k_solid = cf ? k_neighbor : k_face;
+                            double half_dist_solid = cell_is_fluid ? d_half_neighbor : half_dist;
+                            double k_solid = cell_is_fluid ? k_neighbor : k_face;
                             double R = half_dist_solid / (k_solid * A_f) + 1.0 / (h_f * A_f);
                             cond = 1.0 / R;
                         }
@@ -149,7 +141,7 @@ namespace mhs::sim {
                     local.triplets.emplace_back(c_idx, n_idx, -cond);
 
                     // Advection: upwind mass flux for fluid-fluid faces
-                    if (c_is_fluid && n_is_fluid) {
+                    if (cell_is_fluid && n_is_fluid) {
                         int f_idx = model_.global_to_fluid[c_idx];
                         int fn_idx = model_.global_to_fluid[n_idx];
                         if (f_idx >= 0 && fn_idx >= 0) {

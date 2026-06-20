@@ -333,8 +333,10 @@ namespace mhs::sim {
             int totalGrid = model.mesh.nx * model.mesh.ny * model.mesh.nz;
             for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
                 int c_idx = static_cast<int>(model.cells.index_map[old_idx]);
+                if (c_idx < 0 || c_idx >= N)
+                    continue;
                 int f_bc = model.global_to_fluid[c_idx];
-                if (c_idx < 0 || c_idx >= N || f_bc < 0 || !model.is_pressure_boundary[f_bc])
+                if (f_bc < 0 || !model.is_pressure_boundary[f_bc])
                     continue;
 
                 int iy = (old_idx % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
