@@ -1,7 +1,7 @@
 #include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
-#include "preprocessor/fluid_preprocessor.hpp"
 #include "linear_solver/linear_solver.hpp"
+#include "preprocessor/fluid_preprocessor.hpp"
 
 #include <Eigen/Sparse>
 
@@ -38,7 +38,8 @@ namespace mhs::sim {
         int totalGrid = mesh.nx * mesh.ny * mesh.nz;
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
             int c = static_cast<int>(cells.index_map[old_idx]);
-            if (c >= 0) compact_to_old[c] = old_idx;
+            if (c >= 0)
+                compact_to_old[c] = old_idx;
         }
 
         for (int fi = 0; fi < model.n_fluid; ++fi) {
@@ -51,19 +52,9 @@ namespace mhs::sim {
             double dy_cell = mesh.dy[iy];
             double dz_cell = mesh.dz[iz];
             double mu = model.dynamic_viscosity[fi];
-            if (mu < 1e-30)
-                mu = 1e-30;
-
             double dh = model.hydraulic_diameter[fi];
-            if (dh < 1e-30) {
-                model.hydroC_x[fi] = 0.0;
-                model.hydroC_y[fi] = 0.0;
-                model.hydroC_z[fi] = 0.0;
-                continue;
-            }
 
             double K_perm = (dh * dh) / 32.0;
-            if (K_perm < 1e-30) K_perm = 1e-30;
 
             double A_xy = dx_cell * dy_cell;
             double A_xz = dx_cell * dz_cell;
@@ -92,7 +83,8 @@ namespace mhs::sim {
         int totalGrid = mesh.nx * mesh.ny * mesh.nz;
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
             int c = static_cast<int>(cells.index_map[old_idx]);
-            if (c >= 0) compact_to_old[c] = old_idx;
+            if (c >= 0)
+                compact_to_old[c] = old_idx;
         }
 
         // Build sparse matrix (CSR via triplets) — iterate compact fluid domain
@@ -143,16 +135,16 @@ namespace mhs::sim {
                 }
 
                 double C_eff = harmonicConductance(hydroC_c, hydroC_n);
-                if (C_eff < 1e-30)
-                    continue;
-
-                if (!model.is_pressure_boundary[fi]) {
+                diagSum += C_eff; // all neighbors contribute to diagonal
+                if (model.is_pressure_boundary[fn]) {
+                    rhs(fi) += C_eff * model.boundary_pressure[fn];
+                }
+                else {
                     triplets.emplace_back(fi, fn, -C_eff);
-                    diagSum += C_eff;
                 }
             }
 
-            // Diagonal (positive after sign-flip for SPD matrix)
+            // Diagonal: SPD positive or Dirichlet BC
             if (model.is_pressure_boundary[fi]) {
                 triplets.emplace_back(fi, fi, 1.0);
                 rhs(fi) = model.boundary_pressure[fi];
@@ -200,7 +192,8 @@ namespace mhs::sim {
         int totalGrid = mesh.nx * mesh.ny * mesh.nz;
         for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
             int c = static_cast<int>(cells.index_map[old_idx]);
-            if (c >= 0) compact_to_old[c] = old_idx;
+            if (c >= 0)
+                compact_to_old[c] = old_idx;
         }
 
         // N_fluid iteration: compute dominant flow axis per fluid cell
@@ -227,8 +220,24 @@ namespace mhs::sim {
                     continue;
 
                 double dp = std::fabs(model.pressure[fi] - model.pressure[fn]);
+                double hc_a = 0.0, hc_b = 0.0;
+                switch (mhs::utils::AXIS_OF_DIR[f]) {
+                case 0:
+                    hc_a = model.hydroC_x[fi];
+                    hc_b = model.hydroC_x[fn];
+                    break;
+                case 1:
+                    hc_a = model.hydroC_y[fi];
+                    hc_b = model.hydroC_y[fn];
+                    break;
+                default:
+                    hc_a = model.hydroC_z[fi];
+                    hc_b = model.hydroC_z[fn];
+                    break;
+                }
+                double flux = dp * (2.0 * hc_a * hc_b / (hc_a + hc_b));
                 int ax = mhs::utils::AXIS_OF_DIR[f];
-                if (dp > maxVal) {
+                if (flux > maxVal) {
                     maxVal = dp;
                     bestAxis = ax;
                 }

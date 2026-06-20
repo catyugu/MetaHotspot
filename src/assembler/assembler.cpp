@@ -117,8 +117,9 @@ namespace mhs::sim {
                             const auto& mp_f = materials[cells.material_id[f_id]];
                             const mhs::core::FieldContext ctx_f {
                                 mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[f_id], state.current_time};
-                            double kf = mhs::utils::k_along(static_cast<mhs::core::FaceDir>(f_ax), mp_f.kx.eval(ctx_f),
-                                mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
+
+                            double kf = mhs::utils::k_along(
+                                dir, mp_f.kx.eval(ctx_f), mp_f.ky.eval(ctx_f), mp_f.kz.eval(ctx_f));
 
                             double d_h = model_.hydraulic_diameter[f_idx];
                             double ch_w = model_.channel_width[f_idx];
@@ -127,11 +128,10 @@ namespace mhs::sim {
                             double h_f = Nu * kf / d_h;
 
                             // Solid-side conduction half-distance
+                            // Structured grid: shared face areas are equal on both sides.
                             double half_dist_solid = (s_id == c_idx) ? half_dist : d_half_neighbor;
                             double k_solid = (s_id == c_idx) ? k_face : k_neighbor;
-                            double A_solid = (s_id == c_idx)
-                                ? A_f
-                                : mhs::utils::face_area(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
+                            double A_solid = A_f;
 
                             // Series thermal resistance: solid conduction + fluid convection
                             double R = half_dist_solid / (k_solid * A_solid) + 1.0 / (h_f * A_solid);
@@ -185,7 +185,8 @@ namespace mhs::sim {
 
                     int n_idx = (int)cells.index_map[neighborOld];
                     int fn_idx = (n_idx >= 0 && n_idx < (int)model_.global_to_fluid.size())
-                        ? model_.global_to_fluid[n_idx] : -1;
+                        ? model_.global_to_fluid[n_idx]
+                        : -1;
                     if (fn_idx < 0)
                         continue;
 
@@ -193,12 +194,20 @@ namespace mhs::sim {
 
                     double hc_a = 0.0, hc_b = 0.0;
                     switch (axis) {
-                    case 0: hc_a = model_.hydroC_x[f_idx]; hc_b = model_.hydroC_x[fn_idx]; break;
-                    case 1: hc_a = model_.hydroC_y[f_idx]; hc_b = model_.hydroC_y[fn_idx]; break;
-                    default: hc_a = model_.hydroC_z[f_idx]; hc_b = model_.hydroC_z[fn_idx]; break;
+                    case 0:
+                        hc_a = model_.hydroC_x[f_idx];
+                        hc_b = model_.hydroC_x[fn_idx];
+                        break;
+                    case 1:
+                        hc_a = model_.hydroC_y[f_idx];
+                        hc_b = model_.hydroC_y[fn_idx];
+                        break;
+                    default:
+                        hc_a = model_.hydroC_z[f_idx];
+                        hc_b = model_.hydroC_z[fn_idx];
+                        break;
                     }
-                    if (hc_a < 1e-30 || hc_b < 1e-30)
-                        continue;
+
                     // hc uses full cell length L → half-cell conductance = 2*hc.
                     // Series: 1/(1/(2*hc_a)+1/(2*hc_b)) = 2*hc_a*hc_b/(hc_a+hc_b).
                     double C_eff = 2.0 * hc_a * hc_b / (hc_a + hc_b);
@@ -210,15 +219,10 @@ namespace mhs::sim {
                         mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
                     double rho_b = materials[cells.material_id[n_idx]].rho.eval(ctx_n);
                     double rho_avg = 0.5 * (rho_a + rho_b);
-                    if (rho_avg < 1e-30)
-                        rho_avg = 1e-30;
 
                     double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];
                     double massFlux = dP * C_eff * rho_avg;
                     netOutflux += massFlux;
-
-                    if (std::fabs(massFlux) < 1e-30)
-                        continue;
 
                     if (massFlux > 0) {
                         local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
@@ -230,7 +234,7 @@ namespace mhs::sim {
                 }
 
                 // Temperature injection / outlet loss
-                if (std::fabs(netOutflux) >= 1e-30) {
+                if (std::fabs(netOutflux) >= 1e-15) {
                     double T_boundary = model_.boundary_temperature_fluid[f_idx];
                     if (!std::isnan(T_boundary)) {
                         local.b(c_idx) += netOutflux * cp_c * T_boundary;
