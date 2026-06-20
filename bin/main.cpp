@@ -2,6 +2,7 @@
 #include "io/io.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "postprocessor/postprocessor.hpp"
+#include "preprocessor/fluid_preprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include <filesystem>
@@ -58,7 +59,7 @@ int main(int argc, char* argv[])
             if (std::filesystem::exists(*fluidOverlayPath, ec)) {
                 fluidOverlay = mhs::io::read_fluid_overlay_xml(*fluidOverlayPath);
                 if (fluidOverlay.has_value()) {
-                    preprocessor.applyFluidOverlay(*model, fluidOverlay, io_structure);
+                    mhs::sim::applyFluidOverlay(*model, fluidOverlay, io_structure);
                     MHS_LOG_INFO("Applied fluid overlay with {} materials, {} boundaries",
                         fluidOverlay->fluid_materials.size(), fluidOverlay->boundaries.size());
                 } else {

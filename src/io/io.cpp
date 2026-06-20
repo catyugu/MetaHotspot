@@ -598,7 +598,7 @@ namespace mhs::io {
 
         // Parse FluidMaterial nodes
         for (const XMLElement* mat_elem = root->FirstChildElement("FluidMaterial"); mat_elem;
-             mat_elem = mat_elem->NextSiblingElement("FluidMaterial")) {
+            mat_elem = mat_elem->NextSiblingElement("FluidMaterial")) {
             mhs::core::FluidMaterialOverlay fm;
             // name is an XML attribute, not a child element
             if (const char* attr = mat_elem->Attribute("name")) {
@@ -614,7 +614,7 @@ namespace mhs::io {
 
         // Parse Boundary nodes (fluidic)
         for (const XMLElement* bound_elem = root->FirstChildElement("Boundary"); bound_elem;
-             bound_elem = bound_elem->NextSiblingElement("Boundary")) {
+            bound_elem = bound_elem->NextSiblingElement("Boundary")) {
             mhs::core::FluidBoundaryOverlay fb;
 
             if (const XMLElement* name = bound_elem->FirstChildElement("Name")) {
@@ -624,7 +624,7 @@ namespace mhs::io {
             // FaceKeys
             if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
                 for (const XMLElement* fk = fkeys->FirstChildElement("string"); fk;
-                     fk = fk->NextSiblingElement("string")) {
+                    fk = fk->NextSiblingElement("string")) {
                     std::string key = get_text(fk);
                     if (!key.empty()) {
                         fb.face_keys.push_back(key);

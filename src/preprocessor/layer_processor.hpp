@@ -33,9 +33,6 @@ namespace mhs::sim {
         double z_end; // SI z coordinate of layer top
     };
 
-    // Convert length unit to SI (meters) scale factor
-    double length_unit_to_si(mhs::core::LengthUnit unit);
-
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
     // This eliminates repeated eval_geometry calls in the cell loops
     std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale);

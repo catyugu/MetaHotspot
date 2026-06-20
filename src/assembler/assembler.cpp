@@ -169,7 +169,7 @@ namespace mhs::sim {
                                 break;
                             }
                             if (hc_a > 1e-30 && hc_b > 1e-30) {
-                                double C_eff = 2.0 * hc_a * hc_b / (hc_a + hc_b);
+                                double C_eff = mhs::utils::harmonicConductance(hc_a, hc_b);
                                 double rho_b = mp_n.rho.eval(ctx_n);
                                 double rho_avg = 0.5 * (rho_a + rho_b);
                                 double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];

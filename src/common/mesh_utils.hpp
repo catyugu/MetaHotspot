@@ -1,12 +1,42 @@
 #pragma once
 
 #include "data/internal_model.hpp"
+#include "data/io_model.hpp"
 #include "data/types.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
 namespace mhs::utils {
+
+    /// Convert length unit to SI (meters) scale factor.
+    inline double length_unit_to_si(mhs::core::LengthUnit unit)
+    {
+        switch (unit) {
+        case mhs::core::LengthUnit::M:
+            return 1.0;
+        case mhs::core::LengthUnit::Mm:
+            return 1e-3;
+        case mhs::core::LengthUnit::Um:
+            return 1e-6;
+        case mhs::core::LengthUnit::Nm:
+            return 1e-9;
+        case mhs::core::LengthUnit::Inch:
+            return 0.0254;
+        case mhs::core::LengthUnit::Mil:
+            return 2.54e-5;
+        default:
+            return 1e-3;
+        }
+    }
+
+    /// Harmonic mean of two conductances.
+    inline double harmonicConductance(double a, double b)
+    {
+        if (a < 1e-30 || b < 1e-30)
+            return 0.0;
+        return (2.0 * a * b) / (a + b);
+    }
 
     // ── Per-direction coordinate tables ─────────────────────────────────
     /// Axis index (0=X, 1=Y, 2=Z) for each face direction.

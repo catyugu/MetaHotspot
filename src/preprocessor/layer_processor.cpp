@@ -8,26 +8,6 @@ namespace mhs::sim {
 
     constexpr double EPS = 1e-9;
 
-    double length_unit_to_si(mhs::core::LengthUnit unit)
-    {
-        switch (unit) {
-        case mhs::core::LengthUnit::M:
-            return 1.0;
-        case mhs::core::LengthUnit::Mm:
-            return 1e-3;
-        case mhs::core::LengthUnit::Um:
-            return 1e-6;
-        case mhs::core::LengthUnit::Nm:
-            return 1e-9;
-        case mhs::core::LengthUnit::Inch:
-            return 0.0254;
-        case mhs::core::LengthUnit::Mil:
-            return 2.54e-5;
-        default:
-            return 1e-3;
-        }
-    }
-
     std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale)
     {
         int num_layers = (int)layers.size();
@@ -164,12 +144,9 @@ namespace mhs::sim {
         }
 
         // Apply parsed face keys and other_bc to one cell's faces in place.
-        void apply_face_bcs_to_cell(int c_idx, int ix, int iy, int iz,
-            const mhs::core::MeshGeometry& mesh,
-            const mhs::core::CellFields& cells,
-            const std::vector<ParsedFaceKey>& parsed_keys,
-            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
-            mhs::core::CellFields& cells_out)
+        void apply_face_bcs_to_cell(int c_idx, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
+            const mhs::core::CellFields& cells, const std::vector<ParsedFaceKey>& parsed_keys,
+            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx, mhs::core::CellFields& cells_out)
         {
             for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
                 // Axis letter from the direction table — replaces the old face_axis_letter helper.
@@ -211,8 +188,7 @@ namespace mhs::sim {
 
     mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map,
-        const std::vector<ParsedFaceKey>& parsed_face_keys,
+        const std::vector<std::vector<uint16_t>>& block_hs_map, const std::vector<ParsedFaceKey>& parsed_face_keys,
         mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
     {
         const int num_layers = (int)resolved_layers.size();
@@ -276,8 +252,8 @@ namespace mhs::sim {
                     uint32_t c_idx = cells.index_map[old_idx];
                     if (c_idx == mhs::core::invalidIndex)
                         continue;
-                    apply_face_bcs_to_cell((int)c_idx, ix, iy, iz, mesh, cells,
-                        parsed_face_keys, other_bc_enum, other_bc_idx, cells);
+                    apply_face_bcs_to_cell(
+                        (int)c_idx, ix, iy, iz, mesh, cells, parsed_face_keys, other_bc_enum, other_bc_idx, cells);
                 }
             }
         }

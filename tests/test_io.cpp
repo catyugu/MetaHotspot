@@ -1,4 +1,3 @@
-#include "config.h"
 #include "data/io_model.hpp"
 #include "io/io.hpp"
 #include <filesystem>

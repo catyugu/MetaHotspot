@@ -44,7 +44,6 @@ namespace mhs::core {
     struct CellFields {
         std::vector<uint16_t> material_id; // index into material_table
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
-        std::vector<uint16_t> fluid_material_id; // fluid material index; max() when non-fluid
         std::vector<CellBC> cell_bcs;
         std::vector<uint32_t> index_map; // old grid index → compact; invalidIndex = virtual
     };
