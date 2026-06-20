@@ -120,24 +120,17 @@ namespace mhs::sim {
                     if (cell_is_fluid != n_is_fluid) {
                         int f_id = cell_is_fluid ? c_idx : n_idx;
                         int f_idx = model_.global_to_fluid[f_id];
-                        int f_ax = static_cast<int>(model_.flow_axes[f_idx]);
-                        if (f_ax < 0 || f_ax > 2) {
-                            double k_face_val = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-                            cond = A_f / (half_dist / k_face_val + d_half_neighbor / k_neighbor);
-                        }
-                        else {
-                            // Reuse already-evaluated k_face/k_neighbor — no need to re-eval.
-                            double kf = cell_is_fluid ? k_face : k_neighbor;
-                            double d_h = model_.hydraulic_diameter[f_idx];
-                            double ch_w = model_.channel_width[f_idx];
-                            double ch_h = model_.channel_height[f_idx];
-                            double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
-                            double h_f = Nu * kf / d_h;
-                            double half_dist_solid = cell_is_fluid ? d_half_neighbor : half_dist;
-                            double k_solid = cell_is_fluid ? k_neighbor : k_face;
-                            double R = half_dist_solid / (k_solid * A_f) + 1.0 / (h_f * A_f);
-                            cond = 1.0 / R;
-                        }
+                        // Reuse already-evaluated k_face/k_neighbor — no need to re-eval.
+                        double kf = cell_is_fluid ? k_face : k_neighbor;
+                        double d_h = model_.hydraulic_diameter[f_idx];
+                        double ch_w = model_.channel_width[f_idx];
+                        double ch_h = model_.channel_height[f_idx];
+                        double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
+                        double h_f = Nu * kf / d_h;
+                        double half_dist_solid = cell_is_fluid ? d_half_neighbor : half_dist;
+                        double k_solid = cell_is_fluid ? k_neighbor : k_face;
+                        double R = half_dist_solid / (k_solid * A_f) + 1.0 / (h_f * A_f);
+                        cond = 1.0 / R;
                     }
                     else {
                         // Standard solid-solid or fluid-fluid conduction
@@ -169,7 +162,7 @@ namespace mhs::sim {
                                 break;
                             }
                             if (hc_a > 1e-30 && hc_b > 1e-30) {
-                                double C_eff = mhs::utils::harmonicConductance(hc_a, hc_b);
+                                double C_eff = mhs::utils::harmonicAverage(hc_a, hc_b);
                                 double rho_b = mp_n.rho.eval(ctx_n);
                                 double rho_avg = 0.5 * (rho_a + rho_b);
                                 double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];

@@ -126,7 +126,7 @@ namespace mhs::sim {
                         break;
                     }
 
-                    double C_eff = mhs::utils::harmonicConductance(hydroC_c, hydroC_n);
+                    double C_eff = mhs::utils::harmonicAverage(hydroC_c, hydroC_n);
                     diagSum += C_eff;
                     triplets.emplace_back(fi, fn, -C_eff);
                 }
@@ -197,7 +197,7 @@ namespace mhs::sim {
                         hc_b = model.hydroC_z[fn];
                         break;
                     }
-                    double flux = dp * mhs::utils::harmonicConductance(hc_a, hc_b);
+                    double flux = dp * mhs::utils::harmonicAverage(hc_a, hc_b);
                     int ax = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
                     if (flux > maxVal) {
                         maxVal = flux;

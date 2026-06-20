@@ -31,7 +31,7 @@ namespace mhs::utils {
     }
 
     /// Harmonic mean of two conductances.
-    inline double harmonicConductance(double a, double b)
+    inline double harmonicAverage(double a, double b)
     {
         if (a < 1e-30 || b < 1e-30)
             return 0.0;
