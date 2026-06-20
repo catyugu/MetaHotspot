@@ -95,6 +95,11 @@ namespace mhs::sim {
         rhs.setZero();
 
         for (int fi = 0; fi < nf; ++fi) {
+            if (model.is_pressure_boundary[fi]) {
+                triplets.emplace_back(fi, fi, 1.0);
+                rhs(fi) = model.boundary_pressure[fi];
+                continue;
+            }
             int c = model.fluid_to_global[fi];
             int old_idx = compact_to_old[c];
             int ix = old_idx / (mesh.ny * mesh.nz);
@@ -136,22 +141,9 @@ namespace mhs::sim {
 
                 double C_eff = harmonicConductance(hydroC_c, hydroC_n);
                 diagSum += C_eff; // all neighbors contribute to diagonal
-                if (model.is_pressure_boundary[fn]) {
-                    rhs(fi) += C_eff * model.boundary_pressure[fn];
-                }
-                else {
-                    triplets.emplace_back(fi, fn, -C_eff);
-                }
+                triplets.emplace_back(fi, fn, -C_eff);
             }
-
-            // Diagonal: SPD positive or Dirichlet BC
-            if (model.is_pressure_boundary[fi]) {
-                triplets.emplace_back(fi, fi, 1.0);
-                rhs(fi) = model.boundary_pressure[fi];
-            }
-            else {
-                triplets.emplace_back(fi, fi, diagSum);
-            }
+            triplets.emplace_back(fi, fi, diagSum);
         }
 
         // Assemble and solve
