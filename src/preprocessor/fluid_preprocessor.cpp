@@ -14,8 +14,7 @@
 
 namespace mhs::sim {
 
-    namespace { // 匿名命名空间: 内部辅助函数
-
+    namespace {
         // ── 建立反向映射: Compact index → Old grid index ─────────────────────────
         std::vector<int> buildCompactToOld(const mhs::core::CellFields& cells, int totalGrid)
         {
@@ -254,12 +253,6 @@ namespace mhs::sim {
         triplets.reserve(model.n_fluid * 7);
 
         for (int fi = 0; fi < model.n_fluid; ++fi) {
-            if (model.is_pressure_boundary[fi]) {
-                triplets.emplace_back(fi, fi, 1.0);
-                rhs(fi) = model.boundary_pressure[fi];
-                continue;
-            }
-
             int old_idx = compact_to_old[model.fluid_to_global[fi]];
             int ix, iy, iz;
             mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
@@ -277,8 +270,9 @@ namespace mhs::sim {
                 if (fn < 0)
                     continue;
 
+                int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
                 double C_eff = 0.0;
-                switch (mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)]) {
+                switch (axis) {
                 case 0:
                     C_eff = mhs::utils::harmonicAverage(model.hydroC_x[fi], model.hydroC_x[fn]);
                     break;
@@ -289,17 +283,27 @@ namespace mhs::sim {
                     C_eff = mhs::utils::harmonicAverage(model.hydroC_z[fi], model.hydroC_z[fn]);
                     break;
                 }
-
                 diagSum += C_eff;
-                triplets.emplace_back(fi, fn, -C_eff);
+
+                // 如果当前单元是边界，不需要跟内部耦合（只设对角线），但可以借用算出的 C_eff 做量级估算
+                if (!model.is_pressure_boundary[fi]) {
+                    triplets.emplace_back(fi, fn, -C_eff);
+                }
             }
-            triplets.emplace_back(fi, fi, diagSum);
+
+            if (model.is_pressure_boundary[fi]) {
+                triplets.emplace_back(fi, fi, diagSum);
+                rhs(fi) = model.boundary_pressure[fi] * diagSum;
+            }
+            else {
+                triplets.emplace_back(fi, fi, diagSum);
+            }
         }
 
         Eigen::SparseMatrix<double> A(model.n_fluid, model.n_fluid);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
-        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::BiCGSTAB);
+        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::SparseLU);
         auto result = solver->solve(A, rhs);
         if (!result.success) {
             MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", model.n_fluid, static_cast<int>(A.nonZeros()));
