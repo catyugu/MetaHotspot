@@ -1,0 +1,4 @@
+#pragma once
+
+#include <string>
+inline std::string PROJECT_SOURCE_DIR = "@CMAKE_SOURCE_DIR@";

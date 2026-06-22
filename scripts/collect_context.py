@@ -9,6 +9,7 @@ _logger = logging.getLogger(__name__)
 # ===================== 配置区 =====================
 # 1. 目录忽略正则（匹配文件夹名）
 IGNORE_DIR_PATTERNS = [
+    r"^\.cache$",
     r"^\.git$",
     r"^\.vscode$",
     r"^\.idea$",
@@ -18,12 +19,11 @@ IGNORE_DIR_PATTERNS = [
     r"^env$",
     r"^dist$",
     r"^build",
-    r"^external$",
+    r"^legacy$",
     r"^vcpkg_installed$",
     r"^cases$",
     r"^results$",
-    r"^\.next$",
-    r"^\.pytest_cache$",
+    r"^\.",
 ]
 
 # 2. 文件忽略正则（匹配文件名）

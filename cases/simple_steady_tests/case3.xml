@@ -1,0 +1,1160 @@
+<Structure xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models"
+    xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+    <AlphaDegree>0</AlphaDegree>
+    <AmbientTemperature>300</AmbientTemperature>
+    <BasicGeometries xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Dialogs" />
+    <BetaDegree>0</BetaDegree>
+    <Blocks />
+    <BottomThermalBoundary i:nil="true" />
+    <Boundaries>
+        <Boundary>
+            <BoundaryCategory>Electrical</BoundaryCategory>
+            <FaceIds xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                <a:string>Z|E|0|-50,50,-60,60</a:string>
+            </FaceKeys>
+            <Name>边界 5</Name>
+            <ThermalBoundary i:type="a:ThirdTypeThermalBoundary"
+                xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
+                <a:ConvectionCoefficient>60</a:ConvectionCoefficient>
+                <a:EnvironmentTemperature>200</a:EnvironmentTemperature>
+            </ThermalBoundary>
+        </Boundary>
+    </Boundaries>
+    <DieLayerNum>0</DieLayerNum>
+    <DieLayerSizeX>0</DieLayerSizeX>
+    <DieLayerSizeY>0</DieLayerSizeY>
+    <DieMaterialName />
+    <DielectricLossFactor>0</DielectricLossFactor>
+    <Dimension>Dimension3D</Dimension>
+    <EnabledPhysics>HeatTransfer</EnabledPhysics>
+    <Functions xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:KeyValueOfstringFunctionAdzryM2O>
+            <a:Key>test_arbituary</a:Key>
+            <a:Value i:type="b:ExpressionFunction"
+                xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Functions">
+                <b:DrawMaxX>100</b:DrawMaxX>
+                <b:DrawMinX>0</b:DrawMinX>
+                <b:Expression>20*(x+1)-exp(x)</b:Expression>
+            </a:Value>
+        </a:KeyValueOfstringFunctionAdzryM2O>
+        <a:KeyValueOfstringFunctionAdzryM2O>
+            <a:Key>test_double_exponential</a:Key>
+            <a:Value i:type="b:DoubleExponentialFunction"
+                xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Functions">
+                <b:DrawMaxX>100</b:DrawMaxX>
+                <b:DrawMinX>0</b:DrawMinX>
+                <b:A>6</b:A>
+                <b:Alpha>3</b:Alpha>
+                <b:Beta>0.1</b:Beta>
+            </a:Value>
+        </a:KeyValueOfstringFunctionAdzryM2O>
+        <a:KeyValueOfstringFunctionAdzryM2O>
+            <a:Key>test_gaussian</a:Key>
+            <a:Value i:type="b:GaussFunction"
+                xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Functions">
+                <b:DrawMaxX>100</b:DrawMaxX>
+                <b:DrawMinX>0</b:DrawMinX>
+                <b:A>5</b:A>
+                <b:Tau>10</b:Tau>
+                <b:X0>20</b:X0>
+            </a:Value>
+        </a:KeyValueOfstringFunctionAdzryM2O>
+        <a:KeyValueOfstringFunctionAdzryM2O>
+            <a:Key>test_sine</a:Key>
+            <a:Value i:type="b:SineFunction"
+                xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Functions">
+                <b:DrawMaxX>100</b:DrawMaxX>
+                <b:DrawMinX>0</b:DrawMinX>
+                <b:A>5</b:A>
+                <b:Omega>200</b:Omega>
+                <b:Phi>1.57</b:Phi>
+            </a:Value>
+        </a:KeyValueOfstringFunctionAdzryM2O>
+        <a:KeyValueOfstringFunctionAdzryM2O>
+            <a:Key>tests_piecewise_linear</a:Key>
+            <a:Value i:type="b:PieceWiseFunction"
+                xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Functions">
+                <b:DrawMaxX>100</b:DrawMaxX>
+                <b:DrawMinX>0</b:DrawMinX>
+                <b:Points>
+                    <b:PieceWiseFunction.Point>
+                        <b:X>0</b:X>
+                        <b:Y>-1</b:Y>
+                    </b:PieceWiseFunction.Point>
+                    <b:PieceWiseFunction.Point>
+                        <b:X>1</b:X>
+                        <b:Y>2</b:Y>
+                    </b:PieceWiseFunction.Point>
+                    <b:PieceWiseFunction.Point>
+                        <b:X>2</b:X>
+                        <b:Y>2</b:Y>
+                    </b:PieceWiseFunction.Point>
+                    <b:PieceWiseFunction.Point>
+                        <b:X>2</b:X>
+                        <b:Y>3</b:Y>
+                    </b:PieceWiseFunction.Point>
+                    <b:PieceWiseFunction.Point>
+                        <b:X>5</b:X>
+                        <b:Y>3</b:Y>
+                    </b:PieceWiseFunction.Point>
+                </b:Points>
+            </a:Value>
+        </a:KeyValueOfstringFunctionAdzryM2O>
+    </Functions>
+    <GammaDegree>0</GammaDegree>
+    <InitialTemperature>300</InitialTemperature>
+    <LayerPBResults xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    <Layers>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_top/2</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_top/2</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_top/2</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>h_top/2</YSizeExpression>
+                        </Rect>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_top</HeightExpression>
+                            <Name>加操作 3</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_top/2</WidthExpression>
+                            <XExpression>w_top/2</XExpression>
+                            <XIntervalExpression>w_top/2</XIntervalExpression>
+                            <XSizeExpression>w_top/2</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>h_top</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>255</a:B>
+                        <a:G>205</a:G>
+                        <a:R>147</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>1</a:ScB>
+                        <a:ScG>0.610495567</a:ScG>
+                        <a:ScR>0.291770667</a:ScR>
+                    </Color>
+                    <HasBeenChanged>true</HasBeenChanged>
+                    <InitialName>块 1</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>copper</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>t_top</ThicknessExpression>
+                    <TiReyuan>0</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_top/2</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_top/2</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_top/2</XSizeExpression>
+                            <YExpression>h_top/2</YExpression>
+                            <YIntervalExpression>h_top/2</YIntervalExpression>
+                            <YSizeExpression>h_top/2</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>198</a:B>
+                        <a:G>153</a:G>
+                        <a:R>255</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.5647115</a:ScB>
+                        <a:ScG>0.3185468</a:ScG>
+                        <a:ScR>1</a:ScR>
+                    </Color>
+                    <HasBeenChanged>true</HasBeenChanged>
+                    <InitialName>块 2</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>copper</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 2</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>t_top</ThicknessExpression>
+                    <TiReyuan>1e8</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>true</IsTopLayer>
+            <MeshSizeXExpression>10</MeshSizeXExpression>
+            <MeshSizeYExpression>10</MeshSizeYExpression>
+            <MeshSizeZExpression>5</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 1</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>3</ThicknessExpression>
+            <XOffsetExpression>-w_top/2</XOffsetExpression>
+            <YOffsetExpression>-h_top/2</YOffsetExpression>
+        </Layer>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_middle</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_middle</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_middle</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>h_middle</YSizeExpression>
+                        </Rect>
+                        <Rect>
+                            <Add_sub>false</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_middle/2</HeightExpression>
+                            <Name>减操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_middle/2</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_middle/2</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>h_middle/2</YSizeExpression>
+                        </Rect>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>-h_middle*3/2</HeightExpression>
+                            <Name>加操作 2</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_middle/2</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_middle/2</XSizeExpression>
+                            <YExpression>h_middle</YExpression>
+                            <YIntervalExpression>h_middle</YIntervalExpression>
+                            <YSizeExpression>-h_middle*3/2</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>156</a:B>
+                        <a:G>255</a:G>
+                        <a:R>32</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.332451552</a:ScB>
+                        <a:ScG>1</a:ScG>
+                        <a:ScR>0.0144438446</a:ScR>
+                    </Color>
+                    <HasBeenChanged>true</HasBeenChanged>
+                    <InitialName>块 1</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>silicon</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>10</ThicknessExpression>
+                    <TiReyuan>1e7</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>false</IsTopLayer>
+            <MeshSizeXExpression>10</MeshSizeXExpression>
+            <MeshSizeYExpression>10</MeshSizeYExpression>
+            <MeshSizeZExpression>2</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 2</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>t_middle</ThicknessExpression>
+            <XOffsetExpression>-w_middle/2</XOffsetExpression>
+            <YOffsetExpression>-h_middle/2</YOffsetExpression>
+        </Layer>
+        <Layer>
+            <Blocks>
+                <Block>
+                    <AllRects>
+                        <Rect>
+                            <Add_sub>true</Add_sub>
+                            <ArrayDisguise>false</ArrayDisguise>
+                            <CreatedByArray>false</CreatedByArray>
+                            <HeightExpression>h_bottom</HeightExpression>
+                            <Name>加操作 1</Name>
+                            <NotOccupiedByArray>true</NotOccupiedByArray>
+                            <ParentRect i:nil="true" />
+                            <WidthExpression>w_bottom</WidthExpression>
+                            <XExpression>0</XExpression>
+                            <XIntervalExpression>0</XIntervalExpression>
+                            <XSizeExpression>w_bottom</XSizeExpression>
+                            <YExpression>0</YExpression>
+                            <YIntervalExpression>0</YIntervalExpression>
+                            <YSizeExpression>h_bottom</YSizeExpression>
+                        </Rect>
+                    </AllRects>
+                    <CanCreateArray>true</CanCreateArray>
+                    <Color xmlns:a="http://schemas.datacontract.org/2004/07/System.Windows.Media">
+                        <a:A>255</a:A>
+                        <a:B>22</a:B>
+                        <a:G>252</a:G>
+                        <a:R>112</a:R>
+                        <a:ScA>1</a:ScA>
+                        <a:ScB>0.008023193</a:ScB>
+                        <a:ScG>0.9734453</a:ScG>
+                        <a:ScR>0.162029386</a:ScR>
+                    </Color>
+                    <HasBeenChanged>true</HasBeenChanged>
+                    <InitialName>块 1</InitialName>
+                    <IsChargeConservation>false</IsChargeConservation>
+                    <IsChargeConservationPiezoelectricity>false</IsChargeConservationPiezoelectricity>
+                    <IsElectrode>false</IsElectrode>
+                    <IsLinearElasticMaterial>false</IsLinearElasticMaterial>
+                    <IsNormalMaterial>true</IsNormalMaterial>
+                    <IsPML>false</IsPML>
+                    <IsPiezoelectricMaterial>false</IsPiezoelectricMaterial>
+                    <IsTerminal>false</IsTerminal>
+                    <IsVisible>true</IsVisible>
+                    <MaterialName>copper</MaterialName>
+                    <MeshSizeXExpression>0</MeshSizeXExpression>
+                    <MeshSizeYExpression>0</MeshSizeYExpression>
+                    <MeshSizeZExpression>0</MeshSizeZExpression>
+                    <Name>块 1</Name>
+                    <NetDonorConcentration>0</NetDonorConcentration>
+                    <NotChargeConservation>true</NotChargeConservation>
+                    <PMLType />
+                    <ParentBlock i:nil="true" />
+                    <SelectedPMLType />
+                    <TerminalVoltage>0</TerminalVoltage>
+                    <ThicknessExpression>1</ThicknessExpression>
+                    <TiReyuan>0</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <ZOffsetExpression>0</ZOffsetExpression>
+                </Block>
+            </Blocks>
+            <CreatedByTopLayer>false</CreatedByTopLayer>
+            <IsBasic>false</IsBasic>
+            <IsBottomPackaging>false</IsBottomPackaging>
+            <IsDie>false</IsDie>
+            <IsDoule>false</IsDoule>
+            <IsIDTSawModel>false</IsIDTSawModel>
+            <IsNotIDTSawModel>false</IsNotIDTSawModel>
+            <IsSingle>false</IsSingle>
+            <IsSubstrate>false</IsSubstrate>
+            <IsTIM>false</IsTIM>
+            <IsTopLayer>false</IsTopLayer>
+            <MeshSizeXExpression>0</MeshSizeXExpression>
+            <MeshSizeYExpression>0</MeshSizeYExpression>
+            <MeshSizeZExpression>0</MeshSizeZExpression>
+            <MetalConversionRate>0.4</MetalConversionRate>
+            <Name>层 3</Name>
+            <PeriodWidth>10</PeriodWidth>
+            <SawBoundaryOption>None</SawBoundaryOption>
+            <ThicknessExpression>t_bottom</ThicknessExpression>
+            <XOffsetExpression>-w_bottom/2</XOffsetExpression>
+            <YOffsetExpression>-h_bottom/2</YOffsetExpression>
+        </Layer>
+    </Layers>
+    <LengthUnit>Mm</LengthUnit>
+    <Materials xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:KeyValueOfstringMaterialGyu7GfTz>
+            <a:Key>copper</a:Key>
+            <a:Value>
+                <BiRerong i:nil="true" />
+                <Chi0 i:nil="true" />
+                <CouplingMatrixForSaw i:nil="true" />
+                <DaoreXishu>400</DaoreXishu>
+                <DielectricLossFactorForSaw i:nil="true" />
+                <Eg0 i:nil="true" />
+                <ElasticMatrixForSaw i:nil="true" />
+                <Epsilon i:nil="true" />
+                <EpsilonForSaw i:nil="true" />
+                <EpsilonVectorForSaw i:nil="true" />
+                <MaterialKindForSaw>压电材料</MaterialKindForSaw>
+                <MechanicalDampingFactorForSaw i:nil="true" />
+                <Midu i:nil="true" />
+                <MiduForSaw i:nil="true" />
+                <MuN i:nil="true" />
+                <MuP i:nil="true" />
+                <Nc i:nil="true" />
+                <Nv i:nil="true" />
+                <PoissonsRatioForSaw i:nil="true" />
+                <WaveSpeedForSaw i:nil="true" />
+                <YoungsModulusForSaw i:nil="true" />
+            </a:Value>
+        </a:KeyValueOfstringMaterialGyu7GfTz>
+        <a:KeyValueOfstringMaterialGyu7GfTz>
+            <a:Key>silicon</a:Key>
+            <a:Value>
+                <BiRerong i:nil="true" />
+                <Chi0 i:nil="true" />
+                <CouplingMatrixForSaw i:nil="true" />
+                <DaoreXishu>130</DaoreXishu>
+                <DielectricLossFactorForSaw i:nil="true" />
+                <Eg0 i:nil="true" />
+                <ElasticMatrixForSaw i:nil="true" />
+                <Epsilon i:nil="true" />
+                <EpsilonForSaw i:nil="true" />
+                <EpsilonVectorForSaw i:nil="true" />
+                <MaterialKindForSaw>压电材料</MaterialKindForSaw>
+                <MechanicalDampingFactorForSaw i:nil="true" />
+                <Midu i:nil="true" />
+                <MiduForSaw i:nil="true" />
+                <MuN i:nil="true" />
+                <MuP i:nil="true" />
+                <Nc i:nil="true" />
+                <Nv i:nil="true" />
+                <PoissonsRatioForSaw i:nil="true" />
+                <WaveSpeedForSaw i:nil="true" />
+                <YoungsModulusForSaw i:nil="true" />
+            </a:Value>
+        </a:KeyValueOfstringMaterialGyu7GfTz>
+        <a:KeyValueOfstringMaterialGyu7GfTz>
+            <a:Key>TIM</a:Key>
+            <a:Value>
+                <BiRerong>1000</BiRerong>
+                <Chi0 i:nil="true" />
+                <CouplingMatrixForSaw i:nil="true" />
+                <DaoreXishu>1.3</DaoreXishu>
+                <DielectricLossFactorForSaw i:nil="true" />
+                <Eg0 i:nil="true" />
+                <ElasticMatrixForSaw i:nil="true" />
+                <Epsilon i:nil="true" />
+                <EpsilonForSaw i:nil="true" />
+                <EpsilonVectorForSaw i:nil="true" />
+                <MaterialKindForSaw>压电材料</MaterialKindForSaw>
+                <MechanicalDampingFactorForSaw i:nil="true" />
+                <Midu>2000</Midu>
+                <MiduForSaw i:nil="true" />
+                <MuN i:nil="true" />
+                <MuP i:nil="true" />
+                <Nc i:nil="true" />
+                <Nv i:nil="true" />
+                <PoissonsRatioForSaw i:nil="true" />
+                <WaveSpeedForSaw i:nil="true" />
+                <YoungsModulusForSaw i:nil="true" />
+            </a:Value>
+        </a:KeyValueOfstringMaterialGyu7GfTz>
+    </Materials>
+    <MechanicalDampingFactor>0</MechanicalDampingFactor>
+    <ObservePoints2D />
+    <ObservePoints3D />
+    <OtherThermalBondary i:type="a:SecondTypeThermalBoundary"
+        xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
+        <a:HeatFlux>0</a:HeatFlux>
+    </OtherThermalBondary>
+    <PreviewRowNum>0</PreviewRowNum>
+    <Results xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:anyType i:type="Result3D">
+            <Mesh xmlns:b="http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh">
+                <b:XArray>
+                    <a:double>-50</a:double>
+                    <a:double>-15</a:double>
+                    <a:double>-5</a:double>
+                    <a:double>0</a:double>
+                    <a:double>5</a:double>
+                    <a:double>15</a:double>
+                    <a:double>50</a:double>
+                </b:XArray>
+                <b:YArray>
+                    <a:double>-60</a:double>
+                    <a:double>-50</a:double>
+                    <a:double>-41.666666666666664</a:double>
+                    <a:double>-33.333333333333329</a:double>
+                    <a:double>-25</a:double>
+                    <a:double>-16.25</a:double>
+                    <a:double>-7.5</a:double>
+                    <a:double>0</a:double>
+                    <a:double>7.5</a:double>
+                    <a:double>16.25</a:double>
+                    <a:double>25</a:double>
+                    <a:double>60</a:double>
+                </b:YArray>
+                <b:ZArray>
+                    <a:double>0</a:double>
+                    <a:double>20</a:double>
+                    <a:double>22</a:double>
+                    <a:double>24</a:double>
+                    <a:double>26.000000000000004</a:double>
+                    <a:double>29</a:double>
+                </b:ZArray>
+            </Mesh>
+            <Name>温度</Name>
+            <Values>
+                <Data>
+                    <a:double>372.24169860966606</a:double>
+                    <a:double>372.309044490657</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.26115235900255</a:double>
+                    <a:double>372.36372299984669</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.29097134973148</a:double>
+                    <a:double>372.423747081468</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.31338725756484</a:double>
+                    <a:double>372.45043603170029</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.32298704391195</a:double>
+                    <a:double>372.4646961522779</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.30794593187744</a:double>
+                    <a:double>372.45572444529824</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.26191191849131</a:double>
+                    <a:double>372.41354386595378</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.18899293879218</a:double>
+                    <a:double>372.34249073210697</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.07620749341748</a:double>
+                    <a:double>372.22872217708834</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.909710210654</a:double>
+                    <a:double>372.04922028054006</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.63683703620154</a:double>
+                    <a:double>371.79239056724685</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.163779605242</a:double>
+                    <a:double>371.29168382829488</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.62197305694389</a:double>
+                    <a:double>372.88897266062281</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.69232624256335</a:double>
+                    <a:double>373.194498516276</a:double>
+                    <a:double>374.27803629723167</a:double>
+                    <a:double>374.85801038584657</a:double>
+                    <a:double>375.04360145505825</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.81956106357353</a:double>
+                    <a:double>373.55619211492274</a:double>
+                    <a:double>374.52808072244494</a:double>
+                    <a:double>375.05419931091876</a:double>
+                    <a:double>375.22415014370523</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.95548955713008</a:double>
+                    <a:double>373.76025854046514</a:double>
+                    <a:double>374.75299779228186</a:double>
+                    <a:double>375.28996468604015</a:double>
+                    <a:double>375.46300241338452</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.07675420067233</a:double>
+                    <a:double>373.92111465262906</a:double>
+                    <a:double>374.9427188606565</a:double>
+                    <a:double>375.49336346890658</a:double>
+                    <a:double>375.67134575372341</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.16092196063664</a:double>
+                    <a:double>374.04930630727659</a:double>
+                    <a:double>375.10962299064454</a:double>
+                    <a:double>375.68011837439104</a:double>
+                    <a:double>375.870765656927</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.1761369668252</a:double>
+                    <a:double>374.1155464002988</a:double>
+                    <a:double>375.235582036832</a:double>
+                    <a:double>375.84591760565667</a:double>
+                    <a:double>376.097174069153</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.10948865639836</a:double>
+                    <a:double>374.07970132819071</a:double>
+                    <a:double>375.246927378274</a:double>
+                    <a:double>375.89681474451658</a:double>
+                    <a:double>376.25618824817565</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.94983520859586</a:double>
+                    <a:double>373.898893722777</a:double>
+                    <a:double>375.05237632773424</a:double>
+                    <a:double>375.70343055063239</a:double>
+                    <a:double>376.12590752736969</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.66496752991611</a:double>
+                    <a:double>373.4928472703096</a:double>
+                    <a:double>374.57603078425973</a:double>
+                    <a:double>375.15877007478167</a:double>
+                    <a:double>375.37627415807037</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.25396941396519</a:double>
+                    <a:double>372.7889771315908</a:double>
+                    <a:double>374.06538761503475</a:double>
+                    <a:double>374.7340248403487</a:double>
+                    <a:double>374.95404433222421</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.36431018816023</a:double>
+                    <a:double>371.52165304633542</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.61058524722125</a:double>
+                    <a:double>372.97813969398044</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.702006488417</a:double>
+                    <a:double>373.47997619063767</a:double>
+                    <a:double>374.42603188661911</a:double>
+                    <a:double>374.94055145653658</a:double>
+                    <a:double>375.10808291210924</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.85478172669053</a:double>
+                    <a:double>373.99879415293452</a:double>
+                    <a:double>374.73206247833343</a:double>
+                    <a:double>375.16192992213792</a:double>
+                    <a:double>375.30694511641838</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.0291607686712</a:double>
+                    <a:double>374.27660563476587</a:double>
+                    <a:double>375.00482971735391</a:double>
+                    <a:double>375.435449232888</a:double>
+                    <a:double>375.58085921179662</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.19755693402567</a:double>
+                    <a:double>374.55747679919926</a:double>
+                    <a:double>375.2834865741637</a:double>
+                    <a:double>375.71100370047839</a:double>
+                    <a:double>375.85777214876424</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.33025282472869</a:double>
+                    <a:double>374.82334635151881</a:double>
+                    <a:double>375.560999662901</a:double>
+                    <a:double>375.99675434077739</a:double>
+                    <a:double>376.16868537132751</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.38188324809062</a:double>
+                    <a:double>375.04899417077257</a:double>
+                    <a:double>375.936329447138</a:double>
+                    <a:double>376.54920222064641</a:double>
+                    <a:double>376.97273423362947</a:double>
+                    <a:double>377.393168981066</a:double>
+                    <a:double>373.335125123969</a:double>
+                    <a:double>375.1649785642071</a:double>
+                    <a:double>376.32117293296881</a:double>
+                    <a:double>377.28683694875116</a:double>
+                    <a:double>378.22441468115471</a:double>
+                    <a:double>378.86952933406275</a:double>
+                    <a:double>373.17018042467578</a:double>
+                    <a:double>374.95160507790712</a:double>
+                    <a:double>376.102047857523</a:double>
+                    <a:double>377.11447794811011</a:double>
+                    <a:double>378.29422658828571</a:double>
+                    <a:double>379.85994392204367</a:double>
+                    <a:double>372.84256966219931</a:double>
+                    <a:double>374.2981361572667</a:double>
+                    <a:double>375.08052802724512</a:double>
+                    <a:double>375.54430725590032</a:double>
+                    <a:double>375.8026884794719</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.48309095982273</a:double>
+                    <a:double>373.29960999220009</a:double>
+                    <a:double>374.41648012333133</a:double>
+                    <a:double>374.99839329765092</a:double>
+                    <a:double>375.20985575564845</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.50859964967367</a:double>
+                    <a:double>371.64115993859576</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.57734970660931</a:double>
+                    <a:double>372.91044074880847</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.65638006328561</a:double>
+                    <a:double>373.257902306307</a:double>
+                    <a:double>374.34169855063726</a:double>
+                    <a:double>374.90637942750635</a:double>
+                    <a:double>375.08689998855743</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.80686565920189</a:double>
+                    <a:double>373.67313040107223</a:double>
+                    <a:double>374.62316235368866</a:double>
+                    <a:double>375.12202214465208</a:double>
+                    <a:double>375.28384333061234</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.98945444150439</a:double>
+                    <a:double>373.96818114578008</a:double>
+                    <a:double>374.9080032037653</a:double>
+                    <a:double>375.40645089648439</a:double>
+                    <a:double>375.56848610864762</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.1835295955774</a:double>
+                    <a:double>374.43165762234395</a:double>
+                    <a:double>375.25252609501524</a:double>
+                    <a:double>375.72315427152569</a:double>
+                    <a:double>375.88268135214594</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.3393249633113</a:double>
+                    <a:double>374.85474673717931</a:double>
+                    <a:double>375.58242934053612</a:double>
+                    <a:double>376.02178753183512</a:double>
+                    <a:double>376.196339718876</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.404795477266</a:double>
+                    <a:double>375.12960870100659</a:double>
+                    <a:double>376.03334851914553</a:double>
+                    <a:double>376.68949635401196</a:double>
+                    <a:double>377.14569994420407</a:double>
+                    <a:double>377.36346269272417</a:double>
+                    <a:double>373.36368494860022</a:double>
+                    <a:double>375.26722397196454</a:double>
+                    <a:double>376.44194819425059</a:double>
+                    <a:double>377.41009922362423</a:double>
+                    <a:double>378.16974250426023</a:double>
+                    <a:double>378.40426020584357</a:double>
+                    <a:double>373.20220758044189</a:double>
+                    <a:double>375.0503660002347</a:double>
+                    <a:double>376.22380531531439</a:double>
+                    <a:double>377.27205364472269</a:double>
+                    <a:double>378.38351235059309</a:double>
+                    <a:double>379.06132351667179</a:double>
+                    <a:double>372.87317108061632</a:double>
+                    <a:double>374.3671263889463</a:double>
+                    <a:double>375.13584850330443</a:double>
+                    <a:double>375.60213288439417</a:double>
+                    <a:double>375.84820265501315</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.51695187455385</a:double>
+                    <a:double>373.34734452010679</a:double>
+                    <a:double>374.45736464602044</a:double>
+                    <a:double>375.04215167597397</a:double>
+                    <a:double>375.25075665196539</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.52915495212278</a:double>
+                    <a:double>371.65262044194975</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.49565595311611</a:double>
+                    <a:double>372.78491967508404</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.55725139069074</a:double>
+                    <a:double>372.93795070660957</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.692059784155</a:double>
+                    <a:double>373.182766731265</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.873515729163</a:double>
+                    <a:double>373.4775056922864</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.09141177371896</a:double>
+                    <a:double>374.14881044325637</a:double>
+                    <a:double>375.11601639412453</a:double>
+                    <a:double>375.63340402775754</a:double>
+                    <a:double>375.80615624884695</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.261636115973</a:double>
+                    <a:double>374.71597644836248</a:double>
+                    <a:double>375.46546334391542</a:double>
+                    <a:double>375.90130336427524</a:double>
+                    <a:double>376.07175755184335</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.33332263697685</a:double>
+                    <a:double>374.976556012041</a:double>
+                    <a:double>375.84611296220226</a:double>
+                    <a:double>376.4391320587946</a:double>
+                    <a:double>376.83951395937305</a:double>
+                    <a:double>377.22060417724765</a:double>
+                    <a:double>373.29276668617183</a:double>
+                    <a:double>375.06345772661541</a:double>
+                    <a:double>376.08242110860709</a:double>
+                    <a:double>376.84007421952776</a:double>
+                    <a:double>377.42284406651692</a:double>
+                    <a:double>377.76977582352271</a:double>
+                    <a:double>373.13522506619535</a:double>
+                    <a:double>374.85574242539894</a:double>
+                    <a:double>375.84784668324028</a:double>
+                    <a:double>376.59597045240645</a:double>
+                    <a:double>377.2419537180138</a:double>
+                    <a:double>377.97945540430271</a:double>
+                    <a:double>372.82130150968868</a:double>
+                    <a:double>374.26295307142192</a:double>
+                    <a:double>375.03766997250932</a:double>
+                    <a:double>375.49052410565287</a:double>
+                    <a:double>375.69058212392514</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.46715205518063</a:double>
+                    <a:double>373.2812223918462</a:double>
+                    <a:double>374.3947076952478</a:double>
+                    <a:double>374.97537033584507</a:double>
+                    <a:double>375.17276533960427</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.49991482818791</a:double>
+                    <a:double>371.632035685192</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.34280711866148</a:double>
+                    <a:double>372.50757264239871</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.39874473514055</a:double>
+                    <a:double>372.57110699749234</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.51589719800512</a:double>
+                    <a:double>372.7102634162959</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.67005156985186</a:double>
+                    <a:double>372.93878665048129</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.84430429728184</a:double>
+                    <a:double>373.40573176519115</a:double>
+                    <a:double>374.6211100161521</a:double>
+                    <a:double>375.26136058071518</a:double>
+                    <a:double>375.46659019560565</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.98969094311525</a:double>
+                    <a:double>373.82736511524138</a:double>
+                    <a:double>374.90915968608778</a:double>
+                    <a:double>375.48663891217075</a:double>
+                    <a:double>375.67908030257121</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.05177103622009</a:double>
+                    <a:double>373.97240243270488</a:double>
+                    <a:double>375.09367110262878</a:double>
+                    <a:double>375.70136682244612</a:double>
+                    <a:double>375.9473278474365</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>373.01346141673883</a:double>
+                    <a:double>373.95989511585009</a:double>
+                    <a:double>375.11043746032726</a:double>
+                    <a:double>375.73932752131662</a:double>
+                    <a:double>376.02163335399035</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.8742905055982</a:double>
+                    <a:double>373.80044971183167</a:double>
+                    <a:double>374.934667423771</a:double>
+                    <a:double>375.558125694254</a:double>
+                    <a:double>375.85860692975507</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.60737094488354</a:double>
+                    <a:double>373.42551128453283</a:double>
+                    <a:double>374.50547529561277</a:double>
+                    <a:double>375.08371848179479</a:double>
+                    <a:double>375.28371504014041</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.20954176288285</a:double>
+                    <a:double>372.74222692017025</a:double>
+                    <a:double>374.01825143469313</a:double>
+                    <a:double>374.686168595724</a:double>
+                    <a:double>374.90160665927044</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.3393269359488</a:double>
+                    <a:double>371.49635025240713</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.90841657040005</a:double>
+                    <a:double>371.97332921546155</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.93161014955285</a:double>
+                    <a:double>371.99302736807778</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.97364352468611</a:double>
+                    <a:double>372.03177953649356</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.01786942788914</a:double>
+                    <a:double>372.08027403601551</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.05920200189036</a:double>
+                    <a:double>372.16699808418207</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.081059666761</a:double>
+                    <a:double>372.228400555896</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.07147703426222</a:double>
+                    <a:double>372.22223228942903</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>372.028297568837</a:double>
+                    <a:double>372.17863643318333</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.94209161538765</a:double>
+                    <a:double>372.09129405564056</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.8015569602631</a:double>
+                    <a:double>371.94001305103495</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.54902970460938</a:double>
+                    <a:double>371.70442799787656</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>371.10965982442667</a:double>
+                    <a:double>371.23749877721752</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                    <a:double>NaN</a:double>
+                </Data>
+                <SizeX>7</SizeX>
+                <SizeY>12</SizeY>
+                <SizeZ>6</SizeZ>
+            </Values>
+        </a:anyType>
+    </Results>
+    <SawFrequency>0</SawFrequency>
+    <SawFrequencySolveMode>SinglePoint</SawFrequencySolveMode>
+    <SawFrequencyStart>0</SawFrequencyStart>
+    <SawFrequencyStep>0</SawFrequencyStep>
+    <SawFrequencyStop>0</SawFrequencyStop>
+    <SawFrequencyUnit>GHz</SawFrequencyUnit>
+    <SoftwareMode>PTA</SoftwareMode>
+    <StudyType>Steady</StudyType>
+    <TIMMaterialName />
+    <ThermalMaskResults xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
+    <TopLayerIndex>0</TopLayerIndex>
+    <TopThermalBoundary i:nil="true" />
+    <TopoGeometries />
+    <TopoGeometryMaxNum>0</TopoGeometryMaxNum>
+    <TopoLayers />
+    <TransientStudyDuration>0</TransientStudyDuration>
+    <TransientStudyTimeStep>1</TransientStudyTimeStep>
+    <TransientTimeUnit>S</TransientTimeUnit>
+    <UseBlockBuildMode>false</UseBlockBuildMode>
+    <Variables xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+        <a:KeyValueOfstringdouble>
+            <a:Key>w_bottom</a:Key>
+            <a:Value>100</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>h_bottom</a:Key>
+            <a:Value>120</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>t_bottom</a:Key>
+            <a:Value>20</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>w_middle</a:Key>
+            <a:Value>30</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>h_middle</a:Key>
+            <a:Value>50</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>t_middle</a:Key>
+            <a:Value>6</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>w_top</a:Key>
+            <a:Value>10</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>h_top</a:Key>
+            <a:Value>15</a:Value>
+        </a:KeyValueOfstringdouble>
+        <a:KeyValueOfstringdouble>
+            <a:Key>t_top</a:Key>
+            <a:Value>3</a:Value>
+        </a:KeyValueOfstringdouble>
+    </Variables>
+</Structure>
