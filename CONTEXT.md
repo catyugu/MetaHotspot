@@ -31,14 +31,14 @@
 
 两种独立路径：
 
-- **几何** — `mhs::core::eval_geometry()`，依赖已注册的命名变量（`w_top`、`h_middle` 等，SI 米）
-- **场 / BC / 热源** — `mhs::core::parse()`，上下文 `{x, y, z, T, t}`，返回轻量句柄 `mhs::core::CompiledExpression`
+- **几何** — `mhs::core::eval_geometry(formula, symbols)`，依赖 `symbols.variables` 中的命名变量（`w_top`、`h_middle` 等，SI 米）
+- **场 / BC / 热源** — `mhs::core::parse(formula, symbols)`，上下文 `{x, y, z, T, t}`，返回轻量句柄 `mhs::core::CompiledExpression`
 
-`FieldContext` / `FieldEvaluator` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
+`FieldContext` / `FieldEvaluator` / `SymbolTable` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
 
-**线程模型**：注册表变动互斥锁；`parse()` 主线程持锁试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。
+**线程模型**：`SymbolTable` 由 `Preprocessor::load()` 在 setup 阶段构造一次、按值贯穿 setup 路径；`parse()` 主线程试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。`SymbolTable` 在构造时按值复制到 `MuCompiledTLS`，运行时不依赖任何外部状态，因此多个 `Preprocessor` 实例可并行 `load()` 互不干扰。
 
-复杂形式用 `register_native(name, FieldEvaluator)` 注册 C++ 函数字段。`IOStructure.functions` 是当前 native 入口。
+复杂形式用 `mhs::sim::register_all_functions(symbols, fns)` 把 `IOStructure.functions` 写入 `SymbolTable::natives`。
 
 ## 求解流程
 

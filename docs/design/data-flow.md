@@ -7,7 +7,7 @@ XML
   └─> mhs::io::read_xml                          (tinyxml2)
         └─> mhs::core::IOStructure               (AoS, 含字符串)
                 └─> mhs::sim::Preprocessor::load
-                      ├─> mhs::core::clear_registry + set_variable(几何) + mhs::sim::register_all_functions(ios.functions)
+                      ├─> 构造本地 mhs::core::SymbolTable（几何变量 + mhs::sim::register_all_functions(ios.functions) 注入的 native）
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
@@ -79,7 +79,7 @@ XML
 
 ### 6. 无共享可变状态
 
-模块间通过 const 引用和返回值通信。`expr` 注册表是唯一全局可变状态，需在 `Preprocessor::load()` 起头 `clear_registry()`。
+模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `Preprocessor` 实例可并行 `load()` 互不干扰。
 
 ### 7. 无异常，panic 退出
 

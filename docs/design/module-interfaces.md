@@ -24,7 +24,9 @@ namespace mhs::io {
 namespace mhs::sim {
     class Preprocessor {
     public:
-        std::unique_ptr<mhs::core::InternalModel> load(const mhs::core::IOStructure& io);
+        std::unique_ptr<mhs::core::InternalModel> load(
+            const mhs::core::IOStructure& io,
+            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
 }
 
@@ -40,7 +42,8 @@ struct ResolvedLayerGeometry{ std::vector<ResolvedBlock> blocks;
                               double z_start, z_end; };  // SI
 
 std::vector<ResolvedLayerGeometry> resolve_geometry(
-    const std::vector<mhs::core::Layer>& layers, double si_scale);
+    const std::vector<mhs::core::Layer>& layers, double si_scale,
+    const mhs::core::SymbolTable& symbols);
 
 int find_block_for_cell(const ResolvedLayerGeometry& layer,
                         double cx, double cy, double cz);  // -1 = virtual
@@ -62,14 +65,11 @@ struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
 FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
 bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
-                       mhs::core::ThermalBCType other_bc_type,
-                       const mhs::core::FirstTypeThermalBC&  other_bc_first,
-                       const mhs::core::SecondTypeThermalBC& other_bc_second,
-                       const mhs::core::ThirdTypeThermalBC&  other_bc_third,
-                       const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
-                       mhs::core::BCParamTable& bc_params, double si_scale,
-                       const std::function<std::string(const std::string&)>& rewriter);
+std::vector<ParsedFaceKey> parse_all_face_keys(
+    const std::vector<mhs::core::Boundary>& boundaries,
+    mhs::core::BCParamTable& bc_params, double si_scale,
+    const std::function<std::string(const std::string&)>& rewriter,
+    const mhs::core::SymbolTable& symbols);
 ```
 
 ### 预处理流程
@@ -77,14 +77,15 @@ void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
 ```text
 mhs::core::IOStructure
   └─> Preprocessor::load()
-        ├─> mhs::core::clear_registry() + set_variable(几何变量) + mhs::sim::register_all_functions(ios.functions)
+        ├─> 构造本地 mhs::core::SymbolTable（几何变量 + register_all_functions 注入 native）
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
-        ├─> resolve_geometry()     // 预求层 Z 范围 + Block XY 坐标
-        ├─> material_table         // 解析 k/rho/c
-        ├─> resolve_layers()       // valid_mask + index_map (full-grid), material_id (compact)
-        ├─> heat_source_table      // 去重 ti_reyuan_expr，idx 0 = constant(0)
+        ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
+        ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
+        ├─> resolve_layers()           // valid_mask + index_map (full-grid), material_id (compact)
+        ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> resolve_face_keys()    // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
         └─> mhs::core::InternalModel ready
 ```
 

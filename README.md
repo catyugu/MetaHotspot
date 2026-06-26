@@ -38,7 +38,7 @@
 
 ### 工具模块
 
-- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 muparser。提供变量/函数注册池与基于 `FieldContext` 的求值。`mhs::core::{CompiledExpression, MuCompiled, register_native, make_constant, make_evaluator, eval, ...}`。
+- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 muparser。基于显式 `SymbolTable`（变量 + native 闭包）按值传递，无全局注册表与互斥锁。`mhs::core::{CompiledExpression, SymbolTable, make_constant, make_evaluator, parse, eval_geometry, ...}`。
 - **time_scheme**（领域 `mhs::sim::time_scheme`）：时间离散方案抽象。`mhs::sim::time_scheme::{TimeScheme, Bdf1Scheme, Bdf2Scheme, AdaptiveBdfScheme, TimeSchemeConfig, StepDecision, StepResult, create_scheme}`。
 
 ### 数据流
