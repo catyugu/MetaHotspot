@@ -36,8 +36,6 @@ namespace mhs::sim {
         mhs::sim::solveFluidFlow(*model_);
         // 稳态求解分支
         if (model_->study_type == mhs::core::StudyType::Steady) {
-            // 流体压力求解(若模型含流体): pressure → flow_axes 在 T 求解前计算一次
-
             LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
                 auto ops = assembler.assemble(s);
                 return {std::move(ops.K), std::move(ops.f)};
