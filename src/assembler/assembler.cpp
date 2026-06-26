@@ -98,18 +98,9 @@ namespace mhs::sim {
                     const auto& mp_n = materials[cells.material_id[n_idx]];
                     const mhs::core::FieldContext ctx_n {
                         mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
-                    double k_neighbor = 0.0;
-                    switch (mhs::utils::AXIS_OF_DIR[f]) {
-                    case 0:
-                        k_neighbor = mp_n.kx.eval(ctx_n);
-                        break;
-                    case 1:
-                        k_neighbor = mp_n.ky.eval(ctx_n);
-                        break;
-                    case 2:
-                        k_neighbor = mp_n.kz.eval(ctx_n);
-                        break;
-                    }
+                    double k_neighbor
+                        = utils::k_along(dir, mp_n.kx.eval(ctx_n), mp_n.ky.eval(ctx_n), mp_n.kz.eval(ctx_n));
+
                     double d_half_neighbor
                         = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
