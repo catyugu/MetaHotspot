@@ -15,7 +15,7 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
-EXE = os.path.join(REPO_ROOT, "build", "bin", "metahotspot.exe")
+EXE = os.path.join(REPO_ROOT, "build", "bin", "metahotspot")
 
 # (case_dir, results_subdir, kind)
 CASE_GROUPS = [
