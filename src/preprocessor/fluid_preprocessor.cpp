@@ -138,7 +138,7 @@ namespace mhs::sim {
     } // 匿名命名空间
 
     void applyFluidOverlay(mhs::core::InternalModel& model, const std::optional<mhs::core::FluidOverlay>& overlay,
-        const mhs::core::IOStructure& ioStructure)
+        const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols)
     {
         if (!overlay.has_value() || overlay->fluid_materials.empty())
             return;
@@ -171,7 +171,7 @@ namespace mhs::sim {
             if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
                 model.material_table[matIdx].is_fluid = true;
                 model.material_table[matIdx].dynamic_viscosity
-                    = mhs::core::parse(substitute_function_args(visIt->second, "T", ioStructure.functions));
+                    = mhs::core::parse(substitute_function_args(visIt->second, "T", ioStructure.functions), symbols);
             }
         }
 

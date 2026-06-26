@@ -84,7 +84,7 @@ namespace mhs::sim {
 
     std::vector<ParsedFaceKey> parse_all_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
         mhs::core::BCParamTable& bc_params, double si_scale,
-        const std::function<std::string(const std::string&)>& rewriter)
+        const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
     {
         std::vector<ParsedFaceKey> parsed_keys;
 
@@ -96,18 +96,18 @@ namespace mhs::sim {
             case mhs::core::ThermalBCType::FirstType:
                 bc_enum = mhs::core::BcType::FirstType;
                 bc_param_idx = (uint16_t)bc_params.dirichlet_T.size();
-                bc_params.dirichlet_T.push_back(mhs::core::parse(rewriter(boundary.first.temperature)));
+                bc_params.dirichlet_T.push_back(mhs::core::parse(rewriter(boundary.first.temperature), symbols));
                 break;
             case mhs::core::ThermalBCType::SecondType:
                 bc_enum = mhs::core::BcType::SecondType;
                 bc_param_idx = (uint16_t)bc_params.neumann_q.size();
-                bc_params.neumann_q.push_back(mhs::core::parse(rewriter(boundary.second.heat_flux)));
+                bc_params.neumann_q.push_back(mhs::core::parse(rewriter(boundary.second.heat_flux), symbols));
                 break;
             case mhs::core::ThermalBCType::ThirdType:
                 bc_enum = mhs::core::BcType::ThirdType;
                 bc_param_idx = (uint16_t)bc_params.cauchy_h.size();
-                bc_params.cauchy_h.push_back(mhs::core::parse(rewriter(boundary.third.convection_coeff)));
-                bc_params.cauchy_T_inf.push_back(mhs::core::parse(rewriter(boundary.third.T_inf)));
+                bc_params.cauchy_h.push_back(mhs::core::parse(rewriter(boundary.third.convection_coeff), symbols));
+                bc_params.cauchy_T_inf.push_back(mhs::core::parse(rewriter(boundary.third.T_inf), symbols));
                 break;
             }
 

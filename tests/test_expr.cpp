@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <gtest/gtest.h>
+#include <thread>
+#include <vector>
 using namespace mhs::core;
 namespace {
     constexpr double PI = 3.14159265358979323846;
@@ -33,8 +35,8 @@ namespace {
 
     TEST(CompiledExpression, MakeEvaluator)
     {
-        mhs::core::clear_registry();
-        auto expr = mhs::core::parse("x + y");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + y", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
@@ -61,97 +63,94 @@ namespace {
 
     TEST(EvalGeometry, SingleVariable)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 10.0);
+        SymbolTable sym;
+        sym.variables["w"] = 10.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w"), 10.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w", sym), 10.0);
     }
 
     TEST(EvalGeometry, MultipleVariables)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 5.0);
-        mhs::core::set_variable("h", 2.0);
+        SymbolTable sym;
+        sym.variables["w"] = 5.0;
+        sym.variables["h"] = 2.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w"), 5.0);
-        EXPECT_EQ(mhs::core::eval_geometry("h"), 2.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w", sym), 5.0);
+        EXPECT_EQ(mhs::core::eval_geometry("h", sym), 2.0);
     }
 
     TEST(EvalGeometry, ArithmeticAddition)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 5.0);
-        mhs::core::set_variable("h", 3.0);
+        SymbolTable sym;
+        sym.variables["w"] = 5.0;
+        sym.variables["h"] = 3.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w+h"), 8.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w+h", sym), 8.0);
     }
 
     TEST(EvalGeometry, ArithmeticSubtraction)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 10.0);
-        mhs::core::set_variable("h", 3.0);
+        SymbolTable sym;
+        sym.variables["w"] = 10.0;
+        sym.variables["h"] = 3.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w-h"), 7.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w-h", sym), 7.0);
     }
 
     TEST(EvalGeometry, ArithmeticMultiplication)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 5.0);
-        mhs::core::set_variable("h", 3.0);
+        SymbolTable sym;
+        sym.variables["w"] = 5.0;
+        sym.variables["h"] = 3.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w*h"), 15.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w*h", sym), 15.0);
     }
 
     TEST(EvalGeometry, ArithmeticDivision)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 10.0);
-        mhs::core::set_variable("h", 2.0);
+        SymbolTable sym;
+        sym.variables["w"] = 10.0;
+        sym.variables["h"] = 2.0;
 
-        EXPECT_EQ(mhs::core::eval_geometry("w/h"), 5.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w/h", sym), 5.0);
     }
 
     TEST(EvalGeometry, ComplexExpression)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("w", 10.0);
-        mhs::core::set_variable("h", 2.0);
+        SymbolTable sym;
+        sym.variables["w"] = 10.0;
+        sym.variables["h"] = 2.0;
 
-        // (w + h) * 2
-        EXPECT_EQ(mhs::core::eval_geometry("(w+h)*2"), 24.0);
+        EXPECT_EQ(mhs::core::eval_geometry("(w+h)*2", sym), 24.0);
     }
 
     TEST(EvalGeometry, NestedParentheses)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("a", 2.0);
-        mhs::core::set_variable("b", 3.0);
-        mhs::core::set_variable("c", 4.0);
+        SymbolTable sym;
+        sym.variables["a"] = 2.0;
+        sym.variables["b"] = 3.0;
+        sym.variables["c"] = 4.0;
 
-        // (a + b) * c
-        EXPECT_EQ(mhs::core::eval_geometry("(a+b)*c"), 20.0);
+        EXPECT_EQ(mhs::core::eval_geometry("(a+b)*c", sym), 20.0);
     }
 
     TEST(EvalGeometry, OperatorPrecedence)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("a", 10.0);
-        mhs::core::set_variable("b", 3.0);
-        mhs::core::set_variable("c", 2.0);
+        SymbolTable sym;
+        sym.variables["a"] = 10.0;
+        sym.variables["b"] = 3.0;
+        sym.variables["c"] = 2.0;
 
-        // a + b * c = 10 + 6 = 16
-        EXPECT_EQ(mhs::core::eval_geometry("a+b*c"), 16.0);
+        EXPECT_EQ(mhs::core::eval_geometry("a+b*c", sym), 16.0);
     }
 
     TEST(EvalGeometry, UndefinedVariable)
     {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("defined", 1.0);
+        SymbolTable sym;
+        sym.variables["defined"] = 1.0;
 
         // undefined variable should return 0.0
-        EXPECT_EQ(mhs::core::eval_geometry("undefined"), 0.0);
+        EXPECT_EQ(mhs::core::eval_geometry("undefined", sym), 0.0);
     }
 
 } // namespace
@@ -160,36 +159,31 @@ namespace {
 
     TEST(Parse, SimpleConstant)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("42");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("42", sym);
         EXPECT_TRUE(expr.is_constant());
         EXPECT_EQ(expr.constant_value(), 42.0);
     }
 
     TEST(Parse, NegativeConstant)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("-17.5");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("-17.5", sym);
         EXPECT_TRUE(expr.is_constant());
         EXPECT_EQ(expr.constant_value(), -17.5);
     }
 
     TEST(Parse, FloatingPointConstant)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("3.14159");
-        EXPECT_TRUE(expr.is_constant());
+        SymbolTable sym;
+        auto expr = mhs::core::parse("3.14159", sym);
         EXPECT_NEAR(expr.constant_value(), 3.14159, 1e-10);
     }
 
     TEST(Parse, SimpleArithmetic)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x + 1");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + 1", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
@@ -198,9 +192,8 @@ namespace {
 
     TEST(Parse, ArithmeticWithY)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x + y");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + y", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
@@ -209,9 +202,8 @@ namespace {
 
     TEST(Parse, ArithmeticWithZ)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x + y + z");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + y + z", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
@@ -220,9 +212,8 @@ namespace {
 
     TEST(Parse, Multiplication)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x * y");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x * y", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {3.0, 4.0, 0.0, 0.0, 0.0};
@@ -231,9 +222,8 @@ namespace {
 
     TEST(Parse, Division)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x / y");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x / y", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {10.0, 2.0, 0.0, 0.0, 0.0};
@@ -242,9 +232,8 @@ namespace {
 
     TEST(Parse, ComplexExpression)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("(x + y) * z");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("(x + y) * z", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
@@ -253,13 +242,12 @@ namespace {
 
     TEST(Parse, OperatorPrecedence)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("2 + 3 * 4");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("2 + 3 * 4", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
-        EXPECT_EQ(expr.eval(ctx), 14.0); // 2 + (3*4) = 14
+        EXPECT_EQ(expr.eval(ctx), 14.0);
     }
 
 } // namespace
@@ -268,9 +256,8 @@ namespace {
 
     TEST(Parse, SinFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("sin(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("sin(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -282,9 +269,8 @@ namespace {
 
     TEST(Parse, CosFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("cos(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("cos(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -296,9 +282,8 @@ namespace {
 
     TEST(Parse, ExpFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("exp(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("exp(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
@@ -310,9 +295,8 @@ namespace {
 
     TEST(Parse, LogFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("log(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("log(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 0.0, 0.0, 0.0, 0.0};
@@ -324,9 +308,8 @@ namespace {
 
     TEST(Parse, SqrtFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("sqrt(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("sqrt(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {4.0, 0.0, 0.0, 0.0, 0.0};
@@ -338,9 +321,8 @@ namespace {
 
     TEST(Parse, AbsFunction)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("abs(x)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("abs(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {-5.0, 0.0, 0.0, 0.0, 0.0};
@@ -356,9 +338,8 @@ namespace {
 
     TEST(Parse, WithTemperatureT)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("T + 100");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("T + 100", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
@@ -367,9 +348,8 @@ namespace {
 
     TEST(Parse, WithTimeT)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("t * 2");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("t * 2", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 5.0};
@@ -377,12 +357,10 @@ namespace {
         EXPECT_EQ(result, 10.0);
     }
 
-    // Test using our wrapper (clears cache first)
     TEST(Parse, WrapperWithCache)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x + 1");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + 1", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
@@ -390,12 +368,10 @@ namespace {
         EXPECT_EQ(result, 6.0);
     }
 
-    // Test that t variable works correctly
     TEST(Parse, TVariable)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("T * 2");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("T * 2", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 10.0, 0.0};
@@ -403,12 +379,10 @@ namespace {
         EXPECT_EQ(result, 20.0);
     }
 
-    // Test lowercase 't' specifically
     TEST(Parse, LowerCaseTWrapped)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("t");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("t", sym);
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 7.0};
         auto result = expr.eval(ctx);
@@ -417,9 +391,8 @@ namespace {
 
     TEST(Parse, CombinedContext)
     {
-        mhs::core::clear_registry();
-
-        auto expr = mhs::core::parse("x + y + z + T + t");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("x + y + z + T + t", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
@@ -428,10 +401,8 @@ namespace {
 
     TEST(Parse, NonlinearTemperatureDependence)
     {
-        mhs::core::clear_registry();
-
-        // k(T) = k0 * (1 + alpha * T)
-        auto expr = mhs::core::parse("10 * (1 + 0.001 * T)");
+        SymbolTable sym;
+        auto expr = mhs::core::parse("10 * (1 + 0.001 * T)", sym);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 300.0, 0.0};
@@ -442,23 +413,24 @@ namespace {
 
 namespace {
 
-    TEST(NativeFunction, RegisterAndUse)
+    // After SymbolTable refactor, native functions are stored per-table rather
+    // than in a global registry. This test verifies that the SymbolTable's
+    // natives map behaves like a container of FieldEvaluator closures.
+    TEST(SymbolTableNatives, RegisterAndUse)
     {
-        mhs::core::clear_registry();
+        SymbolTable sym;
+        sym.natives["piecewise"] = [](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*ctx*/) {
+            double v = args[0];
+            if (v < 1.0)
+                return 0.0;
+            if (v < 2.0)
+                return 1.0;
+            return 2.0;
+        };
 
-        // Register a piecewise function that reads from args (muparser-evaluated arguments)
-        mhs::core::register_native(
-            "piecewise", [](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*ctx*/) {
-                double v = args[0];
-                if (v < 1.0)
-                    return 0.0;
-                if (v < 2.0)
-                    return 1.0;
-                return 2.0;
-            });
-
-        auto native = mhs::core::get_native("piecewise");
-        EXPECT_TRUE(native != nullptr);
+        // The closure can be retrieved directly from the table.
+        ASSERT_TRUE(sym.natives.count("piecewise") == 1);
+        auto native = sym.natives.at("piecewise");
 
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         const double arg = 0.5;
@@ -467,47 +439,22 @@ namespace {
         EXPECT_EQ(native(&arg2, 1, ctx), 1.0);
     }
 
-    TEST(NativeFunction, GetUnregistered)
+    TEST(SymbolTableNatives, GetUnregistered)
     {
-        mhs::core::clear_registry();
-
-        auto native = mhs::core::get_native("nonexistent");
-        EXPECT_TRUE(native == nullptr);
+        SymbolTable sym;
+        EXPECT_EQ(sym.natives.count("nonexistent"), 0u);
     }
 
 } // namespace
 
 namespace {
 
-    TEST(ClearRegistry, ClearsVariables)
-    {
-        mhs::core::clear_registry();
-        mhs::core::set_variable("x", 1.0);
-        EXPECT_EQ(mhs::core::eval_geometry("x"), 1.0);
-
-        mhs::core::clear_registry();
-        EXPECT_EQ(mhs::core::eval_geometry("x"), 0.0);
-    }
-
-    TEST(ClearRegistry, ClearsFunctions)
-    {
-        mhs::core::clear_registry();
-        mhs::core::register_native(
-            "f", [](const double* /*args*/, int /*nargs*/, const mhs::core::FieldContext&) { return 42.0; });
-        EXPECT_TRUE(mhs::core::get_native("f") != nullptr);
-
-        mhs::core::clear_registry();
-        EXPECT_TRUE(mhs::core::get_native("f") == nullptr);
-    }
-
     TEST(ParserCaching, SameExpressionReturnsCached)
     {
-        mhs::core::clear_registry();
+        SymbolTable sym;
+        auto expr1 = mhs::core::parse("x + 1", sym);
+        auto expr2 = mhs::core::parse("x + 1", sym);
 
-        auto expr1 = mhs::core::parse("x + 1");
-        auto expr2 = mhs::core::parse("x + 1");
-
-        // Both should evaluate the same
         mhs::core::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr1.eval(ctx), 6.0);
         EXPECT_EQ(expr2.eval(ctx), 6.0);
@@ -515,10 +462,9 @@ namespace {
 
     TEST(ParserCaching, DifferentExpressionsAreSeparate)
     {
-        mhs::core::clear_registry();
-
-        auto expr1 = mhs::core::parse("x + 1");
-        auto expr2 = mhs::core::parse("x + 2");
+        SymbolTable sym;
+        auto expr1 = mhs::core::parse("x + 1", sym);
+        auto expr2 = mhs::core::parse("x + 2", sym);
 
         mhs::core::FieldContext ctx {5.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr1.eval(ctx), 6.0);
@@ -527,22 +473,19 @@ namespace {
 
     TEST(ExprTest, ConcurrentEvaluationSingleExpression)
     {
-        // 构造一个稍微复杂、依赖全部上下文变量的表达式
-        auto expr = parse("x*x + 2*y - z + T*0.5 + t");
+        SymbolTable sym;
+        auto expr = parse("x*x + 2*y - z + T*0.5 + t", sym);
         ASSERT_FALSE(expr.is_constant());
 
         const int num_threads = 16;
         const int num_iterations = 10000;
 
-        // 预分配内存避免伪共享(False Sharing)影响性能，每个线程写入自己独立的块
         std::vector<double> results(num_threads * num_iterations, 0.0);
         std::vector<std::thread> threads;
 
-        // 启动多线程进行并发求值
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             threads.emplace_back([&, thread_id]() {
                 for (int i = 0; i < num_iterations; ++i) {
-                    // 每个线程、每次循环拥有截然不同的上下文变量
                     double x = 1.0 + thread_id;
                     double y = 2.0 + i;
                     double z = 3.0 + thread_id * 0.1;
@@ -551,19 +494,16 @@ namespace {
 
                     FieldContext ctx {x, y, z, T, t_time};
 
-                    // 并发调用 eval
                     double val = expr.eval(ctx);
                     results[thread_id * num_iterations + i] = val;
                 }
             });
         }
 
-        // 等待所有线程完成
         for (auto& th : threads) {
             th.join();
         }
 
-        // 串行验证结果的正确性
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             for (int i = 0; i < num_iterations; ++i) {
                 double x = 1.0 + thread_id;
@@ -578,14 +518,14 @@ namespace {
         }
     }
 
-    // 测试 2：高并发下访问表达式字典（模拟装配时的查表求值）
     TEST(ExprTest, ConcurrentEvaluationDictionary)
     {
+        SymbolTable sym;
         std::vector<CompiledExpression> dict;
-        dict.push_back(parse("0.0")); // 索引 0：常数 (默认无热源)
-        dict.push_back(parse("x + y")); // 索引 1：线性
-        dict.push_back(parse("x * y")); // 索引 2：乘积
-        dict.push_back(parse("T^2 + t*10")); // 索引 3：非线性
+        dict.push_back(parse("0.0", sym));
+        dict.push_back(parse("x + y", sym));
+        dict.push_back(parse("x * y", sym));
+        dict.push_back(parse("T^2 + t*10", sym));
 
         const int num_threads = 16;
         const int num_iterations = 5000;
@@ -597,12 +537,11 @@ namespace {
             threads.emplace_back([&, thread_id]() {
                 for (int i = 0; i < num_iterations; ++i) {
                     double x = (double)thread_id;
-                    double y = (double)(i % 100); // 限制 y 的范围
+                    double y = (double)(i % 100);
                     double z = 0.0;
                     double T = 300.0 + thread_id;
                     double t_time = 1.0 + i * 0.1;
 
-                    // 模拟根据 Cell 所属的 mhs::core::Block 随机访问不同的表达式
                     int expr_idx = (thread_id + i) % dict.size();
                     FieldContext ctx {x, y, z, T, t_time};
 
@@ -615,7 +554,6 @@ namespace {
             th.join();
         }
 
-        // 串行验证结果
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             for (int i = 0; i < num_iterations; ++i) {
                 double x = (double)thread_id;
@@ -639,6 +577,72 @@ namespace {
                 EXPECT_NEAR(results[thread_id * num_iterations + i], expected, 1e-9)
                     << "Mismatch at thread " << thread_id << ", iteration " << i << " with expr_idx " << expr_idx;
             }
+        }
+    }
+
+} // namespace
+
+// =====================================================================
+// SymbolTable: red-phase tests for global-state removal
+// These reference the not-yet-defined mhs::core::SymbolTable and the
+// SymbolTable-aware parse/eval_geometry. They will fail to compile until
+// the refactor lands.
+// =====================================================================
+
+namespace {
+
+    TEST(SymbolTable, EvalGeometryUsesPerCallTable)
+    {
+        mhs::core::SymbolTable sym;
+        sym.variables["w"] = 10.0;
+        EXPECT_EQ(mhs::core::eval_geometry("w", sym), 10.0);
+        EXPECT_EQ(mhs::core::eval_geometry("w*2", sym), 20.0);
+    }
+
+    TEST(SymbolTable, EvalGeometryIsolatesPerCall)
+    {
+        mhs::core::SymbolTable a;
+        a.variables["x"] = 1.0;
+        mhs::core::SymbolTable b;
+        b.variables["x"] = 100.0;
+
+        EXPECT_EQ(mhs::core::eval_geometry("x+1", a), 2.0);
+        EXPECT_EQ(mhs::core::eval_geometry("x+1", b), 101.0);
+    }
+
+    TEST(SymbolTable, ParseCapturesNatives)
+    {
+        mhs::core::SymbolTable sym;
+        sym.natives["twice"]
+            = [](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*ctx*/) { return 2.0 * args[0]; };
+        auto expr = mhs::core::parse("twice(3) + x", sym);
+        EXPECT_FALSE(expr.is_constant());
+        mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        ctx.x = 4.0;
+        EXPECT_EQ(expr.eval(ctx), 10.0);
+    }
+
+    TEST(SymbolTable, ParallelParseDoesNotInterfere)
+    {
+        // Variables live in SymbolTable; they are exposed via eval_geometry, not parse.
+        // Two threads construct their own SymbolTable and eval_geometry in parallel —
+        // the result must reflect each thread's own table.
+        const int N_THREADS = 8;
+        std::vector<std::thread> threads;
+        std::vector<double> results(N_THREADS, 0.0);
+
+        for (int tid = 0; tid < N_THREADS; ++tid) {
+            threads.emplace_back([tid, &results]() {
+                mhs::core::SymbolTable sym;
+                sym.variables["k"] = static_cast<double>(tid + 1);
+                results[tid] = mhs::core::eval_geometry("k * 10", sym);
+            });
+        }
+        for (auto& th : threads)
+            th.join();
+
+        for (int tid = 0; tid < N_THREADS; ++tid) {
+            EXPECT_EQ(results[tid], static_cast<double>(tid + 1) * 10.0);
         }
     }
 

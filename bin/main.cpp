@@ -2,7 +2,6 @@
 #include "io/io.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "postprocessor/postprocessor.hpp"
-#include "preprocessor/fluid_preprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include <filesystem>
@@ -30,7 +29,8 @@ int main(int argc, char* argv[])
         auto dot = input_path.rfind('.');
         if (dot != std::string::npos) {
             fluidOverlayPath = input_path.substr(0, dot) + "_additional" + input_path.substr(dot);
-        } else {
+        }
+        else {
             fluidOverlayPath = input_path + "_additional";
         }
     }
@@ -48,10 +48,6 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", io_structure.layers.size(),
             io_structure.materials.size(), io_structure.boundaries.size());
 
-        // Preprocess
-        mhs::sim::Preprocessor preprocessor;
-        auto model = preprocessor.load(io_structure);
-
         // Auto-inferred fluid overlay: e.g. steady_case1.xml → steady_case1_additional.xml
         std::optional<mhs::core::FluidOverlay> fluidOverlay;
         if (fluidOverlayPath.has_value()) {
@@ -59,28 +55,34 @@ int main(int argc, char* argv[])
             if (std::filesystem::exists(*fluidOverlayPath, ec)) {
                 fluidOverlay = mhs::io::read_fluid_overlay_xml(*fluidOverlayPath);
                 if (fluidOverlay.has_value()) {
-                    mhs::sim::applyFluidOverlay(*model, fluidOverlay, io_structure);
-                    MHS_LOG_INFO("Applied fluid overlay with {} materials, {} boundaries",
+                    MHS_LOG_INFO("Loaded fluid overlay with {} materials, {} boundaries",
                         fluidOverlay->fluid_materials.size(), fluidOverlay->boundaries.size());
-                } else {
-                    MHS_LOG_WARN("Fluid overlay file '{}' contained no FluidOverlay element; skipping",
-                        *fluidOverlayPath);
+                }
+                else {
+                    MHS_LOG_WARN(
+                        "Fluid overlay file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
                 }
             }
         }
 
+        // Preprocess (apply fluid overlay inside, if any)
+        mhs::sim::Preprocessor preprocessor;
+        auto model = preprocessor.load(io_structure, fluidOverlay);
+
+        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
+            model->mesh.nx, model->mesh.ny, model->mesh.nz);
+
         // Count fluid cells for diagnostics
-        if (fluidOverlay.has_value()) {
+        if (!model->is_fluid.empty()) {
             int fluidCount = 0;
             for (uint8_t v : model->is_fluid) {
                 if (v)
                     ++fluidCount;
             }
-            MHS_LOG_INFO("Fluid cells: {} / {}", fluidCount, model->is_fluid.size());
+            if (fluidCount > 0) {
+                MHS_LOG_INFO("Fluid cells: {} / {}", fluidCount, model->material_table.size());
+            }
         }
-
-        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
-            model->mesh.nx, model->mesh.ny, model->mesh.nz);
 
         // Create solver
         auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::Pardiso);

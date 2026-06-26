@@ -20,17 +20,16 @@ namespace {
 
     TEST(FunctionHelpers, ExpressionEvaluator)
     {
-        mhs::core::clear_registry();
-        auto ev = make_expression_evaluator("2*x+1");
-        // 内层表达式读 ctx.x；调用方负责把自变量放进 x 槽。
+        mhs::core::SymbolTable sym;
+        auto ev = make_expression_evaluator("2*x+1", sym);
         FieldContext ctx {3, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(nullptr, 0, ctx), 7.0);
     }
 
     TEST(FunctionHelpers, ExpressionEvaluatorBindsXToT)
     {
-        mhs::core::clear_registry();
-        auto ev = make_expression_evaluator("x*x");
+        mhs::core::SymbolTable sym;
+        auto ev = make_expression_evaluator("x*x", sym);
         FieldContext ctx {5, 0, 0, 0, 0};
         EXPECT_DOUBLE_EQ(ev(nullptr, 0, ctx), 25.0);
     }
@@ -207,23 +206,23 @@ namespace {
 
     TEST(RegisterAll, GaussNativeCompiles)
     {
-        mhs::core::clear_registry();
+        mhs::core::SymbolTable sym;
         auto fns = fns_with_gauss();
-        register_all_functions(fns);
-        EXPECT_TRUE(mhs::core::get_native("test_gaussian") != nullptr);
+        register_all_functions(sym, fns);
+        EXPECT_TRUE(sym.natives.count("test_gaussian") == 1);
     }
 
     TEST(EndToEnd, ParseTakesRegisteredNative)
     {
-        mhs::core::clear_registry();
+        mhs::core::SymbolTable sym;
         auto fns = fns_with_gauss();
-        register_all_functions(fns);
+        register_all_functions(sym, fns);
 
         // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
         auto out = substitute_function_args("test_gaussian(x)", "T", fns);
         EXPECT_EQ(out, "test_gaussian(T)");
 
-        auto compiled = mhs::core::parse(out);
+        auto compiled = mhs::core::parse(out, sym);
         // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
         FieldContext ctx {0, 0, 0, 20.0, 0.0};
@@ -232,12 +231,12 @@ namespace {
 
     TEST(EndToEnd, NativeReadsTheBoundSymbol)
     {
-        mhs::core::clear_registry();
+        mhs::core::SymbolTable sym;
         auto fns = fns_with_gauss();
-        register_all_functions(fns);
+        register_all_functions(sym, fns);
 
         // 不做字面替换（"test_gaussian(x)" 直接编译），exprtk 把 x 槽绑定。
-        auto compiled = mhs::core::parse("test_gaussian(x)");
+        auto compiled = mhs::core::parse("test_gaussian(x)", sym);
         FieldContext ctx {20.0, 0, 0, 0, 0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }
