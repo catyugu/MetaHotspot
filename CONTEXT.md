@@ -46,13 +46,17 @@
 XML → core::IOStructure via io::read_xml
   → sim::Preprocessor::load → core::InternalModel
     → sim::Scheduler::run
-        ├─ sim::time_scheme::TimeScheme (Bdf1Scheme | Bdf2Scheme | AdaptiveBdfScheme)
-        │   ├─ select_step(history, t, duration) → (dt, order)
-        │   ├─ build_system(ops, accepted, order, dt) → LinearSystem
-        │   └─ evaluate_step(accepted, trial_T, dt) → StepResult
+        ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
+        │   └─ adjust dt via strategy + output-time grid
         ├─ sim::Assembler::assemble(state)            [K, f, M_diag] (单次 TBB 遍历)
-        └─ sim::nonlinear_solve(provider, state, *solver_) [Anderson 加速定点迭代]
-            → sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
+        │   └─ 纯函数: BDF1 / BDF2 stencil
+        ├─ sim::nonlinear_solve(provider, state, *solver_) [Anderson 加速定点迭代]
+        │   └─ sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
+        │   └─ 纯函数: LTE 估计 + PI 步长建议
+        └─ post-step: probe_recorder_.record()
+            — Free 模式下先对 T 做线性插值
         → post::interpolate_cell_to_node
             → io::write_vtu + io::write_xml
 ```
@@ -63,11 +67,12 @@ XML → core::IOStructure via io::read_xml
 2. 热源字典化 — `heat_source_table`（去重）+ 每单元 `uint16_t` 索引
 3. Cell-level BC — 每单元存 6 面 BC（`CellBC`）
 4. Precomputed sparsity — 组装只填值，不重建结构
-5. Backward Euler 默认；可选 BDF2 / 自适应 BDF（`TimeScheme` 抽象）
-6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `TimeScheme::build_system` 注入（`K` 用当前 T，`M_diag` 仍取 `accepted.current()` 保持 Newton 内冻结）
+5. Backward Euler 默认；BDF2 可选（`IntegratorKind` 枚举 + `build_system` 纯函数路由）
+6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入（`K` 用当前 T，`M_diag` 仍取 `accepted.current()` 保持 Newton 内冻结）
+7. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
 8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
-9. 无虚函数（`mhs::sim::LinearSolver` 与 `mhs::sim::time_scheme::TimeScheme` 除外）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
+9. 无虚函数（仅 `mhs::sim::LinearSolver` 保留虚接口）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
 10. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动）
@@ -79,7 +84,7 @@ XML → core::IOStructure via io::read_xml
 | `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `SolutionHistory accepted`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                             |
 | `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                            |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::sim::time_scheme` | `time_scheme/`                                                          | TimeScheme 抽象接口 + Bdf1Scheme / Bdf2Scheme / AdaptiveBdfScheme + TimeSchemeConfig / StepDecision / StepResult                                                                                           |
+| `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual）                             |
 | `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                           |
 | `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + sample_point 局部采样辅助                                                                                                                                          |
 | `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                          |

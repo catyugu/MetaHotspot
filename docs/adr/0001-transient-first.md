@@ -13,7 +13,7 @@ Cases include both steady and transient studies. CLAUDE.md mandates treating all
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
 - `Scheduler::run()` 根据 `InternalModel::study_type` 分支：`Steady` 跳过时间循环，调用一次 `mhs::sim::nonlinear_solve()`；`Transient` 进入时间步循环至 `current_time >= transient_duration`。
-- 瞬态使用 `TimeScheme`（默认 `AdaptiveBdf`）控制步长选择与误差评估。
+- 瞬态使用 `mhs::sim::time_scheme::StepController`（策略模式）结合 `build_system` 纯函数和 `estimate_error` 纯函数进行步长控制、LTE 估计和时间输出。
 - Nonlinear iteration lives inside each time step.
 - `GlobalState` 始终携带 `T`、`accepted`（`SolutionHistory`）和 `dt`，以支持未来时间导数项。
 

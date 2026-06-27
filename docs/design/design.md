@@ -25,7 +25,7 @@
 
 1. 内部模型不含原始字符串 — 所有表达式预编译为 `CompiledExpression`
 2. 热源字典化 — `InternalModel::heat_source_table` + 每单元 `uint16_t` 索引
-3. 无虚函数（`LinearSolver` 与 `TimeScheme` 除外）
+3. 无虚函数（仅 `LinearSolver` 保留虚接口；旧 `TimeScheme` 虚层次已拆除，替换为纯函数 + `StepController` 策略类）
 4. 无异常 — 错误走 `mhs::logger::panic()`，**程序入口 `bin/main.cpp` 的 `try/catch` 是唯一例外**（捕获 tinyxml2/muparser 抛出的 std::exception 并转 panic 退出）
 5. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, state)` 下无状态）
 6. SoA 贯穿内部模型

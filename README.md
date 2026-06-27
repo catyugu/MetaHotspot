@@ -30,7 +30,7 @@
     - `postprocessor/sample_point.hpp` — `mhs::post::sample_*`，局部 3D 采样与外推辅助。
 - **io**（领域 `mhs::io`）：XML 读取与序列化（VTU/VTK 调试输出）。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
 - **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::sim::Preprocessor::load(IOStructure) → unique_ptr<InternalModel>`；主要逻辑以 `mhs::sim::{resolve_geometry, resolve_layers, resolve_face_keys, ...}` 等自由函数形式存在于同一命名空间。
-- **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，一次 TBB 遍历返回 `AssemblyResult {K, f, M_diag}`，由 `TimeScheme::build_system` 注入时间离散。`mhs::sim::{Assembler, LinearSystem, AssemblyResult}`。TBB 并行。
+- **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，一次 TBB 遍历返回 `AssemblyResult {K, f, M_diag}`，由 `time_scheme::build_system` 纯函数注入时间离散。`mhs::sim::{Assembler, LinearSystem, AssemblyResult}`。TBB 并行。
 - **linear_solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, SparseLUSolver, BiCGSTABSolver, PardisoSolver}`。
 - **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；`Scheduler` 在每个时间步内调用 `nonlinear_solve` 直到收敛或达到模块内部的迭代上限。
 - **scheduler**（领域 `mhs::sim`）：调度完整的求解流程，时间步推进。`mhs::sim::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `InternalModel` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `NonLinearConfig` 通过可选参数传入 `nonlinear_solve`。
@@ -39,7 +39,7 @@
 ### 工具模块
 
 - **expr**（领域 `mhs::core`）：表达式解析与求值，封装 muparser。基于显式 `SymbolTable`（变量 + native 闭包）按值传递，无全局注册表与互斥锁。`mhs::core::{CompiledExpression, SymbolTable, make_constant, make_evaluator, parse, eval_geometry, ...}`。
-- **time_scheme**（领域 `mhs::sim::time_scheme`）：时间离散方案抽象。`mhs::sim::time_scheme::{TimeScheme, Bdf1Scheme, Bdf2Scheme, AdaptiveBdfScheme, TimeSchemeConfig, StepDecision, StepResult, create_scheme}`。
+- **time_scheme**（领域 `mhs::sim::time_scheme`）：三个正交组件的函数式组合。`mhs::sim::time_scheme::{IntegratorKind, build_system, StepStrategy, StepController, ErrorControlConfig, ErrorEstimate, estimate_error}`。旧 OOP `TimeScheme` 层次已拆除。
 
 ### 数据流
 

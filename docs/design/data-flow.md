@@ -16,9 +16,8 @@ XML
                       ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
                       └─> mhs::core::InternalModel
                               └─> mhs::sim::Scheduler::run
-                                    ├─> mhs::sim::time_scheme::create_scheme(cfg)   // Bdf1 | Bdf2 | AdaptiveBdf
-                                    │     ├─> select_step(history, t, duration) → (dt, order)
-                                    │     ├─> dt = clamp(dt, remaining, t_next_output - t)
+                                    ├─> mhs::sim::time_scheme::StepController::rebuild(duration)
+                                    │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
                                     │     ├─> mhs::sim::Assembler::assemble(state)
                                     │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
                                     │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ state.T
@@ -28,9 +27,10 @@ XML
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     │     └─> thread-local triplets + b + mass
                                     │     │     └─> combine_each merge → AssemblyResult {K, f, M_diag}
-                                    │     ├─> scheme->build_system(ops, history, order, dt) → LinearSystem
+                                    │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
                                     │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
-                                    │     └─> scheme->evaluate_step(history, T, dt) → StepResult
+                                    │     └─> mhs::sim::time_scheme::estimate_error(hist, T, dt, cfg) → ErrorEstimate
+                                    ├─> StepController::flush_outputs(t + dt) → output times
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
                                     └─> mhs::post::interpolate_cell_to_node           // run() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）

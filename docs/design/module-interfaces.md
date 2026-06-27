@@ -127,46 +127,50 @@ namespace mhs::sim {
 
 ## `time_scheme`
 
+Three orthogonal components replace the old OOP `TimeScheme` hierarchy:
+
 ```cpp
 namespace mhs::sim::time_scheme {
-    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
 
-    struct TimeSchemeConfig {
-        TimeSchemeKind kind = TimeSchemeKind::Bdf1;
-        double initial_dt = 1.0;
-        double min_dt     = 1e-9;
-        double max_dt     = 1.0;
-        double abs_tol    = 1e-4;
-        double rel_tol    = 1e-6;
-        std::size_t max_order = 2;
-        double safety    = 0.9;
-        double output_dt = 0.0;
+    // ── 1. Integrator (pure linear algebra) ──────────────────────────
+    enum class IntegratorKind { Bdf1, Bdf2 };
+
+    LinearSystem build_system(IntegratorKind kind, const AssemblyResult& ops,
+                              const mhs::core::SolutionHistory& hist, double dt);
+
+    // ── 2. Error controller (pure function) ─────────────────────────
+    struct ErrorControlConfig {
+        double abs_tol = 1e-4;
+        double safety  = 0.9;
+        double min_dt  = 1e-9;
+        double max_dt  = 1.0;
     };
 
-    struct StepDecision { double dt; std::size_t order; };
-    struct StepResult { bool accepted = true; };
+    struct ErrorEstimate {
+        double error_ratio = 0.0;       // LTE / abs_tol  (≤ 1 → accept)
+        double suggested_factor = 1.0;  // PI-controller multiplier
+    };
 
-    class TimeScheme {
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted,
+                                 const std::vector<double>& trial_T, double trial_dt,
+                                 const ErrorControlConfig& cfg);
+
+    // ── 3. Step controller (strategy + output-grid) ─────────────────
+    enum class StepStrategy {
+        Free,         // dt purely error-driven; output via linear interpolation
+        Strict,       // dt clamped to hit output times exactly
+        Intermediate, // ensure at least one solve point between output times
+        Manual        // fixed dt, no error-based adjustment
+    };
+
+    class StepController {
     public:
-        virtual ~TimeScheme() = default;
-        virtual void initialize(mhs::core::SolutionHistory& accepted, mhs::core::GlobalState& state) const
-        {
-            accepted.initialize(state.T);
-        }
-        virtual StepDecision select_step(const mhs::core::SolutionHistory& accepted, double current_t, double duration) const = 0;
-        virtual LinearSystem build_system(const AssemblyResult& ops,
-            const mhs::core::SolutionHistory& accepted, std::size_t order, double dt) const = 0;
-        virtual StepResult evaluate_step(
-            const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T, double trial_dt) const = 0;
-        virtual bool is_output_boundary(double t) const;
-        virtual const TimeSchemeConfig& config() const = 0;
+        StepController(StepStrategy strategy, double output_dt,
+                       double min_dt, double max_dt, double fixed_dt = 1.0);
+        void rebuild(double duration);
+        double prepare(double dt_suggested, double current_t, double duration);
+        std::vector<double> flush_outputs(double current_t);
     };
-
-    class Bdf1Scheme         : public TimeScheme { ... };  // fixed-step backward Euler
-    class Bdf2Scheme         : public TimeScheme { ... };  // fixed-step BDF2 + startup fallback
-    class AdaptiveBdfScheme  : public TimeScheme { ... };  // variable-order, variable-step
-
-    std::unique_ptr<TimeScheme> create_scheme(const TimeSchemeConfig& cfg);
 }
 ```
 
@@ -174,15 +178,20 @@ The `Scheduler::run()` main loop is:
 
 ```text
 while (current_time < duration):
-    step = scheme->select_step(accepted, t, duration)
-    dt   = clamp(step.dt, remaining, t_next_output - t)
-    ops  = assembler.assemble(state)
-    ls   = scheme->build_system(ops, accepted, step.order, dt)
-    nonlinear_solve(ls, state, solver)
-    step_result = scheme->evaluate_step(accepted, T, dt)
-    if step_result.accepted:
-        accepted.accept(T, t + dt)
-        t += dt
+    dt      = step_ctrl.prepare(dt_sug, t, duration)
+    ops     = assembler.assemble(state)
+    ls      = build_system(kind, ops, accepted, dt)
+    nonlinear_solve(provider, state, solver)
+    est     = estimate_error(accepted, T, dt, cfg)
+    if accepted:
+        dt_sug = clamp(dt * est.suggested_factor, min, max)
+        state.accepted.accept(T, t + dt)
+        t     += dt
+        for t_out in step_ctrl.flush_outputs(t):
+            if strategy == Free: interpolate T → T_out
+            else:               record directly at T
+    else:
+        dt_sug = dt * 0.5  // retry with smaller dt
 ```
 
 The `SolutionHistory` (`mhs::core::SolutionHistory`) is a ring buffer storing
