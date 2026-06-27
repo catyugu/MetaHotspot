@@ -103,7 +103,7 @@ namespace mhs::sim {
                 MHS_LOG_WARN("Non-linear iteration did not converge at step {}", state_.time_step);
             }
 
-            auto est = time_scheme::estimate_error(state_.accepted, state_.T, dt, /*err_cfg=*/{});
+            auto est = time_scheme::estimate_error(state_.accepted, state_.T, dt, /*err_cfg=*/ {});
             dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
             const bool accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
 
