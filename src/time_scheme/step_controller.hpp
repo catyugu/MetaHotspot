@@ -34,15 +34,15 @@ namespace mhs::sim::time_scheme {
     public:
         StepController() = default;
 
-        /// Construct with strategy and parameter bounds.
-        /// \param output_dt  User-requested output interval.  ≤ 0 means every
-        ///                   accepted step is an output point (no grid).
-        /// \param fixed_dt   Step size used in Manual mode (ignored otherwise).
-        StepController(StepStrategy strategy, double output_dt, double min_dt, double max_dt, double fixed_dt = 1.0);
+        /// Construct with strategy, step bounds, and Manual-mode fixed step.
+        /// `output_dt` is set later by rebuild().
+        StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt = 1.0);
 
         /// (Re)initialise for a new transient solve.  Builds the output-time grid
-        /// from the known duration and resets all internal cursors.
-        void rebuild(double duration);
+        /// from the known duration and the requested output interval, and resets
+        /// all internal cursors.  `output_dt ≤ 0` means every accepted step is an
+        /// output point (no grid).
+        void rebuild(double duration, double output_dt);
 
         /// Pre-step: given a physics-suggested dt and the current time, return an
         /// adjusted dt that respects the chosen strategy and the remaining duration.
@@ -53,6 +53,8 @@ namespace mhs::sim::time_scheme {
         std::vector<double> flush_outputs(double current_t);
 
         StepStrategy strategy() const noexcept { return strategy_; }
+        double min_dt() const noexcept { return min_dt_; }
+        double max_dt() const noexcept { return max_dt_; }
 
     private:
         StepStrategy strategy_ = StepStrategy::Free;

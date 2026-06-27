@@ -12,16 +12,16 @@ namespace mhs::sim::time_scheme {
         inline double gtol(double t) noexcept { return EPS * std::max(1.0, std::abs(t)); }
     }
 
-    StepController::StepController(
-        StepStrategy strategy, double output_dt, double min_dt, double max_dt, double fixed_dt)
-        : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt), output_dt_(output_dt)
+    StepController::StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt)
+        : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt)
     {
     }
 
-    void StepController::rebuild(double duration)
+    void StepController::rebuild(double duration, double output_dt)
     {
-        if (output_dt_ > 0.0 && duration > 0.0)
-            grid_ = OutputTimeGrid {duration, output_dt_};
+        output_dt_ = output_dt;
+        if (output_dt > 0.0 && duration > 0.0)
+            grid_ = OutputTimeGrid {duration, output_dt};
         else
             grid_ = OutputTimeGrid {};
 
@@ -36,42 +36,32 @@ namespace mhs::sim::time_scheme {
         if (remaining <= 0.0)
             return 0.0;
 
-        double dt;
+        double dt = dt_suggested;
+
+        // Snap the physics-suggested step to the next output grid point.
+        // Returns true (and updates `dt`) when such a snap is needed.
+        const auto snap_to_next = [&](bool use_planting) {
+            if (next_idx_ >= grid_.size())
+                return;
+            const double t_next = grid_.times()[next_idx_];
+            const double tol = gtol(t_next);
+            if (t_next <= current_t + tol)
+                return;
+            if (current_t + dt < t_next - tol)
+                return;
+            dt = use_planting && !planted_ ? 0.5 * (t_next - current_t) : (t_next - current_t);
+            planted_ = true;
+        };
+
         switch (strategy_) {
-
         case StepStrategy::Free:
-            dt = dt_suggested;
             break;
-
         case StepStrategy::Strict:
-            dt = dt_suggested;
-            if (next_idx_ < grid_.size()) {
-                const double t_next = grid_.times()[next_idx_];
-                const double tol = gtol(t_next);
-                if (t_next > current_t + tol && current_t + dt >= t_next - tol)
-                    dt = t_next - current_t;
-            }
+            snap_to_next(/*use_planting=*/false);
             break;
-
         case StepStrategy::Intermediate:
-            dt = dt_suggested;
-            if (next_idx_ < grid_.size()) {
-                const double t_next = grid_.times()[next_idx_];
-                const double tol = gtol(t_next);
-                if (t_next > current_t + tol) {
-                    if (!planted_ && current_t + dt >= t_next - tol) {
-                        // No internal solve point yet; plant one inside the interval.
-                        dt = 0.5 * (t_next - current_t);
-                        planted_ = true;
-                    }
-                    else if (planted_ && current_t + dt >= t_next - tol) {
-                        // Already planted; clamp to hit output exactly.
-                        dt = t_next - current_t;
-                    }
-                }
-            }
+            snap_to_next(/*use_planting=*/true);
             break;
-
         case StepStrategy::Manual:
             dt = fixed_dt_;
             break;
