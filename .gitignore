@@ -1,4 +1,4 @@
-build*/
+build*
 output*
 results
 .vscode
@@ -12,3 +12,4 @@ results
 *.steady
 *.ttrace
 __pycache__
+!src/**
