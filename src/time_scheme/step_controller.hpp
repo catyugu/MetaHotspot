@@ -32,8 +32,6 @@ namespace mhs::sim::time_scheme {
     /// Thread safety: not thread-safe.  One StepController per transient solve.
     class StepController {
     public:
-        StepController() = default;
-
         /// Construct with strategy, step bounds, and Manual-mode fixed step.
         /// `output_dt` is set later by rebuild().
         StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt = 1.0);
@@ -62,7 +60,6 @@ namespace mhs::sim::time_scheme {
         double min_dt_ = 1e-12;
         double max_dt_ = 1.0;
         double fixed_dt_ = 1.0;
-        double output_dt_ = 0.0;
 
         std::size_t next_idx_ = 0; ///< First unconsumed grid index.
         double last_flushed_t_ = 0.0; ///< Last time returned by flush_outputs().

@@ -19,7 +19,6 @@ namespace mhs::sim::time_scheme {
 
     void StepController::rebuild(double duration, double output_dt)
     {
-        output_dt_ = output_dt;
         if (output_dt > 0.0 && duration > 0.0)
             grid_ = OutputTimeGrid {duration, output_dt};
         else
