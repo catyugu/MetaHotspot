@@ -1,6 +1,5 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/linear_system.hpp"
 #include "linear_solver/linear_solver.hpp"
 
@@ -20,14 +19,12 @@ namespace mhs::sim {
         double absolute_tolerance = 1e-12;
     };
 
-    // The provider receives the current iteration's GlobalState by const
-    // reference; the solver owns the mutable state and is responsible for
-    // applying the update each iteration.  Decoupling the data flow this
-    // way makes the contract explicit and removes any hidden state
-    // captured by the provider closure.
-    using LinearSystemProvider = std::function<LinearSystem(const mhs::core::GlobalState&)>;
+    /// Per-iteration linear-system factory. Receives the current temperature
+    /// iterate as a writable Eigen::Ref so callers can pass a Map alias of an
+    /// existing std::vector without copying.
+    using LinearSystemProvider = std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>;
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::GlobalState& state,
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, Eigen::Ref<Eigen::VectorXd> T,
         LinearSolver& solver, const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

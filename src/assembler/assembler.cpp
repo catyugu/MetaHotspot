@@ -19,7 +19,7 @@ namespace mhs::sim {
         };
     } // namespace
 
-    AssemblyResult Assembler::assemble(const mhs::core::GlobalState& state) const
+    AssemblyResult Assembler::assemble(const AssembleContext& ctx) const
     {
         const auto& mesh = model_.mesh;
         const auto& cells = model_.cells;
@@ -28,8 +28,6 @@ namespace mhs::sim {
 
         int N = static_cast<int>(cells.cell_bcs.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
-
-        const std::vector<double>* T_eval_mass = (state.accepted.size() > 0) ? &state.accepted.current() : &state.T;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
 
@@ -50,15 +48,14 @@ namespace mhs::sim {
             // 缓存 cell 上下文：kx/ky/kz 共享一次构造，BC 分支也复用同一 ctx。
             size_t mat_id = cells.material_id[c_idx];
             const auto& mp = materials[mat_id];
-            const mhs::core::FieldContext ctx_c {
-                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], state.T[c_idx], state.current_time};
+            const mhs::core::FieldContext ctx_c {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[c_idx], ctx.current_time};
             const double kx_c = mp.kx.eval(ctx_c);
             const double ky_c = mp.ky.eval(ctx_c);
             const double kz_c = mp.kz.eval(ctx_c);
 
-            // Mass coefficients on accepted.current() — see comment above.
-            const mhs::core::FieldContext ctx_m {
-                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], (*T_eval_mass)[c_idx], state.current_time};
+            // Mass coefficients evaluated at the same temperature field as the
+            // diffusion terms.
+            const mhs::core::FieldContext ctx_m {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[c_idx], ctx.current_time};
             const double rho = mp.rho.eval(ctx_m);
             const double c_heat = mp.c.eval(ctx_m);
             local.mass(c_idx) += rho * c_heat * vol;
@@ -97,7 +94,7 @@ namespace mhs::sim {
 
                     const auto& mp_n = materials[cells.material_id[n_idx]];
                     const mhs::core::FieldContext ctx_n {
-                        mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], state.T[n_idx], state.current_time};
+                        mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], ctx.T[n_idx], ctx.current_time};
                     double k_neighbor
                         = utils::k_along(dir, mp_n.kx.eval(ctx_n), mp_n.ky.eval(ctx_n), mp_n.kz.eval(ctx_n));
 

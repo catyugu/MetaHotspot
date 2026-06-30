@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "data/solution_history.hpp"
 #include "expr/expr.hpp"
 #include "types.hpp"
 
@@ -55,24 +54,6 @@ namespace mhs::core {
         std::vector<CompiledExpression> cauchy_T_inf;
         // 流体-固体耦合扩展: 压力边界参数值 (不需要表达式, 直接 double)
         std::vector<double> pressure_bc_values; // index by PressureBC idx
-    };
-
-    /// Mutable, per-step state owned by Scheduler::run().
-    /// Invariant: state.T is the most recent accepted solution; it mirrors
-    /// accepted.current() at the end of every accepted step.
-    struct GlobalState {
-        double current_time = 0.0;
-        int time_step = 0;
-        double dt = 0.0;
-
-        // BDF-k history buffer.  accepted.current() == T (after accept).
-        // The buffer capacity matches the time scheme's max_order (typically
-        // 2 for BDF2 / AdaptiveBdf).  Populated via accepted.initialize(T)
-        // before the first step.
-        SolutionHistory accepted {0, 1};
-
-        // Active temperature field, length = N_active (== cells.cell_bcs.size()).
-        std::vector<double> T;
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。

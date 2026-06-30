@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/internal_model.hpp"
+#include "data/solution_history.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "scheduler/probe_recorder.hpp"
 #include <memory>
@@ -24,16 +25,24 @@ namespace mhs::sim {
         void run();
 
         const std::vector<double>& solution() const noexcept { return solution_; }
-        double currentTime() const noexcept { return state_.current_time; }
+        double currentTime() const noexcept { return step_.current_time; }
         const std::vector<mhs::core::ProbeTrace>& probeTraces() const noexcept { return probe_recorder_.traces(); }
 
     private:
         Scheduler(const Scheduler&) = delete;
         Scheduler& operator=(const Scheduler&) = delete;
 
+        struct StepState {
+            double current_time = 0.0;
+            int time_step = 0;
+            double dt = 0.0;
+            mhs::core::SolutionHistory accepted {0, 1};
+            std::vector<double> T;
+        };
+
         mhs::core::InternalModel* model_ = nullptr;
         std::unique_ptr<LinearSolver> solver_;
-        mhs::core::GlobalState state_;
+        StepState step_;
         std::vector<double> solution_;
         ProbeRecorder probe_recorder_;
     };

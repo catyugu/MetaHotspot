@@ -47,22 +47,24 @@ namespace mhs::sim {
         }
 
         const std::size_t N = static_cast<std::size_t>(model_->cells.cell_bcs.size());
-        state_.T.assign(N, model_->initial_temperature);
-        state_.current_time = 0.0;
-        state_.time_step = 0;
+        step_.T.assign(N, model_->initial_temperature);
+        step_.current_time = 0.0;
+        step_.time_step = 0;
 
         Assembler assembler(*model_);
         solveFluidFlow(*model_);
 
         // Steady: single non-linear solve, then output.
         if (model_->study_type == mhs::core::StudyType::Steady) {
-            LinearSystemProvider build_ls = [&](const mhs::core::GlobalState& s) -> LinearSystem {
-                auto ops = assembler.assemble(s);
+            LinearSystemProvider build_ls = [&](Eigen::Ref<const Eigen::VectorXd> T_in) -> LinearSystem {
+                AssembleContext ctx {T_in, step_.current_time};
+                auto ops = assembler.assemble(ctx);
                 return {std::move(ops.K), std::move(ops.f)};
             };
-            nonlinear_solve(build_ls, state_, *solver_);
-            solution_ = state_.T;
-            probe_recorder_.record(state_.current_time, state_.T);
+            Eigen::Map<Eigen::VectorXd> T_map(step_.T.data(), static_cast<Eigen::Index>(N));
+            nonlinear_solve(build_ls, T_map, *solver_);
+            solution_ = step_.T;
+            probe_recorder_.record(step_.current_time, step_.T);
             return;
         }
 
@@ -77,61 +79,64 @@ namespace mhs::sim {
 
         // Solution-history ring buffer: capacity 2 (one for current, one for
         // the previous step — enough for BDF2's startup sequence).
-        state_.accepted = mhs::core::SolutionHistory(N, 2);
+        step_.accepted = mhs::core::SolutionHistory(N, 2);
         step_ctrl.rebuild(duration, output_dt);
 
-        state_.accepted.initialize(state_.T, state_.current_time);
-        probe_recorder_.record(state_.current_time, state_.T);
+        step_.accepted.initialize(step_.T, step_.current_time);
+        probe_recorder_.record(step_.current_time, step_.T);
 
         double dt_sug = std::clamp(output_dt / 10.0, min_dt, max_dt);
         double dt = dt_sug;
 
-        while (state_.current_time < duration - 1e-14) {
-            dt = step_ctrl.prepare(dt_sug, state_.current_time, duration);
+        Eigen::Map<Eigen::VectorXd> T_map(step_.T.data(), static_cast<Eigen::Index>(N));
+
+        while (step_.current_time < duration - 1e-14) {
+            dt = step_ctrl.prepare(dt_sug, step_.current_time, duration);
             if (dt <= 0.0)
                 break;
-            state_.dt = dt;
+            step_.dt = dt;
 
             // Re-assembles K, f inside each non-linear iteration; M_diag is
             // frozen at accepted.current() via build_system's BDF stencil logic.
-            LinearSystemProvider provider = [&](const mhs::core::GlobalState& s) -> LinearSystem {
+            LinearSystemProvider provider = [&](Eigen::Ref<const Eigen::VectorXd> T_in) -> LinearSystem {
+                AssembleContext ctx {T_in, step_.current_time};
                 return time_scheme::build_system(
-                    time_scheme::IntegratorKind::Bdf1, assembler.assemble(s), s.accepted, s.dt);
+                    time_scheme::IntegratorKind::Bdf1, assembler.assemble(ctx), step_.accepted, step_.dt);
             };
-            auto nl = nonlinear_solve(provider, state_, *solver_);
+            auto nl = nonlinear_solve(provider, T_map, *solver_);
             if (!nl.converged) {
-                MHS_LOG_WARN("Non-linear iteration did not converge at step {}", state_.time_step);
+                MHS_LOG_WARN("Non-linear iteration did not converge at step {}", step_.time_step);
             }
 
-            auto est = time_scheme::estimate_error(state_.accepted, state_.T, dt, /*err_cfg=*/ {});
+            auto est = time_scheme::estimate_error(step_.accepted, step_.T, dt, /*err_cfg=*/ {});
             dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
             const bool accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
 
             if (accepted_step) {
-                state_.current_time += dt;
-                state_.time_step++;
-                state_.accepted.accept(state_.T, state_.current_time);
+                step_.current_time += dt;
+                step_.time_step++;
+                step_.accepted.accept(step_.T, step_.current_time);
 
-                MHS_LOG_DEBUG("Time: {} solved (dt={})", state_.current_time, dt);
+                MHS_LOG_DEBUG("Time: {} solved (dt={})", step_.current_time, dt);
 
                 // Free mode: step end may overshoot output time → interpolate.
-                auto out = step_ctrl.flush_outputs(state_.current_time);
+                auto out = step_ctrl.flush_outputs(step_.current_time);
                 for (double t_out : out) {
                     auto T_interp = lerp_T(
-                        /* t0 = */ state_.accepted.time_at(1),
-                        /* T0 = */ state_.accepted.at(1),
-                        /* t1 = */ state_.current_time,
-                        /* T1 = */ state_.T, t_out);
+                        /* t0 = */ step_.accepted.time_at(1),
+                        /* T0 = */ step_.accepted.at(1),
+                        /* t1 = */ step_.current_time,
+                        /* T1 = */ step_.T, t_out);
                     probe_recorder_.record(t_out, T_interp);
                 }
             }
             else {
                 dt_sug = dt * 0.5;
-                MHS_LOG_DEBUG("Step rejected at t={}, retry dt={}", state_.current_time, dt_sug);
+                MHS_LOG_DEBUG("Step rejected at t={}, retry dt={}", step_.current_time, dt_sug);
             }
         }
 
-        solution_ = state_.T;
+        solution_ = step_.T;
     }
 
 } // namespace mhs::sim
