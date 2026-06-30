@@ -1,6 +1,9 @@
 build*
 output*
 results
+*.log
+.claude
+.cache
 .vscode
 .idea
 .pytest_cache
