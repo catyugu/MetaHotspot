@@ -15,9 +15,10 @@ namespace mhs::sim {
     //   - ctx 是当前物理上下文（x, y, z, T, t 的真实值），仅作为参考
     // 单变元函数族（除 make_expression_evaluator 外）不参考 ctx。
 
-    mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr)
+    mhs::core::FieldEvaluator make_expression_evaluator(
+        const std::string& inner_expr, const mhs::core::SymbolTable& symbols)
     {
-        auto ce = mhs::core::parse(inner_expr);
+        auto ce = mhs::core::parse(inner_expr, symbols);
         return [ce](const double* args, int nargs, const mhs::core::FieldContext& ctx) {
             mhs::core::FieldContext effective_ctx = ctx;
             if (nargs > 0) {
@@ -134,15 +135,16 @@ namespace mhs::sim {
         return out;
     }
 
-    // ---- 注册全部 native --------------------------------------------------
+    // ---- 写入 SymbolTable -------------------------------------------------
 
-    void register_all_functions(const std::unordered_map<std::string, mhs::core::Function>& fns)
+    void register_all_functions(
+        mhs::core::SymbolTable& symbols, const std::unordered_map<std::string, mhs::core::Function>& fns)
     {
         for (const auto& [key, fn] : fns) {
             mhs::core::FieldEvaluator ev = nullptr;
             switch (fn.type) {
             case mhs::core::FunctionType::Expression:
-                ev = make_expression_evaluator(fn.expression.expression);
+                ev = make_expression_evaluator(fn.expression.expression, symbols);
                 break;
             case mhs::core::FunctionType::DoubleExponential:
                 ev = make_double_exp_evaluator(fn.double_exp.a, fn.double_exp.alpha, fn.double_exp.beta);
@@ -157,7 +159,7 @@ namespace mhs::sim {
                 ev = make_piecewise_evaluator(fn.piecewise.points);
                 break;
             }
-            mhs::core::register_native(key, std::move(ev));
+            symbols.natives[key] = std::move(ev);
         }
     }
 

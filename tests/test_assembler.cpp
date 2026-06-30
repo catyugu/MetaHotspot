@@ -76,13 +76,12 @@ TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
     ASSERT_NE(model, nullptr);
 
     int N = static_cast<int>(model->cells.cell_bcs.size());
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.current_time = 0.0;
-    state.dt = 0.0;
+    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
+    AssembleContext ctx {T_map, 0.0};
 
     Assembler assembler(*model);
-    auto ops = assembler.assemble(state);
+    auto ops = assembler.assemble(ctx);
 
     EXPECT_EQ(ops.K.rows(), N);
     EXPECT_EQ(ops.K.cols(), N);
@@ -93,32 +92,30 @@ TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
 TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
 {
     // Key invariant: assemble does NOT add M_diag/dt to the diagonal.
-    // Compare two calls: one with dt=0 (steady path), one with dt=1.0 (transient).
-    // The K matrix itself must be IDENTICAL — transient terms live in
-    // nonlinear_solve, not in assemble.
+    // Compare two calls at the same T; the K matrix must be identical —
+    // transient terms live in nonlinear_solve / build_system, not in assemble.
     auto io = make_simple_cube_io();
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
     int N = static_cast<int>(model->cells.cell_bcs.size());
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.current_time = 0.0;
+    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
 
     Assembler assembler(*model);
 
-    state.dt = 0.0;
-    auto ops_a = assembler.assemble(state);
+    AssembleContext ctx_a {T_map, 0.0};
+    auto ops_a = assembler.assemble(ctx_a);
 
-    state.dt = 1.0;
-    auto ops_b = assembler.assemble(state);
+    AssembleContext ctx_b {T_map, 0.0};
+    auto ops_b = assembler.assemble(ctx_b);
 
     EXPECT_EQ(ops_a.K.nonZeros(), ops_b.K.nonZeros());
     for (int k = 0; k < ops_a.K.outerSize(); ++k) {
         for (typename Eigen::SparseMatrix<double>::InnerIterator it(ops_a.K, k); it; ++it) {
             double diff = std::abs(it.value() - ops_b.K.coeff(it.row(), it.col()));
-            EXPECT_LT(diff, 1e-12) << "K(" << it.row() << "," << it.col() << ") differs with dt change";
+            EXPECT_LT(diff, 1e-12) << "K(" << it.row() << "," << it.col() << ") differs across calls";
         }
     }
 }
@@ -131,12 +128,12 @@ TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
     ASSERT_NE(model, nullptr);
 
     int N = static_cast<int>(model->cells.cell_bcs.size());
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.current_time = 0.0;
+    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
+    AssembleContext ctx {T_map, 0.0};
 
     Assembler assembler(*model);
-    auto ops = assembler.assemble(state);
+    auto ops = assembler.assemble(ctx);
 
     EXPECT_EQ(ops.M_diag.size(), N);
     // Each cell: rho=8920, c=385, vol = (5e-3)^3 = 1.25e-7
@@ -195,12 +192,12 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     Assembler assembler(*model);
 
-    mhs::core::GlobalState s1;
-    s1.T.assign(N, 300.0);
+    std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
+    std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
+    AssembleContext s1 {Eigen::Map<const Eigen::VectorXd>(T300.data(), N), 0.0};
     auto k1 = assembler.assemble(s1).K;
 
-    mhs::core::GlobalState s2;
-    s2.T.assign(N, 500.0);
+    AssembleContext s2 {Eigen::Map<const Eigen::VectorXd>(T500.data(), N), 0.0};
     auto k2 = assembler.assemble(s2).K;
 
     bool differs = false;
@@ -225,13 +222,12 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     ASSERT_NE(model, nullptr);
 
     int N = static_cast<int>(model->cells.cell_bcs.size());
-    mhs::core::GlobalState state;
-    state.T.resize(N, 300.0);
-    state.current_time = 0.0;
-    state.dt = 0.0;
+    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
+    AssembleContext ctx {T_map, 0.0};
 
     Assembler assembler(*model);
-    auto ops = assembler.assemble(state);
+    auto ops = assembler.assemble(ctx);
 
     // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
     for (int i = 0; i < N; ++i) {
@@ -256,13 +252,12 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     int N = static_cast<int>(model->cells.cell_bcs.size());
     EXPECT_GT(N, 0);
 
-    mhs::core::GlobalState state;
-    state.T.resize(N, model->initial_temperature);
-    state.current_time = 0.0;
-    state.dt = 0.0;
+    std::vector<double> T(static_cast<std::size_t>(N), model->initial_temperature);
+    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
+    AssembleContext ctx {T_map, 0.0};
 
     Assembler assembler(*model);
-    auto ops = assembler.assemble(state);
+    auto ops = assembler.assemble(ctx);
     EXPECT_EQ(ops.K.rows(), N);
     EXPECT_EQ(ops.K.cols(), N);
     EXPECT_GT(ops.K.nonZeros(), 0);

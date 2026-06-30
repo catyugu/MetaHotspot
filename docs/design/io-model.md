@@ -116,7 +116,7 @@ struct IOStructure {
 
 ## 2.2 表达式函数类型
 
-`IOStructure.functions` 是 `unordered_map<string, Function>`，按 `Function.type` 分发到 `mhs::sim::function_helpers` 的 5 个闭包构造器之一。预处理阶段用 `mhs::sim::register_all_functions` 把整张表注册为 expr 全局 native。
+`IOStructure.functions` 是 `unordered_map<string, Function>`，按 `Function.type` 分发到 `mhs::sim::function_helpers` 的 5 个闭包构造器之一。预处理阶段用 `mhs::sim::register_all_functions(symbols, fns)` 把整张表写入本地 `mhs::core::SymbolTable::natives`，`parse(formula, symbols)` 在编译时绑定到 muparser 实例。
 
 ```cpp
 namespace mhs::core {

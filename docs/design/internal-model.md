@@ -54,27 +54,22 @@ struct BCParamTable {
 };
 ```
 
-## GlobalState
+## AssembleContext
+
+定义在 `src/assembler/assembler.hpp`，是 `Assembler::assemble` 接收的最小数据容器：
 
 ```cpp
-struct GlobalState {
-    double current_time  = 0.0;
-    int    time_step     = 0;
-    double dt            = 0.0;   // current transient step size
-
-    SolutionHistory accepted{0, 1};  // BDF-k ring buffer (cap = max_order+1)
-
-    std::vector<double> T;          // 长度 = N_active
+struct AssembleContext {
+    Eigen::Ref<const Eigen::VectorXd> T;
+    double current_time = 0.0;
 };
 ```
 
 **Invariants:**
 
-- `accepted.current() == T` at the end of every accepted step.
-- The previous-step snapshot is at `accepted.at(1)`.
-- `accepted.capacity()` is set to `max_order + 1` in `Scheduler::run()`.
-- `dt` is the **most recently committed** step length (not the
-  upcoming one — use the time-scheme's `StepDecision` for that).
+- `T.size() == N_active`（与 `cells.cell_bcs.size()` 一致）。
+
+历史步缓存（`SolutionHistory`）、`dt`、`time_step` 由 `Scheduler::run()` 内部持有，**不**放在 `AssembleContext` 中，也**不**放入 `InternalModel`。
 
 ## InternalModel
 

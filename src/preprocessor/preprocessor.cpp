@@ -1,5 +1,6 @@
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
+#include "fluid_preprocessor.hpp"
 #include "function_helpers.hpp"
 #include "layer_processor.hpp"
 #include "preprocessor.hpp"
@@ -8,7 +9,8 @@
 
 namespace mhs::sim {
 
-    std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(const mhs::core::IOStructure& ioStructure)
+    std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(
+        const mhs::core::IOStructure& ioStructure, const std::optional<mhs::core::FluidOverlay>& fluidOverlay)
     {
         auto model = std::make_unique<mhs::core::InternalModel>();
 
@@ -17,15 +19,17 @@ namespace mhs::sim {
         model->transient_duration = ioStructure.transient_duration;
         model->transient_time_step = ioStructure.transient_time_step;
 
-        // 解析几何表达式上下文：变量注册到 expr 全局表，function 在下方 register。
+        // 解析几何表达式上下文：变量求值后写入本地的 SymbolTable，natives 由 register_all_functions 填充。
         // 必须在 observation_points 求值前完成，因为后者可能引用变量。
-        mhs::core::clear_registry();
+        // 几何变量的 value 在当前调用约定下总被解析为纯数字（无前向引用），
+        // 所以用一个空表作为临时求值上下文即可。
+        mhs::core::SymbolTable empty_for_geometry_eval;
+        mhs::core::SymbolTable symbols;
         for (const auto& var : ioStructure.variables) {
-            double val = mhs::core::eval_geometry(var.value);
-            mhs::core::set_variable(var.name, val);
+            double val = mhs::core::eval_geometry(var.value, empty_for_geometry_eval);
+            symbols.variables[var.name] = val;
         }
-        const auto& fns = ioStructure.functions;
-        register_all_functions(fns);
+        register_all_functions(symbols, ioStructure.functions);
 
         const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
 
@@ -33,9 +37,9 @@ namespace mhs::sim {
         for (const auto& src : ioStructure.observation_points) {
             mhs::core::ProbePoint p;
             p.name = src.name;
-            p.x = mhs::core::eval_geometry(src.x) * si_scale;
-            p.y = mhs::core::eval_geometry(src.y) * si_scale;
-            p.z = mhs::core::eval_geometry(src.z) * si_scale;
+            p.x = mhs::core::eval_geometry(src.x, symbols) * si_scale;
+            p.y = mhs::core::eval_geometry(src.y, symbols) * si_scale;
+            p.z = mhs::core::eval_geometry(src.z, symbols) * si_scale;
             model->observation_points.push_back(std::move(p));
         }
 
@@ -74,7 +78,7 @@ namespace mhs::sim {
             mesh.cz[k] = (v0 + v1) * 0.5;
         }
 
-        auto resolved_layers = resolve_geometry(ioStructure.layers, si_scale);
+        auto resolved_layers = resolve_geometry(ioStructure.layers, si_scale, symbols);
 
         std::vector<std::string> material_names;
         std::unordered_map<std::string, size_t> name_to_idx;
@@ -91,11 +95,16 @@ namespace mhs::sim {
         model->material_table.resize(material_names.size());
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = ioStructure.materials.at(material_names[m]);
-            model->material_table[m].kx = mhs::core::parse(substitute_function_args(mat.kx, "T", fns));
-            model->material_table[m].ky = mhs::core::parse(substitute_function_args(mat.ky, "T", fns));
-            model->material_table[m].kz = mhs::core::parse(substitute_function_args(mat.kz, "T", fns));
-            model->material_table[m].rho = mhs::core::parse(substitute_function_args(mat.midu, "T", fns));
-            model->material_table[m].c = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", fns));
+            model->material_table[m].kx
+                = mhs::core::parse(substitute_function_args(mat.kx, "T", ioStructure.functions), symbols);
+            model->material_table[m].ky
+                = mhs::core::parse(substitute_function_args(mat.ky, "T", ioStructure.functions), symbols);
+            model->material_table[m].kz
+                = mhs::core::parse(substitute_function_args(mat.kz, "T", ioStructure.functions), symbols);
+            model->material_table[m].rho
+                = mhs::core::parse(substitute_function_args(mat.midu, "T", ioStructure.functions), symbols);
+            model->material_table[m].c
+                = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", ioStructure.functions), symbols);
         }
 
         // --- 热源字典构建（必须在 resolve_layers 之前完成，因 resolve_layers
@@ -109,7 +118,8 @@ namespace mhs::sim {
             for (size_t b = 0; b < resolved_layers[l].blocks.size(); b++) {
                 uint16_t hs_idx = (uint16_t)model->heat_source_table.size();
                 const std::string& raw = resolved_layers[l].blocks[b].ti_reyuan_expr;
-                model->heat_source_table.push_back(mhs::core::parse(substitute_function_args(raw, "t", fns)));
+                model->heat_source_table.push_back(
+                    mhs::core::parse(substitute_function_args(raw, "t", ioStructure.functions), symbols));
                 block_hs_map[l][b] = hs_idx;
             }
         }
@@ -119,10 +129,11 @@ namespace mhs::sim {
         // 不再有第二次全网格遍历去填 heat_source_idx 或 face BCs —— layer/block 归属判定时一并写入
         // cell_bcs 由零初始化保证全 None（不是之前的三重循环）。
         auto& bc_params = model->bc_params;
-        auto bc_rewriter = [&fns](const std::string& s) { return substitute_function_args(s, "T", fns); };
+        auto bc_rewriter
+            = [&ioStructure](const std::string& s) { return substitute_function_args(s, "T", ioStructure.functions); };
 
         // 先展平所有 boundary face keys（不依赖 CellFields）。
-        auto parsed_keys = parse_all_face_keys(ioStructure.boundaries, bc_params, si_scale, bc_rewriter);
+        auto parsed_keys = parse_all_face_keys(ioStructure.boundaries, bc_params, si_scale, bc_rewriter, symbols);
 
         // 构建 other_bc 参数并决定兜底类型的索引。
         mhs::core::BcType other_bc_enum = mhs::core::BcType::None;
@@ -130,20 +141,23 @@ namespace mhs::sim {
         switch (ioStructure.other_bc_type) {
         case mhs::core::ThermalBCType::FirstType: {
             other_bc_enum = mhs::core::BcType::FirstType;
-            bc_params.dirichlet_T.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_first.temperature)));
+            bc_params.dirichlet_T.push_back(
+                mhs::core::parse(bc_rewriter(ioStructure.other_bc_first.temperature), symbols));
             other_bc_idx = (uint16_t)(bc_params.dirichlet_T.size() - 1);
             break;
         }
         case mhs::core::ThermalBCType::SecondType: {
             other_bc_enum = mhs::core::BcType::SecondType;
-            bc_params.neumann_q.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_second.heat_flux)));
+            bc_params.neumann_q.push_back(
+                mhs::core::parse(bc_rewriter(ioStructure.other_bc_second.heat_flux), symbols));
             other_bc_idx = (uint16_t)(bc_params.neumann_q.size() - 1);
             break;
         }
         case mhs::core::ThermalBCType::ThirdType: {
             other_bc_enum = mhs::core::BcType::ThirdType;
-            bc_params.cauchy_h.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.convection_coeff)));
-            bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.T_inf)));
+            bc_params.cauchy_h.push_back(
+                mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.convection_coeff), symbols));
+            bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.T_inf), symbols));
             other_bc_idx = (uint16_t)(bc_params.cauchy_h.size() - 1);
             break;
         }
@@ -151,6 +165,12 @@ namespace mhs::sim {
 
         model->cells = resolve_layers(
             resolved_layers, mesh, name_to_idx, block_hs_map, parsed_keys, other_bc_enum, other_bc_idx);
+
+        // Apply fluid overlay (if any) using the same SymbolTable so viscosity
+        // expressions see the same natives/variables as the rest of the model.
+        if (fluidOverlay.has_value()) {
+            mhs::sim::applyFluidOverlay(*model, fluidOverlay, ioStructure, symbols);
+        }
 
         return model;
     }

@@ -11,7 +11,9 @@ mhs_add_library(mhs_lib
     scheduler/probe_recorder.cpp
     postprocessor/postprocessor.cpp
     postprocessor/sample_point.cpp
-    time_scheme/time_scheme.cpp
+    time_scheme/integrator.cpp
+    time_scheme/step_controller.cpp
+    time_scheme/error_controller.cpp
     PUBLIC_LINKS
     preprocessor_lib
     expr_lib

@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace mhs::core {
 
@@ -18,11 +19,18 @@ namespace mhs::core {
     };
     using FieldEvaluator = std::function<double(const double* args, int nargs, const FieldContext& ctx)>;
 
+    struct SymbolTable {
+        std::unordered_map<std::string, double> variables;
+        std::unordered_map<std::string, FieldEvaluator> natives;
+    };
+
     // Internal: Thread-Local Storage wrapper for muparser compiled instances
     struct MuCompiledTLS;
 
     // Precompiled expression (Copyable, thread-safe eval via TLS)
     // Each thread accessing this expression will instantiate its own muparser instance on-demand.
+    // All symbols the formula needs are captured from the SymbolTable passed to parse();
+    // after construction, eval() does not touch any global state.
     class CompiledExpression {
     public:
         CompiledExpression();
@@ -40,7 +48,7 @@ namespace mhs::core {
         double constant_value() const { return const_val_; }
 
         static CompiledExpression make_constant(double value);
-        static CompiledExpression make_evaluator(const std::string& formula);
+        static CompiledExpression make_evaluator(const std::string& formula, const SymbolTable& symbols);
 
     private:
         bool is_const_ = false;
@@ -48,16 +56,12 @@ namespace mhs::core {
         std::shared_ptr<MuCompiledTLS> tls_impl_;
     };
 
-    // Thread-safe registry operations (mutex-protected)
-    void set_variable(const std::string& name, double value);
-    void register_native(const std::string& name, FieldEvaluator func);
-    FieldEvaluator get_native(const std::string& name);
-    void clear_registry();
+    // Parse a field expression string against the supplied SymbolTable.
+    // The SymbolTable's natives are bound into the compiled AST; variables are
+    // only resolved through eval_geometry, not parse.
+    CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
 
-    // Parse a field expression string
-    CompiledExpression parse(const std::string& formula);
-
-    // Evaluate a geometry expression (uses registered variables)
-    double eval_geometry(const std::string& formula);
+    // Evaluate a geometry expression against the supplied SymbolTable's variables.
+    double eval_geometry(const std::string& formula, const SymbolTable& symbols);
 
 } // namespace mhs::core

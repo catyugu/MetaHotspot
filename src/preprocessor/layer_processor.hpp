@@ -2,6 +2,7 @@
 
 #include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "expr/expr.hpp"
 #include "face_key_processor.hpp" // for ParsedFaceKey
 
 namespace mhs::sim {
@@ -34,8 +35,10 @@ namespace mhs::sim {
     };
 
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
-    // This eliminates repeated eval_geometry calls in the cell loops
-    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale);
+    // This eliminates repeated eval_geometry calls in the cell loops.
+    // `symbols` provides the geometry variables each expression may reference.
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale,
+        const mhs::core::SymbolTable& symbols);
 
     // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
     // Uses pre-evaluated geometry values — no expression evaluation at runtime

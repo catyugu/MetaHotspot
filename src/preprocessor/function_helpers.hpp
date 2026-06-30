@@ -8,7 +8,9 @@
 
 namespace mhs::sim {
 
-    mhs::core::FieldEvaluator make_expression_evaluator(const std::string& inner_expr);
+    // 闭包构造器。Expression 类型需要传入 SymbolTable 以便内层表达式能正确解析。
+    mhs::core::FieldEvaluator make_expression_evaluator(
+        const std::string& inner_expr, const mhs::core::SymbolTable& symbols);
     mhs::core::FieldEvaluator make_double_exp_evaluator(double a, double alpha, double beta);
     mhs::core::FieldEvaluator make_gauss_evaluator(double a, double tau, double x0);
     mhs::core::FieldEvaluator make_sine_evaluator(double a, double omega, double phi);
@@ -20,7 +22,9 @@ namespace mhs::sim {
     std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
         const std::unordered_map<std::string, mhs::core::Function>& fns);
 
-    // 把 mhs::core::IOStructure 的所有 mhs::core::Function 注册为 expr 全局 native。
-    void register_all_functions(const std::unordered_map<std::string, mhs::core::Function>& fns);
+    // 把 mhs::core::IOStructure 的所有 mhs::core::Function 注册为 SymbolTable 的 natives。
+    // 不写任何全局状态；调用方持有 SymbolTable，函数闭包按值存于其中。
+    void register_all_functions(
+        mhs::core::SymbolTable& symbols, const std::unordered_map<std::string, mhs::core::Function>& fns);
 
 } // namespace mhs::sim

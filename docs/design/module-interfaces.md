@@ -24,7 +24,9 @@ namespace mhs::io {
 namespace mhs::sim {
     class Preprocessor {
     public:
-        std::unique_ptr<mhs::core::InternalModel> load(const mhs::core::IOStructure& io);
+        std::unique_ptr<mhs::core::InternalModel> load(
+            const mhs::core::IOStructure& io,
+            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
 }
 
@@ -40,7 +42,8 @@ struct ResolvedLayerGeometry{ std::vector<ResolvedBlock> blocks;
                               double z_start, z_end; };  // SI
 
 std::vector<ResolvedLayerGeometry> resolve_geometry(
-    const std::vector<mhs::core::Layer>& layers, double si_scale);
+    const std::vector<mhs::core::Layer>& layers, double si_scale,
+    const mhs::core::SymbolTable& symbols);
 
 int find_block_for_cell(const ResolvedLayerGeometry& layer,
                         double cx, double cy, double cz);  // -1 = virtual
@@ -62,14 +65,11 @@ struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
 FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
 bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
-void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
-                       mhs::core::ThermalBCType other_bc_type,
-                       const mhs::core::FirstTypeThermalBC&  other_bc_first,
-                       const mhs::core::SecondTypeThermalBC& other_bc_second,
-                       const mhs::core::ThirdTypeThermalBC&  other_bc_third,
-                       const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
-                       mhs::core::BCParamTable& bc_params, double si_scale,
-                       const std::function<std::string(const std::string&)>& rewriter);
+std::vector<ParsedFaceKey> parse_all_face_keys(
+    const std::vector<mhs::core::Boundary>& boundaries,
+    mhs::core::BCParamTable& bc_params, double si_scale,
+    const std::function<std::string(const std::string&)>& rewriter,
+    const mhs::core::SymbolTable& symbols);
 ```
 
 ### 预处理流程
@@ -77,14 +77,15 @@ void resolve_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
 ```text
 mhs::core::IOStructure
   └─> Preprocessor::load()
-        ├─> mhs::core::clear_registry() + set_variable(几何变量) + mhs::sim::register_all_functions(ios.functions)
+        ├─> 构造本地 mhs::core::SymbolTable（几何变量 + register_all_functions 注入 native）
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
-        ├─> resolve_geometry()     // 预求层 Z 范围 + Block XY 坐标
-        ├─> material_table         // 解析 k/rho/c
-        ├─> resolve_layers()       // valid_mask + index_map (full-grid), material_id (compact)
-        ├─> heat_source_table      // 去重 ti_reyuan_expr，idx 0 = constant(0)
+        ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
+        ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
+        ├─> resolve_layers()           // valid_mask + index_map (full-grid), material_id (compact)
+        ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> resolve_face_keys()    // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
         └─> mhs::core::InternalModel ready
 ```
 
@@ -98,19 +99,25 @@ namespace mhs::sim {
     };
 
     /// Result of a single assembler sweep over the active grid.
-    /// Diffusion and BC terms are evaluated at state.T (current Newton
-    /// iterate); the mass term is evaluated at history.latest() to keep
-    /// it constant across Newton iterations (legacy BDF1 stability).
+    /// All terms (diffusion, BC, source, mass) are evaluated at the
+    /// temperature field and time passed in via AssembleContext.
     struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
         Eigen::VectorXd f;
         Eigen::VectorXd M_diag;
     };
 
+    /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
+    /// Invariant (caller-enforced): T.size() == N_active.
+    struct AssembleContext {
+        Eigen::Ref<const Eigen::VectorXd> T;
+        double current_time = 0.0;
+    };
+
     class Assembler {
     public:
         explicit Assembler(const mhs::core::InternalModel& model);
-        AssemblyResult assemble(const mhs::core::GlobalState& state) const;
+        AssemblyResult assemble(const AssembleContext& ctx) const;
     };
 }
 ```
@@ -120,52 +127,56 @@ namespace mhs::sim {
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
-- 质量项 `M_diag[c] = ρ·c·vol`，在 `history.latest()` 处求值
+- 质量项 `M_diag[c] = ρ·c·vol`，在 `ctx.T` 处求值
 
 所有 `eval()` 走 TBB ETS，无锁。
 
 ## `time_scheme`
 
+Three orthogonal components replace the old OOP `TimeScheme` hierarchy:
+
 ```cpp
 namespace mhs::sim::time_scheme {
-    enum class TimeSchemeKind { Bdf1, Bdf2, AdaptiveBdf };
 
-    struct TimeSchemeConfig {
-        TimeSchemeKind kind = TimeSchemeKind::Bdf1;
-        double initial_dt = 1.0;
-        double min_dt     = 1e-9;
-        double max_dt     = 1.0;
-        double abs_tol    = 1e-4;
-        double rel_tol    = 1e-6;
-        std::size_t max_order = 2;
-        double safety    = 0.9;
-        double output_dt = 0.0;
+    // ── 1. Integrator (pure linear algebra) ──────────────────────────
+    enum class IntegratorKind { Bdf1, Bdf2 };
+
+    LinearSystem build_system(IntegratorKind kind, const AssemblyResult& ops,
+                              const mhs::core::SolutionHistory& hist, double dt);
+
+    // ── 2. Error controller (pure function) ─────────────────────────
+    struct ErrorControlConfig {
+        double abs_tol = 1e-4;
+        double safety  = 0.9;
+        double min_dt  = 1e-9;
+        double max_dt  = 1.0;
     };
 
-    struct StepDecision { double dt; std::size_t order; };
-    struct StepResult { bool accepted = true; };
+    struct ErrorEstimate {
+        double error_ratio = 0.0;       // LTE / abs_tol  (≤ 1 → accept)
+        double suggested_factor = 1.0;  // PI-controller multiplier
+    };
 
-    class TimeScheme {
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted,
+                                 const std::vector<double>& trial_T, double trial_dt,
+                                 const ErrorControlConfig& cfg);
+
+    // ── 3. Step controller (strategy + output-grid) ─────────────────
+    enum class StepStrategy {
+        Free,         // dt purely error-driven; output via linear interpolation
+        Strict,       // dt clamped to hit output times exactly
+        Intermediate, // ensure at least one solve point between output times
+        Manual        // fixed dt, no error-based adjustment
+    };
+
+    class StepController {
     public:
-        virtual ~TimeScheme() = default;
-        virtual void initialize(mhs::core::SolutionHistory& accepted, mhs::core::GlobalState& state) const
-        {
-            accepted.initialize(state.T);
-        }
-        virtual StepDecision select_step(const mhs::core::SolutionHistory& accepted, double current_t, double duration) const = 0;
-        virtual LinearSystem build_system(const AssemblyResult& ops,
-            const mhs::core::SolutionHistory& accepted, std::size_t order, double dt) const = 0;
-        virtual StepResult evaluate_step(
-            const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T, double trial_dt) const = 0;
-        virtual bool is_output_boundary(double t) const;
-        virtual const TimeSchemeConfig& config() const = 0;
+        StepController(StepStrategy strategy, double output_dt,
+                       double min_dt, double max_dt, double fixed_dt = 1.0);
+        void rebuild(double duration);
+        double prepare(double dt_suggested, double current_t, double duration);
+        std::vector<double> flush_outputs(double current_t);
     };
-
-    class Bdf1Scheme         : public TimeScheme { ... };  // fixed-step backward Euler
-    class Bdf2Scheme         : public TimeScheme { ... };  // fixed-step BDF2 + startup fallback
-    class AdaptiveBdfScheme  : public TimeScheme { ... };  // variable-order, variable-step
-
-    std::unique_ptr<TimeScheme> create_scheme(const TimeSchemeConfig& cfg);
 }
 ```
 
@@ -173,15 +184,20 @@ The `Scheduler::run()` main loop is:
 
 ```text
 while (current_time < duration):
-    step = scheme->select_step(accepted, t, duration)
-    dt   = clamp(step.dt, remaining, t_next_output - t)
-    ops  = assembler.assemble(state)
-    ls   = scheme->build_system(ops, accepted, step.order, dt)
-    nonlinear_solve(ls, state, solver)
-    step_result = scheme->evaluate_step(accepted, T, dt)
-    if step_result.accepted:
+    dt      = step_ctrl.prepare(dt_sug, t, duration)
+    ops     = assembler.assemble(ctx)
+    ls      = build_system(kind, ops, accepted, dt)
+    nonlinear_solve(provider, T, solver)
+    est     = estimate_error(accepted, T, dt, cfg)
+    if accepted:
+        dt_sug = clamp(dt * est.suggested_factor, min, max)
         accepted.accept(T, t + dt)
-        t += dt
+        t     += dt
+        for t_out in step_ctrl.flush_outputs(t):
+            if strategy == Free: interpolate T → T_out
+            else:               record directly at T
+    else:
+        dt_sug = dt * 0.5  // retry with smaller dt
 ```
 
 The `SolutionHistory` (`mhs::core::SolutionHistory`) is a ring buffer storing
@@ -238,13 +254,13 @@ namespace mhs::sim {
     };
 
     NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider,
-                                    mhs::core::GlobalState& state,
+                                    Eigen::Ref<Eigen::VectorXd> T,
                                     LinearSolver& solver,
                                     const NonLinearConfig& cfg = {});
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(const mhs::core::GlobalState&)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的 `GlobalState`（按 `const&`），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
+`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的温度场（按 `Eigen::Ref<const Eigen::VectorXd>`，零拷贝），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
 
 非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
 
@@ -278,7 +294,7 @@ namespace mhs::sim {
 }
 ```
 
-时间状态（`current_time`, `time_step`, `dt`）在 `mhs::core::GlobalState`，非 `Scheduler` 私有成员。
+时间状态（`current_time`, `time_step`, `dt`）与已接受步历史（`SolutionHistory`）由 `Scheduler::run()` 内部持有，是 `Scheduler` 的私有成员，**不**在 `mhs::core`，**不**在 `AssembleContext`。
 
 `Scheduler` 不持有任何专属配置；`run()` 全部从 `model_` 读取：
 

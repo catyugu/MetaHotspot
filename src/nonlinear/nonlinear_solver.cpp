@@ -1,8 +1,6 @@
 #include "nonlinear_solver.hpp"
 
 #include "common/logger.hpp"
-
-#include <Eigen/Dense>
 #include <Eigen/QR>
 
 #include <algorithm>
@@ -107,20 +105,19 @@ namespace mhs::sim {
 
     } // namespace
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::GlobalState& state,
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, Eigen::Ref<Eigen::VectorXd> T,
         LinearSolver& solver, const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
-        const int N = static_cast<int>(state.T.size());
+        const int N = static_cast<int>(T.size());
 
         AndersonMixer mixer;
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
-            LinearSystem linear_system = ls_provider(state);
-            Eigen::Map<const Eigen::VectorXd> T_map(state.T.data(), N);
-            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
+            LinearSystem linear_system = ls_provider(T);
+            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T;
 
             const double max_residual = residual_vec.cwiseAbs().maxCoeff();
             const double max_b = linear_system.b.cwiseAbs().maxCoeff();
@@ -138,7 +135,7 @@ namespace mhs::sim {
             }
 
             const Eigen::VectorXd G_k = solve_result.solution;
-            const Eigen::VectorXd x_k = T_map; // capture pre-update state
+            const Eigen::VectorXd x_k = T; // capture pre-update state
 
             std::optional<Eigen::VectorXd> x_prop = mixer.step(x_k, G_k);
 
@@ -153,7 +150,7 @@ namespace mhs::sim {
 
             const double max_update = (next - x_k).cwiseAbs().maxCoeff();
             const double max_T = next.cwiseAbs().maxCoeff();
-            Eigen::Map<Eigen::VectorXd>(state.T.data(), N) = next;
+            T = next;
 
             const double update_threshold = rel_tol * max_T + abs_tol;
 

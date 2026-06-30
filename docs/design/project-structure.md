@@ -26,7 +26,7 @@ MetaHotspot/
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
 │   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
 │   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度，ProbeRecorder
-│   ├── time_scheme/            # mhs::sim::time_scheme   BDF1/BDF2/AdaptiveBdf
+│   ├── time_scheme/            # mhs::sim::time_scheme   纯函数积分器 + StepController
 │   └── postprocessor/           # mhs::post (子组织)     单元→节点插值、局部采样
 ├── tests/                       # GTest, 每模块一个套件
 └── bin/                         # 主程序入口
@@ -74,7 +74,7 @@ namespace mhs::logger {
 宏：
 
 | 宏              | 含义                            |
-| --------------- | ------------------------------- |
+|-----------------|---------------------------------|
 | `MHS_LOG_DEBUG` | `VERBOSE=ON` 时启用，否则空展开 |
 | `MHS_LOG_INFO`  | 始终启用                        |
 | `MHS_LOG_WARN`  | 记录警告 + 报告回退值           |
@@ -89,7 +89,7 @@ namespace mhs::logger {
 ## 命名空间
 
 | 命名空间      | 源目录                                                                  | 角色                                     |
-| ------------- | ----------------------------------------------------------------------- | ---------------------------------------- |
+|---------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`         | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::core`   | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
 | `mhs::utils`  | `common/mesh_utils.hpp`                                                 | 面法向查表                               |

@@ -4,38 +4,11 @@
 
 #include <memory>
 #include <muParser.h>
-#include <mutex>
 #include <string>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace mhs::core {
-
-    namespace detail { // registry state: cross-file internal within mhs::core
-        std::mutex& mutex()
-        {
-            static std::mutex m;
-            return m;
-        }
-
-        std::unordered_map<std::string, double>& variables()
-        {
-            static std::unordered_map<std::string, double> vars;
-            return vars;
-        }
-
-        std::unordered_map<std::string, FieldEvaluator>& native_functions()
-        {
-            static std::unordered_map<std::string, FieldEvaluator> funcs;
-            return funcs;
-        }
-
-        std::unordered_map<std::string, std::string>& user_functions()
-        {
-            static std::unordered_map<std::string, std::string> funcs;
-            return funcs;
-        }
-    } // namespace detail
 
     // Bridge state carried alongside every native function registration.
     // muparser hands us a void* to this struct on every native call.
@@ -56,7 +29,12 @@ namespace mhs::core {
 
     class MuCompiled {
     public:
-        explicit MuCompiled(const std::string& formula)
+        // Constructs a muparser instance with x/y/z/T/t, pi/e, and every native
+        // function in `symbols` bound to a heap-allocated NativeFnCtx slot.
+        // `symbols` is captured by reference into native_slots_ entries; the
+        // caller (MuCompiledTLS) keeps the SymbolTable alive for the lifetime
+        // of every MuCompiled it creates.
+        explicit MuCompiled(const std::string& formula, const SymbolTable& symbols)
         {
             // Bind x/y/z/T/t to the addresses of current_ctx_ — muparser dereferences
             // the pointer on every Eval(), so writing current_ctx_ before Eval() updates
@@ -72,16 +50,13 @@ namespace mhs::core {
             parser_.DefineConst("pi", mu::MathImpl<mu::value_type>::CONST_PI);
             parser_.DefineConst("e", mu::MathImpl<mu::value_type>::CONST_E);
 
-            {
-                std::lock_guard<std::mutex> lock(detail::mutex());
-                for (const auto& [name, fe] : detail::native_functions()) {
-                    auto slot = std::make_shared<NativeFnCtx>();
-                    slot->fe = fe;
-                    slot->ctx_ptr = &current_ctx_;
-                    native_slots_[name] = slot;
-                    // muparser requires user data pointer to be non-null; our slot is.
-                    parser_.DefineFunUserData(name, &native_fn_bridge, slot.get(), false);
-                }
+            for (const auto& [name, fe] : symbols.natives) {
+                auto slot = std::make_shared<NativeFnCtx>();
+                slot->fe = fe;
+                slot->ctx_ptr = &current_ctx_;
+                native_slots_[name] = slot;
+                // muparser requires user data pointer to be non-null; our slot is.
+                parser_.DefineFunUserData(name, &native_fn_bridge, slot.get(), false);
             }
 
             try {
@@ -129,13 +104,14 @@ namespace mhs::core {
     };
 
     // TLS wrapper: each thread that touches this expression gets its own MuCompiled.
-    // unique_ptr keeps the AST heap address stable across ETS growth, and the formula
-    // string is captured by value so the wrapper has no external lifetime dependency.
+    // unique_ptr keeps the AST heap address stable across ETS growth. The SymbolTable
+    // is captured by value so the wrapper has no external lifetime dependency.
     struct MuCompiledTLS {
+        SymbolTable symbols;
         tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>> tls;
 
-        explicit MuCompiledTLS(const std::string& formula)
-            : tls([formula]() { return std::make_unique<MuCompiled>(formula); })
+        MuCompiledTLS(const std::string& formula, SymbolTable sym)
+            : symbols(std::move(sym)), tls([formula, this]() { return std::make_unique<MuCompiled>(formula, symbols); })
         {
         }
     };
@@ -162,45 +138,15 @@ namespace mhs::core {
         return e;
     }
 
-    CompiledExpression CompiledExpression::make_evaluator(const std::string& formula)
+    CompiledExpression CompiledExpression::make_evaluator(const std::string& formula, const SymbolTable& symbols)
     {
         CompiledExpression e;
         e.is_const_ = false;
-        e.tls_impl_ = std::make_shared<MuCompiledTLS>(formula);
+        e.tls_impl_ = std::make_shared<MuCompiledTLS>(formula, symbols);
         return e;
     }
 
-    void set_variable(const std::string& name, double value)
-    {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        detail::variables()[name] = value;
-    }
-
-    void register_native(const std::string& name, FieldEvaluator func)
-    {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        detail::native_functions()[name] = std::move(func);
-    }
-
-    FieldEvaluator get_native(const std::string& name)
-    {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        auto it = detail::native_functions().find(name);
-        if (it != detail::native_functions().end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
-
-    void clear_registry()
-    {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        detail::variables().clear();
-        detail::native_functions().clear();
-        detail::user_functions().clear();
-    }
-
-    CompiledExpression parse(const std::string& formula)
+    CompiledExpression parse(const std::string& formula, const SymbolTable& symbols)
     {
         char* end = nullptr;
         double val = std::strtod(formula.c_str(), &end);
@@ -210,18 +156,17 @@ namespace mhs::core {
 
         // Main-thread trial compile: catch syntax errors early
         {
-            MuCompiled test_compile(formula);
+            MuCompiled test_compile(formula, symbols);
             if (!test_compile.valid()) {
                 return CompiledExpression::make_constant(0.0);
             }
         }
-        return CompiledExpression::make_evaluator(formula);
+        return CompiledExpression::make_evaluator(formula, symbols);
     }
 
-    double eval_geometry(const std::string& formula)
+    double eval_geometry(const std::string& formula, const SymbolTable& symbols)
     {
-        std::lock_guard<std::mutex> lock(detail::mutex());
-        const auto& vars = detail::variables();
+        const auto& vars = symbols.variables;
 
         auto var_it = vars.find(formula);
         if (var_it != vars.end()) {

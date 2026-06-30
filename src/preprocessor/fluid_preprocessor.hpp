@@ -2,6 +2,7 @@
 
 #include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "expr/expr.hpp"
 #include <optional>
 
 namespace mhs::sim {
@@ -16,7 +17,7 @@ namespace mhs::sim {
      * If overlay is empty or no fluid materials match, the model is left unchanged.
      */
     void applyFluidOverlay(mhs::core::InternalModel& model, const std::optional<mhs::core::FluidOverlay>& overlay,
-        const mhs::core::IOStructure& ioStructure);
+        const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols);
 
     /**
      * @brief Solve the fluid flow field after the overlay is applied.
