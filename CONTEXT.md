@@ -48,10 +48,10 @@ XML → core::IOStructure via io::read_xml
     → sim::Scheduler::run
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
-        ├─ sim::Assembler::assemble(state)            [K, f, M_diag] (单次 TBB 遍历)
+        ├─ sim::Assembler::assemble(ctx)               [K, f, M_diag] (单次 TBB 遍历)
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
-        ├─ sim::nonlinear_solve(provider, state, *solver_) [Anderson 加速定点迭代]
+        ├─ sim::nonlinear_solve(provider, T, *solver_) [Anderson 加速定点迭代]
         │   └─ sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
         ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
         │   └─ 纯函数: LTE 估计 + PI 步长建议
@@ -68,7 +68,7 @@ XML → core::IOStructure via io::read_xml
 3. Cell-level BC — 每单元存 6 面 BC（`CellBC`）
 4. Precomputed sparsity — 组装只填值，不重建结构
 5. Backward Euler 默认；BDF2 可选（`IntegratorKind` 枚举 + `build_system` 纯函数路由）
-6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入（`K` 用当前 T，`M_diag` 仍取 `accepted.current()` 保持 Newton 内冻结）
+6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
 7. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
 8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
@@ -81,7 +81,7 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                            |
 | ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、GlobalState（含 `SolutionHistory accepted`）、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                             |
+| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、SolutionHistory、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                                                          |
 | `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                            |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
 | `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual）                             |

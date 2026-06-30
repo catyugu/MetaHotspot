@@ -99,19 +99,25 @@ namespace mhs::sim {
     };
 
     /// Result of a single assembler sweep over the active grid.
-    /// Diffusion and BC terms are evaluated at state.T (current Newton
-    /// iterate); the mass term is evaluated at history.latest() to keep
-    /// it constant across Newton iterations (legacy BDF1 stability).
+    /// All terms (diffusion, BC, source, mass) are evaluated at the
+    /// temperature field and time passed in via AssembleContext.
     struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
         Eigen::VectorXd f;
         Eigen::VectorXd M_diag;
     };
 
+    /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
+    /// Invariant (caller-enforced): T.size() == N_active.
+    struct AssembleContext {
+        Eigen::Ref<const Eigen::VectorXd> T;
+        double current_time = 0.0;
+    };
+
     class Assembler {
     public:
         explicit Assembler(const mhs::core::InternalModel& model);
-        AssemblyResult assemble(const mhs::core::GlobalState& state) const;
+        AssemblyResult assemble(const AssembleContext& ctx) const;
     };
 }
 ```
@@ -121,7 +127,7 @@ namespace mhs::sim {
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
-- 质量项 `M_diag[c] = ρ·c·vol`，在 `history.latest()` 处求值
+- 质量项 `M_diag[c] = ρ·c·vol`，在 `ctx.T` 处求值
 
 所有 `eval()` 走 TBB ETS，无锁。
 
@@ -179,13 +185,13 @@ The `Scheduler::run()` main loop is:
 ```text
 while (current_time < duration):
     dt      = step_ctrl.prepare(dt_sug, t, duration)
-    ops     = assembler.assemble(state)
+    ops     = assembler.assemble(ctx)
     ls      = build_system(kind, ops, accepted, dt)
-    nonlinear_solve(provider, state, solver)
+    nonlinear_solve(provider, T, solver)
     est     = estimate_error(accepted, T, dt, cfg)
     if accepted:
         dt_sug = clamp(dt * est.suggested_factor, min, max)
-        state.accepted.accept(T, t + dt)
+        accepted.accept(T, t + dt)
         t     += dt
         for t_out in step_ctrl.flush_outputs(t):
             if strategy == Free: interpolate T → T_out
@@ -248,13 +254,13 @@ namespace mhs::sim {
     };
 
     NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider,
-                                    mhs::core::GlobalState& state,
+                                    Eigen::Ref<Eigen::VectorXd> T,
                                     LinearSolver& solver,
                                     const NonLinearConfig& cfg = {});
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(const mhs::core::GlobalState&)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的 `GlobalState`（按 `const&`），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
+`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的温度场（按 `Eigen::Ref<const Eigen::VectorXd>`，零拷贝），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
 
 非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
 
@@ -288,7 +294,7 @@ namespace mhs::sim {
 }
 ```
 
-时间状态（`current_time`, `time_step`, `dt`）在 `mhs::core::GlobalState`，非 `Scheduler` 私有成员。
+时间状态（`current_time`, `time_step`, `dt`）与已接受步历史（`SolutionHistory`）由 `Scheduler::run()` 内部持有，是 `Scheduler` 的私有成员，**不**在 `mhs::core`，**不**在 `AssembleContext`。
 
 `Scheduler` 不持有任何专属配置；`run()` 全部从 `model_` 读取：
 

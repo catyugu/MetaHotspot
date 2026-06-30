@@ -18,17 +18,17 @@ XML
                               └─> mhs::sim::Scheduler::run
                                     ├─> mhs::sim::time_scheme::StepController::rebuild(duration)
                                     │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
-                                    │     ├─> mhs::sim::Assembler::assemble(state)
+                                    │     ├─> mhs::sim::Assembler::assemble(ctx)
                                     │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
-                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ state.T
-                                    │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ history.latest()
+                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ ctx.T
+                                    │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ ctx.T
                                     │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
                                     │     │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     │     └─> thread-local triplets + b + mass
                                     │     │     └─> combine_each merge → AssemblyResult {K, f, M_diag}
                                     │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
-                                    │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
+                                    │     ├─> mhs::sim::nonlinear_solve(ls_provider, T, solver) [Anderson 加速定点迭代]
                                     │     └─> mhs::sim::time_scheme::estimate_error(hist, T, dt, cfg) → ErrorEstimate
                                     ├─> StepController::flush_outputs(t + dt) → output times
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
@@ -49,7 +49,7 @@ XML
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`              | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                               |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | muparser 或 `make_constant`                              |
-| 组装              | `InternalModel` + `GlobalState`       | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
+| 组装              | `InternalModel` + `AssembleContext`   | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
 | 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                      |
 | 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                                 |
 | 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开到全网格，虚拟位置 NaN                               |
