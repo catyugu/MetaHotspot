@@ -1,7 +1,6 @@
 mhs_add_library(common_lib
-    SOURCES logger.cpp
+    SOURCES logger.cpp cli.cpp
     PUBLIC_LINKS spdlog
-    PRIVATE_LINKS Eigen3::Eigen
 )
 
 if(VERBOSE)
