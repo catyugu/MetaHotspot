@@ -80,7 +80,7 @@ int main(int argc, char* argv[])
                     ++fluidCount;
             }
             if (fluidCount > 0) {
-                MHS_LOG_INFO("Fluid cells: {} / {}", fluidCount, model->material_table.size());
+                MHS_LOG_INFO("Fluid cells: {}", fluidCount);
             }
         }
 
@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
 
         const auto& solution = scheduler.solution();
 
-        MHS_LOG_INFO("Simulation complete. {} cells computed.", solution.size());
+        MHS_LOG_INFO("Simulation complete.");
 
         // Postprocess
         auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution, scheduler.currentTime());
