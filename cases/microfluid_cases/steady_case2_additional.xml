@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
+    <FluidMaterial name="water">
+        <DynamicViscosity>0.00089</DynamicViscosity>
+    </FluidMaterial>
+    <Boundary>
+        <BoundaryCategory>Fluidic</BoundaryCategory>
+        <Name>fluid_inlet</Name>
+        <FaceKeys>
+            <string>Y|E|5|8.125|8.541666666667|0.4|0.7</string>
+        </FaceKeys>
+        <PressureBoundary>
+            <Pressure>200</Pressure>
+        </PressureBoundary>
+        <InletTemperature>298.15</InletTemperature>
+    </Boundary>
+
+    <Boundary>
+        <BoundaryCategory>Fluidic</BoundaryCategory>
+        <Name>fluid_outlet</Name>
+        <FaceKeys>
+            <string>Y|E|10|11.458333333333|11.875|0.4|0.7</string>
+        </FaceKeys>
+        <PressureBoundary>
+            <Pressure>0</Pressure>
+        </PressureBoundary>
+    </Boundary>
+
+</FluidOverlay>
