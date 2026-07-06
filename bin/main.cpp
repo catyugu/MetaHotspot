@@ -22,7 +22,7 @@ int main(int argc, char* argv[])
     }
     if (cli.status == mhs::cli::ParseStatus::Error || !cli.options.has_value()) {
         std::cerr << cli.message << std::endl;
-        std::cerr << "\n" << mhs::cli::usage_text(cli.options ? cli.options->program_name : "metahotspot");
+        std::cerr << "\n" << mhs::cli::usage_text(cli.program_name);
         return 1;
     }
 
