@@ -197,9 +197,9 @@ TEST(FluidBCTest, MassFlowRateAppliedPerFaceKey)
 
     double total_mdot = 0.0;
     int inlet_cell_count = 0;
-    for (size_t fi = 0; fi < model->fluid_bcs.size(); ++fi) {
-        if (model->fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
-            total_mdot += model->fluid_bc_params.mass_flow_rate[model->fluid_bcs[fi].param_idx];
+    for (size_t fi = 0; fi < model->fluid.fluid_bcs.size(); ++fi) {
+        if (model->fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
+            total_mdot += model->fluid.fluid_bc_params.mass_flow_rate[model->fluid.fluid_bcs[fi].param_idx];
             ++inlet_cell_count;
         }
     }
@@ -212,9 +212,9 @@ TEST(FluidBCTest, MassFlowRateAppliedPerFaceKey)
         << "Total MassFlowRate across cells must equal (user value) * (face_key count)";
 
     // All inlet cells should have a strictly positive per-cell flux.
-    for (size_t fi = 0; fi < model->fluid_bcs.size(); ++fi) {
-        if (model->fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
-            double per_cell = model->fluid_bc_params.mass_flow_rate[model->fluid_bcs[fi].param_idx];
+    for (size_t fi = 0; fi < model->fluid.fluid_bcs.size(); ++fi) {
+        if (model->fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
+            double per_cell = model->fluid.fluid_bc_params.mass_flow_rate[model->fluid.fluid_bcs[fi].param_idx];
             EXPECT_GT(per_cell, 0.0) << "Inlet cell fi=" << fi << " has zero per-cell flux";
         }
     }
@@ -274,10 +274,10 @@ TEST(FluidBCTest, MassFlowRateDrivesNonDegeneratePressureField)
     // a positive range.
     auto model = load_case1_and_solve_fluid(make_mdot_overlay(1e-4));
     ASSERT_NE(model, nullptr);
-    ASSERT_GT(model->n_fluid, 0);
+    ASSERT_GT(model->fluid.n_fluid, 0);
 
-    double p_min = *std::min_element(model->pressure.begin(), model->pressure.end());
-    double p_max = *std::max_element(model->pressure.begin(), model->pressure.end());
+    double p_min = *std::min_element(model->fluid.pressure.begin(), model->fluid.pressure.end());
+    double p_max = *std::max_element(model->fluid.pressure.begin(), model->fluid.pressure.end());
     EXPECT_GT(p_max - p_min, 1.0)
         << "Pressure field must be non-degenerate when MassFlowRate drives the inlet";
 }
@@ -291,9 +291,9 @@ TEST(FluidBCTest, PressureTypeOutletSitsAtSpecifiedPressure)
     ASSERT_NE(model, nullptr);
 
     int outlet_cells_checked = 0;
-    for (size_t fi = 0; fi < model->fluid_bcs.size(); ++fi) {
-        if (model->fluid_bcs[fi].kind == mhs::core::FluidBCType::PressureType) {
-            EXPECT_NEAR(model->pressure[fi], 0.0, 1.0)
+    for (size_t fi = 0; fi < model->fluid.fluid_bcs.size(); ++fi) {
+        if (model->fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::PressureType) {
+            EXPECT_NEAR(model->fluid.pressure[fi], 0.0, 1.0)
                 << "PressureType cell fi=" << fi << " should sit at p=0";
             ++outlet_cells_checked;
         }
@@ -311,7 +311,7 @@ TEST(FluidBCTest, MassFlowRateProducesDominantFlowAxes)
     ASSERT_NE(model, nullptr);
 
     int n_with_axis = 0;
-    for (auto ax : model->flow_axes) {
+    for (auto ax : model->fluid.flow_axes) {
         if (ax >= 0)
             ++n_with_axis;
     }

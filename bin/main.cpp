@@ -75,9 +75,9 @@ int main(int argc, char* argv[])
             model->mesh.nx, model->mesh.ny, model->mesh.nz);
 
         // Count fluid cells for diagnostics
-        if (!model->is_fluid.empty()) {
+        if (!model->fluid.is_fluid.empty()) {
             int fluidCount = 0;
-            for (uint8_t v : model->is_fluid) {
+            for (uint8_t v : model->fluid.is_fluid) {
                 if (v)
                     ++fluidCount;
             }

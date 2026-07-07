@@ -40,7 +40,7 @@ namespace mhs::sim {
                     return false;
                 int old_idx = cx * mesh.ny * mesh.nz + cy * mesh.nz + cz;
                 int c_idx = static_cast<int>(cells.index_map[old_idx]);
-                return c_idx >= 0 && c_idx < (int)model.is_fluid.size() && model.is_fluid[c_idx];
+                return c_idx >= 0 && c_idx < (int)model.fluid.is_fluid.size() && model.fluid.is_fluid[c_idx];
             };
 
             int idx[3] = {ix, iy, iz};
@@ -73,8 +73,8 @@ namespace mhs::sim {
         void computeChannelDimensions(mhs::core::InternalModel& model, const std::vector<int>& compact_to_old)
         {
             const auto& mesh = model.mesh;
-            for (int fi = 0; fi < model.n_fluid; ++fi) {
-                int old_idx = compact_to_old[model.fluid_to_global[fi]];
+            for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+                int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
                 int ix, iy, iz;
                 mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
@@ -92,9 +92,9 @@ namespace mhs::sim {
                     ? (2.0 * cross_w * cross_h / (cross_w + cross_h))
                     : 0.0;
 
-                model.hydraulic_diameter[fi] = dh;
-                model.channel_width[fi] = cross_w;
-                model.channel_height[fi] = cross_h;
+                model.fluid.hydraulic_diameter[fi] = dh;
+                model.fluid.channel_width[fi] = cross_w;
+                model.fluid.channel_height[fi] = cross_h;
             }
         }
 
@@ -151,8 +151,8 @@ namespace mhs::sim {
                     // 第一遍: 仅匹配, 计数; 同时缓存匹配 cell 列表以分配 param_idx.
                     std::vector<int> matched;
                     matched.reserve(64);
-                    for (int fi = 0; fi < model.n_fluid; ++fi) {
-                        int old_idx = compact_to_old[model.fluid_to_global[fi]];
+                    for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+                        int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
                         int ix, iy, iz;
                         mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
@@ -185,23 +185,23 @@ namespace mhs::sim {
                         per_cell_value = fb.value / static_cast<double>(matched.size());
                     }
 
-                    uint16_t param_idx = registerFluidBCParam(model.fluid_bc_params, fb, per_cell_value);
+                    uint16_t param_idx = registerFluidBCParam(model.fluid.fluid_bc_params, fb, per_cell_value);
 
                     // 第二遍: 把 param_idx 写回每个匹配 cell.
                     for (int fi : matched) {
-                        int old_idx = compact_to_old[model.fluid_to_global[fi]];
+                        int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
                         int ix, iy, iz;
                         mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
                         mhs::core::FluidCellBC cell_bc;
                         cell_bc.kind = fb.kind;
                         cell_bc.param_idx = param_idx;
-                        model.fluid_bcs[fi] = cell_bc;
+                        model.fluid.fluid_bcs[fi] = cell_bc;
                         if (!std::isnan(fb.inlet_temperature)) {
-                            model.boundary_temperature_fluid[fi] = fb.inlet_temperature;
+                            model.fluid.boundary_temperature_fluid[fi] = fb.inlet_temperature;
                         }
                         if (fb.kind == mhs::core::FluidBCType::VelocityType) {
-                            cacheFaceAreaForVelocity(model.fluid_face_area, fi, fk, mesh, ix, iy, iz);
+                            cacheFaceAreaForVelocity(model.fluid.fluid_face_area, fi, fk, mesh, ix, iy, iz);
                         }
                     }
                 }
@@ -216,7 +216,7 @@ namespace mhs::sim {
         {
             const auto& cells = model.cells;
             const auto& mesh = model.mesh;
-            int c_idx = model.fluid_to_global[fi];
+            int c_idx = model.fluid.fluid_to_global[fi];
             int old_idx = compact_to_old[c_idx];
             int ix, iy, iz;
             mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
@@ -254,7 +254,7 @@ namespace mhs::sim {
         for (const auto& fm : overlay->fluid_materials)
             fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
 
-        model.is_fluid.assign(N, 0);
+        model.fluid.is_fluid.assign(N, 0);
         std::vector<double> visc_temp(N, 0.0);
 
         for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
@@ -269,44 +269,44 @@ namespace mhs::sim {
         for (int c = 0; c < N; ++c) {
             uint16_t matIdx = model.cells.material_id[c];
             if (matIdx < model.material_table.size() && model.material_table[matIdx].is_fluid) {
-                model.is_fluid[c] = 1;
+                model.fluid.is_fluid[c] = 1;
                 visc_temp[c]
                     = model.material_table[matIdx].dynamic_viscosity.eval({0, 0, 0, model.initial_temperature, 0});
             }
         }
 
-        if (std::none_of(model.is_fluid.begin(), model.is_fluid.end(), [](uint8_t v) { return v != 0; }))
+        if (std::none_of(model.fluid.is_fluid.begin(), model.fluid.is_fluid.end(), [](uint8_t v) { return v != 0; }))
             return;
 
         // 3. 构建索引系统及扩展数据数组
-        model.fluid_to_global.clear();
-        model.global_to_fluid.assign(N, -1);
+        model.fluid.fluid_to_global.clear();
+        model.fluid.global_to_fluid.assign(N, -1);
         for (int c = 0; c < N; ++c) {
-            if (model.is_fluid[c]) {
-                model.global_to_fluid[c] = static_cast<int>(model.fluid_to_global.size());
-                model.fluid_to_global.push_back(c);
+            if (model.fluid.is_fluid[c]) {
+                model.fluid.global_to_fluid[c] = static_cast<int>(model.fluid.fluid_to_global.size());
+                model.fluid.fluid_to_global.push_back(c);
             }
         }
-        model.n_fluid = static_cast<int>(model.fluid_to_global.size());
+        model.fluid.n_fluid = static_cast<int>(model.fluid.fluid_to_global.size());
 
-        model.dynamic_viscosity.assign(model.n_fluid, 0.0);
-        model.pressure.assign(model.n_fluid, 0.0);
-        model.flow_axes.assign(model.n_fluid, -1);
-        model.hydroC_x.assign(model.n_fluid, 0.0);
-        model.hydroC_y.assign(model.n_fluid, 0.0);
-        model.hydroC_z.assign(model.n_fluid, 0.0);
-        model.hydraulic_diameter.assign(model.n_fluid, 0.0);
-        model.channel_width.assign(model.n_fluid, 0.0);
-        model.channel_height.assign(model.n_fluid, 0.0);
+        model.fluid.dynamic_viscosity.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.pressure.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.flow_axes.assign(model.fluid.n_fluid, -1);
+        model.fluid.hydroC_x.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.hydroC_y.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.hydroC_z.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.hydraulic_diameter.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.channel_width.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.channel_height.assign(model.fluid.n_fluid, 0.0);
 
         // 字典化 BC 容器 + 每单元 cell-level tag
-        model.fluid_bcs.assign(model.n_fluid, mhs::core::FluidCellBC {});
-        model.fluid_bc_params = mhs::core::FluidBCParamTable {};
-        model.fluid_face_area.assign(model.n_fluid, 0.0);
-        model.boundary_temperature_fluid.assign(model.n_fluid, std::numeric_limits<double>::quiet_NaN());
+        model.fluid.fluid_bcs.assign(model.fluid.n_fluid, mhs::core::FluidCellBC {});
+        model.fluid.fluid_bc_params = mhs::core::FluidBCParamTable {};
+        model.fluid.fluid_face_area.assign(model.fluid.n_fluid, 0.0);
+        model.fluid.boundary_temperature_fluid.assign(model.fluid.n_fluid, std::numeric_limits<double>::quiet_NaN());
 
-        for (int fi = 0; fi < model.n_fluid; ++fi) {
-            model.dynamic_viscosity[fi] = visc_temp[model.fluid_to_global[fi]];
+        for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+            model.fluid.dynamic_viscosity[fi] = visc_temp[model.fluid.fluid_to_global[fi]];
         }
 
         auto compact_to_old = buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
@@ -318,7 +318,7 @@ namespace mhs::sim {
 
     void solveFluidFlow(mhs::core::InternalModel& model)
     {
-        if (model.n_fluid == 0)
+        if (model.fluid.n_fluid == 0)
             return;
 
         const auto& mesh = model.mesh;
@@ -326,28 +326,28 @@ namespace mhs::sim {
         auto compact_to_old = buildCompactToOld(cells, mesh.nx * mesh.ny * mesh.nz);
 
         // Phase 1: 等效渗透率计算
-        for (int fi = 0; fi < model.n_fluid; ++fi) {
-            int old_idx = compact_to_old[model.fluid_to_global[fi]];
+        for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+            int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
             int ix, iy, iz;
             mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
             double dx = mesh.dx[ix], dy = mesh.dy[iy], dz = mesh.dz[iz];
-            double K_perm = std::pow(model.hydraulic_diameter[fi], 2.0)
-                / (2.0 * utils::f_re_rectangular(model.channel_width[fi], model.channel_height[fi]));
+            double K_perm = std::pow(model.fluid.hydraulic_diameter[fi], 2.0)
+                / (2.0 * utils::f_re_rectangular(model.fluid.channel_width[fi], model.fluid.channel_height[fi]));
 
-            double coef = K_perm / model.dynamic_viscosity[fi];
-            model.hydroC_x[fi] = coef * (dy * dz / dx);
-            model.hydroC_y[fi] = coef * (dx * dz / dy);
-            model.hydroC_z[fi] = coef * (dx * dy / dz);
+            double coef = K_perm / model.fluid.dynamic_viscosity[fi];
+            model.fluid.hydroC_x[fi] = coef * (dy * dz / dx);
+            model.fluid.hydroC_y[fi] = coef * (dx * dz / dy);
+            model.fluid.hydroC_z[fi] = coef * (dx * dy / dz);
         }
 
         // Phase 2: 构建并求解泊松方程 (流场)
         std::vector<Eigen::Triplet<double>> triplets;
-        Eigen::VectorXd rhs = Eigen::VectorXd::Zero(model.n_fluid);
-        triplets.reserve(model.n_fluid * 7);
+        Eigen::VectorXd rhs = Eigen::VectorXd::Zero(model.fluid.n_fluid);
+        triplets.reserve(model.fluid.n_fluid * 7);
 
-        for (int fi = 0; fi < model.n_fluid; ++fi) {
-            int old_idx = compact_to_old[model.fluid_to_global[fi]];
+        for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+            int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
             int ix, iy, iz;
             mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
@@ -359,7 +359,7 @@ namespace mhs::sim {
                     continue;
 
                 int n_c = static_cast<int>(cells.index_map[n_old]);
-                int fn = (n_c >= 0 && n_c < static_cast<int>(model.global_to_fluid.size())) ? model.global_to_fluid[n_c]
+                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size())) ? model.fluid.global_to_fluid[n_c]
                                                                                             : -1;
                 if (fn < 0)
                     continue;
@@ -368,58 +368,58 @@ namespace mhs::sim {
                 double C_eff = 0.0;
                 switch (axis) {
                 case 0:
-                    C_eff = mhs::utils::harmonicAverage(model.hydroC_x[fi], model.hydroC_x[fn]);
+                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_x[fi], model.fluid.hydroC_x[fn]);
                     break;
                 case 1:
-                    C_eff = mhs::utils::harmonicAverage(model.hydroC_y[fi], model.hydroC_y[fn]);
+                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_y[fi], model.fluid.hydroC_y[fn]);
                     break;
                 case 2:
-                    C_eff = mhs::utils::harmonicAverage(model.hydroC_z[fi], model.hydroC_z[fn]);
+                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_z[fi], model.fluid.hydroC_z[fn]);
                     break;
                 }
                 diagSum += C_eff;
 
                 // PressureType 边界 cell 不与内部耦合; 其它 kind 都保留内部耦合
-                if (model.fluid_bcs[fi].kind != mhs::core::FluidBCType::PressureType) {
+                if (model.fluid.fluid_bcs[fi].kind != mhs::core::FluidBCType::PressureType) {
                     triplets.emplace_back(fi, fn, -C_eff);
                 }
             }
 
             triplets.emplace_back(fi, fi, diagSum);
             // PressureType: Dirichlet (边界 cell 不与内部耦合, RHS 用压力值)
-            if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::PressureType) {
-                const auto& params = model.fluid_bc_params.pressure;
-                rhs(fi) = params[model.fluid_bcs[fi].param_idx] * diagSum;
+            if (model.fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::PressureType) {
+                const auto& params = model.fluid.fluid_bc_params.pressure;
+                rhs(fi) = params[model.fluid.fluid_bcs[fi].param_idx] * diagSum;
             }
             // MassFlowRateType: Neumann 体通量源 m_dot / rho (符号: + 进入 cell, − 离开).
             // 把 m_dot 作为 Poisson RHS 源项, 让入口有 driving force 推动全场压力梯度,
             // 否则 Pressure=0 出口无流, 装配器侧入口带入的能量无法对流到出口.
-            else if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
-                const double mdot_cell = model.fluid_bc_params.mass_flow_rate[model.fluid_bcs[fi].param_idx];
+            else if (model.fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
+                const double mdot_cell = model.fluid.fluid_bc_params.mass_flow_rate[model.fluid.fluid_bcs[fi].param_idx];
                 const double rho_cell = evaluateFluidRhoAtInitT(model, fi, compact_to_old);
                 // rho==0 在 evaluateFluidRhoAtInitT 中是配置错误; 防御性 fallback.
                 rhs(fi) = (rho_cell > mhs::core::zero_guard) ? (mdot_cell / rho_cell) : 0.0;
             }
             // VelocityType: Neumann 体通量源 u * A_face (m/s · m² = m³/s).
-            else if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::VelocityType) {
-                const double vel = model.fluid_bc_params.velocity[model.fluid_bcs[fi].param_idx];
-                rhs(fi) = vel * model.fluid_face_area[fi];
+            else if (model.fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::VelocityType) {
+                const double vel = model.fluid.fluid_bc_params.velocity[model.fluid.fluid_bcs[fi].param_idx];
+                rhs(fi) = vel * model.fluid.fluid_face_area[fi];
             }
         }
 
-        Eigen::SparseMatrix<double> A(model.n_fluid, model.n_fluid);
+        Eigen::SparseMatrix<double> A(model.fluid.n_fluid, model.fluid.n_fluid);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
         auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::SparseLU);
         auto result = solver->solve(A, rhs);
         if (!result.success) {
-            MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", model.n_fluid, static_cast<int>(A.nonZeros()));
+            MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", model.fluid.n_fluid, static_cast<int>(A.nonZeros()));
             return;
         }
-        model.pressure = std::vector<double>(result.solution.data(), result.solution.data() + result.solution.size());
+        model.fluid.pressure = std::vector<double>(result.solution.data(), result.solution.data() + result.solution.size());
         // Phase 3: 根据压力梯度计算主导流向
-        for (int fi = 0; fi < model.n_fluid; ++fi) {
-            int old_idx = compact_to_old[model.fluid_to_global[fi]];
+        for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
+            int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
             int ix, iy, iz;
             mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
 
@@ -433,23 +433,23 @@ namespace mhs::sim {
                     continue;
 
                 int n_c = static_cast<int>(cells.index_map[n_old]);
-                int fn = (n_c >= 0 && n_c < static_cast<int>(model.global_to_fluid.size())) ? model.global_to_fluid[n_c]
+                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size())) ? model.fluid.global_to_fluid[n_c]
                                                                                             : -1;
                 if (fn < 0)
                     continue;
 
                 int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
-                double dp = std::fabs(model.pressure[fi] - model.pressure[fn]);
+                double dp = std::fabs(model.fluid.pressure[fi] - model.fluid.pressure[fn]);
                 double flux = 0.0;
                 switch (axis) {
                 case 0:
-                    flux = dp * mhs::utils::harmonicAverage(model.hydroC_x[fi], model.hydroC_x[fn]);
+                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_x[fi], model.fluid.hydroC_x[fn]);
                     break;
                 case 1:
-                    flux = dp * mhs::utils::harmonicAverage(model.hydroC_y[fi], model.hydroC_y[fn]);
+                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_y[fi], model.fluid.hydroC_y[fn]);
                     break;
                 case 2:
-                    flux = dp * mhs::utils::harmonicAverage(model.hydroC_z[fi], model.hydroC_z[fn]);
+                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_z[fi], model.fluid.hydroC_z[fn]);
                     break;
                 }
 
@@ -458,7 +458,7 @@ namespace mhs::sim {
                     bestAxis = axis;
                 }
             }
-            model.flow_axes[fi] = static_cast<int8_t>(bestAxis);
+            model.fluid.flow_axes[fi] = static_cast<int8_t>(bestAxis);
         }
     }
 
