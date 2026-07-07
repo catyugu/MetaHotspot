@@ -192,7 +192,7 @@ namespace mhs::sim {
 
             if (cell_is_fluid) {
                 int f_idx = model_.global_to_fluid[c_idx];
-                // ADR-0006: MassFlowRateType / VelocityType cell 用 BC 值覆盖
+                // MassFlowRateType / VelocityType cell 用 BC 值覆盖
                 // pressure 差分得到的 netOutflux, 保证质量守恒由用户给定值驱动.
                 // 该分支对 PressureType 不触发 — 其仍走 pressure-driven 路径。
                 const auto& bc = model_.fluid_bcs[f_idx];
@@ -202,18 +202,18 @@ namespace mhs::sim {
                 else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
                     netOutflux = model_.fluid_bc_params.velocity[bc.param_idx] * model_.fluid_face_area[f_idx];
                 }
-            }
-            if (cell_is_fluid && netOutflux != 0.0) {
-                int f_idx = model_.global_to_fluid[c_idx];
-                double T_boundary = model_.boundary_temperature_fluid[f_idx];
 
-                // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
-                if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
-                    local.b(c_idx) += netOutflux * cp_c * T_boundary;
-                }
-                // 情况 B：流体流出 (Outlet) -> 隐式处理，加入对角线矩阵 (LHS)
-                else {
-                    local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
+                if (netOutflux != 0.0) {
+                    double T_boundary = model_.boundary_temperature_fluid[f_idx];
+
+                    // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
+                    if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
+                        local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                    }
+                    // 情况 B：流体流出 (Outlet) -> 隐式处理，加入对角线矩阵 (LHS)
+                    else {
+                        local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
+                    }
                 }
             }
         });

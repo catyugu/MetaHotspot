@@ -98,14 +98,14 @@ namespace mhs::sim {
             }
         }
 
-        // ── 统一的面匹配检测 + BC dispatch (ADR-0006) ────────────────────────
+        // ── 统一的面匹配检测 + BC dispatch ────────────────────────
         // 将 fb 按 kind 路由到 FluidBCParamTable 对应子表,返回 param_idx。
         // 注意: pressure / mass_flow_rate / velocity 是 *per-face-key* 的标量;
         // 它们必须先按 face_key 注册一次,再在 per-cell 匹配中按 *实际匹配 cell 数*
         // 分摊到每个 cell,这样总流量 = 用户给定值 (不会被 cell 数放大)。
         // face_area 是 per-cell 的 (VelocityType 用),仍在内层写。
-        static uint16_t registerFluidBCParam(mhs::core::FluidBCParamTable& params,
-            const mhs::core::FluidBoundaryOverlay& fb, double per_cell_value)
+        static uint16_t registerFluidBCParam(
+            mhs::core::FluidBCParamTable& params, const mhs::core::FluidBoundaryOverlay& fb, double per_cell_value)
         {
             switch (fb.kind) {
             case mhs::core::FluidBCType::PressureType:
@@ -127,8 +127,9 @@ namespace mhs::sim {
         }
 
         // 仅 VelocityType 需要 per-cell face 面积.
-        static void cacheFaceAreaForVelocity(std::vector<double>& face_area, int fi,
-            const FaceKeyInfo& fk, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz)
+        // `side == 'E'` -> positive-direction face (XP/YP/ZP), 'W' -> negative.
+        static void cacheFaceAreaForVelocity(std::vector<double>& face_area, int fi, const FaceKeyInfo& fk,
+            const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz)
         {
             int axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
             double a = (axis == 0) ? mesh.dy[iy] : mesh.dx[ix];
@@ -210,8 +211,8 @@ namespace mhs::sim {
         // 在 cell 中心处评估流体密度, 用作 MassFlowRate 体积通量源 m_dot / rho 的分母.
         // 在初始温度处求值: 不可压缩流的压力解不依赖 T, 用 T_init 是合理近似.
         // 接受 compact_to_old, 因为调用点已经在 solveFluidFlow 中构造了它.
-        static double evaluateFluidRhoAtInitT(const mhs::core::InternalModel& model, int fi,
-            const std::vector<int>& compact_to_old)
+        static double evaluateFluidRhoAtInitT(
+            const mhs::core::InternalModel& model, int fi, const std::vector<int>& compact_to_old)
         {
             const auto& cells = model.cells;
             const auto& mesh = model.mesh;
@@ -298,7 +299,7 @@ namespace mhs::sim {
         model.channel_width.assign(model.n_fluid, 0.0);
         model.channel_height.assign(model.n_fluid, 0.0);
 
-        // ADR-0006: 字典化 BC 容器 + 每单元 cell-level tag
+        // 字典化 BC 容器 + 每单元 cell-level tag
         model.fluid_bcs.assign(model.n_fluid, mhs::core::FluidCellBC {});
         model.fluid_bc_params = mhs::core::FluidBCParamTable {};
         model.fluid_face_area.assign(model.n_fluid, 0.0);
@@ -394,8 +395,7 @@ namespace mhs::sim {
             // 把 m_dot 作为 Poisson RHS 源项, 让入口有 driving force 推动全场压力梯度,
             // 否则 Pressure=0 出口无流, 装配器侧入口带入的能量无法对流到出口.
             else if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
-                const double mdot_cell
-                    = model.fluid_bc_params.mass_flow_rate[model.fluid_bcs[fi].param_idx];
+                const double mdot_cell = model.fluid_bc_params.mass_flow_rate[model.fluid_bcs[fi].param_idx];
                 const double rho_cell = evaluateFluidRhoAtInitT(model, fi, compact_to_old);
                 // rho==0 在 evaluateFluidRhoAtInitT 中是配置错误; 防御性 fallback.
                 rhs(fi) = (rho_cell > mhs::core::zero_guard) ? (mdot_cell / rho_cell) : 0.0;

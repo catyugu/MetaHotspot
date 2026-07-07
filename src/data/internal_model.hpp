@@ -52,24 +52,22 @@ namespace mhs::core {
         std::vector<CompiledExpression> neumann_q;
         std::vector<CompiledExpression> cauchy_h;
         std::vector<CompiledExpression> cauchy_T_inf;
-        // 流体-固体耦合扩展: 压力边界参数值 (不需要表达式, 直接 double)
-        std::vector<double> pressure_bc_values; // index by PressureBC idx
     };
 
     // =========================================================================
-    // 流体 BC 字典化结构 (ADR-0006)
-    // 与 thermal BCParamTable 1:1 对位：每 kind 一个 vector<double>，
+    // 流体 BC 字典化结构
+    // 每 kind 一个 vector<double>，
     // FluidCellBC::param_idx 索引到对应子表。
     // =========================================================================
     struct FluidBCParamTable {
-        std::vector<double> pressure;        // [Pa]   indexed by FluidBCType::PressureType
-        std::vector<double> mass_flow_rate;  // [kg/s] indexed by FluidBCType::MassFlowRateType
-        std::vector<double> velocity;        // [m/s]  indexed by FluidBCType::VelocityType
+        std::vector<double> pressure; // [Pa]   indexed by FluidBCType::PressureType
+        std::vector<double> mass_flow_rate; // [kg/s] indexed by FluidBCType::MassFlowRateType
+        std::vector<double> velocity; // [m/s]  indexed by FluidBCType::VelocityType
     };
 
     struct FluidCellBC {
         FluidBCType kind = FluidBCType::None;
-        uint16_t    param_idx = static_cast<uint16_t>(invalidIndex);
+        uint16_t param_idx = static_cast<uint16_t>(invalidIndex);
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
@@ -122,11 +120,11 @@ namespace mhs::core {
         std::vector<double> channel_width; // [n_fluid] 通道宽度 [m]
         std::vector<double> channel_height; // [n_fluid] 通道高度 [m]
 
-        // 流体 BC 字典化 (ADR-0006)
-        std::vector<FluidCellBC> fluid_bcs;        // [n_fluid] 每单元 kind + param_idx
-        FluidBCParamTable        fluid_bc_params;   // 三类 BC 参数池
-        std::vector<double>      fluid_face_area;  // [n_fluid] VelocityType 算 netOutflux 用
-        std::vector<double>      boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
+        // 流体 BC 字典化
+        std::vector<FluidCellBC> fluid_bcs; // [n_fluid] 每单元 kind + param_idx
+        FluidBCParamTable fluid_bc_params; // 三类 BC 参数池
+        std::vector<double> fluid_face_area; // [n_fluid] VelocityType 算 netOutflux 用
+        std::vector<double> boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
     };
 
 } // namespace mhs::core

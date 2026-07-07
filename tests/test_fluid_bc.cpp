@@ -33,6 +33,10 @@ using namespace mhs::io;
 
 namespace {
 
+    // Forward-declared; defined later in the second anonymous namespace.
+    // Both namespaces merge at link time, so the symbol is the same.
+    std::unique_ptr<mhs::core::InternalModel> load_case1_with_overlay(const std::string& overlay_xml);
+
     // Write a transient XML text into a temp file and return the path.
     std::filesystem::path write_tmp(const std::string& content, const std::string& suffix)
     {
@@ -55,8 +59,10 @@ namespace {
         return true;
     }
 
-    // Build a MassFlowRate overlay XML with the given inlet value.
-    std::string make_mdot_overlay(double mdot)
+    // Build an overlay XML with the given inlet kind + value. The outlet is
+    // fixed at Pressure=0 (Dirichlet) so the pressure solver has a sink.
+    std::string make_overlay(const std::string& inlet_kind, const std::string& inlet_value,
+        const std::string& inlet_name)
     {
         return R"(<?xml version="1.0" encoding="UTF-8"?>
 <FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
@@ -65,13 +71,12 @@ namespace {
     </FluidMaterial>
     <Boundary>
         <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>fluid_inlet_mdot</Name>
+        <Name>)" + inlet_name + R"(</Name>
         <FaceKeys>
             <string>X|E|0|0.5|1.5|0.2|0.4</string>
             <string>X|E|0|2.5|3.5|0.2|0.4</string>
         </FaceKeys>
-        <MassFlowRate>)"
-            + std::to_string(mdot) + R"(</MassFlowRate>
+        <)" + inlet_kind + R"(>)" + inlet_value + R"(</)" + inlet_kind + R"(>
         <InletTemperature>298.15</InletTemperature>
     </Boundary>
     <Boundary>
@@ -86,35 +91,14 @@ namespace {
 </FluidOverlay>)";
     }
 
-    // Build a Velocity overlay XML with the given inlet value.
+    std::string make_mdot_overlay(double mdot)
+    {
+        return make_overlay("MassFlowRate", std::to_string(mdot), "fluid_inlet_mdot");
+    }
+
     std::string make_velocity_overlay(double v)
     {
-        return R"(<?xml version="1.0" encoding="UTF-8"?>
-<FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
-    <FluidMaterial name="water">
-        <DynamicViscosity>0.00089</DynamicViscosity>
-    </FluidMaterial>
-    <Boundary>
-        <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>fluid_inlet_vel</Name>
-        <FaceKeys>
-            <string>X|E|0|0.5|1.5|0.2|0.4</string>
-            <string>X|E|0|2.5|3.5|0.2|0.4</string>
-        </FaceKeys>
-        <Velocity>)"
-            + std::to_string(v) + R"(</Velocity>
-        <InletTemperature>298.15</InletTemperature>
-    </Boundary>
-    <Boundary>
-        <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>fluid_outlet_pres</Name>
-        <FaceKeys>
-            <string>X|E|8|0.5|1.5|0.2|0.4</string>
-            <string>X|E|8|2.5|3.5|0.2|0.4</string>
-        </FaceKeys>
-        <Pressure>0</Pressure>
-    </Boundary>
-</FluidOverlay>)";
+        return make_overlay("Velocity", std::to_string(v), "fluid_inlet_vel");
     }
 
     // Run the full preprocessor + assembler pipeline on a case with the given
@@ -127,18 +111,7 @@ namespace {
 
     std::optional<AssembledOps> assemble_with_overlay(const std::string& overlay_xml)
     {
-        mhs::core::IOStructure io_data;
-        if (!load_steady_case1(io_data))
-            return std::nullopt;
-
-        auto overlay_path = write_tmp(overlay_xml, "_overlay.xml");
-        auto overlay = mhs::io::read_fluid_overlay_xml(overlay_path.string());
-        std::filesystem::remove(overlay_path);
-        if (!overlay.has_value())
-            return std::nullopt;
-
-        Preprocessor preprocessor;
-        auto model = preprocessor.load(io_data, overlay);
+        auto model = load_case1_with_overlay(overlay_xml);
         if (!model)
             return std::nullopt;
 
@@ -263,25 +236,30 @@ TEST(FluidBCTest, MassFlowRateAppliedPerFaceKey)
 
 namespace {
 
-    // Load the canonical case + overlay, run the pressure solve, return the model.
-    // The caller can then inspect model.pressure, model.flow_axes, etc.
-    std::unique_ptr<mhs::core::InternalModel> load_case1_and_solve_fluid(const std::string& overlay_xml)
+    // Read overlay XML from disk and run the canonical case through the
+    // preprocessor. Caller can then either assemble or solve fluid flow.
+    std::unique_ptr<mhs::core::InternalModel> load_case1_with_overlay(const std::string& overlay_xml)
     {
         mhs::core::IOStructure io_data;
         if (!load_steady_case1(io_data))
             return nullptr;
 
-        auto overlay_path = write_tmp(overlay_xml, "_solve_overlay.xml");
+        auto overlay_path = write_tmp(overlay_xml, "_overlay.xml");
         auto overlay = mhs::io::read_fluid_overlay_xml(overlay_path.string());
         std::filesystem::remove(overlay_path);
         if (!overlay.has_value())
             return nullptr;
 
         Preprocessor preprocessor;
-        auto model = preprocessor.load(io_data, overlay);
+        return preprocessor.load(io_data, overlay);
+    }
+
+    // Load the canonical case + overlay, run the pressure solve, return the model.
+    std::unique_ptr<mhs::core::InternalModel> load_case1_and_solve_fluid(const std::string& overlay_xml)
+    {
+        auto model = load_case1_with_overlay(overlay_xml);
         if (!model)
             return nullptr;
-
         mhs::sim::solveFluidFlow(*model);
         return model;
     }

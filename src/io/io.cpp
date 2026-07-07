@@ -637,11 +637,11 @@ namespace mhs::io {
                 fb.value = parse_double(get_text(p));
                 fb.kind = mhs::core::FluidBCType::PressureType;
             }
-            if (const XMLElement* mfr = bound_elem->FirstChildElement("MassFlowRate")) {
+            else if (const XMLElement* mfr = bound_elem->FirstChildElement("MassFlowRate")) {
                 fb.value = parse_double(get_text(mfr));
                 fb.kind = mhs::core::FluidBCType::MassFlowRateType;
             }
-            if (const XMLElement* vel = bound_elem->FirstChildElement("Velocity")) {
+            else if (const XMLElement* vel = bound_elem->FirstChildElement("Velocity")) {
                 fb.value = parse_double(get_text(vel));
                 fb.kind = mhs::core::FluidBCType::VelocityType;
             }

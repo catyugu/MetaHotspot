@@ -161,12 +161,12 @@ namespace mhs::core {
 
     // 流体-固体耦合: 流体 overlay 类型 (从额外 XML 解析, 不侵入主 IOStructure)
     struct FluidMaterialOverlay {
-        std::string name;           // 与 IOStructure::materials 中已有材料同名
+        std::string name; // 与 IOStructure::materials 中已有材料同名
         std::string dynamic_viscosity; // 动力粘度 μ [Pa·s], 表达式字符串
     };
 
     // 流体边界：单一 value 字段 + kind 决定物理量语义。
-    // ADR-0006 字典化 schema; 三种 kind 互斥:
+    // 字典化 schema; 三种 kind 互斥:
     //   PressureType     — value [Pa]    Dirichlet on p
     //   MassFlowRateType — value [kg/s]  Neumann (energy 侧覆盖 netOutflux)
     //   VelocityType     — value [m/s]   Neumann, normal to face (energy 侧覆盖)
