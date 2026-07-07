@@ -100,37 +100,42 @@ namespace mhs::sim {
 
         // ── 统一的面匹配检测 + BC dispatch (ADR-0006) ────────────────────────
         // 将 fb 按 kind 路由到 FluidBCParamTable 对应子表,返回 param_idx。
-        // VelocityType 同时缓存该 cell 的 face 面积到 fluid_face_area[fi]。
-        static uint16_t pushFluidBCParam(mhs::core::InternalModel& model, int fi,
-            const mhs::core::FluidBoundaryOverlay& fb, const FaceKeyInfo& fk, const mhs::core::MeshGeometry& mesh,
-            int ix, int iy, int iz)
+        // 注意: pressure / mass_flow_rate / velocity 是 *per-face-key* 的标量;
+        // 它们必须先按 face_key 注册一次,再在 per-cell 匹配中按 *实际匹配 cell 数*
+        // 分摊到每个 cell,这样总流量 = 用户给定值 (不会被 cell 数放大)。
+        // face_area 是 per-cell 的 (VelocityType 用),仍在内层写。
+        static uint16_t registerFluidBCParam(mhs::core::FluidBCParamTable& params,
+            const mhs::core::FluidBoundaryOverlay& fb, double per_cell_value)
         {
-            auto& params = model.fluid_bc_params;
-            auto& face_area = model.fluid_face_area;
             switch (fb.kind) {
-            case mhs::core::FluidBCType::PressureType: {
-                params.pressure.push_back(fb.value);
+            case mhs::core::FluidBCType::PressureType:
+                // Pressure 是 Dirichlet 值,不按 cell 分摊,直接存原值。
+                params.pressure.push_back(per_cell_value);
                 return static_cast<uint16_t>(params.pressure.size() - 1);
-            }
-            case mhs::core::FluidBCType::MassFlowRateType: {
-                params.mass_flow_rate.push_back(fb.value);
+            case mhs::core::FluidBCType::MassFlowRateType:
+                // MassFlowRate 是 *总* 通量, 需在 applyFluidBoundaries 中按匹配 cell 数等分。
+                params.mass_flow_rate.push_back(per_cell_value);
                 return static_cast<uint16_t>(params.mass_flow_rate.size() - 1);
-            }
-            case mhs::core::FluidBCType::VelocityType: {
-                params.velocity.push_back(fb.value);
-                // 面面积 = (另外两个轴向尺寸的乘积)
-                int axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
-                double a = (axis == 0) ? mesh.dy[iy] : mesh.dx[ix];
-                double b = (axis == 2) ? mesh.dy[iy] : mesh.dz[iz];
-                if (face_area.size() < static_cast<size_t>(fi) + 1)
-                    face_area.resize(fi + 1, 0.0);
-                face_area[fi] = a * b;
+            case mhs::core::FluidBCType::VelocityType:
+                // Velocity 是 per-cell 通量,无需分摊 (直接读 = u * area)。
+                params.velocity.push_back(per_cell_value);
                 return static_cast<uint16_t>(params.velocity.size() - 1);
-            }
             case mhs::core::FluidBCType::None:
             default:
                 return static_cast<uint16_t>(mhs::core::invalidIndex);
             }
+        }
+
+        // 仅 VelocityType 需要 per-cell face 面积.
+        static void cacheFaceAreaForVelocity(std::vector<double>& face_area, int fi,
+            const FaceKeyInfo& fk, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz)
+        {
+            int axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
+            double a = (axis == 0) ? mesh.dy[iy] : mesh.dx[ix];
+            double b = (axis == 2) ? mesh.dy[iy] : mesh.dz[iz];
+            if (face_area.size() < static_cast<size_t>(fi) + 1)
+                face_area.resize(fi + 1, 0.0);
+            face_area[fi] = a * b;
         }
 
         void applyFluidBoundaries(mhs::core::InternalModel& model, const mhs::core::FluidOverlay& overlay,
@@ -142,6 +147,9 @@ namespace mhs::sim {
                     FaceKeyInfo fk = parse_face_key(keyStr, si_scale);
                     int target_axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
 
+                    // 第一遍: 仅匹配, 计数; 同时缓存匹配 cell 列表以分配 param_idx.
+                    std::vector<int> matched;
+                    matched.reserve(64);
                     for (int fi = 0; fi < model.n_fluid; ++fi) {
                         int old_idx = compact_to_old[model.fluid_to_global[fi]];
                         int ix, iy, iz;
@@ -156,23 +164,65 @@ namespace mhs::sim {
 
                         if (std::abs(face_m - fk.coord_value) < mhs::core::geometry_eps
                             || std::abs(face_p - fk.coord_value) < mhs::core::geometry_eps) {
-                            // 检查 2D 矩形范围 (a, b 取另外两个轴的坐标)
                             double a = c[(target_axis + 1) % 3];
                             double b = c[(target_axis + 2) % 3];
 
                             if (point_in_face_rects(fk, a, b) || point_in_face_rects(fk, b, a)) {
-                                mhs::core::FluidCellBC cell_bc;
-                                cell_bc.kind = fb.kind;
-                                cell_bc.param_idx = pushFluidBCParam(model, fi, fb, fk, mesh, ix, iy, iz);
-                                model.fluid_bcs[fi] = cell_bc;
-                                if (!std::isnan(fb.inlet_temperature)) {
-                                    model.boundary_temperature_fluid[fi] = fb.inlet_temperature;
-                                }
+                                matched.push_back(fi);
                             }
+                        }
+                    }
+
+                    if (matched.empty())
+                        continue;
+
+                    // MassFlowRate 是 *总* 通量, 按匹配 cell 数等分到每个 cell.
+                    // Pressure / Velocity 是 per-cell 量 (pressure Dirichlet 不分摊;
+                    // velocity 乘 per-cell area 后本身就是单 cell 通量).
+                    double per_cell_value = fb.value;
+                    if (fb.kind == mhs::core::FluidBCType::MassFlowRateType) {
+                        per_cell_value = fb.value / static_cast<double>(matched.size());
+                    }
+
+                    uint16_t param_idx = registerFluidBCParam(model.fluid_bc_params, fb, per_cell_value);
+
+                    // 第二遍: 把 param_idx 写回每个匹配 cell.
+                    for (int fi : matched) {
+                        int old_idx = compact_to_old[model.fluid_to_global[fi]];
+                        int ix, iy, iz;
+                        mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
+
+                        mhs::core::FluidCellBC cell_bc;
+                        cell_bc.kind = fb.kind;
+                        cell_bc.param_idx = param_idx;
+                        model.fluid_bcs[fi] = cell_bc;
+                        if (!std::isnan(fb.inlet_temperature)) {
+                            model.boundary_temperature_fluid[fi] = fb.inlet_temperature;
+                        }
+                        if (fb.kind == mhs::core::FluidBCType::VelocityType) {
+                            cacheFaceAreaForVelocity(model.fluid_face_area, fi, fk, mesh, ix, iy, iz);
                         }
                     }
                 }
             }
+        }
+
+        // 在 cell 中心处评估流体密度, 用作 MassFlowRate 体积通量源 m_dot / rho 的分母.
+        // 在初始温度处求值: 不可压缩流的压力解不依赖 T, 用 T_init 是合理近似.
+        // 接受 compact_to_old, 因为调用点已经在 solveFluidFlow 中构造了它.
+        static double evaluateFluidRhoAtInitT(const mhs::core::InternalModel& model, int fi,
+            const std::vector<int>& compact_to_old)
+        {
+            const auto& cells = model.cells;
+            const auto& mesh = model.mesh;
+            int c_idx = model.fluid_to_global[fi];
+            int old_idx = compact_to_old[c_idx];
+            int ix, iy, iz;
+            mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
+            int mat_id = cells.material_id[c_idx];
+            const auto& mp = model.material_table[mat_id];
+            mhs::core::FieldContext ctx {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], model.initial_temperature, 0.0};
+            return mp.rho.eval(ctx);
         }
 
     } // 匿名命名空间
@@ -340,7 +390,21 @@ namespace mhs::sim {
                 const auto& params = model.fluid_bc_params.pressure;
                 rhs(fi) = params[model.fluid_bcs[fi].param_idx] * diagSum;
             }
-            // MassFlowRateType / VelocityType: Neumann, 泊松方程 RHS 不加源项;
+            // MassFlowRateType: Neumann 体通量源 m_dot / rho (符号: + 进入 cell, − 离开).
+            // 把 m_dot 作为 Poisson RHS 源项, 让入口有 driving force 推动全场压力梯度,
+            // 否则 Pressure=0 出口无流, 装配器侧入口带入的能量无法对流到出口.
+            else if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
+                const double mdot_cell
+                    = model.fluid_bc_params.mass_flow_rate[model.fluid_bcs[fi].param_idx];
+                const double rho_cell = evaluateFluidRhoAtInitT(model, fi, compact_to_old);
+                // rho==0 在 evaluateFluidRhoAtInitT 中是配置错误; 防御性 fallback.
+                rhs(fi) = (rho_cell > mhs::core::zero_guard) ? (mdot_cell / rho_cell) : 0.0;
+            }
+            // VelocityType: Neumann 体通量源 u * A_face (m/s · m² = m³/s).
+            else if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::VelocityType) {
+                const double vel = model.fluid_bc_params.velocity[model.fluid_bcs[fi].param_idx];
+                rhs(fi) = vel * model.fluid_face_area[fi];
+            }
         }
 
         Eigen::SparseMatrix<double> A(model.n_fluid, model.n_fluid);
