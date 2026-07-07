@@ -85,9 +85,7 @@ namespace mhs::core {
         std::vector<double> dynamic_viscosity; // [n_fluid] μ [Pa·s]
         std::vector<double> pressure; // [n_fluid] 压力场
         std::vector<int8_t> flow_axes; // [n_fluid] 主导流轴
-        std::vector<double> hydroC_x; // [n_fluid] hydraulic conductance X
-        std::vector<double> hydroC_y; // [n_fluid] hydraulic conductance Y
-        std::vector<double> hydroC_z; // [n_fluid] hydraulic conductance Z
+        std::array<std::vector<double>, 3> hydroC; // [axis][n_fluid] hydraulic conductance
         std::vector<double> hydraulic_diameter; // [n_fluid] 水力直径 [m]
         std::vector<double> channel_width; // [n_fluid] 通道宽度 [m]
         std::vector<double> channel_height; // [n_fluid] 通道高度 [m]

@@ -275,9 +275,6 @@ namespace mhs::sim {
             }
         }
 
-        if (std::none_of(model.fluid.is_fluid.begin(), model.fluid.is_fluid.end(), [](uint8_t v) { return v != 0; }))
-            return;
-
         // 3. 构建索引系统及扩展数据数组
         model.fluid.fluid_to_global.clear();
         model.fluid.global_to_fluid.assign(N, -1);
@@ -289,12 +286,14 @@ namespace mhs::sim {
         }
         model.fluid.n_fluid = static_cast<int>(model.fluid.fluid_to_global.size());
 
+        if (model.fluid.n_fluid == 0)
+            return;
+
         model.fluid.dynamic_viscosity.assign(model.fluid.n_fluid, 0.0);
         model.fluid.pressure.assign(model.fluid.n_fluid, 0.0);
         model.fluid.flow_axes.assign(model.fluid.n_fluid, -1);
-        model.fluid.hydroC_x.assign(model.fluid.n_fluid, 0.0);
-        model.fluid.hydroC_y.assign(model.fluid.n_fluid, 0.0);
-        model.fluid.hydroC_z.assign(model.fluid.n_fluid, 0.0);
+        for (auto& hc : model.fluid.hydroC)
+            hc.assign(model.fluid.n_fluid, 0.0);
         model.fluid.hydraulic_diameter.assign(model.fluid.n_fluid, 0.0);
         model.fluid.channel_width.assign(model.fluid.n_fluid, 0.0);
         model.fluid.channel_height.assign(model.fluid.n_fluid, 0.0);
@@ -309,6 +308,7 @@ namespace mhs::sim {
             model.fluid.dynamic_viscosity[fi] = visc_temp[model.fluid.fluid_to_global[fi]];
         }
 
+        // 建立 compact → old 反向映射, 供 applyFluidBoundaries / computeChannelDimensions 共享.
         auto compact_to_old = buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
         // 4. 应用流体边界与计算通道几何
@@ -336,9 +336,9 @@ namespace mhs::sim {
                 / (2.0 * utils::f_re_rectangular(model.fluid.channel_width[fi], model.fluid.channel_height[fi]));
 
             double coef = K_perm / model.fluid.dynamic_viscosity[fi];
-            model.fluid.hydroC_x[fi] = coef * (dy * dz / dx);
-            model.fluid.hydroC_y[fi] = coef * (dx * dz / dy);
-            model.fluid.hydroC_z[fi] = coef * (dx * dy / dz);
+            model.fluid.hydroC[0][fi] = coef * (dy * dz / dx);
+            model.fluid.hydroC[1][fi] = coef * (dx * dz / dy);
+            model.fluid.hydroC[2][fi] = coef * (dx * dy / dz);
         }
 
         // Phase 2: 构建并求解泊松方程 (流场)
@@ -359,24 +359,15 @@ namespace mhs::sim {
                     continue;
 
                 int n_c = static_cast<int>(cells.index_map[n_old]);
-                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size())) ? model.fluid.global_to_fluid[n_c]
-                                                                                            : -1;
+                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size()))
+                    ? model.fluid.global_to_fluid[n_c]
+                    : -1;
                 if (fn < 0)
                     continue;
 
                 int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
-                double C_eff = 0.0;
-                switch (axis) {
-                case 0:
-                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_x[fi], model.fluid.hydroC_x[fn]);
-                    break;
-                case 1:
-                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_y[fi], model.fluid.hydroC_y[fn]);
-                    break;
-                case 2:
-                    C_eff = mhs::utils::harmonicAverage(model.fluid.hydroC_z[fi], model.fluid.hydroC_z[fn]);
-                    break;
-                }
+                const auto& hc = model.fluid.hydroC[axis];
+                double C_eff = mhs::utils::harmonicAverage(hc[fi], hc[fn]);
                 diagSum += C_eff;
 
                 // PressureType 边界 cell 不与内部耦合; 其它 kind 都保留内部耦合
@@ -395,7 +386,8 @@ namespace mhs::sim {
             // 把 m_dot 作为 Poisson RHS 源项, 让入口有 driving force 推动全场压力梯度,
             // 否则 Pressure=0 出口无流, 装配器侧入口带入的能量无法对流到出口.
             else if (model.fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
-                const double mdot_cell = model.fluid.fluid_bc_params.mass_flow_rate[model.fluid.fluid_bcs[fi].param_idx];
+                const double mdot_cell
+                    = model.fluid.fluid_bc_params.mass_flow_rate[model.fluid.fluid_bcs[fi].param_idx];
                 const double rho_cell = evaluateFluidRhoAtInitT(model, fi, compact_to_old);
                 // rho==0 在 evaluateFluidRhoAtInitT 中是配置错误; 防御性 fallback.
                 rhs(fi) = (rho_cell > mhs::core::zero_guard) ? (mdot_cell / rho_cell) : 0.0;
@@ -413,10 +405,12 @@ namespace mhs::sim {
         auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::SparseLU);
         auto result = solver->solve(A, rhs);
         if (!result.success) {
-            MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", model.fluid.n_fluid, static_cast<int>(A.nonZeros()));
+            MHS_LOG_WARN(
+                "Fluid pressure solve failed (nf={}, nz={})", model.fluid.n_fluid, static_cast<int>(A.nonZeros()));
             return;
         }
-        model.fluid.pressure = std::vector<double>(result.solution.data(), result.solution.data() + result.solution.size());
+        model.fluid.pressure
+            = std::vector<double>(result.solution.data(), result.solution.data() + result.solution.size());
         // Phase 3: 根据压力梯度计算主导流向
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
             int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
@@ -433,25 +427,16 @@ namespace mhs::sim {
                     continue;
 
                 int n_c = static_cast<int>(cells.index_map[n_old]);
-                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size())) ? model.fluid.global_to_fluid[n_c]
-                                                                                            : -1;
+                int fn = (n_c >= 0 && n_c < static_cast<int>(model.fluid.global_to_fluid.size()))
+                    ? model.fluid.global_to_fluid[n_c]
+                    : -1;
                 if (fn < 0)
                     continue;
 
                 int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
+                const auto& hc = model.fluid.hydroC[axis];
                 double dp = std::fabs(model.fluid.pressure[fi] - model.fluid.pressure[fn]);
-                double flux = 0.0;
-                switch (axis) {
-                case 0:
-                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_x[fi], model.fluid.hydroC_x[fn]);
-                    break;
-                case 1:
-                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_y[fi], model.fluid.hydroC_y[fn]);
-                    break;
-                case 2:
-                    flux = dp * mhs::utils::harmonicAverage(model.fluid.hydroC_z[fi], model.fluid.hydroC_z[fn]);
-                    break;
-                }
+                double flux = dp * mhs::utils::harmonicAverage(hc[fi], hc[fn]);
 
                 if (flux > maxFlux) {
                     maxFlux = flux;

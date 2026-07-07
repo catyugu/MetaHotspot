@@ -67,8 +67,8 @@ namespace mhs::sim {
 
             const auto& cell_bc = cells.cell_bcs[c_idx];
             double diag = 0.0;
-            bool cell_is_fluid
-                = !model_.fluid.is_fluid.empty() && c_idx < (int)model_.fluid.is_fluid.size() && model_.fluid.is_fluid[c_idx];
+            bool cell_is_fluid = !model_.fluid.is_fluid.empty() && c_idx < (int)model_.fluid.is_fluid.size()
+                && model_.fluid.is_fluid[c_idx];
             const double rho_a = cell_is_fluid ? materials[cells.material_id[c_idx]].rho.eval(ctx_c) : 0.0;
             const double cp_c = cell_is_fluid ? materials[cells.material_id[c_idx]].c.eval(ctx_c) : 0.0;
             double netOutflux = 0.0;
@@ -102,7 +102,8 @@ namespace mhs::sim {
                         = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
                     double cond = 0.0;
-                    bool n_is_fluid = (n_idx >= 0 && n_idx < (int)model_.fluid.is_fluid.size()) && model_.fluid.is_fluid[n_idx];
+                    bool n_is_fluid
+                        = (n_idx >= 0 && n_idx < (int)model_.fluid.is_fluid.size()) && model_.fluid.is_fluid[n_idx];
 
                     // Fluid-solid interface: Nusselt-based convection correction
                     if (cell_is_fluid != n_is_fluid) {
@@ -134,21 +135,9 @@ namespace mhs::sim {
                         int fn_idx = model_.fluid.global_to_fluid[n_idx];
                         if (f_idx >= 0 && fn_idx >= 0) {
                             int axis = mhs::utils::AXIS_OF_DIR[f];
-                            double hc_a, hc_b;
-                            switch (axis) {
-                            case 0:
-                                hc_a = model_.fluid.hydroC_x[f_idx];
-                                hc_b = model_.fluid.hydroC_x[fn_idx];
-                                break;
-                            case 1:
-                                hc_a = model_.fluid.hydroC_y[f_idx];
-                                hc_b = model_.fluid.hydroC_y[fn_idx];
-                                break;
-                            default:
-                                hc_a = model_.fluid.hydroC_z[f_idx];
-                                hc_b = model_.fluid.hydroC_z[fn_idx];
-                                break;
-                            }
+                            const auto& hc = model_.fluid.hydroC[axis];
+                            double hc_a = hc[f_idx];
+                            double hc_b = hc[fn_idx];
                             if (hc_a > mhs::core::zero_guard && hc_b > mhs::core::zero_guard) {
                                 double C_eff = mhs::utils::harmonicAverage(hc_a, hc_b);
                                 double rho_b = mp_n.rho.eval(ctx_n);
@@ -200,7 +189,8 @@ namespace mhs::sim {
                     netOutflux = model_.fluid.fluid_bc_params.mass_flow_rate[bc.param_idx];
                 }
                 else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
-                    netOutflux = model_.fluid.fluid_bc_params.velocity[bc.param_idx] * model_.fluid.fluid_face_area[f_idx];
+                    netOutflux
+                        = model_.fluid.fluid_bc_params.velocity[bc.param_idx] * model_.fluid.fluid_face_area[f_idx];
                 }
 
                 if (netOutflux != 0.0) {
