@@ -6,6 +6,7 @@
 #include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
+#include "data/tolerance_config.hpp"
 
 namespace mhs::sim {
 
@@ -149,14 +150,14 @@ namespace mhs::sim {
                                 hc_b = model_.hydroC_z[fn_idx];
                                 break;
                             }
-                            if (hc_a > 1e-30 && hc_b > 1e-30) {
+                            if (hc_a > mhs::core::zero_guard && hc_b > mhs::core::zero_guard) {
                                 double C_eff = mhs::utils::harmonicAverage(hc_a, hc_b);
                                 double rho_b = mp_n.rho.eval(ctx_n);
                                 double rho_avg = 0.5 * (rho_a + rho_b);
                                 double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];
                                 double massFlux = dP * C_eff * rho_avg;
                                 netOutflux += massFlux;
-                                if (std::fabs(massFlux) > 1e-30) {
+                                if (std::fabs(massFlux) > mhs::core::zero_guard) {
                                     if (massFlux > 0) {
                                         local.triplets.emplace_back(c_idx, c_idx, massFlux * cp_c);
                                     }
@@ -190,7 +191,7 @@ namespace mhs::sim {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            if (cell_is_fluid && std::fabs(netOutflux) >= 1e-20) {
+            if (cell_is_fluid && std::fabs(netOutflux) >= mhs::core::zero_guard) {
                 int f_idx = model_.global_to_fluid[c_idx];
                 if (netOutflux > 0) { // 流体进入 (Inlet)
                     double T_boundary = model_.boundary_temperature_fluid[f_idx];

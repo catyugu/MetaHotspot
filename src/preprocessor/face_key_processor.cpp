@@ -1,3 +1,4 @@
+#include "data/tolerance_config.hpp"
 #include "data/types.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
@@ -73,7 +74,7 @@ namespace mhs::sim {
 
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b)
     {
-        constexpr double EPS = 1e-9;
+        const double EPS = mhs::core::geometry_eps;
         for (const auto& rect : fk.rects) {
             if (a >= rect[0] - EPS && a <= rect[1] + EPS && b >= rect[2] - EPS && b <= rect[3] + EPS) {
                 return true;

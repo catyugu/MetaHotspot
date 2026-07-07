@@ -27,7 +27,18 @@ CASE_GROUPS = [
 
 def _run_one(input_path, vtu_path, xml_path):
     print(f">>> Running {os.path.basename(input_path)}", flush=True)
-    subprocess.run([EXE, input_path, vtu_path, xml_path], check=False)
+    subprocess.run(
+        [
+            EXE,
+            "--input",
+            input_path,
+            "--output-vtu",
+            vtu_path,
+            "--output-xml",
+            xml_path,
+        ],
+        check=False,
+    )
 
 
 def _run_group(case_dir, results_subdir, _kind=""):

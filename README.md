@@ -85,6 +85,36 @@ flowchart TD
 
 ```
 
+## 运行
+
+`metahotspot` 的命令行参数解析统一由 `mhs::cli`（`src/common/cli.hpp`）完成，
+所有标志都是命名、顺序无关的；不接受位置参数。
+
+| Flag | 默认值 | 说明 |
+|------|--------|------|
+| `--input <file>` | —（必填） | 输入 XML |
+| `--output-vtu <file>` | `./output.vtu` | VTU 输出路径 |
+| `--output-xml <file>` | `./output.xml` | XML 输出路径 |
+| `--fluid-overlay <file>` | 不加载；跳过所有流体相关逻辑 | 显式指定 fluid overlay；未传则不执行流体逻辑 |
+| `--log-file <file>` | `metahotspot.log` | 日志文件路径 |
+| `--no-console-log` | — | 关闭控制台日志 |
+| `--help` | — | 打印帮助并以 0 退出 |
+
+示例：
+
+```bash
+# 最常见的调用：只指定 input，不加载 fluid overlay
+metahotspot --input cases/simple_steady_tests/steady_case1.xml
+
+# 顺序无关：把 output-vtu 放最前也行
+metahotspot --output-vtu /tmp/out.vtu \
+            --output-xml /tmp/out.xml \
+            --input   cases/simple_steady_tests/steady_case1.xml
+
+# 显式指定 fluid overlay
+metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional.xml
+```
+
 ## 第三方依赖
 
 - **CPM**：用于引入其余依赖项。

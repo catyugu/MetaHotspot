@@ -1,3 +1,4 @@
+#include "data/tolerance_config.hpp"
 #include "time_scheme/step_controller.hpp"
 
 #include <algorithm>
@@ -6,10 +7,9 @@
 namespace mhs::sim::time_scheme {
 
     namespace {
-        constexpr double EPS = 1e-12;
 
         /// Relative tolerance for grid-point matching.
-        inline double gtol(double t) noexcept { return EPS * std::max(1.0, std::abs(t)); }
+        inline double gtol(double t) noexcept { return core::zero_guard * std::max(1.0, std::abs(t)); }
     }
 
     StepController::StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt)

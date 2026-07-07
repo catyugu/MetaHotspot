@@ -1,3 +1,4 @@
+#include "common/cli.hpp"
 #include "common/logger.hpp"
 #include "io/io.hpp"
 #include "linear_solver/linear_solver.hpp"
@@ -13,30 +14,31 @@
 
 int main(int argc, char* argv[])
 {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input.xml> [output.vtu] [output.xml]" << std::endl;
+    auto cli = mhs::cli::parse(argc, argv);
+
+    if (cli.status == mhs::cli::ParseStatus::HelpRequested) {
+        std::cout << cli.message;
+        return 0;
+    }
+    if (cli.status == mhs::cli::ParseStatus::Error || !cli.options.has_value()) {
+        std::cerr << cli.message << std::endl;
+        std::cerr << "\n" << mhs::cli::usage_text(cli.program_name);
         return 1;
     }
 
-    std::string input_path = argv[1];
-    std::string output_vtu = argc > 2 ? argv[2] : "./output.vtu";
-    std::string output_xml = argc > 3 ? argv[3] : "./output.xml";
+    const auto& opts = *cli.options;
+    const std::string& input_path = opts.input;
+    const std::string& output_vtu = opts.output_vtu;
+    const std::string& output_xml = opts.output_xml;
 
-    // Auto-infer fluid-overlay path from input filename: insert "_additional" before extension.
-    // E.g. "steady_case1.xml" → "steady_case1_additional.xml"
+    // Fluid overlay 路径策略：
+    //   - --fluid-overlay <file>     -> 显式覆盖；只有显式传入时才执行流体相关逻辑
+    //   - (默认)                    -> 不加载 fluid overlay，所有流体逻辑跳过
     std::optional<std::string> fluidOverlayPath;
-    {
-        auto dot = input_path.rfind('.');
-        if (dot != std::string::npos) {
-            fluidOverlayPath = input_path.substr(0, dot) + "_additional" + input_path.substr(dot);
-        }
-        else {
-            fluidOverlayPath = input_path + "_additional";
-        }
-    }
+    fluidOverlayPath = opts.fluid_overlay;
 
     // Initialize logger
-    mhs::logger::init("metahotspot.log", true);
+    mhs::logger::init(opts.log_file, opts.console_log);
 
     MHS_LOG_INFO("Starting MetaHotspot simulation");
     MHS_LOG_INFO("Input: {}", input_path);
@@ -48,7 +50,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", io_structure.layers.size(),
             io_structure.materials.size(), io_structure.boundaries.size());
 
-        // Auto-inferred fluid overlay: e.g. steady_case1.xml → steady_case1_additional.xml
+        // Fluid overlay: 加载与否由 CLI 决定；只有显式传入 --fluid-overlay 时才执行流体相关逻辑。
         std::optional<mhs::core::FluidOverlay> fluidOverlay;
         if (fluidOverlayPath.has_value()) {
             std::error_code ec;
@@ -80,7 +82,7 @@ int main(int argc, char* argv[])
                     ++fluidCount;
             }
             if (fluidCount > 0) {
-                MHS_LOG_INFO("Fluid cells: {} / {}", fluidCount, model->material_table.size());
+                MHS_LOG_INFO("Fluid cells: {}", fluidCount);
             }
         }
 
@@ -99,7 +101,7 @@ int main(int argc, char* argv[])
 
         const auto& solution = scheduler.solution();
 
-        MHS_LOG_INFO("Simulation complete. {} cells computed.", solution.size());
+        MHS_LOG_INFO("Simulation complete.");
 
         // Postprocess
         auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution, scheduler.currentTime());

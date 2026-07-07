@@ -14,6 +14,7 @@ function(mhs_set_strict_warnings TARGET_NAME)
             -Wall -Wextra -Wpedantic -Werror
             -Wno-language-extension-token
             -Wno-microsoft-enum-value
+            -Wno-nested-anon-types
         )
     endif()
 endfunction()

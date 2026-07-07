@@ -1,6 +1,7 @@
 #include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
+#include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "function_helpers.hpp"
@@ -87,7 +88,9 @@ namespace mhs::sim {
                 double cross_h = lengths[1];
 
                 // 计算水力直径
-                double dh = (cross_w + cross_h > 1e-12) ? (2.0 * cross_w * cross_h / (cross_w + cross_h)) : 0.0;
+                double dh = (cross_w + cross_h > mhs::core::geometry_eps)
+                    ? (2.0 * cross_w * cross_h / (cross_w + cross_h))
+                    : 0.0;
 
                 model.hydraulic_diameter[fi] = dh;
                 model.channel_width[fi] = cross_w;
@@ -117,7 +120,8 @@ namespace mhs::sim {
                         double face_m = c[target_axis] - d[target_axis] * 0.5;
                         double face_p = c[target_axis] + d[target_axis] * 0.5;
 
-                        if (std::abs(face_m - fk.coord_value) < 1e-10 || std::abs(face_p - fk.coord_value) < 1e-10) {
+                        if (std::abs(face_m - fk.coord_value) < mhs::core::geometry_eps
+                            || std::abs(face_p - fk.coord_value) < mhs::core::geometry_eps) {
                             // 检查 2D 矩形范围 (a, b 取另外两个轴的坐标)
                             double a = c[(target_axis + 1) % 3];
                             double b = c[(target_axis + 2) % 3];

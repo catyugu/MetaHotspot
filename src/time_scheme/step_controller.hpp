@@ -81,7 +81,7 @@ namespace mhs::sim::time_scheme {
     private:
         StepStrategy strategy_ = StepStrategy::Free;
         OutputTimeGrid grid_; ///< Output-time grid (empty = record every step).
-        double min_dt_ = 1e-12;
+        double min_dt_ = 1e-8;
         double max_dt_ = 1.0;
         double fixed_dt_ = 1.0;
 
