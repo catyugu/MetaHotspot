@@ -56,6 +56,22 @@ namespace mhs::core {
         std::vector<double> pressure_bc_values; // index by PressureBC idx
     };
 
+    // =========================================================================
+    // 流体 BC 字典化结构 (ADR-0006)
+    // 与 thermal BCParamTable 1:1 对位：每 kind 一个 vector<double>，
+    // FluidCellBC::param_idx 索引到对应子表。
+    // =========================================================================
+    struct FluidBCParamTable {
+        std::vector<double> pressure;        // [Pa]   indexed by FluidBCType::PressureType
+        std::vector<double> mass_flow_rate;  // [kg/s] indexed by FluidBCType::MassFlowRateType
+        std::vector<double> velocity;        // [m/s]  indexed by FluidBCType::VelocityType
+    };
+
+    struct FluidCellBC {
+        FluidBCType kind = FluidBCType::None;
+        uint16_t    param_idx = static_cast<uint16_t>(invalidIndex);
+    };
+
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
     // 与 IOStructure::ObservationPoint3D（表达式字符串）一一对应，由 preprocessor 转换生成。
     struct ProbePoint {
@@ -102,12 +118,15 @@ namespace mhs::core {
         std::vector<double> hydroC_x; // [n_fluid] hydraulic conductance X
         std::vector<double> hydroC_y; // [n_fluid] hydraulic conductance Y
         std::vector<double> hydroC_z; // [n_fluid] hydraulic conductance Z
-        std::vector<uint8_t> is_flow_boundary; // [n_fluid] 压力边界标记
-        std::vector<double> boundary_pressure; // [n_fluid] 压力边界值 [Pa]
-        std::vector<double> boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
         std::vector<double> hydraulic_diameter; // [n_fluid] 水力直径 [m]
         std::vector<double> channel_width; // [n_fluid] 通道宽度 [m]
         std::vector<double> channel_height; // [n_fluid] 通道高度 [m]
+
+        // 流体 BC 字典化 (ADR-0006)
+        std::vector<FluidCellBC> fluid_bcs;        // [n_fluid] 每单元 kind + param_idx
+        FluidBCParamTable        fluid_bc_params;   // 三类 BC 参数池
+        std::vector<double>      fluid_face_area;  // [n_fluid] VelocityType 算 netOutflux 用
+        std::vector<double>      boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
     };
 
 } // namespace mhs::core

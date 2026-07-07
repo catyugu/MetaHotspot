@@ -310,9 +310,7 @@ TEST(IoTest, ReadFluidOverlayParsesMaterialsAndBoundaries)
         <FaceKeys>
             <string>X|E|0|0.5|1.5|0.3|0.5</string>
         </FaceKeys>
-        <PressureBoundary>
-            <Pressure>500</Pressure>
-        </PressureBoundary>
+        <Pressure>500</Pressure>
     </Boundary>
     <Boundary>
         <BoundaryCategory>Fluidic</BoundaryCategory>
@@ -320,9 +318,7 @@ TEST(IoTest, ReadFluidOverlayParsesMaterialsAndBoundaries)
         <FaceKeys>
             <string>X|E|8|0.5|1.5|0.3|0.5</string>
         </FaceKeys>
-        <PressureBoundary>
-            <Pressure>0</Pressure>
-        </PressureBoundary>
+        <Pressure>0</Pressure>
     </Boundary>
 </FluidOverlay>)";
 
@@ -336,9 +332,11 @@ TEST(IoTest, ReadFluidOverlayParsesMaterialsAndBoundaries)
     EXPECT_EQ(overlay->fluid_materials[0].dynamic_viscosity, "0.00089");
     EXPECT_EQ(overlay->boundaries.size(), 2u);
     EXPECT_EQ(overlay->boundaries[0].name, "inlet");
-    EXPECT_DOUBLE_EQ(overlay->boundaries[0].pressure_bc.pressure, 500.0);
+    EXPECT_EQ(overlay->boundaries[0].kind, mhs::core::FluidBCType::PressureType);
+    EXPECT_DOUBLE_EQ(overlay->boundaries[0].value, 500.0);
     EXPECT_EQ(overlay->boundaries[1].name, "outlet");
-    EXPECT_DOUBLE_EQ(overlay->boundaries[1].pressure_bc.pressure, 0.0);
+    EXPECT_EQ(overlay->boundaries[1].kind, mhs::core::FluidBCType::PressureType);
+    EXPECT_DOUBLE_EQ(overlay->boundaries[1].value, 0.0);
 }
 
 TEST(IoTest, ReadFluidOverlayMissingElementReturnsNullopt)

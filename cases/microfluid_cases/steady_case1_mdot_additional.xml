@@ -5,19 +5,21 @@
     </FluidMaterial>
     <Boundary>
         <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>fluid_inlet</Name>
+        <Name>fluid_inlet_mdot</Name>
         <FaceKeys>
-            <string>Y|E|5|8.125|8.541666666667|0.4|0.7</string>
+            <string>X|E|0|0.5|1.5|0.2|0.4</string>
+            <string>X|E|0|2.5|3.5|0.2|0.4</string>
         </FaceKeys>
-        <Pressure>200</Pressure>
+        <MassFlowRate>1e-4</MassFlowRate>
         <InletTemperature>298.15</InletTemperature>
     </Boundary>
 
     <Boundary>
         <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>fluid_outlet</Name>
+        <Name>fluid_outlet_pres</Name>
         <FaceKeys>
-            <string>Y|E|10|11.458333333333|11.875|0.4|0.7</string>
+            <string>X|E|8|0.5|1.5|0.2|0.4</string>
+            <string>X|E|8|2.5|3.5|0.2|0.4</string>
         </FaceKeys>
         <Pressure>0</Pressure>
     </Boundary>

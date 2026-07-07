@@ -10,9 +10,7 @@
             <string>X|E|0|0.5|1.5|0.2|0.4</string>
             <string>X|E|0|2.5|3.5|0.2|0.4</string>
         </FaceKeys>
-        <PressureBoundary>
-            <Pressure>1000</Pressure>
-        </PressureBoundary>
+        <Pressure>1000</Pressure>
         <InletTemperature>298.15</InletTemperature>
     </Boundary>
 
@@ -23,9 +21,7 @@
             <string>X|E|8|0.5|1.5|0.2|0.4</string>
             <string>X|E|8|2.5|3.5|0.2|0.4</string>
         </FaceKeys>
-        <PressureBoundary>
-            <Pressure>0</Pressure>
-        </PressureBoundary>
+        <Pressure>0</Pressure>
     </Boundary>
 
 </FluidOverlay>

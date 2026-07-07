@@ -98,8 +98,42 @@ namespace mhs::sim {
             }
         }
 
-        // ── 统一的面匹配检测 ───────────────────────────────────────────────────
-        void applyPressureBoundaries(mhs::core::InternalModel& model, const mhs::core::FluidOverlay& overlay,
+        // ── 统一的面匹配检测 + BC dispatch (ADR-0006) ────────────────────────
+        // 将 fb 按 kind 路由到 FluidBCParamTable 对应子表,返回 param_idx。
+        // VelocityType 同时缓存该 cell 的 face 面积到 fluid_face_area[fi]。
+        static uint16_t pushFluidBCParam(mhs::core::InternalModel& model, int fi,
+            const mhs::core::FluidBoundaryOverlay& fb, const FaceKeyInfo& fk, const mhs::core::MeshGeometry& mesh,
+            int ix, int iy, int iz)
+        {
+            auto& params = model.fluid_bc_params;
+            auto& face_area = model.fluid_face_area;
+            switch (fb.kind) {
+            case mhs::core::FluidBCType::PressureType: {
+                params.pressure.push_back(fb.value);
+                return static_cast<uint16_t>(params.pressure.size() - 1);
+            }
+            case mhs::core::FluidBCType::MassFlowRateType: {
+                params.mass_flow_rate.push_back(fb.value);
+                return static_cast<uint16_t>(params.mass_flow_rate.size() - 1);
+            }
+            case mhs::core::FluidBCType::VelocityType: {
+                params.velocity.push_back(fb.value);
+                // 面面积 = (另外两个轴向尺寸的乘积)
+                int axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
+                double a = (axis == 0) ? mesh.dy[iy] : mesh.dx[ix];
+                double b = (axis == 2) ? mesh.dy[iy] : mesh.dz[iz];
+                if (face_area.size() < static_cast<size_t>(fi) + 1)
+                    face_area.resize(fi + 1, 0.0);
+                face_area[fi] = a * b;
+                return static_cast<uint16_t>(params.velocity.size() - 1);
+            }
+            case mhs::core::FluidBCType::None:
+            default:
+                return static_cast<uint16_t>(mhs::core::invalidIndex);
+            }
+        }
+
+        void applyFluidBoundaries(mhs::core::InternalModel& model, const mhs::core::FluidOverlay& overlay,
             double si_scale, const std::vector<int>& compact_to_old)
         {
             const auto& mesh = model.mesh;
@@ -127,8 +161,10 @@ namespace mhs::sim {
                             double b = c[(target_axis + 2) % 3];
 
                             if (point_in_face_rects(fk, a, b) || point_in_face_rects(fk, b, a)) {
-                                model.is_flow_boundary[fi] = 1;
-                                model.boundary_pressure[fi] = fb.pressure_bc.pressure;
+                                mhs::core::FluidCellBC cell_bc;
+                                cell_bc.kind = fb.kind;
+                                cell_bc.param_idx = pushFluidBCParam(model, fi, fb, fk, mesh, ix, iy, iz);
+                                model.fluid_bcs[fi] = cell_bc;
                                 if (!std::isnan(fb.inlet_temperature)) {
                                     model.boundary_temperature_fluid[fi] = fb.inlet_temperature;
                                 }
@@ -208,12 +244,15 @@ namespace mhs::sim {
         model.hydroC_x.assign(model.n_fluid, 0.0);
         model.hydroC_y.assign(model.n_fluid, 0.0);
         model.hydroC_z.assign(model.n_fluid, 0.0);
-        model.is_flow_boundary.assign(model.n_fluid, 0);
-        model.boundary_pressure.assign(model.n_fluid, 0.0);
-        model.boundary_temperature_fluid.assign(model.n_fluid, std::numeric_limits<double>::quiet_NaN());
         model.hydraulic_diameter.assign(model.n_fluid, 0.0);
         model.channel_width.assign(model.n_fluid, 0.0);
         model.channel_height.assign(model.n_fluid, 0.0);
+
+        // ADR-0006: 字典化 BC 容器 + 每单元 cell-level tag
+        model.fluid_bcs.assign(model.n_fluid, mhs::core::FluidCellBC {});
+        model.fluid_bc_params = mhs::core::FluidBCParamTable {};
+        model.fluid_face_area.assign(model.n_fluid, 0.0);
+        model.boundary_temperature_fluid.assign(model.n_fluid, std::numeric_limits<double>::quiet_NaN());
 
         for (int fi = 0; fi < model.n_fluid; ++fi) {
             model.dynamic_viscosity[fi] = visc_temp[model.fluid_to_global[fi]];
@@ -221,8 +260,8 @@ namespace mhs::sim {
 
         auto compact_to_old = buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
-        // 4. 应用压力边界与计算通道几何
-        applyPressureBoundaries(model, overlay.value(), si_scale, compact_to_old);
+        // 4. 应用流体边界与计算通道几何
+        applyFluidBoundaries(model, overlay.value(), si_scale, compact_to_old);
         computeChannelDimensions(model, compact_to_old);
     }
 
@@ -289,19 +328,19 @@ namespace mhs::sim {
                 }
                 diagSum += C_eff;
 
-                // 如果当前单元是边界，不需要跟内部耦合（只设对角线），但可以借用算出的 C_eff 做量级估算
-                if (!model.is_flow_boundary[fi]) {
+                // PressureType 边界 cell 不与内部耦合; 其它 kind 都保留内部耦合
+                if (model.fluid_bcs[fi].kind != mhs::core::FluidBCType::PressureType) {
                     triplets.emplace_back(fi, fn, -C_eff);
                 }
             }
 
-            if (model.is_flow_boundary[fi]) {
-                triplets.emplace_back(fi, fi, diagSum);
-                rhs(fi) = model.boundary_pressure[fi] * diagSum;
+            triplets.emplace_back(fi, fi, diagSum);
+            // PressureType: Dirichlet (边界 cell 不与内部耦合, RHS 用压力值)
+            if (model.fluid_bcs[fi].kind == mhs::core::FluidBCType::PressureType) {
+                const auto& params = model.fluid_bc_params.pressure;
+                rhs(fi) = params[model.fluid_bcs[fi].param_idx] * diagSum;
             }
-            else {
-                triplets.emplace_back(fi, fi, diagSum);
-            }
+            // MassFlowRateType / VelocityType: Neumann, 泊松方程 RHS 不加源项;
         }
 
         Eigen::SparseMatrix<double> A(model.n_fluid, model.n_fluid);

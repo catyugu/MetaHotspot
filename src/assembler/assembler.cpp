@@ -192,6 +192,15 @@ namespace mhs::sim {
 
             if (cell_is_fluid && netOutflux != 0.0) {
                 int f_idx = model_.global_to_fluid[c_idx];
+                // ADR-0006: MassFlowRateType / VelocityType cell 用 BC 值覆盖
+                // pressure 差分得到的 netOutflux, 保证质量守恒由用户给定值驱动.
+                const auto& bc = model_.fluid_bcs[f_idx];
+                if (bc.kind == mhs::core::FluidBCType::MassFlowRateType) {
+                    netOutflux = model_.fluid_bc_params.mass_flow_rate[bc.param_idx];
+                }
+                else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
+                    netOutflux = model_.fluid_bc_params.velocity[bc.param_idx] * model_.fluid_face_area[f_idx];
+                }
                 double T_boundary = model_.boundary_temperature_fluid[f_idx];
 
                 // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
