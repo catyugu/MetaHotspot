@@ -1,4 +1,5 @@
 #include "common/mesh_utils.hpp"
+#include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "layer_processor.hpp"
@@ -6,7 +7,8 @@
 
 namespace mhs::sim {
 
-    constexpr double EPS = 1e-9;
+    using mhs::core::geometry_eps;
+    constexpr double EPS = geometry_eps;
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
         const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols)
@@ -168,7 +170,7 @@ namespace mhs::sim {
                 // 优先匹配 parsed_keys
                 bool matched = false;
                 for (const auto& pk : parsed_keys) {
-                    if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < 1e-10) {
+                    if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
                         if (point_in_face_rects(pk.fk, a_val, b_val)) {
                             cells_out.cell_bcs[c_idx].types[(size_t)dir] = pk.bc_enum;
                             cells_out.cell_bcs[c_idx].param_idxs[(size_t)dir] = pk.param_idx;

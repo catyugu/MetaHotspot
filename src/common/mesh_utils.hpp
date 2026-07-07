@@ -2,6 +2,7 @@
 
 #include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/tolerance_config.hpp"
 #include "data/types.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -33,7 +34,7 @@ namespace mhs::utils {
     /// Harmonic mean of two conductances.
     inline double harmonicAverage(double a, double b)
     {
-        if (a < 1e-30 || b < 1e-30)
+        if (a < mhs::core::zero_guard || b < mhs::core::zero_guard)
             return 0.0;
         return (2.0 * a * b) / (a + b);
     }

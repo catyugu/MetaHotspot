@@ -1,5 +1,6 @@
 #include "assembler/assembler.hpp"
 #include "common/logger.hpp"
+#include "data/tolerance_config.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
 #include "preprocessor/fluid_preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
@@ -90,7 +91,7 @@ namespace mhs::sim {
 
         Eigen::Map<Eigen::VectorXd> T_map(step_.T.data(), static_cast<Eigen::Index>(N));
 
-        while (step_.current_time < duration - 1e-14) {
+        while (step_.current_time < duration - mhs::core::zero_guard) {
             dt = step_ctrl.prepare(dt_sug, step_.current_time, duration);
             if (dt <= 0.0)
                 break;

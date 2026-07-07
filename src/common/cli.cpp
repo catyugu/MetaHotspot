@@ -15,7 +15,8 @@ namespace mhs::cli {
            << "  --input <file>          Input XML describing the simulation (required).\n"
            << "  --output-vtu <file>     Output VTU path (default: ./output.vtu).\n"
            << "  --output-xml <file>     Output XML path (default: ./output.xml).\n"
-           << "  --fluid-overlay <file>  Explicit fluid-overlay XML; only when this flag is given will fluid-related logic run.\n"
+           << "  --fluid-overlay <file>  Explicit fluid-overlay XML; only when this flag is given will fluid-related "
+              "logic run.\n"
            << "  --log-file <file>       Log file path (default: metahotspot.log).\n"
            << "  --no-console-log        Disable console logging.\n"
            << "  --help                  Print this help and exit 0.\n"
@@ -127,8 +128,8 @@ namespace mhs::cli {
             }
             else {
                 result.status = ParseStatus::Error;
-                result.message = std::string("positional argument '") + cur
-                    + "' is not accepted; use named flags (try --help)";
+                result.message
+                    = std::string("positional argument '") + cur + "' is not accepted; use named flags (try --help)";
                 return result;
             }
         }
