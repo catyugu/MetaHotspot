@@ -35,9 +35,9 @@ namespace mhs::core {
         CompiledExpression kz;
         CompiledExpression rho;
         CompiledExpression c;
+        CompiledExpression dynamic_viscosity; // μ; 非 fluid = make_constant(0)
         // 流体-固体耦合扩展
         bool is_fluid = false;
-        CompiledExpression dynamic_viscosity; // μ; 非 fluid = make_constant(0)
     };
 
     struct CellFields {
@@ -52,8 +52,49 @@ namespace mhs::core {
         std::vector<CompiledExpression> neumann_q;
         std::vector<CompiledExpression> cauchy_h;
         std::vector<CompiledExpression> cauchy_T_inf;
-        // 流体-固体耦合扩展: 压力边界参数值 (不需要表达式, 直接 double)
-        std::vector<double> pressure_bc_values; // index by PressureBC idx
+    };
+
+    // =========================================================================
+    // 流体 BC 字典化结构
+    // 每 kind 一个 vector<double>，
+    // FluidCellBC::param_idx 索引到对应子表。
+    // =========================================================================
+    struct FluidBCParamTable {
+        std::vector<double> pressure; // [Pa]   indexed by FluidBCType::PressureType
+        std::vector<double> mass_flow_rate; // [kg/s] indexed by FluidBCType::MassFlowRateType
+        std::vector<double> velocity; // [m/s]  indexed by FluidBCType::VelocityType
+    };
+
+    struct FluidCellBC {
+        FluidBCType kind = FluidBCType::None;
+        uint16_t param_idx = static_cast<uint16_t>(invalidIndex);
+    };
+
+    // =========================================================================
+    // Fluid subsystem — owns all per-cell fluid data + BC bookkeeping.
+    // Field arrays are [n_fluid]-compact; cross-reference via global_to_fluid.
+    // Empty / zero-initialized when no fluid overlay is applied (does not
+    // participate in the thermal solve).
+    // =========================================================================
+    struct FluidSubsystem {
+        int n_fluid = 0; // 流体单元数
+        std::vector<int> fluid_to_global; // [n_fluid] → N_active compact index
+        std::vector<int> global_to_fluid; // [N_active] → n_fluid fluid index, -1 = 非流体
+
+        std::vector<uint8_t> is_fluid; // [N_active] 标记流体 cell（用于快速判别）
+        std::vector<double> dynamic_viscosity; // [n_fluid] μ [Pa·s]
+        std::vector<double> pressure; // [n_fluid] 压力场
+        std::vector<int8_t> flow_axes; // [n_fluid] 主导流轴
+        std::array<std::vector<double>, 3> hydroC; // [axis][n_fluid] hydraulic conductance
+        std::vector<double> hydraulic_diameter; // [n_fluid] 水力直径 [m]
+        std::vector<double> channel_width; // [n_fluid] 通道宽度 [m]
+        std::vector<double> channel_height; // [n_fluid] 通道高度 [m]
+
+        // 流体 BC 字典化
+        std::vector<FluidCellBC> fluid_bcs; // [n_fluid] 每单元 kind + param_idx
+        FluidBCParamTable fluid_bc_params; // 三类 BC 参数池
+        std::vector<double> fluid_face_area; // [n_fluid] VelocityType 算 netOutflux 用
+        std::vector<double> boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
     };
 
     // 内部探针点：用户坐标系下的固定位置（已求值到 SI 单位），求解器在每个时间步记录该点温度。
@@ -84,30 +125,14 @@ namespace mhs::core {
         std::vector<ProbePoint> observation_points;
 
         // ============================================================
-        // 流体-固体耦合传热 (fluid-algorithm) 扩展字段
-        // 所有字段零初始化；无 overlay 时全部为空/零值，不参与求解。
+        // 流体-固体耦合传热 (fluid-algorithm) 子系统
+        // 详见 FluidSubsystem。零初始化；无 overlay 时全部为空/零值，不参与求解。
         //
         // 流体属性数组为 [n_fluid] 紧凑长度，通过 global_to_fluid 索引：
-        //   f_idx = global_to_fluid[c_idx]  (或 -1 为非流体)
-        //   c_idx = fluid_to_global[f_idx]
+        //   f_idx = fluid.global_to_fluid[c_idx]  (或 -1 为非流体)
+        //   c_idx = fluid.fluid_to_global[f_idx]
         // ============================================================
-        int n_fluid = 0;                              // 流体单元数
-        std::vector<int> fluid_to_global;             // [n_fluid] → N_active compact index
-        std::vector<int> global_to_fluid;             // [N_active] → n_fluid fluid index, -1 = 非流体
-
-        std::vector<uint8_t> is_fluid;                // [N_active] 标记流体 cell（用于快速判别）
-        std::vector<double> dynamic_viscosity;        // [n_fluid] μ [Pa·s]
-        std::vector<double> pressure;                 // [n_fluid] 压力场
-        std::vector<int8_t> flow_axes;                // [n_fluid] 主导流轴
-        std::vector<double> hydroC_x;                 // [n_fluid] hydraulic conductance X
-        std::vector<double> hydroC_y;                 // [n_fluid] hydraulic conductance Y
-        std::vector<double> hydroC_z;                 // [n_fluid] hydraulic conductance Z
-        std::vector<uint8_t> is_pressure_boundary;    // [n_fluid] 压力边界标记
-        std::vector<double> boundary_pressure;        // [n_fluid] 压力边界值 [Pa]
-        std::vector<double> boundary_temperature_fluid;// [n_fluid] 入口温度 [K]；非入口 = NaN
-        std::vector<double> hydraulic_diameter;        // [n_fluid] 水力直径 [m]
-        std::vector<double> channel_width;             // [n_fluid] 通道宽度 [m]
-        std::vector<double> channel_height;            // [n_fluid] 通道高度 [m]
+        FluidSubsystem fluid;
     };
 
 } // namespace mhs::core

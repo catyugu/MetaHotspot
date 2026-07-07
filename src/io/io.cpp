@@ -632,11 +632,18 @@ namespace mhs::io {
                 }
             }
 
-            // PressureBoundary
-            if (const XMLElement* pb = bound_elem->FirstChildElement("PressureBoundary")) {
-                if (const XMLElement* p = pb->FirstChildElement("Pressure")) {
-                    fb.pressure_bc.pressure = parse_double(get_text(p));
-                }
+            // Pressure / MassFlowRate / Velocity (mutually exclusive, drives fb.kind)
+            if (const XMLElement* p = bound_elem->FirstChildElement("Pressure")) {
+                fb.value = parse_double(get_text(p));
+                fb.kind = mhs::core::FluidBCType::PressureType;
+            }
+            else if (const XMLElement* mfr = bound_elem->FirstChildElement("MassFlowRate")) {
+                fb.value = parse_double(get_text(mfr));
+                fb.kind = mhs::core::FluidBCType::MassFlowRateType;
+            }
+            else if (const XMLElement* vel = bound_elem->FirstChildElement("Velocity")) {
+                fb.value = parse_double(get_text(vel));
+                fb.kind = mhs::core::FluidBCType::VelocityType;
             }
 
             // InletTemperature (optional)

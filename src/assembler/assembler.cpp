@@ -3,7 +3,6 @@
 #include <tbb/parallel_for.h>
 
 #include "assembler.hpp"
-#include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
 #include "data/tolerance_config.hpp"
@@ -68,8 +67,8 @@ namespace mhs::sim {
 
             const auto& cell_bc = cells.cell_bcs[c_idx];
             double diag = 0.0;
-            bool cell_is_fluid
-                = !model_.is_fluid.empty() && c_idx < (int)model_.is_fluid.size() && model_.is_fluid[c_idx];
+            bool cell_is_fluid = !model_.fluid.is_fluid.empty() && c_idx < (int)model_.fluid.is_fluid.size()
+                && model_.fluid.is_fluid[c_idx];
             const double rho_a = cell_is_fluid ? materials[cells.material_id[c_idx]].rho.eval(ctx_c) : 0.0;
             const double cp_c = cell_is_fluid ? materials[cells.material_id[c_idx]].c.eval(ctx_c) : 0.0;
             double netOutflux = 0.0;
@@ -103,17 +102,18 @@ namespace mhs::sim {
                         = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
 
                     double cond = 0.0;
-                    bool n_is_fluid = (n_idx >= 0 && n_idx < (int)model_.is_fluid.size()) && model_.is_fluid[n_idx];
+                    bool n_is_fluid
+                        = (n_idx >= 0 && n_idx < (int)model_.fluid.is_fluid.size()) && model_.fluid.is_fluid[n_idx];
 
                     // Fluid-solid interface: Nusselt-based convection correction
                     if (cell_is_fluid != n_is_fluid) {
                         int f_id = cell_is_fluid ? c_idx : n_idx;
-                        int f_idx = model_.global_to_fluid[f_id];
+                        int f_idx = model_.fluid.global_to_fluid[f_id];
                         // Reuse already-evaluated k_face/k_neighbor — no need to re-eval.
                         double kf = cell_is_fluid ? k_face : k_neighbor;
-                        double d_h = model_.hydraulic_diameter[f_idx];
-                        double ch_w = model_.channel_width[f_idx];
-                        double ch_h = model_.channel_height[f_idx];
+                        double d_h = model_.fluid.hydraulic_diameter[f_idx];
+                        double ch_w = model_.fluid.channel_width[f_idx];
+                        double ch_h = model_.fluid.channel_height[f_idx];
                         double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
                         double h_f = Nu * kf / d_h;
                         double half_dist_solid = cell_is_fluid ? d_half_neighbor : half_dist;
@@ -131,30 +131,18 @@ namespace mhs::sim {
 
                     // Advection: upwind mass flux for fluid-fluid faces
                     if (cell_is_fluid && n_is_fluid) {
-                        int f_idx = model_.global_to_fluid[c_idx];
-                        int fn_idx = model_.global_to_fluid[n_idx];
+                        int f_idx = model_.fluid.global_to_fluid[c_idx];
+                        int fn_idx = model_.fluid.global_to_fluid[n_idx];
                         if (f_idx >= 0 && fn_idx >= 0) {
                             int axis = mhs::utils::AXIS_OF_DIR[f];
-                            double hc_a, hc_b;
-                            switch (axis) {
-                            case 0:
-                                hc_a = model_.hydroC_x[f_idx];
-                                hc_b = model_.hydroC_x[fn_idx];
-                                break;
-                            case 1:
-                                hc_a = model_.hydroC_y[f_idx];
-                                hc_b = model_.hydroC_y[fn_idx];
-                                break;
-                            default:
-                                hc_a = model_.hydroC_z[f_idx];
-                                hc_b = model_.hydroC_z[fn_idx];
-                                break;
-                            }
+                            const auto& hc = model_.fluid.hydroC[axis];
+                            double hc_a = hc[f_idx];
+                            double hc_b = hc[fn_idx];
                             if (hc_a > mhs::core::zero_guard && hc_b > mhs::core::zero_guard) {
                                 double C_eff = mhs::utils::harmonicAverage(hc_a, hc_b);
                                 double rho_b = mp_n.rho.eval(ctx_n);
                                 double rho_avg = 0.5 * (rho_a + rho_b);
-                                double dP = model_.pressure[f_idx] - model_.pressure[fn_idx];
+                                double dP = model_.fluid.pressure[f_idx] - model_.fluid.pressure[fn_idx];
                                 double massFlux = dP * C_eff * rho_avg;
                                 netOutflux += massFlux;
                                 if (std::fabs(massFlux) > mhs::core::zero_guard) {
@@ -191,23 +179,31 @@ namespace mhs::sim {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            if (cell_is_fluid && std::fabs(netOutflux) >= mhs::core::zero_guard) {
-                int f_idx = model_.global_to_fluid[c_idx];
-                if (netOutflux > 0) { // 流体进入 (Inlet)
-                    double T_boundary = model_.boundary_temperature_fluid[f_idx];
-                    if (!std::isnan(T_boundary)) {
+            if (cell_is_fluid) {
+                int f_idx = model_.fluid.global_to_fluid[c_idx];
+                // MassFlowRateType / VelocityType cell 用 BC 值覆盖
+                // pressure 差分得到的 netOutflux, 保证质量守恒由用户给定值驱动.
+                // 该分支对 PressureType 不触发 — 其仍走 pressure-driven 路径。
+                const auto& bc = model_.fluid.fluid_bcs[f_idx];
+                if (bc.kind == mhs::core::FluidBCType::MassFlowRateType) {
+                    netOutflux = model_.fluid.fluid_bc_params.mass_flow_rate[bc.param_idx];
+                }
+                else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
+                    netOutflux
+                        = model_.fluid.fluid_bc_params.velocity[bc.param_idx] * model_.fluid.fluid_face_area[f_idx];
+                }
+
+                if (netOutflux != 0.0) {
+                    double T_boundary = model_.fluid.boundary_temperature_fluid[f_idx];
+
+                    // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
+                    if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
                         local.b(c_idx) += netOutflux * cp_c * T_boundary;
                     }
+                    // 情况 B：流体流出 (Outlet) -> 隐式处理，加入对角线矩阵 (LHS)
                     else {
-                        if (f_idx < (int)model_.is_pressure_boundary.size() && model_.is_pressure_boundary[f_idx]) {
-                            MHS_LOG_WARN(
-                                "Fluid enters near cell {}, no InletTemperature — assuming zero gradient.", c_idx);
-                        }
                         local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                     }
-                }
-                else { // 流体流出 (Outlet)
-                    local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                 }
             }
         });

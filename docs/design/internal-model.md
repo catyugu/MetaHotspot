@@ -16,7 +16,7 @@ struct MeshGeometry {
 ## CellFields（SoA）
 
 ```cpp
-// Per-cell per-face BC (ADR-0005)
+// Per-cell per-face BC (ADR-0002)
 struct CellBC {
     std::array<BcType, FACE_COUNT> types;          // xm, xp, ym, yp, zm, zp
     std::array<uint16_t, FACE_COUNT> param_idxs;   // indices into BCParamTable

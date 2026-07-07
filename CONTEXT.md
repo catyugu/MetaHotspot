@@ -15,7 +15,7 @@
 
 结构化 3D `nx × ny × nz`。**当前不支持 Dimension2D**（IO 会解析但预处理未实现 2D 路径）。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
 
-## 边界条件（cell-level，ADR-0005）
+## 边界条件（cell-level，ADR-0002）
 
 | 类型       | 数学                    | 离散处理                        |
 | ---------- | ----------------------- | ------------------------------- |
@@ -23,7 +23,7 @@
 | SecondType | `-k ∂T/∂n = q₀`         | 累入 RHS：`Σ q·A_face`          |
 | ThirdType  | `-k ∂T/∂n = h(T − T_∞)` | 对角 `h·A` 系数 + RHS `h·A·T_∞` |
 
-> 各项异性 `k`（ADR-0005 cell-level-bc 中讨论）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
+> 各项异性 `k`（ADR-0002 cell-level-bc 中讨论）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
 
 `other_bc` 在预处理阶段填到所有未显式指定的面 + 虚拟邻居面。
 
@@ -120,4 +120,4 @@ XML → core::IOStructure via io::read_xml
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`
 - 项目结构 / Logger / 命名空间 → `docs/design/project-structure.md`
-- ADR 决策记录 → `docs/adr/0001-…0005`
+- ADR 决策记录 → `docs/adr/0001-…0004`
