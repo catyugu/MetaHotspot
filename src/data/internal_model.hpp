@@ -91,23 +91,23 @@ namespace mhs::core {
         //   f_idx = global_to_fluid[c_idx]  (或 -1 为非流体)
         //   c_idx = fluid_to_global[f_idx]
         // ============================================================
-        int n_fluid = 0;                              // 流体单元数
-        std::vector<int> fluid_to_global;             // [n_fluid] → N_active compact index
-        std::vector<int> global_to_fluid;             // [N_active] → n_fluid fluid index, -1 = 非流体
+        int n_fluid = 0; // 流体单元数
+        std::vector<int> fluid_to_global; // [n_fluid] → N_active compact index
+        std::vector<int> global_to_fluid; // [N_active] → n_fluid fluid index, -1 = 非流体
 
-        std::vector<uint8_t> is_fluid;                // [N_active] 标记流体 cell（用于快速判别）
-        std::vector<double> dynamic_viscosity;        // [n_fluid] μ [Pa·s]
-        std::vector<double> pressure;                 // [n_fluid] 压力场
-        std::vector<int8_t> flow_axes;                // [n_fluid] 主导流轴
-        std::vector<double> hydroC_x;                 // [n_fluid] hydraulic conductance X
-        std::vector<double> hydroC_y;                 // [n_fluid] hydraulic conductance Y
-        std::vector<double> hydroC_z;                 // [n_fluid] hydraulic conductance Z
-        std::vector<uint8_t> is_pressure_boundary;    // [n_fluid] 压力边界标记
-        std::vector<double> boundary_pressure;        // [n_fluid] 压力边界值 [Pa]
-        std::vector<double> boundary_temperature_fluid;// [n_fluid] 入口温度 [K]；非入口 = NaN
-        std::vector<double> hydraulic_diameter;        // [n_fluid] 水力直径 [m]
-        std::vector<double> channel_width;             // [n_fluid] 通道宽度 [m]
-        std::vector<double> channel_height;            // [n_fluid] 通道高度 [m]
+        std::vector<uint8_t> is_fluid; // [N_active] 标记流体 cell（用于快速判别）
+        std::vector<double> dynamic_viscosity; // [n_fluid] μ [Pa·s]
+        std::vector<double> pressure; // [n_fluid] 压力场
+        std::vector<int8_t> flow_axes; // [n_fluid] 主导流轴
+        std::vector<double> hydroC_x; // [n_fluid] hydraulic conductance X
+        std::vector<double> hydroC_y; // [n_fluid] hydraulic conductance Y
+        std::vector<double> hydroC_z; // [n_fluid] hydraulic conductance Z
+        std::vector<uint8_t> is_flow_boundary; // [n_fluid] 压力边界标记
+        std::vector<double> boundary_pressure; // [n_fluid] 压力边界值 [Pa]
+        std::vector<double> boundary_temperature_fluid; // [n_fluid] 入口温度 [K]；非入口 = NaN
+        std::vector<double> hydraulic_diameter; // [n_fluid] 水力直径 [m]
+        std::vector<double> channel_width; // [n_fluid] 通道宽度 [m]
+        std::vector<double> channel_height; // [n_fluid] 通道高度 [m]
     };
 
 } // namespace mhs::core

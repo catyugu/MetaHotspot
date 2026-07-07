@@ -3,7 +3,6 @@
 #include <tbb/parallel_for.h>
 
 #include "assembler.hpp"
-#include "common/logger.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
 #include "data/tolerance_config.hpp"
@@ -191,22 +190,16 @@ namespace mhs::sim {
 
             local.triplets.emplace_back(c_idx, c_idx, diag);
 
-            if (cell_is_fluid && std::fabs(netOutflux) >= mhs::core::zero_guard) {
+            if (cell_is_fluid && netOutflux != 0.0) {
                 int f_idx = model_.global_to_fluid[c_idx];
-                if (netOutflux > 0) { // 流体进入 (Inlet)
-                    double T_boundary = model_.boundary_temperature_fluid[f_idx];
-                    if (!std::isnan(T_boundary)) {
-                        local.b(c_idx) += netOutflux * cp_c * T_boundary;
-                    }
-                    else {
-                        if (f_idx < (int)model_.is_pressure_boundary.size() && model_.is_pressure_boundary[f_idx]) {
-                            MHS_LOG_WARN(
-                                "Fluid enters near cell {}, no InletTemperature — assuming zero gradient.", c_idx);
-                        }
-                        local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
-                    }
+                double T_boundary = model_.boundary_temperature_fluid[f_idx];
+
+                // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
+                if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
+                    local.b(c_idx) += netOutflux * cp_c * T_boundary;
                 }
-                else { // 流体流出 (Outlet)
+                // 情况 B：流体流出 (Outlet) -> 隐式处理，加入对角线矩阵 (LHS)
+                else {
                     local.triplets.emplace_back(c_idx, c_idx, -netOutflux * cp_c);
                 }
             }

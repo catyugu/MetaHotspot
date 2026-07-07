@@ -127,7 +127,7 @@ namespace mhs::sim {
                             double b = c[(target_axis + 2) % 3];
 
                             if (point_in_face_rects(fk, a, b) || point_in_face_rects(fk, b, a)) {
-                                model.is_pressure_boundary[fi] = 1;
+                                model.is_flow_boundary[fi] = 1;
                                 model.boundary_pressure[fi] = fb.pressure_bc.pressure;
                                 if (!std::isnan(fb.inlet_temperature)) {
                                     model.boundary_temperature_fluid[fi] = fb.inlet_temperature;
@@ -208,7 +208,7 @@ namespace mhs::sim {
         model.hydroC_x.assign(model.n_fluid, 0.0);
         model.hydroC_y.assign(model.n_fluid, 0.0);
         model.hydroC_z.assign(model.n_fluid, 0.0);
-        model.is_pressure_boundary.assign(model.n_fluid, 0);
+        model.is_flow_boundary.assign(model.n_fluid, 0);
         model.boundary_pressure.assign(model.n_fluid, 0.0);
         model.boundary_temperature_fluid.assign(model.n_fluid, std::numeric_limits<double>::quiet_NaN());
         model.hydraulic_diameter.assign(model.n_fluid, 0.0);
@@ -290,12 +290,12 @@ namespace mhs::sim {
                 diagSum += C_eff;
 
                 // 如果当前单元是边界，不需要跟内部耦合（只设对角线），但可以借用算出的 C_eff 做量级估算
-                if (!model.is_pressure_boundary[fi]) {
+                if (!model.is_flow_boundary[fi]) {
                     triplets.emplace_back(fi, fn, -C_eff);
                 }
             }
 
-            if (model.is_pressure_boundary[fi]) {
+            if (model.is_flow_boundary[fi]) {
                 triplets.emplace_back(fi, fi, diagSum);
                 rhs(fi) = model.boundary_pressure[fi] * diagSum;
             }
