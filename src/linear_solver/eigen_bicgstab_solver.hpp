@@ -5,14 +5,11 @@
 namespace mhs::sim {
 
     // Iterative EigenBiCGSTAB solver (Eigen::EigenBiCGSTAB wrapper).
-    // Tolerance and max_iterations come from SolverConfig.
+    // Reads tolerance and max_iterations from the base class's SolverConfig,
+    // seeded by the factory from SolverSpec::config.
     class EigenBiCGSTABSolver : public LinearSolver {
     public:
         SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) override;
-        void set_config(const SolverConfig& cfg) override;
-
-    private:
-        SolverConfig config_;
     };
 
 } // namespace mhs::sim

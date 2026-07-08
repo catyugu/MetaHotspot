@@ -20,6 +20,4 @@ namespace mhs::sim {
         };
     }
 
-    void EigenSparseLUSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
-
 } // namespace mhs::sim

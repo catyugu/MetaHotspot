@@ -1,5 +1,5 @@
 #include "linear_solver/eigen_bicgstab_solver.hpp"
-#include <Eigen/Sparse>
+#include <Eigen/IterativeLinearSolvers>
 
 namespace mhs::sim {
 
@@ -14,7 +14,5 @@ namespace mhs::sim {
 
         return {x, solver.info() == Eigen::Success, solver.error(), static_cast<int>(solver.iterations())};
     }
-
-    void EigenBiCGSTABSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
 } // namespace mhs::sim

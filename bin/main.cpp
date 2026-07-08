@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
         }
 
         // Create solver
-        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::Pardiso);
+        auto solver = mhs::sim::LinearSolver::create();
 
         // Create scheduler. setModel 时 ProbeRecorder 同步 initialize；瞬态 + 存在观察点时
         // 才会写入 trace，稳态路径或空观察点下 scheduler.probeTraces() 为空。

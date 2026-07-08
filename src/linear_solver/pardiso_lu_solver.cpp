@@ -21,6 +21,4 @@ namespace mhs::sim {
         };
     }
 
-    void PardisoLUSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
-
 } // namespace mhs::sim

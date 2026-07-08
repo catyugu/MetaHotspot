@@ -402,7 +402,7 @@ namespace mhs::sim {
         Eigen::SparseMatrix<double> A(model.fluid.n_fluid, model.fluid.n_fluid);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
-        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::EigenSparseLU);
+        auto solver = mhs::sim::LinearSolver::create();
         auto result = solver->solve(A, rhs);
         if (!result.success) {
             MHS_LOG_WARN(

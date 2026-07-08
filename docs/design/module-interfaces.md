@@ -214,6 +214,16 @@ namespace mhs::sim {
         int max_iterations = 1000;
     };
 
+    struct SolverSpec {
+        SolverType type =
+#ifdef MHS_ENABLE_PARDISO
+            SolverType::Pardiso;
+#else
+            SolverType::EigenSparseLU;
+#endif
+        SolverConfig config {};
+    };
+
     struct SolveResult {
         Eigen::VectorXd solution;
         bool success;
@@ -226,9 +236,12 @@ namespace mhs::sim {
         virtual ~LinearSolver() = default;
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
                                   const Eigen::VectorXd& b) = 0;
-        // 在 solve() 之前注入配置（如 EigenBiCGSTAB 的容差 / 迭代上限）。
-        virtual void set_config(const SolverConfig& cfg) = 0;
-        static std::unique_ptr<LinearSolver> create(SolverType type);
+        // Config lives on the base — every solver needs it, so subclasses no
+        // longer override. The factory seeds `config_` from SolverSpec before
+        // returning the instance.
+        void set_config(SolverConfig cfg);
+        const SolverConfig& config() const;
+        static std::unique_ptr<LinearSolver> create(const SolverSpec& spec = {});
     };
 
     class EigenBiCGSTABSolver  : public LinearSolver { ... };

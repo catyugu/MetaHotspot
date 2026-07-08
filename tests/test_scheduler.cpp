@@ -59,7 +59,7 @@ TEST(SchedulerTest, SetModelAndSolver)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::EigenSparseLU));
+    scheduler.setSolver(LinearSolver::create({.type = SolverType::EigenSparseLU}));
 }
 
 TEST(SchedulerTest, SteadyRunProducesSolution)
@@ -118,7 +118,7 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create({.type = SolverType::Pardiso}));
 
     scheduler.run();
 
@@ -191,7 +191,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create({.type = SolverType::Pardiso}));
 
     scheduler.run();
 
@@ -279,7 +279,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create({.type = SolverType::Pardiso}));
 
     scheduler.run();
 
@@ -377,7 +377,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create({.type = SolverType::Pardiso}));
     scheduler.run();
 
     const auto& traces = scheduler.probeTraces();

@@ -14,6 +14,16 @@ namespace mhs::sim {
         int max_iterations = 1000;
     };
 
+    struct SolverSpec {
+        SolverType type =
+#ifdef MHS_ENABLE_PARDISO
+            SolverType::Pardiso;
+#else
+            SolverType::EigenSparseLU;
+#endif
+        SolverConfig config {};
+    };
+
     // Solve result (no state on solver)
     struct SolveResult {
         Eigen::VectorXd solution;
@@ -25,6 +35,9 @@ namespace mhs::sim {
     // Base linear solver class (virtual interface).
     // Renamed from `Solver` to disambiguate from the nonlinear iteration
     // pathway (`mhs::sim::nonlinear_solve`).
+    //
+    // Every concrete solver needs a SolverConfig before solve(), so the config
+    // lives on the base. Subclasses read `config_` directly.
     class LinearSolver {
     public:
         virtual ~LinearSolver() = default;
@@ -32,11 +45,18 @@ namespace mhs::sim {
         // Solve A * x = b
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) = 0;
 
-        // Inject configuration before solve()
-        virtual void set_config(const SolverConfig& cfg) = 0;
+        // Replace the configuration used by solve(). Called by the factory with
+        // the spec-supplied config; subclasses read the base's `config_`.
+        void set_config(SolverConfig cfg) { config_ = cfg; }
+        const SolverConfig& config() const { return config_; }
 
-        // Factory method
-        static std::unique_ptr<LinearSolver> create(SolverType type);
+        // Factory: build a solver from a spec. Type + config both default
+        // (EigenSparseLU + SolverConfig defaults), so `LinearSolver::create({})`
+        // returns the default solver with default config.
+        static std::unique_ptr<LinearSolver> create(const SolverSpec& spec = {});
+
+    protected:
+        SolverConfig config_;
     };
 
 } // namespace mhs::sim
