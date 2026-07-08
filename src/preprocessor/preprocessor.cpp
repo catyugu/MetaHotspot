@@ -170,6 +170,7 @@ namespace mhs::sim {
         // expressions see the same natives/variables as the rest of the model.
         if (fluidOverlay.has_value()) {
             mhs::sim::applyFluidOverlay(*model, fluidOverlay, ioStructure, symbols);
+            mhs::sim::solveFluidFlow(*model);
         }
 
         return model;

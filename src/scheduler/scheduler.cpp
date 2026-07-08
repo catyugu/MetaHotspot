@@ -2,7 +2,6 @@
 #include "common/logger.hpp"
 #include "data/tolerance_config.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
-#include "preprocessor/fluid_preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include "time_scheme/error_controller.hpp"
 #include "time_scheme/integrator.hpp"
@@ -53,7 +52,6 @@ namespace mhs::sim {
         step_.time_step = 0;
 
         Assembler assembler(*model_);
-        solveFluidFlow(*model_);
 
         // Steady: single non-linear solve, then output.
         if (model_->study_type == mhs::core::StudyType::Steady) {
