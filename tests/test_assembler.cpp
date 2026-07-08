@@ -1,12 +1,11 @@
 #include "assembler/assembler.hpp"
 #include "config.h"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
 #include "data/model.hpp"
 #include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
-
 
 using namespace mhs::sim;
 using namespace mhs::io;

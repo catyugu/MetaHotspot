@@ -4,9 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
 #include "data/model.hpp"
-
 
 namespace mhs::io {
 

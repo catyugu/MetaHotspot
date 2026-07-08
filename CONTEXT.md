@@ -115,7 +115,7 @@ XML → core::IOStructure via io::read_xml
 ## 详细参考
 
 - 内部数据结构 → `docs/design/model.md`
-- IO 数据结构 → `docs/design/io-model.md`
+- IO 数据结构 → `docs/design/io-structure.md`
 - 模块接口 → `docs/design/module-interfaces.md`
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`

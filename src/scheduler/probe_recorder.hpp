@@ -1,8 +1,7 @@
 #pragma once
 
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
 #include "data/model.hpp"
-
 
 #include <vector>
 

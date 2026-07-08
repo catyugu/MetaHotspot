@@ -6,7 +6,7 @@
 |--------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
 | **[data-flow.md](data-flow.md)**                 | 数据流与流程（总览、各阶段表、关键设计原则）                                                             |
 | **[expr-api.md](expr-api.md)**                   | expr 模块接口                                                                                            |
-| **[io-model.md](io-model.md)**                   | IO 模型结构（直接映射 XML schema）                                                                       |
+| **[io-structure.md](io-structure.md)**                   | IO 模型结构（直接映射 XML schema）                                                                       |
 | **[model.md](model.md)**       | 内部模型结构（SoA 布局，扁平化）                                                                         |
 | **[module-interfaces.md](module-interfaces.md)** | 模块接口（io、preprocessor、assembler、time_scheme、linear_solver、scheduler、nonlinear、postprocessor） |
 | **[project-structure.md](project-structure.md)** | 项目结构、CMake、Logger                                                                                  |

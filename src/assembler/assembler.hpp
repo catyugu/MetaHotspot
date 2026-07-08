@@ -5,7 +5,6 @@
 #include "data/linear_system.hpp"
 #include "data/model.hpp"
 
-
 namespace mhs::sim {
 
     /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.

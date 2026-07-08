@@ -22,7 +22,7 @@
 
 - **data**（领域 `mhs::core`）：共享数据契约——域类型、IO 模型、内部模型。**纯头文件，不做独立库目标**。
     - `data/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
-    - `data/io_model.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
+    - `data/io_structure.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
     - `data/model.hpp` — 扁平化 SoA 内部模型（`mhs::core::Model`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`）。
 - **common**（领域 `mhs::logger` / `mhs::utils`）：logger 与横切辅助函数。
     - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
