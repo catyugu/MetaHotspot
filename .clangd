@@ -2,5 +2,5 @@
 
 CompileFlags:
   Add:
-    - -std=c++20
+    - -std=c++17
     - -I${workspaceFolder}/src

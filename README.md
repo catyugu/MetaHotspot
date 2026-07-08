@@ -2,7 +2,7 @@
 
 ## 规范
 
-- 语言：C++20
+- 语言：C++17
 - 构建系统：CMake
 - 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
 - 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
