@@ -72,7 +72,7 @@ XML → core::IOStructure via io::read_xml
 7. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
 8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
-9. 无虚函数（仅 `mhs::sim::LinearSolver` 保留虚接口）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
+9. 无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
 10. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动）
