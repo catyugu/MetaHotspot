@@ -207,10 +207,9 @@ the k most recently *accepted* (T, time) pairs.  Capacity is `max_order + 1`.
 
 ```cpp
 namespace mhs::sim {
-    enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
+    enum class SolverType { Pardiso, EigenSparseLU, EigenBiCGSTAB };
 
     struct SolverConfig {
-        SolverType type = SolverType::Pardiso;
         double tolerance = 1e-8;
         int max_iterations = 1000;
     };
@@ -227,14 +226,14 @@ namespace mhs::sim {
         virtual ~LinearSolver() = default;
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
                                   const Eigen::VectorXd& b) = 0;
-        // 在 solve() 之前注入配置（如 BiCGSTAB 的容差 / 迭代上限）。
+        // 在 solve() 之前注入配置（如 EigenBiCGSTAB 的容差 / 迭代上限）。
         virtual void set_config(const SolverConfig& cfg) = 0;
         static std::unique_ptr<LinearSolver> create(SolverType type);
     };
 
-    class BiCGSTABSolver  : public LinearSolver { ... };
+    class EigenBiCGSTABSolver  : public LinearSolver { ... };
     class PardisoSolver   : public LinearSolver { ... };
-    class SparseLUSolver  : public LinearSolver { ... };
+    class EigenSparseLUSolver  : public LinearSolver { ... };
 }
 ```
 

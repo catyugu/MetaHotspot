@@ -5,19 +5,11 @@
 
 namespace mhs::sim {
 
-    enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
+    enum class SolverType { Pardiso, EigenSparseLU, EigenBiCGSTAB };
 
     // LinearSolver configuration
     struct SolverConfig {
-        // Active solver. Defaults to the best available backend at build time.
-        SolverType type =
-#ifdef MHS_ENABLE_PARDISO
-            SolverType::Pardiso;
-#else
-            SolverType::SparseLU;
-#endif
-
-        // BiCGSTAB-only knobs.
+        // EigenBiCGSTAB-only knobs.
         double tolerance = 1e-8;
         int max_iterations = 1000;
     };

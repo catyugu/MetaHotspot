@@ -24,7 +24,7 @@ namespace mhs::sim {
      *
      * Three-phase pipeline (all internal):
      *   1. initCellHydroProperties  — Hele-Shaw hydraulic conductance per axis
-     *   2. solvePressure            — Poisson matrix + BiCGSTAB solve
+     *   2. solvePressure            — Poisson matrix + EigenBiCGSTAB solve
      *   3. precomputeFlowAxes       — dominant flow axis per fluid cell
      *
      * If no fluid cells exist (is_fluid all false), returns immediately.

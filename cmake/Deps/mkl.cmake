@@ -1,7 +1,7 @@
 include(${CMAKE_CURRENT_LIST_DIR}/../CPM.cmake)
 
 # Intel oneMKL provides MKL::MKL. Pardiso is optional: when oneMKL is absent,
-# the existing solver factory falls back to Eigen SparseLU.
+# the existing solver factory falls back to Eigen EigenSparseLU.
 set(MHS_ENABLE_PARDISO FALSE CACHE INTERNAL "" FORCE)
 
 if(USE_MKL)
@@ -25,7 +25,7 @@ if(USE_MKL)
     else()
         message(WARNING
             "USE_MKL=ON but oneMKL was not found; disabling Pardiso and "
-            "falling back to Eigen SparseLU")
+            "falling back to Eigen EigenSparseLU")
     endif()
 else()
     message(STATUS "USE_MKL=OFF; Pardiso support is disabled")

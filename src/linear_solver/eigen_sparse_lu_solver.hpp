@@ -4,9 +4,9 @@
 
 namespace mhs::sim {
 
-    // Direct sparse LU solver (Eigen::SparseLU wrapper).
+    // Direct sparse LU solver (Eigen::EigenSparseLU wrapper).
     // Used for general asymmetric systems; single-threaded.
-    class SparseLUSolver : public LinearSolver {
+    class EigenSparseLUSolver : public LinearSolver {
     public:
         SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) override;
         void set_config(const SolverConfig& cfg) override;

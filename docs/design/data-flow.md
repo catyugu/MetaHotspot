@@ -50,7 +50,7 @@ XML
 | 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                               |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | muparser 或 `make_constant`                              |
 | 组装              | `InternalModel` + `AssembleContext`   | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
-| 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                      |
+| 线性求解          | `A x = b`                             | `x`                        | EigenSparseLU / EigenBiCGSTAB                            |
 | 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                                 |
 | 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开到全网格，虚拟位置 NaN                               |
 | 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`             | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护   |

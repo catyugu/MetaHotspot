@@ -1,9 +1,9 @@
-#include "linear_solver/sparse_lu_solver.hpp"
+#include "linear_solver/eigen_sparse_lu_solver.hpp"
 #include <Eigen/Sparse>
 
 namespace mhs::sim {
 
-    SolveResult SparseLUSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
+    SolveResult EigenSparseLUSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
     {
         Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
         solver.compute(A);
@@ -20,6 +20,6 @@ namespace mhs::sim {
         };
     }
 
-    void SparseLUSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
+    void EigenSparseLUSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
 } // namespace mhs::sim

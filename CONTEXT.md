@@ -52,7 +52,7 @@ XML → core::IOStructure via io::read_xml
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
         ├─ sim::nonlinear_solve(provider, T, *solver_) [Anderson 加速定点迭代]
-        │   └─ sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        │   └─ sim::LinearSolver::solve(A, b) [EigenSparseLU / EigenBiCGSTAB]
         ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
         │   └─ 纯函数: LTE 估计 + PI 步长建议
         └─ post-step: probe_recorder_.record()
@@ -83,7 +83,7 @@ XML → core::IOStructure via io::read_xml
 | ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、SolutionHistory、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                                                          |
 | `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                            |
-| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、EigenBiCGSTABSolver、PardisoSolver、EigenSparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
 | `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual）                             |
 | `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                           |
 | `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + sample_point 局部采样辅助                                                                                                                                          |

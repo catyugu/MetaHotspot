@@ -59,7 +59,7 @@ TEST(SchedulerTest, SetModelAndSolver)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::SparseLU));
+    scheduler.setSolver(LinearSolver::create(SolverType::EigenSparseLU));
 }
 
 TEST(SchedulerTest, SteadyRunProducesSolution)

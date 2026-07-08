@@ -1,7 +1,7 @@
 set(_linear_solver_sources
     linear_solver.cpp
-    bicgstab_solver.cpp
-    sparse_lu_solver.cpp
+    eigen_bicgstab_solver.cpp
+    eigen_sparse_lu_solver.cpp
 )
 
 if(MHS_ENABLE_PARDISO)
