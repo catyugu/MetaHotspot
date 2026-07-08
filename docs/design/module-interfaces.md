@@ -7,12 +7,12 @@ namespace mhs::io {
     mhs::core::IOStructure read_xml(const std::string& xml_path);
 
     void write_vtu(const std::string& path,
-                   const mhs::core::InternalModel& model,
+                   const mhs::core::Model& model,
                    const std::vector<double>& node_temperature);
 
     void write_xml(const std::string& input_path,
                    const std::string& output_path,
-                   const mhs::core::InternalModel& model,
+                   const mhs::core::Model& model,
                    const std::vector<double>& node_temperature,
                    const std::vector<mhs::core::ProbeTrace>& observation_traces = {});
 }
@@ -24,7 +24,7 @@ namespace mhs::io {
 namespace mhs::sim {
     class Preprocessor {
     public:
-        std::unique_ptr<mhs::core::InternalModel> load(
+        std::unique_ptr<mhs::core::Model> load(
             const mhs::core::IOStructure& io,
             const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
@@ -86,7 +86,7 @@ mhs::core::IOStructure
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
         ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
-        └─> mhs::core::InternalModel ready
+        └─> mhs::core::Model ready
 ```
 
 ## `assembler`
@@ -116,7 +116,7 @@ namespace mhs::sim {
 
     class Assembler {
     public:
-        explicit Assembler(const mhs::core::InternalModel& model);
+        explicit Assembler(const mhs::core::Model& model);
         AssemblyResult assemble(const AssembleContext& ctx) const;
     };
 }
@@ -282,7 +282,7 @@ namespace mhs::sim {
 namespace mhs::sim {
     class Scheduler {
     public:
-        void setModel(mhs::core::InternalModel* model);
+        void setModel(mhs::core::Model* model);
         void setSolver(std::unique_ptr<LinearSolver> solver);
         void run();
         const std::vector<double>& solution() const;
@@ -299,7 +299,7 @@ namespace mhs::sim {
     // 使时间依赖的 BC / 材料表达式（如 "500 + 100*t"）在正确的时刻被求值。
     class ProbeRecorder {
     public:
-        void initialize(const mhs::core::InternalModel& model);
+        void initialize(const mhs::core::Model& model);
         void record(double time, const std::vector<double>& cell_T);
         const std::vector<mhs::core::ProbeTrace>& traces() const;
     };
@@ -326,7 +326,7 @@ namespace mhs::post {
     // `time` 注入 FieldContext.t，使时间依赖的 BC 表达式在正确的时刻被求值。
     // 稳态场景传 0.0 即可；瞬态由调用方提供当前求解时刻。
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model,
+        const mhs::core::Model& model,
         const std::vector<double>& cell_temperature,
         double time);
 

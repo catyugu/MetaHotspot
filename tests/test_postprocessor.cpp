@@ -1,9 +1,10 @@
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
+
 
 using namespace mhs::sim;
 

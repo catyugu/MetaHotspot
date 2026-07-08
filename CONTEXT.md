@@ -44,7 +44,7 @@
 
 ```text
 XML → core::IOStructure via io::read_xml
-  → sim::Preprocessor::load → core::InternalModel
+  → sim::Preprocessor::load → core::Model
     → sim::Scheduler::run
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
@@ -81,7 +81,7 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                            |
 | ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、SolutionHistory、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                                                          |
+| `mhs::core`             | `data/` + `expr/`                                                       | Model、IOStructure、SolutionHistory、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                                                          |
 | `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                            |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、EigenBiCGSTABSolver、PardisoLUSolver、EigenSparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
 | `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual）                             |
@@ -114,7 +114,7 @@ XML → core::IOStructure via io::read_xml
 
 ## 详细参考
 
-- 内部数据结构 → `docs/design/internal-model.md`
+- 内部数据结构 → `docs/design/model.md`
 - IO 数据结构 → `docs/design/io-model.md`
 - 模块接口 → `docs/design/module-interfaces.md`
 - expr 模块 → `docs/design/expr-api.md`

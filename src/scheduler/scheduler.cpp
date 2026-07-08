@@ -12,7 +12,7 @@
 
 namespace mhs::sim {
 
-    void Scheduler::setModel(mhs::core::InternalModel* model)
+    void Scheduler::setModel(mhs::core::Model* model)
     {
         model_ = model;
         if (model_)

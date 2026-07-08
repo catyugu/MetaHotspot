@@ -1,12 +1,13 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
 #include "data/tolerance_config.hpp"
 #include "data/types.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
 
 namespace mhs::utils {
 

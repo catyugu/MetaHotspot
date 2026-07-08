@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/internal_model.hpp"
+#include "data/model.hpp"
 #include "data/solution_history.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "scheduler/probe_recorder.hpp"
@@ -19,7 +19,7 @@ namespace mhs::sim {
     public:
         Scheduler() = default;
 
-        void setModel(mhs::core::InternalModel* model);
+        void setModel(mhs::core::Model* model);
         void setSolver(std::unique_ptr<LinearSolver> solver);
 
         void run();
@@ -40,7 +40,7 @@ namespace mhs::sim {
             std::vector<double> T;
         };
 
-        mhs::core::InternalModel* model_ = nullptr;
+        mhs::core::Model* model_ = nullptr;
         std::unique_ptr<LinearSolver> solver_;
         StepState step_;
         std::vector<double> solution_;

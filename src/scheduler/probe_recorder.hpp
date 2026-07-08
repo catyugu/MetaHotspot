@@ -1,7 +1,8 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
+
 
 #include <vector>
 
@@ -15,14 +16,14 @@ namespace mhs::sim {
     // - **算法精度对齐 mhs::post::sample_point**：以"邻接 cell 的均值"得到 T_c，
     //   再以各向异性距离权重对 cell 周围 8 cell 中心 + 该 cell 的 Neumann/Cauchy
     //   面中心外推做 LSQ 拟合。Dirichlet 面早返回。
-    // - 依赖：仅 mhs::core（InternalModel、FieldContext）。
+    // - 依赖：仅 mhs::core（Model、FieldContext）。
     class ProbeRecorder {
     public:
         ProbeRecorder() = default;
 
         // 绑定待记录探针与所属模型。observation_points 为空时 recorder 处于
         // 禁用态，recordStep/recordInitial 都是 no-op。
-        void initialize(const mhs::core::InternalModel& model);
+        void initialize(const mhs::core::Model& model);
 
         // 记录一个时间点。稳态/瞬态通用：稳态求解场景下调用一次即可。
         void record(double time, const std::vector<double>& cell_T);
@@ -31,7 +32,7 @@ namespace mhs::sim {
         const std::vector<mhs::core::ProbeTrace>& traces() const { return traces_; }
 
     private:
-        const mhs::core::InternalModel* model_ = nullptr;
+        const mhs::core::Model* model_ = nullptr;
         std::vector<mhs::core::ProbeTrace> traces_;
 
         // 预解析的探针槽位，避免 record 时重复二分。

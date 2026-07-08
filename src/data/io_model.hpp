@@ -85,7 +85,7 @@ namespace mhs::core {
     };
 
     // 单变元函数类别（5 类），XML <Functions> 块解析为这些 POD 类型。
-    // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，InternalModel
+    // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，Model
     // 不再持有这些类型，保持模块解耦。
     enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
@@ -143,7 +143,7 @@ namespace mhs::core {
     enum class Dimension { Dimension2D, Dimension3D };
 
     // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
-    // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
+    // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 Model。
     // 求解器在每个时间步记录该点温度。
     struct ObservationPoint3D {
         std::string name;

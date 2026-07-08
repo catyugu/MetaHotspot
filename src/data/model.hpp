@@ -106,7 +106,7 @@ namespace mhs::core {
         double z = 0.0;
     };
 
-    struct InternalModel {
+    struct Model {
         MeshGeometry mesh;
         CellFields cells;
         BCParamTable bc_params;

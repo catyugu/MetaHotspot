@@ -34,7 +34,7 @@ Anisotropic `k`: at assembly, pick `k_along(dir) ∈ {kx, ky, kz}` per face norm
 
 `other_bc` is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated `CellBC` per cell.
 
-The fluid subsystem is independent of `CellBC`: thermal BCs and fluid BCs coexist on the same face. Fluid BCs live in `FluidCellBC` + `FluidBCParamTable` (see `internal_model.hpp`).
+The fluid subsystem is independent of `CellBC`: thermal BCs and fluid BCs coexist on the same face. Fluid BCs live in `FluidCellBC` + `FluidBCParamTable` (see `model.hpp`).
 
 ## Rationale
 

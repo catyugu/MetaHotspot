@@ -1,8 +1,9 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
 #include "expr/expr.hpp"
+
 
 #include <functional>
 #include <string>
@@ -49,10 +50,8 @@ namespace mhs::sim {
     // turns `name(x)` into `name(T)`.
     // `symbols` is forwarded into every parse() call so the resulting
     // CompiledExpression captures the correct natives/variables.
-    std::vector<ParsedFaceKey> parse_all_face_keys(
-        const std::vector<mhs::core::Boundary>& boundaries,
+    std::vector<ParsedFaceKey> parse_all_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
         mhs::core::BCParamTable& bc_params, double si_scale,
-        const std::function<std::string(const std::string&)>& rewriter,
-        const mhs::core::SymbolTable& symbols);
+        const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols);
 
 } // namespace mhs::sim

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
 #include "expr/expr.hpp"
 #include <optional>
+
 
 namespace mhs::sim {
 
@@ -16,7 +17,7 @@ namespace mhs::sim {
      *
      * If overlay is empty or no fluid materials match, the model is left unchanged.
      */
-    void applyFluidOverlay(mhs::core::InternalModel& model, const std::optional<mhs::core::FluidOverlay>& overlay,
+    void applyFluidOverlay(mhs::core::Model& model, const std::optional<mhs::core::FluidOverlay>& overlay,
         const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols);
 
     /**
@@ -29,6 +30,6 @@ namespace mhs::sim {
      *
      * If no fluid cells exist (is_fluid all false), returns immediately.
      */
-    void solveFluidFlow(mhs::core::InternalModel& model);
+    void solveFluidFlow(mhs::core::Model& model);
 
 } // namespace mhs::sim

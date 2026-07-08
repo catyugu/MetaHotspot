@@ -10,7 +10,7 @@ CLAUDE.md mandates data-oriented design and flat SoA. The structured grid can ho
 
 ## Decision
 
-All mesh and field data uses SoA throughout the internal model. See `docs/design/internal-model.md` for concrete types. The IO model is intentionally AoS to mirror the XML schema; conversion happens once in the preprocessor.
+All mesh and field data uses SoA throughout the internal model. See `docs/design/model.md` for concrete types. The IO model is intentionally AoS to mirror the XML schema; conversion happens once in the preprocessor.
 
 ## Rationale
 

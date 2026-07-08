@@ -1,6 +1,6 @@
 # 内部模型结构（SoA）
 
-扁平 SoA，针对缓存局部性和向量化优化。`src/data/internal_model.hpp`。**所有几何 SI 米**。
+扁平 SoA，针对缓存局部性和向量化优化。`src/data/model.hpp`。**所有几何 SI 米**。
 
 ## MeshGeometry
 
@@ -37,7 +37,7 @@ struct CellFields {
 
 ### 热源字典化
 
-`Block.ti_reyuan_expr` 字符串去重后编入 `InternalModel::heat_source_table`：
+`Block.ti_reyuan_expr` 字符串去重后编入 `Model::heat_source_table`：
 
 - `heat_source_idx` 是 compact 字段（与 `material_id` / `cell_bcs` 同索引空间），未匹配到任何 block 的活跃单元填 `0`（`make_constant(0.0)`）
 - 重复公式只编译一次，每单元 2 字节索引
@@ -69,12 +69,12 @@ struct AssembleContext {
 
 - `T.size() == N_active`（与 `cells.cell_bcs.size()` 一致）。
 
-历史步缓存（`SolutionHistory`）、`dt`、`time_step` 由 `Scheduler::run()` 内部持有，**不**放在 `AssembleContext` 中，也**不**放入 `InternalModel`。
+历史步缓存（`SolutionHistory`）、`dt`、`time_step` 由 `Scheduler::run()` 内部持有，**不**放在 `AssembleContext` 中，也**不**放入 `Model`。
 
-## InternalModel
+## Model
 
 ```cpp
-struct InternalModel {
+struct Model {
     MeshGeometry       mesh;
     CellFields         cells;
     BCParamTable       bc_params;

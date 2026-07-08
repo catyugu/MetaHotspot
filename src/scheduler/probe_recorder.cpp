@@ -42,7 +42,7 @@ namespace mhs::sim {
         }
     } // namespace
 
-    void ProbeRecorder::initialize(const mhs::core::InternalModel& model)
+    void ProbeRecorder::initialize(const mhs::core::Model& model)
     {
         model_ = &model;
         traces_.clear();

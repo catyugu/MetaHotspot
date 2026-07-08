@@ -8,7 +8,7 @@
 namespace mhs::post {
 
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature, double time)
+        const mhs::core::Model& model, const std::vector<double>& cell_temperature, double time)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;

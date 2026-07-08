@@ -1,9 +1,10 @@
 #pragma once
 
-#include "data/internal_model.hpp"
 #include "data/io_model.hpp"
+#include "data/model.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp" // for ParsedFaceKey
+
 
 namespace mhs::sim {
 
@@ -37,8 +38,8 @@ namespace mhs::sim {
     // Pre-evaluate all geometry expressions for all layers, including Z ranges
     // This eliminates repeated eval_geometry calls in the cell loops.
     // `symbols` provides the geometry variables each expression may reference.
-    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::core::Layer>& layers, double si_scale,
-        const mhs::core::SymbolTable& symbols);
+    std::vector<ResolvedLayerGeometry> resolve_geometry(
+        const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
 
     // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
     // Uses pre-evaluated geometry values — no expression evaluation at runtime
@@ -56,8 +57,7 @@ namespace mhs::sim {
     // cell_bcs is default-zero-initialized (BcType::None = 0) before BC assignment.
     mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map,
-        const std::vector<ParsedFaceKey>& parsed_face_keys,
+        const std::vector<std::vector<uint16_t>>& block_hs_map, const std::vector<ParsedFaceKey>& parsed_face_keys,
         mhs::core::BcType other_bc_enum, uint16_t other_bc_idx);
 
 } // namespace mhs::sim

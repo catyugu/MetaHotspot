@@ -30,7 +30,7 @@ Two separate paths.
 
 ### Heat source dictionary
 
-`InternalModel::heat_source_table` is a deduplicated `std::vector<CompiledExpression>` indexed by `CellFields::heat_source_idx` (`std::vector<uint16_t>`). Index 0 is reserved for the default `make_constant(0.0)`. Rationale: many cells share the same `ti_reyuan_expr` formula (common in layered chip stacks); per-cell `vector<CompiledExpression>` would allocate N copies of the same AST. The dictionary holds one AST per unique formula, reducing the per-cell footprint to 2 bytes, while keeping the lockless `eval()` semantics intact.
+`Model::heat_source_table` is a deduplicated `std::vector<CompiledExpression>` indexed by `CellFields::heat_source_idx` (`std::vector<uint16_t>`). Index 0 is reserved for the default `make_constant(0.0)`. Rationale: many cells share the same `ti_reyuan_expr` formula (common in layered chip stacks); per-cell `vector<CompiledExpression>` would allocate N copies of the same AST. The dictionary holds one AST per unique formula, reducing the per-cell footprint to 2 bytes, while keeping the lockless `eval()` semantics intact.
 
 ### Native functions
 

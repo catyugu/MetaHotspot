@@ -9,10 +9,10 @@
 
 namespace mhs::sim {
 
-    std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(
+    std::unique_ptr<mhs::core::Model> Preprocessor::load(
         const mhs::core::IOStructure& ioStructure, const std::optional<mhs::core::FluidOverlay>& fluidOverlay)
     {
-        auto model = std::make_unique<mhs::core::InternalModel>();
+        auto model = std::make_unique<mhs::core::Model>();
 
         model->study_type = ioStructure.study_type;
         model->initial_temperature = ioStructure.initial_temperature;

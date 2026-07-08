@@ -659,8 +659,7 @@ namespace mhs::io {
         return overlay;
     }
 
-    void write_vtu(
-        const std::string& path, const mhs::core::InternalModel& model, const std::vector<double>& node_temperature)
+    void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
@@ -821,7 +820,7 @@ namespace mhs::io {
         doc.SaveFile(path.c_str());
     }
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::InternalModel& model,
+    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
         const std::vector<double>& node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
     {
         using namespace tinyxml2;

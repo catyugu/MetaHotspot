@@ -124,7 +124,7 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto in_path = write_tmp_xml("io_write_input.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_output.xml";
 
-    mhs::core::InternalModel model;
+    mhs::core::Model model;
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;
@@ -177,7 +177,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto in_path = write_tmp_xml("io_write_steady.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
-    mhs::core::InternalModel model;
+    mhs::core::Model model;
     model.mesh.nx = 1;
     model.mesh.ny = 1;
     model.mesh.nz = 1;

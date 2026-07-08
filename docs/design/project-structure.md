@@ -17,7 +17,7 @@ MetaHotspot/
 │       ├── other.cmake
 │       └── tbb.cmake
 ├── src/
-│   ├── data/                    # mhs::core               数据契约（types, io_model, internal_model）
+│   ├── data/                    # mhs::core               数据契约（types, io_model, model）
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
 │   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
