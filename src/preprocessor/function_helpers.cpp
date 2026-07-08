@@ -5,6 +5,7 @@
 #include <cmath>
 #include <string>
 #include <string_view>
+#include <algorithm>
 
 namespace mhs::sim {
 

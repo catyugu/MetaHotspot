@@ -15,6 +15,9 @@ function(mhs_set_strict_warnings TARGET_NAME)
             -Wno-language-extension-token
             -Wno-microsoft-enum-value
             -Wno-nested-anon-types
+            -Wno-stringop-overflow
+            -Wno-array-bounds
+
         )
     endif()
 endfunction()
