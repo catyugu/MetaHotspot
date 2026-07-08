@@ -10,7 +10,7 @@ namespace mhs::sim {
     // for EigenSparseLUSolver (general unsymmetric systems). Compiled in only when
     // MHS_ENABLE_PARDISO is defined; without it the factory falls back to
     // EigenSparseLUSolver.
-    class PardisoSolver : public LinearSolver {
+    class PardisoLUSolver : public LinearSolver {
     public:
         SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) override;
         void set_config(const SolverConfig& cfg) override;

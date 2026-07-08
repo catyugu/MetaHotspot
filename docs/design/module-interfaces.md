@@ -232,7 +232,7 @@ namespace mhs::sim {
     };
 
     class EigenBiCGSTABSolver  : public LinearSolver { ... };
-    class PardisoSolver   : public LinearSolver { ... };
+    class PardisoLUSolver   : public LinearSolver { ... };
     class EigenSparseLUSolver  : public LinearSolver { ... };
 }
 ```

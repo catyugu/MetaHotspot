@@ -5,7 +5,7 @@ set(_linear_solver_sources
 )
 
 if(MHS_ENABLE_PARDISO)
-    list(APPEND _linear_solver_sources pardiso_solver.cpp)
+    list(APPEND _linear_solver_sources pardiso_lu_solver.cpp)
 endif()
 
 mhs_add_library(linear_solver_lib
