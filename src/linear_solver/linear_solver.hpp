@@ -15,12 +15,7 @@ namespace mhs::sim {
     };
 
     struct SolverSpec {
-        SolverType type =
-#ifdef MHS_ENABLE_PARDISO
-            SolverType::Pardiso;
-#else
-            SolverType::EigenSparseLU;
-#endif
+        SolverType type = SolverType::Pardiso;
         SolverConfig config {};
     };
 
