@@ -75,7 +75,7 @@ TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -99,7 +99,7 @@ TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
 
@@ -127,7 +127,7 @@ TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -189,7 +189,7 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     Assembler assembler(*model);
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
@@ -221,7 +221,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -249,7 +249,7 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     auto model = preprocessor.load(io_data);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     EXPECT_GT(N, 0);
 
     std::vector<double> T(static_cast<std::size_t>(N), model->initial_temperature);

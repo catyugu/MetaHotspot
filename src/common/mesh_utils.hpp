@@ -141,4 +141,18 @@ namespace mhs::utils {
         return (sign < 0 && i == 0) || (sign > 0 && i == n - 1);
     }
 
+    // ── Grid-index reverse map ─────────────────────────────────────────
+
+    /// Build compact-index → old-grid-index reverse map.
+    inline std::vector<int> buildCompactToOld(const mhs::core::CellFields& cells, int total_grid)
+    {
+        std::vector<int> compact_to_old(cells.material_id.size(), -1);
+        for (int old_idx = 0; old_idx < total_grid; ++old_idx) {
+            uint32_t c = cells.index_map[old_idx];
+            if (c != mhs::core::invalidIndex)
+                compact_to_old[c] = old_idx;
+        }
+        return compact_to_old;
+    }
+
 } // namespace mhs::utils

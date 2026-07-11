@@ -16,17 +16,6 @@
 namespace mhs::sim {
 
     namespace {
-        // ── 建立反向映射: Compact index → Old grid index ─────────────────────────
-        std::vector<int> buildCompactToOld(const mhs::core::CellFields& cells, int totalGrid)
-        {
-            std::vector<int> compact_to_old(cells.material_id.size(), -1);
-            for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
-                int c = static_cast<int>(cells.index_map[old_idx]);
-                if (c >= 0)
-                    compact_to_old[c] = old_idx;
-            }
-            return compact_to_old;
-        }
 
         // ── 沿指定轴探索连续流体长度 (替代原本脆弱且冗长的 6 个 while 循环) ───────────
         double measure_fluid_extent(const mhs::core::Model& model, int ix, int iy, int iz, int axis)
@@ -235,7 +224,7 @@ namespace mhs::sim {
             return;
 
         const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
-        const int N = static_cast<int>(model.cells.cell_bcs.size());
+        const int N = static_cast<int>(model.cells.material_id.size());
 
         // 1. 建立材质名索引映射
         std::unordered_map<std::string, uint16_t> matNameToTableIdx;
@@ -309,7 +298,7 @@ namespace mhs::sim {
         }
 
         // 建立 compact → old 反向映射, 供 applyFluidBoundaries / computeChannelDimensions 共享.
-        auto compact_to_old = buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
+        auto compact_to_old = mhs::utils::buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
         // 4. 应用流体边界与计算通道几何
         applyFluidBoundaries(model, overlay.value(), si_scale, compact_to_old);
@@ -323,7 +312,7 @@ namespace mhs::sim {
 
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
-        auto compact_to_old = buildCompactToOld(cells, mesh.nx * mesh.ny * mesh.nz);
+        auto compact_to_old = mhs::utils::buildCompactToOld(cells, mesh.nx * mesh.ny * mesh.nz);
 
         // Phase 1: 等效渗透率计算
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {

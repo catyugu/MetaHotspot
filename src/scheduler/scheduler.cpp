@@ -46,7 +46,7 @@ namespace mhs::sim {
             MHS_FATAL("Scheduler: model or solver not set");
         }
 
-        const std::size_t N = static_cast<std::size_t>(model_->cells.cell_bcs.size());
+        const std::size_t N = static_cast<std::size_t>(model_->cells.material_id.size());
         step_.T.assign(N, model_->initial_temperature);
         step_.current_time = 0.0;
         step_.time_step = 0;
