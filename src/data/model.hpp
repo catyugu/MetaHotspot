@@ -12,12 +12,12 @@ namespace mhs::core {
 
     inline constexpr uint32_t invalidIndex = std::numeric_limits<uint32_t>::max();
 
-    // ── A boundary patch (one exposed face with a BC) ───────────
-    struct BoundaryPatch {
-        uint32_t cell_idx; // → CellFields::material_id[]
-        FaceDir dir; // which face of the cell (0..5 = XM..ZP)
-        BcType type; // FirstType / SecondType / ThirdType
-        uint16_t param_idx; // → BCParamTable
+    // ── A per-face BC record ─────────────────────────────────
+    // Every cell has exactly 6 faces, stored as a flat array
+    // [N_active * 6] in row-major order (dir 0..5 per cell).
+    struct FaceBC {
+        BcType type = BcType::None;  // None = internal face or adiabatic
+        uint16_t param_idx = 0;      // → BCParamTable
     };
 
     // ── Structured mesh geometry ─────────────────────────────────────────
@@ -59,9 +59,6 @@ namespace mhs::core {
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
         std::vector<uint32_t> index_map; // old grid index → compact;
                                          // invalidIndex = virtual / inactive
-        std::vector<uint32_t> cell_bc_range; // prefix-sum: patches
-                                             // [cell_bc_range[c]..cell_bc_range[c+1]-1]
-                                             // belong to cell c
     };
 
     // ── Probe / observation point ────────────────────────────────────────
@@ -77,8 +74,9 @@ namespace mhs::core {
         MeshGeometry mesh;
         CellFields cells;
 
-        // Boundary condition storage: compact flat list + parameter table.
-        std::vector<BoundaryPatch> boundary_patches;
+        // Face-level BC storage: flat array [N_active * 6].
+        // face_bcs[c * 6 + dir] gives the BC for cell c's face `dir`.
+        std::vector<FaceBC> face_bcs;
         BCParamTable bc_params;
 
         std::vector<MaterialProps> material_table;

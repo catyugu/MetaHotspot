@@ -12,7 +12,7 @@ namespace mhs::post {
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
-        const auto& patches = model.boundary_patches;
+        const auto& face_bcs = model.face_bcs;
         const auto& bc_params = model.bc_params;
 
         int node_nx = mesh.nx + 1;
@@ -81,36 +81,27 @@ namespace mhs::post {
 
                                 mhs::core::FaceDir dirs[3] = {f_x, f_y, f_z};
 
-                                // 从 boundary_patches 查找该 cell 的边界条件
-                                // 利用 cell_bc_range 快速定位
-                                uint32_t range_start = cells.cell_bc_range[compact_idx];
-                                uint32_t range_end = cells.cell_bc_range[compact_idx + 1];
-                                for (uint32_t pi = range_start; pi < range_end; ++pi) {
-                                    const auto& bp = patches[pi];
-                                    bool matches_direction = false;
-                                    for (mhs::core::FaceDir dir : dirs) {
-                                        if (bp.dir == dir) {
-                                            matches_direction = true;
-                                            break;
-                                        }
-                                    }
-                                    if (!matches_direction)
+                                // 从 face_bcs 直接取该 cell 的 3 个面（节点相邻方向）
+                                auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
+                                for (mhs::core::FaceDir dir : dirs) {
+                                    const auto& fb = fc[(size_t)dir];
+                                    if (fb.type == mhs::core::BcType::None)
                                         continue;
 
-                                    if (bp.type == mhs::core::BcType::FirstType) {
-                                        dirichlet_sum += bc_params.dirichlet_T[bp.param_idx].eval(
+                                    if (fb.type == mhs::core::BcType::FirstType) {
+                                        dirichlet_sum += bc_params.dirichlet_T[fb.param_idx].eval(
                                             {node_x, node_y, node_z, T_c, time});
                                         dirichlet_count++;
                                     }
                                     else {
                                         // 梯度边界：外推面中心温度并作为一个额外的"几何观测点"喂给最小二乘求解器
-                                        double k_face = mhs::utils::k_along(bp.dir, kx_c, ky_c, kz_c);
-                                        double T_f = mhs::post::sample_extrapolate_face_temperature(bp.dir, bp.type,
-                                            bp.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
+                                        double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
+                                        double T_f = mhs::post::sample_extrapolate_face_temperature(
+                                            dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
                                         // 【各向异性修正】同理，计算面中心到节点的等效各向异性距离权重
                                         double fx, fy, fz;
-                                        mhs::post::sample_face_center(bp.dir, ix, iy, iz, mesh, fx, fy, fz);
+                                        mhs::post::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
                                         double f_dx = fx - node_x;
                                         double f_dy = fy - node_y;
                                         double f_dz = fz - node_z;

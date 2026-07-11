@@ -14,30 +14,25 @@ using namespace mhs::io;
 
 // Helpers for testing patch-based BC assignment.
 
-/// Find a BoundaryPatch on `cell_idx` with direction `dir`.
-/// Returns pointer or nullptr.
-static const BoundaryPatch* find_patch(const Model& model, uint32_t cell_idx, FaceDir dir)
+/// Find a FaceBC on `cell_idx` with direction `dir`.
+/// Returns pointer or nullptr if that face has BcType::None.
+static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
-    uint32_t start = model.cells.cell_bc_range[cell_idx];
-    uint32_t end = model.cells.cell_bc_range[cell_idx + 1];
-    for (uint32_t pi = start; pi < end; ++pi) {
-        if (model.boundary_patches[pi].dir == dir)
-            return &model.boundary_patches[pi];
-    }
-    return nullptr;
+    auto& fb = model.face_bcs[cell_idx * FACE_COUNT + (size_t)dir];
+    return fb.type != BcType::None ? &fb : nullptr;
 }
 
 /// Return the BcType on cell_idx for direction dir, or None if not found.
 static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
-    auto* p = find_patch(model, cell_idx, dir);
+    auto* p = find_face_bc(model, cell_idx, dir);
     return p ? p->type : BcType::None;
 }
 
 /// Return the param_idx on cell_idx for direction dir, or 0 if not found.
 static uint16_t get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
-    auto* p = find_patch(model, cell_idx, dir);
+    auto* p = find_face_bc(model, cell_idx, dir);
     return p ? p->param_idx : 0;
 }
 

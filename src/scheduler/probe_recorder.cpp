@@ -90,7 +90,7 @@ namespace mhs::sim {
     {
         const auto& mesh = model_->mesh;
         const auto& cells = model_->cells;
-        const auto& patches = model_->boundary_patches;
+        const auto& face_bcs = model_->face_bcs;
         const auto& bc_params = model_->bc_params;
         const int ix = slot.ix;
         const int iy = slot.iy;
@@ -129,15 +129,13 @@ namespace mhs::sim {
             return std::numeric_limits<double>::quiet_NaN();
         const double T_c = sum_T / static_cast<double>(cnt);
 
-        // 2. Dirichlet 面早返回：利用 patch 列表查找
-        //    遍历该 cell 的所有 patch，如果探针位于该面方向且为 FirstType，直接求值
-        uint32_t range_start = cells.cell_bc_range[compact_idx];
-        uint32_t range_end = cells.cell_bc_range[compact_idx + 1];
-        for (uint32_t pi = range_start; pi < range_end; ++pi) {
-            const auto& bp = patches[pi];
-            if (bp.type == mhs::core::BcType::FirstType
-                && mhs::utils::is_grid_boundary_face(bp.dir, ix, iy, iz, mesh)) {
-                return bc_params.dirichlet_T[bp.param_idx].eval({px, py, pz, T_c, time});
+        // 2. Dirichlet 面早返回：利用 face_bcs 直接查找
+        auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
+        for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+            const auto& fb = fc[f];
+            if (fb.type == mhs::core::BcType::FirstType
+                && mhs::utils::is_grid_boundary_face(mhs::core::FACE_DIRS[f], ix, iy, iz, mesh)) {
+                return bc_params.dirichlet_T[fb.param_idx].eval({px, py, pz, T_c, time});
             }
         }
 
@@ -169,18 +167,19 @@ namespace mhs::sim {
             }
         }
 
-        // 遍历该 cell 的所有 patch，对 Neumann/Cauchy 面做外推
-        for (uint32_t pi = range_start; pi < range_end; ++pi) {
-            const auto& bp = patches[pi];
-            if (bp.type == mhs::core::BcType::None || bp.type == mhs::core::BcType::FirstType)
+        // 遍历该 cell 的所有面，对 Neumann/Cauchy 面做外推
+        for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+            const auto& fb = fc[f];
+            if (fb.type == mhs::core::BcType::None || fb.type == mhs::core::BcType::FirstType)
                 continue;
 
-            double k_face = mhs::utils::k_along(bp.dir, kx_c, ky_c, kz_c);
+            auto dir = mhs::core::FACE_DIRS[f];
+            double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
             double T_f = mhs::post::sample_extrapolate_face_temperature(
-                bp.dir, bp.type, bp.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
+                dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
             double fx, fy, fz;
-            mhs::post::sample_face_center(bp.dir, ix, iy, iz, mesh, fx, fy, fz);
+            mhs::post::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
             double fdx = fx - px;
             double fdy = fy - py;
             double fdz = fz - pz;

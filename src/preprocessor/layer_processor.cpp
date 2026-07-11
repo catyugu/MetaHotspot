@@ -130,14 +130,12 @@ namespace mhs::sim {
     }
 
     namespace {
-        // Match face keys for the given cell face and push a BoundaryPatch.
-        // Writes into patches[fill_cursor[c_idx]++] and advances the cursor.
-        void apply_face_bc_to_patch(int c_idx, mhs::core::FaceDir dir, int ix, int iy, int iz,
+        // Match face keys for the given cell face and return the matching BC.
+        // Returns (BcType::None, 0) if no key matches and no valid fallback.
+        std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, int ix, int iy, int iz,
             const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys,
-            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx, std::vector<mhs::core::BoundaryPatch>& patches,
-            std::vector<uint32_t>& fill_cursor)
+            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
         {
-            // Axis letter for face key matching — same as old AXIS_LETTER.
             static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
             const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
             const char face_axis_letter = AXIS_LETTER[axis];
@@ -149,23 +147,20 @@ namespace mhs::sim {
             const double a_val = centers[ta];
             const double b_val = centers[tb];
 
-            // Match against parsed face keys
             for (const auto& pk : parsed_keys) {
                 if (pk.fk.axis == face_axis_letter
                     && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
                     if (point_in_face_rects(pk.fk, a_val, b_val)) {
-                        uint32_t pos = fill_cursor[c_idx]++;
-                        patches[pos] = {static_cast<uint32_t>(c_idx), dir, pk.bc_enum, pk.param_idx};
-                        return;
+                        return {pk.bc_enum, pk.param_idx};
                     }
                 }
             }
 
             // Fallback to other_bc
             if (other_bc_enum != mhs::core::BcType::None) {
-                uint32_t pos = fill_cursor[c_idx]++;
-                patches[pos] = {static_cast<uint32_t>(c_idx), dir, other_bc_enum, other_bc_idx};
+                return {other_bc_enum, other_bc_idx};
             }
+            return {mhs::core::BcType::None, 0};
         }
     } // anonymous namespace
 
@@ -221,44 +216,15 @@ namespace mhs::sim {
         return cells;
     }
 
-    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
-        std::vector<mhs::core::BoundaryPatch>& boundary_patches)
+        std::vector<mhs::core::FaceBC>& face_bcs)
     {
         const int compact_count = (int)cells.material_id.size();
+        face_bcs.assign(compact_count * mhs::core::FACE_COUNT, mhs::core::FaceBC {});
 
-        // ── Phase 1: count exposed faces per cell directly in cell_bc_range ──
-        cells.cell_bc_range.resize(compact_count + 1, 0);
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    uint32_t c_idx = cells.index_map[old_idx];
-                    if (c_idx == mhs::core::invalidIndex)
-                        continue;
-                    for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
-                            < 0)
-                            cells.cell_bc_range[c_idx]++;
-                    }
-                }
-            }
-        }
-
-        // ── Phase 2: convert count array → prefix-sum in-place ──
-        uint32_t running = 0;
-        for (int i = 0; i <= compact_count; i++) {
-            uint32_t cnt = cells.cell_bc_range[i];
-            cells.cell_bc_range[i] = running;
-            running += cnt;
-        }
-
-        const uint32_t total_patches = cells.cell_bc_range[compact_count];
-        boundary_patches.resize(total_patches);
-
-        // ── Phase 3: fill patches (use cell_bc_range as per-cell write cursor) ──
-        std::vector<uint32_t> fill_cursor(cells.cell_bc_range.begin(), cells.cell_bc_range.begin() + compact_count);
-
+        // Single grid traversal: for each active cell's exposed faces,
+        // match the face key and write directly into face_bcs[c*6+dir].
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
@@ -267,13 +233,15 @@ namespace mhs::sim {
                     if (c_idx == mhs::core::invalidIndex)
                         continue;
 
-                    for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
+                    for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+                        mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
                         if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
                             >= 0)
-                            continue;
+                            continue; // internal face — no BC needed
 
-                        apply_face_bc_to_patch(static_cast<int>(c_idx), dir, ix, iy, iz, mesh, parsed_face_keys,
-                            other_bc_enum, other_bc_idx, boundary_patches, fill_cursor);
+                        auto [type, param_idx]
+                            = match_face_bc(dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
+                        face_bcs[c_idx * mhs::core::FACE_COUNT + f] = {type, param_idx};
                     }
                 }
             }

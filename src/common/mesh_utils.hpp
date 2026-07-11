@@ -126,6 +126,22 @@ namespace mhs::utils {
         return centers[axis] + sign * sizes[axis] * 0.5;
     }
 
+    /// Full 3-D coordinates of the face center.
+    inline void face_center_3d(mhs::core::FaceDir dir, int ix, int iy, int iz,
+        const mhs::core::MeshGeometry& mesh, double& fx, double& fy, double& fz)
+    {
+        fx = mesh.cx[ix]; fy = mesh.cy[iy]; fz = mesh.cz[iz];
+        double half = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+        switch (dir) {
+        case mhs::core::FaceDir::XM: fx -= half; break;
+        case mhs::core::FaceDir::XP: fx += half; break;
+        case mhs::core::FaceDir::YM: fy -= half; break;
+        case mhs::core::FaceDir::YP: fy += half; break;
+        case mhs::core::FaceDir::ZM: fz -= half; break;
+        case mhs::core::FaceDir::ZP: fz += half; break;
+        }
+    }
+
     /// True iff this face lies on the outer hull of the structured grid
     /// (no neighbor slot to step into). Replaces the 6-line `ix==0 || ix==nx-1 || ...`
     /// check scattered across assembler / probe recorder.

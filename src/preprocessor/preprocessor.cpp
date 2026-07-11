@@ -164,7 +164,7 @@ namespace mhs::sim {
         }
 
         model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
-        resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc_enum, other_bc_idx, model->boundary_patches);
+        resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc_enum, other_bc_idx, model->face_bcs);
 
         // Apply fluid overlay (if any) using the same SymbolTable so viscosity
         // expressions see the same natives/variables as the rest of the model.

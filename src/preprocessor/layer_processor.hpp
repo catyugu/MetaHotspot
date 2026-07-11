@@ -57,14 +57,14 @@ namespace mhs::sim {
         const std::vector<std::vector<uint16_t>>& block_hs_map);
 
     // Resolve boundary patches for every exposed face of every active cell.
-    // Phase 1: count exposed faces → build prefix-sum in cells.cell_bc_range.
-    // Phase 2: fill boundary_patches using parsed face keys (or other_bc fallback).
+    // Single grid traversal: writes directly into boundary.face_bcs[]. No
+    // prefix-sum or intermediate scan needed — face_bcs is [N_active * 6].
     //
     // `cells` must already have a valid index_map (from assign_cell_layers).
     // `parsed_face_keys` comes from parse_all_face_keys().
-    // Modifies cells.cell_bc_range and fills boundary_patches.
-    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+    // Other_bc is the fallback BC for faces that don't match any face key.
+    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum,
-        uint16_t other_bc_idx, std::vector<mhs::core::BoundaryPatch>& boundary_patches);
+        uint16_t other_bc_idx, std::vector<mhs::core::FaceBC>& face_bcs);
 
 } // namespace mhs::sim
