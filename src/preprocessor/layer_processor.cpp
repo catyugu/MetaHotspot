@@ -130,22 +130,6 @@ namespace mhs::sim {
     }
 
     namespace {
-        // True iff the cell face at (ix, iy, iz) on dir is "exposed" — i.e., the
-        // neighbor is outside the grid or is a virtual cell (via index_map).
-        bool is_cell_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
-            const mhs::core::CellFields& cells)
-        {
-            int nix = mhs::utils::neighbor_ix(dir, ix);
-            int niy = mhs::utils::neighbor_iy(dir, iy);
-            int niz = mhs::utils::neighbor_iz(dir, iz);
-
-            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz)
-                return true;
-
-            int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
-            return cells.index_map[neighbor] == mhs::core::invalidIndex;
-        }
-
         // Match face keys for the given cell face and push a BoundaryPatch.
         // Writes into patches[fill_cursor[c_idx]++] and advances the cursor.
         void apply_face_bc_to_patch(int c_idx, mhs::core::FaceDir dir, int ix, int iy, int iz,
@@ -185,10 +169,9 @@ namespace mhs::sim {
         }
     } // anonymous namespace
 
-    mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+    mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map, const std::vector<ParsedFaceKey>& parsed_face_keys,
-        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx, std::vector<mhs::core::BoundaryPatch>& boundary_patches)
+        const std::vector<std::vector<uint16_t>>& block_hs_map)
     {
         const int num_layers = (int)resolved_layers.size();
         const int total = mesh.nx * mesh.ny * mesh.nz;
@@ -235,6 +218,13 @@ namespace mhs::sim {
             }
         }
 
+        return cells;
+    }
+
+    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        std::vector<mhs::core::BoundaryPatch>& boundary_patches)
+    {
         const int compact_count = (int)cells.material_id.size();
 
         // ── Phase 1: count exposed faces per cell directly in cell_bc_range ──
@@ -247,7 +237,8 @@ namespace mhs::sim {
                     if (c_idx == mhs::core::invalidIndex)
                         continue;
                     for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                        if (is_cell_face_exposed(dir, ix, iy, iz, mesh, cells))
+                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
+                            < 0)
                             cells.cell_bc_range[c_idx]++;
                     }
                 }
@@ -277,7 +268,8 @@ namespace mhs::sim {
                         continue;
 
                     for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                        if (!is_cell_face_exposed(dir, ix, iy, iz, mesh, cells))
+                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
+                            >= 0)
                             continue;
 
                         apply_face_bc_to_patch(static_cast<int>(c_idx), dir, ix, iy, iz, mesh, parsed_face_keys,
@@ -286,8 +278,6 @@ namespace mhs::sim {
                 }
             }
         }
-
-        return cells;
     }
 
 } // namespace mhs::sim

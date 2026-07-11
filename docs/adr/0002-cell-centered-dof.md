@@ -51,12 +51,13 @@ The fluid subsystem is independent of `CellBC`: thermal BCs and fluid BCs coexis
 ```text
 IOStructure
   └─> Preprocessor::load()
-        ├─> preprocessor::resolve_layers()
-        │     ├─> valid_mask, index_map            (full-grid tier)
-        │     └─> material_id                      (compact tier; parallel to cell_bcs)
-        ├─> preprocessor::resolve_face_keys()
-        │     ├─> flatten (boundary, face_key) pairs
-        │     └─> single grid traversal → CellBC per cell, per face, with `other_bc` fallback (handles overlap)
+        ├─> preprocessor::assign_cell_layers()
+        │     ├─> index_map                   (full-grid)
+        │     └─> material_id + heat_source_idx (compact)
+        ├─> preprocessor::parse_all_face_keys()
+        │     └─> flatten (boundary, face_key) pairs
+        ├─> preprocessor::resolve_boundary_patches()
+        │     └─> cell_bc_range [prefix-sum] + boundary_patches (handles overlap)
         └─> Compile expressions → BCParamTable + heat_source_table
 ```
 

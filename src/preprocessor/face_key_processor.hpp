@@ -41,8 +41,8 @@ namespace mhs::sim {
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
     // Flatten all (boundary, face_key) pairs and push their BC params into
-    // bc_params.  Returns the flattened ParsedFaceKey vector used by the
-    // single-pass grid traversal inside resolve_layers.
+    // bc_params.  Returns the flattened ParsedFaceKey vector consumed by
+    // resolve_boundary_patches to match boundary conditions against cell faces.
     //
     // The `rewriter` is applied to every BC string (temperature / heat_flux /
     // convection_coeff / T_inf) before parsing — typically the 字面替换 that

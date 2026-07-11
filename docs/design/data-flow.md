@@ -11,9 +11,9 @@ XML
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> mhs::sim::resolve_layers           (valid_mask + index_map [full-grid]; material_id [compact])
+                      ├─> mhs::sim::assign_cell_layers       (index_map [full-grid]; material_id + heat_source_idx [compact])
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
-                      ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
+                      ├─> mhs::sim::resolve_boundary_patches (cell_bc_range [prefix-sum] + boundary_patches)
                       └─> mhs::core::Model
                               └─> mhs::sim::Scheduler::run
                                     ├─> mhs::sim::time_scheme::StepController::rebuild(duration)

@@ -48,15 +48,19 @@ std::vector<ResolvedLayerGeometry> resolve_geometry(
 int find_block_for_cell(const ResolvedLayerGeometry& layer,
                         double cx, double cy, double cz);  // -1 = virtual
 
-struct LayerResolveResult {
-    mhs::core::CellFields cells;
-    std::vector<size_t> layer_id_old;
-};
-
-LayerResolveResult resolve_layers(
+mhs::core::CellFields assign_cell_layers(
     const std::vector<ResolvedLayerGeometry>& resolved_layers,
     const mhs::core::MeshGeometry& mesh,
-    const std::unordered_map<std::string, size_t>& name_to_idx);
+    const std::unordered_map<std::string, size_t>& name_to_idx,
+    const std::vector<std::vector<uint16_t>>& block_hs_map);
+
+void resolve_boundary_patches(
+    const mhs::core::MeshGeometry& mesh,
+    mhs::core::CellFields& cells,
+    const std::vector<ParsedFaceKey>& parsed_face_keys,
+    mhs::core::BcType other_bc_enum,
+    uint16_t other_bc_idx,
+    std::vector<mhs::core::BoundaryPatch>& boundary_patches);
 
 struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
                      double coord_value = 0.0;
@@ -81,10 +85,11 @@ mhs::core::IOStructure
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
-        ├─> resolve_layers()           // valid_mask + index_map (full-grid), material_id (compact)
+        ├─> assign_cell_layers()       // index_map (full-grid), material_id + heat_source_idx (compact)
         ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
+        ├─> resolve_boundary_patches()    // cell_bc_range [prefix-sum] + boundary_patches
         ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
         └─> mhs::core::Model ready
 ```

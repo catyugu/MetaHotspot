@@ -46,16 +46,25 @@ namespace mhs::sim {
     // Returns block index or -1 if cell is virtual
     int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
 
-    // Resolve cell validity, material, heat-source assignment, and BCs in a single pass.
-    // Returns CellFields (index_map full-grid, with invalidIndex marking virtual cells;
-    // material_id + heat_source_idx compact by compact_count).
+    // Assign every grid cell to its layer + block and write volumetric cell fields.
+    // Returns CellFields with index_map (full-grid; invalidIndex = virtual),
+    // material_id and heat_source_idx (both compact by active count).
     //
     // `block_hs_map[l][b]` = heat_source_table index for layer l / block b.
-    // `parsed_face_keys` comes from parse_all_face_keys() — the flattened boundary list.
-    mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+    // No BC parameters needed — boundary resolution is a separate step.
+    mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map, const std::vector<ParsedFaceKey>& parsed_face_keys,
-        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
-        std::vector<mhs::core::BoundaryPatch>& boundary_patches);
+        const std::vector<std::vector<uint16_t>>& block_hs_map);
+
+    // Resolve boundary patches for every exposed face of every active cell.
+    // Phase 1: count exposed faces → build prefix-sum in cells.cell_bc_range.
+    // Phase 2: fill boundary_patches using parsed face keys (or other_bc fallback).
+    //
+    // `cells` must already have a valid index_map (from assign_cell_layers).
+    // `parsed_face_keys` comes from parse_all_face_keys().
+    // Modifies cells.cell_bc_range and fills boundary_patches.
+    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, mhs::core::CellFields& cells,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum,
+        uint16_t other_bc_idx, std::vector<mhs::core::BoundaryPatch>& boundary_patches);
 
 } // namespace mhs::sim
