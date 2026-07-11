@@ -15,13 +15,16 @@ Two storage concerns must be answered together:
 
 ## Decision
 
-**Cell-centered DOFs only, stored at the cell level.** BCs are applied as boundary integrals over cell faces — no face DOFs stored, no per-face SoA arrays. Each cell holds its own 6-face BC descriptor, indexed into a shared parameter table:
+**Cell-centered DOFs only, stored at the cell level.** BCs are applied as boundary integrals over cell faces — no face DOFs stored, no per-face SoA arrays. Each face of every cell carries its own BC descriptor, stored as a flat array on `Model`, indexed into a shared parameter table:
 
 ```cpp
-struct CellBC {
-    std::array<BcType, FACE_COUNT> types;        // xm, xp, ym, yp, zm, zp
-    std::array<uint16_t, FACE_COUNT> param_idxs; // indices into BCParamTable
+struct FaceBC {
+    BcType type = BcType::None;
+    uint16_t param_idx = 0;      // → BCParamTable
 };
+
+// Model::face_bcs is std::vector<FaceBC> with size N_active * 6.
+// face_bcs[c * 6 + dir] gives the BC for cell c's face dir.
 ```
 
 Discrete treatments:
@@ -32,13 +35,13 @@ Discrete treatments:
 
 Anisotropic `k`: at assembly, pick `k_along(dir) ∈ {kx, ky, kz}` per face normal.
 
-`other_bc` is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated `CellBC` per cell.
+`other_bc` is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated per-face BC for every cell.
 
-The fluid subsystem is independent of `CellBC`: thermal BCs and fluid BCs coexist on the same face. Fluid BCs live in `FluidCellBC` + `FluidBCParamTable` (see `model.hpp`).
+The fluid subsystem is independent of thermal BC storage: thermal BCs and fluid BCs coexist on the same face but use separate types (`FaceBC` and `FluidCellBC`, see `model.hpp`).
 
 ## Rationale
 
-- **No projection ambiguity.** Each cell's face is independent; overlapping blocks each carry their own resolution.
+- **No projection ambiguity.** Each individual face BC is independent; overlapping blocks each carry their own resolution.
 - **Virtual-neighbor consistency.** When a cell's neighbor is virtual, the cell's face BC is already set to `other_bc` during preprocessing — same channel as overlap resolution.
 - **Flexibility.** Different cells in the same layer can have different BC types on the same directional face.
 - **Simpler preprocessing.** No global face arrays; assignment is at cell level.
@@ -57,7 +60,7 @@ IOStructure
         ├─> preprocessor::parse_all_face_keys()
         │     └─> flatten (boundary, face_key) pairs
         ├─> preprocessor::resolve_boundary_patches()
-        │     └─> cell_bc_range [prefix-sum] + boundary_patches (handles overlap)
+        │     └─> face_bcs [N_active * 6] (handles overlap)
         └─> Compile expressions → BCParamTable + heat_source_table
 ```
 
@@ -65,6 +68,6 @@ IOStructure
 
 - `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
 - `other_bc` is applied during preprocessing, not at assembly time. Virtual neighbors: the active cell's face touching a virtual cell gets `other_bc` set during `resolve_face_keys()`.
-- The heat source is **not** part of `CellBC` — it is a deduplicated dictionary indexed by `uint16_t` (see ADR-0004 §Heat source dictionary).
-- The preprocessor pre-resolves every face-key string into per-cell `CellBC { types[6], param_idxs[6] }`. Assembly hot loops do array lookups only — no string parsing.
+- The heat source is **not** part of `FaceBC` — it is a deduplicated dictionary indexed by `uint16_t` (see ADR-0004 §Heat source dictionary).
+- The preprocessor pre-resolves every face-key string into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no string parsing.
 - All geometry stays in SI meters.

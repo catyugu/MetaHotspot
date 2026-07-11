@@ -16,32 +16,44 @@ struct MeshGeometry {
 ## CellFields（SoA）
 
 ```cpp
-// Per-cell per-face BC (ADR-0002)
-struct CellBC {
-    std::array<BcType, FACE_COUNT> types;          // xm, xp, ym, yp, zm, zp
-    std::array<uint16_t, FACE_COUNT> param_idxs;   // indices into BCParamTable
+// Per-cell per-face BC (ADR-0002) — stored as flat array on Model
+struct FaceBC {
+    BcType type = BcType::None;  // None = internal face or adiabatic
+    uint16_t param_idx = 0;      // → BCParamTable
 };
 
 struct CellFields {
-
-    std::vector<uint32_t> index_map;             // old grid index → compact; invalidIndex = virtual
-    std::vector<uint16_t> material_id;           // index into material_table
-    std::vector<uint16_t> heat_source_idx;       // index into heat_source_table
-    std::vector<CellBC>   cell_bcs;
+    std::vector<uint32_t> index_map;         // old grid index → compact; invalidIndex = virtual
+    std::vector<uint16_t> material_id;       // index into material_table
+    std::vector<uint16_t> heat_source_idx;   // index into heat_source_table
 };
 ```
 
 ### 虚拟单元
 
-结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`index_map`（full-grid tier）的 `invalidIndex` 值即标记虚拟单元，矩阵维度 = `N_active`，由 `cell_bcs.size()` 唯一确定（`cell_bcs` 是 compact tier 字段）。
+结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`index_map`（full-grid tier）的 `invalidIndex` 值即标记虚拟单元，矩阵维度 = `N_active`，由 `cells.material_id.size()` 唯一确定（`cells` 是 compact tier 字段）。
+
+`face_bcs` 存储在 `Model` 中，为 `[N_active * 6]` 扁平数组：`face_bcs[c * 6 + dir]` 给出单元 c 方向 dir 的 BC。无 `CellBC` 结构体。
 
 ### 热源字典化
 
 `Block.ti_reyuan_expr` 字符串去重后编入 `Model::heat_source_table`：
 
-- `heat_source_idx` 是 compact 字段（与 `material_id` / `cell_bcs` 同索引空间），未匹配到任何 block 的活跃单元填 `0`（`make_constant(0.0)`）
+- `heat_source_idx` 是 compact 字段（与 `material_id` 同索引空间），未匹配到任何 block 的活跃单元填 `0`（`make_constant(0.0)`）
 - 重复公式只编译一次，每单元 2 字节索引
 - `model.heat_source_table[hs_idx].eval(ctx)` 求值
+
+## MaterialProps
+
+```cpp
+struct MaterialProps {
+    CompiledExpression kx, ky, kz;      // thermal conductivity [W/(m·K)]
+    CompiledExpression rho;              // density [kg/m³]
+    CompiledExpression c;                // specific heat [J/(kg·K)]
+    CompiledExpression dynamic_viscosity; // μ [Pa·s]; 非 fluid = make_constant(0)
+    bool is_fluid = false;
+};
+```
 
 ## BCParamTable
 
@@ -54,31 +66,19 @@ struct BCParamTable {
 };
 ```
 
-## AssembleContext
-
-定义在 `src/assembler/assembler.hpp`，是 `Assembler::assemble` 接收的最小数据容器：
-
-```cpp
-struct AssembleContext {
-    Eigen::Ref<const Eigen::VectorXd> T;
-    double current_time = 0.0;
-};
-```
-
-**Invariants:**
-
-- `T.size() == N_active`（与 `cells.cell_bcs.size()` 一致）。
-
-历史步缓存（`SolutionHistory`）、`dt`、`time_step` 由 `Scheduler::run()` 内部持有，**不**放在 `AssembleContext` 中，也**不**放入 `Model`。
-
 ## Model
 
 ```cpp
 struct Model {
     MeshGeometry       mesh;
     CellFields         cells;
+
+    // Face-level BC storage: flat array [N_active * 6].
+    // face_bcs[c * 6 + dir] gives the BC for cell c's face `dir`.
+    std::vector<FaceBC> face_bcs;
     BCParamTable       bc_params;
-    std::vector<MaterialProps> material_table;     // CompiledExpression { kx, ky, kz, rho, c }
+
+    std::vector<MaterialProps> material_table;
 
     std::vector<CompiledExpression> heat_source_table;  // dedup; idx 0 = constant 0
 
@@ -87,13 +87,41 @@ struct Model {
     double transient_duration    = 0.0;
     double transient_time_step   = 1.0;
     std::vector<ProbePoint> observation_points;
+
+    // Fluid-solid coupled heat-transfer subsystem
+    FluidDomain fluid;
+};
+```
+
+## FluidDomain
+
+```cpp
+struct FluidDomain {
+    int n_fluid = 0;
+    std::vector<int> fluid_to_global;
+    std::vector<int> global_to_fluid;
+    std::vector<uint8_t> is_fluid;
+
+    std::vector<double> dynamic_viscosity;
+    std::vector<double> pressure;
+    std::vector<int8_t> flow_axes;
+    std::array<std::vector<double>, 3> hydroC;
+    std::vector<double> hydraulic_diameter;
+    std::vector<double> channel_width;
+    std::vector<double> channel_height;
+
+    std::vector<FluidCellBC> fluid_bcs;
+    FluidBCParamTable fluid_bc_params;
+    std::vector<double> fluid_face_area;
+    std::vector<double> boundary_temperature_fluid;
 };
 ```
 
 ## 设计要点
 
 - **虚拟单元**：assembler 跳过 `index_map[idx]==invalidIndex`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
-- **Cell-level BC**：消除投影歧义；虚拟邻居已在 `resolve_face_keys()` 阶段填好 `other_bc`
+- **面级 BC**：`face_bcs` 为 `[N_active * 6]` 扁平数组，消除了 `CellBC` 结构体。`face_bcs[c*6 + dir]` 直接索引。虚拟邻居已在 `resolve_boundary_patches()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。
 - **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::utils`（`src/common/mesh_utils.hpp`），由装配器和预处理器共享。
+- **流体域**：`FluidDomain` 包含预求解的冻结流场（压力、流量轴、水力直径等），以及流体 BC 表

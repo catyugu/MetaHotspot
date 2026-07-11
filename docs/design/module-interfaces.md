@@ -5,6 +5,7 @@
 ```cpp
 namespace mhs::io {
     mhs::core::IOStructure read_xml(const std::string& xml_path);
+    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path);
 
     void write_vtu(const std::string& path,
                    const mhs::core::Model& model,
@@ -25,7 +26,7 @@ namespace mhs::sim {
     class Preprocessor {
     public:
         std::unique_ptr<mhs::core::Model> load(
-            const mhs::core::IOStructure& io,
+            const mhs::core::IOStructure& ioStructure,
             const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
 }
@@ -56,11 +57,11 @@ mhs::core::CellFields assign_cell_layers(
 
 void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,
-    mhs::core::CellFields& cells,
+    const mhs::core::CellFields& cells,
     const std::vector<ParsedFaceKey>& parsed_face_keys,
     mhs::core::BcType other_bc_enum,
     uint16_t other_bc_idx,
-    std::vector<mhs::core::BoundaryPatch>& boundary_patches);
+    std::vector<mhs::core::FaceBC>& face_bcs);
 
 struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
                      double coord_value = 0.0;
@@ -89,7 +90,7 @@ mhs::core::IOStructure
         ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
-        ├─> resolve_boundary_patches()    // cell_bc_range [prefix-sum] + boundary_patches
+        ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
         ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
         └─> mhs::core::Model ready
 ```
@@ -153,8 +154,6 @@ namespace mhs::sim::time_scheme {
     struct ErrorControlConfig {
         double abs_tol = 1e-4;
         double safety  = 0.9;
-        double min_dt  = 1e-9;
-        double max_dt  = 1.0;
     };
 
     struct ErrorEstimate {
@@ -176,9 +175,8 @@ namespace mhs::sim::time_scheme {
 
     class StepController {
     public:
-        StepController(StepStrategy strategy, double output_dt,
-                       double min_dt, double max_dt, double fixed_dt = 1.0);
-        void rebuild(double duration);
+        StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt = 1.0);
+        void rebuild(double duration, double output_dt);
         double prepare(double dt_suggested, double current_t, double duration);
         std::vector<double> flush_outputs(double current_t);
     };
@@ -260,7 +258,7 @@ namespace mhs::sim {
 
     struct NonLinearConfig {
         double underrelaxation      = 1.0;
-        int    max_iterations       = 50;
+        int    max_iterations       = 200;
         double relative_tolerance   = 1e-6;
         double absolute_tolerance   = 1e-12;
     };
@@ -285,13 +283,9 @@ namespace mhs::sim {
         void setModel(mhs::core::Model* model);
         void setSolver(std::unique_ptr<LinearSolver> solver);
         void run();
-        const std::vector<double>& solution() const;
-        // 求解结束时的当前时刻（稳态恒为 0.0；瞬态为最后一个步末的时间）。
-        // postprocessor 调 FieldContext.t 时需要此值。
-        double currentTime() const;
-        // 探针温度时间序列：与 model.observation_points 一一对应。
-        // 仅 (Transient && !observation_points.empty()) 时非空；每个 trace 长度 = 步数 + 1（含 t=0）。
-        const std::vector<mhs::core::ProbeTrace>& probeTraces() const;
+        const std::vector<double>& solution() const noexcept { return solution_; }
+        double currentTime() const noexcept { return step_.current_time; }
+        const std::vector<mhs::core::ProbeTrace>& probeTraces() const noexcept { return probe_recorder_.traces(); }
     };
 
     // 探针局部采样与时序记录器，专属于 Scheduler。仅依赖 mhs::core。

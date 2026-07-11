@@ -163,6 +163,25 @@ struct Function {
     PieceWiseFunction piecewise;
 };
 
+// 流体-固体耦合: 流体 overlay 类型 (从额外 XML 解析, 不侵入主 IOStructure)
+struct FluidMaterialOverlay {
+    std::string name;
+    std::string dynamic_viscosity;
+};
+
+struct FluidBoundaryOverlay {
+    std::string name;
+    std::vector<std::string> face_keys;
+    FluidBCType kind = FluidBCType::None;
+    double value = 0.0;
+    double inlet_temperature = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct FluidOverlay {
+    std::vector<FluidMaterialOverlay> fluid_materials;
+    std::vector<FluidBoundaryOverlay> boundaries;
+};
+
 } // namespace mhs::core
 ```
 
