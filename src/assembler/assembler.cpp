@@ -245,29 +245,20 @@ namespace mhs::sim {
             const int n_ports = (int)sb.port_cells.size();
             if (n_ports == 0)
                 continue;
-            for (int k = 0; k < sb.K_eff.outerSize(); ++k) {
-                for (Eigen::SparseMatrix<double>::InnerIterator it(sb.K_eff, k); it; ++it) {
-                    if (it.row() > it.col())
+            for (int i = 0; i < n_ports; i++) {
+                uint32_t gi = sb.port_cells[i];
+                if (gi >= (uint32_t)N)
+                    continue;
+                for (int j = 0; j < n_ports; j++) {
+                    uint32_t gj = sb.port_cells[j];
+                    if (gj >= (uint32_t)N)
                         continue;
-                    int port_i = (int)it.row();
-                    int port_j = (int)it.col();
-                    double val = it.value();
-
-                    uint32_t gi = sb.port_cells[port_i];
-                    uint32_t gj = sb.port_cells[port_j];
-                    if (gi < (uint32_t)N && gj < (uint32_t)N) {
+                    double val = sb.K_eff(i, j);
+                    if (std::abs(val) > mhs::core::zero_guard) {
                         triplets.emplace_back((int)gi, (int)gj, val);
-                        if (gi != gj)
-                            triplets.emplace_back((int)gj, (int)gi, val);
                     }
                 }
-            }
-
-            for (int p = 0; p < n_ports; ++p) {
-                uint32_t gi = sb.port_cells[p];
-                if (gi < (uint32_t)N) {
-                    b((int)gi) += sb.rhs_eff(p);
-                }
+                b((int)gi) += sb.rhs_eff(i);
             }
         }
 

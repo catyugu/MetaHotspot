@@ -86,8 +86,8 @@ namespace mhs::core {
     struct SmartBlockModel {
         std::string name;
         std::vector<uint32_t> port_cells;         // [N_ports]: compact cell index of each port
-        Eigen::SparseMatrix<double> K_eff;         // effective stiffness contribution [N_ports x N_ports]
-        Eigen::VectorXd rhs_eff;                   // effective RHS contribution (size N_ports)
+        Eigen::MatrixXd K_eff;                    // dense effective stiffness [N_ports x N_ports]
+        Eigen::VectorXd rhs_eff;                  // effective RHS contribution (size N_ports)
     };
 
     // ── Top-level model ──────────────────────────────────────────────────

@@ -260,160 +260,82 @@ namespace mhs::sim {
         const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<mhs::core::SmartMacroModelData>& trained_models, mhs::core::Model& model)
     {
-        // (1) Find SmartMacro blocks in the resolved layers.
-        // For each, collect all grid cells inside the block and classify them
-        // as interface (adjacent to an active cell) vs interior.
-        struct SmartBlockInfo {
-            int layer_index = -1;
-            std::vector<int> old_indices; // full-grid indices of cells inside the block
-        };
-        std::vector<SmartBlockInfo> info_list;
+        model.smart_blocks.clear();
 
+        // Iterate resolved layers to find SmartMacro blocks, matched 1:1 with trained_models
+        size_t sm_idx = 0;
         for (int l = 0; l < (int)resolved_layers.size(); l++) {
             for (int b = 0; b < (int)resolved_layers[l].blocks.size(); b++) {
-                const auto& rb = resolved_layers[l].blocks[b];
-                if (!rb.is_smart_macro)
+                if (!resolved_layers[l].blocks[b].is_smart_macro)
+                    continue;
+                if (sm_idx >= trained_models.size())
                     continue;
 
-                SmartBlockInfo info;
-                info.layer_index = l;
+                const auto& trained = trained_models[sm_idx];
+                sm_idx++;
+                const int n_ports = (int)trained.port_ix.size();
+                if (n_ports == 0)
+                    continue;
 
-                // Scan the full grid for cells inside this block
-                for (int ix = 0; ix < mesh.nx; ix++) {
-                    for (int iy = 0; iy < mesh.ny; iy++) {
-                        for (int iz = 0; iz < mesh.nz; iz++) {
-                            double cx = mesh.cx[ix];
-                            double cy = mesh.cy[iy];
-                            double cz = mesh.cz[iz];
-                            if (find_block_for_cell(resolved_layers[l], cx, cy, cz) == b) {
-                                int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                                info.old_indices.push_back(old_idx);
-                            }
-                        }
+                mhs::core::SmartBlockModel sbm;
+                sbm.name = trained.name;
+                sbm.port_cells.assign(n_ports, mhs::core::invalidIndex);
+                Eigen::VectorXd C_diag = Eigen::VectorXd::Zero(n_ports);
+
+                // Iterate trained port indices directly (no full-grid scan needed)
+                for (int p = 0; p < n_ports; p++) {
+                    int ix = trained.port_ix[p];
+                    int iy = trained.port_iy[p];
+                    int iz = trained.port_iz[p];
+
+                    if (ix < 0 || ix >= mesh.nx || iy < 0 || iy >= mesh.ny || iz < 0 || iz >= mesh.nz)
+                        continue;
+
+                    for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+                        mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
+                        int n_old = mhs::utils::neighbor_grid_index(
+                            ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                        if (n_old < 0)
+                            continue;
+
+                        // Active neighbor found — compute C_i
+                        int nix = mhs::utils::neighbor_ix(dir, ix);
+                        int niy = mhs::utils::neighbor_iy(dir, iy);
+                        int niz = mhs::utils::neighbor_iz(dir, iz);
+
+                        uint32_t act_c_idx = cells.index_map[n_old];
+                        size_t nm_id = model.cells.material_id[act_c_idx];
+                        const auto& nmp = model.material_table[nm_id];
+
+                        mhs::core::FieldContext ctx_n {
+                            mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], model.initial_temperature, 0.0};
+                        double k_active
+                            = mhs::utils::k_along(dir, nmp.kx.eval(ctx_n), nmp.ky.eval(ctx_n), nmp.kz.eval(ctx_n));
+
+                        const double A_f = mhs::utils::face_area(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+                        const double half_dist_active
+                            = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
+                        double C_i = k_active * A_f / half_dist_active;
+
+                        C_diag(p) += C_i;
+                        sbm.port_cells[p] = act_c_idx;
+                        break; // first active neighbor found
                     }
                 }
 
-                if (info.old_indices.empty())
-                    continue;
+                // Pre-compute K_eff and rhs_eff (dense direct, no sparse conversion)
+                //   K_eff  = C - C * (K_port + C)^(-1) * C
+                //   rhs_eff = C * (K_port + C)^(-1) * f_port
+                Eigen::MatrixXd C_mat = C_diag.asDiagonal();
+                Eigen::MatrixXd Kpc = trained.K_port + C_mat;
+                Eigen::MatrixXd Kpc_inv
+                    = Kpc.selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXd::Identity(n_ports, n_ports));
 
-                info_list.push_back(std::move(info));
+                sbm.K_eff = C_mat - C_mat * (Kpc_inv * C_mat);
+                sbm.rhs_eff = C_mat * (Kpc_inv * trained.f_port);
+
+                model.smart_blocks.push_back(std::move(sbm));
             }
-        }
-
-        if (info_list.empty()) {
-            model.smart_blocks.clear();
-            return;
-        }
-
-        // (2) For each SmartMacro, use the already-loaded trained model and
-        // build K_eff / rhs_eff. trained_models[i] corresponds to info_list[i].
-        for (size_t sm = 0; sm < info_list.size(); sm++) {
-            auto& si = info_list[sm];
-            const auto& trained = trained_models[sm];
-            const int n_ports = (int)trained.port_ix.size();
-
-            // Build a map: (ix, iy, iz) -> port_index from the trained model.
-            struct GridKey {
-                int ix, iy, iz;
-            };
-            auto hash_fn
-                = [](const GridKey& k) -> size_t { return (size_t(k.ix) << 32) ^ (size_t(k.iy) << 16) ^ size_t(k.iz); };
-            struct KeyEqual {
-                bool operator()(const GridKey& a, const GridKey& b) const
-                {
-                    return a.ix == b.ix && a.iy == b.iy && a.iz == b.iz;
-                }
-            };
-            std::unordered_map<GridKey, int, decltype(hash_fn), KeyEqual> port_map(n_ports, hash_fn, KeyEqual {});
-            for (int p = 0; p < n_ports; p++) {
-                port_map[{trained.port_ix[p], trained.port_iy[p], trained.port_iz[p]}] = p;
-            }
-
-            // (3) Identify interface ports and compute port-to-cell mapping + C_i.
-            mhs::core::SmartBlockModel sbm;
-            sbm.name = trained.name;
-            sbm.port_cells.assign(n_ports, mhs::core::invalidIndex);
-
-            // port -> C_i for each port
-            Eigen::VectorXd C_diag = Eigen::VectorXd::Zero(n_ports);
-
-            for (int old_idx : si.old_indices) {
-                int ix, iy, iz;
-                mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
-
-                GridKey key {ix, iy, iz};
-                auto pit = port_map.find(key);
-                if (pit == port_map.end())
-                    continue;
-
-                int p_idx = pit->second;
-
-                for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
-                    mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-
-                    int n_old
-                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
-                    if (n_old < 0)
-                        continue;
-
-                    uint32_t act_c_idx = cells.index_map[n_old];
-                    if (act_c_idx == mhs::core::invalidIndex)
-                        continue;
-
-                    // Active neighbor found — compute C_i
-                    int nix = mhs::utils::neighbor_ix(dir, ix);
-                    int niy = mhs::utils::neighbor_iy(dir, iy);
-                    int niz = mhs::utils::neighbor_iz(dir, iz);
-
-                    size_t nm_id = model.cells.material_id[act_c_idx];
-                    const auto& nmp = model.material_table[nm_id];
-
-                    mhs::core::FieldContext ctx_n {
-                        mesh.cx[nix], mesh.cy[niy], mesh.cz[niz], model.initial_temperature, 0.0};
-                    double k_active
-                        = mhs::utils::k_along(dir, nmp.kx.eval(ctx_n), nmp.ky.eval(ctx_n), nmp.kz.eval(ctx_n));
-
-                    const double A_f = mhs::utils::face_area(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
-                    const double half_dist_active
-                        = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
-                    double C_i = k_active * A_f / half_dist_active;
-
-                    C_diag(p_idx) += C_i;
-                    sbm.port_cells[p_idx] = act_c_idx;
-                    break;
-                }
-            }
-
-            // (4) Pre-compute K_eff and rhs_eff.
-            //     K_eff = C - C * (K_port + C)^(-1) * C
-            //     rhs_eff = C * (K_port + C)^(-1) * f_port
-            Eigen::MatrixXd C_mat = C_diag.asDiagonal();
-            Eigen::MatrixXd Kpc = trained.K_port + C_mat;
-            Eigen::MatrixXd Kpc_inv
-                = Kpc.selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXd::Identity(n_ports, n_ports));
-
-            // K_eff = C - C * Kpc_inv * C
-            Eigen::MatrixXd M = C_mat * (Kpc_inv * C_mat);
-            Eigen::MatrixXd K_eff_dense = C_mat - M;
-
-            // Convert to sparse (only non-zeros above zero_guard)
-            std::vector<Eigen::Triplet<double>> eff_t;
-            eff_t.reserve(n_ports * n_ports);
-            for (int i = 0; i < n_ports; i++) {
-                for (int j = 0; j < n_ports; j++) {
-                    double val = K_eff_dense(i, j);
-                    if (std::abs(val) > mhs::core::zero_guard) {
-                        eff_t.emplace_back(i, j, val);
-                    }
-                }
-            }
-            sbm.K_eff.resize(n_ports, n_ports);
-            sbm.K_eff.setFromTriplets(eff_t.begin(), eff_t.end());
-
-            // rhs_eff = C * Kpc_inv * f_port
-            sbm.rhs_eff = C_mat * (Kpc_inv * trained.f_port);
-
-            model.smart_blocks.push_back(std::move(sbm));
         }
     }
 
