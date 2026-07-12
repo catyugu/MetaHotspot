@@ -27,6 +27,8 @@ namespace mhs::core {
         std::string name;
     };
 
+    enum class BlockType { Normal, SmartMacro };
+
     // 找到 struct Block 定义并修改：
     struct Block {
         std::vector<Rect> all_rects;
@@ -36,6 +38,8 @@ namespace mhs::core {
         std::string ti_reyuan_expr; // 体热源表达式 [W/m³]
         std::string name;
         std::string thickness_expr; // 新增：Block 自己的厚度表达式
+        BlockType block_type = BlockType::Normal;
+        std::string model_file; // 仅 SmartMacro: 训练模型 XML 路径
     };
     struct Layer {
         std::vector<Block> blocks;

@@ -1,4 +1,6 @@
 #pragma once
+#include <Eigen/Core>
+#include <Eigen/Sparse>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -69,6 +71,26 @@ namespace mhs::core {
         double z = 0.0;
     };
 
+    // ── Smart macro-model (DtN) support ──────────────────────────────────
+    /// Records one port (interface face) of a SmartBlock.
+    /// Maps a smart block interface face to the adjacent active cell.
+    struct SmartPortRecord {
+        uint32_t active_cell_idx = invalidIndex;
+        mhs::core::FaceDir dir = FaceDir::XM;
+        uint16_t port_idx = 0;   // index into K_port
+        double C = 0.0;          // coupling conductance [W/K]
+    };
+
+    /// A trained DtN macro model.
+    struct SmartBlockModel {
+        std::string name;
+        Eigen::MatrixXd K_port;               // dense [N_ports x N_ports] DtN matrix
+        Eigen::VectorXd f_port;               // RHS vector from BCs on smart block (size N_ports)
+        std::vector<SmartPortRecord> ports;
+        Eigen::SparseMatrix<double> K_eff;    // pre-computed effective stiffness contribution
+        Eigen::VectorXd rhs_eff;              // pre-computed effective RHS contribution (size N_ports)
+    };
+
     // ── Top-level model ──────────────────────────────────────────────────
     struct Model {
         MeshGeometry mesh;
@@ -92,6 +114,9 @@ namespace mhs::core {
 
         // Fluid-solid coupled heat-transfer subsystem
         mhs::core::FluidDomain fluid;
+
+        // Smart macro-model blocks (DtN-based)
+        std::vector<SmartBlockModel> smart_blocks;
     };
 
 } // namespace mhs::core

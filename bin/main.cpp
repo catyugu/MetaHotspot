@@ -69,7 +69,8 @@ int main(int argc, char* argv[])
 
         // Preprocess (apply fluid overlay inside, if any)
         mhs::sim::Preprocessor preprocessor;
-        auto model = preprocessor.load(io_structure, fluidOverlay);
+        auto case_path = std::filesystem::path(input_path);
+        auto model = preprocessor.load(io_structure, fluidOverlay, case_path.parent_path().string());
 
         MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
             model->mesh.nx, model->mesh.ny, model->mesh.nz);

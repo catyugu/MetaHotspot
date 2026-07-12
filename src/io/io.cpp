@@ -424,6 +424,15 @@ namespace mhs::io {
                         if (const XMLElement* thickness = block_elem->FirstChildElement("ThicknessExpression")) {
                             block.thickness_expr = get_text(thickness);
                         }
+                        if (const XMLElement* btype = block_elem->FirstChildElement("BlockType")) {
+                            std::string bt = get_text(btype);
+                            if (bt == "SmartMacro" || bt == "smart_macro") {
+                                block.block_type = mhs::core::BlockType::SmartMacro;
+                            }
+                        }
+                        if (const XMLElement* mfile = block_elem->FirstChildElement("ModelFile")) {
+                            block.model_file = get_text(mfile);
+                        }
 
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {

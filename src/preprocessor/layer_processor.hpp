@@ -25,6 +25,10 @@ namespace mhs::sim {
         // 该 Block 在世界坐标系中的 Z 范围
         double z_start = 0.0;
         double z_end = 0.0;
+
+        // SmartMacro support
+        bool is_smart_macro = false;
+        std::string model_file;
     };
 
     // Pre-resolved geometry for a single layer
@@ -66,5 +70,17 @@ namespace mhs::sim {
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum,
         uint16_t other_bc_idx, std::vector<mhs::core::FaceBC>& face_bcs);
+
+    // ── SmartMacro block coupling ─────────────────────────────────────────────
+    // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
+    // coupling data: identify interface cells, compute C_i, load K_port, compute
+    // K_eff = C - C*(K_port + C)^(-1)*C, and write into model->smart_blocks.
+    //
+    // `resolved_layers` is the pre-resolved geometry (needed to locate SmartMacro
+    // blocks and intersect with the global grid). `mesh` and `cells` must have
+    // valid index_map (smart block cells are virtual / invalidIndex).
+    void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+        const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
+        const std::string& case_dir, mhs::core::Model& model);
 
 } // namespace mhs::sim
