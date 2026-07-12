@@ -27,4 +27,8 @@ namespace mhs::io {
     std::vector<mhs::core::SmartMacroModelData> load_smart_macro_models(
         const mhs::core::IOStructure& io, const std::string& case_dir);
 
+    /// Load a single SmartMacro model from disk (.xml + sibling .data binary).
+    /// Throws on any I/O or format error.
+    mhs::core::SmartMacroModelData read_smart_macro_model(const std::string& xml_path);
+
 } // namespace mhs::io

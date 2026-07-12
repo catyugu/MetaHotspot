@@ -72,15 +72,6 @@ namespace mhs::core {
     };
 
     // ── Smart macro-model (DtN) support ──────────────────────────────────
-    /// Raw trained model loaded from disk (K_port + f_port + port indices).
-    struct SmartMacroModelData {
-        std::string name;
-        Eigen::MatrixXd K_port;               // dense [N_ports x N_ports] DtN matrix
-        Eigen::VectorXd f_port;               // RHS vector from BCs (size N_ports)
-        std::vector<int> port_ix;
-        std::vector<int> port_iy;
-        std::vector<int> port_iz;
-    };
 
     /// A trained DtN macro model ready for assembly (pre-computed Schur complement).
     struct SmartBlockModel {

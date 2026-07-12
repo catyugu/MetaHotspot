@@ -156,6 +156,20 @@ namespace mhs::core {
         std::string z;
     };
 
+    // ── SmartMacro model (IO-payload, no Eigen types) ──────────────────
+    /// Raw trained model loaded from disk: DtN matrix + RHS + port indices.
+    /// K_port is stored as dense row-major [N_ports x N_ports].
+    /// f_port is stored as a flat vector (length N_ports).
+    /// Consumers wrap with Eigen::Map for linear algebra.
+    struct SmartMacroModelData {
+        std::string name;
+        std::vector<double> K_port;            // row-major [N_ports x N_ports]
+        std::vector<double> f_port;            // RHS vector (size N_ports)
+        std::vector<int> port_ix;
+        std::vector<int> port_iy;
+        std::vector<int> port_iz;
+    };
+
     // 探针温度时间序列：与 ObservationPoint3D::name 一一对应，times/values 等长。
     struct ProbeTrace {
         std::string name;

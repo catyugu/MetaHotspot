@@ -4,7 +4,6 @@ add_subdirectory(common)
 add_subdirectory(assembler)
 add_subdirectory(linear_solver)
 add_subdirectory(preprocessor)
-add_subdirectory(smart_block)
 mhs_add_library(mhs_lib
     SOURCES
     nonlinear/nonlinear_solver.cpp
@@ -22,5 +21,4 @@ mhs_add_library(mhs_lib
     io_lib
     linear_solver_lib
     assembler_lib
-    smart_block_lib
 )

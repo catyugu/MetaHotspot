@@ -277,6 +277,11 @@ namespace mhs::sim {
                 if (n_ports == 0)
                     continue;
 
+                // Wrap POD vectors with Eigen::Map for zero-copy linear algebra
+                auto K_port_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                    trained.K_port.data(), n_ports, n_ports);
+                auto f_port_map = Eigen::Map<const Eigen::VectorXd>(trained.f_port.data(), n_ports);
+
                 mhs::core::SmartBlockModel sbm;
                 sbm.name = trained.name;
                 sbm.port_cells.assign(n_ports, mhs::core::invalidIndex);
@@ -327,12 +332,12 @@ namespace mhs::sim {
                 //   K_eff  = C - C * (K_port + C)^(-1) * C
                 //   rhs_eff = C * (K_port + C)^(-1) * f_port
                 Eigen::MatrixXd C_mat = C_diag.asDiagonal();
-                Eigen::MatrixXd Kpc = trained.K_port + C_mat;
+                Eigen::MatrixXd Kpc = K_port_map + C_mat;
                 Eigen::MatrixXd Kpc_inv
                     = Kpc.selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXd::Identity(n_ports, n_ports));
 
                 sbm.K_eff = C_mat - C_mat * (Kpc_inv * C_mat);
-                sbm.rhs_eff = C_mat * (Kpc_inv * trained.f_port);
+                sbm.rhs_eff = C_mat * (Kpc_inv * f_port_map);
 
                 model.smart_blocks.push_back(std::move(sbm));
             }
