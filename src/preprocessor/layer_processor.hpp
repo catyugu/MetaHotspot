@@ -72,9 +72,9 @@ namespace mhs::sim {
 
     // ── SmartMacro block coupling ─────────────────────────────────────────────
     // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
-    // coupling data: identify interface cells, compute C_i, compute
-    // K_eff = C - C*(K_port + C)^(-1)*C  and rhs_eff = C*(K_port + C)^(-1)*f_port,
-    // then write K_eff + rhs_eff + port_cells into model->smart_blocks.
+    // coupling data: identify interface cells, compute C_i, and copy POD data
+    // (phi_basis, K_modal, f_modal).  No Schur complement solve — the extended
+    // system is assembled directly with modal DOFs as extra unknowns.
     //
     // `trained_models` are the already-loaded SmartMacroModelData for each
     // SmartMacro block in the resolved layers (same order as encountered in

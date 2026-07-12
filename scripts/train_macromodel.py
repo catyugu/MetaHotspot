@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-train_macromodel.py — Train a DtN (Dirichlet-to-Neumann) SmartMacro model
+train_macromodel.py — Train a POD-based SmartMacro model
 
 Given a case XML with a SmartMacro block:
   1. Parse the global mesh and block geometry
@@ -8,11 +8,12 @@ Given a case XML with a SmartMacro block:
   3. Build the local FVM stiffness matrix (same stencil as C++ Assembler)
   4. Partition into interior (i) and interface (f) DOFs
   5. Compute K_port = K_ff - K_fi * K_ii^(-1) * K_if  (Schur complement)
-  6. Write trained model XML with port ordering (ix, iy, iz)
+  6. Perform POD (eigendecomposition) on K_port → retain n_modes dominant modes
+  7. Write trained model XML + binary with phi_basis, K_modal, f_modal
 
 Usage:
   python scripts/train_macromodel.py cases/macromodel_tests/case1.xml \\
-      --output cases/macromodel_tests/trained_copper.xml
+      --output cases/macromodel_tests/trained_copper.xml --n-modes 10
 """
 
 import argparse
@@ -283,7 +284,7 @@ def get_material_props(root, mat_name):
 
 def main():
     register_namespaces_ns()
-    parser = argparse.ArgumentParser(description="Train a DtN SmartMacro model")
+    parser = argparse.ArgumentParser(description="Train a POD-based SmartMacro model")
     parser.add_argument("input_xml", help="Path to the case XML file")
     parser.add_argument(
         "--output",
@@ -291,10 +292,17 @@ def main():
         default="trained_model.xml",
         help="Output path for trained SmartMacro model XML",
     )
+    parser.add_argument(
+        "--n-modes",
+        type=int,
+        default=10,
+        help="Number of POD modes to retain (default: 10)",
+    )
     args = parser.parse_args()
 
     input_path = args.input_xml
     output_path = args.output
+    n_modes = args.n_modes
 
     # 1. Parse
     print(f"Parsing {input_path}...")
@@ -521,9 +529,6 @@ def main():
     K_port = K_ff.toarray() - K_fi.toarray() @ X
 
     # RHS contribution from BCs: f_port_reduced = f_f - K_fi * K_ii^(-1) * f_i
-    # This is the RHS on the port DOFs after eliminating interior DOFs
-    # The convention: local system = K_local * T_local = f_local
-    # After Schur: K_port * T_port = f_port_reduced
     f_port = f_f - K_fi.toarray() @ spsolve(K_ii, f_i)
 
     print(
@@ -537,17 +542,37 @@ def main():
         print(f"Symmetry error: {sym_err:.4e}, symmetrizing")
         K_port = 0.5 * (K_port + K_port.T)
 
-    # 10. Write trained model
+    # 10. POD: eigendecomposition of K_port → extract n_modes smoothest modes
+    # For thermal diffusion, the physically dominant modes are those with the
+    # smallest eigenvalues (smooth spatial variations), not the largest.
+    print(f"Computing POD basis (n_modes={n_modes})...")
+    eigvals, eigvecs = np.linalg.eigh(K_port)
+    # eigh returns ascending order — smallest eigenvalues first = smoothest modes
+    # Take the first n_modes as our POD basis
+    n_modes = min(n_modes, n_ports)
+    n_modes = max(n_modes, 1)
+    Phi = np.ascontiguousarray(eigvecs[:, :n_modes])  # [N_ports x n_modes]
+
+    K_modal = Phi.T @ K_port @ Phi  # [n_modes x n_modes]
+    f_modal = Phi.T @ f_port        # [n_modes]
+
+    print(f"  Smallest eigenvalue: {eigvals[0]:.6e}, largest among selected: {eigvals[n_modes-1]:.6e}")
+    print(f"  Eigenvalue ratio (selected/total): {np.sum(eigvals[:n_modes]) / np.sum(np.abs(eigvals)):.8f}")
+
+    # 11. Write trained model
     base = os.path.splitext(output_path)[0]
     data_path = base + ".data"
     print(f"Writing {output_path} (XML) + {data_path} (binary)...")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    # Write binary data file: [f_port][K_port row-major] as little-endian doubles
-    K_flat = K_port.ravel(order="C").astype(np.float64)
+    # Write binary data file:
+    #   [f_modal: M doubles][K_modal: M*M doubles row-major][phi_basis: N*M doubles row-major]
+    K_modal_flat = np.ascontiguousarray(K_modal, dtype=np.float64).ravel(order="C")
+    Phi_flat = np.ascontiguousarray(Phi, dtype=np.float64).ravel(order="C")
     with open(data_path, "wb") as f:
-        f.write(f_port.astype(np.float64).tobytes())
-        f.write(K_flat.tobytes())
+        f.write(f_modal.astype(np.float64).tobytes())
+        f.write(K_modal_flat.tobytes())
+        f.write(Phi_flat.tobytes())
 
     # Write tiny XML with pointer to data file
     ET.register_namespace("", "SmartMacroModel")
@@ -555,6 +580,7 @@ def main():
 
     ET.SubElement(root_elem, "Name").text = f"{mat_name}_block"
     ET.SubElement(root_elem, "NPorts").text = str(n_ports)
+    ET.SubElement(root_elem, "NModes").text = str(n_modes)
     ET.SubElement(root_elem, "DataFile").text = os.path.basename(data_path)
 
     po = ET.SubElement(root_elem, "PortOrder")
@@ -572,10 +598,10 @@ def main():
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(pretty)
 
-    data_size_mb = os.path.getsize(data_path) / (1024 * 1024)
+    data_size_kb = os.path.getsize(data_path) / 1024
     print(
-        f"Done!  Interior: {n_int}, Ports: {n_ports}, "
-        f"K_port: {n_ports}×{n_ports}, data file: {data_size_mb:.1f} MB"
+        f"Done!  Ports: {n_ports}, Modes: {n_modes}, "
+        f"data file: {data_size_kb:.1f} KB"
     )
     return 0
 

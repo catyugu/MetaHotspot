@@ -71,14 +71,26 @@ namespace mhs::core {
         double z = 0.0;
     };
 
-    // ── Smart macro-model (DtN) support ──────────────────────────────────
+    // ── Smart macro-model (POD-based extended system) ────────────────
 
-    /// A trained DtN macro model ready for assembly (pre-computed Schur complement).
+    /// A trained POD-reduced macro model ready for assembly.
+    /// Instead of a dense Schur complement, keeps `n_modes` modal DOFs
+    /// as extra unknowns in the global system.  Coupling between the
+    /// physical port cells and the modal DOFs is through the POD basis Φ.
     struct SmartBlockModel {
         std::string name;
         std::vector<uint32_t> port_cells;         // [N_ports]: compact cell index of each port
-        Eigen::MatrixXd K_eff;                    // dense effective stiffness [N_ports x N_ports]
-        Eigen::VectorXd rhs_eff;                  // effective RHS contribution (size N_ports)
+
+        // Conductance to active neighbor, computed at preprocess time.
+        Eigen::VectorXd C_diag;                    // [N_ports]
+
+        // POD data (read from trained model, used at assembly time).
+        Eigen::MatrixXd phi_basis;                 // [N_ports x n_modes]
+        Eigen::VectorXd f_modal;                   // [n_modes]
+        Eigen::MatrixXd K_modal_eff;               // [n_modes x n_modes] = K_modal + Φᵀ·C·Φ
+
+        int modal_start_idx = 0;                   // first modal DOF index in global system
+        int n_modes = 0;
     };
 
     // ── Top-level model ──────────────────────────────────────────────────
@@ -105,8 +117,18 @@ namespace mhs::core {
         // Fluid-solid coupled heat-transfer subsystem
         mhs::core::FluidDomain fluid;
 
-        // Smart macro-model blocks (DtN-based)
+        // Smart macro-model blocks (POD-based extended system)
         std::vector<SmartBlockModel> smart_blocks;
+
+        // ── DOF accounting helpers ──────────────────────────────────────
+        int total_modal_dofs() const {
+            int s = 0;
+            for (const auto& sb : smart_blocks) s += sb.n_modes;
+            return s;
+        }
+        int total_dofs() const {
+            return static_cast<int>(cells.material_id.size()) + total_modal_dofs();
+        }
     };
 
 } // namespace mhs::core

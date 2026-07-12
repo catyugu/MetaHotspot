@@ -1000,6 +1000,22 @@ namespace mhs::io {
             throw std::runtime_error("Invalid NPorts=" + std::to_string(n_ports) + " in SmartMacro model");
         }
 
+        // NModes (POD format, required)
+        int n_modes = 0;
+        if (const auto* nm_elem = root->FirstChildElement("NModes")) {
+            if (const char* text = nm_elem->GetText())
+                n_modes = std::stoi(text);
+        }
+        else {
+            throw std::runtime_error("Missing <NModes> in SmartMacro model (POD format required)");
+        }
+
+        if (n_modes <= 0) {
+            throw std::runtime_error("Invalid NModes=" + std::to_string(n_modes) + " in SmartMacro model");
+        }
+
+        result.n_modes = n_modes;
+
         // PortOrder
         result.port_ix.reserve(n_ports);
         result.port_iy.reserve(n_ports);
@@ -1043,28 +1059,40 @@ namespace mhs::io {
 
         auto data_path = std::filesystem::path(xml_path).parent_path() / data_file;
 
-        // Read binary data: [f_port: N doubles][K_port: N*N doubles, row-major]
+        // Read binary data: [f_modal: M doubles][K_modal: M*M doubles, row-major][phi_basis: N*M doubles, row-major]
         std::ifstream bin(data_path, std::ios::binary);
         if (!bin) {
             throw std::runtime_error("Failed to open binary data file: " + data_path.string());
         }
 
-        // Read f_port (flat vector)
-        result.f_port.resize(n_ports);
-        bin.read(reinterpret_cast<char*>(result.f_port.data()), n_ports * sizeof(double));
+        // Read f_modal (flat vector)
+        result.f_modal.resize(n_modes);
+        bin.read(reinterpret_cast<char*>(result.f_modal.data()), n_modes * sizeof(double));
         if (!bin) {
-            throw std::runtime_error("Failed to read f_port from binary data");
+            throw std::runtime_error("Failed to read f_modal from binary data");
         }
 
-        // Read K_port (row-major flat vector)
-        result.K_port.resize(static_cast<size_t>(n_ports) * static_cast<size_t>(n_ports));
-        std::vector<double> buf(n_ports);
-        for (int r = 0; r < n_ports; ++r) {
-            bin.read(reinterpret_cast<char*>(buf.data()), n_ports * sizeof(double));
+        // Read K_modal (row-major flat vector, M x M)
+        result.K_modal.resize(static_cast<size_t>(n_modes) * static_cast<size_t>(n_modes));
+        for (int r = 0; r < n_modes; ++r) {
+            std::vector<double> buf(n_modes);
+            bin.read(reinterpret_cast<char*>(buf.data()), n_modes * sizeof(double));
             if (!bin) {
-                throw std::runtime_error("Failed to read K_port row " + std::to_string(r));
+                throw std::runtime_error("Failed to read K_modal row " + std::to_string(r));
             }
-            double* row_start = result.K_port.data() + static_cast<size_t>(r) * static_cast<size_t>(n_ports);
+            double* row_start = result.K_modal.data() + static_cast<size_t>(r) * static_cast<size_t>(n_modes);
+            std::copy(buf.begin(), buf.end(), row_start);
+        }
+
+        // Read phi_basis (row-major: N_ports x n_modes)
+        result.phi_basis.resize(static_cast<size_t>(n_ports) * static_cast<size_t>(n_modes));
+        for (int r = 0; r < n_ports; ++r) {
+            std::vector<double> buf(n_modes);
+            bin.read(reinterpret_cast<char*>(buf.data()), n_modes * sizeof(double));
+            if (!bin) {
+                throw std::runtime_error("Failed to read phi_basis row " + std::to_string(r));
+            }
+            double* row_start = result.phi_basis.data() + static_cast<size_t>(r) * static_cast<size_t>(n_modes);
             std::copy(buf.begin(), buf.end(), row_start);
         }
 

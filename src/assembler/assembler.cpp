@@ -27,10 +27,11 @@ namespace mhs::sim {
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
 
-        int N = static_cast<int>(cells.material_id.size());
+        int N_phys = static_cast<int>(cells.material_id.size());
+        int N_total = N_phys + model_.total_modal_dofs();
         int total = mesh.nx * mesh.ny * mesh.nz;
 
-        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
+        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N_total); });
 
         // ═══════════════════════════════════════════════════════════════════
         // Phase 1: 内部传导 + 热源 + 瞬态质量矩阵 + 边界条件
@@ -231,8 +232,8 @@ namespace mhs::sim {
 
         // ── Combine thread-local data ──
         std::vector<Eigen::Triplet<double>> triplets;
-        Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
-        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
+        Eigen::VectorXd b = Eigen::VectorXd::Zero(N_total);
+        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N_total);
 
         thread_data.combine_each([&](const ThreadLocalData& local) {
             triplets.insert(triplets.end(), local.triplets.begin(), local.triplets.end());
@@ -240,29 +241,54 @@ namespace mhs::sim {
             M_diag += local.mass;
         });
 
-        // ── Scatter SmartBlock K_eff contributions (before setFromTriplets — single pass) ──
+        // ── Scatter extended system per SmartBlock (POD-based) ──
         for (const auto& sb : model_.smart_blocks) {
             const int n_ports = (int)sb.port_cells.size();
-            if (n_ports == 0)
+            const int n_modes = sb.n_modes;
+            const int modal_start = sb.modal_start_idx;
+            if (n_ports == 0 || n_modes == 0)
                 continue;
+
+            // 1. Diagonal: diag(C_diag) into port cell DOFs
+            // 2. Coupling: -C·Φ between port cells and modal DOFs
             for (int i = 0; i < n_ports; i++) {
                 uint32_t gi = sb.port_cells[i];
-                if (gi >= (uint32_t)N)
+                if (gi >= (uint32_t)N_phys)
                     continue;
-                for (int j = 0; j < n_ports; j++) {
-                    uint32_t gj = sb.port_cells[j];
-                    if (gj >= (uint32_t)N)
-                        continue;
-                    double val = sb.K_eff(i, j);
+
+                double Ci = sb.C_diag(i);
+                if (std::abs(Ci) > mhs::core::zero_guard) {
+                    triplets.emplace_back((int)gi, (int)gi, Ci);
+                }
+
+                // Coupling: -Ci * phi_basis(i, k) for each mode k
+                for (int k = 0; k < n_modes; k++) {
+                    double val = -Ci * sb.phi_basis(i, k);
                     if (std::abs(val) > mhs::core::zero_guard) {
-                        triplets.emplace_back((int)gi, (int)gj, val);
+                        int mk = modal_start + k;
+                        triplets.emplace_back((int)gi, mk, val);
+                        triplets.emplace_back(mk, (int)gi, val);
                     }
                 }
-                b((int)gi) += sb.rhs_eff(i);
+            }
+
+            // 3. Modal block: K_modal_eff [n_modes x n_modes]
+            for (int k = 0; k < n_modes; k++) {
+                for (int kp = 0; kp < n_modes; kp++) {
+                    double val = sb.K_modal_eff(k, kp);
+                    if (std::abs(val) > mhs::core::zero_guard) {
+                        triplets.emplace_back(modal_start + k, modal_start + kp, val);
+                    }
+                }
+            }
+
+            // 4. RHS for modal DOFs: +f_modal  (from Φᵀ·f_port)
+            for (int k = 0; k < n_modes; k++) {
+                b(modal_start + k) = sb.f_modal(k);
             }
         }
 
-        Eigen::SparseMatrix<double> K(N, N);
+        Eigen::SparseMatrix<double> K(N_total, N_total);
         K.setFromTriplets(triplets.begin(), triplets.end());
 
         return {std::move(K), std::move(b), std::move(M_diag)};

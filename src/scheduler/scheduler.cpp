@@ -46,8 +46,11 @@ namespace mhs::sim {
             MHS_FATAL("Scheduler: model or solver not set");
         }
 
-        const std::size_t N = static_cast<std::size_t>(model_->cells.material_id.size());
-        step_.T.assign(N, model_->initial_temperature);
+        const std::size_t N = model_->total_dofs();
+        const std::size_t N_phys = static_cast<std::size_t>(model_->cells.material_id.size());
+        step_.T.assign(N, 0.0);
+        // Only physical DOFs get initial temperature; modal DOFs start at 0.
+        std::fill(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N_phys), model_->initial_temperature);
         step_.current_time = 0.0;
         step_.time_step = 0;
 

@@ -261,6 +261,8 @@ namespace mhs::sim {
         const std::vector<mhs::core::SmartMacroModelData>& trained_models, mhs::core::Model& model)
     {
         model.smart_blocks.clear();
+        int cumulative_modes = 0;
+        const int N_phys = static_cast<int>(model.cells.material_id.size());
 
         // Iterate resolved layers to find SmartMacro blocks, matched 1:1 with trained_models
         size_t sm_idx = 0;
@@ -274,18 +276,23 @@ namespace mhs::sim {
                 const auto& trained = trained_models[sm_idx];
                 sm_idx++;
                 const int n_ports = (int)trained.port_ix.size();
-                if (n_ports == 0)
+                const int n_modes = trained.n_modes;
+                if (n_ports == 0 || n_modes == 0)
                     continue;
 
                 // Wrap POD vectors with Eigen::Map for zero-copy linear algebra
-                auto K_port_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
-                    trained.K_port.data(), n_ports, n_ports);
-                auto f_port_map = Eigen::Map<const Eigen::VectorXd>(trained.f_port.data(), n_ports);
+                auto phi_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                    trained.phi_basis.data(), n_ports, n_modes);
+                auto K_modal_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                    trained.K_modal.data(), n_modes, n_modes);
+                auto f_modal_map = Eigen::Map<const Eigen::VectorXd>(trained.f_modal.data(), n_modes);
 
                 mhs::core::SmartBlockModel sbm;
                 sbm.name = trained.name;
                 sbm.port_cells.assign(n_ports, mhs::core::invalidIndex);
-                Eigen::VectorXd C_diag = Eigen::VectorXd::Zero(n_ports);
+                sbm.C_diag = Eigen::VectorXd::Zero(n_ports);
+                sbm.n_modes = n_modes;
+                sbm.modal_start_idx = N_phys + cumulative_modes;
 
                 // Iterate trained port indices directly (no full-grid scan needed)
                 for (int p = 0; p < n_ports; p++) {
@@ -322,23 +329,22 @@ namespace mhs::sim {
                             = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
                         double C_i = k_active * A_f / half_dist_active;
 
-                        C_diag(p) += C_i;
+                        sbm.C_diag(p) += C_i;
                         sbm.port_cells[p] = act_c_idx;
                         break; // first active neighbor found
                     }
                 }
 
-                // Pre-compute K_eff and rhs_eff (dense direct, no sparse conversion)
-                //   K_eff  = C - C * (K_port + C)^(-1) * C
-                //   rhs_eff = C * (K_port + C)^(-1) * f_port
-                Eigen::MatrixXd C_mat = C_diag.asDiagonal();
-                Eigen::MatrixXd Kpc = K_port_map + C_mat;
-                Eigen::MatrixXd Kpc_inv
-                    = Kpc.selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXd::Identity(n_ports, n_ports));
+                // Copy POD data and pre-compute K_modal_eff = K_modal + Φᵀ·C·Φ
+                // (the assembly-phase scatter will build the extended system
+                //  coupling terms — no Schur complement solve needed).
+                sbm.phi_basis = phi_map;
+                sbm.f_modal = f_modal_map;
+                Eigen::MatrixXd K_modal_dense = K_modal_map;
+                sbm.K_modal_eff = K_modal_dense
+                    + sbm.phi_basis.transpose() * sbm.C_diag.asDiagonal() * sbm.phi_basis;
 
-                sbm.K_eff = C_mat - C_mat * (Kpc_inv * C_mat);
-                sbm.rhs_eff = C_mat * (Kpc_inv * f_port_map);
-
+                cumulative_modes += n_modes;
                 model.smart_blocks.push_back(std::move(sbm));
             }
         }
