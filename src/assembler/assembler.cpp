@@ -240,25 +240,21 @@ namespace mhs::sim {
             M_diag += local.mass;
         });
 
-        Eigen::SparseMatrix<double> K(N, N);
-        K.setFromTriplets(triplets.begin(), triplets.end());
-
-        // ── Scatter SmartBlock K_eff contributions (post-loop) ──
+        // ── Scatter SmartBlock K_eff contributions (before setFromTriplets — single pass) ──
         for (const auto& sb : model_.smart_blocks) {
-            const int n_ports = (int)sb.ports.size();
+            const int n_ports = (int)sb.port_cells.size();
             if (n_ports == 0)
                 continue;
-            // Scatter K_eff stiffness contributions (upper triangle)
             for (int k = 0; k < sb.K_eff.outerSize(); ++k) {
                 for (Eigen::SparseMatrix<double>::InnerIterator it(sb.K_eff, k); it; ++it) {
                     if (it.row() > it.col())
-                        continue; // skip lower triangle
+                        continue;
                     int port_i = (int)it.row();
                     int port_j = (int)it.col();
                     double val = it.value();
 
-                    uint32_t gi = sb.ports[port_i].active_cell_idx;
-                    uint32_t gj = sb.ports[port_j].active_cell_idx;
+                    uint32_t gi = sb.port_cells[port_i];
+                    uint32_t gj = sb.port_cells[port_j];
                     if (gi < (uint32_t)N && gj < (uint32_t)N) {
                         triplets.emplace_back((int)gi, (int)gj, val);
                         if (gi != gj)
@@ -267,19 +263,16 @@ namespace mhs::sim {
                 }
             }
 
-            // Scatter rhs_eff RHS contribution
             for (int p = 0; p < n_ports; ++p) {
-                uint32_t gi = sb.ports[p].active_cell_idx;
+                uint32_t gi = sb.port_cells[p];
                 if (gi < (uint32_t)N) {
                     b((int)gi) += sb.rhs_eff(p);
                 }
             }
         }
 
-        // Rebuild K with SmartBlock contributions included
-        if (!model_.smart_blocks.empty()) {
-            K.setFromTriplets(triplets.begin(), triplets.end());
-        }
+        Eigen::SparseMatrix<double> K(N, N);
+        K.setFromTriplets(triplets.begin(), triplets.end());
 
         return {std::move(K), std::move(b), std::move(M_diag)};
     }

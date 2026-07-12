@@ -270,7 +270,6 @@ namespace mhs::sim {
             const ResolvedBlock* block = nullptr;
             int layer_index = -1;
             std::vector<int> old_indices; // full-grid indices of cells inside the block
-            std::vector<int> port_old_indices; // subset: interface cells only
         };
         std::vector<SmartBlockInfo> info_list;
 
@@ -311,8 +310,7 @@ namespace mhs::sim {
             return;
         }
 
-        // (2) For each SmartMacro, load the trained model and identify ports.
-        // Ports are smart-block cells with at least one face adjacent to an active cell.
+        // (2) For each SmartMacro, load the trained model and build K_eff / rhs_eff.
         for (auto& si : info_list) {
             const std::string model_path = (std::filesystem::path(case_dir) / si.block->model_file).string();
             auto trained = mhs::core::read_smart_macro_model(model_path);
@@ -335,25 +333,14 @@ namespace mhs::sim {
                 port_map[{trained.port_ix[p], trained.port_iy[p], trained.port_iz[p]}] = p;
             }
 
-            // (3) Identify all interface ports in the current global grid:
-            //     For each smart block cell, check if any neighbor is active.
-            //     Also compute C_i = k * A / half_dist for the active neighbor side.
-            std::vector<Eigen::Triplet<double>> eff_triplets;
+            // (3) Identify interface ports and compute port-to-cell mapping + C_i.
             mhs::core::SmartBlockModel sbm;
             sbm.name = trained.name;
-            sbm.K_port = std::move(trained.K_port);
-            sbm.ports.resize(n_ports);
+            sbm.port_cells.assign(n_ports, mhs::core::invalidIndex);
 
             // port -> C_i for each port
             Eigen::VectorXd C_diag = Eigen::VectorXd::Zero(n_ports);
 
-            // Initialize port records with invalid indices
-            for (int p = 0; p < n_ports; ++p) {
-                sbm.ports[p].port_idx = static_cast<uint16_t>(p);
-                sbm.ports[p].active_cell_idx = mhs::core::invalidIndex;
-            }
-
-            // For each smart-block cell, check faces
             for (int old_idx : si.old_indices) {
                 int ix, iy, iz;
                 mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
@@ -361,7 +348,7 @@ namespace mhs::sim {
                 GridKey key {ix, iy, iz};
                 auto pit = port_map.find(key);
                 if (pit == port_map.end())
-                    continue; // not an interface port in the training model
+                    continue;
 
                 int p_idx = pit->second;
 
@@ -371,18 +358,17 @@ namespace mhs::sim {
                     int n_old
                         = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
                     if (n_old < 0)
-                        continue; // no active neighbor → domain boundary, skip
+                        continue;
 
                     uint32_t act_c_idx = cells.index_map[n_old];
                     if (act_c_idx == mhs::core::invalidIndex)
-                        continue; // neighbor is also virtual (another smart block)
+                        continue;
 
                     // Active neighbor found — compute C_i
                     int nix = mhs::utils::neighbor_ix(dir, ix);
                     int niy = mhs::utils::neighbor_iy(dir, iy);
                     int niz = mhs::utils::neighbor_iz(dir, iz);
 
-                    // Use the active neighbor's material for conductivity
                     size_t nm_id = model.cells.material_id[act_c_idx];
                     const auto& nmp = model.material_table[nm_id];
 
@@ -397,31 +383,24 @@ namespace mhs::sim {
                     double C_i = k_active * A_f / half_dist_active;
 
                     C_diag(p_idx) += C_i;
-
-                    sbm.ports[p_idx].active_cell_idx = act_c_idx;
-                    sbm.ports[p_idx].dir = dir;
-                    sbm.ports[p_idx].C = C_diag(p_idx);
-
-                    // Only count the first active neighbor found (conservative)
+                    sbm.port_cells[p_idx] = act_c_idx;
                     break;
                 }
             }
 
-            // (4) Pre-compute K_eff = C - C * (K_port + C)^(-1) * C
-            // where C is the diagonal matrix of coupling conductances
+            // (4) Pre-compute K_eff and rhs_eff.
+            //     K_eff = C - C * (K_port + C)^(-1) * C
+            //     rhs_eff = C * (K_port + C)^(-1) * f_port
             Eigen::MatrixXd C_mat = C_diag.asDiagonal();
-            Eigen::MatrixXd Kpc = sbm.K_port + C_mat; // (K_port + C)
+            Eigen::MatrixXd Kpc = trained.K_port + C_mat;
             Eigen::MatrixXd Kpc_inv
                 = Kpc.selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXd::Identity(n_ports, n_ports));
 
-            // K_eff = C * (I - Kpc_inv * C)  — more numerically stable factorization
             // K_eff = C - C * Kpc_inv * C
-            // Compute: M = C * Kpc_inv * C, then K_eff = C - M
             Eigen::MatrixXd M = C_mat * (Kpc_inv * C_mat);
             Eigen::MatrixXd K_eff_dense = C_mat - M;
 
-            // Convert to sparse for the assembler
-            // (Only store non-zeros within tolerance)
+            // Convert to sparse (only non-zeros above zero_guard)
             std::vector<Eigen::Triplet<double>> eff_t;
             eff_t.reserve(n_ports * n_ports);
             for (int i = 0; i < n_ports; i++) {
@@ -435,15 +414,8 @@ namespace mhs::sim {
             sbm.K_eff.resize(n_ports, n_ports);
             sbm.K_eff.setFromTriplets(eff_t.begin(), eff_t.end());
 
-            // Store the reduced RHS from BCs
-            sbm.f_port = std::move(trained.f_port);
-
-            // Pre-compute rhs_eff = C * Kpc_inv * f_port
-            // This is the RHS contribution on active-cell DOFs from BCs on the smart block.
-            // The interface heat flux is: Q = C * (T_f - T_c)
-            // After eliminating T_f: Q = C*(K_port+C)^{-1}*f_port - K_eff*T_c
-            // In the assembly: K += K_eff,  b += C*(K_port+C)^{-1}*f_port
-            sbm.rhs_eff = C_mat * (Kpc_inv * sbm.f_port);
+            // rhs_eff = C * Kpc_inv * f_port
+            sbm.rhs_eff = C_mat * (Kpc_inv * trained.f_port);
 
             model.smart_blocks.push_back(std::move(sbm));
         }

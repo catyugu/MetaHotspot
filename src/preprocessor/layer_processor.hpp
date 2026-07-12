@@ -73,8 +73,9 @@ namespace mhs::sim {
 
     // ── SmartMacro block coupling ─────────────────────────────────────────────
     // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
-    // coupling data: identify interface cells, compute C_i, load K_port, compute
-    // K_eff = C - C*(K_port + C)^(-1)*C, and write into model->smart_blocks.
+    // coupling data: identify interface cells, load K_port + f_port, compute
+    // K_eff = C - C*(K_port + C)^(-1)*C  and rhs_eff = C*(K_port + C)^(-1)*f_port,
+    // then write K_eff + rhs_eff + port_cells into model->smart_blocks.
     //
     // `resolved_layers` is the pre-resolved geometry (needed to locate SmartMacro
     // blocks and intersect with the global grid). `mesh` and `cells` must have
