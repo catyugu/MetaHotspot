@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-train_macromodel.py — Train a POD-based SmartMacro model
+train_macromodel.py — Train a POD-based SmartMacro model for any block in any case XML
 
-Given a case XML with a SmartMacro block:
+Given a case XML and a (layer, block) position:
   1. Parse the global mesh and block geometry
-  2. Identify interior vs interface cells for the smart block
+  2. Identify interior vs interface cells for the block
   3. Build the local FVM stiffness matrix (same stencil as C++ Assembler)
   4. Partition into interior (i) and interface (f) DOFs
   5. Compute K_port = K_ff - K_fi * K_ii^(-1) * K_if  (Schur complement)
   6. Perform POD (eigendecomposition) on K_port → retain n_modes dominant modes
   7. Write trained model XML + binary with phi_basis, K_modal, f_modal
+  8. Write a modified copy of the input XML with BlockType="SmartMacro"
+     and ModelFile pointing to the trained model file
 
 Usage:
   python scripts/train_macromodel.py cases/macromodel_tests/case1.xml \\
-      --output cases/macromodel_tests/trained_copper.xml --n-modes 10
+      --output-dir cases/macromodel_tests/ --n-modes 10
 """
 
 import argparse
-import math
 import os
 import sys
 import xml.dom.minidom as minidom
@@ -70,30 +71,46 @@ def parse_double(s):
         return 0.0
 
 
-def find_smartmacro_block(root):
-    """Find the first SmartMacro block."""
+def find_block_by_position(root, layer_index, block_index):
+    """Find a block at the given layer index and block index within that layer.
+
+    Returns (layer_elem, block_elem, rect_elem, material_name, layer_name, block_name).
+    """
     layers = xfind(root, "Layers")
     if layers is None:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
-    for layer_elem in xfindall(layers, "Layer"):
-        blocks_elem = xfind(layer_elem, "Blocks")
-        if blocks_elem is None:
-            continue
-        for block_elem in xfindall(blocks_elem, "Block"):
-            btype_elem = xfind(block_elem, "BlockType")
-            if btype_elem is not None:
-                bt = get_text(btype_elem).lower()
-                if bt == "smartmacro":
-                    material_name = get_text(xfind(block_elem, "MaterialName"))
-                    model_file = get_text(xfind(block_elem, "ModelFile"))
-                    rects_elem = xfind(block_elem, "AllRects")
-                    rect_elem = (
-                        xfind(rects_elem, "Rect") if rects_elem is not None else None
-                    )
-                    return layer_elem, block_elem, rect_elem, material_name, model_file
+    layer_elems = xfindall(layers, "Layer")
+    if layer_index < 0 or layer_index >= len(layer_elems):
+        print(
+            f"ERROR: Layer index {layer_index} out of range "
+            f"(0-{len(layer_elems) - 1})"
+        )
+        return None, None, None, None, None, None
 
-    return None, None, None, None, None
+    layer_elem = layer_elems[layer_index]
+    layer_name = get_text(xfind(layer_elem, "Name"))
+
+    blocks_elem = xfind(layer_elem, "Blocks")
+    if blocks_elem is None:
+        print(f"ERROR: No Blocks element in layer {layer_index}")
+        return None, None, None, None, None, None
+
+    block_elems = xfindall(blocks_elem, "Block")
+    if block_index < 0 or block_index >= len(block_elems):
+        print(
+            f"ERROR: Block index {block_index} out of range "
+            f"(0-{len(block_elems) - 1})"
+        )
+        return None, None, None, None, None, None
+
+    block_elem = block_elems[block_index]
+    material_name = get_text(xfind(block_elem, "MaterialName"))
+    block_name = get_text(xfind(block_elem, "Name"))
+    rects_elem = xfind(block_elem, "AllRects")
+    rect_elem = xfind(rects_elem, "Rect") if rects_elem is not None else None
+
+    return layer_elem, block_elem, rect_elem, material_name, layer_name, block_name
 
 
 def compute_layer_stacking(root, si_scale):
@@ -284,13 +301,29 @@ def get_material_props(root, mat_name):
 
 def main():
     register_namespaces_ns()
-    parser = argparse.ArgumentParser(description="Train a POD-based SmartMacro model")
-    parser.add_argument("input_xml", help="Path to the case XML file")
+    parser = argparse.ArgumentParser(
+        description="Train a POD-based SmartMacro model on any block in any case XML"
+    )
     parser.add_argument(
-        "--output",
-        "-o",
-        default="trained_model.xml",
-        help="Output path for trained SmartMacro model XML",
+        "input_xml",
+        help="Path to the case XML file",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Output directory for trained model XML + binary + modified case XML",
+    )
+    parser.add_argument(
+        "--layer",
+        type=int,
+        default=0,
+        help="Layer index (0-based) containing the block to convert (default: 0)",
+    )
+    parser.add_argument(
+        "--block",
+        type=int,
+        default=0,
+        help="Block index (0-based) within the layer to convert (default: 0)",
     )
     parser.add_argument(
         "--n-modes",
@@ -301,8 +334,8 @@ def main():
     args = parser.parse_args()
 
     input_path = args.input_xml
-    output_path = args.output
     n_modes = args.n_modes
+    output_dir = args.output_dir
 
     # 1. Parse
     print(f"Parsing {input_path}...")
@@ -321,14 +354,24 @@ def main():
     si_scale = si_scale_map.get(lu_text, 1e-3)
     print(f"Length unit: '{lu_text}', SI scale: {si_scale}")
 
-    # 2. Find SmartMacro block
-    layer_elem, block_elem, rect_elem, mat_name, model_file = find_smartmacro_block(
-        root
+    # 2. Find block by layer/block index
+    layer_elem, block_elem, rect_elem, mat_name, layer_name, block_name = (
+        find_block_by_position(root, args.layer, args.block)
     )
     if rect_elem is None:
-        print("ERROR: No SmartMacro block found")
+        print(f"ERROR: No block found at layer={args.layer}, block={args.block}")
         sys.exit(1)
-    print(f"SmartMacro block material: {mat_name}, model file: {model_file}")
+    print(
+        f"Converting layer {args.layer} ('{layer_name}') block {args.block} "
+        f"(material: {mat_name}) to SmartMacro"
+    )
+
+    # Resolve output paths
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = f"trained_layer{args.layer}_block{args.block}"
+    output_path = os.path.join(output_dir, base_name + ".xml")
+    input_basename = os.path.splitext(os.path.basename(input_path))[0]
+    modified_case_path = os.path.join(output_dir, f"modified_{input_basename}.xml")
 
     # 3. Build mesh (XML coords are in case's length unit, e.g. Mm=mm)
     nx, ny, nz, cx, cy, cz, dx, dy, dz = build_mesh_from_xml(root)
@@ -346,13 +389,7 @@ def main():
     )
 
     # 4. Evaluate block geometry with correct Z stacking
-    # Find the smart block's layer index (0-based in XML layer order)
-    layers_root = xfind(root, "Layers")
-    layer_index = -1
-    for li, le in enumerate(xfindall(layers_root, "Layer")):
-        if le == layer_elem:
-            layer_index = li
-            break
+    layer_index = args.layer
     x_min, x_max, y_min, y_max, z_min, z_max = eval_block_geometry(
         root, layer_elem, block_elem, rect_elem, si_scale, layer_index
     )
@@ -578,7 +615,7 @@ def main():
     ET.register_namespace("", "SmartMacroModel")
     root_elem = ET.Element("SmartMacroModel")
 
-    ET.SubElement(root_elem, "Name").text = f"{mat_name}_block"
+    ET.SubElement(root_elem, "Name").text = f"trained_layer{args.layer}_block{args.block}"
     ET.SubElement(root_elem, "NPorts").text = str(n_ports)
     ET.SubElement(root_elem, "NModes").text = str(n_modes)
     ET.SubElement(root_elem, "DataFile").text = os.path.basename(data_path)
@@ -603,12 +640,94 @@ def main():
         f"Done!  Ports: {n_ports}, Modes: {n_modes}, "
         f"data file: {data_size_kb:.1f} KB"
     )
+
+    # 12. Write modified case XML via text-level replacement
+    #
+    # ElementTree.write() cannot reproduce the original default-namespace format
+    # (<Structure xmlns="...">) — it always emits prefixed roots (<ns0:Structure>)
+    # which the C++ XML parser rejects.  Instead, we perform targeted
+    # replacements on the raw XML text, preserving the original serialization.
+    trained_basename = os.path.basename(output_path)
+
+    def replace_in_text(src_path, dst_path, replacements):
+        """Read *src_path*, apply *replacements* dict (old→new), write *dst_path*."""
+        with open(src_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        with open(dst_path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    # The block may or may not already have BlockType / ModelFile elements.
+    # Handle both cases by replacing existing values and inserting if missing.
+    block_close_tag = "</Block>"
+
+    with open(input_path, "r", encoding="utf-8") as f_in:
+        lines = f_in.readlines()
+
+    block_depth = 0
+    target_block_depth = -1
+    block_type_inserted = False
+    model_file_inserted = False
+    out_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Count depth: <Block> opening
+        if "<Block" in stripped and ("</Block>" not in stripped or "><" in stripped):
+            block_depth += 1
+            if block_depth == 1:
+                target_block_depth = 1
+
+        # Replace existing values in already-open block
+        if target_block_depth > 0 and block_depth >= target_block_depth:
+            if stripped.startswith("<BlockType>") and stripped.endswith("</BlockType>"):
+                line = line.replace(
+                    stripped, f"<BlockType>SmartMacro</BlockType>"
+                )
+                block_type_inserted = True
+            if stripped.startswith("<ModelFile>") and stripped.endswith("</ModelFile>"):
+                line = line.replace(
+                    stripped, f"<ModelFile>{trained_basename}</ModelFile>"
+                )
+                model_file_inserted = True
+
+        # Closing </Block> — insert missing elements before it
+        if "</Block>" in stripped and block_depth > 0:
+            if block_depth == target_block_depth:
+                indent = line[: len(line) - len(line.lstrip())]
+                if not block_type_inserted:
+                    out_lines.append(
+                        f"{indent}  <BlockType>SmartMacro</BlockType>\n"
+                    )
+                if not model_file_inserted:
+                    out_lines.append(
+                        f"{indent}  <ModelFile>{trained_basename}</ModelFile>\n"
+                    )
+                target_block_depth = -1  # only once
+            block_depth -= 1
+
+        out_lines.append(line)
+
+    modified_text = "".join(out_lines)
+    with open(modified_case_path, "w", encoding="utf-8") as f:
+        f.write(modified_text)
+
+    print(f"Modified case XML: {modified_case_path}")
+
     return 0
 
 
 def register_namespaces_ns():
-    """Register namespaces so etree preserves them."""
-    ET.register_namespace("", NS)
+    """Register namespaces so etree preserves them.
+
+    NOTE: we deliberately do NOT register the default NS as empty-prefix here
+    because doing so would cause ElementTree.write() to serialize the main case
+    XML with a prefixed root (<ns0:Structure> instead of <Structure>) which the
+    C++ parser rejects ("No Structure element found").  The a:/b: prefixes are
+    only needed for find operations and do not affect serialization.
+    """
     ET.register_namespace("a", NS_A)
     ET.register_namespace("b", NS_MESH)
 
