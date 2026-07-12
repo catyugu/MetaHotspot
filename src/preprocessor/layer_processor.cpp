@@ -3,11 +3,9 @@
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "layer_processor.hpp"
-#include "smart_block/smart_block_reader.hpp"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cstdint>
-#include <filesystem>
 #include <unordered_map>
 
 namespace mhs::sim {
@@ -63,7 +61,6 @@ namespace mhs::sim {
                 rb.material_name = block.material_name;
                 rb.ti_reyuan_expr = block.ti_reyuan_expr;
                 rb.is_smart_macro = (block.block_type == mhs::core::BlockType::SmartMacro);
-                rb.model_file = block.model_file;
 
                 if (l == 0 && !block.thickness_expr.empty()) {
                     double b_thick = mhs::core::eval_geometry(block.thickness_expr, symbols) * si_scale;
@@ -260,14 +257,13 @@ namespace mhs::sim {
 
     // ── SmartMacro block coupling ───────────────────────────────────────────
     void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells, const std::string& case_dir,
-        mhs::core::Model& model)
+        const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models, mhs::core::Model& model)
     {
         // (1) Find SmartMacro blocks in the resolved layers.
         // For each, collect all grid cells inside the block and classify them
         // as interface (adjacent to an active cell) vs interior.
         struct SmartBlockInfo {
-            const ResolvedBlock* block = nullptr;
             int layer_index = -1;
             std::vector<int> old_indices; // full-grid indices of cells inside the block
         };
@@ -280,7 +276,6 @@ namespace mhs::sim {
                     continue;
 
                 SmartBlockInfo info;
-                info.block = &rb;
                 info.layer_index = l;
 
                 // Scan the full grid for cells inside this block
@@ -310,10 +305,11 @@ namespace mhs::sim {
             return;
         }
 
-        // (2) For each SmartMacro, load the trained model and build K_eff / rhs_eff.
-        for (auto& si : info_list) {
-            const std::string model_path = (std::filesystem::path(case_dir) / si.block->model_file).string();
-            auto trained = mhs::core::read_smart_macro_model(model_path);
+        // (2) For each SmartMacro, use the already-loaded trained model and
+        // build K_eff / rhs_eff. trained_models[i] corresponds to info_list[i].
+        for (size_t sm = 0; sm < info_list.size(); sm++) {
+            auto& si = info_list[sm];
+            const auto& trained = trained_models[sm];
             const int n_ports = (int)trained.port_ix.size();
 
             // Build a map: (ix, iy, iz) -> port_index from the trained model.

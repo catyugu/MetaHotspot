@@ -28,7 +28,6 @@ namespace mhs::sim {
 
         // SmartMacro support
         bool is_smart_macro = false;
-        std::string model_file;
     };
 
     // Pre-resolved geometry for a single layer
@@ -73,15 +72,15 @@ namespace mhs::sim {
 
     // ── SmartMacro block coupling ─────────────────────────────────────────────
     // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
-    // coupling data: identify interface cells, load K_port + f_port, compute
+    // coupling data: identify interface cells, compute C_i, compute
     // K_eff = C - C*(K_port + C)^(-1)*C  and rhs_eff = C*(K_port + C)^(-1)*f_port,
     // then write K_eff + rhs_eff + port_cells into model->smart_blocks.
     //
-    // `resolved_layers` is the pre-resolved geometry (needed to locate SmartMacro
-    // blocks and intersect with the global grid). `mesh` and `cells` must have
-    // valid index_map (smart block cells are virtual / invalidIndex).
+    // `trained_models` are the already-loaded SmartMacroModelData for each
+    // SmartMacro block in the resolved layers (same order as encountered in
+    // the IOStructure).
     void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::string& case_dir, mhs::core::Model& model);
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models, mhs::core::Model& model);
 
 } // namespace mhs::sim

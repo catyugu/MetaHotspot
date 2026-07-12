@@ -7,6 +7,7 @@
 
 #include "common/logger.hpp"
 #include "io.hpp"
+#include "smart_block/smart_block_reader.hpp"
 
 namespace mhs::io {
 
@@ -959,6 +960,27 @@ namespace mhs::io {
             std::filesystem::create_directories(dirPath.parent_path());
         }
         doc.SaveFile(output_path.c_str());
+    }
+
+    // =========================================================================
+    // SmartMacro model loading
+    // =========================================================================
+    std::vector<mhs::core::SmartMacroModelData> load_smart_macro_models(
+        const mhs::core::IOStructure& io, const std::string& case_dir)
+    {
+        if (case_dir.empty())
+            return {};
+
+        std::vector<mhs::core::SmartMacroModelData> result;
+        for (const auto& layer : io.layers) {
+            for (const auto& block : layer.blocks) {
+                if (block.block_type != mhs::core::BlockType::SmartMacro)
+                    continue;
+                const std::string model_path = (std::filesystem::path(case_dir) / block.model_file).string();
+                result.push_back(mhs::core::read_smart_macro_model(model_path));
+            }
+        }
+        return result;
     }
 
 } // namespace mhs::io

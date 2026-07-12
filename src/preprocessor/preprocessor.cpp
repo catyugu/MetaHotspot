@@ -10,7 +10,8 @@
 namespace mhs::sim {
 
     std::unique_ptr<mhs::core::Model> Preprocessor::load(const mhs::core::IOStructure& ioStructure,
-        const std::optional<mhs::core::FluidOverlay>& fluidOverlay, const std::string& case_dir)
+        const std::optional<mhs::core::FluidOverlay>& fluidOverlay,
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models)
     {
         auto model = std::make_unique<mhs::core::Model>();
 
@@ -166,9 +167,9 @@ namespace mhs::sim {
         model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
         resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc_enum, other_bc_idx, model->face_bcs);
 
-        // If case_dir is non-empty, resolve SmartMacro block couplings.
-        if (!case_dir.empty()) {
-            build_smart_block_coupling(resolved_layers, mesh, model->cells, case_dir, *model);
+        // If trained_models are provided, resolve SmartMacro block couplings.
+        if (!trained_models.empty()) {
+            build_smart_block_coupling(resolved_layers, mesh, model->cells, trained_models, *model);
         }
 
         // Apply fluid overlay (if any) using the same SymbolTable so viscosity

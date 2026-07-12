@@ -3,4 +3,4 @@ mhs_add_library(preprocessor_lib
     PRIVATE_LINKS expr_lib common_lib io_lib linear_solver_lib
 )
 
-target_link_libraries(preprocessor_lib PRIVATE smart_block_lib Eigen3::Eigen)
+target_link_libraries(preprocessor_lib PRIVATE Eigen3::Eigen)
