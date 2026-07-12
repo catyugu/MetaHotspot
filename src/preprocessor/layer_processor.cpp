@@ -262,7 +262,7 @@ namespace mhs::sim {
     {
         model.smart_blocks.clear();
         int cumulative_modes = 0;
-        const int N_phys = static_cast<int>(model.cells.material_id.size());
+        const int N_phys = model.physical_dofs();
 
         // Iterate resolved layers to find SmartMacro blocks, matched 1:1 with trained_models
         size_t sm_idx = 0;
@@ -283,8 +283,9 @@ namespace mhs::sim {
                 // Wrap POD vectors with Eigen::Map for zero-copy linear algebra
                 auto phi_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
                     trained.phi_basis.data(), n_ports, n_modes);
-                auto K_modal_map = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
-                    trained.K_modal.data(), n_modes, n_modes);
+                auto K_modal_map
+                    = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                        trained.K_modal.data(), n_modes, n_modes);
                 auto f_modal_map = Eigen::Map<const Eigen::VectorXd>(trained.f_modal.data(), n_modes);
 
                 mhs::core::SmartBlockModel sbm;
@@ -338,11 +339,9 @@ namespace mhs::sim {
                 // Copy POD data and pre-compute K_modal_eff = K_modal + Φᵀ·C·Φ
                 // (the assembly-phase scatter will build the extended system
                 //  coupling terms — no Schur complement solve needed).
-                sbm.phi_basis = phi_map;
                 sbm.f_modal = f_modal_map;
-                Eigen::MatrixXd K_modal_dense = K_modal_map;
-                sbm.K_modal_eff = K_modal_dense
-                    + sbm.phi_basis.transpose() * sbm.C_diag.asDiagonal() * sbm.phi_basis;
+                sbm.K_modal_eff = K_modal_map + phi_map.transpose() * sbm.C_diag.asDiagonal() * phi_map;
+                sbm.phi_basis = phi_map;
 
                 cumulative_modes += n_modes;
                 model.smart_blocks.push_back(std::move(sbm));

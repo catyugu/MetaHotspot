@@ -24,6 +24,9 @@ namespace mhs::sim {
 
         void run();
 
+        /// Return the solution vector (physical cell-center temperatures only).
+        /// Modal DOFs from the extended system are stripped — callers receive
+        /// exactly `model_->physical_dofs()` entries.
         const std::vector<double>& solution() const noexcept { return solution_; }
         double currentTime() const noexcept { return step_.current_time; }
         const std::vector<mhs::core::ProbeTrace>& probeTraces() const noexcept { return probe_recorder_.traces(); }

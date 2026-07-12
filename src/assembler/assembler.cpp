@@ -27,8 +27,8 @@ namespace mhs::sim {
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
 
-        int N_phys = static_cast<int>(cells.material_id.size());
-        int N_total = N_phys + model_.total_modal_dofs();
+        int N_phys = model_.physical_dofs();
+        int N_total = model_.total_dofs();
         int total = mesh.nx * mesh.ny * mesh.nz;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N_total); });
@@ -259,15 +259,15 @@ namespace mhs::sim {
                 double Ci = sb.C_diag(i);
                 if (std::abs(Ci) > mhs::core::zero_guard) {
                     triplets.emplace_back((int)gi, (int)gi, Ci);
-                }
 
-                // Coupling: -Ci * phi_basis(i, k) for each mode k
-                for (int k = 0; k < n_modes; k++) {
-                    double val = -Ci * sb.phi_basis(i, k);
-                    if (std::abs(val) > mhs::core::zero_guard) {
-                        int mk = modal_start + k;
-                        triplets.emplace_back((int)gi, mk, val);
-                        triplets.emplace_back(mk, (int)gi, val);
+                    // Coupling: -Ci * phi_basis(i, k) for each mode k
+                    for (int k = 0; k < n_modes; k++) {
+                        double val = -Ci * sb.phi_basis(i, k);
+                        if (std::abs(val) > mhs::core::zero_guard) {
+                            int mk = modal_start + k;
+                            triplets.emplace_back((int)gi, mk, val);
+                            triplets.emplace_back(mk, (int)gi, val);
+                        }
                     }
                 }
             }
@@ -284,7 +284,7 @@ namespace mhs::sim {
 
             // 4. RHS for modal DOFs: +f_modal  (from Φᵀ·f_port)
             for (int k = 0; k < n_modes; k++) {
-                b(modal_start + k) = sb.f_modal(k);
+                b(modal_start + k) += sb.f_modal(k);
             }
         }
 

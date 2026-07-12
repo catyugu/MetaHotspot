@@ -101,19 +101,11 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Running simulation...");
         scheduler.run();
 
-        const auto& raw_solution = scheduler.solution();
-
         MHS_LOG_INFO("Simulation complete.");
 
-        // Trim modal DOFs — they are not physical temperatures and
-        // must not enter post-processing.
-        const std::size_t N_phys = model->cells.material_id.size();
-        std::vector<double> solution;
-        if (raw_solution.size() > N_phys) {
-            solution.assign(raw_solution.begin(), raw_solution.begin() + static_cast<std::ptrdiff_t>(N_phys));
-        } else {
-            solution = raw_solution;
-        }
+        // scheduler.solution() returns physical cell-center temperatures only
+        // (modal DOFs are stripped internally).
+        const auto& solution = scheduler.solution();
 
         // Postprocess
         auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution, scheduler.currentTime());

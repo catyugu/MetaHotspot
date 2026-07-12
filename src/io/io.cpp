@@ -1074,26 +1074,18 @@ namespace mhs::io {
 
         // Read K_modal (row-major flat vector, M x M)
         result.K_modal.resize(static_cast<size_t>(n_modes) * static_cast<size_t>(n_modes));
-        for (int r = 0; r < n_modes; ++r) {
-            std::vector<double> buf(n_modes);
-            bin.read(reinterpret_cast<char*>(buf.data()), n_modes * sizeof(double));
-            if (!bin) {
-                throw std::runtime_error("Failed to read K_modal row " + std::to_string(r));
-            }
-            double* row_start = result.K_modal.data() + static_cast<size_t>(r) * static_cast<size_t>(n_modes);
-            std::copy(buf.begin(), buf.end(), row_start);
+        bin.read(reinterpret_cast<char*>(result.K_modal.data()),
+            static_cast<std::streamsize>(result.K_modal.size() * sizeof(double)));
+        if (!bin) {
+            throw std::runtime_error("Failed to read K_modal from binary data");
         }
 
         // Read phi_basis (row-major: N_ports x n_modes)
         result.phi_basis.resize(static_cast<size_t>(n_ports) * static_cast<size_t>(n_modes));
-        for (int r = 0; r < n_ports; ++r) {
-            std::vector<double> buf(n_modes);
-            bin.read(reinterpret_cast<char*>(buf.data()), n_modes * sizeof(double));
-            if (!bin) {
-                throw std::runtime_error("Failed to read phi_basis row " + std::to_string(r));
-            }
-            double* row_start = result.phi_basis.data() + static_cast<size_t>(r) * static_cast<size_t>(n_modes);
-            std::copy(buf.begin(), buf.end(), row_start);
+        bin.read(reinterpret_cast<char*>(result.phi_basis.data()),
+            static_cast<std::streamsize>(result.phi_basis.size() * sizeof(double)));
+        if (!bin) {
+            throw std::runtime_error("Failed to read phi_basis from binary data");
         }
 
         return result;

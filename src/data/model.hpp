@@ -121,13 +121,14 @@ namespace mhs::core {
         std::vector<SmartBlockModel> smart_blocks;
 
         // ── DOF accounting helpers ──────────────────────────────────────
+        int physical_dofs() const { return static_cast<int>(cells.material_id.size()); }
         int total_modal_dofs() const {
             int s = 0;
             for (const auto& sb : smart_blocks) s += sb.n_modes;
             return s;
         }
         int total_dofs() const {
-            return static_cast<int>(cells.material_id.size()) + total_modal_dofs();
+            return physical_dofs() + total_modal_dofs();
         }
     };
 
