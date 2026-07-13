@@ -269,7 +269,7 @@ namespace mhs::sim {
     //       Unified (C_env, T_ref, Q_ext) via Thevenin equivalence:
     //         Dirichlet (FirstType):   C = 1e10, T_ref = T_bc, Q_ext = 0
     //         Neumann   (SecondType):  C = 0, T_ref = 0, Q_ext = q*A
-    //         Robin     (ThirdType):   C = h*A/(1+h*h_block/k_block), T_ref = T_inf, Q_ext = 0
+    //         Robin     (ThirdType):   C = h*A, T_ref = T_inf, Q_ext = 0
     //  3. Accumulate per-face values for the modal extended system.
     //
     // No BCs are baked into the trained modal data. All external effects enter
@@ -379,12 +379,8 @@ namespace mhs::sim {
                     else {
                         // ── Case 2: Domain boundary face → match against BC patches ──
                         const double A_f = mhs::utils::face_area(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
-                        const double half_block
-                            = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
                         mhs::core::FieldContext ctx_c {
                             mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], model.initial_temperature, 0.0};
-                        double k_block = mhs::utils::k_along(dir, trained.kx, trained.ky, trained.kz);
-
                         // Match face BC using the same match_face_bc logic
                         auto [bc_type, bc_idx]
                             = match_face_bc(dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
@@ -418,22 +414,7 @@ namespace mhs::sim {
                             // Robin: convection
                             double h_val = bc_params.cauchy_h[bc_idx].eval(ctx_c);
                             double T_inf = bc_params.cauchy_T_inf[bc_idx].eval(ctx_c);
-                            // Equivalent conductance: h*A_f with block-side correction
-                            // C_env = h * A_f (if h_A is small compared to k*A/h)
-                            // More precisely: Q = h*A*(T_inf - T_face)
-                            // T_face = T_cell via the DtN mapping...
-                            // For the Thevenin form: C_env = h*A_f/(1 + h*half_block/k_block)
-                            double hA = h_val * A_f;
-                            double kA_over_half = k_block * A_f / half_block;
-                            if (hA > mhs::core::zero_guard && kA_over_half > mhs::core::zero_guard) {
-                                C_env = hA * kA_over_half / (hA + kA_over_half);
-                            }
-                            else if (hA > mhs::core::zero_guard) {
-                                C_env = hA;
-                            }
-                            else {
-                                C_env = 0.0;
-                            }
+                            C_env = h_val * A_f;
                             T_ref = T_inf;
                             break;
                         }

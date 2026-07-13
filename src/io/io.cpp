@@ -1051,14 +1051,6 @@ namespace mhs::io {
                 + " entries but NPorts=" + std::to_string(n_ports));
         }
 
-        // Kx, Ky, Kz (optional — block material thermal conductivity for domain-boundary BCs)
-        if (const auto* kx_elem = root->FirstChildElement("Kx"))
-            result.kx = std::stod(kx_elem->GetText() ? kx_elem->GetText() : "0");
-        if (const auto* ky_elem = root->FirstChildElement("Ky"))
-            result.ky = std::stod(ky_elem->GetText() ? ky_elem->GetText() : "0");
-        if (const auto* kz_elem = root->FirstChildElement("Kz"))
-            result.kz = std::stod(kz_elem->GetText() ? kz_elem->GetText() : "0");
-
         // DataFile: resolve relative to XML directory
         std::string data_file;
         if (const auto* df_elem = root->FirstChildElement("DataFile")) {

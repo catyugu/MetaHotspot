@@ -162,20 +162,14 @@ namespace mhs::core {
     /// phi_basis is row-major [N_faces x n_modes].
     /// port_ix/iy/iz identify the owner (block-interior) cell of each port face.
     /// port_dir is the face direction (0-5, same convention as mesh_utils).
-    /// kx/ky/kz is the block material thermal conductivity (used to compute
-    /// environment conductance for domain-boundary faces).
-    /// NOTE: f_modal is NOT stored — it's always zero for BC-agnostic training.
     struct SmartMacroModelData {
         std::string name;
-        std::vector<double> K_modal;           // row-major [n_modes x n_modes]
-        std::vector<double> phi_basis;         // row-major [N_faces x n_modes]
+        std::vector<double> K_modal; // row-major [n_modes x n_modes]
+        std::vector<double> phi_basis; // row-major [N_faces x n_modes]
         std::vector<int> port_ix;
         std::vector<int> port_iy;
         std::vector<int> port_iz;
-        std::vector<int> port_dir;             // face direction 0-5 for each port
-        double kx = 0.0;
-        double ky = 0.0;
-        double kz = 0.0;
+        std::vector<int> port_dir; // face direction 0-5 for each port
         int n_modes = 0;
     };
 
