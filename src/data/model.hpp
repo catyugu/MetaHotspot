@@ -1,4 +1,6 @@
 #pragma once
+#include <Eigen/Core>
+#include <Eigen/Sparse>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -16,8 +18,8 @@ namespace mhs::core {
     // Every cell has exactly 6 faces, stored as a flat array
     // [N_active * 6] in row-major order (dir 0..5 per cell).
     struct FaceBC {
-        BcType type = BcType::None;  // None = internal face or adiabatic
-        uint16_t param_idx = 0;      // → BCParamTable
+        BcType type = BcType::None; // None = internal face or adiabatic
+        uint16_t param_idx = 0; // → BCParamTable
     };
 
     // ── Structured mesh geometry ─────────────────────────────────────────
@@ -69,6 +71,51 @@ namespace mhs::core {
         double z = 0.0;
     };
 
+    // ── Smart macro-model (POD-based extended system) ────────────────
+
+    /// Per-face invariant data for a SmartMacro port.
+    /// Everything here is purely geometric/topological — independent of temperature and time.
+    struct PortFaceInfo {
+        // Owner cell grid coordinates (inside the SmartMacro block)
+        int ix = 0, iy = 0, iz = 0;
+        mhs::core::FaceDir dir = mhs::core::FaceDir::XM;
+
+        // Precomputed face geometry
+        double A_f = 0.0; // face area [m²]
+
+        // ── Active neighbor coupling ──
+        bool has_neighbor = false;
+        uint32_t neighbor_c = invalidIndex; // compact index of the neighbor cell
+        double half_dist_nbr = 0.0; // neighbor half-length along dir [m]
+
+        // ── Domain boundary BC (used only when !has_neighbor) ──
+        mhs::core::BcType bc_type = mhs::core::BcType::None;
+        uint16_t bc_param_idx = 0;
+    };
+
+    /// A trained POD-reduced macro model ready for assembly.
+    /// Port faces on the block boundary are reduced via POD. Each port face
+    /// `f` has invariant geometry/topology stored in `faces[f]`.
+    ///
+    /// At assembly time, the environment parameters (C_env, T_ref, Q_ext),
+    /// cell-aggregated coupling, and K_modal_eff are computed on-the-fly
+    /// from ctx.T and ctx.current_time — supporting nonlinear neighbour
+    /// materials (k(T)) and time-varying BCs.
+    struct SmartBlockModel {
+        std::string name;
+
+        // Invariant modal data (from training).
+        Eigen::MatrixXd K_modal; // [n_modes x n_modes] — raw modal stiffness
+        Eigen::MatrixXd phi_basis; // [n_faces x n_modes] — POD basis
+
+        // Per-face invariant geometry & topology.
+        std::vector<PortFaceInfo> faces;
+
+        int modal_start_idx = 0;
+        int n_faces = 0;
+        int n_modes = 0;
+    };
+
     // ── Top-level model ──────────────────────────────────────────────────
     struct Model {
         MeshGeometry mesh;
@@ -92,6 +139,20 @@ namespace mhs::core {
 
         // Fluid-solid coupled heat-transfer subsystem
         mhs::core::FluidDomain fluid;
+
+        // Smart macro-model blocks (POD-based extended system)
+        std::vector<SmartBlockModel> smart_blocks;
+
+        // ── DOF accounting helpers ──────────────────────────────────────
+        int physical_dofs() const { return static_cast<int>(cells.material_id.size()); }
+        int total_modal_dofs() const
+        {
+            int s = 0;
+            for (const auto& sb : smart_blocks)
+                s += sb.n_modes;
+            return s;
+        }
+        int total_dofs() const { return physical_dofs() + total_modal_dofs(); }
     };
 
 } // namespace mhs::core

@@ -19,9 +19,9 @@ EXE = os.path.join(REPO_ROOT, "build", "bin", "metahotspot")
 
 # (case_dir, results_subdir, kind)
 CASE_GROUPS = [
-    ("cases/simple_steady_tests", "simple_steady_tests", "steady"),
-    ("cases/nonlinear_steady_tests", "nonlinear_steady_tests", "steady"),
-    ("cases/simple_transient_tests", "simple_transient_tests", "transient"),
+    ("cases/simple_steady_cases", "simple_steady_cases", "steady"),
+    ("cases/nonlinear_steady_cases", "nonlinear_steady_cases", "steady"),
+    ("cases/simple_transient_cases", "simple_transient_cases", "transient"),
 ]
 
 

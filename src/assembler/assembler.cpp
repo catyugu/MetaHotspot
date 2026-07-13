@@ -2,6 +2,8 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
+#include <unordered_map>
+
 #include "assembler.hpp"
 #include "common/mesh_utils.hpp"
 #include "common/physics_utils.hpp"
@@ -9,7 +11,9 @@
 
 namespace mhs::sim {
 
-    namespace { // anonymous: file-private helpers
+    namespace {
+        inline constexpr double DIRICHLET_PENALTY = 1e20;
+
         // Per-thread scratch for the TBB parallel_for over grid cells.
         struct ThreadLocalData {
             std::vector<Eigen::Triplet<double>> triplets;
@@ -27,10 +31,11 @@ namespace mhs::sim {
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
 
-        int N = static_cast<int>(cells.material_id.size());
+        int N_phys = model_.physical_dofs();
+        int N_total = model_.total_dofs();
         int total = mesh.nx * mesh.ny * mesh.nz;
 
-        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
+        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N_total); });
 
         // ═══════════════════════════════════════════════════════════════════
         // Phase 1: 内部传导 + 热源 + 瞬态质量矩阵 + 边界条件
@@ -231,8 +236,8 @@ namespace mhs::sim {
 
         // ── Combine thread-local data ──
         std::vector<Eigen::Triplet<double>> triplets;
-        Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
-        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
+        Eigen::VectorXd b = Eigen::VectorXd::Zero(N_total);
+        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N_total);
 
         thread_data.combine_each([&](const ThreadLocalData& local) {
             triplets.insert(triplets.end(), local.triplets.begin(), local.triplets.end());
@@ -240,7 +245,138 @@ namespace mhs::sim {
             M_diag += local.mass;
         });
 
-        Eigen::SparseMatrix<double> K(N, N);
+        // ── Scatter extended system per SmartBlock (face-level POD) ──
+        for (const auto& sb : model_.smart_blocks) {
+            const int n_faces = sb.n_faces;
+            const int n_modes = sb.n_modes;
+            const int modal_start = sb.modal_start_idx;
+            if (n_faces == 0 || n_modes == 0)
+                continue;
+
+            // ── Phase 1: compute environment parameters per face ──
+            Eigen::VectorXd C_env_vec = Eigen::VectorXd::Zero(n_faces);
+            Eigen::VectorXd T_ref_vec = Eigen::VectorXd::Zero(n_faces);
+            Eigen::VectorXd Q_ext_vec = Eigen::VectorXd::Zero(n_faces);
+
+            // Per-neighbor aggregation scratch.
+            std::unordered_map<uint32_t, std::pair<double, Eigen::VectorXd>> cell_contrib;
+            // cell_contrib[neighbor_c] = (C_total, phiC_total)  — phiC_total sized n_modes
+
+            for (int p = 0; p < n_faces; p++) {
+                const auto& pfi = sb.faces[p];
+
+                if (pfi.has_neighbor) {
+                    // ── Active neighbor: C_env = k_n * A_f / h_n ──
+                    const uint32_t act_c = pfi.neighbor_c;
+                    const auto& nmp = materials[cells.material_id[act_c]];
+                    const mhs::core::FieldContext ctx_n {
+                        mesh.cx[pfi.ix], mesh.cy[pfi.iy], mesh.cz[pfi.iz], ctx.T[act_c], ctx.current_time};
+                    const double k_active
+                        = mhs::utils::k_along(pfi.dir, nmp.kx.eval(ctx_n), nmp.ky.eval(ctx_n), nmp.kz.eval(ctx_n));
+
+                    const double C_env = k_active * pfi.A_f / pfi.half_dist_nbr;
+
+                    C_env_vec(p) = C_env;
+                    T_ref_vec(p) = 0.0; // T_neighbor is unknown → enters the system matrix
+                    Q_ext_vec(p) = 0.0;
+
+                    // Aggregate C_env and C_env*Φ for this neighbor.
+                    auto& [c_total, phi_total] = cell_contrib[act_c];
+                    if (phi_total.size() == 0) {
+                        phi_total = Eigen::VectorXd::Zero(n_modes);
+                    }
+                    c_total += C_env;
+                    phi_total += C_env * sb.phi_basis.row(p).transpose();
+                }
+                else {
+                    // ── Domain boundary face: BC-type dispatch ──
+                    double C_env = 0.0, T_ref = 0.0, Q_ext = 0.0;
+
+                    const auto& bc = model_.bc_params;
+                    // Build context from the owner cell (port faces are inside the block).
+                    const mhs::core::FieldContext ctx_c {
+                        mesh.cx[pfi.ix], mesh.cy[pfi.iy], mesh.cz[pfi.iz], 0.0, ctx.current_time};
+
+                    switch (pfi.bc_type) {
+                    case mhs::core::BcType::None:
+                        // Adiabatic.
+                        break;
+
+                    case mhs::core::BcType::FirstType: {
+                        double T_bc_val = bc.dirichlet_T[pfi.bc_param_idx].eval(ctx_c);
+                        C_env = DIRICHLET_PENALTY; // penalty
+                        T_ref = T_bc_val;
+                        break;
+                    }
+
+                    case mhs::core::BcType::SecondType: {
+                        double q_val = bc.neumann_q[pfi.bc_param_idx].eval(ctx_c);
+                        Q_ext = q_val * pfi.A_f;
+                        break;
+                    }
+
+                    case mhs::core::BcType::ThirdType: {
+                        double h_val = bc.cauchy_h[pfi.bc_param_idx].eval(ctx_c);
+                        double T_inf = bc.cauchy_T_inf[pfi.bc_param_idx].eval(ctx_c);
+                        C_env = h_val * pfi.A_f;
+                        T_ref = T_inf;
+                        break;
+                    }
+
+                    default:
+                        break;
+                    }
+
+                    C_env_vec(p) = C_env;
+                    T_ref_vec(p) = T_ref;
+                    Q_ext_vec(p) = Q_ext;
+                }
+            }
+
+            // ── Phase 2: compute K_modal_eff = K_modal + Φᵀ·diag(C_env)·Φ ──
+            Eigen::MatrixXd K_modal_eff = sb.K_modal + sb.phi_basis.transpose() * C_env_vec.asDiagonal() * sb.phi_basis;
+
+            // ── Scatter to global system ──
+            // 4a. Active-neighbor coupling (iterate cell_contrib directly,
+            //     no need for separate sort + Eigen-vector copy step).
+            for (const auto& [c_idx, contrib] : cell_contrib) {
+                int gi = (int)c_idx;
+                if (gi >= N_phys)
+                    continue;
+                double C_total = contrib.first;
+                if (std::abs(C_total) <= mhs::core::zero_guard)
+                    continue;
+
+                triplets.emplace_back(gi, gi, C_total);
+
+                const auto& phi_total = contrib.second;
+                for (int k = 0; k < n_modes; k++) {
+                    double val = -phi_total(k);
+                    if (std::abs(val) > mhs::core::zero_guard) {
+                        int mk = modal_start + k;
+                        triplets.emplace_back(gi, mk, val);
+                        triplets.emplace_back(mk, gi, val);
+                    }
+                }
+            }
+
+            // 4b. Modal block: K_modal_eff.
+            for (int k = 0; k < n_modes; k++) {
+                for (int kp = 0; kp < n_modes; kp++) {
+                    double val = K_modal_eff(k, kp);
+                    if (std::abs(val) > mhs::core::zero_guard) {
+                        triplets.emplace_back(modal_start + k, modal_start + kp, val);
+                    }
+                }
+            }
+
+            // 4c. Modal RHS: domain-BC contribution
+            //     b(mk) += Σ_p φ(p,k) * (C_env(p)*T_ref(p) + Q_ext(p))
+            b.segment(modal_start, n_modes)
+                += sb.phi_basis.transpose() * (C_env_vec.cwiseProduct(T_ref_vec) + Q_ext_vec);
+        }
+
+        Eigen::SparseMatrix<double> K(N_total, N_total);
         K.setFromTriplets(triplets.begin(), triplets.end());
 
         return {std::move(K), std::move(b), std::move(M_diag)};
