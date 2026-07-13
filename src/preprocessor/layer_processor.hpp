@@ -70,17 +70,23 @@ namespace mhs::sim {
         const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum,
         uint16_t other_bc_idx, std::vector<mhs::core::FaceBC>& face_bcs);
 
-    // ── SmartMacro block coupling ─────────────────────────────────────────────
-    // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
-    // coupling data: identify interface cells, compute C_i, and copy POD data
-    // (phi_basis, K_modal, f_modal).  No Schur complement solve — the extended
-    // system is assembled directly with modal DOFs as extra unknowns.
+    // ── SmartMacro block coupling (face-level, BC-agnostic) ────────────────
     //
-    // `trained_models` are the already-loaded SmartMacroModelData for each
-    // SmartMacro block in the resolved layers (same order as encountered in
-    // the IOStructure).
+    // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
+    // coupling data for every SmartMacro block. For each port face (boundary
+    // face of the block) the function determines:
+    //   - Active neighbor → C_env = k_n*A/h_n, coupled to neighbor cell DOF
+    //   - Domain boundary  → (C_env, T_ref, Q_ext) from face BC match
+    //
+    // The function does NOT bake any BCs into the modal data — all BC effects
+    // enter through the environment parameters (C_env, T_ref, Q_ext) which
+    // are assembled into the extended system at runtime.
     void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<mhs::core::SmartMacroModelData>& trained_models, mhs::core::Model& model);
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models,
+        const std::vector<ParsedFaceKey>& parsed_face_keys,
+        const mhs::core::BCParamTable& bc_params,
+        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        mhs::core::Model& model);
 
 } // namespace mhs::sim

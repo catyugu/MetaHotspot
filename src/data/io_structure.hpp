@@ -157,19 +157,25 @@ namespace mhs::core {
     };
 
     // ── SmartMacro model (IO-payload, no Eigen types) ──────────────────
-    /// POD-based reduced model loaded from disk: modal DtN + modal RHS + POD basis.
+    /// POD-based reduced model loaded from disk: face-level DtN + POD basis.
     /// K_modal is stored as dense row-major [n_modes x n_modes].
-    /// f_modal is stored as a flat vector (length n_modes).
-    /// phi_basis is row-major [N_ports x n_modes].
-    /// Consumers wrap with Eigen::Map for linear algebra.
+    /// phi_basis is row-major [N_faces x n_modes].
+    /// port_ix/iy/iz identify the owner (block-interior) cell of each port face.
+    /// port_dir is the face direction (0-5, same convention as mesh_utils).
+    /// kx/ky/kz is the block material thermal conductivity (used to compute
+    /// environment conductance for domain-boundary faces).
+    /// NOTE: f_modal is NOT stored — it's always zero for BC-agnostic training.
     struct SmartMacroModelData {
         std::string name;
         std::vector<double> K_modal;           // row-major [n_modes x n_modes]
-        std::vector<double> f_modal;           // RHS vector (size n_modes)
-        std::vector<double> phi_basis;         // row-major [N_ports x n_modes]
+        std::vector<double> phi_basis;         // row-major [N_faces x n_modes]
         std::vector<int> port_ix;
         std::vector<int> port_iy;
         std::vector<int> port_iz;
+        std::vector<int> port_dir;             // face direction 0-5 for each port
+        double kx = 0.0;
+        double ky = 0.0;
+        double kz = 0.0;
         int n_modes = 0;
     };
 

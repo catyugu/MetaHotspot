@@ -74,22 +74,33 @@ namespace mhs::core {
     // ── Smart macro-model (POD-based extended system) ────────────────
 
     /// A trained POD-reduced macro model ready for assembly.
-    /// Instead of a dense Schur complement, keeps `n_modes` modal DOFs
-    /// as extra unknowns in the global system.  Coupling between the
-    /// physical port cells and the modal DOFs is through the POD basis Φ.
+    /// Port faces on the block boundary are reduced via POD. Each port face
+    /// `f` maps to an owner cell inside the block and has environment
+    /// parameters (C_env_f, T_ref_f, Q_ext_f) from either an active
+    /// neighbor cell or a domain-boundary BC.
+    ///
+    /// At assembly time, the extended system scattering uses aggregated
+    /// per-neighbor-cell coupling data (`coupled_cells`/`coupled_C`/`coupled_phi`)
+    /// for compact triplet generation.
     struct SmartBlockModel {
         std::string name;
-        std::vector<uint32_t> port_cells;         // [N_ports]: compact cell index of each port
 
-        // Conductance to active neighbor, computed at preprocess time.
-        Eigen::VectorXd C_diag;                    // [N_ports]
+        // Face-level environment parameters [N_faces].
+        Eigen::VectorXd C_env_vec;
+        Eigen::VectorXd T_ref_vec;
+        Eigen::VectorXd Q_ext_vec;
 
-        // POD data (read from trained model, used at assembly time).
-        Eigen::MatrixXd phi_basis;                 // [N_ports x n_modes]
-        Eigen::VectorXd f_modal;                   // [n_modes]
-        Eigen::MatrixXd K_modal_eff;               // [n_modes x n_modes] = K_modal + Φᵀ·C·Φ
+        // POD basis [N_faces x n_modes] and modal operators.
+        Eigen::MatrixXd phi_basis;
+        Eigen::MatrixXd K_modal_eff;       // [n_modes x n_modes] = K_modal + Φᵀ·C·Φ for domain-BC faces
 
-        int modal_start_idx = 0;                   // first modal DOF index in global system
+        // Aggregated coupling for active-neighbor cells.
+        std::vector<uint32_t> coupled_cells;     // [n_coupled] — compact cell indices
+        Eigen::VectorXd coupled_C;               // [n_coupled] — Σ C_env_f per cell
+        Eigen::MatrixXd coupled_phi;             // [n_coupled x n_modes] — Σ C_env_f * φ(f,k)
+
+        int modal_start_idx = 0;
+        int n_faces = 0;
         int n_modes = 0;
     };
 

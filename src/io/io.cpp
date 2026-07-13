@@ -1016,10 +1016,11 @@ namespace mhs::io {
 
         result.n_modes = n_modes;
 
-        // PortOrder
+        // PortOrder (with Dir for face-level ports)
         result.port_ix.reserve(n_ports);
         result.port_iy.reserve(n_ports);
         result.port_iz.reserve(n_ports);
+        result.port_dir.reserve(n_ports);
 
         const auto* po_elem = root->FirstChildElement("PortOrder");
         if (!po_elem) {
@@ -1029,23 +1030,34 @@ namespace mhs::io {
         for (const auto* port_elem = po_elem->FirstChildElement("Port"); port_elem;
             port_elem = port_elem->NextSiblingElement("Port")) {
 
-            int ix = 0, iy = 0, iz = 0;
+            int ix = 0, iy = 0, iz = 0, dir = 0;
             if (const auto* e = port_elem->FirstChildElement("IX"))
                 ix = std::stoi(e->GetText() ? e->GetText() : "0");
             if (const auto* e = port_elem->FirstChildElement("IY"))
                 iy = std::stoi(e->GetText() ? e->GetText() : "0");
             if (const auto* e = port_elem->FirstChildElement("IZ"))
                 iz = std::stoi(e->GetText() ? e->GetText() : "0");
+            if (const auto* e = port_elem->FirstChildElement("Dir"))
+                dir = std::stoi(e->GetText() ? e->GetText() : "0");
 
             result.port_ix.push_back(ix);
             result.port_iy.push_back(iy);
             result.port_iz.push_back(iz);
+            result.port_dir.push_back(dir);
         }
 
         if (static_cast<int>(result.port_ix.size()) != n_ports) {
             throw std::runtime_error("PortOrder has " + std::to_string(result.port_ix.size())
                 + " entries but NPorts=" + std::to_string(n_ports));
         }
+
+        // Kx, Ky, Kz (optional — block material thermal conductivity for domain-boundary BCs)
+        if (const auto* kx_elem = root->FirstChildElement("Kx"))
+            result.kx = std::stod(kx_elem->GetText() ? kx_elem->GetText() : "0");
+        if (const auto* ky_elem = root->FirstChildElement("Ky"))
+            result.ky = std::stod(ky_elem->GetText() ? ky_elem->GetText() : "0");
+        if (const auto* kz_elem = root->FirstChildElement("Kz"))
+            result.kz = std::stod(kz_elem->GetText() ? kz_elem->GetText() : "0");
 
         // DataFile: resolve relative to XML directory
         std::string data_file;
@@ -1059,17 +1071,11 @@ namespace mhs::io {
 
         auto data_path = std::filesystem::path(xml_path).parent_path() / data_file;
 
-        // Read binary data: [f_modal: M doubles][K_modal: M*M doubles, row-major][phi_basis: N*M doubles, row-major]
+        // Read binary data: [K_modal: M*M doubles, row-major][phi_basis: N*M doubles, row-major]
+        // NOTE: f_modal not stored — always zero for BC-agnostic training.
         std::ifstream bin(data_path, std::ios::binary);
         if (!bin) {
             throw std::runtime_error("Failed to open binary data file: " + data_path.string());
-        }
-
-        // Read f_modal (flat vector)
-        result.f_modal.resize(n_modes);
-        bin.read(reinterpret_cast<char*>(result.f_modal.data()), n_modes * sizeof(double));
-        if (!bin) {
-            throw std::runtime_error("Failed to read f_modal from binary data");
         }
 
         // Read K_modal (row-major flat vector, M x M)

@@ -241,38 +241,39 @@ namespace mhs::sim {
             M_diag += local.mass;
         });
 
-        // ── Scatter extended system per SmartBlock (POD-based) ──
+        // ── Scatter extended system per SmartBlock (face-level POD) ──
         for (const auto& sb : model_.smart_blocks) {
-            const int n_ports = (int)sb.port_cells.size();
+            const int n_coupled = (int)sb.coupled_cells.size();
             const int n_modes = sb.n_modes;
             const int modal_start = sb.modal_start_idx;
-            if (n_ports == 0 || n_modes == 0)
+            if (n_coupled == 0 && n_modes == 0)
                 continue;
 
-            // 1. Diagonal: diag(C_diag) into port cell DOFs
-            // 2. Coupling: -C·Φ between port cells and modal DOFs
-            for (int i = 0; i < n_ports; i++) {
-                uint32_t gi = sb.port_cells[i];
-                if (gi >= (uint32_t)N_phys)
+            // 1. Active-neighbor coupling (aggregated per unique cell)
+            //    (c, c)  += coupled_C[ci]
+            //    (c, mk) -= coupled_phi[ci, k]
+            //    (mk, c) -= coupled_phi[ci, k]
+            for (int ci = 0; ci < n_coupled; ci++) {
+                int gi = (int)sb.coupled_cells[ci];
+                if (gi >= N_phys)
+                    continue;
+                double C_total = sb.coupled_C(ci);
+                if (std::abs(C_total) <= mhs::core::zero_guard)
                     continue;
 
-                double Ci = sb.C_diag(i);
-                if (std::abs(Ci) > mhs::core::zero_guard) {
-                    triplets.emplace_back((int)gi, (int)gi, Ci);
+                triplets.emplace_back(gi, gi, C_total);
 
-                    // Coupling: -Ci * phi_basis(i, k) for each mode k
-                    for (int k = 0; k < n_modes; k++) {
-                        double val = -Ci * sb.phi_basis(i, k);
-                        if (std::abs(val) > mhs::core::zero_guard) {
-                            int mk = modal_start + k;
-                            triplets.emplace_back((int)gi, mk, val);
-                            triplets.emplace_back(mk, (int)gi, val);
-                        }
+                for (int k = 0; k < n_modes; k++) {
+                    double val = -sb.coupled_phi(ci, k);
+                    if (std::abs(val) > mhs::core::zero_guard) {
+                        int mk = modal_start + k;
+                        triplets.emplace_back(gi, mk, val);
+                        triplets.emplace_back(mk, gi, val);
                     }
                 }
             }
 
-            // 3. Modal block: K_modal_eff [n_modes x n_modes]
+            // 2. Modal block: K_modal_eff [n_modes x n_modes]
             for (int k = 0; k < n_modes; k++) {
                 for (int kp = 0; kp < n_modes; kp++) {
                     double val = sb.K_modal_eff(k, kp);
@@ -282,9 +283,24 @@ namespace mhs::sim {
                 }
             }
 
-            // 4. RHS for modal DOFs: +f_modal  (from Φᵀ·f_port)
+            // 3. Modal RHS: domain-BC contribution
+            //    b(mk) += Σ_p φ(p,k)*(C_env(p)*T_ref(p) + Q_ext(p))
+            //
+            // f_modal is NOT included — it is always zero for BC-agnostic training.
             for (int k = 0; k < n_modes; k++) {
-                b(modal_start + k) += sb.f_modal(k);
+                double bc_rhs = 0.0;
+                for (int p = 0; p < sb.n_faces; p++) {
+                    double C_env = sb.C_env_vec(p);
+                    double T_ref = sb.T_ref_vec(p);
+                    double Q_ext = sb.Q_ext_vec(p);
+                    if (std::abs(C_env) > mhs::core::zero_guard && std::abs(T_ref) > mhs::core::zero_guard) {
+                        bc_rhs += sb.phi_basis(p, k) * C_env * T_ref;
+                    }
+                    if (std::abs(Q_ext) > mhs::core::zero_guard) {
+                        bc_rhs += sb.phi_basis(p, k) * Q_ext;
+                    }
+                }
+                b(modal_start + k) += bc_rhs;
             }
         }
 
