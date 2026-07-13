@@ -9,6 +9,12 @@
 
 namespace mhs::sim {
 
+    /// `overloaded` helper for std::visit: `std::visit(overloaded{lambda1, lambda2, ...}, variant)`.
+    template <typename... Ts> struct overloaded : Ts... {
+        using Ts::operator()...;
+    };
+    template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
     struct FaceKeyInfo {
         char axis = 'Z';
         char side = 'E';
@@ -20,6 +26,12 @@ namespace mhs::sim {
         FaceKeyInfo fk;
         mhs::core::BcType bc_enum;
         uint16_t param_idx;
+    };
+
+    /// Fallback boundary condition used for faces that don't match any explicit boundary key.
+    struct OtherBC {
+        mhs::core::BcType type = mhs::core::BcType::None;
+        uint16_t param_idx = 0;
     };
 
     // Parse a face key string. Two formats are supported, selected by axis:

@@ -137,8 +137,7 @@ namespace mhs::sim {
         // Match face keys for the given cell face and return the matching BC.
         // Returns (BcType::None, 0) if no key matches and no valid fallback.
         std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, int ix, int iy, int iz,
-            const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys,
-            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
+            const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys, const OtherBC& other_bc)
         {
             static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
             const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
@@ -161,8 +160,8 @@ namespace mhs::sim {
             }
 
             // Fallback to other_bc
-            if (other_bc_enum != mhs::core::BcType::None) {
-                return {other_bc_enum, other_bc_idx};
+            if (other_bc.type != mhs::core::BcType::None) {
+                return {other_bc.type, other_bc.param_idx};
             }
             return {mhs::core::BcType::None, 0};
         }
@@ -224,7 +223,7 @@ namespace mhs::sim {
     }
 
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc,
         std::vector<mhs::core::FaceBC>& face_bcs)
     {
         const int compact_count = (int)cells.material_id.size();
@@ -246,8 +245,7 @@ namespace mhs::sim {
                             >= 0)
                             continue; // internal face — no BC needed
 
-                        auto [type, param_idx]
-                            = match_face_bc(dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
+                        auto [type, param_idx] = match_face_bc(dir, ix, iy, iz, mesh, parsed_face_keys, other_bc);
                         face_bcs[c_idx * mhs::core::FACE_COUNT + f] = {type, param_idx};
                     }
                 }
@@ -270,8 +268,7 @@ namespace mhs::sim {
     void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<mhs::core::SmartMacroModelData>& trained_models,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
-        mhs::core::Model& model)
+        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc, mhs::core::Model& model)
     {
         model.smart_blocks.clear();
         int cumulative_modes = 0;
@@ -346,8 +343,7 @@ namespace mhs::sim {
                     else {
                         // Domain boundary face: match BC type + param index (for assembly-time eval).
                         pfi.has_neighbor = false;
-                        auto [bc_type, bc_idx]
-                            = match_face_bc(pfi.dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
+                        auto [bc_type, bc_idx] = match_face_bc(pfi.dir, ix, iy, iz, mesh, parsed_face_keys, other_bc);
                         pfi.bc_type = bc_type;
                         pfi.bc_param_idx = bc_idx;
                     }

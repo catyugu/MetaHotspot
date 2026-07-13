@@ -67,7 +67,7 @@ namespace mhs::sim {
     // `parsed_face_keys` comes from parse_all_face_keys().
     // Other_bc is the fallback BC for faces that don't match any face key.
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc,
         std::vector<mhs::core::FaceBC>& face_bcs);
 
     // ── SmartMacro block coupling (face-level, BC-agnostic) ────────────────
@@ -84,7 +84,6 @@ namespace mhs::sim {
     void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<mhs::core::SmartMacroModelData>& trained_models,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
-        mhs::core::Model& model);
+        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc, mhs::core::Model& model);
 
 } // namespace mhs::sim
