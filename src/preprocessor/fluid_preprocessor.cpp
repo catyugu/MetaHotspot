@@ -16,7 +16,18 @@
 namespace mhs::sim {
 
     namespace {
+        static std::vector<int> compact_to_old;
 
+        /// Build compact-index → old-grid-index reverse map.
+        void buildCompactToOld(const mhs::core::CellFields& cells, int total_grid)
+        {
+            compact_to_old.assign(cells.material_id.size(), -1);
+            for (int old_idx = 0; old_idx < total_grid; ++old_idx) {
+                uint32_t c = cells.index_map[old_idx];
+                if (c != mhs::core::invalidIndex)
+                    compact_to_old[c] = old_idx;
+            }
+        }
         // ── 沿指定轴探索连续流体长度 (替代原本脆弱且冗长的 6 个 while 循环) ───────────
         double measure_fluid_extent(const mhs::core::Model& model, int ix, int iy, int iz, int axis)
         {
@@ -59,7 +70,7 @@ namespace mhs::sim {
         }
 
         // ── 计算通道几何 ────────────────────────────────────────────────────────
-        void computeChannelDimensions(mhs::core::Model& model, const std::vector<int>& compact_to_old)
+        void computeChannelDimensions(mhs::core::Model& model)
         {
             const auto& mesh = model.mesh;
             for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
@@ -128,8 +139,7 @@ namespace mhs::sim {
             face_area[fi] = a * b;
         }
 
-        void applyFluidBoundaries(mhs::core::Model& model, const mhs::core::FluidOverlay& overlay, double si_scale,
-            const std::vector<int>& compact_to_old)
+        void applyFluidBoundaries(mhs::core::Model& model, const mhs::core::FluidOverlay& overlay, double si_scale)
         {
             const auto& mesh = model.mesh;
             for (const auto& fb : overlay.boundaries) {
@@ -199,9 +209,7 @@ namespace mhs::sim {
 
         // 在 cell 中心处评估流体密度, 用作 MassFlowRate 体积通量源 m_dot / rho 的分母.
         // 在初始温度处求值: 不可压缩流的压力解不依赖 T, 用 T_init 是合理近似.
-        // 接受 compact_to_old, 因为调用点已经在 solveFluidFlow 中构造了它.
-        static double evaluateFluidRhoAtInitT(
-            const mhs::core::Model& model, int fi, const std::vector<int>& compact_to_old)
+        static double evaluateFluidRhoAtInitT(const mhs::core::Model& model, int fi)
         {
             const auto& cells = model.cells;
             const auto& mesh = model.mesh;
@@ -218,7 +226,7 @@ namespace mhs::sim {
     } // 匿名命名空间
 
     // ── Phase 1: 等效渗透率计算 ──────────────────────────────────────────
-    static void initCellHydroProperties(mhs::core::Model& model, const std::vector<int>& compact_to_old)
+    static void initCellHydroProperties(mhs::core::Model& model)
     {
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
             int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
@@ -238,7 +246,7 @@ namespace mhs::sim {
 
     // ── Phase 2: 构建并求解泊松方程 (流场) ──────────────────────────────
     // Returns true on success.
-    static bool solvePressure(mhs::core::Model& model, const std::vector<int>& compact_to_old)
+    static bool solvePressure(mhs::core::Model& model)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -287,7 +295,7 @@ namespace mhs::sim {
             else if (model.fluid.fluid_bcs[fi].kind == mhs::core::FluidBCType::MassFlowRateType) {
                 const double mdot_cell
                     = model.fluid.fluid_bc_params.mass_flow_rate[model.fluid.fluid_bcs[fi].param_idx];
-                const double rho_cell = evaluateFluidRhoAtInitT(model, fi, compact_to_old);
+                const double rho_cell = evaluateFluidRhoAtInitT(model, fi);
                 rhs(fi) = (rho_cell > mhs::core::zero_guard) ? (mdot_cell / rho_cell) : 0.0;
             }
             // VelocityType: Neumann 体通量源 u * A_face (m/s · m² = m³/s).
@@ -313,7 +321,7 @@ namespace mhs::sim {
     }
 
     // ── Phase 3: 根据压力梯度计算主导流向 ───────────────────────────────
-    static void precomputeFlowAxes(mhs::core::Model& model, const std::vector<int>& compact_to_old)
+    static void precomputeFlowAxes(mhs::core::Model& model)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -361,6 +369,8 @@ namespace mhs::sim {
 
         const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
         const int N = static_cast<int>(model.cells.material_id.size());
+
+        buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
         // 1. 建立材质名索引映射
         std::unordered_map<std::string, uint16_t> matNameToTableIdx;
@@ -432,27 +442,19 @@ namespace mhs::sim {
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
             model.fluid.dynamic_viscosity[fi] = visc_temp[model.fluid.fluid_to_global[fi]];
         }
-
-        // 建立 compact → old 反向映射, 供 applyFluidBoundaries / computeChannelDimensions 共享.
-        auto compact_to_old = mhs::utils::buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
-
         // 4. 应用流体边界与计算通道几何
-        applyFluidBoundaries(model, overlay.value(), si_scale, compact_to_old);
-        computeChannelDimensions(model, compact_to_old);
+        applyFluidBoundaries(model, overlay.value(), si_scale);
+        computeChannelDimensions(model);
     }
 
     void solveFluidFlow(mhs::core::Model& model)
     {
         if (model.fluid.n_fluid == 0)
             return;
-
-        const int total_grid = model.mesh.nx * model.mesh.ny * model.mesh.nz;
-        auto compact_to_old = mhs::utils::buildCompactToOld(model.cells, total_grid);
-
-        initCellHydroProperties(model, compact_to_old);
-        if (!solvePressure(model, compact_to_old))
+        initCellHydroProperties(model);
+        if (!solvePressure(model))
             return;
-        precomputeFlowAxes(model, compact_to_old);
+        precomputeFlowAxes(model);
     }
 
 } // namespace mhs::sim
