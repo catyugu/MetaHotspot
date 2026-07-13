@@ -405,7 +405,7 @@ TEST(PreprocessorTest, OtherBCFallback)
 
 TEST(PreprocessorTest, Case1XMLLoad)
 {
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_tests/case1.xml";
+    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
     if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found at " << case_path;
     }
