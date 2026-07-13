@@ -68,6 +68,53 @@ def parse_double(s):
         return 0.0
 
 
+def parse_variables(root):
+    """Extract variable definitions (name → value) from <Variables> section."""
+    variables = {}
+    vars_elem = xfind(root, "Variables")
+    if vars_elem is None:
+        return variables
+    for kv in vars_elem:
+        key_elem = afind(kv, "Key")
+        val_elem = afind(kv, "Value")
+        if (
+            key_elem is not None
+            and val_elem is not None
+            and key_elem.text
+            and val_elem.text
+        ):
+            variables[key_elem.text.strip()] = parse_double(val_elem.text.strip())
+    return variables
+
+
+def eval_expression(expr_str, variables):
+    """Evaluate a simple arithmetic expression that may reference variables.
+
+    Handles: identifiers, numbers, +, -, *, /, unary negation.
+    Expressions like 't_top', '-w_bottom/2', 'h_middle*3/2' are resolved
+    by substituting known variable values first, then evaluating.
+    """
+    s = expr_str.strip() if expr_str else ""
+    if not s:
+        return 0.0
+    # Fast path: already a plain number
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    # Substitute variable names (longest first to avoid partial-name clashes)
+    for name in sorted(variables.keys(), key=len, reverse=True):
+        s = s.replace(name, str(variables[name]))
+    # Evaluate the resulting arithmetic expression
+    try:
+        return float(eval(s))
+    except Exception as e:
+        print(
+            f"  Warning: cannot evaluate expression '{expr_str}': {e}", file=sys.stderr
+        )
+        return 0.0
+
+
 def find_block_by_position(root, layer_index, block_index):
     """Find a block at the given layer index and block index within that layer."""
     layers = xfind(root, "Layers")
@@ -95,7 +142,7 @@ def find_block_by_position(root, layer_index, block_index):
     return layer_elem, block_elem, rect_elem, material_name, layer_name, block_name
 
 
-def compute_layer_stacking(root, si_scale):
+def compute_layer_stacking(root, si_scale, variables):
     """Compute z_start/z_end for each layer (same algorithm as layer_processor.cpp)."""
     layers = xfind(root, "Layers")
     if layers is None:
@@ -112,17 +159,21 @@ def compute_layer_stacking(root, si_scale):
                 for b in xfindall(blocks_elem, "Block"):
                     bthick_text = get_text(xfind(b, "ThicknessExpression"))
                     if bthick_text:
-                        t = parse_double(bthick_text) * si_scale
+                        t = eval_expression(bthick_text, variables) * si_scale
                         if t > max_t:
                             max_t = t
             layer_thick_text = get_text(xfind(layer_elem, "ThicknessExpression"))
             layer_t = (
-                parse_double(layer_thick_text) * si_scale if layer_thick_text else 0.0
+                eval_expression(layer_thick_text, variables) * si_scale
+                if layer_thick_text
+                else 0.0
             )
             thickness[l] = max(max_t, layer_t)
         else:
             layer_t = (
-                parse_double(get_text(xfind(layer_elem, "ThicknessExpression")))
+                eval_expression(
+                    get_text(xfind(layer_elem, "ThicknessExpression")), variables
+                )
                 * si_scale
             )
             thickness[l] = layer_t
@@ -135,21 +186,23 @@ def compute_layer_stacking(root, si_scale):
     return result
 
 
-def eval_block_geometry(root, layer_elem, block_elem, rect_elem, si_scale, layer_index):
+def eval_block_geometry(
+    root, layer_elem, block_elem, rect_elem, si_scale, layer_index, variables
+):
     """Evaluate geometry expressions for the smart block, including correct Z stacking."""
 
     def get_offset(elem, tag):
-        return parse_double(get_text(xfind(elem, tag))) * si_scale
+        return eval_expression(get_text(xfind(elem, tag)), variables) * si_scale
 
     layer_x_off = get_offset(layer_elem, "XOffsetExpression")
     layer_y_off = get_offset(layer_elem, "YOffsetExpression")
     block_x_off = get_offset(block_elem, "XOffsetExpression")
     block_y_off = get_offset(block_elem, "YOffsetExpression")
 
-    x_expr = parse_double(get_text(xfind(rect_elem, "XExpression")))
-    y_expr = parse_double(get_text(xfind(rect_elem, "YExpression")))
-    w_expr = parse_double(get_text(xfind(rect_elem, "WidthExpression")))
-    h_expr = parse_double(get_text(xfind(rect_elem, "HeightExpression")))
+    x_expr = eval_expression(get_text(xfind(rect_elem, "XExpression")), variables)
+    y_expr = eval_expression(get_text(xfind(rect_elem, "YExpression")), variables)
+    w_expr = eval_expression(get_text(xfind(rect_elem, "WidthExpression")), variables)
+    h_expr = eval_expression(get_text(xfind(rect_elem, "HeightExpression")), variables)
 
     if w_expr < 0:
         x_expr += w_expr
@@ -163,15 +216,17 @@ def eval_block_geometry(root, layer_elem, block_elem, rect_elem, si_scale, layer
     x_max = x_min + w_expr * si_scale
     y_max = y_min + h_expr * si_scale
 
-    stacking = compute_layer_stacking(root, si_scale)
+    stacking = compute_layer_stacking(root, si_scale, variables)
     l_start, l_end = stacking[layer_index]
 
     block_thick_text = get_text(xfind(block_elem, "ThicknessExpression"))
-    if block_thick_text:
-        b_thick = parse_double(block_thick_text) * si_scale
+    if layer_index == 0 and block_thick_text:
+        # Top layer only: clip block to its own thickness (matches C++ layer_processor.cpp)
+        b_thick = eval_expression(block_thick_text, variables) * si_scale
         z_min = l_start
         z_max = l_start + b_thick
     else:
+        # Non-top layers: block fills the entire layer height
         z_min = l_start
         z_max = l_end
 
@@ -248,7 +303,7 @@ def main():
     parser.add_argument("--layer", type=int, default=0, help="Layer index (0-based)")
     parser.add_argument("--block", type=int, default=0, help="Block index (0-based)")
     parser.add_argument(
-        "--n-modes", type=int, default=10, help="Number of POD modes to retain"
+        "--n-modes", type=int, default=15, help="Number of POD modes to retain"
     )
     parser.add_argument(
         "--material-k", type=float, default=None, help="Override material k [W/mK]"
@@ -296,9 +351,12 @@ def main():
     dx_si, dy_si, dz_si = dx * si_scale, dy * si_scale, dz * si_scale
     print(f"Mesh: {nx} x {ny} x {nz} = {nx*ny*nz} cells")
 
-    # ── 3. Evaluate block geometry ─────────────────────────────────────────
+    # ── 3. Parse variable definitions and evaluate block geometry ─────────
+    variables = parse_variables(root)
+    if variables:
+        print(f"Variables: { {k: v for k, v in sorted(variables.items())} }")
     x_min, x_max, y_min, y_max, z_min, z_max = eval_block_geometry(
-        root, layer_elem, block_elem, rect_elem, si_scale, args.layer
+        root, layer_elem, block_elem, rect_elem, si_scale, args.layer, variables
     )
     print(
         f"Block: x=[{x_min:.4g},{x_max:.4g}] y=[{y_min:.4g},{y_max:.4g}] z=[{z_min:.4g},{z_max:.4g}]"
@@ -474,27 +532,21 @@ def main():
     eigvals_orig = None
 
     # Try eigsh with progressive tolerance loosening
-    configs = [
-        {"k": n_modes, "which": "SA", "tol": 1e-6, "maxiter": 5000},
-        {
-            "k": min(n_modes, 5),
-            "which": "SA",
-            "tol": 1e-4,
-            "maxiter": 5000,
-            "ncv": max(3 * min(n_modes, 5), 15),
-        },
-    ]
-    for cfg in configs:
-        if Phi_face is not None:
-            break
-        try:
-            eigvals, eigvecs = eigsh(A_op, **cfg)
-            nk = min(n_modes, len(eigvals))
-            eigvals_orig = eigvals[:nk]
-            Phi_face = np.ascontiguousarray(eigvecs[:, :nk], dtype=np.float64)
-            print(f"  eigsh succeeded: k={cfg['k']}, tol={cfg['tol']}")
-        except Exception as e:
-            print(f"  eigsh(k={cfg['k']}, tol={cfg['tol']}) failed: {e}")
+    config = {
+        "k": n_modes,
+        "which": "SA",
+        "tol": 1e-6,
+        "maxiter": 5000,
+        "ncv": 2 * n_modes + 1,
+    }
+    try:
+        eigvals, eigvecs = eigsh(A_op, **config)
+        nk = min(n_modes, len(eigvals))
+        eigvals_orig = eigvals[:nk]
+        Phi_face = np.ascontiguousarray(eigvecs[:, :nk], dtype=np.float64)
+        print(f"  eigsh succeeded: k={config['k']}, tol={config['tol']}")
+    except Exception as e:
+        print(f"  eigsh(k={config['k']}, tol={config['tol']}) failed: {e}")
 
     if Phi_face is None:
         print("ERROR: Could not compute POD basis")
