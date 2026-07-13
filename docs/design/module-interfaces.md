@@ -46,9 +46,6 @@ std::vector<ResolvedLayerGeometry> resolve_geometry(
     const std::vector<mhs::core::Layer>& layers, double si_scale,
     const mhs::core::SymbolTable& symbols);
 
-int find_block_for_cell(const ResolvedLayerGeometry& layer,
-                        double cx, double cy, double cz);  // -1 = virtual
-
 mhs::core::CellFields assign_cell_layers(
     const std::vector<ResolvedLayerGeometry>& resolved_layers,
     const mhs::core::MeshGeometry& mesh,

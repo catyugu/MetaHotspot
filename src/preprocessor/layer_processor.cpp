@@ -10,8 +10,63 @@
 
 namespace mhs::sim {
 
-    using mhs::core::geometry_eps;
-    constexpr double EPS = geometry_eps;
+    constexpr double EPS = mhs::core::geometry_eps;
+
+    namespace {
+
+        // 找到 find_block_for_cell 函数，在遍历 block 时引入 Z 的校验
+        int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
+        {
+            for (int b = (int)resolved_layer.blocks.size() - 1; b >= 0; b--) {
+                const auto& block = resolved_layer.blocks[b];
+                if (cz < block.z_start - EPS || cz > block.z_end + EPS) {
+                    continue;
+                }
+                bool is_inside = false;
+                for (const auto& rect : block.rects) {
+                    if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS && cy >= rect.y - EPS
+                        && cy <= rect.y + rect.height + EPS) {
+                        is_inside = rect.add_sub;
+                    }
+                }
+                if (is_inside) {
+                    return b;
+                }
+            }
+            return -1;
+        }
+        // Match face keys for the given cell face and return the matching BC.
+        // Returns (BcType::None, 0) if no key matches and no valid fallback.
+        std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, int ix, int iy, int iz,
+            const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys, const OtherBC& other_bc)
+        {
+            static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
+            const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
+            const char face_axis_letter = AXIS_LETTER[axis];
+
+            const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
+            const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
+            const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
+            const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
+            const double a_val = centers[ta];
+            const double b_val = centers[tb];
+
+            for (const auto& pk : parsed_keys) {
+                if (pk.fk.axis == face_axis_letter
+                    && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
+                    if (point_in_face_rects(pk.fk, a_val, b_val)) {
+                        return {pk.bc_enum, pk.param_idx};
+                    }
+                }
+            }
+
+            // Fallback to other_bc
+            if (other_bc.type != mhs::core::BcType::None) {
+                return {other_bc.type, other_bc.param_idx};
+            }
+            return {mhs::core::BcType::None, 0};
+        }
+    } // anonymous namespace
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
         const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols)
@@ -107,65 +162,6 @@ namespace mhs::sim {
 
         return resolved;
     }
-
-    // 找到 find_block_for_cell 函数，在遍历 block 时引入 Z 的校验
-    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
-    {
-        if (cz < resolved_layer.z_start - EPS || cz > resolved_layer.z_end + EPS) {
-            return -1;
-        }
-        for (int b = (int)resolved_layer.blocks.size() - 1; b >= 0; b--) {
-            const auto& block = resolved_layer.blocks[b];
-            if (cz < block.z_start - EPS || cz > block.z_end + EPS) {
-                continue;
-            }
-            bool is_inside = false;
-            for (const auto& rect : block.rects) {
-                if (cx >= rect.x - EPS && cx <= rect.x + rect.width + EPS && cy >= rect.y - EPS
-                    && cy <= rect.y + rect.height + EPS) {
-                    is_inside = rect.add_sub;
-                }
-            }
-            if (is_inside) {
-                return b;
-            }
-        }
-        return -1;
-    }
-
-    namespace {
-        // Match face keys for the given cell face and return the matching BC.
-        // Returns (BcType::None, 0) if no key matches and no valid fallback.
-        std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, int ix, int iy, int iz,
-            const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys, const OtherBC& other_bc)
-        {
-            static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
-            const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
-            const char face_axis_letter = AXIS_LETTER[axis];
-
-            const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
-            const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
-            const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
-            const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
-            const double a_val = centers[ta];
-            const double b_val = centers[tb];
-
-            for (const auto& pk : parsed_keys) {
-                if (pk.fk.axis == face_axis_letter
-                    && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
-                    if (point_in_face_rects(pk.fk, a_val, b_val)) {
-                        return {pk.bc_enum, pk.param_idx};
-                    }
-                }
-            }
-
-            // Fallback to other_bc
-            if (other_bc.type != mhs::core::BcType::None) {
-                return {other_bc.type, other_bc.param_idx};
-            }
-            return {mhs::core::BcType::None, 0};
-        }
-    } // anonymous namespace
 
     mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,

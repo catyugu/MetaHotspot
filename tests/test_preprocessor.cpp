@@ -423,8 +423,6 @@ TEST(PreprocessorTest, Case1XMLLoad)
     EXPECT_EQ(model->material_table.size(), 2);
 }
 
-// ---- Epsilon Tolerance Tests for find_block_for_cell ----
-
 TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
 {
     // This test verifies that cells whose centers fall exactly on

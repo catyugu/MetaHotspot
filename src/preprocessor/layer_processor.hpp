@@ -43,12 +43,6 @@ namespace mhs::sim {
     std::vector<ResolvedLayerGeometry> resolve_geometry(
         const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
 
-    // Determine which block a cell at (cx, cy, cz) belongs to in a resolved layer
-    // Uses pre-evaluated geometry values — no expression evaluation at runtime
-    // Traverses blocks in reverse order (last block wins in overlap regions)
-    // Returns block index or -1 if cell is virtual
-    int find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz);
-
     // Assign every grid cell to its layer + block and write volumetric cell fields.
     // Returns CellFields with index_map (full-grid; invalidIndex = virtual),
     // material_id and heat_source_idx (both compact by active count).
