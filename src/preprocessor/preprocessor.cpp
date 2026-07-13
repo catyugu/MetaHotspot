@@ -169,8 +169,8 @@ namespace mhs::sim {
 
         // If trained_models are provided, resolve SmartMacro block couplings.
         if (!trained_models.empty()) {
-            build_smart_block_coupling(resolved_layers, mesh, model->cells, trained_models, parsed_keys, bc_params,
-                other_bc_enum, other_bc_idx, *model);
+            build_smart_block_coupling(
+                resolved_layers, mesh, model->cells, trained_models, parsed_keys, other_bc_enum, other_bc_idx, *model);
         }
 
         // Apply fluid overlay (if any) using the same SymbolTable so viscosity

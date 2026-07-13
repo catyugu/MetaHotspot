@@ -18,8 +18,8 @@ namespace mhs::core {
     // Every cell has exactly 6 faces, stored as a flat array
     // [N_active * 6] in row-major order (dir 0..5 per cell).
     struct FaceBC {
-        BcType type = BcType::None;  // None = internal face or adiabatic
-        uint16_t param_idx = 0;      // → BCParamTable
+        BcType type = BcType::None; // None = internal face or adiabatic
+        uint16_t param_idx = 0; // → BCParamTable
     };
 
     // ── Structured mesh geometry ─────────────────────────────────────────
@@ -73,31 +73,44 @@ namespace mhs::core {
 
     // ── Smart macro-model (POD-based extended system) ────────────────
 
+    /// Per-face invariant data for a SmartMacro port.
+    /// Everything here is purely geometric/topological — independent of temperature and time.
+    struct PortFaceInfo {
+        // Owner cell grid coordinates (inside the SmartMacro block)
+        int ix = 0, iy = 0, iz = 0;
+        mhs::core::FaceDir dir = mhs::core::FaceDir::XM;
+
+        // Precomputed face geometry
+        double A_f = 0.0; // face area [m²]
+        double half_dist = 0.0; // owner cell half-length along dir [m]
+
+        // ── Active neighbor coupling ──
+        bool has_neighbor = false;
+        uint32_t neighbor_c = invalidIndex; // compact index of the neighbor cell
+        double half_dist_nbr = 0.0; // neighbor half-length along dir [m]
+
+        // ── Domain boundary BC (used only when !has_neighbor) ──
+        mhs::core::BcType bc_type = mhs::core::BcType::None;
+        uint16_t bc_param_idx = 0;
+    };
+
     /// A trained POD-reduced macro model ready for assembly.
     /// Port faces on the block boundary are reduced via POD. Each port face
-    /// `f` maps to an owner cell inside the block and has environment
-    /// parameters (C_env_f, T_ref_f, Q_ext_f) from either an active
-    /// neighbor cell or a domain-boundary BC.
+    /// `f` has invariant geometry/topology stored in `faces[f]`.
     ///
-    /// At assembly time, the extended system scattering uses aggregated
-    /// per-neighbor-cell coupling data (`coupled_cells`/`coupled_C`/`coupled_phi`)
-    /// for compact triplet generation.
+    /// At assembly time, the environment parameters (C_env, T_ref, Q_ext),
+    /// cell-aggregated coupling, and K_modal_eff are computed on-the-fly
+    /// from ctx.T and ctx.current_time — supporting nonlinear neighbour
+    /// materials (k(T)) and time-varying BCs.
     struct SmartBlockModel {
         std::string name;
 
-        // Face-level environment parameters [N_faces].
-        Eigen::VectorXd C_env_vec;
-        Eigen::VectorXd T_ref_vec;
-        Eigen::VectorXd Q_ext_vec;
+        // Invariant modal data (from training).
+        Eigen::MatrixXd K_modal; // [n_modes x n_modes] — raw modal stiffness
+        Eigen::MatrixXd phi_basis; // [n_faces x n_modes] — POD basis
 
-        // POD basis [N_faces x n_modes] and modal operators.
-        Eigen::MatrixXd phi_basis;
-        Eigen::MatrixXd K_modal_eff;       // [n_modes x n_modes] = K_modal + Φᵀ·C_env·Φ (all faces)
-
-        // Aggregated coupling for active-neighbor cells.
-        std::vector<uint32_t> coupled_cells;     // [n_coupled] — compact cell indices
-        Eigen::VectorXd coupled_C;               // [n_coupled] — Σ C_env_f per cell
-        Eigen::MatrixXd coupled_phi;             // [n_coupled x n_modes] — Σ C_env_f * φ(f,k)
+        // Per-face invariant geometry & topology.
+        std::vector<PortFaceInfo> faces;
 
         int modal_start_idx = 0;
         int n_faces = 0;
@@ -133,14 +146,14 @@ namespace mhs::core {
 
         // ── DOF accounting helpers ──────────────────────────────────────
         int physical_dofs() const { return static_cast<int>(cells.material_id.size()); }
-        int total_modal_dofs() const {
+        int total_modal_dofs() const
+        {
             int s = 0;
-            for (const auto& sb : smart_blocks) s += sb.n_modes;
+            for (const auto& sb : smart_blocks)
+                s += sb.n_modes;
             return s;
         }
-        int total_dofs() const {
-            return physical_dofs() + total_modal_dofs();
-        }
+        int total_dofs() const { return physical_dofs() + total_modal_dofs(); }
     };
 
 } // namespace mhs::core
