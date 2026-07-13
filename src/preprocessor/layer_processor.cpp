@@ -367,14 +367,9 @@ namespace mhs::sim {
                         auto& [c_total, phi_total] = cell_contrib[act_c_idx];
                         if (phi_total.size() == 0) {
                             phi_total = Eigen::VectorXd::Zero(n_modes);
-                            c_total = C_env;
                         }
-                        else {
-                            c_total += C_env;
-                        }
-                        for (int k = 0; k < n_modes; k++) {
-                            phi_total(k) += C_env * phi_map(p, k);
-                        }
+                        c_total += C_env;
+                        phi_total += C_env * phi_map.row(p).transpose();
                     }
                     else {
                         // ── Case 2: Domain boundary face → match against BC patches ──

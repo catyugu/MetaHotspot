@@ -103,7 +103,6 @@ def compute_layer_stacking(root, si_scale):
     layer_elems = xfindall(layers, "Layer")
     n = len(layer_elems)
     thickness = [0.0] * n
-    result = []
     z_cursor = 0.0
     for l, layer_elem in enumerate(layer_elems):
         if l == 0:
@@ -128,6 +127,7 @@ def compute_layer_stacking(root, si_scale):
             )
             thickness[l] = layer_t
         z_cursor += thickness[l]
+    result = []
     for l in range(n):
         z_start = z_cursor - thickness[l]
         result.append((z_start, z_start + thickness[l]))
@@ -609,8 +609,7 @@ def main():
                         f"{indent}  <ModelFile>{trained_basename}</ModelFile>\n"
                     )
                 target_block_depth = -1
-            if in_target_layer:
-                block_depth -= 1
+            block_depth -= 1
 
         out_lines.append(line)
 
