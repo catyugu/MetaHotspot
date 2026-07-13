@@ -46,8 +46,7 @@ static mhs::core::IOStructure make_simple_uniform_grid_io()
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     return io;
 }
@@ -139,14 +138,12 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // Dirichlet BC on bottom Z face (Z=0) at 500K
     mhs::core::Boundary boundary_dirichlet;
     boundary_dirichlet.name = "bc_dirichlet";
-    boundary_dirichlet.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary_dirichlet.first.temperature = "500";
+    boundary_dirichlet.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary_dirichlet.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -220,14 +217,12 @@ TEST(PostprocessorTest, DirichletBCOverridesBoundaryNodes)
     // Dirichlet BC on bottom face (Z=0) at 500K
     mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -318,13 +313,11 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
     mhs::core::Boundary boundary;
     boundary.name = "bc_time_dep";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500 + 100*t";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500 + 100*t"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);

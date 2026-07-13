@@ -44,8 +44,7 @@ static mhs::core::IOStructure make_simple_cube_io()
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     return io;
 }
@@ -104,13 +103,11 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     // Dirichlet 500K on bottom face (Z=0)
     mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -177,13 +174,11 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     // Dirichlet 300K on bottom face (Z=0)
     mhs::core::Boundary boundary1;
     boundary1.name = "bc1";
-    boundary1.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary1.first.temperature = "300";
+    boundary1.bc = mhs::core::FirstTypeThermalBC {"300"};
     boundary1.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary1);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -248,8 +243,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.transient_duration = 5.0;
     io.transient_time_step = 1.0;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     // 两个观察点：中心 (5,5,5) mm + Dirichlet 面 z=0 上的 (5,5,0)
     mhs::core::ObservationPoint3D op1;
@@ -268,8 +262,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     // z=0 设为 Dirichlet 500K，确保 op2 走 Dirichlet 早返回路径
     mhs::core::Boundary boundary;
     boundary.name = "bc_z0";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
@@ -353,8 +346,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.transient_duration = 5.0;
     io.transient_time_step = 1.0;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     // Dirichlet 探针位于 z=0 面中心；BC 表达式随时间线性增长
     mhs::core::ObservationPoint3D op;
@@ -366,8 +358,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     mhs::core::Boundary boundary;
     boundary.name = "bc_z0_time_dep";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500 + 100*t";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500 + 100*t"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 

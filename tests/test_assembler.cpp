@@ -52,8 +52,7 @@ static mhs::core::IOStructure make_simple_cube_io()
     mat.bi_rerong = "385";
     io.materials["copper"] = mat;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     return io;
 }
@@ -182,8 +181,7 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     mat.kx = mat.ky = mat.kz = "100 + T";
     io.materials["mat"] = mat;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);

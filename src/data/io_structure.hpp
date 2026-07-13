@@ -3,6 +3,7 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include "types.hpp"
@@ -54,8 +55,6 @@ namespace mhs::core {
 
     enum class BoundaryCategory { Electrical };
 
-    enum class ThermalBCType { FirstType, SecondType, ThirdType };
-
     struct FirstTypeThermalBC {
         std::string temperature = "300.0";
     };
@@ -73,10 +72,7 @@ namespace mhs::core {
         BoundaryCategory category;
         std::string name;
         std::vector<std::string> face_keys;
-        ThermalBCType bc_type;
-        FirstTypeThermalBC first;
-        SecondTypeThermalBC second;
-        ThirdTypeThermalBC third;
+        std::variant<FirstTypeThermalBC, SecondTypeThermalBC, ThirdTypeThermalBC> bc;
     };
 
     struct Material {
@@ -91,8 +87,6 @@ namespace mhs::core {
     // 单变元函数类别（5 类），XML <Functions> 块解析为这些 POD 类型。
     // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，Model
     // 不再持有这些类型，保持模块解耦。
-    enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
-
     struct ExpressionFunction {
         std::string expression; // muparser 字符串，自变量名 `x`
         double draw_min_x = 0.0;
@@ -133,14 +127,8 @@ namespace mhs::core {
         double draw_max_x = 100.0;
     };
 
-    struct Function {
-        FunctionType type = FunctionType::Expression;
-        ExpressionFunction expression;
-        DoubleExponentialFunction double_exp;
-        GaussFunction gauss;
-        SineFunction sine;
-        PieceWiseFunction piecewise;
-    };
+    using Function
+        = std::variant<ExpressionFunction, DoubleExponentialFunction, GaussFunction, SineFunction, PieceWiseFunction>;
 
     enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
 
@@ -219,10 +207,7 @@ namespace mhs::core {
         double transient_time_step = 1.0;
         std::string transient_time_unit = "s";
 
-        ThermalBCType other_bc_type = ThermalBCType::SecondType;
-        FirstTypeThermalBC other_bc_first;
-        SecondTypeThermalBC other_bc_second;
-        ThirdTypeThermalBC other_bc_third;
+        std::variant<FirstTypeThermalBC, SecondTypeThermalBC, ThirdTypeThermalBC> other_bc = SecondTypeThermalBC {};
 
         // Mesh vertex coordinates from XML (Results[0].Mesh.XArray/YArray/ZArray)
         std::vector<double> mesh_vertex_x;

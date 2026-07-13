@@ -7,6 +7,8 @@
 
 #include "common/mesh_utils.hpp"
 
+#include <type_traits>
+
 namespace mhs::sim {
 
     std::unique_ptr<mhs::core::Model> Preprocessor::load(const mhs::core::IOStructure& ioStructure,
@@ -139,30 +141,27 @@ namespace mhs::sim {
         // 构建 other_bc 参数并决定兜底类型的索引。
         mhs::core::BcType other_bc_enum = mhs::core::BcType::None;
         uint16_t other_bc_idx = 0;
-        switch (ioStructure.other_bc_type) {
-        case mhs::core::ThermalBCType::FirstType: {
-            other_bc_enum = mhs::core::BcType::FirstType;
-            bc_params.dirichlet_T.push_back(
-                mhs::core::parse(bc_rewriter(ioStructure.other_bc_first.temperature), symbols));
-            other_bc_idx = (uint16_t)(bc_params.dirichlet_T.size() - 1);
-            break;
-        }
-        case mhs::core::ThermalBCType::SecondType: {
-            other_bc_enum = mhs::core::BcType::SecondType;
-            bc_params.neumann_q.push_back(
-                mhs::core::parse(bc_rewriter(ioStructure.other_bc_second.heat_flux), symbols));
-            other_bc_idx = (uint16_t)(bc_params.neumann_q.size() - 1);
-            break;
-        }
-        case mhs::core::ThermalBCType::ThirdType: {
-            other_bc_enum = mhs::core::BcType::ThirdType;
-            bc_params.cauchy_h.push_back(
-                mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.convection_coeff), symbols));
-            bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(ioStructure.other_bc_third.T_inf), symbols));
-            other_bc_idx = (uint16_t)(bc_params.cauchy_h.size() - 1);
-            break;
-        }
-        }
+        std::visit(
+            [&](const auto& variant) {
+                using T = std::decay_t<decltype(variant)>;
+                if constexpr (std::is_same_v<T, mhs::core::FirstTypeThermalBC>) {
+                    other_bc_enum = mhs::core::BcType::FirstType;
+                    bc_params.dirichlet_T.push_back(mhs::core::parse(bc_rewriter(variant.temperature), symbols));
+                    other_bc_idx = (uint16_t)(bc_params.dirichlet_T.size() - 1);
+                }
+                else if constexpr (std::is_same_v<T, mhs::core::SecondTypeThermalBC>) {
+                    other_bc_enum = mhs::core::BcType::SecondType;
+                    bc_params.neumann_q.push_back(mhs::core::parse(bc_rewriter(variant.heat_flux), symbols));
+                    other_bc_idx = (uint16_t)(bc_params.neumann_q.size() - 1);
+                }
+                else if constexpr (std::is_same_v<T, mhs::core::ThirdTypeThermalBC>) {
+                    other_bc_enum = mhs::core::BcType::ThirdType;
+                    bc_params.cauchy_h.push_back(mhs::core::parse(bc_rewriter(variant.convection_coeff), symbols));
+                    bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(variant.T_inf), symbols));
+                    other_bc_idx = (uint16_t)(bc_params.cauchy_h.size() - 1);
+                }
+            },
+            ioStructure.other_bc);
 
         model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
         resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc_enum, other_bc_idx, model->face_bcs);

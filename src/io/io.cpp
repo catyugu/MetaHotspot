@@ -211,25 +211,28 @@ namespace mhs::io {
             const char* type = other->Attribute("i:type");
             std::string type_str = type ? type : "";
             if (type_str.find("FirstType") != std::string::npos) {
-                structure.other_bc_type = mhs::core::ThermalBCType::FirstType;
+                mhs::core::FirstTypeThermalBC bc;
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
-                    structure.other_bc_first.temperature = get_text(temp);
+                    bc.temperature = get_text(temp);
                 }
+                structure.other_bc = std::move(bc);
             }
             else if (type_str.find("SecondType") != std::string::npos) {
-                structure.other_bc_type = mhs::core::ThermalBCType::SecondType;
+                mhs::core::SecondTypeThermalBC bc;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
-                    structure.other_bc_second.heat_flux = get_text(flux);
+                    bc.heat_flux = get_text(flux);
                 }
+                structure.other_bc = std::move(bc);
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
-                structure.other_bc_type = mhs::core::ThermalBCType::ThirdType;
+                mhs::core::ThirdTypeThermalBC bc;
                 if (const XMLElement* h = other->FirstChildElement("a:ConvectionCoefficient")) {
-                    structure.other_bc_third.convection_coeff = get_text(h);
+                    bc.convection_coeff = get_text(h);
                 }
                 if (const XMLElement* t = other->FirstChildElement("a:EnvironmentTemperature")) {
-                    structure.other_bc_third.T_inf = get_text(t);
+                    bc.T_inf = get_text(t);
                 }
+                structure.other_bc = std::move(bc);
             }
         }
 
@@ -323,48 +326,53 @@ namespace mhs::io {
                     const char* type = val->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("ExpressionFunction") != std::string::npos) {
-                        fn.type = mhs::core::FunctionType::Expression;
-                        read_string_member(val, "b:Expression", fn.expression.expression);
-                        read_draw_range(val, fn.expression.draw_min_x, fn.expression.draw_max_x);
+                        mhs::core::ExpressionFunction expr;
+                        read_string_member(val, "b:Expression", expr.expression);
+                        read_draw_range(val, expr.draw_min_x, expr.draw_max_x);
+                        fn = std::move(expr);
                     }
                     else if (type_str.find("DoubleExponentialFunction") != std::string::npos) {
-                        fn.type = mhs::core::FunctionType::DoubleExponential;
-                        read_double_member(val, "b:A", fn.double_exp.a);
-                        read_double_member(val, "b:Alpha", fn.double_exp.alpha);
-                        read_double_member(val, "b:Beta", fn.double_exp.beta);
-                        read_draw_range(val, fn.double_exp.draw_min_x, fn.double_exp.draw_max_x);
+                        mhs::core::DoubleExponentialFunction de;
+                        read_double_member(val, "b:A", de.a);
+                        read_double_member(val, "b:Alpha", de.alpha);
+                        read_double_member(val, "b:Beta", de.beta);
+                        read_draw_range(val, de.draw_min_x, de.draw_max_x);
+                        fn = std::move(de);
                     }
                     else if (type_str.find("GaussFunction") != std::string::npos) {
-                        fn.type = mhs::core::FunctionType::Gauss;
-                        read_double_member(val, "b:A", fn.gauss.a);
-                        read_double_member(val, "b:Tau", fn.gauss.tau);
-                        read_double_member(val, "b:X0", fn.gauss.x0);
-                        read_draw_range(val, fn.gauss.draw_min_x, fn.gauss.draw_max_x);
+                        mhs::core::GaussFunction g;
+                        read_double_member(val, "b:A", g.a);
+                        read_double_member(val, "b:Tau", g.tau);
+                        read_double_member(val, "b:X0", g.x0);
+                        read_draw_range(val, g.draw_min_x, g.draw_max_x);
+                        fn = std::move(g);
                     }
                     else if (type_str.find("SineFunction") != std::string::npos) {
-                        fn.type = mhs::core::FunctionType::Sine;
-                        read_double_member(val, "b:A", fn.sine.a);
-                        read_double_member(val, "b:Omega", fn.sine.omega);
-                        read_double_member(val, "b:Phi", fn.sine.phi);
-                        read_draw_range(val, fn.sine.draw_min_x, fn.sine.draw_max_x);
+                        mhs::core::SineFunction s;
+                        read_double_member(val, "b:A", s.a);
+                        read_double_member(val, "b:Omega", s.omega);
+                        read_double_member(val, "b:Phi", s.phi);
+                        read_draw_range(val, s.draw_min_x, s.draw_max_x);
+                        fn = std::move(s);
                     }
                     else if (type_str.find("PieceWiseFunction") != std::string::npos) {
-                        fn.type = mhs::core::FunctionType::PieceWise;
+                        mhs::core::PieceWiseFunction pw;
                         if (const XMLElement* points = val->FirstChildElement("b:Points")) {
                             for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
                                 pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
                                 mhs::core::PieceWiseFunction::Point p;
                                 read_double_member(pt, "b:X", p.x);
                                 read_double_member(pt, "b:Y", p.y);
-                                fn.piecewise.points.push_back(p);
+                                pw.points.push_back(p);
                             }
                             // Pre-sort by X so the closure can binary-search without
                             // sorting again at registration time.
-                            std::sort(fn.piecewise.points.begin(), fn.piecewise.points.end(),
+                            std::sort(pw.points.begin(), pw.points.end(),
                                 [](const mhs::core::PieceWiseFunction::Point& a,
                                     const mhs::core::PieceWiseFunction::Point& b) { return a.x < b.x; });
                         }
-                        read_draw_range(val, fn.piecewise.draw_min_x, fn.piecewise.draw_max_x);
+                        read_draw_range(val, pw.draw_min_x, pw.draw_max_x);
+                        fn = std::move(pw);
                     }
                     else if (!type_str.empty()) {
                         throw std::runtime_error("Unknown function i:type: " + type_str);
@@ -510,25 +518,28 @@ namespace mhs::io {
                     const char* type = thermal->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("FirstType") != std::string::npos) {
-                        boundary.bc_type = mhs::core::ThermalBCType::FirstType;
+                        mhs::core::FirstTypeThermalBC bc;
                         if (const XMLElement* t = thermal->FirstChildElement("a:Temperature")) {
-                            boundary.first.temperature = get_text(t);
+                            bc.temperature = get_text(t);
                         }
+                        boundary.bc = std::move(bc);
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
-                        boundary.bc_type = mhs::core::ThermalBCType::SecondType;
+                        mhs::core::SecondTypeThermalBC bc;
                         if (const XMLElement* q = thermal->FirstChildElement("a:HeatFlux")) {
-                            boundary.second.heat_flux = get_text(q);
+                            bc.heat_flux = get_text(q);
                         }
+                        boundary.bc = std::move(bc);
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
-                        boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
+                        mhs::core::ThirdTypeThermalBC bc;
                         if (const XMLElement* h = thermal->FirstChildElement("a:ConvectionCoefficient")) {
-                            boundary.third.convection_coeff = get_text(h);
+                            bc.convection_coeff = get_text(h);
                         }
                         if (const XMLElement* t = thermal->FirstChildElement("a:EnvironmentTemperature")) {
-                            boundary.third.T_inf = get_text(t);
+                            bc.T_inf = get_text(t);
                         }
+                        boundary.bc = std::move(bc);
                     }
                 }
 

@@ -81,8 +81,7 @@ static mhs::core::IOStructure make_simple_io()
     io.materials["test_material"] = mat;
 
     // No explicit boundaries - default other_bc applies
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     return io;
 }
@@ -243,8 +242,7 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -332,13 +330,11 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     // mhs::core::Boundary: Dirichlet 500K on Z bottom face
     mhs::core::Boundary boundary;
     boundary.name = "bc1";
-    boundary.bc_type = mhs::core::ThermalBCType::FirstType;
-    boundary.first.temperature = "500";
+    boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100");
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -477,8 +473,7 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -563,8 +558,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -648,14 +642,11 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     // Convection on the upper half of the y=10mm Y+ face
     mhs::core::Boundary boundary;
     boundary.name = "bc_yp";
-    boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
-    boundary.third.convection_coeff = "10";
-    boundary.third.T_inf = "200";
+    boundary.bc = mhs::core::ThirdTypeThermalBC {"10", "200"};
     boundary.face_keys.push_back("Y|E|10|0|10|0|5"); // cx: 0-10, cz: 0-5
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);
@@ -727,16 +718,13 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     // One boundary, three face_keys targeting three different exposed faces
     mhs::core::Boundary boundary;
     boundary.name = "bc_multi";
-    boundary.bc_type = mhs::core::ThermalBCType::ThirdType;
-    boundary.third.convection_coeff = "10";
-    boundary.third.T_inf = "200";
+    boundary.bc = mhs::core::ThirdTypeThermalBC {"10", "200"};
     boundary.face_keys.push_back("X|E|10|0|10|0|10"); // XP face, all cz
     boundary.face_keys.push_back("X|E|0|0|10|0|10"); // XM face, all cz
     boundary.face_keys.push_back("Y|E|10|0|10|0|10"); // YP face, all cz
     io.boundaries.push_back(boundary);
 
-    io.other_bc_type = mhs::core::ThermalBCType::SecondType;
-    io.other_bc_second.heat_flux = "0";
+    io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     Preprocessor preprocessor;
     auto model = preprocessor.load(io);

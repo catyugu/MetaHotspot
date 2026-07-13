@@ -6,6 +6,7 @@
 #include <cmath>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace mhs::sim {
 
@@ -143,23 +144,26 @@ namespace mhs::sim {
     {
         for (const auto& [key, fn] : fns) {
             mhs::core::FieldEvaluator ev = nullptr;
-            switch (fn.type) {
-            case mhs::core::FunctionType::Expression:
-                ev = make_expression_evaluator(fn.expression.expression, symbols);
-                break;
-            case mhs::core::FunctionType::DoubleExponential:
-                ev = make_double_exp_evaluator(fn.double_exp.a, fn.double_exp.alpha, fn.double_exp.beta);
-                break;
-            case mhs::core::FunctionType::Gauss:
-                ev = make_gauss_evaluator(fn.gauss.a, fn.gauss.tau, fn.gauss.x0);
-                break;
-            case mhs::core::FunctionType::Sine:
-                ev = make_sine_evaluator(fn.sine.a, fn.sine.omega, fn.sine.phi);
-                break;
-            case mhs::core::FunctionType::PieceWise:
-                ev = make_piecewise_evaluator(fn.piecewise.points);
-                break;
-            }
+            std::visit(
+                [&](const auto& variant) {
+                    using T = std::decay_t<decltype(variant)>;
+                    if constexpr (std::is_same_v<T, mhs::core::ExpressionFunction>) {
+                        ev = make_expression_evaluator(variant.expression, symbols);
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::core::DoubleExponentialFunction>) {
+                        ev = make_double_exp_evaluator(variant.a, variant.alpha, variant.beta);
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::core::GaussFunction>) {
+                        ev = make_gauss_evaluator(variant.a, variant.tau, variant.x0);
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::core::SineFunction>) {
+                        ev = make_sine_evaluator(variant.a, variant.omega, variant.phi);
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::core::PieceWiseFunction>) {
+                        ev = make_piecewise_evaluator(variant.points);
+                    }
+                },
+                fn);
             symbols.natives[key] = std::move(ev);
         }
     }
