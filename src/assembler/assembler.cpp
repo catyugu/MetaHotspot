@@ -31,8 +31,11 @@ namespace mhs::sim {
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
 
-        int N_phys = model_.physical_dofs();
-        int N_total = model_.total_dofs();
+        int s = 0;
+        for (const auto& sb : model_.smart_blocks)
+            s += sb.n_modes;
+        const int N_phys = static_cast<int>(model_.cells.material_id.size());
+        const int N_total = N_phys + s;
         int total = mesh.nx * mesh.ny * mesh.nz;
 
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N_total); });

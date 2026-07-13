@@ -268,7 +268,7 @@ namespace mhs::sim {
     {
         model.smart_blocks.clear();
         int cumulative_modes = 0;
-        const int N_phys = model.physical_dofs();
+        const int N_phys = static_cast<int>(cells.material_id.size());
 
         size_t sm_idx = 0;
         for (int l = 0; l < (int)resolved_layers.size(); l++) {
