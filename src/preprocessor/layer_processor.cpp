@@ -364,16 +364,16 @@ namespace mhs::sim {
                         sbm.Q_ext_vec(p) = 0.0;
 
                         // Aggregate C_env and C_env*Φ for this neighbor cell
-                        auto it = cell_contrib.find(act_c_idx);
-                        if (it == cell_contrib.end()) {
-                            cell_contrib[act_c_idx] = {C_env, Eigen::VectorXd::Zero(n_modes)};
-                            it = cell_contrib.find(act_c_idx);
+                        auto& [c_total, phi_total] = cell_contrib[act_c_idx];
+                        if (phi_total.size() == 0) {
+                            phi_total = Eigen::VectorXd::Zero(n_modes);
+                            c_total = C_env;
                         }
                         else {
-                            it->second.first += C_env;
+                            c_total += C_env;
                         }
                         for (int k = 0; k < n_modes; k++) {
-                            it->second.second(k) += C_env * phi_map(p, k);
+                            phi_total(k) += C_env * phi_map(p, k);
                         }
                     }
                     else {
@@ -458,19 +458,7 @@ namespace mhs::sim {
                 // matrix (via coupled_C/coupled_phi);
                 // for domain-BC faces, T_ref is known and enters the RHS
                 // (handled in the assembler).
-                Eigen::MatrixXd C_env_modal = Eigen::MatrixXd::Zero(n_modes, n_modes);
-                for (int p = 0; p < n_faces; p++) {
-                    const double C = sbm.C_env_vec(p);
-                    if (std::abs(C) <= mhs::core::zero_guard)
-                        continue;
-                    for (int k = 0; k < n_modes; k++) {
-                        const double phi_k = phi_map(p, k);
-                        for (int kp = 0; kp < n_modes; kp++) {
-                            C_env_modal(k, kp) += C * phi_k * phi_map(p, kp);
-                        }
-                    }
-                }
-                sbm.K_modal_eff = K_modal_map + C_env_modal;
+                sbm.K_modal_eff = K_modal_map + phi_map.transpose() * sbm.C_env_vec.asDiagonal() * phi_map;
 
                 // ── Phase 3: Aggregate unique coupled cells ──
                 sbm.coupled_cells.reserve(cell_contrib.size());

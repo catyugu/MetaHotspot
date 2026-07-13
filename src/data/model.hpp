@@ -92,7 +92,7 @@ namespace mhs::core {
 
         // POD basis [N_faces x n_modes] and modal operators.
         Eigen::MatrixXd phi_basis;
-        Eigen::MatrixXd K_modal_eff;       // [n_modes x n_modes] = K_modal + Φᵀ·C·Φ for domain-BC faces
+        Eigen::MatrixXd K_modal_eff;       // [n_modes x n_modes] = K_modal + Φᵀ·C_env·Φ (all faces)
 
         // Aggregated coupling for active-neighbor cells.
         std::vector<uint32_t> coupled_cells;     // [n_coupled] — compact cell indices

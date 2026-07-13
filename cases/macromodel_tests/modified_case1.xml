@@ -77,8 +77,6 @@
                     <IsTerminal>false</IsTerminal>
                     <IsVisible>true</IsVisible>
                     <MaterialName>copper</MaterialName>
-                    <BlockType>SmartMacro</BlockType>
-                    <ModelFile>trained_layer0_block0.xml</ModelFile>
                     <MeshSizeXExpression>0</MeshSizeXExpression>
                     <MeshSizeYExpression>0</MeshSizeYExpression>
                     <MeshSizeZExpression>0</MeshSizeZExpression>

@@ -10,8 +10,6 @@ Given a case XML and a (layer, block) position:
        K_port_face @ v = C_DtN ∘ v - S^T @ (K_cc^{-1} @ (S @ v))
   5. POD (eigsh, which='SA') → retain n_modes dominant modes
   6. Write trained model XML + binary with phi_basis_face, K_modal
-     NOTE: No f_modal — internal heat sources are zero during BC-agnostic
-     training, so f_port ≡ 0 and f_modal = Φᵀ·f_port ≡ 0.
 
 Usage:
   python scripts/train_macromodel.py cases/macromodel_tests/case1.xml \
@@ -30,7 +28,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 import numpy as np
-from scipy.sparse import lil_matrix, csr_matrix
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import splu, eigsh, LinearOperator
 
 # Namespaces used in the XML
@@ -105,6 +103,7 @@ def compute_layer_stacking(root, si_scale):
     layer_elems = xfindall(layers, "Layer")
     n = len(layer_elems)
     thickness = [0.0] * n
+    result = []
     z_cursor = 0.0
     for l, layer_elem in enumerate(layer_elems):
         if l == 0:
@@ -129,12 +128,11 @@ def compute_layer_stacking(root, si_scale):
             )
             thickness[l] = layer_t
         z_cursor += thickness[l]
-    result = []
     for l in range(n):
         z_start = z_cursor - thickness[l]
-        result.append((z_start, z_cursor if l == 0 else z_cursor))
+        result.append((z_start, z_start + thickness[l]))
         z_cursor -= thickness[l]
-    return [(r[0], r[0] + thickness[l]) for l, r in enumerate(result)]
+    return result
 
 
 def eval_block_geometry(root, layer_elem, block_elem, rect_elem, si_scale, layer_index):
@@ -202,16 +200,10 @@ def build_mesh_from_xml(root):
         raise ValueError("No Mesh element")
 
     def read_array(parent, tag):
-        arr = []
         el = parent.find(f"{{{NS_MESH}}}{tag}")
         if el is None:
             el = xfind(parent, tag)
-        if el is None:
-            el = parent.find(tag)
-        if el is not None:
-            for d in el:
-                arr.append(parse_double(get_text(d)))
-        return arr
+        return [parse_double(get_text(d)) for d in el] if el is not None else []
 
     xarr = read_array(mesh_elem, "XArray")
     yarr = read_array(mesh_elem, "YArray")
@@ -396,7 +388,7 @@ def main():
     # ── 6. Build K_cc (cell-cell FVM matrix) ───────────────────────────────
     # K_cc [n_block × n_block]: cell-to-cell internal conduction
     print("Building K_cc (cell-cell)...")
-    K_cc = lil_matrix((n_block, n_block))
+    rows_cc, cols_cc, data_cc = [], [], []
 
     for i in range(n_block):
         ix, iy, iz = block_ix[i], block_iy[i], block_iz[i]
@@ -427,8 +419,21 @@ def main():
             denom = h_i / k_i + h_j / k_j
             if denom > 0:
                 cond = A_f / denom
-                K_cc[i, i] += cond
-                K_cc[i, j] -= cond
+                rows_cc.append(i)
+                cols_cc.append(i)
+                data_cc.append(cond)
+                rows_cc.append(i)
+                cols_cc.append(j)
+                data_cc.append(-cond)
+
+    # Add C_DtN contributions to K_cc diagonal for boundary cells
+    for f, pf in enumerate(port_faces):
+        c = pf["cell_local"]
+        rows_cc.append(c)
+        cols_cc.append(c)
+        data_cc.append(C_DtN_arr[f])
+
+    K_cc_csr = csr_matrix((data_cc, (rows_cc, cols_cc)), shape=(n_block, n_block))
 
     # ── 7. Build S matrix (cell-face coupling) ─────────────────────────────
     # S[c, f] = C_DtN_f if port face f belongs to cell c
@@ -443,13 +448,6 @@ def main():
         data_s.append(C_DtN_arr[f])
 
     S = csr_matrix((data_s, (row_indices_s, col_indices_s)), shape=(n_block, n_ports))
-
-    # Add C_DtN contributions to K_cc diagonal for boundary cells
-    for f, pf in enumerate(port_faces):
-        c = pf["cell_local"]
-        K_cc[c, c] += C_DtN_arr[f]
-
-    K_cc_csr = K_cc.tocsr()
 
     # Factor K_cc once (used for implicit matvec in eigsh)
     print("  Factorizing K_cc (sparse LU)...")
@@ -477,7 +475,6 @@ def main():
 
     # Try eigsh with progressive tolerance loosening
     configs = [
-        {"k": n_modes, "which": "SA", "tol": 1e-8, "maxiter": 2000},
         {"k": n_modes, "which": "SA", "tol": 1e-6, "maxiter": 5000},
         {
             "k": min(n_modes, 5),
@@ -498,26 +495,6 @@ def main():
             print(f"  eigsh succeeded: k={cfg['k']}, tol={cfg['tol']}")
         except Exception as e:
             print(f"  eigsh(k={cfg['k']}, tol={cfg['tol']}) failed: {e}")
-
-    # Fallback: build dense K_port_face for modest n_ports
-    if Phi_face is None and n_ports <= 2000:
-        print("  Building dense K_port_face as fallback (column-by-column)...")
-        try:
-            K_port_face_dense = np.zeros((n_ports, n_ports))
-            for j in range(n_ports):
-                ej = np.zeros(n_ports)
-                ej[j] = 1.0
-                K_port_face_dense[:, j] = matvec(ej)
-            # Symmetrize
-            K_port_face_dense = 0.5 * (K_port_face_dense + K_port_face_dense.T)
-            eigvals, eigvecs = np.linalg.eigh(K_port_face_dense)
-            del K_port_face_dense
-            n_modes = min(n_modes, n_ports)
-            eigvals_orig = eigvals[:n_modes]
-            Phi_face = np.ascontiguousarray(eigvecs[:, :n_modes], dtype=np.float64)
-            print(f"  Dense fallback succeeded.")
-        except Exception as e:
-            print(f"  Dense fallback failed: {e}")
 
     if Phi_face is None:
         print("ERROR: Could not compute POD basis")

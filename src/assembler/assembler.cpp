@@ -285,22 +285,20 @@ namespace mhs::sim {
 
             // 3. Modal RHS: domain-BC contribution
             //    b(mk) += Σ_p φ(p,k)*(C_env(p)*T_ref(p) + Q_ext(p))
-            //
-            // f_modal is NOT included — it is always zero for BC-agnostic training.
-            for (int k = 0; k < n_modes; k++) {
-                double bc_rhs = 0.0;
+            {
+                Eigen::VectorXd face_rhs(sb.n_faces);
                 for (int p = 0; p < sb.n_faces; p++) {
-                    double C_env = sb.C_env_vec(p);
-                    double T_ref = sb.T_ref_vec(p);
-                    double Q_ext = sb.Q_ext_vec(p);
-                    if (std::abs(C_env) > mhs::core::zero_guard && std::abs(T_ref) > mhs::core::zero_guard) {
-                        bc_rhs += sb.phi_basis(p, k) * C_env * T_ref;
+                    double r = 0.0;
+                    if (std::abs(sb.C_env_vec(p)) > mhs::core::zero_guard
+                        && std::abs(sb.T_ref_vec(p)) > mhs::core::zero_guard) {
+                        r += sb.C_env_vec(p) * sb.T_ref_vec(p);
                     }
-                    if (std::abs(Q_ext) > mhs::core::zero_guard) {
-                        bc_rhs += sb.phi_basis(p, k) * Q_ext;
+                    if (std::abs(sb.Q_ext_vec(p)) > mhs::core::zero_guard) {
+                        r += sb.Q_ext_vec(p);
                     }
+                    face_rhs(p) = r;
                 }
-                b(modal_start + k) += bc_rhs;
+                b.segment(modal_start, n_modes) += sb.phi_basis.transpose() * face_rhs;
             }
         }
 
