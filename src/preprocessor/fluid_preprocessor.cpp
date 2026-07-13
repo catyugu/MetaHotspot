@@ -309,14 +309,14 @@ namespace mhs::sim {
         A.setFromTriplets(triplets.begin(), triplets.end());
 
         auto solver = mhs::sim::LinearSolver::create();
-        auto result = solver->solve(A, rhs);
-        if (!result.success) {
+        solver->compute(A);
+        Eigen::VectorXd x = solver->solve(rhs);
+        if (!solver->success()) {
             MHS_LOG_WARN(
                 "Fluid pressure solve failed (nf={}, nz={})", model.fluid.n_fluid, static_cast<int>(A.nonZeros()));
             return false;
         }
-        model.fluid.pressure
-            = std::vector<double>(result.solution.data(), result.solution.data() + result.solution.size());
+        model.fluid.pressure = std::vector<double>(x.data(), x.data() + x.size());
         return true;
     }
 

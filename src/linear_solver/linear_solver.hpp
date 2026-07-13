@@ -19,39 +19,34 @@ namespace mhs::sim {
         SolverConfig config {};
     };
 
-    // Solve result (no state on solver)
-    struct SolveResult {
-        Eigen::VectorXd solution;
-        bool success;
-        double residual_norm;
-        int iterations;
-    };
-
-    // Base linear solver class (virtual interface).
-    // Renamed from `Solver` to disambiguate from the nonlinear iteration
-    // pathway (`mhs::sim::nonlinear_solve`).
-    //
-    // Every concrete solver needs a SolverConfig before solve(), so the config
-    // lives on the base. Subclasses read `config_` directly.
     class LinearSolver {
     public:
         virtual ~LinearSolver() = default;
 
-        // Solve A * x = b
-        virtual SolveResult solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b) = 0;
+        /// Build factorization (direct) or preconditioner (iterative).
+        /// Must be called before solve(b).
+        virtual void compute(const Eigen::SparseMatrix<double>& A) = 0;
 
-        // Replace the configuration used by solve(). Called by the factory with
-        // the spec-supplied config; subclasses read the base's `config_`.
+        /// Solve A * x = b. Requires compute(A) to have been called first.
+        virtual Eigen::VectorXd solve(const Eigen::VectorXd& b) = 0;
+
+        // Configuration
         void set_config(SolverConfig cfg) { config_ = cfg; }
         const SolverConfig& config() const { return config_; }
 
-        // Factory: build a solver from a spec. Type + config both default
-        // (EigenSparseLU + SolverConfig defaults), so `LinearSolver::create({})`
-        // returns the default solver with default config.
+        // Diagnostics from the last solve()
+        bool success() const { return success_; }
+        int iterations() const { return iterations_; }
+        double residual() const { return residual_; }
+
+        // Factory: build a solver from a spec.
         static std::unique_ptr<LinearSolver> create(const SolverSpec& spec = {});
 
     protected:
         SolverConfig config_;
+        bool success_ = false;
+        int iterations_ = 0;
+        double residual_ = 0.0;
     };
 
 } // namespace mhs::sim

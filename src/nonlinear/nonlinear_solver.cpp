@@ -129,12 +129,11 @@ namespace mhs::sim {
                 return {true, iter};
             }
 
-            auto solve_result = solver.solve(linear_system.A, linear_system.b);
-            if (!solve_result.success) {
+            solver.compute(linear_system.A);
+            const Eigen::VectorXd G_k = solver.solve(linear_system.b);
+            if (!solver.success()) {
                 MHS_LOG_WARN("Linear solver failed at Non-Linear iteration {}", iter);
             }
-
-            const Eigen::VectorXd G_k = solve_result.solution;
             const Eigen::VectorXd x_k = T; // capture pre-update state
 
             std::optional<Eigen::VectorXd> x_prop = mixer.step(x_k, G_k);

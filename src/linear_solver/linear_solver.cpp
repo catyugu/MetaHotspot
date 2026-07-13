@@ -8,10 +8,8 @@
 
 namespace mhs::sim {
 
-    // Factory: builds the chosen solver and seeds it with the spec's config.
-    // The spec default-constructs to SolverType::EigenSparseLU + default config,
-    // The Pardiso branch is guarded by MHS_ENABLE_PARDISO; without it, requests for
-    // Pardiso fall back to EigenSparseLUSolver.
+    // --- Factory ---
+
     std::unique_ptr<LinearSolver> LinearSolver::create(const SolverSpec& spec)
     {
         std::unique_ptr<LinearSolver> solver = nullptr;

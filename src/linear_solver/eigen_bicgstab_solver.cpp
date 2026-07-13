@@ -3,16 +3,21 @@
 
 namespace mhs::sim {
 
-    SolveResult EigenBiCGSTABSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
+    void EigenBiCGSTABSolver::compute(const Eigen::SparseMatrix<double>& A)
     {
-        Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver;
-        solver.compute(A);
-        solver.setMaxIterations(config_.max_iterations);
-        solver.setTolerance(config_.tolerance);
+        A_ = A;
+        solver_.compute(A_);
+        solver_.setMaxIterations(config_.max_iterations);
+        solver_.setTolerance(config_.tolerance);
+    }
 
-        Eigen::VectorXd x = solver.solve(b);
-
-        return {x, solver.info() == Eigen::Success, solver.error(), static_cast<int>(solver.iterations())};
+    Eigen::VectorXd EigenBiCGSTABSolver::solve(const Eigen::VectorXd& b)
+    {
+        Eigen::VectorXd x = solver_.solve(b);
+        success_ = (solver_.info() == Eigen::Success);
+        iterations_ = static_cast<int>(solver_.iterations());
+        residual_ = solver_.error();
+        return x;
     }
 
 } // namespace mhs::sim
