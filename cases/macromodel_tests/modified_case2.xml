@@ -92,6 +92,8 @@
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
+                  <BlockType>SmartMacro</BlockType>
+                  <ModelFile>trained_layer0_block0.xml</ModelFile>
                 </Block>
             </Blocks>
             <CreatedByTopLayer>false</CreatedByTopLayer>

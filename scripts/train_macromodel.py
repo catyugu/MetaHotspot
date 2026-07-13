@@ -534,9 +534,6 @@ def main():
     )
     ET.SubElement(root_elem, "NPorts").text = str(n_ports)
     ET.SubElement(root_elem, "NModes").text = str(n_modes)
-    ET.SubElement(root_elem, "Kx").text = str(kx_mat)
-    ET.SubElement(root_elem, "Ky").text = str(ky_mat)
-    ET.SubElement(root_elem, "Kz").text = str(kz_mat)
     ET.SubElement(root_elem, "DataFile").text = os.path.basename(data_path)
 
     po = ET.SubElement(root_elem, "PortOrder")
@@ -566,17 +563,31 @@ def main():
         lines = f_in.readlines()
 
     block_depth = 0
+    layer_count = -1  # 0-based counter for <Layer> tags
+    block_count = -1  # 0-based counter for <Block> tags within current layer
+    target_layer = args.layer
+    target_block = args.block
     target_block_depth = -1
+    in_target_layer = False
     block_type_inserted = False
     model_file_inserted = False
     out_lines = []
 
     for line in lines:
         stripped = line.strip()
-        if "<Block" in stripped and "</Block>" not in stripped:
+
+        # Track layer depth to reset block counter per layer
+        if stripped == "<Layer>":
+            layer_count += 1
+            block_count = -1
+            in_target_layer = layer_count == target_layer
+
+        # Only count <Block> opening tags (not <Blocks>, <ParentBlock>, etc.)
+        if stripped == "<Block>" and in_target_layer:
             block_depth += 1
-            if block_depth == 1:
-                target_block_depth = 1
+            block_count += 1
+            if block_count == target_block:
+                target_block_depth = block_depth
 
         if target_block_depth > 0 and block_depth >= target_block_depth:
             if stripped.startswith("<BlockType>"):
@@ -588,7 +599,7 @@ def main():
                 )
                 model_file_inserted = True
 
-        if "</Block>" in stripped and block_depth > 0:
+        if stripped == "</Block>" and block_depth > 0:
             if block_depth == target_block_depth:
                 indent = line[: len(line) - len(line.lstrip())]
                 if not block_type_inserted:
@@ -598,7 +609,8 @@ def main():
                         f"{indent}  <ModelFile>{trained_basename}</ModelFile>\n"
                     )
                 target_block_depth = -1
-            block_depth -= 1
+            if in_target_layer:
+                block_depth -= 1
 
         out_lines.append(line)
 
