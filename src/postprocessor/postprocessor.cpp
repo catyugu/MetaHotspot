@@ -8,10 +8,12 @@
 namespace mhs::post {
 
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature, double time)
+        const mhs::core::Model& model, const std::vector<double>& cell_temperature, double time)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
+        const auto& face_bcs = model.face_bcs;
+        const auto& bc_params = model.bc_params;
 
         int node_nx = mesh.nx + 1;
         int node_ny = mesh.ny + 1;
@@ -79,24 +81,23 @@ namespace mhs::post {
 
                                 mhs::core::FaceDir dirs[3] = {f_x, f_y, f_z};
 
-                                // 检查面上的边界条件
+                                // 从 face_bcs 直接取该 cell 的 3 个面（节点相邻方向）
+                                auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
                                 for (mhs::core::FaceDir dir : dirs) {
-                                    mhs::core::BcType bc_type = cells.cell_bcs[compact_idx].types[(size_t)dir];
-                                    if (bc_type == mhs::core::BcType::None)
+                                    const auto& fb = fc[(size_t)dir];
+                                    if (fb.type == mhs::core::BcType::None)
                                         continue;
 
-                                    uint16_t param_idx = cells.cell_bcs[compact_idx].param_idxs[(size_t)dir];
-
-                                    if (bc_type == mhs::core::BcType::FirstType) {
-                                        dirichlet_sum += model.bc_params.dirichlet_T[param_idx].eval(
+                                    if (fb.type == mhs::core::BcType::FirstType) {
+                                        dirichlet_sum += bc_params.dirichlet_T[fb.param_idx].eval(
                                             {node_x, node_y, node_z, T_c, time});
                                         dirichlet_count++;
                                     }
                                     else {
                                         // 梯度边界：外推面中心温度并作为一个额外的"几何观测点"喂给最小二乘求解器
                                         double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-                                        double T_f = mhs::post::sample_extrapolate_face_temperature(dir, bc_type,
-                                            param_idx, T_c, k_face, mesh, ix, iy, iz, model.bc_params, time);
+                                        double T_f = mhs::post::sample_extrapolate_face_temperature(
+                                            dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
                                         // 【各向异性修正】同理，计算面中心到节点的等效各向异性距离权重
                                         double fx, fy, fz;

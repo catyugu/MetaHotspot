@@ -16,20 +16,9 @@
 namespace mhs::sim {
 
     namespace {
-        // ── 建立反向映射: Compact index → Old grid index ─────────────────────────
-        std::vector<int> buildCompactToOld(const mhs::core::CellFields& cells, int totalGrid)
-        {
-            std::vector<int> compact_to_old(cells.material_id.size(), -1);
-            for (int old_idx = 0; old_idx < totalGrid; ++old_idx) {
-                int c = static_cast<int>(cells.index_map[old_idx]);
-                if (c >= 0)
-                    compact_to_old[c] = old_idx;
-            }
-            return compact_to_old;
-        }
 
         // ── 沿指定轴探索连续流体长度 (替代原本脆弱且冗长的 6 个 while 循环) ───────────
-        double measure_fluid_extent(const mhs::core::InternalModel& model, int ix, int iy, int iz, int axis)
+        double measure_fluid_extent(const mhs::core::Model& model, int ix, int iy, int iz, int axis)
         {
             const auto& mesh = model.mesh;
             const auto& cells = model.cells;
@@ -70,7 +59,7 @@ namespace mhs::sim {
         }
 
         // ── 计算通道几何 ────────────────────────────────────────────────────────
-        void computeChannelDimensions(mhs::core::InternalModel& model, const std::vector<int>& compact_to_old)
+        void computeChannelDimensions(mhs::core::Model& model, const std::vector<int>& compact_to_old)
         {
             const auto& mesh = model.mesh;
             for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
@@ -139,8 +128,8 @@ namespace mhs::sim {
             face_area[fi] = a * b;
         }
 
-        void applyFluidBoundaries(mhs::core::InternalModel& model, const mhs::core::FluidOverlay& overlay,
-            double si_scale, const std::vector<int>& compact_to_old)
+        void applyFluidBoundaries(mhs::core::Model& model, const mhs::core::FluidOverlay& overlay, double si_scale,
+            const std::vector<int>& compact_to_old)
         {
             const auto& mesh = model.mesh;
             for (const auto& fb : overlay.boundaries) {
@@ -212,7 +201,7 @@ namespace mhs::sim {
         // 在初始温度处求值: 不可压缩流的压力解不依赖 T, 用 T_init 是合理近似.
         // 接受 compact_to_old, 因为调用点已经在 solveFluidFlow 中构造了它.
         static double evaluateFluidRhoAtInitT(
-            const mhs::core::InternalModel& model, int fi, const std::vector<int>& compact_to_old)
+            const mhs::core::Model& model, int fi, const std::vector<int>& compact_to_old)
         {
             const auto& cells = model.cells;
             const auto& mesh = model.mesh;
@@ -228,14 +217,14 @@ namespace mhs::sim {
 
     } // 匿名命名空间
 
-    void applyFluidOverlay(mhs::core::InternalModel& model, const std::optional<mhs::core::FluidOverlay>& overlay,
+    void applyFluidOverlay(mhs::core::Model& model, const std::optional<mhs::core::FluidOverlay>& overlay,
         const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols)
     {
         if (!overlay.has_value() || overlay->fluid_materials.empty())
             return;
 
         const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
-        const int N = static_cast<int>(model.cells.cell_bcs.size());
+        const int N = static_cast<int>(model.cells.material_id.size());
 
         // 1. 建立材质名索引映射
         std::unordered_map<std::string, uint16_t> matNameToTableIdx;
@@ -309,21 +298,21 @@ namespace mhs::sim {
         }
 
         // 建立 compact → old 反向映射, 供 applyFluidBoundaries / computeChannelDimensions 共享.
-        auto compact_to_old = buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
+        auto compact_to_old = mhs::utils::buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
         // 4. 应用流体边界与计算通道几何
         applyFluidBoundaries(model, overlay.value(), si_scale, compact_to_old);
         computeChannelDimensions(model, compact_to_old);
     }
 
-    void solveFluidFlow(mhs::core::InternalModel& model)
+    void solveFluidFlow(mhs::core::Model& model)
     {
         if (model.fluid.n_fluid == 0)
             return;
 
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
-        auto compact_to_old = buildCompactToOld(cells, mesh.nx * mesh.ny * mesh.nz);
+        auto compact_to_old = mhs::utils::buildCompactToOld(cells, mesh.nx * mesh.ny * mesh.nz);
 
         // Phase 1: 等效渗透率计算
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
@@ -402,7 +391,7 @@ namespace mhs::sim {
         Eigen::SparseMatrix<double> A(model.fluid.n_fluid, model.fluid.n_fluid);
         A.setFromTriplets(triplets.begin(), triplets.end());
 
-        auto solver = mhs::sim::LinearSolver::create(mhs::sim::SolverType::SparseLU);
+        auto solver = mhs::sim::LinearSolver::create();
         auto result = solver->solve(A, rhs);
         if (!result.success) {
             MHS_LOG_WARN(

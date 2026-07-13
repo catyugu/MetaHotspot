@@ -5,14 +5,15 @@
 ```cpp
 namespace mhs::io {
     mhs::core::IOStructure read_xml(const std::string& xml_path);
+    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path);
 
     void write_vtu(const std::string& path,
-                   const mhs::core::InternalModel& model,
+                   const mhs::core::Model& model,
                    const std::vector<double>& node_temperature);
 
     void write_xml(const std::string& input_path,
                    const std::string& output_path,
-                   const mhs::core::InternalModel& model,
+                   const mhs::core::Model& model,
                    const std::vector<double>& node_temperature,
                    const std::vector<mhs::core::ProbeTrace>& observation_traces = {});
 }
@@ -24,8 +25,8 @@ namespace mhs::io {
 namespace mhs::sim {
     class Preprocessor {
     public:
-        std::unique_ptr<mhs::core::InternalModel> load(
-            const mhs::core::IOStructure& io,
+        std::unique_ptr<mhs::core::Model> load(
+            const mhs::core::IOStructure& ioStructure,
             const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
 }
@@ -48,15 +49,19 @@ std::vector<ResolvedLayerGeometry> resolve_geometry(
 int find_block_for_cell(const ResolvedLayerGeometry& layer,
                         double cx, double cy, double cz);  // -1 = virtual
 
-struct LayerResolveResult {
-    mhs::core::CellFields cells;
-    std::vector<size_t> layer_id_old;
-};
-
-LayerResolveResult resolve_layers(
+mhs::core::CellFields assign_cell_layers(
     const std::vector<ResolvedLayerGeometry>& resolved_layers,
     const mhs::core::MeshGeometry& mesh,
-    const std::unordered_map<std::string, size_t>& name_to_idx);
+    const std::unordered_map<std::string, size_t>& name_to_idx,
+    const std::vector<std::vector<uint16_t>>& block_hs_map);
+
+void resolve_boundary_patches(
+    const mhs::core::MeshGeometry& mesh,
+    const mhs::core::CellFields& cells,
+    const std::vector<ParsedFaceKey>& parsed_face_keys,
+    mhs::core::BcType other_bc_enum,
+    uint16_t other_bc_idx,
+    std::vector<mhs::core::FaceBC>& face_bcs);
 
 struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
                      double coord_value = 0.0;
@@ -81,12 +86,13 @@ mhs::core::IOStructure
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
-        ├─> resolve_layers()           // valid_mask + index_map (full-grid), material_id (compact)
+        ├─> assign_cell_layers()       // index_map (full-grid), material_id + heat_source_idx (compact)
         ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) 后单次遍历网格：CellBC + BCParamTable + other_bc
+        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
+        ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
         ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
-        └─> mhs::core::InternalModel ready
+        └─> mhs::core::Model ready
 ```
 
 ## `assembler`
@@ -116,7 +122,7 @@ namespace mhs::sim {
 
     class Assembler {
     public:
-        explicit Assembler(const mhs::core::InternalModel& model);
+        explicit Assembler(const mhs::core::Model& model);
         AssemblyResult assemble(const AssembleContext& ctx) const;
     };
 }
@@ -148,8 +154,6 @@ namespace mhs::sim::time_scheme {
     struct ErrorControlConfig {
         double abs_tol = 1e-4;
         double safety  = 0.9;
-        double min_dt  = 1e-9;
-        double max_dt  = 1.0;
     };
 
     struct ErrorEstimate {
@@ -171,9 +175,8 @@ namespace mhs::sim::time_scheme {
 
     class StepController {
     public:
-        StepController(StepStrategy strategy, double output_dt,
-                       double min_dt, double max_dt, double fixed_dt = 1.0);
-        void rebuild(double duration);
+        StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt = 1.0);
+        void rebuild(double duration, double output_dt);
         double prepare(double dt_suggested, double current_t, double duration);
         std::vector<double> flush_outputs(double current_t);
     };
@@ -207,12 +210,16 @@ the k most recently *accepted* (T, time) pairs.  Capacity is `max_order + 1`.
 
 ```cpp
 namespace mhs::sim {
-    enum class SolverType { Pardiso, SparseLU, BiCGSTAB };
+    enum class SolverType { Pardiso, EigenSparseLU, EigenBiCGSTAB };
 
     struct SolverConfig {
-        SolverType type = SolverType::Pardiso;
         double tolerance = 1e-8;
         int max_iterations = 1000;
+    };
+
+    struct SolverSpec {
+        SolverType type = SolverType::Pardiso;
+        SolverConfig config {};
     };
 
     struct SolveResult {
@@ -227,14 +234,17 @@ namespace mhs::sim {
         virtual ~LinearSolver() = default;
         virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
                                   const Eigen::VectorXd& b) = 0;
-        // 在 solve() 之前注入配置（如 BiCGSTAB 的容差 / 迭代上限）。
-        virtual void set_config(const SolverConfig& cfg) = 0;
-        static std::unique_ptr<LinearSolver> create(SolverType type);
+        // Config lives on the base — every solver needs it, so subclasses no
+        // longer override. The factory seeds `config_` from SolverSpec before
+        // returning the instance.
+        void set_config(SolverConfig cfg);
+        const SolverConfig& config() const;
+        static std::unique_ptr<LinearSolver> create(const SolverSpec& spec = {});
     };
 
-    class BiCGSTABSolver  : public LinearSolver { ... };
-    class PardisoSolver   : public LinearSolver { ... };
-    class SparseLUSolver  : public LinearSolver { ... };
+    class EigenBiCGSTABSolver  : public LinearSolver { ... };
+    class PardisoLUSolver   : public LinearSolver { ... };
+    class EigenSparseLUSolver  : public LinearSolver { ... };
 }
 ```
 
@@ -248,7 +258,7 @@ namespace mhs::sim {
 
     struct NonLinearConfig {
         double underrelaxation      = 1.0;
-        int    max_iterations       = 50;
+        int    max_iterations       = 200;
         double relative_tolerance   = 1e-6;
         double absolute_tolerance   = 1e-12;
     };
@@ -270,16 +280,12 @@ namespace mhs::sim {
 namespace mhs::sim {
     class Scheduler {
     public:
-        void setModel(mhs::core::InternalModel* model);
+        void setModel(mhs::core::Model* model);
         void setSolver(std::unique_ptr<LinearSolver> solver);
         void run();
-        const std::vector<double>& solution() const;
-        // 求解结束时的当前时刻（稳态恒为 0.0；瞬态为最后一个步末的时间）。
-        // postprocessor 调 FieldContext.t 时需要此值。
-        double currentTime() const;
-        // 探针温度时间序列：与 model.observation_points 一一对应。
-        // 仅 (Transient && !observation_points.empty()) 时非空；每个 trace 长度 = 步数 + 1（含 t=0）。
-        const std::vector<mhs::core::ProbeTrace>& probeTraces() const;
+        const std::vector<double>& solution() const noexcept { return solution_; }
+        double currentTime() const noexcept { return step_.current_time; }
+        const std::vector<mhs::core::ProbeTrace>& probeTraces() const noexcept { return probe_recorder_.traces(); }
     };
 
     // 探针局部采样与时序记录器，专属于 Scheduler。仅依赖 mhs::core。
@@ -287,7 +293,7 @@ namespace mhs::sim {
     // 使时间依赖的 BC / 材料表达式（如 "500 + 100*t"）在正确的时刻被求值。
     class ProbeRecorder {
     public:
-        void initialize(const mhs::core::InternalModel& model);
+        void initialize(const mhs::core::Model& model);
         void record(double time, const std::vector<double>& cell_T);
         const std::vector<mhs::core::ProbeTrace>& traces() const;
     };
@@ -314,7 +320,7 @@ namespace mhs::post {
     // `time` 注入 FieldContext.t，使时间依赖的 BC 表达式在正确的时刻被求值。
     // 稳态场景传 0.0 即可；瞬态由调用方提供当前求解时刻。
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model,
+        const mhs::core::Model& model,
         const std::vector<double>& cell_temperature,
         double time);
 

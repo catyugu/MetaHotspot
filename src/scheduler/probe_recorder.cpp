@@ -42,7 +42,7 @@ namespace mhs::sim {
         }
     } // namespace
 
-    void ProbeRecorder::initialize(const mhs::core::InternalModel& model)
+    void ProbeRecorder::initialize(const mhs::core::Model& model)
     {
         model_ = &model;
         traces_.clear();
@@ -90,6 +90,8 @@ namespace mhs::sim {
     {
         const auto& mesh = model_->mesh;
         const auto& cells = model_->cells;
+        const auto& face_bcs = model_->face_bcs;
+        const auto& bc_params = model_->bc_params;
         const int ix = slot.ix;
         const int iy = slot.iy;
         const int iz = slot.iz;
@@ -127,14 +129,13 @@ namespace mhs::sim {
             return std::numeric_limits<double>::quiet_NaN();
         const double T_c = sum_T / static_cast<double>(cnt);
 
-        // 2. Dirichlet 面早返回（探针位于 cell 网格边界面上、且该面对应 FirstType）
-        for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
-            if (!mhs::utils::is_grid_boundary_face(mhs::core::FACE_DIRS[d], ix, iy, iz, mesh))
-                continue;
-            const auto& cell_bc = cells.cell_bcs[compact_idx];
-            if (cell_bc.types[d] == mhs::core::BcType::FirstType) {
-                uint16_t param_idx = cell_bc.param_idxs[d];
-                return model_->bc_params.dirichlet_T[param_idx].eval({px, py, pz, T_c, time});
+        // 2. Dirichlet 面早返回：利用 face_bcs 直接查找
+        auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
+        for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+            const auto& fb = fc[f];
+            if (fb.type == mhs::core::BcType::FirstType
+                && mhs::utils::is_grid_boundary_face(mhs::core::FACE_DIRS[f], ix, iy, iz, mesh)) {
+                return bc_params.dirichlet_T[fb.param_idx].eval({px, py, pz, T_c, time});
             }
         }
 
@@ -166,16 +167,16 @@ namespace mhs::sim {
             }
         }
 
-        const auto& cell_bc = cells.cell_bcs[compact_idx];
-        for (size_t d = 0; d < mhs::core::FACE_COUNT; ++d) {
-            mhs::core::BcType bc = cell_bc.types[d];
-            if (bc == mhs::core::BcType::None || bc == mhs::core::BcType::FirstType)
+        // 遍历该 cell 的所有面，对 Neumann/Cauchy 面做外推
+        for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+            const auto& fb = fc[f];
+            if (fb.type == mhs::core::BcType::None || fb.type == mhs::core::BcType::FirstType)
                 continue;
-            mhs::core::FaceDir dir = mhs::core::FACE_DIRS[d];
-            uint16_t param_idx = cell_bc.param_idxs[d];
+
+            auto dir = mhs::core::FACE_DIRS[f];
             double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
             double T_f = mhs::post::sample_extrapolate_face_temperature(
-                dir, bc, param_idx, T_c, k_face, mesh, ix, iy, iz, model_->bc_params, time);
+                dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
             double fx, fy, fz;
             mhs::post::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "data/internal_model.hpp"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
+#include "data/model.hpp"
 #include "expr/expr.hpp"
 
 #include <functional>
@@ -41,18 +41,16 @@ namespace mhs::sim {
     bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
 
     // Flatten all (boundary, face_key) pairs and push their BC params into
-    // bc_params.  Returns the flattened ParsedFaceKey vector used by the
-    // single-pass grid traversal inside resolve_layers.
+    // bc_params.  Returns the flattened ParsedFaceKey vector consumed by
+    // resolve_boundary_patches to match boundary conditions against cell faces.
     //
     // The `rewriter` is applied to every BC string (temperature / heat_flux /
     // convection_coeff / T_inf) before parsing — typically the 字面替换 that
     // turns `name(x)` into `name(T)`.
     // `symbols` is forwarded into every parse() call so the resulting
     // CompiledExpression captures the correct natives/variables.
-    std::vector<ParsedFaceKey> parse_all_face_keys(
-        const std::vector<mhs::core::Boundary>& boundaries,
+    std::vector<ParsedFaceKey> parse_all_face_keys(const std::vector<mhs::core::Boundary>& boundaries,
         mhs::core::BCParamTable& bc_params, double si_scale,
-        const std::function<std::string(const std::string&)>& rewriter,
-        const mhs::core::SymbolTable& symbols);
+        const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols);
 
 } // namespace mhs::sim

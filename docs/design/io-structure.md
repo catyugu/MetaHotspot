@@ -1,6 +1,6 @@
 # IO 模型结构
 
-直接映射 XML schema，仅用于序列化/反序列化。`src/data/io_model.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
+直接映射 XML schema，仅用于序列化/反序列化。`src/data/io_structure.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
 
 ```cpp
 namespace mhs::core {
@@ -67,7 +67,7 @@ enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
 enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 当前未实现，预处理不读取
 
 // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
-// （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
+// （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 Model。
 struct ObservationPoint3D {
     std::string name;
     std::string x;
@@ -161,6 +161,25 @@ struct Function {
     GaussFunction gauss;
     SineFunction sine;
     PieceWiseFunction piecewise;
+};
+
+// 流体-固体耦合: 流体 overlay 类型 (从额外 XML 解析, 不侵入主 IOStructure)
+struct FluidMaterialOverlay {
+    std::string name;
+    std::string dynamic_viscosity;
+};
+
+struct FluidBoundaryOverlay {
+    std::string name;
+    std::vector<std::string> face_keys;
+    FluidBCType kind = FluidBCType::None;
+    double value = 0.0;
+    double inlet_temperature = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct FluidOverlay {
+    std::vector<FluidMaterialOverlay> fluid_materials;
+    std::vector<FluidBoundaryOverlay> boundaries;
 };
 
 } // namespace mhs::core

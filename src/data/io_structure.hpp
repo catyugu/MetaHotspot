@@ -27,6 +27,8 @@ namespace mhs::core {
         std::string name;
     };
 
+    enum class BlockType { Normal, SmartMacro };
+
     // 找到 struct Block 定义并修改：
     struct Block {
         std::vector<Rect> all_rects;
@@ -36,6 +38,8 @@ namespace mhs::core {
         std::string ti_reyuan_expr; // 体热源表达式 [W/m³]
         std::string name;
         std::string thickness_expr; // 新增：Block 自己的厚度表达式
+        BlockType block_type = BlockType::Normal;
+        std::string model_file; // 仅 SmartMacro: 训练模型 XML 路径
     };
     struct Layer {
         std::vector<Block> blocks;
@@ -85,7 +89,7 @@ namespace mhs::core {
     };
 
     // 单变元函数类别（5 类），XML <Functions> 块解析为这些 POD 类型。
-    // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，InternalModel
+    // 仅在 IO 层使用：preprocessor 收到后注册到 expr 全局注册表，Model
     // 不再持有这些类型，保持模块解耦。
     enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
 
@@ -143,13 +147,30 @@ namespace mhs::core {
     enum class Dimension { Dimension2D, Dimension3D };
 
     // 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
-    // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 InternalModel。
+    // （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 Model。
     // 求解器在每个时间步记录该点温度。
     struct ObservationPoint3D {
         std::string name;
         std::string x;
         std::string y;
         std::string z;
+    };
+
+    // ── SmartMacro model (IO-payload, no Eigen types) ──────────────────
+    /// POD-based reduced model loaded from disk: face-level DtN + POD basis.
+    /// K_modal is stored as dense row-major [n_modes x n_modes].
+    /// phi_basis is row-major [N_faces x n_modes].
+    /// port_ix/iy/iz identify the owner (block-interior) cell of each port face.
+    /// port_dir is the face direction (0-5, same convention as mesh_utils).
+    struct SmartMacroModelData {
+        std::string name;
+        std::vector<double> K_modal; // row-major [n_modes x n_modes]
+        std::vector<double> phi_basis; // row-major [N_faces x n_modes]
+        std::vector<int> port_ix;
+        std::vector<int> port_iy;
+        std::vector<int> port_iz;
+        std::vector<int> port_dir; // face direction 0-5 for each port
+        int n_modes = 0;
     };
 
     // 探针温度时间序列：与 ObservationPoint3D::name 一一对应，times/values 等长。

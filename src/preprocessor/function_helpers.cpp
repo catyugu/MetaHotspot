@@ -2,6 +2,7 @@
 #include "expr/expr.hpp"
 #include "function_helpers.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <string_view>

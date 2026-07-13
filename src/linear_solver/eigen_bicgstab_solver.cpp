@@ -1,9 +1,9 @@
-#include "linear_solver/bicgstab_solver.hpp"
-#include <Eigen/Sparse>
+#include "linear_solver/eigen_bicgstab_solver.hpp"
+#include <Eigen/IterativeLinearSolvers>
 
 namespace mhs::sim {
 
-    SolveResult BiCGSTABSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
+    SolveResult EigenBiCGSTABSolver::solve(const Eigen::SparseMatrix<double>& A, const Eigen::VectorXd& b)
     {
         Eigen::BiCGSTAB<Eigen::SparseMatrix<double>> solver;
         solver.compute(A);
@@ -14,7 +14,5 @@ namespace mhs::sim {
 
         return {x, solver.info() == Eigen::Success, solver.error(), static_cast<int>(solver.iterations())};
     }
-
-    void BiCGSTABSolver::set_config(const SolverConfig& cfg) { config_ = cfg; }
 
 } // namespace mhs::sim

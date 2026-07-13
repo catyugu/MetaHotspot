@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/internal_model.hpp"
+#include "data/model.hpp"
 #include <vector>
 
 namespace mhs::post {
@@ -11,7 +11,7 @@ namespace mhs::post {
     // `time` 注入到 FieldContext.t，使时间依赖的 BC 表达式（如 "500 + 100*t"）
     // 在正确的时刻被求值。
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::InternalModel& model, const std::vector<double>& cell_temperature, double time);
+        const mhs::core::Model& model, const std::vector<double>& cell_temperature, double time);
 
     double max_temperature(const std::vector<double>& T);
     double min_temperature(const std::vector<double>& T);

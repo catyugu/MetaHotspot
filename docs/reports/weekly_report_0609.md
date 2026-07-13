@@ -4,7 +4,7 @@
 
 1. **瞬态求解**：完成了时间推进逻辑和观察点的支持，并新增 transient case1、case2 两组算例用于验证。case2 专门用于各向异性热导率场景的瞬态对比。
 2. **各向异性热导率支持**：在材料模型中加入了方向性导热系数的处理能力，可按方向分别指定 kx、ky、kz。
-3. **MKL PARDISO 求解器**：新增对 Intel MKL PARDISO 直接求解器的封装，与原有 BiCGSTAB、SparseLU 并列可选，大规模网格下求解效率有明显提升。
+3. **MKL PARDISO 求解器**：新增对 Intel MKL PARDISO 直接求解器的封装，与原有 EigenBiCGSTAB、EigenSparseLU 并列可选，大规模网格下求解效率有明显提升。
 4. **函数类型解析**：在 preprocessor 中新增 function_helpers 模块，支持从 XML 中解析函数的类型标注（边界条件类型、源项类型等），便于后续注册其他函数。
 5. **非线性求解器参数传递**：模仿 COMSOL 做法改用右边项/相对容差/绝对容差综合决策。
 
@@ -15,7 +15,7 @@
 
 ## 三、架构重构
 
-1. **求解器层重构**：将原来的 `solver` 模块拆分为独立的 `linear_solver`，内部按求解器类型（BiCGSTAB、SparseLU、PARDISO）各自封装为独立头文件/源文件，方便按需编译。
+1. **求解器层重构**：将原来的 `solver` 模块拆分为独立的 `linear_solver`，内部按求解器类型（EigenBiCGSTAB、EigenSparseLU、PARDISO）各自封装为独立头文件/源文件，方便按需编译。
 2. **模块合并**：将 `logger` 和 `model` 合并入 `common_lib`，减少库数量；`model/types.hpp` 中的类型定义移入 `common/types.hpp`。
 3. **expr 模块改造**：重构了 expr 模块的原生函数注册机制，使绑定接口更加简单易用，同时解除了 command 与 expr 之间的循环依赖。
 4. **face_key_processor 简化**：引入 `mesh_utils` 查表替代原先的方向枚举分支判断，`face_key_processor` 逻辑精简。

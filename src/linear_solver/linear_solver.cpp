@@ -1,31 +1,38 @@
-#include "linear_solver/bicgstab_solver.hpp"
+#include "linear_solver/eigen_bicgstab_solver.hpp"
+#include "linear_solver/eigen_sparse_lu_solver.hpp"
 #include "linear_solver/linear_solver.hpp"
-#include "linear_solver/sparse_lu_solver.hpp"
-
 
 #ifdef MHS_ENABLE_PARDISO
-#include "linear_solver/pardiso_solver.hpp"
+#include "linear_solver/pardiso_lu_solver.hpp"
 #endif
 
 namespace mhs::sim {
 
-    // Factory: explicit branches for each SolverType. The default and the
-    // Pardiso branch are guarded by MHS_ENABLE_PARDISO; without it, both
-    // fall back to SparseLUSolver.
-    std::unique_ptr<LinearSolver> LinearSolver::create(SolverType type)
+    // Factory: builds the chosen solver and seeds it with the spec's config.
+    // The spec default-constructs to SolverType::EigenSparseLU + default config,
+    // The Pardiso branch is guarded by MHS_ENABLE_PARDISO; without it, requests for
+    // Pardiso fall back to EigenSparseLUSolver.
+    std::unique_ptr<LinearSolver> LinearSolver::create(const SolverSpec& spec)
     {
-        switch (type) {
+        std::unique_ptr<LinearSolver> solver = nullptr;
+        switch (spec.type) {
 #ifdef MHS_ENABLE_PARDISO
         case SolverType::Pardiso:
-            return std::make_unique<PardisoSolver>();
+            solver = std::make_unique<PardisoLUSolver>();
+            break;
 #endif
-        case SolverType::SparseLU:
-            return std::make_unique<SparseLUSolver>();
-        case SolverType::BiCGSTAB:
-            return std::make_unique<BiCGSTABSolver>();
+        case SolverType::EigenSparseLU:
+            solver = std::make_unique<EigenSparseLUSolver>();
+            break;
+        case SolverType::EigenBiCGSTAB:
+            solver = std::make_unique<EigenBiCGSTABSolver>();
+            break;
         default:
-            return std::make_unique<SparseLUSolver>();
+            solver = std::make_unique<EigenSparseLUSolver>();
+            break;
         }
+        solver->set_config(spec.config);
+        return solver;
     }
 
 } // namespace mhs::sim

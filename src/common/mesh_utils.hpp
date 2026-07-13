@@ -1,7 +1,7 @@
 #pragma once
 
-#include "data/internal_model.hpp"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
+#include "data/model.hpp"
 #include "data/tolerance_config.hpp"
 #include "data/types.hpp"
 #include <cstddef>
@@ -126,6 +126,22 @@ namespace mhs::utils {
         return centers[axis] + sign * sizes[axis] * 0.5;
     }
 
+    /// Full 3-D coordinates of the face center.
+    inline void face_center_3d(mhs::core::FaceDir dir, int ix, int iy, int iz,
+        const mhs::core::MeshGeometry& mesh, double& fx, double& fy, double& fz)
+    {
+        fx = mesh.cx[ix]; fy = mesh.cy[iy]; fz = mesh.cz[iz];
+        double half = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+        switch (dir) {
+        case mhs::core::FaceDir::XM: fx -= half; break;
+        case mhs::core::FaceDir::XP: fx += half; break;
+        case mhs::core::FaceDir::YM: fy -= half; break;
+        case mhs::core::FaceDir::YP: fy += half; break;
+        case mhs::core::FaceDir::ZM: fz -= half; break;
+        case mhs::core::FaceDir::ZP: fz += half; break;
+        }
+    }
+
     /// True iff this face lies on the outer hull of the structured grid
     /// (no neighbor slot to step into). Replaces the 6-line `ix==0 || ix==nx-1 || ...`
     /// check scattered across assembler / probe recorder.
@@ -139,6 +155,20 @@ namespace mhs::utils {
         const int i = idx[axis];
         const int n = sizes[axis];
         return (sign < 0 && i == 0) || (sign > 0 && i == n - 1);
+    }
+
+    // ── Grid-index reverse map ─────────────────────────────────────────
+
+    /// Build compact-index → old-grid-index reverse map.
+    inline std::vector<int> buildCompactToOld(const mhs::core::CellFields& cells, int total_grid)
+    {
+        std::vector<int> compact_to_old(cells.material_id.size(), -1);
+        for (int old_idx = 0; old_idx < total_grid; ++old_idx) {
+            uint32_t c = cells.index_map[old_idx];
+            if (c != mhs::core::invalidIndex)
+                compact_to_old[c] = old_idx;
+        }
+        return compact_to_old;
     }
 
 } // namespace mhs::utils

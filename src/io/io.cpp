@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <tinyxml2.h>
 
 #include <algorithm>
@@ -424,6 +425,15 @@ namespace mhs::io {
                         if (const XMLElement* thickness = block_elem->FirstChildElement("ThicknessExpression")) {
                             block.thickness_expr = get_text(thickness);
                         }
+                        if (const XMLElement* btype = block_elem->FirstChildElement("BlockType")) {
+                            std::string bt = get_text(btype);
+                            if (bt == "SmartMacro" || bt == "smart_macro") {
+                                block.block_type = mhs::core::BlockType::SmartMacro;
+                            }
+                        }
+                        if (const XMLElement* mfile = block_elem->FirstChildElement("ModelFile")) {
+                            block.model_file = get_text(mfile);
+                        }
 
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
@@ -659,8 +669,7 @@ namespace mhs::io {
         return overlay;
     }
 
-    void write_vtu(
-        const std::string& path, const mhs::core::InternalModel& model, const std::vector<double>& node_temperature)
+    void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
@@ -821,7 +830,7 @@ namespace mhs::io {
         doc.SaveFile(path.c_str());
     }
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::InternalModel& model,
+    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
         const std::vector<double>& node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
     {
         using namespace tinyxml2;
@@ -951,6 +960,151 @@ namespace mhs::io {
             std::filesystem::create_directories(dirPath.parent_path());
         }
         doc.SaveFile(output_path.c_str());
+    }
+
+    // =========================================================================
+    // SmartMacro model loading
+    // =========================================================================
+
+    mhs::core::SmartMacroModelData read_smart_macro_model(const std::string& xml_path)
+    {
+        XMLDocument doc;
+        if (doc.LoadFile(xml_path.c_str()) != XML_SUCCESS) {
+            throw std::runtime_error("Failed to load SmartMacro model XML: " + xml_path);
+        }
+
+        const auto* root = doc.FirstChildElement("SmartMacroModel");
+        if (!root) {
+            throw std::runtime_error("No <SmartMacroModel> element found in " + xml_path);
+        }
+
+        mhs::core::SmartMacroModelData result;
+
+        // Name
+        if (const auto* name_elem = root->FirstChildElement("Name")) {
+            if (const char* text = name_elem->GetText())
+                result.name = std::string(text);
+        }
+
+        // NPorts
+        int n_ports = 0;
+        if (const auto* np_elem = root->FirstChildElement("NPorts")) {
+            if (const char* text = np_elem->GetText())
+                n_ports = std::stoi(text);
+        }
+        else {
+            throw std::runtime_error("Missing <NPorts> in SmartMacro model");
+        }
+
+        if (n_ports <= 0) {
+            throw std::runtime_error("Invalid NPorts=" + std::to_string(n_ports) + " in SmartMacro model");
+        }
+
+        // NModes (POD format, required)
+        int n_modes = 0;
+        if (const auto* nm_elem = root->FirstChildElement("NModes")) {
+            if (const char* text = nm_elem->GetText())
+                n_modes = std::stoi(text);
+        }
+        else {
+            throw std::runtime_error("Missing <NModes> in SmartMacro model (POD format required)");
+        }
+
+        if (n_modes <= 0) {
+            throw std::runtime_error("Invalid NModes=" + std::to_string(n_modes) + " in SmartMacro model");
+        }
+
+        result.n_modes = n_modes;
+
+        // PortOrder (with Dir for face-level ports)
+        result.port_ix.reserve(n_ports);
+        result.port_iy.reserve(n_ports);
+        result.port_iz.reserve(n_ports);
+        result.port_dir.reserve(n_ports);
+
+        const auto* po_elem = root->FirstChildElement("PortOrder");
+        if (!po_elem) {
+            throw std::runtime_error("Missing <PortOrder> in SmartMacro model");
+        }
+
+        for (const auto* port_elem = po_elem->FirstChildElement("Port"); port_elem;
+            port_elem = port_elem->NextSiblingElement("Port")) {
+
+            int ix = 0, iy = 0, iz = 0, dir = 0;
+            if (const auto* e = port_elem->FirstChildElement("IX"))
+                ix = std::stoi(e->GetText() ? e->GetText() : "0");
+            if (const auto* e = port_elem->FirstChildElement("IY"))
+                iy = std::stoi(e->GetText() ? e->GetText() : "0");
+            if (const auto* e = port_elem->FirstChildElement("IZ"))
+                iz = std::stoi(e->GetText() ? e->GetText() : "0");
+            if (const auto* e = port_elem->FirstChildElement("Dir"))
+                dir = std::stoi(e->GetText() ? e->GetText() : "0");
+
+            result.port_ix.push_back(ix);
+            result.port_iy.push_back(iy);
+            result.port_iz.push_back(iz);
+            result.port_dir.push_back(dir);
+        }
+
+        if (static_cast<int>(result.port_ix.size()) != n_ports) {
+            throw std::runtime_error("PortOrder has " + std::to_string(result.port_ix.size())
+                + " entries but NPorts=" + std::to_string(n_ports));
+        }
+
+        // DataFile: resolve relative to XML directory
+        std::string data_file;
+        if (const auto* df_elem = root->FirstChildElement("DataFile")) {
+            if (const char* text = df_elem->GetText())
+                data_file = std::string(text);
+        }
+        if (data_file.empty()) {
+            throw std::runtime_error("Missing <DataFile> in SmartMacro model");
+        }
+
+        auto data_path = std::filesystem::path(xml_path).parent_path() / data_file;
+
+        // Read binary data: [K_modal: M*M doubles, row-major][phi_basis: N*M doubles, row-major]
+        // NOTE: f_modal not stored — always zero for BC-agnostic training.
+        std::ifstream bin(data_path, std::ios::binary);
+        if (!bin) {
+            throw std::runtime_error("Failed to open binary data file: " + data_path.string());
+        }
+
+        // Read K_modal (row-major flat vector, M x M)
+        result.K_modal.resize(static_cast<size_t>(n_modes) * static_cast<size_t>(n_modes));
+        bin.read(reinterpret_cast<char*>(result.K_modal.data()),
+            static_cast<std::streamsize>(result.K_modal.size() * sizeof(double)));
+        if (!bin) {
+            throw std::runtime_error("Failed to read K_modal from binary data");
+        }
+
+        // Read phi_basis (row-major: N_ports x n_modes)
+        result.phi_basis.resize(static_cast<size_t>(n_ports) * static_cast<size_t>(n_modes));
+        bin.read(reinterpret_cast<char*>(result.phi_basis.data()),
+            static_cast<std::streamsize>(result.phi_basis.size() * sizeof(double)));
+        if (!bin) {
+            throw std::runtime_error("Failed to read phi_basis from binary data");
+        }
+
+        return result;
+    }
+
+    std::vector<mhs::core::SmartMacroModelData> load_smart_macro_models(
+        const mhs::core::IOStructure& io, const std::string& case_dir)
+    {
+        if (case_dir.empty())
+            return {};
+
+        std::vector<mhs::core::SmartMacroModelData> result;
+        for (const auto& layer : io.layers) {
+            for (const auto& block : layer.blocks) {
+                if (block.block_type != mhs::core::BlockType::SmartMacro)
+                    continue;
+                const std::string model_path = (std::filesystem::path(case_dir) / block.model_file).string();
+                result.push_back(read_smart_macro_model(model_path));
+            }
+        }
+        return result;
     }
 
 } // namespace mhs::io

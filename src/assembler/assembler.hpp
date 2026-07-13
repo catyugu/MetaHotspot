@@ -2,8 +2,8 @@
 
 #include <Eigen/Core>
 
-#include "data/internal_model.hpp"
 #include "data/linear_system.hpp"
+#include "data/model.hpp"
 
 namespace mhs::sim {
 
@@ -18,7 +18,7 @@ namespace mhs::sim {
 
     class Assembler {
     public:
-        explicit Assembler(const mhs::core::InternalModel& model) : model_(model) { }
+        explicit Assembler(const mhs::core::Model& model) : model_(model) { }
         ~Assembler() = default;
 
         /// Build K, f, M_diag in a single sweep over the active grid.
@@ -27,7 +27,7 @@ namespace mhs::sim {
         AssemblyResult assemble(const AssembleContext& ctx) const;
 
     private:
-        const mhs::core::InternalModel& model_;
+        const mhs::core::Model& model_;
     };
 
 } // namespace mhs::sim

@@ -21,7 +21,7 @@ Single-context — one `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents
 
 ## Build, Test, and Development Commands
 
-- **Build Config**: C++20, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
+- **Build Config**: C++17, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
 
 ```bash
 # Build

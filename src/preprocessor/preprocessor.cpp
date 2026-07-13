@@ -9,10 +9,11 @@
 
 namespace mhs::sim {
 
-    std::unique_ptr<mhs::core::InternalModel> Preprocessor::load(
-        const mhs::core::IOStructure& ioStructure, const std::optional<mhs::core::FluidOverlay>& fluidOverlay)
+    std::unique_ptr<mhs::core::Model> Preprocessor::load(const mhs::core::IOStructure& ioStructure,
+        const std::optional<mhs::core::FluidOverlay>& fluidOverlay,
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models)
     {
-        auto model = std::make_unique<mhs::core::InternalModel>();
+        auto model = std::make_unique<mhs::core::Model>();
 
         model->study_type = ioStructure.study_type;
         model->initial_temperature = ioStructure.initial_temperature;
@@ -107,7 +108,7 @@ namespace mhs::sim {
                 = mhs::core::parse(substitute_function_args(mat.bi_rerong, "T", ioStructure.functions), symbols);
         }
 
-        // --- 热源字典构建（必须在 resolve_layers 之前完成，因 resolve_layers
+        // --- 热源字典构建（必须在 assign_cell_layers 之前完成，因 assign_cell_layers
         //     在层归属遍历中同步消费 block_hs_map 来填 heat_source_idx） ---
         model->heat_source_table.clear();
         model->heat_source_table.push_back(mhs::core::CompiledExpression::make_constant(0.0)); // 索引 0 留空为默认 0.0
@@ -124,10 +125,10 @@ namespace mhs::sim {
             }
         }
 
-        // 一次遍历完成 index_map + material_id + heat_source_idx + cell_bcs（compact）；
-        // index_map 的 invalidIndex 值标记虚拟单元（无 valid_mask 字段）。
-        // 不再有第二次全网格遍历去填 heat_source_idx 或 face BCs —— layer/block 归属判定时一并写入
-        // cell_bcs 由零初始化保证全 None（不是之前的三重循环）。
+        // Step 1: assign_cell_layers — single traversal writes index_map (full-grid) +
+        // material_id + heat_source_idx (compact).  invalidIndex marks virtual cells.
+        // Step 2: resolve_boundary_patches — two traversals: count exposed faces per cell
+        // (prefix-sum into cell_bc_range), then fill boundary_patches with matched BC data.
         auto& bc_params = model->bc_params;
         auto bc_rewriter
             = [&ioStructure](const std::string& s) { return substitute_function_args(s, "T", ioStructure.functions); };
@@ -163,13 +164,20 @@ namespace mhs::sim {
         }
         }
 
-        model->cells = resolve_layers(
-            resolved_layers, mesh, name_to_idx, block_hs_map, parsed_keys, other_bc_enum, other_bc_idx);
+        model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
+        resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc_enum, other_bc_idx, model->face_bcs);
+
+        // If trained_models are provided, resolve SmartMacro block couplings.
+        if (!trained_models.empty()) {
+            build_smart_block_coupling(
+                resolved_layers, mesh, model->cells, trained_models, parsed_keys, other_bc_enum, other_bc_idx, *model);
+        }
 
         // Apply fluid overlay (if any) using the same SymbolTable so viscosity
         // expressions see the same natives/variables as the rest of the model.
         if (fluidOverlay.has_value()) {
             mhs::sim::applyFluidOverlay(*model, fluidOverlay, ioStructure, symbols);
+            mhs::sim::solveFluidFlow(*model);
         }
 
         return model;

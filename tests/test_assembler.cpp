@@ -1,7 +1,7 @@
 #include "assembler/assembler.hpp"
 #include "config.h"
-#include "data/internal_model.hpp"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
+#include "data/model.hpp"
 #include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>
@@ -75,7 +75,7 @@ TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -99,7 +99,7 @@ TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
 
@@ -127,7 +127,7 @@ TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -189,7 +189,7 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     Assembler assembler(*model);
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
@@ -221,7 +221,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto model = preprocessor.load(io);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
@@ -239,7 +239,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 
 TEST(AssemblerTest, Case1AssemblyRuns)
 {
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_tests/case1.xml";
+    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
     if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found";
     }
@@ -249,7 +249,7 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     auto model = preprocessor.load(io_data);
     ASSERT_NE(model, nullptr);
 
-    int N = static_cast<int>(model->cells.cell_bcs.size());
+    int N = static_cast<int>(model->cells.material_id.size());
     EXPECT_GT(N, 0);
 
     std::vector<double> T(static_cast<std::size_t>(N), model->initial_temperature);

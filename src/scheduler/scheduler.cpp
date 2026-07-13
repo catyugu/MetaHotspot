@@ -2,7 +2,6 @@
 #include "common/logger.hpp"
 #include "data/tolerance_config.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
-#include "preprocessor/fluid_preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
 #include "time_scheme/error_controller.hpp"
 #include "time_scheme/integrator.hpp"
@@ -13,7 +12,7 @@
 
 namespace mhs::sim {
 
-    void Scheduler::setModel(mhs::core::InternalModel* model)
+    void Scheduler::setModel(mhs::core::Model* model)
     {
         model_ = model;
         if (model_)
@@ -47,13 +46,15 @@ namespace mhs::sim {
             MHS_FATAL("Scheduler: model or solver not set");
         }
 
-        const std::size_t N = static_cast<std::size_t>(model_->cells.cell_bcs.size());
-        step_.T.assign(N, model_->initial_temperature);
+        const std::size_t N = model_->total_dofs();
+        const std::size_t N_phys = model_->physical_dofs();
+        step_.T.resize(N); // value-initializes to 0.0 (modal DOFs start at 0)
+        // Only physical DOFs get initial temperature.
+        std::fill_n(step_.T.data(), N_phys, model_->initial_temperature);
         step_.current_time = 0.0;
         step_.time_step = 0;
 
         Assembler assembler(*model_);
-        solveFluidFlow(*model_);
 
         // Steady: single non-linear solve, then output.
         if (model_->study_type == mhs::core::StudyType::Steady) {
@@ -64,7 +65,7 @@ namespace mhs::sim {
             };
             Eigen::Map<Eigen::VectorXd> T_map(step_.T.data(), static_cast<Eigen::Index>(N));
             nonlinear_solve(build_ls, T_map, *solver_);
-            solution_ = step_.T;
+            solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N_phys));
             probe_recorder_.record(step_.current_time, step_.T);
             return;
         }
@@ -137,7 +138,7 @@ namespace mhs::sim {
             }
         }
 
-        solution_ = step_.T;
+        solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N_phys));
     }
 
 } // namespace mhs::sim

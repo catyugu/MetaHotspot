@@ -10,7 +10,7 @@
 //
 // Heavy implementation lives in sample_point.cpp (built into mhs_lib).
 
-#include "data/internal_model.hpp"
+#include "data/model.hpp"
 
 #include <cstdint>
 #include <vector>

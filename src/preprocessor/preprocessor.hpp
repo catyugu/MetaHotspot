@@ -1,7 +1,7 @@
 #pragma once
 
-#include "data/internal_model.hpp"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
+#include "data/model.hpp"
 #include <memory>
 #include <optional>
 
@@ -20,8 +20,9 @@ namespace mhs::sim {
         Preprocessor() = default;
         ~Preprocessor() = default;
 
-        std::unique_ptr<mhs::core::InternalModel> load(const mhs::core::IOStructure& ioStructure,
-            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
+        std::unique_ptr<mhs::core::Model> load(const mhs::core::IOStructure& ioStructure,
+            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt,
+            const std::vector<mhs::core::SmartMacroModelData>& trained_models = {});
     };
 
 } // namespace mhs::sim

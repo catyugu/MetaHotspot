@@ -11,19 +11,19 @@ XML
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> mhs::sim::resolve_layers           (valid_mask + index_map [full-grid]; material_id [compact])
+                      ├─> mhs::sim::assign_cell_layers       (index_map [full-grid]; material_id + heat_source_idx [compact])
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
-                      ├─> mhs::sim::resolve_face_keys        (展平 face_key 后单次遍历网格：CellBC + BCParamTable + other_bc)
-                      └─> mhs::core::InternalModel
+                      ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
+                      └─> mhs::core::Model (含 face_bcs, FluidDomain)
                               └─> mhs::sim::Scheduler::run
-                                    ├─> mhs::sim::time_scheme::StepController::rebuild(duration)
+                                    ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
                                     │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
                                     │     ├─> mhs::sim::Assembler::assemble(ctx)
                                     │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
                                     │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ ctx.T
                                     │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ ctx.T
                                     │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
-                                    │     │     │     ├─> cell_bcs.types/param_idxs + bc_params.eval
+                                    │     │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     │     └─> thread-local triplets + b + mass
                                     │     │     └─> combine_each merge → AssemblyResult {K, f, M_diag}
@@ -40,20 +40,20 @@ XML
 
 ## 各阶段
 
-| 阶段              | 输入                                  | 输出                       | 关键                                                     |
-|-------------------|---------------------------------------|----------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `IOStructure`              | tinyxml2                                                 |
-| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`             | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`  | 预求 Z 范围 + Block XY                                   |
-| 预处理-虚拟单元   | mesh + 层几何                         | `valid_mask` + `index_map` | full-grid；标记 + 紧凑映射                               |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`              | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
-| 预处理-面 BC      | mesh + `Boundaries`                   | `CellBC` + `BCParamTable`  | 6 面独立 + `other_bc` 兜底                               |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`       | muparser 或 `make_constant`                              |
-| 组装              | `InternalModel` + `AssembleContext`   | `LinearSystem`             | TBB 并行；`eval()` 锁无关                                |
-| 线性求解          | `A x = b`                             | `x`                        | SparseLU / BiCGSTAB                                      |
-| 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`     | 状态更新                                                 |
-| 后处理            | `InternalModel` + `T`                 | VTU + XML                  | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`             | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护   |
+| 阶段              | 输入                                  | 输出                        | 关键                                                     |
+|-------------------|---------------------------------------|-----------------------------|----------------------------------------------------------|
+| XML 解析          | XML 文件                              | `IOStructure`               | tinyxml2                                                 |
+| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`              | si_scale, dx/dy/dz, cx/cy/cz                             |
+| 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
+| 预处理-虚拟单元   | mesh + 层几何                         | `index_map`                 | full-grid；标记 + 紧凑映射                               |
+| 预处理-单元归属   | mesh + 层几何                         | `material_id`               | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
+| 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable` | 6 面独立 + `other_bc` 兜底                               |
+| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`        | muparser 或 `make_constant`                              |
+| 组装              | `Model` + `AssembleContext`           | `LinearSystem`              | TBB 并行；`eval()` 锁无关                                |
+| 线性求解          | `A x = b`                             | `x`                         | EigenSparseLU / EigenBiCGSTAB                            |
+| 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`      | 状态更新                                                 |
+| 后处理            | `Model` + `T`                         | VTU + XML                   | 展开到全网格，虚拟位置 NaN                               |
+| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`              | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护   |
 
 ## 关键设计原则
 
@@ -65,13 +65,13 @@ XML
 
 `heat_source_table`（去重 `vector<CompiledExpression>`）+ 每单元 `uint16_t` 索引。重复公式只编译一次；N 个单元 → N 个 2 字节索引 + 唯一公式数个 AST。
 
-### 3. Cell 级别 BC
+### 3. 面级别 BC
 
-`CellBC { types[6], param_idxs[6] }`。
+`Model::face_bcs[N_active * 6]` 扁平数组。`face_bcs[c * 6 + dir]` 直接索引。
 
 ### 4. 虚拟单元
 
-`valid_mask` + `index_map` 标记。Assembler 跳过；Postprocessor 展开写 NaN。
+`index_map` + `face_bcs` 标记。Assembler 跳过；Postprocessor 展开写 NaN。
 
 ### 5. SoA 贯穿内部模型
 

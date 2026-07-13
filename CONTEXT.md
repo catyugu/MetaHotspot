@@ -15,7 +15,7 @@
 
 结构化 3D `nx × ny × nz`。**当前不支持 Dimension2D**（IO 会解析但预处理未实现 2D 路径）。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
 
-## 边界条件（cell-level，ADR-0002）
+## 边界条件（face-level，ADR-0002）
 
 | 类型       | 数学                    | 离散处理                        |
 | ---------- | ----------------------- | ------------------------------- |
@@ -25,7 +25,7 @@
 
 > 各项异性 `k`（ADR-0002 cell-level-bc 中讨论）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
 
-`other_bc` 在预处理阶段填到所有未显式指定的面 + 虚拟邻居面。
+`other_bc` 在预处理阶段由 `resolve_boundary_patches` 填到所有未显式指定的面 + 虚拟邻居面（写入 `Model::face_bcs` 扁平数组）。
 
 ## 表达式（ADR-0004）
 
@@ -44,7 +44,7 @@
 
 ```text
 XML → core::IOStructure via io::read_xml
-  → sim::Preprocessor::load → core::InternalModel
+  → sim::Preprocessor::load → core::Model
     → sim::Scheduler::run
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
@@ -52,7 +52,7 @@ XML → core::IOStructure via io::read_xml
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
         ├─ sim::nonlinear_solve(provider, T, *solver_) [Anderson 加速定点迭代]
-        │   └─ sim::LinearSolver::solve(A, b) [SparseLU / BiCGSTAB]
+        │   └─ sim::LinearSolver::solve(A, b) [EigenSparseLU / EigenBiCGSTAB]
         ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
         │   └─ 纯函数: LTE 估计 + PI 步长建议
         └─ post-step: probe_recorder_.record()
@@ -65,29 +65,30 @@ XML → core::IOStructure via io::read_xml
 
 1. 内部模型不含原始字符串 — 表达式预编译为 `CompiledExpression`
 2. 热源字典化 — `heat_source_table`（去重）+ 每单元 `uint16_t` 索引
-3. Cell-level BC — 每单元存 6 面 BC（`CellBC`）
-4. Precomputed sparsity — 组装只填值，不重建结构
-5. Backward Euler 默认；BDF2 可选（`IntegratorKind` 枚举 + `build_system` 纯函数路由）
-6. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
-7. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
-7. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
-8. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
-9. 无虚函数（仅 `mhs::sim::LinearSolver` 保留虚接口）；无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
-10. POD / 纯函数优先
+3. 面级 BC — `Model::face_bcs[N_active * 6]` 扁平数组，无 `CellBC`
+4. 含流体-固体耦合子系统 — `Model::fluid`（`FluidDomain`）
+5. Precomputed sparsity — 组装只填值，不重建结构
+6. Backward Euler 默认；BDF2 可选（`IntegratorKind` 枚举 + `build_system` 纯函数路由）
+7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
+8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
+9. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
+10. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
+11. 无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
+12. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动）
 
 命名空间按**领域边界**划分，不与目录 1:1 映射。公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏实现。
 
-| 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                            |
-| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | InternalModel、IOModel、SolutionHistory、StudyType、BcType、FaceDir、CompiledExpression、FieldEvaluator、Material                                                                                          |
-| `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                            |
-| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、BiCGSTABSolver、PardisoSolver、SparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
-| `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual）                             |
-| `mhs::io`               | `io/`                                                                   | read_xml / write_vtu / write_xml                                                                                                                                                                           |
-| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + sample_point 局部采样辅助                                                                                                                                          |
-| `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                          |
+| 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mhs::core`             | `data/` + `expr/`                                                       | Model、IOStructure、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、FluidBCType、CompiledExpression、FieldEvaluator、Material、ProbePoint、CellFields、MeshGeometry                                  |
+| `mhs::utils`            | `common/`                                                               | mesh_utils 查表                                                                                                                                                                                                        |
+| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、EigenBiCGSTABSolver、PardisoLUSolver、EigenSparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid                        |
+| `mhs::io`               | `io/`                                                                   | read_xml / read_fluid_overlay_xml / write_vtu / write_xml                                                                                                                                                              |
+| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + sample_point 局部采样辅助                                                                                                                                                      |
+| `mhs::logger`           | `common/logger.*`                                                       | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                                      |
 
 ### 铁律
 
@@ -115,7 +116,7 @@ XML → core::IOStructure via io::read_xml
 ## 详细参考
 
 - 内部数据结构 → `docs/design/internal-model.md`
-- IO 数据结构 → `docs/design/io-model.md`
+- IO 数据结构 → `docs/design/io-structure.md`
 - 模块接口 → `docs/design/module-interfaces.md`
 - expr 模块 → `docs/design/expr-api.md`
 - 数据流与流程 → `docs/design/data-flow.md`

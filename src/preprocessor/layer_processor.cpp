@@ -3,7 +3,10 @@
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "layer_processor.hpp"
+#include <Eigen/Dense>
+#include <algorithm>
 #include <cstdint>
+#include <unordered_map>
 
 namespace mhs::sim {
 
@@ -57,6 +60,7 @@ namespace mhs::sim {
                 double block_y_off_si = mhs::core::eval_geometry(block.y_offset_expr, symbols) * si_scale;
                 rb.material_name = block.material_name;
                 rb.ti_reyuan_expr = block.ti_reyuan_expr;
+                rb.is_smart_macro = (block.block_type == mhs::core::BlockType::SmartMacro);
 
                 if (l == 0 && !block.thickness_expr.empty()) {
                     double b_thick = mhs::core::eval_geometry(block.thickness_expr, symbols) * si_scale;
@@ -130,69 +134,43 @@ namespace mhs::sim {
     }
 
     namespace {
-        // True iff the cell face at (ix, iy, iz) on dir is "exposed" — i.e., the
-        // neighbor is outside the grid or is a virtual cell (via index_map).
-        bool is_cell_face_exposed(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
-            const mhs::core::CellFields& cells)
+        // Match face keys for the given cell face and return the matching BC.
+        // Returns (BcType::None, 0) if no key matches and no valid fallback.
+        std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, int ix, int iy, int iz,
+            const mhs::core::MeshGeometry& mesh, const std::vector<ParsedFaceKey>& parsed_keys,
+            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
         {
-            int nix = mhs::utils::neighbor_ix(dir, ix);
-            int niy = mhs::utils::neighbor_iy(dir, iy);
-            int niz = mhs::utils::neighbor_iz(dir, iz);
+            static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
+            const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
+            const char face_axis_letter = AXIS_LETTER[axis];
 
-            if (nix < 0 || nix >= mesh.nx || niy < 0 || niy >= mesh.ny || niz < 0 || niz >= mesh.nz)
-                return true;
+            const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
+            const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
+            const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
+            const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
+            const double a_val = centers[ta];
+            const double b_val = centers[tb];
 
-            int neighbor = nix * mesh.ny * mesh.nz + niy * mesh.nz + niz;
-            return cells.index_map[neighbor] == mhs::core::invalidIndex;
-        }
-
-        // Apply parsed face keys and other_bc to one cell's faces in place.
-        void apply_face_bcs_to_cell(int c_idx, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
-            const mhs::core::CellFields& cells, const std::vector<ParsedFaceKey>& parsed_keys,
-            mhs::core::BcType other_bc_enum, uint16_t other_bc_idx, mhs::core::CellFields& cells_out)
-        {
-            for (mhs::core::FaceDir dir : mhs::core::FACE_DIRS) {
-                // Axis letter from the direction table — replaces the old face_axis_letter helper.
-                static constexpr char AXIS_LETTER[3] = {'X', 'Y', 'Z'};
-                const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
-                const char face_axis = AXIS_LETTER[axis];
-
-                const double face_coord = mhs::utils::face_coord_value(dir, ix, iy, iz, mesh);
-                const int ta = mhs::utils::TANGENT_A_OF_DIR[static_cast<size_t>(dir)];
-                const int tb = mhs::utils::TANGENT_B_OF_DIR[static_cast<size_t>(dir)];
-                const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
-                const double a_val = centers[ta];
-                const double b_val = centers[tb];
-
-                if (!is_cell_face_exposed(dir, ix, iy, iz, mesh, cells))
-                    continue;
-
-                // 优先匹配 parsed_keys
-                bool matched = false;
-                for (const auto& pk : parsed_keys) {
-                    if (pk.fk.axis == face_axis && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
-                        if (point_in_face_rects(pk.fk, a_val, b_val)) {
-                            cells_out.cell_bcs[c_idx].types[(size_t)dir] = pk.bc_enum;
-                            cells_out.cell_bcs[c_idx].param_idxs[(size_t)dir] = pk.param_idx;
-                            matched = true;
-                            break;
-                        }
+            for (const auto& pk : parsed_keys) {
+                if (pk.fk.axis == face_axis_letter
+                    && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
+                    if (point_in_face_rects(pk.fk, a_val, b_val)) {
+                        return {pk.bc_enum, pk.param_idx};
                     }
                 }
-
-                // 未命中 → 兜底 other_bc
-                if (!matched && other_bc_enum != mhs::core::BcType::None) {
-                    cells_out.cell_bcs[c_idx].types[(size_t)dir] = other_bc_enum;
-                    cells_out.cell_bcs[c_idx].param_idxs[(size_t)dir] = other_bc_idx;
-                }
             }
+
+            // Fallback to other_bc
+            if (other_bc_enum != mhs::core::BcType::None) {
+                return {other_bc_enum, other_bc_idx};
+            }
+            return {mhs::core::BcType::None, 0};
         }
     } // anonymous namespace
 
-    mhs::core::CellFields resolve_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+    mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map, const std::vector<ParsedFaceKey>& parsed_face_keys,
-        mhs::core::BcType other_bc_enum, uint16_t other_bc_idx)
+        const std::vector<std::vector<uint16_t>>& block_hs_map)
     {
         const int num_layers = (int)resolved_layers.size();
         const int total = mesh.nx * mesh.ny * mesh.nz;
@@ -229,25 +207,31 @@ namespace mhs::sim {
                     }
 
                     if (layer_idx >= 0 && block_idx >= 0) {
+                        const auto& block = resolved_layers[layer_idx].blocks[block_idx];
+                        // Skip SmartMacro blocks — their cells stay virtual (invalidIndex)
+                        if (block.is_smart_macro)
+                            continue;
                         const int c_idx = (int)cells.material_id.size(); // compact index grows here
                         cells.index_map[old_idx] = c_idx;
-                        const auto& block = resolved_layers[layer_idx].blocks[block_idx];
                         cells.material_id.push_back(static_cast<uint16_t>(name_to_idx.at(block.material_name)));
                         cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
-
-                        // BC fill deferred: we need the full cell_bcs array first.
-                        // cell_bcs is resized below after we know the count.
                     }
                 }
             }
         }
 
-        const int compact_count = (int)cells.material_id.size();
-        cells.cell_bcs.resize(compact_count);
+        return cells;
+    }
 
-        // Second pass: fill BCs for every active cell.
-        // Must use index_map to map old grid position back to compact index.
-        // This avoids storing an intermediate old_idx→compact map.
+    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        std::vector<mhs::core::FaceBC>& face_bcs)
+    {
+        const int compact_count = (int)cells.material_id.size();
+        face_bcs.assign(compact_count * mhs::core::FACE_COUNT, mhs::core::FaceBC {});
+
+        // Single grid traversal: for each active cell's exposed faces,
+        // match the face key and write directly into face_bcs[c*6+dir].
         for (int ix = 0; ix < mesh.nx; ix++) {
             for (int iy = 0; iy < mesh.ny; iy++) {
                 for (int iz = 0; iz < mesh.nz; iz++) {
@@ -255,13 +239,126 @@ namespace mhs::sim {
                     uint32_t c_idx = cells.index_map[old_idx];
                     if (c_idx == mhs::core::invalidIndex)
                         continue;
-                    apply_face_bcs_to_cell(
-                        (int)c_idx, ix, iy, iz, mesh, cells, parsed_face_keys, other_bc_enum, other_bc_idx, cells);
+
+                    for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
+                        mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
+                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
+                            >= 0)
+                            continue; // internal face — no BC needed
+
+                        auto [type, param_idx]
+                            = match_face_bc(dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
+                        face_bcs[c_idx * mhs::core::FACE_COUNT + f] = {type, param_idx};
+                    }
                 }
             }
         }
+    }
 
-        return cells;
+    // ── SmartMacro block coupling — invariant-only precomputation ───────────
+    //
+    // For each SmartMacro block, iterate over trained port faces and store
+    // ONLY invariant (temperature- and time-independent) data into PortFaceInfo.
+    //
+    // The following depend on T and/or t and are therefore computed at assembly
+    // time (in Assembler::assemble):
+    //   - C_env_vec, T_ref_vec, Q_ext_vec  (via material k(T) and BC expressions)
+    //   - K_modal_eff, coupled_C, coupled_phi, coupled_cells
+    //
+    // What stays here: face geometry, neighbor identity, BC-type classification
+    // (so the assembler doesn't need the parsed face keys at all).
+    void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
+        const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
+        const std::vector<mhs::core::SmartMacroModelData>& trained_models,
+        const std::vector<ParsedFaceKey>& parsed_face_keys, mhs::core::BcType other_bc_enum, uint16_t other_bc_idx,
+        mhs::core::Model& model)
+    {
+        model.smart_blocks.clear();
+        int cumulative_modes = 0;
+        const int N_phys = model.physical_dofs();
+
+        size_t sm_idx = 0;
+        for (int l = 0; l < (int)resolved_layers.size(); l++) {
+            for (int b = 0; b < (int)resolved_layers[l].blocks.size(); b++) {
+                if (!resolved_layers[l].blocks[b].is_smart_macro)
+                    continue;
+                if (sm_idx >= trained_models.size())
+                    continue;
+
+                const auto& trained = trained_models[sm_idx];
+                sm_idx++;
+                const int n_faces = (int)trained.port_ix.size();
+                const int n_modes = trained.n_modes;
+                if (n_faces == 0 || n_modes == 0)
+                    continue;
+
+                mhs::core::SmartBlockModel sbm;
+                sbm.name = trained.name;
+                sbm.n_faces = n_faces;
+                sbm.n_modes = n_modes;
+                sbm.modal_start_idx = N_phys + cumulative_modes;
+
+                // Copy modal data (row-major flat vector -> Eigen matrix).
+                sbm.K_modal = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                    trained.K_modal.data(), n_modes, n_modes);
+                sbm.phi_basis
+                    = Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+                        trained.phi_basis.data(), n_faces, n_modes);
+
+                // ── Precompute invariant PortFaceInfo for each port face ──
+                sbm.faces.reserve(n_faces);
+
+                for (int p = 0; p < n_faces; p++) {
+                    int ix = trained.port_ix[p];
+                    int iy = trained.port_iy[p];
+                    int iz = trained.port_iz[p];
+                    int dir_val = (int)(trained.port_dir.size() > (size_t)p ? trained.port_dir[p] : -1);
+
+                    if (ix < 0 || ix >= mesh.nx || iy < 0 || iy >= mesh.ny || iz < 0 || iz >= mesh.nz)
+                        continue;
+                    if (dir_val < 0 || (size_t)dir_val >= mhs::core::FACE_COUNT)
+                        continue;
+
+                    mhs::core::PortFaceInfo pfi;
+                    pfi.ix = ix;
+                    pfi.iy = iy;
+                    pfi.iz = iz;
+                    pfi.dir = static_cast<mhs::core::FaceDir>(dir_val);
+
+                    // Face geometry (all invariant).
+                    pfi.A_f = mhs::utils::face_area(pfi.dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
+
+                    // Check if this face has an active (non-virtual) neighbor.
+                    int n_old = mhs::utils::neighbor_grid_index(
+                        ix, iy, iz, pfi.dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+
+                    if (n_old >= 0) {
+                        // Active neighbor: store compact index + its half-length.
+                        pfi.has_neighbor = true;
+                        pfi.neighbor_c = cells.index_map[n_old];
+
+                        const int nix = mhs::utils::neighbor_ix(pfi.dir, ix);
+                        const int niy = mhs::utils::neighbor_iy(pfi.dir, iy);
+                        const int niz = mhs::utils::neighbor_iz(pfi.dir, iz);
+                        pfi.half_dist_nbr
+                            = mhs::utils::half_length_along(pfi.dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
+                    }
+                    else {
+                        // Domain boundary face: match BC type + param index (for assembly-time eval).
+                        pfi.has_neighbor = false;
+                        auto [bc_type, bc_idx]
+                            = match_face_bc(pfi.dir, ix, iy, iz, mesh, parsed_face_keys, other_bc_enum, other_bc_idx);
+                        pfi.bc_type = bc_type;
+                        pfi.bc_param_idx = bc_idx;
+                    }
+
+                    sbm.faces.push_back(std::move(pfi));
+                }
+
+                cumulative_modes += n_modes;
+                model.smart_blocks.push_back(std::move(sbm));
+            }
+        }
     }
 
 } // namespace mhs::sim

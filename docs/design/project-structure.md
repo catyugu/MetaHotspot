@@ -17,7 +17,7 @@ MetaHotspot/
 │       ├── other.cmake
 │       └── tbb.cmake
 ├── src/
-│   ├── data/                    # mhs::core               数据契约（types, io_model, internal_model）
+│   ├── data/                    # mhs::core               数据契约（types, io_structure, model）
 │   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
 │   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
@@ -37,7 +37,7 @@ MetaHotspot/
 ```cmake
 cmake_minimum_required(VERSION 3.16)
 project(MetaHotspot VERSION 1.0.0 LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

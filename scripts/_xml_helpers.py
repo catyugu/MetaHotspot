@@ -65,7 +65,11 @@ def extract_field(xml_path):
     data = find_element(values, "Data")
     if data is None:
         return None
-    size = (_read_size(values, "SizeX"), _read_size(values, "SizeY"), _read_size(values, "SizeZ"))
+    size = (
+        _read_size(values, "SizeX"),
+        _read_size(values, "SizeY"),
+        _read_size(values, "SizeZ"),
+    )
     return parse_doubles(data), size
 
 

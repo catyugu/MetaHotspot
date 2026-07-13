@@ -59,7 +59,7 @@ TEST(SchedulerTest, SetModelAndSolver)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::SparseLU));
+    scheduler.setSolver(LinearSolver::create());
 }
 
 TEST(SchedulerTest, SteadyRunProducesSolution)
@@ -118,12 +118,12 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create());
 
     scheduler.run();
 
     const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.cell_bcs.size());
+    EXPECT_EQ(solution.size(), model->cells.material_id.size());
 
     // With Dirichlet 500K on bottom and Neumann(0) on all other faces,
     // and no heat source, steady state should be T=500K everywhere
@@ -191,12 +191,12 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create());
 
     scheduler.run();
 
     const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.cell_bcs.size());
+    EXPECT_EQ(solution.size(), model->cells.material_id.size());
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
@@ -279,7 +279,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create());
 
     scheduler.run();
 
@@ -377,7 +377,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     Scheduler scheduler;
     scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create(SolverType::Pardiso));
+    scheduler.setSolver(LinearSolver::create());
     scheduler.run();
 
     const auto& traces = scheduler.probeTraces();

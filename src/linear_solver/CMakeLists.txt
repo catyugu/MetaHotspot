@@ -1,11 +1,11 @@
 set(_linear_solver_sources
     linear_solver.cpp
-    bicgstab_solver.cpp
-    sparse_lu_solver.cpp
+    eigen_bicgstab_solver.cpp
+    eigen_sparse_lu_solver.cpp
 )
 
 if(MHS_ENABLE_PARDISO)
-    list(APPEND _linear_solver_sources pardiso_solver.cpp)
+    list(APPEND _linear_solver_sources pardiso_lu_solver.cpp)
 endif()
 
 mhs_add_library(linear_solver_lib

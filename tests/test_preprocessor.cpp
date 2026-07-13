@@ -1,6 +1,6 @@
 #include "config.h"
-#include "data/internal_model.hpp"
-#include "data/io_model.hpp"
+#include "data/io_structure.hpp"
+#include "data/model.hpp"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
 #include "preprocessor/face_key_processor.hpp"
@@ -11,6 +11,30 @@
 using namespace mhs::core;
 using namespace mhs::sim;
 using namespace mhs::io;
+
+// Helpers for testing patch-based BC assignment.
+
+/// Find a FaceBC on `cell_idx` with direction `dir`.
+/// Returns pointer or nullptr if that face has BcType::None.
+static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+{
+    auto& fb = model.face_bcs[cell_idx * FACE_COUNT + (size_t)dir];
+    return fb.type != BcType::None ? &fb : nullptr;
+}
+
+/// Return the BcType on cell_idx for direction dir, or None if not found.
+static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
+{
+    auto* p = find_face_bc(model, cell_idx, dir);
+    return p ? p->type : BcType::None;
+}
+
+/// Return the param_idx on cell_idx for direction dir, or 0 if not found.
+static uint16_t get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
+{
+    auto* p = find_face_bc(model, cell_idx, dir);
+    return p ? p->param_idx : 0;
+}
 
 // Helper: build a minimal mhs::core::IOStructure for testing
 static mhs::core::IOStructure make_simple_io()
@@ -110,7 +134,7 @@ TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
     ASSERT_NE(model, nullptr);
 
     // All 8 cells should be valid
-    EXPECT_EQ(model->cells.cell_bcs.size(), 8u);
+    EXPECT_EQ(model->cells.material_id.size(), 8u);
     for (int i = 0; i < 8; i++) {
         EXPECT_NE(model->cells.index_map[i], mhs::core::invalidIndex);
     }
@@ -329,7 +353,7 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     size_t compact = model->cells.index_map[idx_bc];
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::ZM], mhs::core::BcType::FirstType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
 
     // mhs::core::BCParamTable should have dirichlet_T entries
     EXPECT_FALSE(model->bc_params.dirichlet_T.empty());
@@ -346,7 +370,7 @@ TEST(PreprocessorTest, OtherBCFallback)
 
     // With no explicit boundaries and other_bc=SecondType(0),
     // all faces on domain boundaries should have SecondType BC
-    // Interior faces should have None BC
+    // Interior faces should have None BC (no patch entry)
 
     // Cell (0,0,0) - bottom-left-front cell:
     // XM (x=0 face): domain boundary -> SecondType
@@ -359,32 +383,29 @@ TEST(PreprocessorTest, OtherBCFallback)
     size_t compact = model->cells.index_map[idx];
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::SecondType);
-    EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::YM], mhs::core::BcType::SecondType);
-    EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::ZM], mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::YM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::SecondType);
 
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
-    // XM, YM, ZM are interior -> None
+    // XM, YM, ZM are interior -> None (no patch)
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
     size_t compact_inner = model->cells.index_map[idx_inner];
     ASSERT_NE(compact_inner, mhs::core::invalidIndex);
 
-    EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::XM], mhs::core::BcType::None);
-    EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::YM], mhs::core::BcType::None);
-    EXPECT_EQ(model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::ZM], mhs::core::BcType::None);
-    EXPECT_EQ(
-        model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::XP], mhs::core::BcType::SecondType);
-    EXPECT_EQ(
-        model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::YP], mhs::core::BcType::SecondType);
-    EXPECT_EQ(
-        model->cells.cell_bcs[compact_inner].types[(size_t)mhs::core::FaceDir::ZP], mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::YM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::ZM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::XP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::YP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::ZP), mhs::core::BcType::SecondType);
 }
 
 // ---- Full Case1 Integration Test ----
 
 TEST(PreprocessorTest, Case1XMLLoad)
 {
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_tests/case1.xml";
+    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
     if (!std::filesystem::exists(case_path)) {
         GTEST_SKIP() << "Case1 XML not found at " << case_path;
     }
@@ -399,12 +420,13 @@ TEST(PreprocessorTest, Case1XMLLoad)
     EXPECT_EQ(model->mesh.ny, 20);
     EXPECT_EQ(model->mesh.nz, 9);
     // Should have some valid and some virtual cells
-    EXPECT_GT(model->cells.cell_bcs.size(), 0u);
-    EXPECT_LT(model->cells.cell_bcs.size(), 3600u);
+    EXPECT_GT(model->cells.material_id.size(), 0u);
+    EXPECT_LT(model->cells.material_id.size(), 3600u);
 
     // mhs::core::Material table should have copper and silicon
     EXPECT_EQ(model->material_table.size(), 2);
 }
+
 // ---- Epsilon Tolerance Tests for find_block_for_cell ----
 
 TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
@@ -649,7 +671,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
         int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)mhs::core::FaceDir::YP], mhs::core::BcType::ThirdType)
+        EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
             << "Y-format face key should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
 
@@ -657,7 +679,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     // they should fall through to the other_bc (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
     int compact_out = (int)model->cells.index_map[idx_outside];
-    EXPECT_NE(model->cells.cell_bcs[compact_out].types[(size_t)mhs::core::FaceDir::YP], mhs::core::BcType::ThirdType)
+    EXPECT_NE(get_bc_type(*model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
 
@@ -729,7 +751,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     auto check_face = [&](int ix, int iy, int iz, mhs::core::FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
         int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(model->cells.cell_bcs[compact].types[(size_t)dir], mhs::core::BcType::ThirdType)
+        EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be ThirdType from one of the boundary face_keys";
     };

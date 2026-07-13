@@ -45,30 +45,7 @@ namespace mhs::post {
     void sample_face_center(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
         double& fx, double& fy, double& fz)
     {
-        fx = mesh.cx[ix];
-        fy = mesh.cy[iy];
-        fz = mesh.cz[iz];
-        double half = mhs::utils::half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
-        switch (dir) {
-        case mhs::core::FaceDir::XM:
-            fx -= half;
-            break;
-        case mhs::core::FaceDir::XP:
-            fx += half;
-            break;
-        case mhs::core::FaceDir::YM:
-            fy -= half;
-            break;
-        case mhs::core::FaceDir::YP:
-            fy += half;
-            break;
-        case mhs::core::FaceDir::ZM:
-            fz -= half;
-            break;
-        case mhs::core::FaceDir::ZP:
-            fz += half;
-            break;
-        }
+        mhs::utils::face_center_3d(dir, ix, iy, iz, mesh, fx, fy, fz);
     }
 
     double sample_extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type, uint16_t param_idx,
