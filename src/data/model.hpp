@@ -82,7 +82,6 @@ namespace mhs::core {
 
         // Precomputed face geometry
         double A_f = 0.0; // face area [m²]
-        double half_dist = 0.0; // owner cell half-length along dir [m]
 
         // ── Active neighbor coupling ──
         bool has_neighbor = false;

@@ -327,7 +327,6 @@ namespace mhs::sim {
 
                     // Face geometry (all invariant).
                     pfi.A_f = mhs::utils::face_area(pfi.dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
-                    pfi.half_dist = mhs::utils::half_length_along(pfi.dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
 
                     // Check if this face has an active (non-virtual) neighbor.
                     int n_old = mhs::utils::neighbor_grid_index(

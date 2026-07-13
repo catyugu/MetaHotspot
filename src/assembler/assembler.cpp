@@ -2,7 +2,6 @@
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
-#include <algorithm>
 #include <unordered_map>
 
 #include "assembler.hpp"
@@ -12,7 +11,9 @@
 
 namespace mhs::sim {
 
-    namespace { // anonymous: file-private helpers
+    namespace {
+        inline constexpr double DIRICHLET_PENALTY = 1e20;
+
         // Per-thread scratch for the TBB parallel_for over grid cells.
         struct ThreadLocalData {
             std::vector<Eigen::Triplet<double>> triplets;
@@ -293,14 +294,8 @@ namespace mhs::sim {
 
                     const auto& bc = model_.bc_params;
                     // Build context from the owner cell (port faces are inside the block).
-                    const mhs::core::FieldContext ctx_c {mesh.cx[pfi.ix], mesh.cy[pfi.iy], mesh.cz[pfi.iz],
-                        // Use the average of neighbouring physical cells if possible;
-                        // for domain-boundary ports the owner cell is inside the block
-                        // and has no active DOF, so we use ctx.T values from the
-                        // nearest physical cell context. In practice the BC
-                        // expressions rarely depend on T (they are ambient conditions),
-                        // but we supply the best available context.
-                        model_.initial_temperature, ctx.current_time};
+                    const mhs::core::FieldContext ctx_c {
+                        mesh.cx[pfi.ix], mesh.cy[pfi.iy], mesh.cz[pfi.iz], 0.0, ctx.current_time};
 
                     switch (pfi.bc_type) {
                     case mhs::core::BcType::None:
@@ -309,7 +304,7 @@ namespace mhs::sim {
 
                     case mhs::core::BcType::FirstType: {
                         double T_bc_val = bc.dirichlet_T[pfi.bc_param_idx].eval(ctx_c);
-                        C_env = 1e10; // penalty
+                        C_env = DIRICHLET_PENALTY; // penalty
                         T_ref = T_bc_val;
                         break;
                     }
@@ -341,38 +336,22 @@ namespace mhs::sim {
             // ── Phase 2: compute K_modal_eff = K_modal + Φᵀ·diag(C_env)·Φ ──
             Eigen::MatrixXd K_modal_eff = sb.K_modal + sb.phi_basis.transpose() * C_env_vec.asDiagonal() * sb.phi_basis;
 
-            // ── Phase 3: aggregate unique coupled cells ──
-            // (re-aggregated every assembly so nonlinear neighbours are correct)
-            std::vector<uint32_t> coupled_cells;
-            coupled_cells.reserve(cell_contrib.size());
-            for (const auto& kv : cell_contrib) {
-                coupled_cells.push_back(kv.first);
-            }
-            std::sort(coupled_cells.begin(), coupled_cells.end());
-
-            const size_t n_coupled = coupled_cells.size();
-            Eigen::VectorXd coupled_C(n_coupled);
-            Eigen::MatrixXd coupled_phi(n_coupled, n_modes);
-            for (size_t ci = 0; ci < n_coupled; ci++) {
-                const auto& contrib = cell_contrib[coupled_cells[ci]];
-                coupled_C(ci) = contrib.first;
-                coupled_phi.row(ci) = contrib.second;
-            }
-
-            // ── Phase 4: scatter to global system ──
-            // 4a. Active-neighbor coupling.
-            for (size_t ci = 0; ci < n_coupled; ci++) {
-                int gi = (int)coupled_cells[ci];
+            // ── Scatter to global system ──
+            // 4a. Active-neighbor coupling (iterate cell_contrib directly,
+            //     no need for separate sort + Eigen-vector copy step).
+            for (const auto& [c_idx, contrib] : cell_contrib) {
+                int gi = (int)c_idx;
                 if (gi >= N_phys)
                     continue;
-                double C_total = coupled_C(ci);
+                double C_total = contrib.first;
                 if (std::abs(C_total) <= mhs::core::zero_guard)
                     continue;
 
                 triplets.emplace_back(gi, gi, C_total);
 
+                const auto& phi_total = contrib.second;
                 for (int k = 0; k < n_modes; k++) {
-                    double val = -coupled_phi(ci, k);
+                    double val = -phi_total(k);
                     if (std::abs(val) > mhs::core::zero_guard) {
                         int mk = modal_start + k;
                         triplets.emplace_back(gi, mk, val);
@@ -393,21 +372,8 @@ namespace mhs::sim {
 
             // 4c. Modal RHS: domain-BC contribution
             //     b(mk) += Σ_p φ(p,k) * (C_env(p)*T_ref(p) + Q_ext(p))
-            {
-                Eigen::VectorXd face_rhs(n_faces);
-                for (int p = 0; p < n_faces; p++) {
-                    double r = 0.0;
-                    if (std::abs(C_env_vec(p)) > mhs::core::zero_guard
-                        && std::abs(T_ref_vec(p)) > mhs::core::zero_guard) {
-                        r += C_env_vec(p) * T_ref_vec(p);
-                    }
-                    if (std::abs(Q_ext_vec(p)) > mhs::core::zero_guard) {
-                        r += Q_ext_vec(p);
-                    }
-                    face_rhs(p) = r;
-                }
-                b.segment(modal_start, n_modes) += sb.phi_basis.transpose() * face_rhs;
-            }
+            b.segment(modal_start, n_modes)
+                += sb.phi_basis.transpose() * (C_env_vec.cwiseProduct(T_ref_vec) + Q_ext_vec);
         }
 
         Eigen::SparseMatrix<double> K(N_total, N_total);
