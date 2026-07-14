@@ -1,6 +1,6 @@
-#include "logger/logger.hpp"
 #include "expr/expr.hpp"
 #include "function_helpers.hpp"
+#include "logger/logger.hpp"
 
 #include <algorithm>
 #include <cmath>

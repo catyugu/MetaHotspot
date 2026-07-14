@@ -1,6 +1,6 @@
+#include "probe_recorder.hpp"
 #include "utils/mesh_utils.hpp"
 #include "utils/sampling.hpp"
-#include "probe_recorder.hpp"
 
 #include <limits>
 

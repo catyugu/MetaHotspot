@@ -1,6 +1,6 @@
 #include "assembler/assembler.hpp"
-#include "logger/logger.hpp"
 #include "data/tolerance_config.hpp"
+#include "logger/logger.hpp"
 #include "nonlinear/nonlinear_solver.hpp"
 #include "scheduler/scheduler.hpp"
 #include "time_scheme/error_controller.hpp"

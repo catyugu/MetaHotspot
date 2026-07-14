@@ -1,12 +1,12 @@
-#include "logger/logger.hpp"
-#include "utils/mesh_utils.hpp"
-#include "utils/physics_utils.hpp"
 #include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "function_helpers.hpp"
 #include "linear_solver/linear_solver.hpp"
+#include "logger/logger.hpp"
 #include "preprocessor/fluid_preprocessor.hpp"
+#include "utils/mesh_utils.hpp"
+#include "utils/physics_utils.hpp"
 
 #include <Eigen/Sparse>
 #include <algorithm>
@@ -253,7 +253,7 @@ namespace mhs::sim {
 
         std::vector<Eigen::Triplet<double>> triplets;
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(model.fluid.n_fluid);
-        triplets.reserve(model.fluid.n_fluid * 7);
+        triplets.reserve(static_cast<std::size_t>(model.fluid.n_fluid) * 7);
 
         for (int fi = 0; fi < model.fluid.n_fluid; ++fi) {
             int old_idx = compact_to_old[model.fluid.fluid_to_global[fi]];
