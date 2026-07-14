@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Eigen/Core>
-
-#include "data/linear_system.hpp"
 #include "data/model.hpp"
+#include <Eigen/Core>
 
 namespace mhs::sim {
 
+    struct AssemblyResult {
+        Eigen::SparseMatrix<double> K;
+        Eigen::VectorXd f;
+        Eigen::VectorXd M_diag;
+    };
     /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
     ///
     /// Invariant (caller-enforced):
