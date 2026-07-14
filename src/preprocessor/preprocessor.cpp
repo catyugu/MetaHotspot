@@ -1,4 +1,4 @@
-#include "common/mesh_utils.hpp"
+#include "utils/mesh_utils.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "fluid_preprocessor.hpp"

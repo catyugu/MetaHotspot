@@ -1,21 +1,22 @@
 #pragma once
 
 // Shared helpers for "evaluate temperature at an arbitrary 3D point in a
-// structured cell-centered grid with cell-level BCs". Used by:
+// structured cell-centered grid with cell-level BCs".
+//
+// Extracted from postprocessor/sample_point.hpp to break the cross-module
+// dependency scheduler (mhs::sim) → postprocessor (mhs::post).
+//
+// These are pure data + math — no module-specific logic.
+// Used by:
 //   - mhs::post::interpolate_cell_to_node  (whole-grid node sampling)
 //   - mhs::sim::ProbeRecorder::sample_one  (per-probe local sampling)
-//
-// The math — least-squares plane fit on cell centers + extrapolated face
-// temperatures — is the same in both. Only the aggregation scope differs.
-//
-// Heavy implementation lives in sample_point.cpp (built into mhs_lib).
 
 #include "data/model.hpp"
 
 #include <cstdint>
 #include <vector>
 
-namespace mhs::post {
+namespace mhs::utils {
 
     struct SampleDataPoint {
         double x = 0.0, y = 0.0, z = 0.0;
@@ -23,7 +24,7 @@ namespace mhs::post {
         double weight = 0.0;
     };
 
-    // Least-squares fit T(x,y,z) ≈ T_node + gx·x + gy·y + gz·z at the node
+    // Least-squares fit T(x,y,z) ? T_node + gx·x + gy·y + gz·z at the node
     // (node_x, node_y, node_z), with Tikhonov regularization on the gradient.
     // Returns X(0) = interpolated T at the node. NaN if no points.
     double sample_solve_least_squares(
@@ -39,4 +40,4 @@ namespace mhs::post {
         double T_c, double k, const mhs::core::MeshGeometry& mesh, int ix, int iy, int iz,
         const mhs::core::BCParamTable& bc_params, double time);
 
-} // namespace mhs::post
+} // namespace mhs::utils

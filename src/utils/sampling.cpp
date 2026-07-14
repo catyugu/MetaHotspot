@@ -1,11 +1,11 @@
-#include "common/mesh_utils.hpp"
-#include "postprocessor/sample_point.hpp"
+#include "utils/mesh_utils.hpp"
+#include "utils/sampling.hpp"
 
 #include <Eigen/Dense>
 #include <cmath>
 #include <limits>
 
-namespace mhs::post {
+namespace mhs::utils {
 
     double sample_solve_least_squares(
         const std::vector<SampleDataPoint>& pts, double node_x, double node_y, double node_z)
@@ -71,4 +71,4 @@ namespace mhs::post {
         return T_c;
     }
 
-} // namespace mhs::post
+} // namespace mhs::utils

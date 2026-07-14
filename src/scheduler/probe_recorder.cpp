@@ -1,5 +1,5 @@
-#include "common/mesh_utils.hpp"
-#include "postprocessor/sample_point.hpp"
+#include "utils/mesh_utils.hpp"
+#include "utils/sampling.hpp"
 #include "probe_recorder.hpp"
 
 #include <limits>
@@ -104,7 +104,7 @@ namespace mhs::sim {
 
         // 1. 收集 8 邻接 cell 的 (center, T) 数据点；自身 cell 必定 active（slot.valid 保证）
         //    边界上 ≤ 8 个。
-        std::vector<mhs::post::SampleDataPoint> pts;
+        std::vector<mhs::utils::SampleDataPoint> pts;
         pts.reserve(8 + mhs::core::FACE_COUNT);
 
         double sum_T = 0.0;
@@ -175,11 +175,11 @@ namespace mhs::sim {
 
             auto dir = mhs::core::FACE_DIRS[f];
             double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-            double T_f = mhs::post::sample_extrapolate_face_temperature(
+            double T_f = mhs::utils::sample_extrapolate_face_temperature(
                 dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
             double fx, fy, fz;
-            mhs::post::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
+            mhs::utils::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
             double fdx = fx - px;
             double fdy = fy - py;
             double fdz = fz - pz;
@@ -187,7 +187,7 @@ namespace mhs::sim {
             pts.push_back({fx, fy, fz, T_f, 1.0 / fdist_k});
         }
 
-        return mhs::post::sample_solve_least_squares(pts, px, py, pz);
+        return mhs::utils::sample_solve_least_squares(pts, px, py, pz);
     }
 
 } // namespace mhs::sim

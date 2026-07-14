@@ -1,5 +1,5 @@
-#include "common/cli.hpp"
-#include "common/logger.hpp"
+#include "cli.hpp"
+#include "logger/logger.hpp"
 #include "io/io.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "postprocessor/postprocessor.hpp"

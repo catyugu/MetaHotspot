@@ -1,4 +1,4 @@
-#include "common/logger.hpp"
+#include "logger/logger.hpp"
 #include <cstdio>
 #include <fstream>
 #include <gtest/gtest.h>

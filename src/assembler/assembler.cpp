@@ -5,8 +5,8 @@
 #include <unordered_map>
 
 #include "assembler.hpp"
-#include "common/mesh_utils.hpp"
-#include "common/physics_utils.hpp"
+#include "utils/mesh_utils.hpp"
+#include "utils/physics_utils.hpp"
 #include "data/tolerance_config.hpp"
 
 namespace mhs::sim {

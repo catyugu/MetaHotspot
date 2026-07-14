@@ -6,7 +6,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "common/logger.hpp"
+#include "logger/logger.hpp"
 #include "io.hpp"
 
 namespace mhs::io {

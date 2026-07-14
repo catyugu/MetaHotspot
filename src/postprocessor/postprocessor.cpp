@@ -1,6 +1,6 @@
-#include "common/mesh_utils.hpp"
+#include "utils/mesh_utils.hpp"
+#include "utils/sampling.hpp"
 #include "postprocessor.hpp"
-#include "postprocessor/sample_point.hpp"
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -34,7 +34,7 @@ namespace mhs::post {
                     double dirichlet_sum = 0.0;
                     int dirichlet_count = 0;
 
-                    std::vector<mhs::post::SampleDataPoint> pts;
+                    std::vector<mhs::utils::SampleDataPoint> pts;
 
                     // 遍历该节点周边相接的最多 8 个体元
                     for (int dx = -1; dx <= 0; dx++) {
@@ -96,12 +96,12 @@ namespace mhs::post {
                                     else {
                                         // 梯度边界：外推面中心温度并作为一个额外的"几何观测点"喂给最小二乘求解器
                                         double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-                                        double T_f = mhs::post::sample_extrapolate_face_temperature(
+                                        double T_f = mhs::utils::sample_extrapolate_face_temperature(
                                             dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
 
                                         // 【各向异性修正】同理，计算面中心到节点的等效各向异性距离权重
                                         double fx, fy, fz;
-                                        mhs::post::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
+                                        mhs::utils::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
                                         double f_dx = fx - node_x;
                                         double f_dy = fy - node_y;
                                         double f_dz = fz - node_z;
@@ -121,7 +121,7 @@ namespace mhs::post {
                     }
                     else if (!pts.empty()) {
                         // 利用最小二乘求解器精确拟合
-                        node_T[node_idx] = mhs::post::sample_solve_least_squares(pts, node_x, node_y, node_z);
+                        node_T[node_idx] = mhs::utils::sample_solve_least_squares(pts, node_x, node_y, node_z);
                     }
                 }
             }
