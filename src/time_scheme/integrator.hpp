@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assembler/assembler.hpp"
 #include "data/linear_system.hpp"
 #include "data/solution_history.hpp"
 

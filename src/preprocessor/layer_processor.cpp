@@ -1,8 +1,8 @@
-#include "utils/mesh_utils.hpp"
 #include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
 #include "layer_processor.hpp"
+#include "utils/mesh_utils.hpp"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cstdint>
@@ -286,7 +286,6 @@ namespace mhs::sim {
                     continue;
 
                 mhs::core::SmartBlockModel sbm;
-                sbm.name = trained.name;
                 sbm.n_faces = n_faces;
                 sbm.n_modes = n_modes;
                 sbm.modal_start_idx = N_phys + cumulative_modes;

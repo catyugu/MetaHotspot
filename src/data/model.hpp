@@ -102,7 +102,6 @@ namespace mhs::core {
     /// from ctx.T and ctx.current_time — supporting nonlinear neighbour
     /// materials (k(T)) and time-varying BCs.
     struct SmartBlockModel {
-        std::string name;
 
         // Invariant modal data (from training).
         Eigen::MatrixXd K_modal; // [n_modes x n_modes] — raw modal stiffness
