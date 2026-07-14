@@ -35,7 +35,7 @@ $$Q_{in, i} = C_i (T_{ref, i} - T_{face, i}) + Q_{ext, i}$$
 1. 生成精确的 Schur 补矩阵：在离线阶段，提取子域的内部矩阵 $\mathbf{K}_{ii}$、交界矩阵 $\mathbf{K}_{i\Gamma}$ 和边界矩阵 $\mathbf{K}_{\Gamma\Gamma}$。计算稠密的 Schur 补矩阵：$$\mathbf{K}_{schur} = \mathbf{K}_{\Gamma\Gamma} - \mathbf{K}_{\Gamma i} \mathbf{K}_{ii}^{-1} \mathbf{K}_{i\Gamma}$$
 2. 求解特征值问题：对这个对称半正定矩阵求解特征值和特征向量：$$\mathbf{K}_{schur} \mathbf{\phi}_i = \lambda_i \mathbf{\phi}_i$$
 3. 截断与构造 $\mathbf{\Phi}$：将特征值从小到大排序，提取前 $r$ 个最小特征值对应的特征向量，将它们按列排布，就构成了正交基底 $\mathbf{\Phi} = [\mathbf{\phi}_1, \mathbf{\phi}_2, \dots, \mathbf{\phi}_r]$。
-4. 此时，模态等效刚度矩阵 $\mathbf{K}_{modal\_eff}$ 就是一个纯对角矩阵，对角线元素就是这 $r$ 个特征值：$$\mathbf{K}_{modal\_eff} = \text{diag}(\lambda_1, \lambda_2, \dots, \lambda_r)$$
+4. 此时，我们可以定义模态等效刚度矩阵 $\mathbf{K}_{r}$ ，它是一个纯对角矩阵，对角线元素就是这 $r$ 个特征值：$$\mathbf{K}_{r} = \text{diag}(\lambda_1, \lambda_2, \dots, \lambda_r)$$
 
 #### 获取宏模型：非线性版本
 
@@ -47,48 +47,47 @@ $$Q_{in, i} = C_i (T_{ref, i} - T_{face, i}) + Q_{ext, i}$$
 - 输入特征（模态温度）： $\mathbf{\alpha}_{train} = \mathbf{\Phi}^T \mathbf{X}_T$ （尺寸 $r \times M$）
 - 输出标签（模态热流）： $\mathbf{\beta}_{train} = \mathbf{\Phi}^T \mathbf{X}_Q$ （尺寸 $r \times M$）
 
-5. 训练单层感知机：现在你有了低维的数据对 $(\mathbf{\alpha}, \mathbf{\beta})$。定义单层感知机 $\mathbf{\beta} = \sigma(\mathbf{A}\mathbf{\alpha} + \mathbf{b})$：
-
-- 输入维度：$r$
-- 输出维度：$r$
-- 激活函数 $\sigma$：选择二阶可导的激活函数，因为需要光滑的解析雅可比矩阵 $\sigma'$。
-- 优化权重 $\mathbf{A}$ 和偏置 $\mathbf{b}$。
+5. 训练单层感知机：现在有低维的数据对 $(\mathbf{\alpha}, \mathbf{\beta})$。尝试训练一个模型预测 $\mathbf{\beta}(\mathbf{\alpha})$。
 
 #### 非线性模型（DtN 映射）的局部线性化修正
 
-我们这里只讨论和邻接的、和宏模型有耦合的单元。对于宏块外部边界，采用虚拟单元，贡献全部都在右手项。
+我们这里只讨论和邻接的、和宏模型有耦合的单元。其他和宏块不相邻的单元不受影响。
 
 符号约定：
 
 - $\mathbf{\Phi}_f$：面上的纯几何模态基矩阵，尺寸为 $nfaces \times r$，满足正交性 $\mathbf{\Phi}_f^T \mathbf{\Phi}_f = \mathbf{I}_{r \times r}$。
 - $\mathbf{C}$：界面面片的半热导对角矩阵，尺寸为 $nfaces \times nfaces$。（本质向量，计算很便宜）
-- $\mathbf{\Phi}_c = \mathbf{C} \mathbf{\Phi}_f$：热导加权投影矩阵（整体方程中实际装配的东西）。
+- $\mathbf{\Phi}_c = \mathbf{C} \mathbf{\Phi}_f$：热导加权投影矩阵（整体方程中实际装配的东西），尺寸为 $nadj \times r$
 - $\mathbf{C}_\alpha = \mathbf{\Phi}_f^T \mathbf{C} \mathbf{\Phi}_f$：界面半热阻在模态空间的等效投影，尺寸为 $r \times r$ 的对称正定矩阵。
 
-对于非线性的单层感知机 $\mathbf{\beta} = \sigma(\mathbf{A}\mathbf{\alpha} + \mathbf{b})$，在当前迭代步 $\mathbf{\alpha}^k$ 进行泰勒一阶展开：
+代入界面的热平衡投影方程 $\mathbf{\Phi}_f^T \mathbf{Q}_{in}^{k+1} = \mathbf{\beta}(\mathbf{\alpha^k})$ 中：
 
-$$\mathbf{\beta}(\mathbf{\alpha}) \approx \mathbf{\beta}(\mathbf{\alpha}^k) + \mathbf{J}_{modal} (\mathbf{\alpha} - \mathbf{\alpha}^k)$$
-
-其中，雅可比矩阵通过求导获得：
-
-$$\mathbf{J}_{modal} = \frac{\partial \mathbf{\beta}}{\partial \mathbf{\alpha}} = \text{diag}\left(\sigma'(\mathbf{A}\mathbf{\alpha}^k + \mathbf{b})\right) \mathbf{A}$$
-
-代入界面的热平衡投影方程 $\mathbf{\Phi}_f^T \mathbf{Q}_{in} = \mathbf{\beta}(\mathbf{\alpha})$ 中：
-
-$$\mathbf{\Phi}_c^T \mathbf{T}_{adj}^{k+1} - \mathbf{C}_\alpha \mathbf{\alpha}^{k+1} = \mathbf{\beta}(\mathbf{\alpha}^k) + \mathbf{J}_{modal} (\mathbf{\alpha}^{k+1} - \mathbf{\alpha}^k)$$
+$$\mathbf{\Phi}_c^T \mathbf{T}_{adj}^{k+1} - \mathbf{C}_\alpha \mathbf{\alpha}^{k+1} = \mathbf{\beta}(\mathbf{\alpha}^k)$$
 
 当然，这里的 $\mathbf{C_{\alpha}}$ 是根据第 k 步来装配的，因为我们还没有第 k+1 步的温度值。
 
 而另一方面，对于邻接单元有守恒律：
 
-$$\mathbf{K}_{adj} \mathbf{T}^{k+1} -\mathbf{\Phi_c}\mathbf{\alpha}^{k+1}=\mathbf{f}_{adj}$$
+$$\mathbf{K}_{adj} \mathbf{T}^{k+1} -\mathbf{\Phi_c}\mathbf{\alpha}^{k+1}=\mathbf{f}_{adj}^{k+1}$$
 
-将含有 $k+1$ 的未知量移到左边，已知量留在右边，即可得到非线性 DtN 映射下最终的牛顿增广系统矩阵结构：
+将含有 $k+1$ 的未知量移到左边，已知量留在右边，即可得到非线性 DtN 映射下最终的增广系统矩阵结构：
 
-$$\begin{bmatrix} \mathbf{K}_{adj} & -\mathbf{\Phi}_c \\ -\mathbf{\Phi}_c^T & \mathbf{C}_\alpha + \mathbf{J}_{modal} \end{bmatrix} \begin{bmatrix} \mathbf{T}_{adj}^{k+1} \\ \mathbf{\alpha}^{k+1} \end{bmatrix} = \begin{bmatrix} \mathbf{f}_{adj} \\ \mathbf{J}_{modal}\mathbf{\alpha}^k - \mathbf{\beta}(\mathbf{\alpha}^k) \end{bmatrix}$$
+$$\begin{bmatrix} \mathbf{K}_{adj} & -\mathbf{\Phi}_c \\ -\mathbf{\Phi}_c^T & \mathbf{C}_\alpha \end{bmatrix} \begin{bmatrix} \mathbf{T}_{adj}^{k+1} \\ \mathbf{\alpha}^{k+1} \end{bmatrix} = \begin{bmatrix} \mathbf{f}_{adj}^{k+1} \\  - \mathbf{\beta}(\mathbf{\alpha}^k) \end{bmatrix}$$
 
-如果宏块邻接的是边界，则全部进入右手向量。
+考虑宏模型自己的边界条件：
 
-### 瞬态非线性问题的可能困境
+$$\begin{bmatrix} \mathbf{K}_{phys} & -\mathbf{\Phi}_c \\ -\mathbf{\Phi}_c^T & \mathbf{C}_\alpha + (\mathbf{\Phi}_f^T \mathbf{C}_{env} \mathbf{\Phi}_f) \end{bmatrix} \begin{bmatrix} \mathbf{T}_{phys}^{k+1} \\ \mathbf{\alpha}^{k+1} \end{bmatrix} = \begin{bmatrix} \mathbf{f}_{phys} \\ \mathbf{\Phi}_f^T (\mathbf{C}_{env} \mathbf{T}_{ref} + \mathbf{Q}_{ext}) - \mathbf{\beta}(\mathbf{\alpha}^k) \end{bmatrix}$$
 
-如果要处理瞬态非线性问题，则难免引入内部状态和时序模型，从而会导向 LSTM 或类似的结构，而这种结构的雅可比显然无法简单地解析计算，可能需要引入自动微分等较庞大的框架，或者不得不使用现有的 PyTorch 等框架来辅助计算，这容易让项目复杂度爆炸。
+特别地，宏模型内部为线性的情况下，有显式的模态刚度矩阵 $\mathbf{K}_r \mathbf{\alpha} = \mathbf{\beta}$，因而：
+
+$$\begin{bmatrix} \mathbf{K}_{adj} & -\mathbf{\Phi}_c \\ -\mathbf{\Phi}_c^T & \mathbf{C}_\alpha + \mathbf{K}_r \end{bmatrix} \begin{bmatrix} \mathbf{T}_{adj}^{k+1} \\ \mathbf{\alpha}^{k+1} \end{bmatrix} = \begin{bmatrix} \mathbf{f}_{adj}^{k+1} \\ \mathbf{0} \end{bmatrix}$$
+
+### 瞬态问题的处理思路
+
+瞬态问题需要额外的状态量，外部训练的 DtN 映射变为：
+
+$$[\mathbf{\beta}^n, \mathbf{h}_{trial}^n] = f_{predict}(\mathbf{\alpha}^n, \mathbf{h}^{n-1}, \Delta t)$$
+
+非线性迭代时的系统变为：
+
+$$\begin{bmatrix} \mathbf{K}_{adj} + \frac{1}{\Delta t}\mathbf{M}_{adj} & -\mathbf{\Phi}_c \\ -\mathbf{\Phi}_c^T & \mathbf{C}_\alpha \end{bmatrix} \begin{bmatrix} \mathbf{T}_{adj}^{k+1} \\ \mathbf{\alpha}^{k+1} \end{bmatrix} = \begin{bmatrix} \mathbf{f}_{adj} \\- \mathbf{\beta}(\mathbf{\alpha}^k, \mathbf{h}^{n-1}, \Delta t) \end{bmatrix}$$
