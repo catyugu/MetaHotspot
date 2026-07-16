@@ -3,32 +3,24 @@
 #include "data/io_structure.hpp"
 #include "data/model.hpp"
 #include "expr/expr.hpp"
+
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace mhs::sim {
 
-    /**
-     * @brief Apply a fluid overlay to a loaded model.
-     *
-     * Marks fluid cells, builds the fluid indirection mapping (fluid_to_global /
-     * global_to_fluid), sets up pressure boundary conditions, and computes per-cell
-     * channel geometry (hydraulic diameter, width, height).
-     *
-     * If overlay is empty or no fluid materials match, the model is left unchanged.
-     */
-    void applyFluidOverlay(mhs::core::Model& model, const std::optional<mhs::core::FluidOverlay>& overlay,
-        const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols);
+    // Scratch data shared by the fluid-domain builder and the one-time flow
+    // solve. It is owned by Preprocessor::load and released when preprocessing
+    // finishes; no process-global state is retained between simulations.
+    struct FluidPreprocessWorkspace {
+        std::vector<mhs::Index> active_to_grid;
+    };
 
-    /**
-     * @brief Solve the fluid flow field after the overlay is applied.
-     *
-     * Three-phase pipeline (all internal):
-     *   1. initCellHydroProperties  — Hele-Shaw hydraulic conductance per axis
-     *   2. solvePressure            — Poisson matrix + EigenBiCGSTAB solve
-     *   3. precomputeFlowAxes       — dominant flow axis per fluid cell
-     *
-     * If no fluid cells exist (is_fluid all false), returns immediately.
-     */
-    void solveFluidFlow(mhs::core::Model& model);
+    std::optional<FluidPreprocessWorkspace> buildFluidDomain(mhs::core::Model& model,
+        const mhs::core::FluidOverlay& overlay, const mhs::core::IOStructure& io_structure,
+        const mhs::core::SymbolTable& symbols, const std::vector<std::string>& material_names);
+
+    void solveFluidFlow(mhs::core::Model& model, const FluidPreprocessWorkspace& workspace);
 
 } // namespace mhs::sim

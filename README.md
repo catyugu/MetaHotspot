@@ -29,7 +29,7 @@
     - `common/mesh_utils.hpp` — `mhs::utils::k_along` / `half_length_along` / `face_area` / `neighbor_*`，面法向查表。
     - `postprocessor/sample_point.hpp` — `mhs::post::sample_*`，局部 3D 采样与外推辅助。
 - **io**（领域 `mhs::io`）：XML 读取与序列化（VTU/VTK 调试输出）。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
-- **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::sim::Preprocessor::load(IOStructure) → unique_ptr<Model>`；主要逻辑以 `mhs::sim::{resolve_geometry, assign_cell_layers, resolve_boundary_patches, parse_all_face_keys, ...}` 等自由函数形式存在于同一命名空间。
+- **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示。`Preprocessor::load` 只编排 mesh、material/source catalog、cell topology、boundary catalog 和可选 fluid domain 等阶段；模型字段构建位于 `mhs::sim::detail`，几何/边界算法继续使用可独立测试的自由函数。流体域构建与一次性流场求解分属不同实现文件，阶段 scratch 不保留为全局状态。
 - **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，一次 TBB 遍历返回 `AssemblyResult {K, f, M_diag}`，由 `time_scheme::build_system` 纯函数注入时间离散。`mhs::sim::{Assembler, LinearSystem, AssemblyResult}`。TBB 并行。
 - **linear_solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, EigenSparseLUSolver, EigenBiCGSTABSolver, PardisoLUSolver}`。
 - **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；`Scheduler` 在每个时间步内调用 `nonlinear_solve` 直到收敛或达到模块内部的迭代上限。

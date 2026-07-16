@@ -5,6 +5,7 @@
 #include "io/io.hpp"
 #include "preprocessor/face_key_processor.hpp"
 #include "preprocessor/preprocessor.hpp"
+#include <cmath>
 #include <filesystem>
 #include <gtest/gtest.h>
 
@@ -756,4 +757,118 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     for (int ix = 0; ix < nx; ++ix)
         for (int iz = 0; iz < nz; ++iz)
             check_face(ix, ny - 1, iz, mhs::core::FaceDir::YP);
+}
+
+TEST(PreprocessorTest, CompactFieldsDoNotReserveTheFullSparseGrid)
+{
+    auto io = make_simple_io();
+    io.mesh_vertex_x.clear();
+    io.mesh_vertex_y.clear();
+    for (int i = 0; i <= 100; ++i) {
+        io.mesh_vertex_x.push_back(static_cast<double>(i));
+        io.mesh_vertex_y.push_back(static_cast<double>(i));
+    }
+    io.mesh_vertex_z = {0.0, 1.0};
+    io.layers[0].thickness_expr = "1";
+    io.layers[0].blocks[0].all_rects[0].width_expr = "1";
+    io.layers[0].blocks[0].all_rects[0].height_expr = "1";
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+
+    ASSERT_EQ(model->cells.index_map.size(), 10000u);
+    ASSERT_EQ(model->cells.material_id.size(), 1u);
+    ASSERT_EQ(model->cells.heat_source_idx.size(), 1u);
+
+    // Compact arrays may keep a small growth slack, but must not reserve the
+    // complete bounding grid when almost every grid cell is inactive.
+    EXPECT_LE(model->cells.material_id.capacity(), 64u);
+    EXPECT_LE(model->cells.heat_source_idx.capacity(), 64u);
+}
+
+TEST(PreprocessorTest, DuplicateBlockHeatSourcesShareOneCatalogEntry)
+{
+    auto io = make_simple_io();
+    auto& first_block = io.layers[0].blocks[0];
+    first_block.ti_reyuan_expr = "123";
+    first_block.all_rects[0].width_expr = "5";
+
+    auto second_block = first_block;
+    second_block.name = "second_block";
+    second_block.all_rects[0].x_expr = "5";
+    io.layers[0].blocks.push_back(second_block);
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io);
+
+    ASSERT_EQ(model->heat_source_table.size(), 2u); // default zero + shared 123
+    ASSERT_EQ(model->cells.heat_source_idx.size(), 8u);
+    const uint16_t shared_index = model->cells.heat_source_idx.front();
+    ASSERT_NE(shared_index, 0u);
+    for (uint16_t index : model->cells.heat_source_idx)
+        EXPECT_EQ(index, shared_index);
+}
+
+TEST(PreprocessorTest, RejectsNonIncreasingMeshVertices)
+{
+    auto io = make_simple_io();
+    io.mesh_vertex_x = {0.0, 5.0, 5.0, 10.0};
+
+    EXPECT_DEATH(
+        {
+            Preprocessor preprocessor;
+            (void)preprocessor.load(io);
+        },
+        "");
+}
+
+TEST(PreprocessorTest, FluidOverlayBuildsACompleteFrozenFlowField)
+{
+    auto io = make_simple_io();
+    io.mesh_vertex_x = {0.0, 5.0, 10.0};
+    io.mesh_vertex_y = {0.0, 10.0};
+    io.mesh_vertex_z = {0.0, 10.0};
+    io.layers[0].blocks[0].material_name = "water";
+    io.materials.clear();
+
+    mhs::core::Material water;
+    water.name = "water";
+    water.kx = water.ky = water.kz = "0.6";
+    water.midu = "1000";
+    water.bi_rerong = "4200";
+    io.materials[water.name] = water;
+
+    mhs::core::FluidOverlay overlay;
+    overlay.fluid_materials.push_back({"water", "0.001"});
+
+    mhs::core::FluidBoundaryOverlay inlet;
+    inlet.name = "inlet";
+    inlet.kind = mhs::core::FluidBCType::PressureType;
+    inlet.value = 1000.0;
+    inlet.face_keys.push_back("X|E|0|0|10|0|10");
+    overlay.boundaries.push_back(inlet);
+
+    mhs::core::FluidBoundaryOverlay outlet;
+    outlet.name = "outlet";
+    outlet.kind = mhs::core::FluidBCType::PressureType;
+    outlet.value = 0.0;
+    outlet.face_keys.push_back("X|E|10|0|10|0|10");
+    overlay.boundaries.push_back(outlet);
+
+    Preprocessor preprocessor;
+    auto model = preprocessor.load(io, overlay);
+
+    ASSERT_EQ(model->fluid.n_fluid, 2u);
+    ASSERT_EQ(model->fluid.fluid_to_global.size(), 2u);
+    ASSERT_EQ(model->fluid.global_to_fluid.size(), 2u);
+    ASSERT_EQ(model->fluid.dynamic_viscosity.size(), 2u);
+    ASSERT_EQ(model->fluid.pressure.size(), 2u);
+    ASSERT_EQ(model->fluid.flow_axes.size(), 2u);
+    EXPECT_NEAR(model->fluid.dynamic_viscosity[0], 0.001, 1e-12);
+    EXPECT_NEAR(model->fluid.dynamic_viscosity[1], 0.001, 1e-12);
+    EXPECT_NEAR(model->fluid.pressure[0], 1000.0, 1e-8);
+    EXPECT_NEAR(model->fluid.pressure[1], 0.0, 1e-8);
+    EXPECT_EQ(model->fluid.flow_axes[0], 0);
+    EXPECT_EQ(model->fluid.flow_axes[1], 0);
+    EXPECT_TRUE(std::isfinite(model->fluid.hydraulic_diameter[0]));
 }

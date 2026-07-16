@@ -1,5 +1,6 @@
 mhs_add_library(preprocessor_lib
-    SOURCES preprocessor.cpp layer_processor.cpp face_key_processor.cpp function_helpers.cpp fluid_preprocessor.cpp
+    SOURCES preprocessor.cpp model_builder.cpp layer_processor.cpp face_key_processor.cpp function_helpers.cpp
+            fluid_preprocessor.cpp fluid_flow_solver.cpp
     PRIVATE_LINKS expr_lib utils_lib io_lib linear_solver_lib logger_lib
 )
 

@@ -1,11 +1,13 @@
+#include "layer_processor.hpp"
 #include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
-#include "layer_processor.hpp"
+#include "logger/logger.hpp"
 #include "utils/mesh_utils.hpp"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <unordered_map>
 
 namespace mhs::sim {
@@ -13,6 +15,17 @@ namespace mhs::sim {
     constexpr double EPS = mhs::core::geometry_eps;
 
     namespace {
+
+        mhs::Index checked_grid_cell_count(const mhs::core::MeshGeometry& mesh)
+        {
+            const auto max = std::numeric_limits<mhs::Index>::max();
+            if (mesh.nx != 0 && mesh.ny > max / mesh.nx)
+                MHS_FATAL("mesh cell count overflows Index");
+            const mhs::Index xy = mesh.nx * mesh.ny;
+            if (xy != 0 && mesh.nz > max / xy)
+                MHS_FATAL("mesh cell count overflows Index");
+            return xy * mesh.nz;
+        }
 
         mhs::Index find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
         {
@@ -152,12 +165,10 @@ namespace mhs::sim {
         const std::vector<std::vector<uint16_t>>& block_hs_map)
     {
         const mhs::Index num_layers = static_cast<mhs::Index>(resolved_layers.size());
-        const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
+        const mhs::Index total = checked_grid_cell_count(mesh);
 
         mhs::core::CellFields cells;
         cells.index_map.resize(total, mhs::invalidIndex);
-        cells.material_id.reserve(total);
-        cells.heat_source_idx.reserve(total);
 
         for (mhs::Index ix = 0; ix < mesh.nx; ix++) {
             for (mhs::Index iy = 0; iy < mesh.ny; iy++) {

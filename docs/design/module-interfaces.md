@@ -52,6 +52,22 @@ mhs::core::CellFields assign_cell_layers(
     const std::unordered_map<std::string, size_t>& name_to_idx,
     const std::vector<std::vector<uint16_t>>& block_hs_map);
 
+// 流体构建 scratch 只在 Preprocessor::load 生命周期内存在。
+struct FluidPreprocessWorkspace {
+    std::vector<mhs::Index> active_to_grid;
+};
+
+std::optional<FluidPreprocessWorkspace> buildFluidDomain(
+    mhs::core::Model& model,
+    const mhs::core::FluidOverlay& overlay,
+    const mhs::core::IOStructure& io_structure,
+    const mhs::core::SymbolTable& symbols,
+    const std::vector<std::string>& material_names);
+
+void solveFluidFlow(
+    mhs::core::Model& model,
+    const FluidPreprocessWorkspace& workspace);
+
 void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,
     const mhs::core::CellFields& cells,
@@ -82,13 +98,15 @@ mhs::core::IOStructure
         ├─> 构造本地 mhs::core::SymbolTable（几何变量 + register_all_functions 注入 native）
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
-        ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
+        ├─> detail::build_material_catalog() // 解析 k/rho/c + 稳定 name/index 映射
         ├─> assign_cell_layers()       // index_map (full-grid), material_id + heat_source_idx (compact)
-        ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
+        ├─> detail::build_heat_source_catalog() // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
-        ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
+        ├─> (可选) buildFluidDomain(symbols, material_names)
+        │     └─> FluidPreprocessWorkspace(active_to_grid) // 局部 scratch，无 static 状态
+        ├─> (可选) solveFluidFlow(workspace) // 流体域存在时执行一次
         └─> mhs::core::Model ready
 ```
 
