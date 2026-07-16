@@ -42,9 +42,9 @@ XML
 
 | 阶段              | 输入                                  | 输出                        | 关键                                                     |
 |-------------------|---------------------------------------|-----------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `ModelDefinition`               | tinyxml2                                                 |
+| XML 解析          | XML 文件                              | `ModelDefinition`           | tinyxml2                                                 |
 | 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`              | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `ModelDefinition.layers`                  | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
+| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
 | 预处理-虚拟单元   | mesh + 层几何                         | `index_map`                 | full-grid；标记 + 紧凑映射                               |
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`               | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable` | 6 面独立 + `other_bc` 兜底                               |
