@@ -118,7 +118,7 @@ namespace {
     std::unordered_map<std::string, mhs::core::Function> fns_with_gauss()
     {
         std::unordered_map<std::string, mhs::core::Function> fns;
-        mhs::core::Function g = mhs::core::GaussFunction {5.0, 10.0, 20.0, 0.0, 100.0};
+        mhs::core::Function g = mhs::core::GaussFunction {5.0, 10.0, 20.0};
         fns["test_gaussian"] = g;
         return fns;
     }

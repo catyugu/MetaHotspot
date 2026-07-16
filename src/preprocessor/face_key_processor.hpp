@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "expr/expr.hpp"
 

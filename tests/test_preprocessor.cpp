@@ -1,5 +1,5 @@
 #include "config.h"
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
@@ -36,12 +36,11 @@ static uint16_t get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
     return p ? p->param_idx : 0;
 }
 
-// Helper: build a minimal mhs::core::IOStructure for testing
-static mhs::core::IOStructure make_simple_io()
+// Helper: build a minimal mhs::core::ModelDefinition for testing
+static mhs::core::ModelDefinition make_simple_io()
 {
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -52,12 +51,9 @@ static mhs::core::IOStructure make_simple_io()
 
     // One layer, one block covering the whole area
     mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "test_block";
     block.material_name = "test_material";
     block.ti_reyuan_expr = "0";
 
@@ -74,7 +70,6 @@ static mhs::core::IOStructure make_simple_io()
 
     // mhs::core::Material
     mhs::core::Material mat;
-    mat.name = "test_material";
     mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
@@ -91,36 +86,34 @@ static mhs::core::IOStructure make_simple_io()
 TEST(PreprocessorTest, MeshGeometryFromVertices)
 {
     auto io = make_simple_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    EXPECT_EQ(model->mesh.nx, 2);
-    EXPECT_EQ(model->mesh.ny, 2);
-    EXPECT_EQ(model->mesh.nz, 2);
+    EXPECT_EQ(model.mesh.nx, 2);
+    EXPECT_EQ(model.mesh.ny, 2);
+    EXPECT_EQ(model.mesh.nz, 2);
 
     // Check cell sizes (dx, dy, dz)
-    EXPECT_EQ(model->mesh.dx.size(), 2);
-    EXPECT_NEAR(model->mesh.dx[0], 5.0e-3, 1e-10); // 5mm -> 0.005m (SI)
-    EXPECT_NEAR(model->mesh.dx[1], 5.0e-3, 1e-10);
+    EXPECT_EQ(model.mesh.dx.size(), 2);
+    EXPECT_NEAR(model.mesh.dx[0], 5.0e-3, 1e-10); // 5mm -> 0.005m (SI)
+    EXPECT_NEAR(model.mesh.dx[1], 5.0e-3, 1e-10);
 
-    EXPECT_EQ(model->mesh.dy.size(), 2);
-    EXPECT_NEAR(model->mesh.dy[0], 5.0e-3, 1e-10);
-    EXPECT_NEAR(model->mesh.dy[1], 5.0e-3, 1e-10);
+    EXPECT_EQ(model.mesh.dy.size(), 2);
+    EXPECT_NEAR(model.mesh.dy[0], 5.0e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.dy[1], 5.0e-3, 1e-10);
 
-    EXPECT_EQ(model->mesh.dz.size(), 2);
-    EXPECT_NEAR(model->mesh.dz[0], 5.0e-3, 1e-10);
-    EXPECT_NEAR(model->mesh.dz[1], 5.0e-3, 1e-10);
+    EXPECT_EQ(model.mesh.dz.size(), 2);
+    EXPECT_NEAR(model.mesh.dz[0], 5.0e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.dz[1], 5.0e-3, 1e-10);
 
     // Check cell centers (cx, cy, cz)
-    EXPECT_NEAR(model->mesh.cx[0], 2.5e-3, 1e-10); // center of [0, 5mm] in m
-    EXPECT_NEAR(model->mesh.cx[1], 7.5e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.cx[0], 2.5e-3, 1e-10); // center of [0, 5mm] in m
+    EXPECT_NEAR(model.mesh.cx[1], 7.5e-3, 1e-10);
 
-    EXPECT_NEAR(model->mesh.cy[0], 2.5e-3, 1e-10);
-    EXPECT_NEAR(model->mesh.cy[1], 7.5e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.cy[0], 2.5e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.cy[1], 7.5e-3, 1e-10);
 
-    EXPECT_NEAR(model->mesh.cz[0], 2.5e-3, 1e-10);
-    EXPECT_NEAR(model->mesh.cz[1], 7.5e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.cz[0], 2.5e-3, 1e-10);
+    EXPECT_NEAR(model.mesh.cz[1], 7.5e-3, 1e-10);
 }
 
 // ---- Virtual Cell / LayerProcessor Tests ----
@@ -128,40 +121,63 @@ TEST(PreprocessorTest, MeshGeometryFromVertices)
 TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
 {
     auto io = make_simple_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
     // All 8 cells should be valid
-    EXPECT_EQ(model->cells.material_id.size(), 8u);
+    EXPECT_EQ(model.cells.material_id.size(), 8u);
     for (int i = 0; i < 8; i++) {
-        EXPECT_NE(model->cells.index_map[i], mhs::invalidIndex);
+        EXPECT_NE(model.cells.index_map[i], mhs::invalidIndex);
+    }
+}
+
+TEST(PreprocessorTest, FluidDataInModelDefinitionUsesNormalBuildPath)
+{
+    auto definition = make_simple_io();
+    definition.materials.at("test_material").dynamic_viscosity = "0.001";
+
+    mhs::core::FluidBoundary inlet;
+    inlet.kind = mhs::core::FluidBCType::PressureType;
+    inlet.value = 500.0;
+    inlet.face_keys = {"X|E|0|0|10|0|10"};
+    definition.fluid_boundaries.push_back(inlet);
+
+    mhs::core::FluidBoundary outlet;
+    outlet.kind = mhs::core::FluidBCType::PressureType;
+    outlet.value = 0.0;
+    outlet.face_keys = {"X|E|10|0|10|0|10"};
+    definition.fluid_boundaries.push_back(outlet);
+
+    auto model = build_model(definition);
+
+    ASSERT_EQ(model.material_table.size(), 1u);
+    EXPECT_TRUE(model.material_table[0].is_fluid);
+    EXPECT_EQ(model.fluid.n_fluid, model.cells.material_id.size());
+    EXPECT_EQ(model.fluid.fluid_to_global.size(), model.cells.material_id.size());
+    for (double viscosity : model.fluid.dynamic_viscosity) {
+        EXPECT_DOUBLE_EQ(viscosity, 0.001);
     }
 }
 
 TEST(PreprocessorTest, MaterialAssignment)
 {
     auto io = make_simple_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
     // All cells should have material_id = 0 (first material)
     for (int i = 0; i < 8; i++) {
-        EXPECT_EQ(model->cells.material_id[i], 0);
+        EXPECT_EQ(model.cells.material_id[i], 0);
     }
 
     // mhs::core::Material table should have one entry
-    EXPECT_EQ(model->material_table.size(), 1);
-    EXPECT_TRUE(model->material_table[0].kx.is_constant());
-    EXPECT_NEAR(model->material_table[0].kx.constant_value(), 400.0, 1e-10);
+    EXPECT_EQ(model.material_table.size(), 1);
+    EXPECT_TRUE(model.material_table[0].kx.is_constant());
+    EXPECT_NEAR(model.material_table[0].kx.constant_value(), 400.0, 1e-10);
 }
 
 TEST(PreprocessorTest, VirtualCellsFromSubRect)
 {
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -172,13 +188,10 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
 
     // mhs::core::Layer 1 (top): 2 blocks, with add/sub rects creating L-shape
     mhs::core::Layer layer1;
-    layer1.name = "top";
-    layer1.is_top_layer = true;
     layer1.thickness_expr = "20";
 
     // mhs::core::Block 1: L-shape via add rect (0,0,50,50) and (50,0,50,100)
     mhs::core::Block block1;
-    block1.name = "b1";
     block1.material_name = "copper";
     block1.ti_reyuan_expr = "0";
 
@@ -203,12 +216,9 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
 
     // mhs::core::Layer 2 (substrate): silicon with sub-rect hole at (0,0,50,50)
     mhs::core::Layer layer2;
-    layer2.name = "substrate";
-    layer2.is_top_layer = false;
     layer2.thickness_expr = "10";
 
     mhs::core::Block block2;
-    block2.name = "b2";
     block2.material_name = "silicon";
     block2.ti_reyuan_expr = "0";
 
@@ -233,24 +243,20 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
 
     // Materials
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     mhs::core::Material silicon;
-    silicon.name = "silicon";
     silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int nx = model->mesh.nx;
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
+    int nx = model.mesh.nx;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
     EXPECT_EQ(nx, 2);
     EXPECT_EQ(ny, 2);
     EXPECT_EQ(nz, 9);
@@ -274,26 +280,25 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     // Check cell (ix=0, iy=1, iz=0) -> layer2, not subtracted, in (0,0,100,100) -> valid
     // Actually cell at cy=75e-3 is NOT in sub-rect (0,0,50,50), so it IS valid
     int idx_01_0 = 0 * ny * nz + 1 * nz + 0;
-    EXPECT_NE(model->cells.index_map[idx_01_0], mhs::invalidIndex); // valid in layer2
+    EXPECT_NE(model.cells.index_map[idx_01_0], mhs::invalidIndex); // valid in layer2
 
     // Check cell (ix=0, iy=0, iz=5) -> layer0 (top), (ix=0, iy=0) cx=25mm, cy=25mm in rect1 -> valid
     // iz=5 means cz=12.5mm, which is in top layer (z=10..30mm)
     int idx_00_5 = 0 * ny * nz + 0 * nz + 5;
-    EXPECT_NE(model->cells.index_map[idx_00_5], mhs::invalidIndex);
+    EXPECT_NE(model.cells.index_map[idx_00_5], mhs::invalidIndex);
 
     // Cell (ix=0, iy=0, iz=4) -> layer1 (substrate), cx=25mm cy=25mm -> subtracted -> virtual
     // iz=4 means cz=9mm, in substrate layer (z=0..10mm)
     int idx_00_4 = 0 * ny * nz + 0 * nz + 4;
-    EXPECT_EQ(model->cells.index_map[idx_00_4], mhs::invalidIndex);
+    EXPECT_EQ(model.cells.index_map[idx_00_4], mhs::invalidIndex);
 }
 
 // ---- FaceKey / BC Tests ----
 
 TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
 {
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -302,12 +307,9 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     io.mesh_vertex_z = {0, 10, 20, 30};
 
     mhs::core::Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
     layer.thickness_expr = "30";
 
     mhs::core::Block block;
-    block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -323,46 +325,40 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     io.layers.push_back(layer);
 
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // mhs::core::Boundary: Dirichlet 500K on Z bottom face
     mhs::core::Boundary boundary;
-    boundary.name = "bc1";
     boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100");
     io.boundaries.push_back(boundary);
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
     // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> FirstType on ZM
-    int ny_bc = model->mesh.ny;
-    int nz_bc = model->mesh.nz;
+    int ny_bc = model.mesh.ny;
+    int nz_bc = model.mesh.nz;
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    size_t compact = model->cells.index_map[idx_bc];
+    size_t compact = model.cells.index_map[idx_bc];
     ASSERT_NE(compact, mhs::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
 
     // mhs::core::BCParamTable should have dirichlet_T entries
-    EXPECT_FALSE(model->bc_params.dirichlet_T.empty());
-    EXPECT_TRUE(model->bc_params.dirichlet_T[0].is_constant());
-    EXPECT_NEAR(model->bc_params.dirichlet_T[0].constant_value(), 500.0, 1e-10);
+    EXPECT_FALSE(model.bc_params.dirichlet_T.empty());
+    EXPECT_TRUE(model.bc_params.dirichlet_T[0].is_constant());
+    EXPECT_NEAR(model.bc_params.dirichlet_T[0].constant_value(), 500.0, 1e-10);
 }
 
 TEST(PreprocessorTest, OtherBCFallback)
 {
     auto io = make_simple_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
     // With no explicit boundaries and other_bc=SecondType(0),
     // all faces on domain boundaries should have SecondType BC
@@ -373,28 +369,28 @@ TEST(PreprocessorTest, OtherBCFallback)
     // YM (y=0 face): domain boundary -> SecondType
     // ZM (z=0 face): domain boundary -> SecondType
     // XP, YP, ZP: interior or domain boundary
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
     int idx = 0 * ny * nz + 0 * nz + 0;
-    size_t compact = model->cells.index_map[idx];
+    size_t compact = model.cells.index_map[idx];
     ASSERT_NE(compact, mhs::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::YM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::SecondType);
 
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> None (no patch)
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
-    size_t compact_inner = model->cells.index_map[idx_inner];
+    size_t compact_inner = model.cells.index_map[idx_inner];
     ASSERT_NE(compact_inner, mhs::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::YM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::ZM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::XP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::YP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(*model, (uint32_t)compact_inner, mhs::core::FaceDir::ZP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::YM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::ZM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::YP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::ZP), mhs::core::BcType::SecondType);
 }
 
 // ---- Full Case1 Integration Test ----
@@ -407,20 +403,18 @@ TEST(PreprocessorTest, Case1XMLLoad)
     }
 
     auto io_data = mhs::io::read_xml(case_path);
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io_data);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io_data);
 
     // Case1: X=[0,10,...,100], Y=[0,10,...,100], Z=[0,2,4,6,8,10,15,20,25,30]
-    EXPECT_EQ(model->mesh.nx, 20);
-    EXPECT_EQ(model->mesh.ny, 20);
-    EXPECT_EQ(model->mesh.nz, 9);
+    EXPECT_EQ(model.mesh.nx, 20);
+    EXPECT_EQ(model.mesh.ny, 20);
+    EXPECT_EQ(model.mesh.nz, 9);
     // Should have some valid and some virtual cells
-    EXPECT_GT(model->cells.material_id.size(), 0u);
-    EXPECT_LT(model->cells.material_id.size(), 3600u);
+    EXPECT_GT(model.cells.material_id.size(), 0u);
+    EXPECT_LT(model.cells.material_id.size(), 3600u);
 
     // mhs::core::Material table should have copper and silicon
-    EXPECT_EQ(model->material_table.size(), 2);
+    EXPECT_EQ(model.material_table.size(), 2);
 }
 
 TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
@@ -435,9 +429,8 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     // Cell ix=1: cx=75mm -> exactly at rx+rw=75mm (upper bound must be inclusive with epsilon)
     // Without epsilon tolerance, strict `<` on upper bound excludes ix=1.
 
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -446,12 +439,9 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     io.mesh_vertex_z = {0, 10, 20, 30};
 
     mhs::core::Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
     layer.thickness_expr = "30";
 
     mhs::core::Block block;
-    block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -467,27 +457,24 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     io.layers.push_back(layer);
 
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm >= rx=25mm, should be valid
     int idx0 = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model->cells.index_map[idx0], mhs::invalidIndex);
+    EXPECT_NE(model.cells.index_map[idx0], mhs::invalidIndex);
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm exactly equals rx+rw=75mm
     // Without epsilon tolerance, this cell is incorrectly classified as virtual
     int idx1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model->cells.index_map[idx1], mhs::invalidIndex);
+    EXPECT_NE(model.cells.index_map[idx1], mhs::invalidIndex);
 }
 
 TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
@@ -499,9 +486,8 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Before the fix: first-match logic gives block1 (copper) to overlap cells.
     // After the fix: last-match logic gives block2 (silicon) to overlap cells.
 
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -510,13 +496,10 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     io.mesh_vertex_z = {0, 10, 20, 30};
 
     mhs::core::Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
     layer.thickness_expr = "30";
 
     // mhs::core::Block 1: background substrate covering entire 100x100mm area (copper)
     mhs::core::Block block1;
-    block1.name = "substrate";
     block1.material_name = "copper";
     block1.ti_reyuan_expr = "0";
 
@@ -530,7 +513,6 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     // mhs::core::Block 2: chip overlaying the first quadrant (0-50, 0-50) (silicon)
     mhs::core::Block block2;
-    block2.name = "chip";
     block2.material_name = "silicon";
     block2.ti_reyuan_expr = "1e7";
 
@@ -547,39 +529,35 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     io.layers.push_back(layer);
 
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     mhs::core::Material silicon;
-    silicon.name = "silicon";
     silicon.kx = silicon.ky = silicon.kz = "130";
     io.materials["silicon"] = silicon;
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model->cells.index_map[idx_overlap], mhs::invalidIndex);
-    int c_overlap = (int)model->cells.index_map[idx_overlap];
+    EXPECT_NE(model.cells.index_map[idx_overlap], mhs::invalidIndex);
+    int c_overlap = (int)model.cells.index_map[idx_overlap];
 
     // mhs::core::Material should be silicon (block2), not copper (block1)
     // name_to_idx order: "copper" = 0, "silicon" = 1
-    EXPECT_EQ(model->cells.material_id[c_overlap], 1)
+    EXPECT_EQ(model.cells.material_id[c_overlap], 1)
         << "Overlapping cell must get material from later block (silicon), not earlier (copper)";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    int c_only_block1 = (int)model->cells.index_map[idx_only_block1];
-    EXPECT_EQ(model->cells.material_id[c_only_block1], 0) << "Cell in only block1 must get copper material";
+    int c_only_block1 = (int)model.cells.index_map[idx_only_block1];
+    EXPECT_EQ(model.cells.material_id[c_only_block1], 0) << "Cell in only block1 must get copper material";
 }
 
 TEST(PreprocessorTest, ParseFaceKey_XFormatSevenParts)
@@ -602,9 +580,8 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     // of a cell adjacent to vertex_y = 7.5mm gets the assigned BC.
     //
     // Mesh: 2x2 cells over [0, 10]x[0, 10]x[0, 10] mm; one block filling all.
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -613,12 +590,9 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     io.mesh_vertex_z = {0, 5, 10};
 
     mhs::core::Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -633,42 +607,38 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     io.layers.push_back(layer);
 
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // Convection on the upper half of the y=10mm Y+ face
     mhs::core::Boundary boundary;
-    boundary.name = "bc_yp";
     boundary.bc = mhs::core::ThirdTypeThermalBC {"10", "200"};
     boundary.face_keys.push_back("Y|E|10|0|10|0|5"); // cx: 0-10, cz: 0-5
     io.boundaries.push_back(boundary);
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
     // Cells adjacent to the Y+ face at y=10mm have iy=1 (vertex_y[2] = 10).
     // Their YP face is exposed. mhs::core::Rect: cx in [0,10], cz in [0,5].
     // Cells with iz=0 (cz=2.5) are inside the rect and get ThirdType.
     // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
     // the other_bc (SecondType).
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
-        int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
+        int compact = (int)model.cells.index_map[idx];
+        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
             << "Y-format face key should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
 
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the other_bc (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
-    int compact_out = (int)model->cells.index_map[idx_outside];
-    EXPECT_NE(get_bc_type(*model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
+    int compact_out = (int)model.cells.index_map[idx_outside];
+    EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
 
@@ -678,9 +648,8 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     // Mirrors case1 mhs::core::Boundary 5: 4 X-keys + 2 Y-keys covering the side faces
     // of the top die. Without correct per-key iteration, some faces would
     // silently fall through to other_bc.
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -689,12 +658,9 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     io.mesh_vertex_z = {0, 5, 10};
 
     mhs::core::Layer layer;
-    layer.name = "test";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "b1";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -709,13 +675,11 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     io.layers.push_back(layer);
 
     mhs::core::Material copper;
-    copper.name = "copper";
     copper.kx = copper.ky = copper.kz = "400";
     io.materials["copper"] = copper;
 
     // One boundary, three face_keys targeting three different exposed faces
     mhs::core::Boundary boundary;
-    boundary.name = "bc_multi";
     boundary.bc = mhs::core::ThirdTypeThermalBC {"10", "200"};
     boundary.face_keys.push_back("X|E|10|0|10|0|10"); // XP face, all cz
     boundary.face_keys.push_back("X|E|0|0|10|0|10"); // XM face, all cz
@@ -724,20 +688,18 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int ny = model->mesh.ny;
-    int nz = model->mesh.nz;
-    int nx = model->mesh.nx;
+    int ny = model.mesh.ny;
+    int nz = model.mesh.nz;
+    int nx = model.mesh.nx;
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
     // and specifically the three faces the keys target must be ThirdType.
     auto check_face = [&](int ix, int iy, int iz, mhs::core::FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
-        int compact = (int)model->cells.index_map[idx];
-        EXPECT_EQ(get_bc_type(*model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
+        int compact = (int)model.cells.index_map[idx];
+        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be ThirdType from one of the boundary face_keys";
     };

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "expr/expr.hpp"
 
 #include <string>
@@ -22,7 +22,7 @@ namespace mhs::sim {
     std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
         const std::unordered_map<std::string, mhs::core::Function>& fns);
 
-    // 把 mhs::core::IOStructure 的所有 mhs::core::Function 注册为 SymbolTable 的 natives。
+    // 把 mhs::core::ModelDefinition 的所有 mhs::core::Function 注册为 SymbolTable 的 natives。
     // 不写任何全局状态；调用方持有 SymbolTable，函数闭包按值存于其中。
     void register_all_functions(
         mhs::core::SymbolTable& symbols, const std::unordered_map<std::string, mhs::core::Function>& fns);

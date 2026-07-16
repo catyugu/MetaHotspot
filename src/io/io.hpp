@@ -1,18 +1,19 @@
 #pragma once
 
-#include <optional>
 #include <string>
 #include <vector>
 
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "data/model.hpp"
+#include "data/solution.hpp"
 
 namespace mhs::io {
 
-    mhs::core::IOStructure read_xml(const std::string& xml_path);
+    mhs::core::ModelDefinition read_xml(const std::string& xml_path);
 
-    // Read fluid overlay XML; returns std::nullopt if file doesn't exist or has no FluidOverlay element.
-    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path);
+    // Merge an optional fluid XML document into an existing model definition.
+    // Returns false when the file cannot be loaded or has no FluidOverlay element.
+    bool merge_fluid_xml(const std::string& xml_path, mhs::core::ModelDefinition& definition);
 
     void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature);
 

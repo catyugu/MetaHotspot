@@ -52,8 +52,8 @@ The fluid subsystem is independent of thermal BC storage: thermal BCs and fluid 
 ## Data flow
 
 ```text
-IOStructure
-  └─> Preprocessor::load()
+ModelDefinition
+  └─> build_model()
         ├─> preprocessor::assign_cell_layers()
         │     ├─> index_map                   (full-grid)
         │     └─> material_id + heat_source_idx (compact)

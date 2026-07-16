@@ -1,7 +1,6 @@
 #include "data/tolerance_config.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
-#include "function_helpers.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "logger/logger.hpp"
 #include "preprocessor/fluid_preprocessor.hpp"
@@ -93,7 +92,7 @@ namespace mhs::sim {
         }
 
         static uint16_t registerFluidBCParam(
-            mhs::core::FluidBCParamTable& params, const mhs::core::FluidBoundaryOverlay& fb, double per_cell_value)
+            mhs::core::FluidBCParamTable& params, const mhs::core::FluidBoundary& fb, double per_cell_value)
         {
             switch (fb.kind) {
             case mhs::core::FluidBCType::PressureType:
@@ -122,10 +121,11 @@ namespace mhs::sim {
             face_area[fi] = a * b;
         }
 
-        void applyFluidBoundaries(mhs::core::Model& model, const mhs::core::FluidOverlay& overlay, double si_scale)
+        void applyFluidBoundaries(mhs::core::Model& model,
+            const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
         {
             const auto& mesh = model.mesh;
-            for (const auto& fb : overlay.boundaries) {
+            for (const auto& fb : boundaries) {
                 for (const auto& keyStr : fb.face_keys) {
                     FaceKeyInfo fk = parse_face_key(keyStr, si_scale);
                     int target_axis = (fk.axis == 'X') ? 0 : (fk.axis == 'Y') ? 1 : 2;
@@ -332,43 +332,15 @@ namespace mhs::sim {
         }
     }
 
-    void applyFluidOverlay(mhs::core::Model& model, const std::optional<mhs::core::FluidOverlay>& overlay,
-        const mhs::core::IOStructure& ioStructure, const mhs::core::SymbolTable& symbols)
+    void prepare_fluid_domain(mhs::core::Model& model,
+        const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
     {
-        if (!overlay.has_value() || overlay->fluid_materials.empty())
-            return;
-
-        const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
         const mhs::Index N = static_cast<mhs::Index>(model.cells.material_id.size());
 
         buildCompactToOld(model.cells, model.mesh.nx * model.mesh.ny * model.mesh.nz);
 
-        std::unordered_map<std::string, uint16_t> matNameToTableIdx;
-        for (const auto& layer : ioStructure.layers) {
-            for (const auto& block : layer.blocks) {
-                matNameToTableIdx.emplace(block.material_name, static_cast<uint16_t>(matNameToTableIdx.size()));
-            }
-        }
-        std::vector<std::string> matNamesByTableIdx(matNameToTableIdx.size());
-        for (const auto& [name, idx] : matNameToTableIdx) {
-            matNamesByTableIdx[idx] = name;
-        }
-
-        std::unordered_map<std::string, std::string> fluidViscosityMap;
-        for (const auto& fm : overlay->fluid_materials)
-            fluidViscosityMap[fm.name] = fm.dynamic_viscosity;
-
         model.fluid.is_fluid.assign(N, 0);
         std::vector<double> visc_temp(N, 0.0);
-
-        for (uint16_t matIdx = 0; matIdx < static_cast<uint16_t>(model.material_table.size()); ++matIdx) {
-            auto visIt = fluidViscosityMap.find(matNamesByTableIdx[matIdx]);
-            if (visIt != fluidViscosityMap.end() && !visIt->second.empty()) {
-                model.material_table[matIdx].is_fluid = true;
-                model.material_table[matIdx].dynamic_viscosity
-                    = mhs::core::parse(substitute_function_args(visIt->second, "T", ioStructure.functions), symbols);
-            }
-        }
 
         for (mhs::Index c = 0; c < N; ++c) {
             uint16_t matIdx = model.cells.material_id[c];
@@ -409,11 +381,11 @@ namespace mhs::sim {
         for (mhs::Index fi = 0; fi < model.fluid.n_fluid; ++fi) {
             model.fluid.dynamic_viscosity[fi] = visc_temp[model.fluid.fluid_to_global[fi]];
         }
-        applyFluidBoundaries(model, overlay.value(), si_scale);
+        applyFluidBoundaries(model, boundaries, si_scale);
         computeChannelDimensions(model);
     }
 
-    void solveFluidFlow(mhs::core::Model& model)
+    void solve_fluid_flow(mhs::core::Model& model)
     {
         if (model.fluid.n_fluid == 0)
             return;

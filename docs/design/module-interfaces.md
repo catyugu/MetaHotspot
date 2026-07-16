@@ -4,8 +4,9 @@
 
 ```cpp
 namespace mhs::io {
-    mhs::core::IOStructure read_xml(const std::string& xml_path);
-    std::optional<mhs::core::FluidOverlay> read_fluid_overlay_xml(const std::string& xml_path);
+    mhs::core::ModelDefinition read_xml(const std::string& xml_path);
+    bool merge_fluid_xml(const std::string& xml_path,
+                         mhs::core::ModelDefinition& definition);
 
     void write_vtu(const std::string& path,
                    const mhs::core::Model& model,
@@ -23,12 +24,8 @@ namespace mhs::io {
 
 ```cpp
 namespace mhs::sim {
-    class Preprocessor {
-    public:
-        std::unique_ptr<mhs::core::Model> load(
-            const mhs::core::IOStructure& ioStructure,
-            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
-    };
+    mhs::core::Model build_model(
+        const mhs::core::ModelDefinition& definition);
 }
 
 namespace mhs::sim {
@@ -72,13 +69,14 @@ std::vector<ParsedFaceKey> parse_all_face_keys(
     mhs::core::BCParamTable& bc_params, double si_scale,
     const std::function<std::string(const std::string&)>& rewriter,
     const mhs::core::SymbolTable& symbols);
+}
 ```
 
 ### 预处理流程
 
 ```text
-mhs::core::IOStructure
-  └─> Preprocessor::load()
+mhs::core::ModelDefinition
+  └─> build_model()
         ├─> 构造本地 mhs::core::SymbolTable（几何变量 + register_all_functions 注入 native）
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
@@ -88,7 +86,7 @@ mhs::core::IOStructure
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
-        ├─> (可选) applyFluidOverlay(symbols)  // 由 Preprocessor::load 内部调用，传入同一 symbols
+        ├─> prepare_fluid_domain()     // 材料粘度和流体边界已在 ModelDefinition 中
         └─> mhs::core::Model ready
 ```
 
@@ -180,7 +178,7 @@ namespace mhs::sim::time_scheme {
 }
 ```
 
-The `Scheduler::run()` main loop is:
+The `solve()` main loop is:
 
 ```text
 while (current_time < duration):
@@ -267,7 +265,7 @@ namespace mhs::sim {
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的温度场（按 `Eigen::Ref<const Eigen::VectorXd>`，零拷贝），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，`Scheduler` 不持有私有非线性逻辑。
+`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的温度场（按 `Eigen::Ref<const Eigen::VectorXd>`，零拷贝），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，由 `solve()` 调用。
 
 非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
 
@@ -275,17 +273,15 @@ namespace mhs::sim {
 
 ```cpp
 namespace mhs::sim {
-    class Scheduler {
-    public:
-        void setModel(mhs::core::Model* model);
-        void setSolver(std::unique_ptr<LinearSolver> solver);
-        void run();
-        const std::vector<double>& solution() const noexcept { return solution_; }
-        double currentTime() const noexcept { return step_.current_time; }
-        const std::vector<mhs::core::ProbeTrace>& probeTraces() const noexcept { return probe_recorder_.traces(); }
+    struct SolveOptions {
+        SolverSpec solver;
+        NonLinearConfig nonlinear;
     };
 
-    // 探针局部采样与时序记录器，专属于 Scheduler。仅依赖 mhs::core。
+    mhs::core::Solution solve(const mhs::core::Model& model,
+                              const SolveOptions& options = {});
+
+    // 探针局部采样与时序记录器是 solve() 的内部辅助，仅依赖 mhs::core。
     // `record(time, ...)` 把 `time` 透传到 `sample_one` 的 FieldContext.t，
     // 使时间依赖的 BC / 材料表达式（如 "500 + 100*t"）在正确的时刻被求值。
     class ProbeRecorder {
@@ -297,18 +293,20 @@ namespace mhs::sim {
 }
 ```
 
-时间状态（`current_time`, `time_step`, `dt`）与已接受步历史（`SolutionHistory`）由 `Scheduler::run()` 内部持有，是 `Scheduler` 的私有成员，**不**在 `mhs::core`，**不**在 `AssembleContext`。
+时间状态（`current_time`, `time_step`, `dt`）与已接受步历史（`SolutionHistory`）由 `solve()` 的局部状态持有，**不**在 `mhs::core::Model`，**不**在 `AssembleContext`。
 
-`Scheduler` 不持有任何专属配置；`run()` 全部从 `model_` 读取：
+`solve()` 从传入的 `model` 读取时间参数，从 `SolveOptions` 读取求解器和非线性配置：
 
 - `study_type` — 决定是否进入时间循环
 - `transient_duration` / `transient_time_step` — 瞬态循环的 `duration` / `dt`
-- 非线性迭代参数 → `mhs::sim::nonlinear_solve` 内部默认
+- 非线性迭代参数 → `SolveOptions::nonlinear`
 
-`run()` 行为：
+`solve()` 行为：
 
 - `Steady`：跳过时间循环，单次调用 `nonlinear_solve()`
-- `Transient`：按 `TimeScheme`（默认 `AdaptiveBdf`）循环至 `current_time >= duration`，每步 `assemble → build_system → nonlinear_solve → evaluate_step`，接受后 `history.push(T, t)`。
+- `Transient`：循环至 `current_time >= duration`，每步 `assemble → build_system → nonlinear_solve → estimate_error`，接受后记录历史和探针。
+
+返回的 `Solution` 包含最终温度、最终时刻和探针序列；调用前不存在需要 setter 补齐的半初始化状态。
 
 ## `postprocessor`
 

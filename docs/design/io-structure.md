@@ -1,229 +1,123 @@
-# IO 模型结构
+# `ModelDefinition` 输入结构
 
-直接映射 XML schema，仅用于序列化/反序列化。`src/data/io_structure.hpp`。**单位**：`LengthUnit` 在预处理阶段转 SI 米。
+`src/data/model_definition.hpp` 定义模型构建所需的领域输入。它不是 XML DOM 的逐字段镜像：XML 读取器把外部格式裁剪并转换成这些 POD，外部代码也可以直接构造同一结构，然后调用 `mhs::sim::build_model()`。
+
+求解输出不在这里；`Solution` 和 `ProbeTrace` 位于 `src/data/solution.hpp`。
+
+## 顶层结构
 
 ```cpp
 namespace mhs::core {
 
+struct ModelDefinition {
+    StudyType study_type = StudyType::Steady;
+    LengthUnit length_unit = LengthUnit::M;
+    double initial_temperature = 300.0;
+
+    std::vector<Variable> variables;
+    std::vector<Layer> layers;
+    std::unordered_map<std::string, Material> materials;
+    std::vector<Boundary> boundaries;
+
+    double transient_duration = 0.0;
+    double transient_time_step = 1.0;
+    std::variant<FirstTypeThermalBC,
+                 SecondTypeThermalBC,
+                 ThirdTypeThermalBC> other_bc;
+
+    std::vector<double> mesh_vertex_x;
+    std::vector<double> mesh_vertex_y;
+    std::vector<double> mesh_vertex_z;
+
+    std::unordered_map<std::string, Function> functions;
+    std::vector<ObservationPoint3D> observation_points;
+    std::vector<FluidBoundary> fluid_boundaries;
+};
+
+}
+```
+
+已删除不会参与模型构建的 XML/UI 字段，例如对象显示名称、绘图区间、周期显示参数、瞬态时间单位和未实现的维度枚举。
+
+## 几何、材料与边界
+
+```cpp
 struct Variable { std::string name; std::string value; };
 
 struct Rect {
-    bool add_sub;
-    std::string width_expr;    // 几何表达式（字符串）
-    std::string height_expr;
-    std::string x_expr;
-    std::string y_expr;
-    std::string x_size_expr;
-    std::string y_size_expr;
-    std::string x_interval_expr;
-    std::string y_interval_expr;
-    std::string name;
+    bool add_sub = true;
+    std::string width_expr, height_expr;
+    std::string x_expr, y_expr;
 };
 
 struct Block {
     std::vector<Rect> all_rects;
     std::string material_name;
-    std::string x_offset_expr;
-    std::string y_offset_expr;
-    std::string ti_reyuan_expr;  // 体热源表达式 [W/m³]，如 "1e9" 或 "1e8+0.5*x"
-    std::string name;
-    std::string thickness_expr;  // Block 自己的厚度表达式（layer 0 可变厚度）
+    std::string x_offset_expr, y_offset_expr;
+    std::string ti_reyuan_expr;
+    std::string thickness_expr;
 };
 
 struct Layer {
     std::vector<Block> blocks;
-    std::string name;
     std::string thickness_expr;
-    std::string x_offset_expr;
-    std::string y_offset_expr;
-    std::string period_width_expr;
-    int period_width = 10;
-    bool is_top_layer = false;
+    std::string x_offset_expr, y_offset_expr;
 };
 
-// 边界
-enum class BoundaryCategory { Electrical };
-enum class ThermalBCType    { FirstType, SecondType, ThirdType };
-struct FirstTypeThermalBC  { std::string temperature = "300.0"; };   // Dirichlet
-struct SecondTypeThermalBC { std::string heat_flux = "0.0"; };       // Neumann
-struct ThirdTypeThermalBC  { std::string convection_coeff = "0.0";
-                             std::string T_inf = "300.0"; };         // Cauchy
-struct Boundary { BoundaryCategory category; std::string name;
-                  std::vector<std::string> face_keys;
-                  ThermalBCType bc_type;
-                  FirstTypeThermalBC first; SecondTypeThermalBC second; ThirdTypeThermalBC third; };
-
-// 材料
-struct Material { std::string name;
-                  std::string kx = "0.0";   // 热导率 X 方向 [W/(m·K)]
-                  std::string ky = "0.0";   // 热导率 Y 方向 [W/(m·K)]
-                  std::string kz = "0.0";   // 热导率 Z 方向 [W/(m·K)]
-                  std::string midu        = "0.0";   // rho
-                  std::string bi_rerong   = "0.0"; }; // c
-
-// 元数据
-enum class StudyType  { Steady, Transient };
-enum class LengthUnit { M, Mm, Um, Nm, Inch, Mil };
-enum class Dimension  { Dimension2D, Dimension3D };  // Dimension2D 当前未实现，预处理不读取
-
-// 3D 探针（观察点）：用户坐标系下的固定位置，坐标以 muparser 表达式形式给出
-// （如 "chip_w/2 + 0.1"），由 preprocessor 在加载时一次性求值到 Model。
-struct ObservationPoint3D {
-    std::string name;
-    std::string x;
-    std::string y;
-    std::string z;
+struct Material {
+    std::string kx = "0.0", ky = "0.0", kz = "0.0";
+    std::string midu = "0.0";
+    std::string bi_rerong = "0.0";
+    std::string dynamic_viscosity; // 空字符串表示固体
 };
 
-// 探针温度时间序列：与 ObservationPoint3D::name 一一对应。
-struct ProbeTrace {
-    std::string name;
-    std::vector<double> times;
-    std::vector<double> values;
+struct Boundary {
+    std::vector<std::string> face_keys;
+    std::variant<FirstTypeThermalBC,
+                 SecondTypeThermalBC,
+                 ThirdTypeThermalBC> bc;
 };
-
-struct IOStructure {
-    StudyType  study_type;
-    Dimension  dimension;
-    LengthUnit length_unit;
-    double initial_temperature  = 300.0;
-
-    std::vector<Variable> variables;
-    std::vector<Layer>    layers;
-    std::unordered_map<std::string, Material> materials;
-    std::vector<Boundary> boundaries;
-
-    double transient_duration     = 0.0;
-    double transient_time_step    = 1.0;
-    std::string transient_time_unit = "s";
-
-    ThermalBCType     other_bc_type  = ThermalBCType::SecondType;
-    FirstTypeThermalBC  other_bc_first;
-    SecondTypeThermalBC other_bc_second;
-    ThirdTypeThermalBC  other_bc_third;
-
-    std::vector<double> mesh_vertex_x, mesh_vertex_y, mesh_vertex_z;
-    std::unordered_map<std::string, Function> functions;
-
-    // 3D 观察点（探针）列表，默认空：稳态 case 不会有此项。
-    std::vector<ObservationPoint3D> observation_points;
-};
-
-} // namespace mhs::core
 ```
 
----
+材料名称只作为 `ModelDefinition::materials` 的 key 和 `Block::material_name` 的引用存在，不在 `Material` 内重复存储。
 
-## 2.2 表达式函数类型
+`DaoreXishu` 的 XML 解析规则保持不变：单表达式同时赋给 `kx/ky/kz`；三个逗号分隔表达式依次赋给三轴；其他段数报错。
 
-`IOStructure.functions` 是 `unordered_map<string, Function>`，按 `Function.type` 分发到 `mhs::sim::function_helpers` 的 5 个闭包构造器之一。预处理阶段用 `mhs::sim::register_all_functions(symbols, fns)` 把整张表写入本地 `mhs::core::SymbolTable::natives`，`parse(formula, symbols)` 在编译时绑定到 muparser 实例。
+## 流体输入
+
+流体数据直接属于模型定义，不再存在 `FluidOverlay` 领域类型：
 
 ```cpp
-namespace mhs::core {
-
-enum class FunctionType { Expression, DoubleExponential, Gauss, Sine, PieceWise };
-
-struct ExpressionFunction {
-    std::string expression;  // 如 "20*(x+1)-exp(x)"
-    double draw_min_x = 0.0;
-    double draw_max_x = 100.0;
-};
-
-struct DoubleExponentialFunction {
-    double a = 0.0, alpha = 0.0, beta = 0.0;
-    double draw_min_x = 0.0;
-    double draw_max_x = 100.0;
-};
-
-struct GaussFunction {
-    double a = 0.0, tau = 0.0, x0 = 0.0;
-    double draw_min_x = 0.0;
-    double draw_max_x = 100.0;
-};
-
-struct SineFunction {
-    double a = 0.0, omega = 0.0, phi = 0.0;
-    double draw_min_x = 0.0;
-    double draw_max_x = 100.0;
-};
-
-struct PieceWiseFunction {
-    struct Point { double x = 0.0, y = 0.0; };
-    std::vector<Point> points;
-    double draw_min_x = 0.0;
-    double draw_max_x = 100.0;
-};
-
-struct Function {
-    FunctionType type = FunctionType::Expression;
-    ExpressionFunction expression;
-    DoubleExponentialFunction double_exp;
-    GaussFunction gauss;
-    SineFunction sine;
-    PieceWiseFunction piecewise;
-};
-
-// 流体-固体耦合: 流体 overlay 类型 (从额外 XML 解析, 不侵入主 IOStructure)
-struct FluidMaterialOverlay {
-    std::string name;
-    std::string dynamic_viscosity;
-};
-
-struct FluidBoundaryOverlay {
-    std::string name;
+struct FluidBoundary {
     std::vector<std::string> face_keys;
     FluidBCType kind = FluidBCType::None;
     double value = 0.0;
-    double inlet_temperature = std::numeric_limits<double>::quiet_NaN();
+    double inlet_temperature =
+        std::numeric_limits<double>::quiet_NaN();
 };
-
-struct FluidOverlay {
-    std::vector<FluidMaterialOverlay> fluid_materials;
-    std::vector<FluidBoundaryOverlay> boundaries;
-};
-
-} // namespace mhs::core
 ```
 
----
+- 材料的 `dynamic_viscosity` 非空时，`build_model()` 将该材料编译为流体材料。
+- `fluid_boundaries` 与热边界一样直接参与模型构建。
+- 兼容的附加流体 XML 由 `merge_fluid_xml(path, definition)` 一次性合并到材料表和 `fluid_boundaries`，之后与代码直接构造的定义走相同的 `build_model()` 路径。
 
-## 字段说明
+## 表达式函数
 
-### BC 类型
+`Function` 是以下五种输入的 `std::variant`：
 
-| 类型       | 数学                    | XML 元素                    |
-|------------|-------------------------|-----------------------------|
-| FirstType  | `T = T₀`                | `FirstTypeThermalBoundary`  |
-| SecondType | `-k ∂T/∂n = q₀`         | `SecondTypeThermalBoundary` |
-| ThirdType  | `-k ∂T/∂n = h(T - T_∞)` | `ThirdTypeThermalBoundary`  |
+- `ExpressionFunction { expression }`
+- `DoubleExponentialFunction { a, alpha, beta }`
+- `GaussFunction { a, tau, x0 }`
+- `SineFunction { a, omega, phi }`
+- `PieceWiseFunction { points }`
 
-### Face key 格式
+绘图范围属于 UI 元数据，不参与表达式编译，因此不在 `ModelDefinition` 中。
 
-```text
-Face|Direction|CoordValue|RectList
-```
+## Face key
 
-- `Face`: `Z` / `Y` / `X` — 法向轴
-- `Direction`: `E` — 类别（当前仅 Electrical，未使用）
-- `CoordValue`: 边界面的**空间坐标**（SI 前乘 `si_scale`）。**不是层索引**。
-- `RectList`:
-    - Z-face: `xmin,xmax,ymin,ymax;xmin2,xmax2,ymin2,ymax2;…`
-    - X/Y-face: `Min1|Max1|Min2|Max2`（pipe-delimited single rect）
+格式为 `Axis|Category|Coordinate|RectList`。坐标和矩形范围使用 `length_unit`，在 `build_model()` 中统一转换成 SI：
 
-示例: `Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`
+- Z 面矩形：`xmin,xmax,ymin,ymax;...`
+- X/Y 面矩形：`min1|max1|min2|max2`
 
-### `ti_reyuan_expr`（体热源）
-
-每个 Block 一个体热源密度表达式 `[W/m³]`，由 `preprocessor` 去重后编入 `heat_source_table`。可以是常数（`"1e9"`）、空间函数（`"1e8 + 0.5*x"`），或任意 muparser 表达式。
-
-### `kx / ky / kz`（各向异性热导率）
-
-材料热导率按笛卡尔三轴拆分（**W/(m·K)**），与装配时面法向匹配（X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`）。`io` 模块在解析 `DaoreXishu` 节点时按以下规则拆分：
-
-- **单表达式**（如 `DaoreXishu>100</DaoreXishu>`）→ `kx = ky = kz = "100"`，退化为各向同性。
-- **三表达式**（`DaoreXishu>kx_expr, ky_expr, kz_expr</DaoreXishu>`）→ 按逗号分隔（容忍空白）分别赋给 `kx / ky / kz`。
-- 其它段数（2 段、4 段及以上）经 `MHS_FATAL` panic。
-
-### Block 不含 XY 以外的空间字段
-
-Block 仅在 XY 平面通过 add/sub Rect 定义形状，Z 范围默认继承父 Layer 的 `z_start/z_end`（layer 0 支持 Block 级 `thickness_expr` 实现可变 Z 厚度）。
+例如：`Z|E|0|0,50,50,100;50,100,0,50`。

@@ -22,18 +22,19 @@
 
 - **data**（领域 `mhs::core`）：共享数据契约——域类型、IO 模型、内部模型。**纯头文件，不做独立库目标**。
     - `data/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
-    - `data/io_structure.hpp` — 直接镜像 XML schema 的 AoS 结构（`mhs::core::IOStructure`、`mhs::core::Variable`、`mhs::core::Rect`、`mhs::core::Block`、`mhs::core::Layer`、`mhs::core::Boundary`、`mhs::core::Material`、`mhs::core::FirstTypeThermalBC` 等）。
+    - `data/model_definition.hpp` — 可由 XML 或外部代码构造的领域输入（`mhs::core::ModelDefinition` 及其几何、材料、边界 POD）。
     - `data/model.hpp` — 扁平化 SoA 内部模型（`mhs::core::Model`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`）。
+    - `data/solution.hpp` — 求解输出（`mhs::core::Solution`、`mhs::core::ProbeTrace`）。
 - **common**（领域 `mhs::logger` / `mhs::utils`）：logger 与横切辅助函数。
     - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
     - `common/mesh_utils.hpp` — `mhs::utils::k_along` / `half_length_along` / `face_area` / `neighbor_*`，面法向查表。
     - `postprocessor/sample_point.hpp` — `mhs::post::sample_*`，局部 3D 采样与外推辅助。
-- **io**（领域 `mhs::io`）：XML 读取与序列化（VTU/VTK 调试输出）。`mhs::io::{read_xml, write_vtu, write_xml}` 均为自由函数。
-- **preprocessor**（领域 `mhs::sim`）：将高层 IO 模型转换为优化的内部表示（结构化网格生成、连通性、SoA 布局、预编译表达式、cell-level BC 装配）。类 `mhs::sim::Preprocessor::load(IOStructure) → unique_ptr<Model>`；主要逻辑以 `mhs::sim::{resolve_geometry, assign_cell_layers, resolve_boundary_patches, parse_all_face_keys, ...}` 等自由函数形式存在于同一命名空间。
+- **io**（领域 `mhs::io`）：XML 读取、XML 写回与 VTU 输出分别实现在三个 `.cpp`，仍组成同一个 `io_lib`。`read_xml` 和 `merge_fluid_xml` 只生成/补充 `ModelDefinition`。
+- **preprocessor**（领域 `mhs::sim`）：`mhs::sim::build_model(const ModelDefinition&) → Model` 将领域输入转换为内部 SoA 模型；没有可变预处理器对象或所有权包装。
 - **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，一次 TBB 遍历返回 `AssemblyResult {K, f, M_diag}`，由 `time_scheme::build_system` 纯函数注入时间离散。`mhs::sim::{Assembler, LinearSystem, AssemblyResult}`。TBB 并行。
 - **linear_solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, EigenSparseLUSolver, EigenBiCGSTABSolver, PardisoLUSolver}`。
-- **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；`Scheduler` 在每个时间步内调用 `nonlinear_solve` 直到收敛或达到模块内部的迭代上限。
-- **scheduler**（领域 `mhs::sim`）：调度完整的求解流程，时间步推进。`mhs::sim::Scheduler`，方法 `setModel / setSolver / run / solution`。**不持有专属配置**：时间步 / 时长直接从 `Model` 的 `study_type` / `transient_duration` / `transient_time_step` 读取；非线性参数由 `NonLinearConfig` 通过可选参数传入 `nonlinear_solve`。
+- **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数由 `NonLinearConfig` 持有，`solve` 在每个时间步内调用它。
+- **scheduler**（领域 `mhs::sim`）：`mhs::sim::solve(const Model&, const SolveOptions&) → Solution` 完成稳态或瞬态求解；不存在可观察的半初始化调度器状态。
 - **postprocessor**（领域 `mhs::post`）：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::post::interpolate_cell_to_node` / `sample_*` / `max_temperature` / `min_temperature`（自由函数，非 class）。
 
 ### 工具模块
@@ -46,15 +47,15 @@
 ```mermaid
 flowchart TD
     XML["XML 输入文件"] --> io_read["io: 反序列化 (tinyxml2)"]
-    io_read --> IOStructure["IO 模型"]
-    IOStructure --> pre["预处理器"]
+    io_read --> ModelDefinition["IO 模型"]
+    ModelDefinition --> pre["build_model()"]
     pre -- "构建连通性、SoA布局、预编译表达式" --> Model["内部模型 (SoA, 掩码, 状态缓冲区, 预编译表达式)"]
 
     Model --> sched
 
-    subgraph SimulationLoop ["调度器: 时间步与非线性迭代"]
+    subgraph SimulationLoop ["solve(): 时间步与非线性迭代"]
         direction TB
-        sched["调度器（推进时间，控制迭代）"]
+        sched["求解流程（推进时间，控制迭代）"]
         stat["全局状态缓冲区（状态、历史）"]
         assembler["组装器（基于局部上下文求值预编译表达式）"]
         Asys["组装后的系统 (A, b)"]

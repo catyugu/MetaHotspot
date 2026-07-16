@@ -29,5 +29,5 @@
 4. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, ctx)` 下无状态）
 5. SoA 贯穿内部模型
 6. expr 预编译，`eval()` 锁无关
-7. 复杂形式用 native function — `mhs::sim::register_all_functions(symbols, ...)` 将 `IOStructure::Function` 写入本地 `mhs::core::SymbolTable::natives`，由 `parse(formula, symbols)` 在编译时绑定
-8. **不支持 2D** — `Dimension::Dimension2D` 在 IO 解析阶段会被赋值，但预处理阶段未实现 2D 网格构建。
+7. 复杂形式用 native function — `mhs::sim::register_all_functions(symbols, ...)` 将 `ModelDefinition::Function` 写入本地 `mhs::core::SymbolTable::natives`，由 `parse(formula, symbols)` 在编译时绑定
+8. **不支持 2D** — `ModelDefinition` 只描述当前实现支持的 3D 网格，不保留未生效的维度枚举。

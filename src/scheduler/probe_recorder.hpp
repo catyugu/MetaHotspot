@@ -1,13 +1,13 @@
 #pragma once
 
-#include "data/io_structure.hpp"
 #include "data/model.hpp"
+#include "data/solution.hpp"
 
 #include <vector>
 
 namespace mhs::sim {
 
-    // 探针采样与时序记录器。专属于 Scheduler，独立于 mhs::post。
+    // 求解过程内部使用的探针采样与时序记录器，独立于 mhs::post。
     //
     // 设计要点：
     // - **局部采样**：每个时间步只对 (n_probes × 1) 个 cell 做 O(1) 邻域寻址与

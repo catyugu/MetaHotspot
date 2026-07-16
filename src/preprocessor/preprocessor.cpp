@@ -6,6 +6,9 @@
 #include "preprocessor.hpp"
 #include "utils/mesh_utils.hpp"
 
+#include <algorithm>
+#include <cassert>
+
 namespace mhs::sim {
     namespace {
         /// Compute cell widths (d) and centers (c) from vertex coordinates along one axis.
@@ -21,13 +24,13 @@ namespace mhs::sim {
             }
         }
 
-        /// Copy scalar study parameters from IO structure to Model.
-        inline void copy_scalar_parameters(mhs::core::Model& model, const mhs::core::IOStructure& io)
+        /// Copy scalar study parameters from the definition to Model.
+        inline void copy_scalar_parameters(mhs::core::Model& model, const mhs::core::ModelDefinition& definition)
         {
-            model.study_type = io.study_type;
-            model.initial_temperature = io.initial_temperature;
-            model.transient_duration = io.transient_duration;
-            model.transient_time_step = io.transient_time_step;
+            model.study_type = definition.study_type;
+            model.initial_temperature = definition.initial_temperature;
+            model.transient_duration = definition.transient_duration;
+            model.transient_time_step = definition.transient_time_step;
         }
 
         /// Evaluate geometry variables and register all user-defined functions.
@@ -45,7 +48,7 @@ namespace mhs::sim {
             return symbols;
         }
 
-        /// Convert IO-layer observation point expressions to SI-unit ProbePoints.
+        /// Convert observation point expressions to SI-unit ProbePoints.
         std::vector<mhs::core::ProbePoint> build_observation_points(
             const std::vector<mhs::core::ObservationPoint3D>& src, const mhs::core::SymbolTable& symbols,
             double si_scale)
@@ -91,20 +94,19 @@ namespace mhs::sim {
 
     } // namespace
 
-    std::unique_ptr<mhs::core::Model> Preprocessor::load(
-        const mhs::core::IOStructure& ioStructure, const std::optional<mhs::core::FluidOverlay>& fluidOverlay)
+    mhs::core::Model build_model(const mhs::core::ModelDefinition& definition)
     {
-        auto model = std::make_unique<mhs::core::Model>();
-        copy_scalar_parameters(*model, ioStructure);
+        mhs::core::Model model;
+        copy_scalar_parameters(model, definition);
 
-        auto symbols = build_symbol_table(ioStructure.variables, ioStructure.functions);
-        const double si_scale = mhs::utils::length_unit_to_si(ioStructure.length_unit);
-        model->observation_points = build_observation_points(ioStructure.observation_points, symbols, si_scale);
+        auto symbols = build_symbol_table(definition.variables, definition.functions);
+        const double si_scale = mhs::utils::length_unit_to_si(definition.length_unit);
+        model.observation_points = build_observation_points(definition.observation_points, symbols, si_scale);
 
-        auto& mesh = model->mesh;
-        mesh.nx = static_cast<mhs::Index>(ioStructure.mesh_vertex_x.size()) - 1;
-        mesh.ny = static_cast<mhs::Index>(ioStructure.mesh_vertex_y.size()) - 1;
-        mesh.nz = static_cast<mhs::Index>(ioStructure.mesh_vertex_z.size()) - 1;
+        auto& mesh = model.mesh;
+        mesh.nx = static_cast<mhs::Index>(definition.mesh_vertex_x.size()) - 1;
+        mesh.ny = static_cast<mhs::Index>(definition.mesh_vertex_y.size()) - 1;
+        mesh.nz = static_cast<mhs::Index>(definition.mesh_vertex_z.size()) - 1;
 
         assert(mesh.nx > 0 && mesh.ny > 0 && mesh.nz > 0);
         mesh.dx.resize(static_cast<size_t>(mesh.nx));
@@ -114,11 +116,11 @@ namespace mhs::sim {
         mesh.dz.resize(static_cast<size_t>(mesh.nz));
         mesh.cz.resize(static_cast<size_t>(mesh.nz));
 
-        compute_cell_spacing(ioStructure.mesh_vertex_x, mesh.dx, mesh.cx, si_scale);
-        compute_cell_spacing(ioStructure.mesh_vertex_y, mesh.dy, mesh.cy, si_scale);
-        compute_cell_spacing(ioStructure.mesh_vertex_z, mesh.dz, mesh.cz, si_scale);
+        compute_cell_spacing(definition.mesh_vertex_x, mesh.dx, mesh.cx, si_scale);
+        compute_cell_spacing(definition.mesh_vertex_y, mesh.dy, mesh.cy, si_scale);
+        compute_cell_spacing(definition.mesh_vertex_z, mesh.dz, mesh.cz, si_scale);
 
-        auto resolved_layers = resolve_geometry(ioStructure.layers, si_scale, symbols);
+        auto resolved_layers = resolve_geometry(definition.layers, si_scale, symbols);
 
         // Collect unique material names from resolved blocks.
         std::vector<std::string> material_names;
@@ -131,28 +133,32 @@ namespace mhs::sim {
                 }
 
         // Compile material property expressions.
-        model->material_table.resize(material_names.size());
+        model.material_table.resize(material_names.size());
         for (size_t m = 0; m < material_names.size(); m++) {
-            const auto& mat = ioStructure.materials.at(material_names[m]);
+            const auto& mat = definition.materials.at(material_names[m]);
             auto compile = [&](const std::string& expr) {
-                return mhs::core::parse(substitute_function_args(expr, "T", ioStructure.functions), symbols);
+                return mhs::core::parse(substitute_function_args(expr, "T", definition.functions), symbols);
             };
-            model->material_table[m].kx = compile(mat.kx);
-            model->material_table[m].ky = compile(mat.ky);
-            model->material_table[m].kz = compile(mat.kz);
-            model->material_table[m].rho = compile(mat.midu);
-            model->material_table[m].c = compile(mat.bi_rerong);
+            auto& props = model.material_table[m];
+            props.kx = compile(mat.kx);
+            props.ky = compile(mat.ky);
+            props.kz = compile(mat.kz);
+            props.rho = compile(mat.midu);
+            props.c = compile(mat.bi_rerong);
+            props.is_fluid = !mat.dynamic_viscosity.empty();
+            props.dynamic_viscosity
+                = props.is_fluid ? compile(mat.dynamic_viscosity) : mhs::core::CompiledExpression::make_constant(0.0);
         }
 
         // Build heat source table + index map (must precede assign_cell_layers).
         auto block_hs_map
-            = build_heat_source_table(model->heat_source_table, resolved_layers, ioStructure.functions, symbols);
+            = build_heat_source_table(model.heat_source_table, resolved_layers, definition.functions, symbols);
 
         // Parse boundaries + other_bc; register BC parameters.
-        auto& bc_params = model->bc_params;
+        auto& bc_params = model.bc_params;
         auto bc_rewriter
-            = [&](const std::string& s) { return substitute_function_args(s, "T", ioStructure.functions); };
-        auto parsed_keys = parse_all_face_keys(ioStructure.boundaries, bc_params, si_scale, bc_rewriter, symbols);
+            = [&](const std::string& s) { return substitute_function_args(s, "T", definition.functions); };
+        auto parsed_keys = parse_all_face_keys(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
 
         // Parse other_bc fallback.
         OtherBC other_bc;
@@ -174,16 +180,18 @@ namespace mhs::sim {
                            bc_params.cauchy_T_inf.push_back(mhs::core::parse(bc_rewriter(b.T_inf), symbols));
                        },
                    },
-            ioStructure.other_bc);
+            definition.other_bc);
 
         // Cell assignment and boundary resolution.
-        model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
-        resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc, model->face_bcs);
+        model.cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
+        resolve_boundary_patches(mesh, model.cells, parsed_keys, other_bc, model.face_bcs);
 
         // Fluid coupling.
-        if (fluidOverlay.has_value()) {
-            mhs::sim::applyFluidOverlay(*model, fluidOverlay, ioStructure, symbols);
-            mhs::sim::solveFluidFlow(*model);
+        const bool has_fluid_material = std::any_of(model.material_table.begin(), model.material_table.end(),
+            [](const mhs::core::MaterialProps& material) { return material.is_fluid; });
+        if (has_fluid_material) {
+            mhs::sim::prepare_fluid_domain(model, definition.fluid_boundaries, si_scale);
+            mhs::sim::solve_fluid_flow(model);
         }
 
         return model;

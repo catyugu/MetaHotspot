@@ -1,16 +1,15 @@
-#include "linear_solver/linear_solver.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
 
-// Helper: build a minimal mhs::core::IOStructure for a simple uniform cube
-static mhs::core::IOStructure make_simple_cube_io()
+// Helper: build a minimal mhs::core::ModelDefinition for a simple uniform cube
+static mhs::core::ModelDefinition make_simple_cube_io()
 {
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -19,12 +18,9 @@ static mhs::core::IOStructure make_simple_cube_io()
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -40,7 +36,6 @@ static mhs::core::IOStructure make_simple_cube_io()
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
@@ -49,24 +44,21 @@ static mhs::core::IOStructure make_simple_cube_io()
     return io;
 }
 
-TEST(SchedulerTest, SetModelAndSolver)
+TEST(SchedulerTest, SolveAcceptsCompleteModel)
 {
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Scheduler scheduler;
-    scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create());
+    auto result = solve(model);
+
+    EXPECT_EQ(result.temperature.size(), model.cells.material_id.size());
 }
 
 TEST(SchedulerTest, SteadyRunProducesSolution)
 {
     // Simple cube with Dirichlet BC on one face, Neumann(0) on others
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -75,12 +67,9 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -96,31 +85,23 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 500K on bottom face (Z=0)
     mhs::core::Boundary boundary;
-    boundary.name = "bc1";
     boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Scheduler scheduler;
-    scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create());
+    auto result = solve(model);
 
-    scheduler.run();
-
-    const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.material_id.size());
+    const auto& solution = result.temperature;
+    EXPECT_EQ(solution.size(), model.cells.material_id.size());
 
     // With Dirichlet 500K on bottom and Neumann(0) on all other faces,
     // and no heat source, steady state should be T=500K everywhere
@@ -135,9 +116,8 @@ TEST(SchedulerTest, SteadyRunProducesSolution)
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -146,12 +126,9 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e6"; // heat source
 
@@ -167,31 +144,23 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
     // Dirichlet 300K on bottom face (Z=0)
     mhs::core::Boundary boundary1;
-    boundary1.name = "bc1";
     boundary1.bc = mhs::core::FirstTypeThermalBC {"300"};
     boundary1.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary1);
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Scheduler scheduler;
-    scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create());
+    auto result = solve(model);
 
-    scheduler.run();
-
-    const auto& solution = scheduler.solution();
-    EXPECT_EQ(solution.size(), model->cells.material_id.size());
+    const auto& solution = result.temperature;
+    EXPECT_EQ(solution.size(), model.cells.material_id.size());
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
@@ -204,9 +173,8 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     // 瞬态 5 步，2 个观察点。ProbeRecorder 应在 t=0 起点 + 5 个步末各记录 1 次。
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Transient;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -215,11 +183,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "l";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
     mhs::core::Block block;
-    block.name = "b";
     block.material_name = "copper";
     block.ti_reyuan_expr = "1e8";
 
@@ -234,7 +199,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
@@ -261,22 +225,15 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     // z=0 设为 Dirichlet 500K，确保 op2 走 Dirichlet 早返回路径
     mhs::core::Boundary boundary;
-    boundary.name = "bc_z0";
     boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Scheduler scheduler;
-    scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create());
+    auto result = solve(model);
 
-    scheduler.run();
-
-    const auto& traces = scheduler.probeTraces();
+    const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
     EXPECT_EQ(traces[0].name, "center");
     EXPECT_EQ(traces[1].name, "z0");
@@ -309,9 +266,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     // 导致时间依赖的 BC 表达式在 t>0 时被错误求值。本测试在 z=0 面上用
     // 时间依赖 Dirichlet "500 + 100*t"，跑 5 步瞬态 (dt=1)，验证每步末的
     // 探针温度严格等于 500 + 100*t，而非恒为 500。
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Transient;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -320,11 +276,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "l";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
     mhs::core::Block block;
-    block.name = "b";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -339,7 +292,6 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     io.materials["copper"] = mat;
 
@@ -357,21 +309,15 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.observation_points.push_back(op);
 
     mhs::core::Boundary boundary;
-    boundary.name = "bc_z0_time_dep";
     boundary.bc = mhs::core::FirstTypeThermalBC {"500 + 100*t"};
     boundary.face_keys.push_back("Z|E|0|0,10,0,10");
     io.boundaries.push_back(boundary);
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Scheduler scheduler;
-    scheduler.setModel(model.get());
-    scheduler.setSolver(LinearSolver::create());
-    scheduler.run();
+    auto result = solve(model);
 
-    const auto& traces = scheduler.probeTraces();
+    const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);
     const auto& tr = traces[0];
     ASSERT_GE(tr.times.size(), 6u); // t=0 + 5 步末（内部可 sub-stepping）

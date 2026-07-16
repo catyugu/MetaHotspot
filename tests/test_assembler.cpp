@@ -1,6 +1,6 @@
 #include "assembler/assembler.hpp"
 #include "config.h"
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
@@ -11,12 +11,11 @@ using namespace mhs::sim;
 using namespace mhs::io;
 using namespace mhs::sim;
 
-// Helper: build a minimal mhs::core::IOStructure for a simple uniform cube
-static mhs::core::IOStructure make_simple_cube_io()
+// Helper: build a minimal mhs::core::ModelDefinition for a simple uniform cube
+static mhs::core::ModelDefinition make_simple_cube_io()
 {
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -25,12 +24,9 @@ static mhs::core::IOStructure make_simple_cube_io()
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "test_layer";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
 
     mhs::core::Block block;
-    block.name = "test_block";
     block.material_name = "copper";
     block.ti_reyuan_expr = "0";
 
@@ -46,7 +42,6 @@ static mhs::core::IOStructure make_simple_cube_io()
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "copper";
     mat.kx = mat.ky = mat.kz = "400";
     mat.midu = "8920";
     mat.bi_rerong = "385";
@@ -60,26 +55,22 @@ static mhs::core::IOStructure make_simple_cube_io()
 TEST(AssemblerTest, ConstructWithModel)
 {
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
 }
 
 TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
 {
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int N = static_cast<int>(model->cells.material_id.size());
+    int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
 
     EXPECT_EQ(ops.K.rows(), N);
@@ -94,15 +85,13 @@ TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
     // Compare two calls at the same T; the K matrix must be identical —
     // transient terms live in nonlinear_solve / build_system, not in assemble.
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int N = static_cast<int>(model->cells.material_id.size());
+    int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
 
     AssembleContext ctx_a {T_map, 0.0};
     auto ops_a = assembler.assemble(ctx_a);
@@ -122,16 +111,14 @@ TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
 TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int N = static_cast<int>(model->cells.material_id.size());
+    int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
 
     EXPECT_EQ(ops.M_diag.size(), N);
@@ -147,9 +134,8 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
-    mhs::core::IOStructure io;
+    mhs::core::ModelDefinition io;
     io.study_type = mhs::core::StudyType::Steady;
-    io.dimension = mhs::core::Dimension::Dimension3D;
     io.length_unit = mhs::core::LengthUnit::Mm;
     io.initial_temperature = 300.0;
 
@@ -158,11 +144,8 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     io.mesh_vertex_z = {0.0, 5.0, 10.0};
 
     mhs::core::Layer layer;
-    layer.name = "l";
-    layer.is_top_layer = true;
     layer.thickness_expr = "10";
     mhs::core::Block block;
-    block.name = "b";
     block.material_name = "mat";
     block.ti_reyuan_expr = "0";
 
@@ -177,18 +160,15 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
     io.layers.push_back(layer);
 
     mhs::core::Material mat;
-    mat.name = "mat";
     mat.kx = mat.ky = mat.kz = "100 + T";
     io.materials["mat"] = mat;
 
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int N = static_cast<int>(model->cells.material_id.size());
-    Assembler assembler(*model);
+    int N = static_cast<int>(model.cells.material_id.size());
+    Assembler assembler(model);
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
     std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -215,16 +195,14 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     // The b vector should equal what the old `assemble` would have computed for
     // steady (no mass term). The diagonal of K should be the same (negative).
     auto io = make_simple_cube_io();
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io);
 
-    int N = static_cast<int>(model->cells.material_id.size());
+    int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
 
     // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
@@ -243,18 +221,16 @@ TEST(AssemblerTest, Case1AssemblyRuns)
     }
 
     auto io_data = mhs::io::read_xml(case_path);
-    Preprocessor preprocessor;
-    auto model = preprocessor.load(io_data);
-    ASSERT_NE(model, nullptr);
+    auto model = build_model(io_data);
 
-    int N = static_cast<int>(model->cells.material_id.size());
+    int N = static_cast<int>(model.cells.material_id.size());
     EXPECT_GT(N, 0);
 
-    std::vector<double> T(static_cast<std::size_t>(N), model->initial_temperature);
+    std::vector<double> T(static_cast<std::size_t>(N), model.initial_temperature);
     Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
     AssembleContext ctx {T_map, 0.0};
 
-    Assembler assembler(*model);
+    Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
     EXPECT_EQ(ops.K.rows(), N);
     EXPECT_EQ(ops.K.cols(), N);

@@ -5,8 +5,8 @@
 ```text
 XML
   └─> mhs::io::read_xml                          (tinyxml2)
-        └─> mhs::core::IOStructure               (AoS, 含字符串)
-                └─> mhs::sim::Preprocessor::load
+        └─> mhs::core::ModelDefinition               (AoS, 含字符串)
+                └─> mhs::sim::build_model
                       ├─> 构造本地 mhs::core::SymbolTable（几何变量 + mhs::sim::register_all_functions(ios.functions) 注入的 native）
                       ├─> mhs::core::MeshGeometry (×si_scale)
                       ├─> mhs::sim::resolve_geometry         (几何预求)
@@ -15,7 +15,7 @@ XML
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
-                              └─> mhs::sim::Scheduler::run
+                              └─> mhs::sim::solve
                                     ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
                                     │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
                                     │     ├─> mhs::sim::Assembler::assemble(ctx)
@@ -42,9 +42,9 @@ XML
 
 | 阶段              | 输入                                  | 输出                        | 关键                                                     |
 |-------------------|---------------------------------------|-----------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `IOStructure`               | tinyxml2                                                 |
+| XML 解析          | XML 文件                              | `ModelDefinition`               | tinyxml2                                                 |
 | 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`              | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `IOStructure.layers`                  | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
+| 预处理-层几何     | `ModelDefinition.layers`                  | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
 | 预处理-虚拟单元   | mesh + 层几何                         | `index_map`                 | full-grid；标记 + 紧凑映射                               |
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`               | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable` | 6 面独立 + `other_bc` 兜底                               |
@@ -53,7 +53,7 @@ XML
 | 线性求解          | `A x = b`                             | `x`                         | EigenSparseLU / EigenBiCGSTAB                            |
 | 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`      | 状态更新                                                 |
 | 后处理            | `Model` + `T`                         | VTU + XML                   | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`              | 每步 O(n_probes) 局部采样；trace 在 Scheduler 内部维护   |
+| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`              | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
 ## 关键设计原则
 
@@ -79,7 +79,7 @@ XML
 
 ### 6. 无共享可变状态
 
-模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `Preprocessor` 实例可并行 `load()` 互不干扰。
+模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `build_model()` 调用互不共享构建状态。
 
 ### 7. 无异常，panic 退出
 

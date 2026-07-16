@@ -1,5 +1,5 @@
 mhs_add_library(io_lib
-    SOURCES io.cpp
+    SOURCES xml_reader.cpp xml_writer.cpp vtu_writer.cpp
     PRIVATE_LINKS logger_lib tinyxml2 Eigen3::Eigen
 )
 

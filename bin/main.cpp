@@ -1,6 +1,5 @@
 #include "cli.hpp"
 #include "io/io.hpp"
-#include "linear_solver/linear_solver.hpp"
 #include "logger/logger.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
@@ -45,39 +44,34 @@ int main(int argc, char* argv[])
 
     try {
         // Read input XML
-        auto io_structure = mhs::io::read_xml(input_path);
+        auto definition = mhs::io::read_xml(input_path);
 
-        MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", io_structure.layers.size(),
-            io_structure.materials.size(), io_structure.boundaries.size());
+        MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", definition.layers.size(),
+            definition.materials.size(), definition.boundaries.size());
 
         // Fluid overlay: 加载与否由 CLI 决定；只有显式传入 --fluid-overlay 时才执行流体相关逻辑。
-        std::optional<mhs::core::FluidOverlay> fluidOverlay;
         if (fluidOverlayPath.has_value()) {
             std::error_code ec;
             if (std::filesystem::exists(*fluidOverlayPath, ec)) {
-                fluidOverlay = mhs::io::read_fluid_overlay_xml(*fluidOverlayPath);
-                if (fluidOverlay.has_value()) {
-                    MHS_LOG_INFO("Loaded fluid overlay with {} materials, {} boundaries",
-                        fluidOverlay->fluid_materials.size(), fluidOverlay->boundaries.size());
+                if (mhs::io::merge_fluid_xml(*fluidOverlayPath, definition)) {
+                    MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
                 }
                 else {
                     MHS_LOG_WARN(
-                        "Fluid overlay file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
+                        "Fluid data file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
                 }
             }
         }
 
-        // Preprocess (apply fluid overlay inside, if any)
-        mhs::sim::Preprocessor preprocessor;
-        auto model = preprocessor.load(io_structure, fluidOverlay);
+        auto model = mhs::sim::build_model(definition);
 
-        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
-            model->mesh.nx, model->mesh.ny, model->mesh.nz);
+        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model.mesh.nx * model.mesh.ny * model.mesh.nz,
+            model.mesh.nx, model.mesh.ny, model.mesh.nz);
 
         // Count fluid cells for diagnostics
-        if (!model->fluid.is_fluid.empty()) {
+        if (!model.fluid.is_fluid.empty()) {
             int fluidCount = 0;
-            for (uint8_t v : model->fluid.is_fluid) {
+            for (uint8_t v : model.fluid.is_fluid) {
                 if (v)
                     ++fluidCount;
             }
@@ -86,29 +80,22 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Create solver
-        auto solver = mhs::sim::LinearSolver::create();
-
-        mhs::sim::Scheduler scheduler;
-        scheduler.setModel(model.get());
-        scheduler.setSolver(std::move(solver));
-
         // Run simulation
         MHS_LOG_INFO("Running simulation...");
-        scheduler.run();
+        auto result = mhs::sim::solve(model);
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = scheduler.solution();
+        const auto& solution = result.temperature;
 
         // Postprocess
-        auto node_temperature = mhs::post::interpolate_cell_to_node(*model, solution, scheduler.currentTime());
+        auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
 
         // Write outputs
-        mhs::io::write_vtu(output_vtu, *model, node_temperature);
+        mhs::io::write_vtu(output_vtu, model, node_temperature);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
-        mhs::io::write_xml(input_path, output_xml, *model, node_temperature, scheduler.probeTraces());
+        mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics

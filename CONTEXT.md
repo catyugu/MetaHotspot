@@ -8,12 +8,12 @@
 
 ## 求解类型
 
-- **Steady**: `mhs::core::StudyType::Steady`。视为 t=0 的单次非线性迭代，scheduler 不做时间循环。
+- **Steady**: `mhs::core::StudyType::Steady`。视为 t=0 的单次非线性迭代，`solve()` 不做时间循环。
 - **Transient**: `mhs::core::StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `assemble → build_system → nonlinear_solve → evaluate_step`。
 
 ## 网格
 
-结构化 3D `nx × ny × nz`。**当前不支持 Dimension2D**（IO 会解析但预处理未实现 2D 路径）。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
+结构化 3D `nx × ny × nz`。当前不支持 2D，`ModelDefinition` 不保留未生效的维度字段。每个单元存温度 DOF 在中心；BC 走面积分，无面 DOF（ADR-0002）。
 
 ## 边界条件（face-level，ADR-0002）
 
@@ -36,26 +36,26 @@
 
 `FieldContext` / `FieldEvaluator` / `SymbolTable` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
 
-**线程模型**：`SymbolTable` 由 `Preprocessor::load()` 在 setup 阶段构造一次、按值贯穿 setup 路径；`parse()` 主线程试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。`SymbolTable` 在构造时按值复制到 `MuCompiledTLS`，运行时不依赖任何外部状态，因此多个 `Preprocessor` 实例可并行 `load()` 互不干扰。
+**线程模型**：每次 `build_model()` 调用在 setup 阶段构造本地 `SymbolTable`、按值贯穿 setup 路径；`parse()` 主线程试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。`SymbolTable` 在构造时按值复制到 `MuCompiledTLS`，运行时不依赖任何外部状态。
 
-复杂形式用 `mhs::sim::register_all_functions(symbols, fns)` 把 `IOStructure.functions` 写入 `SymbolTable::natives`。
+复杂形式用 `mhs::sim::register_all_functions(symbols, fns)` 把 `ModelDefinition.functions` 写入 `SymbolTable::natives`。
 
 ## 求解流程
 
 ```text
-XML → core::IOStructure via io::read_xml
-  → sim::Preprocessor::load → core::Model
-    → sim::Scheduler::run
+XML → core::ModelDefinition via io::read_xml
+  → sim::build_model → core::Model
+    → sim::solve → core::Solution
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
         ├─ sim::Assembler::assemble(ctx)               [K, f, M_diag] (单次 TBB 遍历)
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
-        ├─ sim::nonlinear_solve(provider, T, *solver_) [Anderson 加速定点迭代]
+        ├─ sim::nonlinear_solve(provider, T, *solver)  [Anderson 加速定点迭代]
         │   └─ sim::LinearSolver::solve(A, b) [EigenSparseLU / EigenBiCGSTAB]
         ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
         │   └─ 纯函数: LTE 估计 + PI 步长建议
-        └─ post-step: probe_recorder_.record()
+        └─ post-step: probe_recorder.record()
             — Free 模式下先对 T 做线性插值
         → post::interpolate_cell_to_node
             → io::write_vtu + io::write_xml
@@ -82,11 +82,11 @@ XML → core::IOStructure via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | Model、IOStructure、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、FluidBCType、CompiledExpression、FieldEvaluator、Material、ProbePoint、CellFields、MeshGeometry                                  |
+| `mhs::core`             | `data/` + `expr/`                                                       | ModelDefinition、Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、FluidBCType、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                  |
 | `mhs::utils`            | `utils/`                                                                | mesh_utils 查表 + physics_utils + sampling（最小二乘+面外推）                                                                                                                                                          |
-| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | LinearSolver、EigenBiCGSTABSolver、PardisoLUSolver、EigenSparseLUSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、Scheduler、Preprocessor、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve() |
 | `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid                        |
-| `mhs::io`               | `io/`                                                                   | read_xml / read_fluid_overlay_xml / write_vtu / write_xml                                                                                                                                                              |
+| `mhs::io`               | `io/`                                                                   | read_xml / merge_fluid_xml / write_vtu / write_xml                                                                                                                                                              |
 | `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + 局部采样辅助 `mhs::utils`                                                                                                                                                      |
 | `mhs::logger`           | `logger/`                                                               | init / flush / panic + 模板 debug/info/warn/error                                                                                                                                                                      |
 

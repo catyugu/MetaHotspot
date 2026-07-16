@@ -1,27 +1,10 @@
 #pragma once
 
-#include "data/io_structure.hpp"
+#include "data/model_definition.hpp"
 #include "data/model.hpp"
-#include <memory>
-#include <optional>
-
 namespace mhs::sim {
 
-    /**
-     * @brief Reads mhs::core::IOStructure and converts to internal SoA representation
-     *
-     * If `fluidOverlay` is provided, the fluid overlay (viscosity expressions,
-     * pressure BCs, hydraulic channel geometry) is applied before returning.
-     * The overlay's viscosity expressions are compiled with the same SymbolTable
-     * the rest of the model is built from, so they share variable / native names.
-     */
-    class Preprocessor {
-    public:
-        Preprocessor() = default;
-        ~Preprocessor() = default;
-
-        std::unique_ptr<mhs::core::Model> load(const mhs::core::IOStructure& ioStructure,
-            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
-    };
+    /// Convert a model definition into the internal SoA representation.
+    mhs::core::Model build_model(const mhs::core::ModelDefinition& definition);
 
 } // namespace mhs::sim

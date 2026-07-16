@@ -17,11 +17,11 @@ MetaHotspot/
 │       ├── other.cmake
 │       └── tbb.cmake
 ├── src/
-│   ├── data/                    # mhs::core               数据契约（types, io_structure, model）
-│   ├── io/                      # mhs::io                XML 读 + VTU/XML 写
+│   ├── data/                    # mhs::core               数据契约（types, model_definition, model, solution）
+│   ├── io/                      # mhs::io                 XML 读、XML 写、VTU 写（同一 io_lib）
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
 │   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
-│   ├── preprocessor/            # mhs::sim (子组织)      Preprocessor + 自由函数
+│   ├── preprocessor/            # mhs::sim (子组织)      build_model + 构建辅助函数
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
 │   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
@@ -84,7 +84,7 @@ namespace mhs::logger {
 
 ## 2D 支持
 
-**不支持。** `mhs::core::Dimension::Dimension2D` 在 IO 解析阶段会被赋值，但预处理阶段未实现 2D 网格构建，会导致路径异常。当前只支持 `Dimension3D`。
+**不支持。** `ModelDefinition` 只描述当前实现支持的 3D 网格，不再保留未生效的 `Dimension` 字段。
 
 ## 命名空间
 

@@ -23,7 +23,7 @@ Two separate paths.
 
 ### Thread safety
 
-- There is no global registry. Each `Preprocessor::load()` constructs a local `SymbolTable` (variables + native closures), threads it through every `parse()` / `eval_geometry()` call, and discards it on return. The setup path is single-threaded by construction.
+- There is no global registry. Each `build_model()` call constructs a local `SymbolTable` (variables + native closures), threads it through every `parse()` / `eval_geometry()` call, and discards it on return. The setup path is single-threaded by construction.
 - `parse()` is main-thread only; it briefly constructs a trial `MuCompiled` (to surface syntax errors early) and returns a `CompiledExpression` handle. The `MuCompiledTLS` inside the handle holds a value-copy of the `SymbolTable`, so the handle is independent of any external state and is safe to share across threads.
 - `CompiledExpression::eval()` is **lock-free**. Internally it holds a `shared_ptr<MuCompiledTLS>`, which wraps a `tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>>`. Each TBB worker thread lazily instantiates its own private muparser instance on first `tls.local()`; the formula string and the `SymbolTable` are captured by value in the ETS constructor lambda, so there is no external lifetime dependency. The `unique_ptr` element type keeps each AST's heap address stable so that the `NativeFnCtx` slots (registered with `DefineFunUserData`) keep their raw `FieldContext*` valid even when the ETS grows or the wrapper is copied. Each AST's `current_ctx_` field is written by the calling thread only on every `eval()`.
 - Constant expressions (`make_constant`) short-circuit before touching the TLS.
