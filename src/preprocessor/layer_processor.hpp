@@ -25,9 +25,6 @@ namespace mhs::sim {
         // 该 Block 在世界坐标系中的 Z 范围
         double z_start = 0.0;
         double z_end = 0.0;
-
-        // SmartMacro support
-        bool is_smart_macro = false;
     };
 
     // Pre-resolved geometry for a single layer
@@ -63,21 +60,5 @@ namespace mhs::sim {
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc,
         std::vector<mhs::core::FaceBC>& face_bcs);
-
-    // ── SmartMacro block coupling (face-level, BC-agnostic) ────────────────
-    //
-    // After assign_cell_layers + resolve_boundary_patches, build the SmartBlock
-    // coupling data for every SmartMacro block. For each port face (boundary
-    // face of the block) the function determines:
-    //   - Active neighbor → C_env = k_n*A/h_n, coupled to neighbor cell DOF
-    //   - Domain boundary  → (C_env, T_ref, Q_ext) from face BC match
-    //
-    // The function does NOT bake any BCs into the modal data — all BC effects
-    // enter through the environment parameters (C_env, T_ref, Q_ext) which
-    // are assembled into the extended system at runtime.
-    void build_smart_block_coupling(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<mhs::core::SmartMacroModelData>& trained_models,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc, mhs::core::Model& model);
 
 } // namespace mhs::sim

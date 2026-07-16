@@ -21,8 +21,7 @@ namespace mhs::sim {
         ~Preprocessor() = default;
 
         std::unique_ptr<mhs::core::Model> load(const mhs::core::IOStructure& ioStructure,
-            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt,
-            const std::vector<mhs::core::SmartMacroModelData>& trained_models = {});
+            const std::optional<mhs::core::FluidOverlay>& fluidOverlay = std::nullopt);
     };
 
 } // namespace mhs::sim

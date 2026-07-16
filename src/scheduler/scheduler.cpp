@@ -45,14 +45,11 @@ namespace mhs::sim {
         if (!model_ || !solver_) {
             MHS_FATAL("Scheduler: model or solver not set");
         }
-        int s = 0;
-        for (const auto& sb : model_->smart_blocks)
-            s += sb.n_modes;
-        const std::size_t N_phys = static_cast<int>(model_->cells.material_id.size());
-        const std::size_t N = N_phys + s;
-        step_.T.resize(N); // value-initializes to 0.0 (modal DOFs start at 0)
-        // Only physical DOFs get initial temperature.
-        std::fill_n(step_.T.data(), N_phys, model_->initial_temperature);
+
+        const std::size_t N = static_cast<int>(model_->cells.material_id.size());
+        step_.T.resize(N);
+
+        std::fill_n(step_.T.data(), N, model_->initial_temperature);
         step_.current_time = 0.0;
         step_.time_step = 0;
 
@@ -67,7 +64,7 @@ namespace mhs::sim {
             };
             Eigen::Map<Eigen::VectorXd> T_map(step_.T.data(), static_cast<Eigen::Index>(N));
             nonlinear_solve(build_ls, T_map, *solver_);
-            solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N_phys));
+            solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N));
             probe_recorder_.record(step_.current_time, step_.T);
             return;
         }
@@ -140,7 +137,7 @@ namespace mhs::sim {
             }
         }
 
-        solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N_phys));
+        solution_.assign(step_.T.begin(), step_.T.begin() + static_cast<std::ptrdiff_t>(N));
     }
 
 } // namespace mhs::sim

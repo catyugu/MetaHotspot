@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Eigen/SparseCore"
 #include "data/model.hpp"
 #include <Eigen/Core>
 

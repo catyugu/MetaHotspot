@@ -1,7 +1,7 @@
 #include "cli.hpp"
-#include "logger/logger.hpp"
 #include "io/io.hpp"
 #include "linear_solver/linear_solver.hpp"
+#include "logger/logger.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
@@ -69,9 +69,7 @@ int main(int argc, char* argv[])
 
         // Preprocess (apply fluid overlay inside, if any)
         mhs::sim::Preprocessor preprocessor;
-        auto case_dir = std::filesystem::path(input_path).parent_path().string();
-        auto trained_models = mhs::io::load_smart_macro_models(io_structure, case_dir);
-        auto model = preprocessor.load(io_structure, fluidOverlay, trained_models);
+        auto model = preprocessor.load(io_structure, fluidOverlay);
 
         MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model->mesh.nx * model->mesh.ny * model->mesh.nz,
             model->mesh.nx, model->mesh.ny, model->mesh.nz);
@@ -91,8 +89,6 @@ int main(int argc, char* argv[])
         // Create solver
         auto solver = mhs::sim::LinearSolver::create();
 
-        // Create scheduler. setModel 时 ProbeRecorder 同步 initialize；瞬态 + 存在观察点时
-        // 才会写入 trace，稳态路径或空观察点下 scheduler.probeTraces() 为空。
         mhs::sim::Scheduler scheduler;
         scheduler.setModel(model.get());
         scheduler.setSolver(std::move(solver));
@@ -103,8 +99,6 @@ int main(int argc, char* argv[])
 
         MHS_LOG_INFO("Simulation complete.");
 
-        // scheduler.solution() returns physical cell-center temperatures only
-        // (modal DOFs are stripped internally).
         const auto& solution = scheduler.solution();
 
         // Postprocess
@@ -117,7 +111,7 @@ int main(int argc, char* argv[])
         mhs::io::write_xml(input_path, output_xml, *model, node_temperature, scheduler.probeTraces());
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
-        // Print statistics (physical DOFs only — modal amplitudes are not temperatures)
+        // Print statistics
         double max_T = mhs::post::max_temperature(solution);
         double min_T = mhs::post::min_temperature(solution);
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);

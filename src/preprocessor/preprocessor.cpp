@@ -91,9 +91,8 @@ namespace mhs::sim {
 
     } // namespace
 
-    std::unique_ptr<mhs::core::Model> Preprocessor::load(const mhs::core::IOStructure& ioStructure,
-        const std::optional<mhs::core::FluidOverlay>& fluidOverlay,
-        const std::vector<mhs::core::SmartMacroModelData>& trained_models)
+    std::unique_ptr<mhs::core::Model> Preprocessor::load(
+        const mhs::core::IOStructure& ioStructure, const std::optional<mhs::core::FluidOverlay>& fluidOverlay)
     {
         auto model = std::make_unique<mhs::core::Model>();
         copy_scalar_parameters(*model, ioStructure);
@@ -179,12 +178,6 @@ namespace mhs::sim {
         // Cell assignment and boundary resolution.
         model->cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
         resolve_boundary_patches(mesh, model->cells, parsed_keys, other_bc, model->face_bcs);
-
-        // SmartMacro coupling.
-        if (!trained_models.empty()) {
-            build_smart_block_coupling(
-                resolved_layers, mesh, model->cells, trained_models, parsed_keys, other_bc, *model);
-        }
 
         // Fluid coupling.
         if (fluidOverlay.has_value()) {
