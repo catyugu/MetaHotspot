@@ -29,8 +29,8 @@ namespace mhs::io {
             return text ? trim(text) : "";
         }
 
-        void refill_double_list(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent,
-            const std::vector<double>& data, bool allow_nan)
+        void refill_double_list(
+            tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, const std::vector<double>& data, bool allow_nan)
         {
             if (!parent)
                 return;

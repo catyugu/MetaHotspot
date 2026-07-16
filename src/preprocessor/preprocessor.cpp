@@ -156,8 +156,7 @@ namespace mhs::sim {
 
         // Parse boundaries + other_bc; register BC parameters.
         auto& bc_params = model.bc_params;
-        auto bc_rewriter
-            = [&](const std::string& s) { return substitute_function_args(s, "T", definition.functions); };
+        auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T", definition.functions); };
         auto parsed_keys = parse_all_face_keys(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
 
         // Parse other_bc fallback.

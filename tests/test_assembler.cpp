@@ -1,7 +1,7 @@
 #include "assembler/assembler.hpp"
 #include "config.h"
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
+#include "data/model_definition.hpp"
 #include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <filesystem>

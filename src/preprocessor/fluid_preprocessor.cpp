@@ -121,8 +121,8 @@ namespace mhs::sim {
             face_area[fi] = a * b;
         }
 
-        void applyFluidBoundaries(mhs::core::Model& model,
-            const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
+        void applyFluidBoundaries(
+            mhs::core::Model& model, const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
         {
             const auto& mesh = model.mesh;
             for (const auto& fb : boundaries) {
@@ -332,8 +332,8 @@ namespace mhs::sim {
         }
     }
 
-    void prepare_fluid_domain(mhs::core::Model& model,
-        const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
+    void prepare_fluid_domain(
+        mhs::core::Model& model, const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
     {
         const mhs::Index N = static_cast<mhs::Index>(model.cells.material_id.size());
 

@@ -89,11 +89,11 @@ namespace mhs::io {
                         static_cast<int>(node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz)),
                         static_cast<int>(node_idx(ix, iy + 1, iz + 1, node_ny, node_nz))};
 
-                    std::snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n",
-                        static_cast<int>(node_remap[n[0]]), static_cast<int>(node_remap[n[1]]),
-                        static_cast<int>(node_remap[n[2]]), static_cast<int>(node_remap[n[3]]),
-                        static_cast<int>(node_remap[n[4]]), static_cast<int>(node_remap[n[5]]),
-                        static_cast<int>(node_remap[n[6]]), static_cast<int>(node_remap[n[7]]));
+                    std::snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n", static_cast<int>(node_remap[n[0]]),
+                        static_cast<int>(node_remap[n[1]]), static_cast<int>(node_remap[n[2]]),
+                        static_cast<int>(node_remap[n[3]]), static_cast<int>(node_remap[n[4]]),
+                        static_cast<int>(node_remap[n[5]]), static_cast<int>(node_remap[n[6]]),
+                        static_cast<int>(node_remap[n[7]]));
                     conn_str += buf;
 
                     cell_num++;

@@ -1,6 +1,6 @@
 #include "config.h"
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
+#include "data/model_definition.hpp"
 #include "expr/expr.hpp"
 #include "io/io.hpp"
 #include "preprocessor/face_key_processor.hpp"

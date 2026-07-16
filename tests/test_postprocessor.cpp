@@ -1,5 +1,5 @@
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
+#include "data/model_definition.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <cmath>
