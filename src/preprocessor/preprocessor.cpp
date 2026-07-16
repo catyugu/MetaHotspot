@@ -12,8 +12,8 @@ namespace mhs::sim {
         inline void compute_cell_spacing(
             const std::vector<double>& vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
         {
-            const int n = static_cast<int>(d.size());
-            for (int i = 0; i < n; ++i) {
+            const mhs::Index n = static_cast<mhs::Index>(d.size());
+            for (mhs::Index i = 0; i < n; ++i) {
                 const double v0 = vertices[i] * si_scale;
                 const double v1 = vertices[i + 1] * si_scale;
                 d[i] = v1 - v0;
@@ -102,16 +102,17 @@ namespace mhs::sim {
         model->observation_points = build_observation_points(ioStructure.observation_points, symbols, si_scale);
 
         auto& mesh = model->mesh;
-        mesh.nx = (int)ioStructure.mesh_vertex_x.size() - 1;
-        mesh.ny = (int)ioStructure.mesh_vertex_y.size() - 1;
-        mesh.nz = (int)ioStructure.mesh_vertex_z.size() - 1;
+        mesh.nx = static_cast<mhs::Index>(ioStructure.mesh_vertex_x.size()) - 1;
+        mesh.ny = static_cast<mhs::Index>(ioStructure.mesh_vertex_y.size()) - 1;
+        mesh.nz = static_cast<mhs::Index>(ioStructure.mesh_vertex_z.size()) - 1;
 
-        mesh.dx.resize(mesh.nx);
-        mesh.cx.resize(mesh.nx);
-        mesh.dy.resize(mesh.ny);
-        mesh.cy.resize(mesh.ny);
-        mesh.dz.resize(mesh.nz);
-        mesh.cz.resize(mesh.nz);
+        assert(mesh.nx > 0 && mesh.ny > 0 && mesh.nz > 0);
+        mesh.dx.resize(static_cast<size_t>(mesh.nx));
+        mesh.cx.resize(static_cast<size_t>(mesh.nx));
+        mesh.dy.resize(static_cast<size_t>(mesh.ny));
+        mesh.cy.resize(static_cast<size_t>(mesh.ny));
+        mesh.dz.resize(static_cast<size_t>(mesh.nz));
+        mesh.cz.resize(static_cast<size_t>(mesh.nz));
 
         compute_cell_spacing(ioStructure.mesh_vertex_x, mesh.dx, mesh.cx, si_scale);
         compute_cell_spacing(ioStructure.mesh_vertex_y, mesh.dy, mesh.cy, si_scale);

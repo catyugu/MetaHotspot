@@ -3,6 +3,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+
+namespace mhs {
+    using Index = size_t;
+    inline constexpr Index invalidIndex = std::numeric_limits<Index>::max();
+}
 
 namespace mhs::core {
 

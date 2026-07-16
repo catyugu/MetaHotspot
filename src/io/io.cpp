@@ -675,41 +675,43 @@ namespace mhs::io {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
-        int node_nx = mesh.nx + 1;
-        int node_ny = mesh.ny + 1;
-        int node_nz = mesh.nz + 1;
+        mhs::Index node_nx = mesh.nx + 1;
+        mhs::Index node_ny = mesh.ny + 1;
+        mhs::Index node_nz = mesh.nz + 1;
 
         // Build node remapping: only include nodes whose temperature is not NaN
-        int total_nodes = node_nx * node_ny * node_nz;
-        std::vector<int> node_remap(total_nodes, -1);
+        mhs::Index total_nodes = node_nx * node_ny * node_nz;
+        std::vector<mhs::Index> node_remap(total_nodes, mhs::invalidIndex);
         std::vector<double> active_coords;
         std::vector<double> active_temps;
 
-        auto node_idx = [](int vx, int vy, int vz, int nny, int nnz) { return vx * nny * nnz + vy * nnz + vz; };
+        auto node_idx = [](mhs::Index vx, mhs::Index vy, mhs::Index vz, mhs::Index nny, mhs::Index nnz) {
+            return vx * nny * nnz + vy * nnz + vz;
+        };
 
         char buf[64];
-        for (int vx = 0; vx < node_nx; vx++) {
-            for (int vy = 0; vy < node_ny; vy++) {
-                for (int vz = 0; vz < node_nz; vz++) {
-                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
+        for (mhs::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::Index vz = 0; vz < node_nz; vz++) {
+                    mhs::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
                     double T = node_temperature[i];
                     if (std::isnan(T))
                         continue;
-                    node_remap[i] = (int)active_temps.size();
+                    node_remap[i] = static_cast<mhs::Index>(active_temps.size());
                     active_temps.push_back(T);
                 }
             }
         }
 
-        int num_points = (int)active_temps.size();
+        int num_points = static_cast<int>(active_temps.size());
 
         // Build string buffers
         std::string coords_str;
-        for (int vx = 0; vx < node_nx; vx++) {
-            for (int vy = 0; vy < node_ny; vy++) {
-                for (int vz = 0; vz < node_nz; vz++) {
-                    int i = node_idx(vx, vy, vz, node_ny, node_nz);
-                    if (node_remap[i] < 0)
+        for (mhs::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::Index vz = 0; vz < node_nz; vz++) {
+                    mhs::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    if (node_remap[i] == mhs::invalidIndex)
                         continue;
                     double node_x = (vx == 0) ? mesh.cx[0] - mesh.dx[0] * 0.5 : mesh.cx[vx - 1] + mesh.dx[vx - 1] * 0.5;
                     double node_y = (vy == 0) ? mesh.cy[0] - mesh.dy[0] * 0.5 : mesh.cy[vy - 1] + mesh.dy[vy - 1] * 0.5;
@@ -732,25 +734,30 @@ namespace mhs::io {
         std::string type_str;
         int cell_num = 0;
 
-        for (int ix = 0; ix < mesh.nx; ix++) {
-            for (int iy = 0; iy < mesh.ny; iy++) {
-                for (int iz = 0; iz < mesh.nz; iz++) {
-                    int old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.index_map[old_idx] == mhs::core::invalidIndex)
+        for (mhs::Index ix = 0; ix < mesh.nx; ix++) {
+            for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
+                for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
+                    mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.index_map[old_idx] == mhs::invalidIndex)
                         continue;
 
                     // VTK hex ordering: 0-3 bottom face, 4-7 top face
-                    // Node indices in original grid
-                    int n[8] = {node_idx(ix, iy, iz, node_ny, node_nz), node_idx(ix + 1, iy, iz, node_ny, node_nz),
-                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz), node_idx(ix, iy + 1, iz, node_ny, node_nz),
-                        node_idx(ix, iy, iz + 1, node_ny, node_nz), node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
-                        node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
-                        node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)};
+                    // Node indices in original grid; cast to int for VTK 32-bit connectivity.
+                    int n[8] = {static_cast<int>(node_idx(ix, iy, iz, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix + 1, iy, iz, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix + 1, iy + 1, iz, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix, iy + 1, iz, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix, iy, iz + 1, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix + 1, iy, iz + 1, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz)),
+                        static_cast<int>(node_idx(ix, iy + 1, iz + 1, node_ny, node_nz))};
 
-                    // Remap to compact node indices
-                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n", node_remap[n[0]], node_remap[n[1]],
-                        node_remap[n[2]], node_remap[n[3]], node_remap[n[4]], node_remap[n[5]], node_remap[n[6]],
-                        node_remap[n[7]]);
+                    // Remap to compact node indices (node_remap values fit in int for realistic meshes)
+                    snprintf(buf, sizeof(buf), "%d %d %d %d %d %d %d %d\n", static_cast<int>(node_remap[n[0]]),
+                        static_cast<int>(node_remap[n[1]]), static_cast<int>(node_remap[n[2]]),
+                        static_cast<int>(node_remap[n[3]]), static_cast<int>(node_remap[n[4]]),
+                        static_cast<int>(node_remap[n[5]]), static_cast<int>(node_remap[n[6]]),
+                        static_cast<int>(node_remap[n[7]]));
                     conn_str += buf;
 
                     cell_num++;
@@ -873,15 +880,15 @@ namespace mhs::io {
         // (X outermost, Y middle, Z innermost)
         // Note: in the reference formula, 'x' maps to our Y dimension (stride = SizeZ)
         // and 'y' maps to our X dimension (stride = SizeZ * SizeY).
-        int node_nx = model.mesh.nx + 1;
-        int node_ny = model.mesh.ny + 1;
-        int node_nz = model.mesh.nz + 1;
+        mhs::Index node_nx = model.mesh.nx + 1;
+        mhs::Index node_ny = model.mesh.ny + 1;
+        mhs::Index node_nz = model.mesh.nz + 1;
 
         // Write new temperature values in reference ordering: (vx, vy, vz)
         // Reference index = vz + SizeZ * vy + SizeZ * SizeY * vx
-        for (int vx = 0; vx < node_nx; vx++) {
-            for (int vy = 0; vy < node_ny; vy++) {
-                for (int vz = 0; vz < node_nz; vz++) {
+        for (mhs::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::Index vz = 0; vz < node_nz; vz++) {
                     double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
 
                     XMLElement* double_elem = doc.NewElement("a:double");

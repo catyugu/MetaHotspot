@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -9,8 +8,6 @@
 #include "types.hpp"
 
 namespace mhs::core {
-
-    inline constexpr uint32_t invalidIndex = std::numeric_limits<uint32_t>::max();
 
     // ── A per-face BC record ─────────────────────────────────
     // Every cell has exactly 6 faces, stored as a flat array
@@ -22,7 +19,7 @@ namespace mhs::core {
 
     // ── Structured mesh geometry ─────────────────────────────────────────
     struct MeshGeometry {
-        int nx = 0, ny = 0, nz = 0;
+        mhs::Index nx = 0, ny = 0, nz = 0;
 
         std::vector<double> dx;
         std::vector<double> dy;
@@ -57,8 +54,8 @@ namespace mhs::core {
     struct CellFields {
         std::vector<uint16_t> material_id; // index into material_table
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
-        std::vector<uint32_t> index_map; // old grid index → compact;
-                                         // invalidIndex = virtual / inactive
+        std::vector<Index> index_map; // old grid index → compact;
+                                      // invalidIndex = virtual / inactive
     };
 
     // ── Probe / observation point ────────────────────────────────────────

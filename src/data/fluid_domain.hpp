@@ -17,14 +17,14 @@ namespace mhs::core {
 
     struct FluidCellBC {
         FluidBCType kind = FluidBCType::None;
-        uint16_t param_idx = static_cast<uint16_t>(std::numeric_limits<uint32_t>::max());
+        uint16_t param_idx = std::numeric_limits<uint16_t>::max();
     };
 
     struct FluidDomain {
         // Topology
-        int n_fluid = 0;
-        std::vector<int> fluid_to_global; // [n_fluid] → N_active compact index
-        std::vector<int> global_to_fluid; // [N_active] → n_fluid fluid index, -1 = non-fluid
+        Index n_fluid = 0;
+        std::vector<Index> fluid_to_global; // [n_fluid] → N_active compact index
+        std::vector<Index> global_to_fluid; // [N_active] → n_fluid fluid index, mhs::invalidIndex = non-fluid
         std::vector<uint8_t> is_fluid; // [N_active] flag
 
         // Pre-solved frozen flow state (built once by solveFluidFlow)

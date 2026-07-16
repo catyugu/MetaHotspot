@@ -1,7 +1,9 @@
 #include "data/tolerance_config.hpp"
+#include "data/types.hpp"
 #include "time_scheme/error_controller.hpp"
 #include <Eigen/Core>
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 
 namespace mhs::sim::time_scheme {
@@ -9,12 +11,14 @@ namespace mhs::sim::time_scheme {
     ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
         double trial_dt, const ErrorControlConfig& cfg)
     {
-        const int N = static_cast<int>(trial_T.size());
-        if (N <= 0)
+        const mhs::Index N = static_cast<mhs::Index>(trial_T.size());
+        if (N == 0)
             return {0.0, 1.0};
+        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_N = static_cast<Eigen::Index>(N);
 
-        Eigen::Map<const Eigen::VectorXd> T_curr(trial_T.data(), N);
-        Eigen::Map<const Eigen::VectorXd> T_prev(accepted.current().data(), N);
+        Eigen::Map<const Eigen::VectorXd> T_curr(trial_T.data(), eigen_N);
+        Eigen::Map<const Eigen::VectorXd> T_prev(accepted.current().data(), eigen_N);
 
         // Local truncation error estimate.
         Eigen::VectorXd err_vec;

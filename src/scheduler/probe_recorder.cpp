@@ -7,33 +7,26 @@
 namespace mhs::sim {
 
     namespace {
-        // 二分查找 cell 中心数组：返回 cell 下标 lo，使得 cx[lo] ≤ value。
-        // 然后验证 value 落在 [cx[lo] - dx[lo]/2, cx[lo] + dx[lo]/2] 内；
-        // 边界情况检查下一个 cell 的左半部。越界返回 -1。
-        template <typename T> int locate_cell_index(const std::vector<T>& centers, const std::vector<T>& sizes, T value)
+        template <typename T>
+        mhs::Index locate_cell_index(const std::vector<T>& centers, const std::vector<T>& sizes, T value)
         {
-            int n = static_cast<int>(centers.size());
+            mhs::Index n = static_cast<mhs::Index>(centers.size());
             if (n == 0)
-                return -1;
-            // 域边界：第一个 cell 的左节点 ↔ 最后一个 cell 的右节点
+                return mhs::invalidIndex;
             T lo_bound = centers[0] - sizes[0] * T(0.5);
             T hi_bound = centers[n - 1] + sizes[n - 1] * T(0.5);
             if (value < lo_bound || value > hi_bound)
-                return -1;
+                return mhs::invalidIndex;
 
-            // Binary search on centers to find the cell whose center is ≤ value
-            int lo = 0, hi = n - 1;
+            mhs::Index lo = 0, hi = n - 1;
             while (lo < hi) {
-                int mid = (lo + hi + 1) / 2;
+                mhs::Index mid = (lo + hi + 1) / 2;
                 if (centers[mid] <= value)
                     lo = mid;
                 else
                     hi = mid - 1;
             }
-            // lo: largest cell index whose center ≤ value
             T half = sizes[lo] * T(0.5);
-            // 上边界（value == centers[lo] + half）归下一个 cell，匹配旧 vertex 二分语义：
-            // vertex[lo] ≤ value < vertex[lo+1]（右端点属于下一格）
             if (value >= centers[lo] + half && lo + 1 < n)
                 return lo + 1;
             if (value >= centers[lo] - half)
@@ -62,12 +55,12 @@ namespace mhs::sim {
             slot.ix = locate_cell_index(model.mesh.cx, model.mesh.dx, op.x);
             slot.iy = locate_cell_index(model.mesh.cy, model.mesh.dy, op.y);
             slot.iz = locate_cell_index(model.mesh.cz, model.mesh.dz, op.z);
-            if (slot.ix < 0 || slot.iy < 0 || slot.iz < 0) {
+            if (slot.ix == mhs::invalidIndex || slot.iy == mhs::invalidIndex || slot.iz == mhs::invalidIndex) {
                 slot.valid = false;
             }
             else {
                 slot.grid_idx = slot.ix * model.mesh.ny * model.mesh.nz + slot.iy * model.mesh.nz + slot.iz;
-                slot.valid = (model.cells.index_map[slot.grid_idx] != mhs::core::invalidIndex);
+                slot.valid = (model.cells.index_map[slot.grid_idx] != mhs::invalidIndex);
             }
             slots_.push_back(std::move(slot));
         }
@@ -92,33 +85,32 @@ namespace mhs::sim {
         const auto& cells = model_->cells;
         const auto& face_bcs = model_->face_bcs;
         const auto& bc_params = model_->bc_params;
-        const int ix = slot.ix;
-        const int iy = slot.iy;
-        const int iz = slot.iz;
-        const int grid_idx = slot.grid_idx;
+        const mhs::Index ix = slot.ix;
+        const mhs::Index iy = slot.iy;
+        const mhs::Index iz = slot.iz;
+        const mhs::Index grid_idx = slot.grid_idx;
         const double px = slot.px;
         const double py = slot.py;
         const double pz = slot.pz;
 
-        int compact_idx = static_cast<int>(cells.index_map[grid_idx]);
+        mhs::Index compact_idx = cells.index_map[grid_idx];
+        assert(compact_idx != mhs::invalidIndex);
 
-        // 1. 收集 8 邻接 cell 的 (center, T) 数据点；自身 cell 必定 active（slot.valid 保证）
-        //    边界上 ≤ 8 个。
         std::vector<mhs::utils::SampleDataPoint> pts;
         pts.reserve(8 + mhs::core::FACE_COUNT);
 
         double sum_T = 0.0;
-        int cnt = 0;
-        for (int dx = 0; dx <= 1; ++dx) {
-            for (int dy = 0; dy <= 1; ++dy) {
-                for (int dz = 0; dz <= 1; ++dz) {
-                    int ngx = ix + dx;
-                    int ngy = iy + dy;
-                    int ngz = iz + dz;
+        mhs::Index cnt = 0;
+        for (mhs::Index dx = 0; dx <= 1; ++dx) {
+            for (mhs::Index dy = 0; dy <= 1; ++dy) {
+                for (mhs::Index dz = 0; dz <= 1; ++dz) {
+                    mhs::Index ngx = ix + dx;
+                    mhs::Index ngy = iy + dy;
+                    mhs::Index ngz = iz + dz;
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
-                    int ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.index_map[ng] == mhs::core::invalidIndex)
+                    mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
+                    if (cells.index_map[ng] == mhs::invalidIndex)
                         continue;
                     sum_T += cell_T[cells.index_map[ng]];
                     ++cnt;
@@ -129,7 +121,6 @@ namespace mhs::sim {
             return std::numeric_limits<double>::quiet_NaN();
         const double T_c = sum_T / static_cast<double>(cnt);
 
-        // 2. Dirichlet 面早返回：利用 face_bcs 直接查找
         auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
         for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
             const auto& fb = fc[f];
@@ -139,23 +130,22 @@ namespace mhs::sim {
             }
         }
 
-        // 3. 局部 LSQ：8 cell 中心 + Neumann/Cauchy 面的面中心外推
         const auto& mp = model_->material_table[cells.material_id[compact_idx]];
         mhs::core::FieldContext ctx {px, py, pz, T_c, time};
         double kx_c = mp.kx.eval(ctx);
         double ky_c = mp.ky.eval(ctx);
         double kz_c = mp.kz.eval(ctx);
 
-        for (int dx = 0; dx <= 1; ++dx) {
-            for (int dy = 0; dy <= 1; ++dy) {
-                for (int dz = 0; dz <= 1; ++dz) {
-                    int ngx = ix + dx;
-                    int ngy = iy + dy;
-                    int ngz = iz + dz;
+        for (mhs::Index dx = 0; dx <= 1; ++dx) {
+            for (mhs::Index dy = 0; dy <= 1; ++dy) {
+                for (mhs::Index dz = 0; dz <= 1; ++dz) {
+                    mhs::Index ngx = ix + dx;
+                    mhs::Index ngy = iy + dy;
+                    mhs::Index ngz = iz + dz;
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
-                    int ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.index_map[ng] == mhs::core::invalidIndex)
+                    mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
+                    if (cells.index_map[ng] == mhs::invalidIndex)
                         continue;
                     double T_i = cell_T[cells.index_map[ng]];
                     double cdx = mesh.cx[ngx] - px;
@@ -167,7 +157,6 @@ namespace mhs::sim {
             }
         }
 
-        // 遍历该 cell 的所有面，对 Neumann/Cauchy 面做外推
         for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
             const auto& fb = fc[f];
             if (fb.type == mhs::core::BcType::None || fb.type == mhs::core::BcType::FirstType)

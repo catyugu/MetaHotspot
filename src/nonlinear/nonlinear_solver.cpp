@@ -1,9 +1,11 @@
 #include "nonlinear_solver.hpp"
 
+#include "data/types.hpp"
 #include "logger/logger.hpp"
 #include <Eigen/QR>
 
 #include <algorithm>
+#include <cassert>
 #include <optional>
 #include <vector>
 
@@ -111,7 +113,9 @@ namespace mhs::sim {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
-        const int N = static_cast<int>(T.size());
+        const mhs::Index N = static_cast<mhs::Index>(T.size());
+        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_N = static_cast<Eigen::Index>(N);
 
         AndersonMixer mixer;
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
@@ -138,7 +142,7 @@ namespace mhs::sim {
 
             std::optional<Eigen::VectorXd> x_prop = mixer.step(x_k, G_k);
 
-            Eigen::VectorXd next(N);
+            Eigen::VectorXd next(eigen_N);
             const bool use_aa = x_prop.has_value() && x_prop->allFinite();
             if (use_aa) {
                 next = std::move(*x_prop);

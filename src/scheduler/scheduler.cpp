@@ -46,7 +46,7 @@ namespace mhs::sim {
             MHS_FATAL("Scheduler: model or solver not set");
         }
 
-        const std::size_t N = static_cast<int>(model_->cells.material_id.size());
+        const mhs::Index N = static_cast<mhs::Index>(model_->cells.material_id.size());
         step_.T.resize(N);
 
         std::fill_n(step_.T.data(), N, model_->initial_temperature);
@@ -80,7 +80,7 @@ namespace mhs::sim {
 
         // Solution-history ring buffer: capacity 2 (one for current, one for
         // the previous step — enough for BDF2's startup sequence).
-        step_.accepted = mhs::core::SolutionHistory(N, 2);
+        step_.accepted = mhs::core::SolutionHistory(static_cast<std::size_t>(N), 2);
         step_ctrl.rebuild(duration, output_dt);
 
         step_.accepted.initialize(step_.T, step_.current_time);

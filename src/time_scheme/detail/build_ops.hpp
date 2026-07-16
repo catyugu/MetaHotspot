@@ -2,7 +2,9 @@
 #include "assembler/assembler.hpp"
 #include "data/linear_system.hpp"
 #include "data/solution_history.hpp"
+#include "data/types.hpp"
 #include <Eigen/Sparse>
+#include <cassert>
 
 namespace mhs::sim::time_scheme::detail {
 
@@ -11,9 +13,11 @@ namespace mhs::sim::time_scheme::detail {
     /// b = f + M_diag * T_prev / dt
     inline LinearSystem build_bdf1_ls(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
     {
-        const int N = static_cast<int>(ops.f.size());
+        const mhs::Index N = static_cast<mhs::Index>(ops.f.size());
+        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_N = static_cast<Eigen::Index>(N);
         const auto& T_prev = history.current();
-        Eigen::Map<const Eigen::VectorXd> T_n(T_prev.data(), N);
+        Eigen::Map<const Eigen::VectorXd> T_n(T_prev.data(), eigen_N);
 
         const Eigen::VectorXd m_over_dt = ops.M_diag / dt;
 
@@ -30,7 +34,9 @@ namespace mhs::sim::time_scheme::detail {
     /// (\alpha_0 M + K) T_{n+1} = f - \alpha_1 M T_n - \alpha_2 M T_{n-1}
     inline LinearSystem build_bdf2_ls(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
     {
-        const int N = static_cast<int>(ops.f.size());
+        const mhs::Index N = static_cast<mhs::Index>(ops.f.size());
+        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_N = static_cast<Eigen::Index>(N);
         const double h_n = dt;
         const double h_nm1 = history.previous_dt();
         const double delta = h_n / h_nm1;
@@ -40,8 +46,8 @@ namespace mhs::sim::time_scheme::detail {
         const double alpha1 = -(1.0 + delta) / h_n;
         const double alpha2 = (delta * delta) / (h_n * (1.0 + delta));
 
-        Eigen::Map<const Eigen::VectorXd> T_n(history.current().data(), N);
-        Eigen::Map<const Eigen::VectorXd> T_nm1(history.at(1).data(), N);
+        Eigen::Map<const Eigen::VectorXd> T_n(history.current().data(), eigen_N);
+        Eigen::Map<const Eigen::VectorXd> T_nm1(history.at(1).data(), eigen_N);
 
         Eigen::SparseMatrix<double> A = ops.K;
         A.diagonal() += alpha0 * ops.M_diag;

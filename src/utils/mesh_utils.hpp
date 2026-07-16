@@ -4,6 +4,7 @@
 #include "data/model.hpp"
 #include "data/tolerance_config.hpp"
 #include "data/types.hpp"
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -40,30 +41,17 @@ namespace mhs::utils {
     }
 
     // ── Per-direction coordinate tables ─────────────────────────────────
-    /// Axis index (0=X, 1=Y, 2=Z) for each face direction.
     inline constexpr int AXIS_OF_DIR[mhs::core::FACE_COUNT] = {0, 0, 1, 1, 2, 2};
-
-    /// Neighbor offset along X for each face direction.
     inline constexpr int DIR_DX[mhs::core::FACE_COUNT] = {-1, 1, 0, 0, 0, 0};
-    /// Neighbor offset along Y for each face direction.
     inline constexpr int DIR_DY[mhs::core::FACE_COUNT] = {0, 0, -1, 1, 0, 0};
-    /// Neighbor offset along Z for each face direction.
     inline constexpr int DIR_DZ[mhs::core::FACE_COUNT] = {0, 0, 0, 0, -1, 1};
-
-    /// Sign of the face: XM/YM/ZM → −1, XP/YP/ZP → +1.
-    /// Used to compute face center as `cell_center + sign * half_length_along`.
     inline constexpr int DIR_SIGN[mhs::core::FACE_COUNT] = {-1, +1, -1, +1, -1, +1};
-
-    /// Tangent index "A" (first non-axis direction) for each face.
-    /// X-faces (XM/XP) → Y (1), Y-faces → X (0), Z-faces → X (0).
     inline constexpr int TANGENT_A_OF_DIR[mhs::core::FACE_COUNT] = {1, 1, 0, 0, 0, 0};
-
-    /// Tangent index "B" (second non-axis direction) for each face.
-    /// X-faces → Z (2), Y-faces → Z (2), Z-faces → Y (1).
     inline constexpr int TANGENT_B_OF_DIR[mhs::core::FACE_COUNT] = {2, 2, 2, 2, 1, 1};
 
     /// Decode flat grid index to (ix, iy, iz) coordinates.
-    inline void decode_index(int old_idx, int ny, int nz, int& ix, int& iy, int& iz)
+    inline void decode_index(mhs::Index old_idx, mhs::Index ny, mhs::Index nz,
+        mhs::Index& ix, mhs::Index& iy, mhs::Index& iz)
     {
         ix = old_idx / (ny * nz);
         iy = (old_idx % (ny * nz)) / nz;
@@ -71,54 +59,65 @@ namespace mhs::utils {
     }
 
     // ── Neighbor coordinate lookups ─────────────────────────────────────
-
-    /// Neighbor grid-coordinate along each axis — branchless via DIR_DX/DY/DZ.
-    inline int neighbor_ix(mhs::core::FaceDir dir, int ix) { return ix + DIR_DX[static_cast<size_t>(dir)]; }
-    inline int neighbor_iy(mhs::core::FaceDir dir, int iy) { return iy + DIR_DY[static_cast<size_t>(dir)]; }
-    inline int neighbor_iz(mhs::core::FaceDir dir, int iz) { return iz + DIR_DZ[static_cast<size_t>(dir)]; }
-
-    /// Neighbor flat grid index with boundary check; returns -1 if out of bounds or invalid.
-    inline int neighbor_grid_index(
-        int ix, int iy, int iz, mhs::core::FaceDir dir, int nx, int ny, int nz, const std::vector<uint32_t>& index_map)
+    inline mhs::Index neighbor_ix(mhs::core::FaceDir dir, mhs::Index ix)
     {
-        int nix = ix + DIR_DX[static_cast<size_t>(dir)];
-        int niy = iy + DIR_DY[static_cast<size_t>(dir)];
-        int niz = iz + DIR_DZ[static_cast<size_t>(dir)];
-        if (nix < 0 || nix >= nx || niy < 0 || niy >= ny || niz < 0 || niz >= nz)
-            return -1;
-        int idx = nix * ny * nz + niy * nz + niz;
-        return index_map[idx] != mhs::core::invalidIndex ? idx : -1;
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
+        return static_cast<mhs::Index>(static_cast<int64_t>(ix) + DIR_DX[static_cast<size_t>(dir)]);
+    }
+    inline mhs::Index neighbor_iy(mhs::core::FaceDir dir, mhs::Index iy)
+    {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
+        return static_cast<mhs::Index>(static_cast<int64_t>(iy) + DIR_DY[static_cast<size_t>(dir)]);
+    }
+    inline mhs::Index neighbor_iz(mhs::core::FaceDir dir, mhs::Index iz)
+    {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
+        return static_cast<mhs::Index>(static_cast<int64_t>(iz) + DIR_DZ[static_cast<size_t>(dir)]);
+    }
+
+    inline mhs::Index neighbor_grid_index(
+        mhs::Index ix, mhs::Index iy, mhs::Index iz, mhs::core::FaceDir dir,
+        mhs::Index nx, mhs::Index ny, mhs::Index nz,
+        const std::vector<mhs::Index>& index_map)
+    {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
+        mhs::Index nix = neighbor_ix(dir, ix);
+        mhs::Index niy = neighbor_iy(dir, iy);
+        mhs::Index niz = neighbor_iz(dir, iz);
+        if (nix >= nx || niy >= ny || niz >= nz)
+            return mhs::invalidIndex;
+        mhs::Index idx = nix * ny * nz + niy * nz + niz;
+        return index_map[idx] != mhs::invalidIndex ? idx : mhs::invalidIndex;
     }
 
     // ── Face-axis-relative geometric lookups ───────────────────────────
-
-    /// Thermal conductivity along the face direction — branchless via AXIS_OF_DIR.
     inline double k_along(mhs::core::FaceDir dir, double kx, double ky, double kz)
     {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const double k[3] = {kx, ky, kz};
         return k[AXIS_OF_DIR[static_cast<size_t>(dir)]];
     }
 
-    /// Half cell length along the face direction — branchless via AXIS_OF_DIR.
     inline double half_length_along(mhs::core::FaceDir dir, double dx, double dy, double dz)
     {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const double d[3] = {dx, dy, dz};
         return d[AXIS_OF_DIR[static_cast<size_t>(dir)]] / 2.0;
     }
 
-    /// Cross-sectional face area perpendicular to the face direction — branchless.
     inline double face_area(mhs::core::FaceDir dir, double dx, double dy, double dz)
     {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const double d[3] = {dx, dy, dz};
         const auto a = AXIS_OF_DIR[static_cast<size_t>(dir)];
         return d[(a + 1) % 3] * d[(a + 2) % 3];
     }
 
-    /// World-space coordinate of the face center along its normal axis.
-    /// Returns `cell_center[axis] + sign * sizes[axis] / 2` — i.e., the
-    /// midpoint of the cell's `dir` face.
-    inline double face_coord_value(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh)
+    inline double face_coord_value(mhs::core::FaceDir dir,
+        mhs::Index ix, mhs::Index iy, mhs::Index iz,
+        const mhs::core::MeshGeometry& mesh)
     {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const int axis = AXIS_OF_DIR[static_cast<size_t>(dir)];
         const int sign = DIR_SIGN[static_cast<size_t>(dir)];
         const double centers[3] = {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz]};
@@ -126,8 +125,9 @@ namespace mhs::utils {
         return centers[axis] + sign * sizes[axis] * 0.5;
     }
 
-    /// Full 3-D coordinates of the face center.
-    inline void face_center_3d(mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh,
+    inline void face_center_3d(mhs::core::FaceDir dir,
+        mhs::Index ix, mhs::Index iy, mhs::Index iz,
+        const mhs::core::MeshGeometry& mesh,
         double& fx, double& fy, double& fz)
     {
         fx = mesh.cx[ix];
@@ -135,39 +135,27 @@ namespace mhs::utils {
         fz = mesh.cz[iz];
         double half = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
         switch (dir) {
-        case mhs::core::FaceDir::XM:
-            fx -= half;
-            break;
-        case mhs::core::FaceDir::XP:
-            fx += half;
-            break;
-        case mhs::core::FaceDir::YM:
-            fy -= half;
-            break;
-        case mhs::core::FaceDir::YP:
-            fy += half;
-            break;
-        case mhs::core::FaceDir::ZM:
-            fz -= half;
-            break;
-        case mhs::core::FaceDir::ZP:
-            fz += half;
-            break;
+        case mhs::core::FaceDir::XM: fx -= half; break;
+        case mhs::core::FaceDir::XP: fx += half; break;
+        case mhs::core::FaceDir::YM: fy -= half; break;
+        case mhs::core::FaceDir::YP: fy += half; break;
+        case mhs::core::FaceDir::ZM: fz -= half; break;
+        case mhs::core::FaceDir::ZP: fz += half; break;
         }
     }
 
-    /// True iff this face lies on the outer hull of the structured grid
-    /// (no neighbor slot to step into). Replaces the 6-line `ix==0 || ix==nx-1 || ...`
-    /// check scattered across assembler / probe recorder.
     inline bool is_grid_boundary_face(
-        mhs::core::FaceDir dir, int ix, int iy, int iz, const mhs::core::MeshGeometry& mesh)
+        mhs::core::FaceDir dir,
+        mhs::Index ix, mhs::Index iy, mhs::Index iz,
+        const mhs::core::MeshGeometry& mesh)
     {
+        assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const int axis = AXIS_OF_DIR[static_cast<size_t>(dir)];
         const int sign = DIR_SIGN[static_cast<size_t>(dir)];
-        const int sizes[3] = {mesh.nx, mesh.ny, mesh.nz};
-        const int idx[3] = {ix, iy, iz};
-        const int i = idx[axis];
-        const int n = sizes[axis];
+        const mhs::Index sizes[3] = {mesh.nx, mesh.ny, mesh.nz};
+        const mhs::Index idx[3] = {ix, iy, iz};
+        const mhs::Index i = idx[axis];
+        const mhs::Index n = sizes[axis];
         return (sign < 0 && i == 0) || (sign > 0 && i == n - 1);
     }
 
