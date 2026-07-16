@@ -9,13 +9,8 @@
 namespace mhs::sim {
 
     namespace {
-
-        // Per-thread scratch for the TBB parallel_for over grid cells.
         struct ThreadLocalData {
             std::vector<Eigen::Triplet<double>> triplets;
-            Eigen::VectorXd b;
-            Eigen::VectorXd mass;
-            explicit ThreadLocalData(int N) : b(Eigen::VectorXd::Zero(N)), mass(Eigen::VectorXd::Zero(N)) { }
         };
     } // namespace
 
@@ -30,7 +25,13 @@ namespace mhs::sim {
         const int N = static_cast<int>(model_.cells.material_id.size());
         int total = mesh.nx * mesh.ny * mesh.nz;
 
-        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([&]() { return ThreadLocalData(N); });
+        auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([]() { return ThreadLocalData {}; });
+
+        // Global vectors — each active cell owns a unique c_idx row, so
+        // threads never contend on the same index.  Eliminates N×N_threads
+        // duplication of b and M_diag.
+        Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
+        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
 
         // ═══════════════════════════════════════════════════════════════════
         // Phase 1: 内部传导 + 热源 + 瞬态质量矩阵 + 边界条件
@@ -65,12 +66,12 @@ namespace mhs::sim {
             const mhs::core::FieldContext ctx_m {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[c_idx], ctx.current_time};
             const double rho = mp.rho.eval(ctx_m);
             const double c_heat = mp.c.eval(ctx_m);
-            local.mass(c_idx) += rho * c_heat * vol;
+            M_diag(c_idx) += rho * c_heat * vol;
 
             // Heat source
             uint16_t hs_idx = cells.heat_source_idx[c_idx];
             const double Q = model_.heat_source_table[hs_idx].eval(ctx_c);
-            local.b(c_idx) += Q * vol;
+            b(c_idx) += Q * vol;
 
             double diag = 0.0;
             bool cell_is_fluid = !model_.fluid.is_fluid.empty() && c_idx < (int)model_.fluid.is_fluid.size()
@@ -178,12 +179,12 @@ namespace mhs::sim {
                         double T_bc_val = bc_params.dirichlet_T[fb.param_idx].eval(ctx_c);
                         double cond = k_face * A_f / half_dist;
                         local.triplets.emplace_back(c_idx, c_idx, cond);
-                        local.b(c_idx) += cond * T_bc_val;
+                        b(c_idx) += cond * T_bc_val;
                         break;
                     }
                     case mhs::core::BcType::SecondType: {
                         double q = bc_params.neumann_q[fb.param_idx].eval(ctx_c);
-                        local.b(c_idx) += q * A_f;
+                        b(c_idx) += q * A_f;
                         break;
                     }
                     case mhs::core::BcType::ThirdType: {
@@ -191,7 +192,7 @@ namespace mhs::sim {
                         double T_inf = bc_params.cauchy_T_inf[fb.param_idx].eval(ctx_c);
                         double coeff = k_face * h * A_f / (k_face + h * half_dist);
                         local.triplets.emplace_back(c_idx, c_idx, coeff);
-                        local.b(c_idx) += coeff * T_inf;
+                        b(c_idx) += coeff * T_inf;
                         break;
                     }
                     default:
@@ -219,7 +220,7 @@ namespace mhs::sim {
 
                     // 情况 A：流体流入 (Inlet) -> 作为源项加入右端向量 (RHS)
                     if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
-                        local.b(c_idx) += netOutflux * cp_c * T_boundary;
+                        b(c_idx) += netOutflux * cp_c * T_boundary;
                     }
                     // 情况 B：流体流出 (Outlet) -> 隐式处理，加入对角线矩阵 (LHS)
                     else {
@@ -229,16 +230,16 @@ namespace mhs::sim {
             }
         });
 
-        // ── Combine thread-local data ──
+        // ── Combine thread-local triplets ──
+        // b and M_diag are already global (written directly by each thread
+        // to disjoint c_idx positions); only triplet lists need merging.
         std::vector<Eigen::Triplet<double>> triplets;
-        Eigen::VectorXd b = Eigen::VectorXd::Zero(N);
-        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(N);
-
         thread_data.combine_each([&](const ThreadLocalData& local) {
             triplets.insert(triplets.end(), local.triplets.begin(), local.triplets.end());
-            b += local.b;
-            M_diag += local.mass;
         });
+
+        // Optional: release per-thread memory early
+        thread_data.clear();
 
         Eigen::SparseMatrix<double> K(N, N);
         K.setFromTriplets(triplets.begin(), triplets.end());
