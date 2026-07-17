@@ -23,7 +23,7 @@ The whole system is designed for transient simulation. Steady state is a single 
 
 ## Rationale
 
-- One code path for time-stepping. Steady is the degenerate one-step case, so steady and transient share the entire solver, error estimator, and probe pipeline.
+- Steady and transient share assembly, nonlinear solve, linear solve, and probe recording; only transient uses time integration and error control.
 - Treating every case as nonlinear natively means Cauchy BCs, temperature-dependent `k`, and fluid-solid coupling all go through the same fixed-point loop.
 - Splitting strategy / algebra / error-control into three orthogonal pieces (vs. an OOP `TimeScheme` hierarchy) keeps the inner loops free of virtual calls and lets the integrator kind be selected per step without subclass gymnastics.
 

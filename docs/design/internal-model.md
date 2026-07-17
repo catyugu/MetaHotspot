@@ -6,7 +6,7 @@
 
 ```cpp
 struct MeshGeometry {
-    int nx = 0, ny = 0, nz = 0;
+    mhs::Index nx = 0, ny = 0, nz = 0;
 
     std::vector<double> dx, dy, dz;                    // sizes nx, ny, nz
     std::vector<double> cx, cy, cz;                    // sizes nx, ny, nz (centers)
@@ -23,8 +23,8 @@ struct FaceBC {
 };
 
 struct CellFields {
-    std::vector<uint32_t> grid_to_cell;      // grid index → active cell; invalidIndex = virtual
-    std::vector<uint32_t> cell_to_grid;      // active cell → grid index
+    std::vector<Index> grid_to_cell;         // grid index → active cell; invalidIndex = virtual
+    std::vector<Index> cell_to_grid;         // active cell → grid index
     std::vector<uint16_t> material_id;       // index into material_table
     std::vector<uint16_t> heat_source_idx;   // index into heat_source_table
 };
@@ -36,12 +36,11 @@ struct CellFields {
 
 `face_bcs` 存储在 `Model` 中，为 `[N_active * 6]` 扁平数组：`face_bcs[c * 6 + dir]` 给出单元 c 方向 dir 的 BC。无 `CellBC` 结构体。
 
-### 热源字典化
+### 热源索引表
 
-`Block.ti_reyuan_expr` 字符串去重后编入 `Model::heat_source_table`：
+每个 Block 的 `ti_reyuan_expr` 编入 `Model::heat_source_table`：
 
 - `heat_source_idx` 是 compact 字段（与 `material_id` 同索引空间），未匹配到任何 block 的活跃单元填 `0`（`make_constant(0.0)`）
-- 重复公式只编译一次，每单元 2 字节索引
 - `model.heat_source_table[hs_idx].eval(ctx)` 求值
 
 ## MaterialProps
@@ -81,12 +80,12 @@ struct Model {
 
     std::vector<MaterialProps> material_table;
 
-    std::vector<CompiledExpression> heat_source_table;  // dedup; idx 0 = constant 0
+    std::vector<CompiledExpression> heat_source_table;  // per Block; idx 0 = constant 0
 
     double initial_temperature = 300.0;
     StudyType study_type = StudyType::Steady;
     double transient_duration    = 0.0;
-    double transient_time_step   = 1.0;
+    double transient_time_step   = 1.0; // output interval
     std::vector<ProbePoint> observation_points;
 
     // Fluid-solid coupled heat-transfer subsystem
@@ -116,6 +115,6 @@ struct FluidDomain {
 - **双向拓扑**：assembler 通过 `cell_to_grid` 只遍历活跃单元；邻居查询和 postprocessor 通过 `grid_to_cell` 识别虚拟位置
 - **面级 BC**：`face_bcs` 为 `[N_active * 6]` 扁平数组，消除了 `CellBC` 结构体。`face_bcs[c*6 + dir]` 直接索引。虚拟邻居已在 `resolve_boundary_patches()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
-- **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。
-- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::utils`（`src/common/mesh_utils.hpp`），由装配器和预处理器共享。
+- **Ring buffer (`SolutionHistory`)**：容量由构造函数显式指定；当前调度器使用容量 2。`accepted.current() == T` 在每步接受后成立。
+- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向助手统一定义在 `src/utils/mesh_utils.hpp`。
 - **流体域**：`FluidDomain` 只包含热组装所需的冻结面流量、流固换热因子和边界出流/温度；水力预处理状态不进入 `Model`

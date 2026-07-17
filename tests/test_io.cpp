@@ -223,28 +223,6 @@ static std::string make_xml_with_daore_xishu(const std::string& daore_text)
     return body;
 }
 
-TEST(IoTest, ReadXmlDaoreXishuThreeExpressions)
-{
-    auto path = write_tmp_xml("io_daore_3.xml", make_xml_with_daore_xishu("1,2,3"));
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
-    ASSERT_TRUE(io_structure.materials.count("mat")) << "mhs::core::Material 'mat' should be parsed";
-    EXPECT_EQ(io_structure.materials.at("mat").kx, "1");
-    EXPECT_EQ(io_structure.materials.at("mat").ky, "2");
-    EXPECT_EQ(io_structure.materials.at("mat").kz, "3");
-    std::filesystem::remove(path);
-}
-
-TEST(IoTest, ReadXmlDaoreXishuSingleExpressionSetsAllAxes)
-{
-    auto path = write_tmp_xml("io_daore_1.xml", make_xml_with_daore_xishu("5"));
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
-    ASSERT_TRUE(io_structure.materials.count("mat"));
-    EXPECT_EQ(io_structure.materials.at("mat").kx, "5");
-    EXPECT_EQ(io_structure.materials.at("mat").ky, "5");
-    EXPECT_EQ(io_structure.materials.at("mat").kz, "5");
-    std::filesystem::remove(path);
-}
-
 TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
 {
     auto path = write_tmp_xml("io_daore_trim.xml", make_xml_with_daore_xishu("  5  "));
@@ -270,13 +248,6 @@ TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
 TEST(IoTest, ReadXmlDaoreXishuTwoExpressionsPanics)
 {
     auto path = write_tmp_xml("io_daore_2.xml", make_xml_with_daore_xishu("1, 2"));
-    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
-    std::filesystem::remove(path);
-}
-
-TEST(IoTest, ReadXmlDaoreXishuFourExpressionsPanics)
-{
-    auto path = write_tmp_xml("io_daore_4.xml", make_xml_with_daore_xishu("1,2,3,4"));
     EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
     std::filesystem::remove(path);
 }

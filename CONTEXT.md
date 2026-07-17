@@ -9,7 +9,7 @@
 ## 求解类型
 
 - **Steady**: `mhs::core::StudyType::Steady`。视为 t=0 的单次非线性迭代，`solve()` 不做时间循环。
-- **Transient**: `mhs::core::StudyType::Transient`。从 t=0 起按 `transient_time_step` 推进，每步 `assemble → build_system → nonlinear_solve → evaluate_step`。
+- **Transient**: `mhs::core::StudyType::Transient`。`transient_time_step` 是输出间隔；内部步长由误差控制器调整，每步执行 `assemble → build_system → nonlinear_solve → estimate_error`。
 
 ## 网格
 
@@ -54,7 +54,7 @@ XML → core::ModelDefinition via io::read_xml
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
         ├─ sim::nonlinear_solve(provider, T, *solver)  [Anderson 加速定点迭代]
-        │   └─ sim::LinearSolver::solve(A, b) [EigenSparseLU / EigenBiCGSTAB]
+        │   └─ sim::LinearSolver::compute(A) + solve(b) [EigenSparseLU / EigenBiCGSTAB / Pardiso]
         ├─ sim::time_scheme::estimate_error(…) → ErrorEstimate
         │   └─ 纯函数: LTE 估计 + PI 步长建议
         └─ post-step: probe_recorder.record()
@@ -66,16 +66,16 @@ XML → core::ModelDefinition via io::read_xml
 ## 关键设计原则
 
 1. 内部模型不含原始字符串 — 表达式预编译为 `CompiledExpression`
-2. 热源字典化 — `heat_source_table`（去重）+ 每单元 `uint16_t` 索引
+2. 热源表 — `heat_source_table` 按 Block 编译，单元用 `uint16_t heat_source_idx` 引用
 3. 面级 BC — `Model::face_bcs[N_active * 6]` 扁平数组，无 `CellBC`
 4. 含流体-固体耦合子系统 — `Model::fluid`（`FluidDomain`）
-5. Precomputed sparsity — 组装只填值，不重建结构
-6. Backward Euler 默认；BDF2 可选（`IntegratorKind` 枚举 + `build_system` 纯函数路由）
+5. 流体增量只写对角或直接邻居坐标，不扩展基础热算子的稀疏模式
+6. 调度器当前使用 Backward Euler；`build_system` 同时提供 BDF2 及启动阶段回退
 7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
 8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
-9. TBB 并行组装 — 跳虚拟单元，`enumerable_thread_specific<ThreadLocalData>` + 合并
+9. TBB 并行组装 — 基础路径遍历 `cell_to_grid`，流体路径遍历 `fluid_to_global`，线程局部 triplet 最后合并
 10. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
-11. 无异常（仅 `bin/main.cpp` 边界 try/catch 捕获 std::exception → `mhs::logger::panic`）
+11. 模块通过 `std::exception` 报告错误，`bin/main.cpp` 统一捕获并转为日志和进程退出
 12. POD / 纯函数优先
 
 ## 命名空间速查（领域驱动）

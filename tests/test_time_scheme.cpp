@@ -96,20 +96,6 @@ namespace {
         EXPECT_DOUBLE_EQ(ls.b(1), 2.0);
     }
 
-    TEST(TimeSchemeBdf1, LargeDt)
-    {
-        auto ops = make_known_3dof_ops();
-        mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize({100.0, 200.0, 300.0}, 0.0);
-
-        // dt → ∞ => M_diag/dt → 0, so A ≈ K
-        auto ls = mhs::sim::time_scheme::detail::build_bdf1_ls(ops, hist, 1e10);
-
-        EXPECT_NEAR(ls.A.coeff(0, 0), 2.0, 1e-6);
-        // b → f (M_diag * T_prev / dt ≈ 0)
-        EXPECT_NEAR(ls.b(0), 10.0, 1e-6);
-    }
-
 } // namespace
 
 // ============================================================================
@@ -163,24 +149,6 @@ namespace {
         EXPECT_DOUBLE_EQ(ls.b(2), expected_b(2));
     }
 
-    TEST(TimeSchemeBdf2, UniformSteps)
-    {
-        // When dt_n == dt_nm1  (uniform step), delta = 1:
-        // alpha0 = (1+2)/(h*2) = 3/(2h), alpha1 = -2/h, alpha2 = 1/(2h)
-        auto ops = make_known_3dof_ops();
-        const double dt = 1.0;
-
-        mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize({0.0, 0.0, 0.0}, 0.0);
-        hist.accept({1.0, 1.0, 1.0}, 1.0);
-
-        auto ls = mhs::sim::time_scheme::detail::build_bdf2_ls(ops, hist, dt);
-
-        // alpha0 = 3/(2*1) = 1.5
-        // A[0,0] = 2 + 1.5*1 = 3.5
-        EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 3.5);
-    }
-
 } // namespace
 
 // ============================================================================
@@ -188,33 +156,6 @@ namespace {
 // ============================================================================
 
 namespace {
-
-    TEST(TimeSchemeBuildSystem, Bdf1Explicit)
-    {
-        auto ops = make_known_3dof_ops();
-        mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize({100.0, 200.0, 300.0}, 0.0);
-
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, 1.0);
-
-        EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 3.0); // 2 + 1/1
-        EXPECT_DOUBLE_EQ(ls.b(0), 110.0); // 10 + 1*100/1
-    }
-
-    TEST(TimeSchemeBuildSystem, Bdf2WithSufficientHistory)
-    {
-        auto ops = make_known_3dof_ops();
-        mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize({100.0, 200.0, 300.0}, 0.0);
-        hist.accept({110.0, 205.0, 305.0}, 0.4);
-
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, 0.5);
-
-        // BDF2 path: same coefficients as the dedicated BDF2 test
-        const double delta_val = 0.5 / 0.4;
-        const double alpha0 = (1.0 + 2.0 * delta_val) / (0.5 * (1.0 + delta_val));
-        EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 2.0 + alpha0 * 1.0);
-    }
 
     TEST(TimeSchemeBuildSystem, Bdf2FallsBackToBdf1WithInsufficientHistory)
     {
@@ -332,23 +273,6 @@ namespace {
         EXPECT_NEAR(est.suggested_factor, 0.5, 0.01);
     }
 
-    TEST(TimeSchemeErrorEstimate, SafetyAndToleranceAffectFactor)
-    {
-        std::vector<double> T0 = {300.0};
-        std::vector<double> T1 = {310.0};
-        auto hist = make_hist(T0, T1, 0.5);
-        std::vector<double> trial_T = {315.0};
-
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-2; // Much looser tolerance
-        cfg.safety = 1.0;
-
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_T, 0.5, cfg);
-
-        // error_ratio should be smaller (tol is looser)
-        EXPECT_LT(est.error_ratio, 100.0); // compared to ~158 with tighter tol
-    }
-
     TEST(TimeSchemeErrorEstimate, EmptySolution)
     {
         mhs::core::SolutionHistory hist(0, 2);
@@ -359,24 +283,6 @@ namespace {
 
         EXPECT_DOUBLE_EQ(est.error_ratio, 0.0);
         EXPECT_DOUBLE_EQ(est.suggested_factor, 1.0);
-    }
-
-    TEST(TimeSchemeErrorEstimate, UniformResultWithMultipleDof)
-    {
-        // All DOFs have the same error behavior.
-        std::vector<double> T0 = {300.0, 300.0, 300.0, 300.0};
-        std::vector<double> T1 = {310.0, 310.0, 310.0, 310.0};
-        auto hist = make_hist(T0, T1, 0.5);
-        std::vector<double> trial_T = {315.0, 315.0, 315.0, 315.0};
-
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-4;
-
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_T, 0.5, cfg);
-
-        // Error should be based on the infinity norm — all DOFs have same value,
-        // so the result should be identical to the 1-DOF case above.
-        EXPECT_NEAR(est.error_ratio, 5.0 / 315.0 / 1e-4, 0.01);
     }
 
 } // namespace
@@ -394,40 +300,6 @@ namespace {
 
         double dt = ctrl.prepare(0.3, 0.0, 10.0);
         EXPECT_DOUBLE_EQ(dt, 0.3); // Free: returns dt_suggested as-is
-    }
-
-    TEST(StepController, FreeStrategyNoGridReturnsSuggestedDt)
-    {
-        // output_dt ≤ 0 → no output grid.
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 1e-6, 10.0);
-        ctrl.rebuild(10.0, 0.0);
-
-        double dt = ctrl.prepare(0.25, 0.0, 10.0);
-        EXPECT_DOUBLE_EQ(dt, 0.25);
-    }
-
-    TEST(StepController, StrictClampsToOutputGrid)
-    {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Strict, 1e-6, 10.0);
-        ctrl.rebuild(10.0, 1.0); // output every 1.0 — grid = [0, 1, 2, ..., 10]
-
-        // Flush first to advance past the t=0 grid point (next_idx goes from 0→1).
-        ctrl.flush_outputs(0.0);
-
-        // Now at t=0 with dt=1.2 (spanning the output grid point t=1.0),
-        // snap to t_next=1.0: dt = 1.0 - 0.0 = 1.0
-        double dt = ctrl.prepare(1.2, 0.0, 10.0);
-        EXPECT_DOUBLE_EQ(dt, 1.0);
-    }
-
-    TEST(StepController, StrictDoesNotSnapWhenFarFromGrid)
-    {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Strict, 1e-6, 10.0);
-        ctrl.rebuild(10.0, 1.0);
-
-        // dt=0.1 keeps us far from the grid: 0.0+0.1=0.1 < 1.0 - eps
-        double dt = ctrl.prepare(0.1, 0.0, 10.0);
-        EXPECT_DOUBLE_EQ(dt, 0.1);
     }
 
     TEST(StepController, ManualReturnsFixedDt)

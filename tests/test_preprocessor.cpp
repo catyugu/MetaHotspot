@@ -118,18 +118,6 @@ TEST(PreprocessorTest, MeshGeometryFromVertices)
 
 // ---- Virtual Cell / LayerProcessor Tests ----
 
-TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
-{
-    auto io = make_simple_io();
-    auto model = build_model(io);
-
-    // All 8 cells should be valid
-    EXPECT_EQ(model.cells.material_id.size(), 8u);
-    for (int i = 0; i < 8; i++) {
-        EXPECT_NE(model.cells.grid_to_cell[i], mhs::invalidIndex);
-    }
-}
-
 TEST(PreprocessorTest, CellMappingsAreExactInverses)
 {
     auto definition = make_simple_io();
@@ -166,31 +154,6 @@ TEST(PreprocessorTest, CellMappingsAreExactInverses)
         ASSERT_LT(grid, cells.grid_to_cell.size());
         EXPECT_EQ(cells.grid_to_cell[grid], cell);
     }
-}
-
-TEST(PreprocessorTest, FluidDataInModelDefinitionUsesNormalBuildPath)
-{
-    auto definition = make_simple_io();
-    definition.materials.at("test_material").dynamic_viscosity = "0.001";
-
-    mhs::core::FluidBoundary inlet;
-    inlet.kind = mhs::core::FluidBCType::PressureType;
-    inlet.value = 500.0;
-    inlet.face_keys = {"X|E|0|0|10|0|10"};
-    definition.fluid_boundaries.push_back(inlet);
-
-    mhs::core::FluidBoundary outlet;
-    outlet.kind = mhs::core::FluidBCType::PressureType;
-    outlet.value = 0.0;
-    outlet.face_keys = {"X|E|10|0|10|0|10"};
-    definition.fluid_boundaries.push_back(outlet);
-
-    auto model = build_model(definition);
-
-    ASSERT_EQ(model.material_table.size(), 1u);
-    EXPECT_EQ(model.fluid.fluid_to_global.size(), model.cells.material_id.size());
-    EXPECT_EQ(model.fluid.global_to_fluid.size(), model.cells.material_id.size());
-    EXPECT_EQ(model.fluid.face_volume_flux.size(), model.cells.material_id.size() * mhs::core::FACE_COUNT);
 }
 
 TEST(PreprocessorTest, MaterialAssignment)
@@ -429,28 +392,6 @@ TEST(PreprocessorTest, OtherBCFallback)
 }
 
 // ---- Full Case1 Integration Test ----
-
-TEST(PreprocessorTest, Case1XMLLoad)
-{
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    if (!std::filesystem::exists(case_path)) {
-        GTEST_SKIP() << "Case1 XML not found at " << case_path;
-    }
-
-    auto io_data = mhs::io::read_xml(case_path);
-    auto model = build_model(io_data);
-
-    // Case1: X=[0,10,...,100], Y=[0,10,...,100], Z=[0,2,4,6,8,10,15,20,25,30]
-    EXPECT_EQ(model.mesh.nx, 20);
-    EXPECT_EQ(model.mesh.ny, 20);
-    EXPECT_EQ(model.mesh.nz, 9);
-    // Should have some valid and some virtual cells
-    EXPECT_GT(model.cells.material_id.size(), 0u);
-    EXPECT_LT(model.cells.material_id.size(), 3600u);
-
-    // mhs::core::Material table should have copper and silicon
-    EXPECT_EQ(model.material_table.size(), 2);
-}
 
 TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
 {

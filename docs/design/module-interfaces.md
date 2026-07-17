@@ -28,9 +28,11 @@ namespace mhs::sim {
         const mhs::core::ModelDefinition& definition);
 }
 
-namespace mhs::sim {
-
+namespace mhs::utils {
 double length_unit_to_si(mhs::core::LengthUnit unit);
+}
+
+namespace mhs::sim {
 
 struct ResolvedRect         { bool add_sub; double x, y, width, height; };  // SI
 struct ResolvedBlock        { std::vector<ResolvedRect> rects;
@@ -53,8 +55,7 @@ void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,
     const mhs::core::CellFields& cells,
     const std::vector<ParsedFaceKey>& parsed_face_keys,
-    mhs::core::BcType other_bc_enum,
-    uint16_t other_bc_idx,
+    const OtherBC& other_bc,
     std::vector<mhs::core::FaceBC>& face_bcs);
 
 struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
@@ -82,7 +83,7 @@ mhs::core::ModelDefinition
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
         ├─> assign_cell_layers()       // grid_to_cell (full-grid), cell_to_grid + fields (compact)
-        ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
+        ├─> heat_source_table          // 按 Block 编译，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
@@ -141,7 +142,7 @@ namespace mhs::sim {
 `assemble()` 首先用 `tbb::parallel_for(0, N_active)` 遍历 `cell_to_grid`，生成与物理类型无关的基础热算子；`fluid::assemble_increment()` 则只遍历 `fluid_to_global`。两条路径都不再扫描整个结构化网格。增量合并后只构造一次稀疏矩阵。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`。基础组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
-- 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）
+- 每面 BC（按 `face_bcs[cell * 6 + face]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
 - 质量项 `M_diag[c] = ρ·c·vol`，在 `ctx.T` 处求值
 
@@ -214,7 +215,9 @@ while (current_time < duration):
 ```
 
 The `SolutionHistory` (`mhs::core::SolutionHistory`) is a ring buffer storing
-the k most recently *accepted* (T, time) pairs.  Capacity is `max_order + 1`.
+the most recently accepted (T, time) pairs. Capacity is explicit; `solve()` currently uses 2.
+
+当前 `solve()` 使用 `StepStrategy::Free` 和 `IntegratorKind::Bdf1`；其余策略与 BDF2 由 `time_scheme` 接口提供。
 
 ## `linear_solver`
 
@@ -232,23 +235,16 @@ namespace mhs::sim {
         SolverConfig config {};
     };
 
-    struct SolveResult {
-        Eigen::VectorXd solution;
-        bool success;
-        double residual_norm;
-        int iterations;
-    };
-
     class LinearSolver {
     public:
         virtual ~LinearSolver() = default;
-        virtual SolveResult solve(const Eigen::SparseMatrix<double>& A,
-                                  const Eigen::VectorXd& b) = 0;
-        // Config lives on the base — every solver needs it, so subclasses no
-        // longer override. The factory seeds `config_` from SolverSpec before
-        // returning the instance.
+        virtual void compute(const Eigen::SparseMatrix<double>& A) = 0;
+        virtual Eigen::VectorXd solve(const Eigen::VectorXd& b) = 0;
         void set_config(SolverConfig cfg);
         const SolverConfig& config() const;
+        bool success() const;
+        int iterations() const;
+        double residual() const;
         static std::unique_ptr<LinearSolver> create(const SolverSpec& spec = {});
     };
 
@@ -257,8 +253,6 @@ namespace mhs::sim {
     class EigenSparseLUSolver  : public LinearSolver { ... };
 }
 ```
-
-`Solver` 改名为 `LinearSolver`，与非线性迭代路径（`mhs::sim::nonlinear_solve`）区分。
 
 ## `nonlinear`
 
@@ -280,9 +274,7 @@ namespace mhs::sim {
 }
 ```
 
-`nonlinear_solve()` 是 Anderson 加速的定点迭代：通过 `LinearSystemProvider`（签名 `std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>`）获取线性系统 → solve → underrelax 更新 → 收敛判据。Provider 显式接收当前迭代的温度场（按 `Eigen::Ref<const Eigen::VectorXd>`，零拷贝），让数据流在签名里可见；迭代状态由 `nonlinear_solve` 自身修改。接受可选的 `NonLinearConfig& cfg` 参数；**完整非线性循环在 `mhs::sim` 内**，由 `solve()` 调用。
-
-非线性的控制参数（`underrelaxation` / `max_iterations` / 收敛容差）由 `NonLinearConfig` 持有，`nonlinear_solve` 通过可选参数接收；默认值见 `NonLinearConfig`，调整请直接改该结构体或在本函数中替换配置来源（模型字段、注册表等）。
+`nonlinear_solve()` 通过 `LinearSystemProvider` 取得当前温度对应的线性系统，执行 Anderson 加速、欠松弛和收敛判断。控制参数由 `NonLinearConfig` 提供。
 
 ## `scheduler`
 
@@ -313,7 +305,8 @@ namespace mhs::sim {
 `solve()` 从传入的 `model` 读取时间参数，从 `SolveOptions` 读取求解器和非线性配置：
 
 - `study_type` — 决定是否进入时间循环
-- `transient_duration` / `transient_time_step` — 瞬态循环的 `duration` / `dt`
+- `transient_duration` — 瞬态结束时间
+- `transient_time_step` — 输出时间间隔；内部求解步长由误差控制器调整
 - 非线性迭代参数 → `SolveOptions::nonlinear`
 
 `solve()` 行为：

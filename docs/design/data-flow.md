@@ -12,7 +12,7 @@ XML
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> mhs::sim::assign_cell_layers       (grid_to_cell [full-grid]; cell_to_grid + fields [compact])
-                      ├─> heat_source_table        (去重 ti_reyuan_expr)
+                      ├─> heat_source_table        (按 Block 编译 ti_reyuan_expr)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
                       ├─> mhs::sim::fluid::build_domain
                       │     └─> pressure scratch → frozen face flux + interface factor
@@ -35,7 +35,7 @@ XML
                                     │     └─> mhs::sim::time_scheme::estimate_error(hist, T, dt, cfg) → ErrorEstimate
                                     ├─> StepController::flush_outputs(t + dt) → output times
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
-                                    └─> mhs::post::interpolate_cell_to_node           // run() 结束后一次性展开
+                                    └─> mhs::post::interpolate_cell_to_node           // solve() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）
                                           ├─> 面中心外推使用该面法向对应的 k
                                           └─> mhs::io::write_vtu + mhs::io::write_xml(probeTraces)   (virtual → NaN)
@@ -52,9 +52,9 @@ XML
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`               | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable` | 6 面独立 + `other_bc` 兜底                               |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`        | muparser 或 `make_constant`                              |
-| 组装              | `Model` + `AssembleContext`           | `LinearSystem`              | TBB 并行；`eval()` 锁无关                                |
+| 组装              | `Model` + `AssembleContext`           | `AssemblyResult`            | TBB 并行；`eval()` 锁无关                                |
 | 线性求解          | `A x = b`                             | `x`                         | EigenSparseLU / EigenBiCGSTAB                            |
-| 非线性更新        | `ΔT`                                  | `T_new = T_old + ω·ΔT`      | 状态更新                                                 |
+| 非线性更新        | 线性解 `G(T)`                         | 下一温度迭代值              | Anderson 加速或欠松弛                                    |
 | 后处理            | `Model` + `T`                         | VTU + XML                   | 展开到全网格，虚拟位置 NaN                               |
 | 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`              | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
@@ -64,9 +64,9 @@ XML
 
 所有表达式预编译为 `mhs::core::CompiledExpression`。
 
-### 2. 热源字典化
+### 2. 热源索引表
 
-`heat_source_table`（去重 `vector<CompiledExpression>`）+ 每单元 `uint16_t` 索引。重复公式只编译一次；N 个单元 → N 个 2 字节索引 + 唯一公式数个 AST。
+`heat_source_table` 按 Block 编译为 `vector<CompiledExpression>`；每个活跃单元只保存一个 `uint16_t` 索引。
 
 ### 3. 面级别 BC
 
@@ -84,9 +84,9 @@ XML
 
 模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `build_model()` 调用互不共享构建状态。
 
-### 7. 无异常，panic 退出
+### 7. 错误边界
 
-不可恢复错误经 `MHS_FATAL` 调 `mhs::logger::panic()`。**唯一例外**：`bin/main.cpp` 用 `try/catch` 捕获 tinyxml2/muparser 的 `std::exception` 并转 panic — 边界 entry 必需。
+模块可用 `std::exception` 报告解析和计算错误；`bin/main.cpp` 统一捕获并通过 `MHS_FATAL` 记录后退出。
 
 ### 8. 各向异性热导率 — 面法向匹配与后处理距离权重
 
@@ -98,4 +98,4 @@ w = 1 / (dx²/kx + dy²/ky + dz²/kz)
 
 以使 k 大的方向传播得快的影响更显著，与扩散方程的各向异性一致。
 
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向查表助手统一定义在 `src/common/mesh_utils.hpp`（`mhs::utils` 命名空间），由装配器和预处理器共享，避免两处分叉的 `switch (FaceDir)` 分支。
+`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向助手统一定义在 `src/utils/mesh_utils.hpp`（`mhs::utils` 命名空间）。

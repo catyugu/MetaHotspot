@@ -37,7 +37,7 @@ Anisotropic `k`: at assembly, pick `k_along(dir) ∈ {kx, ky, kz}` per face norm
 
 `other_bc` is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated per-face BC for every cell.
 
-The fluid subsystem is independent of thermal BC storage: thermal BCs and fluid BCs coexist on the same face but use separate types (`FaceBC` and `FluidCellBC`, see `model.hpp`).
+The fluid subsystem is independent of thermal BC storage: thermal faces use `FaceBC`; fluid boundary records are temporary preprocessing state and only assembly-ready values enter `FluidDomain`.
 
 ## Rationale
 
@@ -68,7 +68,7 @@ ModelDefinition
 ## Notes
 
 - `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
-- `other_bc` is applied during preprocessing, not at assembly time. Virtual neighbors: the active cell's face touching a virtual cell gets `other_bc` set during `resolve_face_keys()`.
-- The heat source is **not** part of `FaceBC` — it is a deduplicated dictionary indexed by `uint16_t` (see ADR-0004 §Heat source dictionary).
+- `other_bc` is applied during preprocessing, not at assembly time. Virtual neighbors: the active cell's face touching a virtual cell gets `other_bc` set during `resolve_boundary_patches()`.
+- The heat source is **not** part of `FaceBC` — it is stored in a Block-level expression table indexed per cell by `uint16_t`.
 - The preprocessor pre-resolves every face-key string into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no string parsing.
 - All geometry stays in SI meters.

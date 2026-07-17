@@ -12,9 +12,7 @@
 - 回归测试：应包括单元测试和案例行为验证。结果须与直接从案例 XML 中读取的原始 FEM2 结果进行核对。可以使用 `pytest` 方便地进行回归测试。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
 - 日志：放弃原生流或格式化输入。应封装一个成熟的日志库（如 spdlog），以实现结构化、高性能的日志。默认级别应为 `INFO`。热循环中如需打印，则应该使用 `DEBUG`。
-- 错误处理：绝不使用原生 C++ 异常。绝不进行 `try-catch`。程序应要么：
-    - 记录错误并退出，用于不可恢复的错误，或
-    - 明确记录回退行为的警告，并给出回退值。
+- 错误处理：模块可通过 `std::exception` 报告错误；CLI 入口统一捕获、记录并退出。可恢复问题应记录警告和回退值。
 
 ## 架构
 
@@ -25,17 +23,15 @@
     - `data/model_definition.hpp` — 可由 XML 或外部代码构造的领域输入（`mhs::core::ModelDefinition` 及其几何、材料、边界 POD）。
     - `data/model.hpp` — 扁平化 SoA 内部模型（`mhs::core::Model`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`）。
     - `data/solution.hpp` — 求解输出（`mhs::core::Solution`、`mhs::core::ProbeTrace`）。
-- **common**（领域 `mhs::logger` / `mhs::utils`）：logger 与横切辅助函数。
-    - `common/logger.hpp` / `logger.cpp` — `mhs::logger::{init, flush, debug, info, warn, error, panic}`，封装 spdlog。
-    - `common/mesh_utils.hpp` — `mhs::utils::k_along` / `half_length_along` / `face_area` / `neighbor_*`，面法向查表。
-    - `postprocessor/sample_point.hpp` — `mhs::post::sample_*`，局部 3D 采样与外推辅助。
+- **logger**（领域 `mhs::logger`）：`logger/logger.hpp` / `logger.cpp` 封装 spdlog。
+- **utils**（领域 `mhs::utils`）：`utils/mesh_utils.hpp` 提供面法向与网格助手，`utils/sampling.hpp` 提供局部 3D 采样与外推。
 - **io**（领域 `mhs::io`）：XML 读取、XML 写回与 VTU 输出分别实现在三个 `.cpp`，仍组成同一个 `io_lib`。`read_xml` 和 `merge_fluid_xml` 只生成/补充 `ModelDefinition`。
 - **preprocessor**（领域 `mhs::sim`）：`mhs::sim::build_model(const ModelDefinition&) → Model` 将领域输入转换为内部 SoA 模型；没有可变预处理器对象或所有权包装。
-- **assembler**（领域 `mhs::sim`）：消费内部模型配置和当前全局状态，一次 TBB 遍历返回 `AssemblyResult {K, f, M_diag}`，由 `time_scheme::build_system` 纯函数注入时间离散。`mhs::sim::{Assembler, LinearSystem, AssemblyResult}`。TBB 并行。
-- **linear_solver**（领域 `mhs::sim`）：线性求解器，使用工厂设计模式选择并实例化不同求解器。`mhs::sim::{LinearSolver, SolverType, SolverConfig, SolveResult, EigenSparseLUSolver, EigenBiCGSTABSolver, PardisoLUSolver}`。
+- **assembler**（领域 `mhs::sim`）：消费内部模型和 `AssembleContext`，基础热路径与流体增量合并后返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 注入。
+- **linear_solver**（领域 `mhs::sim`）：`LinearSolver::create()` 选择 `EigenSparseLU`、`EigenBiCGSTAB` 或 `Pardiso`；接口为 `compute(A)`、`solve(b)` 和求解诊断。
 - **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数由 `NonLinearConfig` 持有，`solve` 在每个时间步内调用它。
 - **scheduler**（领域 `mhs::sim`）：`mhs::sim::solve(const Model&, const SolveOptions&) → Solution` 完成稳态或瞬态求解；不存在可观察的半初始化调度器状态。
-- **postprocessor**（领域 `mhs::post`）：将求解向量转换为其他形式，单元到节点插值、计算最大/最小温度等导出量。纯计算，不做 IO。`mhs::post::interpolate_cell_to_node` / `sample_*` / `max_temperature` / `min_temperature`（自由函数，非 class）。
+- **postprocessor**（领域 `mhs::post`）：单元到节点插值及最大/最小温度计算；采样辅助位于 `mhs::utils`。纯计算，不做 IO。
 
 ### 工具模块
 
@@ -49,28 +45,28 @@ flowchart TD
     XML["XML 输入文件"] --> io_read["io: 反序列化 (tinyxml2)"]
     io_read --> ModelDefinition["IO 模型"]
     ModelDefinition --> pre["build_model()"]
-    pre -- "构建连通性、SoA布局、预编译表达式" --> Model["内部模型 (SoA, 掩码, 状态缓冲区, 预编译表达式)"]
+    pre -- "构建双向映射、SoA、预编译表达式和冻结流场" --> Model["内部模型"]
 
     Model --> sched
 
     subgraph SimulationLoop ["solve(): 时间步与非线性迭代"]
         direction TB
         sched["求解流程（推进时间，控制迭代）"]
-        stat["全局状态缓冲区（状态、历史）"]
-        assembler["组装器（基于局部上下文求值预编译表达式）"]
-        Asys["组装后的系统 (A, b)"]
-        solver["线性求解器（求解 A Δx = -残差）"]
-        Dx["残差向量 / 更新 Δx"]
+        stat["局部温度与已接受历史"]
+        assembler["基础热组装 + 流体增量"]
+        Asys["AssemblyResult → LinearSystem"]
+        solver["线性求解器"]
+        Dx["新温度迭代值"]
         converged{"非线性收敛？"}
 
         sched --> stat
         stat -- "当前状态快照，预编译表达式等组装所需内容" --> assembler
         assembler -- "组装" --> Asys
         Asys --> solver
-        solver -- "Δx, 残差" --> Dx
+        solver -- "G(T)" --> Dx
         Dx --> converged
 
-        converged -- "否" --> update_guess["应用 Δx 更新（猜测修正）"] --> stat
+        converged -- "否" --> update_guess["Anderson / 欠松弛更新"] --> stat
         converged -- "是" --> accept["接受时间步（更新状态和历史）"]
         accept -- "最终状态" --> stat
         accept --> next_time{"更多时间步？"}
@@ -88,7 +84,7 @@ flowchart TD
 
 ## 运行
 
-`metahotspot` 的命令行参数解析统一由 `mhs::cli`（`src/common/cli.hpp`）完成，
+`metahotspot` 的命令行参数解析统一由 `mhs::cli`（`bin/cli.hpp`）完成，
 所有标志都是命名、顺序无关的；不接受位置参数。
 
 | Flag | 默认值 | 说明 |
@@ -120,9 +116,9 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 
 - **CPM**：用于引入其余依赖项。
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
-- **spdlog**：结构化、快速的日志记录，支持多种接收器（控制台、文件、系统日志）。由 `common` 模块（`mhs::logger`）封装。
+- **spdlog**：结构化日志，由 `logger` 模块（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `expr` 用于评估用户定义的函数、材料律、边界条件。
-- **Eigen**：线性代数核心：稠密向量、稀疏矩阵（Eigen::SparseMatrix），以及内置求解器（EigenSparseLU、ConjugateGradient、EigenBiCGSTAB），可通过 `solver` 工厂选择。同时提供 SIMD 向量化和无矩阵功能。
+- **Eigen**：稠密向量、稀疏矩阵，以及 EigenSparseLU / EigenBiCGSTAB 求解器。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
 

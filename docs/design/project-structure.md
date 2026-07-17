@@ -6,12 +6,11 @@
 MetaHotspot/
 ├── CMakeLists.txt
 ├── cmake/
-│   ├── CompilerOptions.cmake    # /W4 /WX 或 -Wall -Wextra -Wpedantic -Werror
 │   ├── CPM.cmake                # CPM package manager
 │   ├── Dependencies.cmake       # CPM: Eigen, spdlog, muparser, tinyxml2, oneTBB
-│   ├── Utilities.cmake          # 辅助脚本（copy libomp.dll 等）
+│   ├── Utilities.cmake          # library helper、严格告警、运行库复制
 │   ├── config.h.in
-│   └── Deps/                    # 各第三方依赖的 CPM 配置
+│   └── Deps/                    # 第三方依赖配置
 │       ├── mkl.cmake
 │       ├── muparser.cmake
 │       ├── other.cmake
@@ -20,7 +19,8 @@ MetaHotspot/
 │   ├── data/                    # mhs::core               数据契约（types, model_definition, model, solution）
 │   ├── io/                      # mhs::io                 XML 读、XML 写、VTU 写（同一 io_lib）
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
-│   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
+│   ├── utils/                   # mhs::utils              网格、FaceKey、采样和物理助手
+│   ├── logger/                  # mhs::logger             spdlog 封装
 │   ├── preprocessor/            # mhs::sim (子组织)      build_model + 构建辅助函数
 │   ├── fluid/                   # mhs::sim::fluid        冻结流场预处理 + 热装配增量
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
@@ -40,6 +40,7 @@ cmake_minimum_required(VERSION 3.16)
 project(MetaHotspot VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(VERBOSE "Enable DEBUG level logging" OFF)
@@ -47,7 +48,6 @@ option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" ON)
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.h)
 
-include(cmake/CompilerOptions.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/Utilities.cmake)
 
@@ -76,7 +76,7 @@ namespace mhs::logger {
 
 | 宏              | 含义                            |
 |-----------------|---------------------------------|
-| `MHS_LOG_DEBUG` | `VERBOSE=ON` 时启用，否则空展开 |
+| `MHS_LOG_DEBUG` | 记录 debug；`VERBOSE=ON` 时 logger 级别允许输出 |
 | `MHS_LOG_INFO`  | 始终启用                        |
 | `MHS_LOG_WARN`  | 记录警告 + 报告回退值           |
 | `MHS_FATAL`     | 记录后 `panic()` 退出           |
@@ -93,11 +93,11 @@ namespace mhs::logger {
 |-------------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::core`       | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `common/mesh_utils.hpp`                                                 | 面法向查表                               |
+| `mhs::utils`      | `utils/`                                                                 | 网格、FaceKey、采样和物理助手            |
 | `mhs::sim`        | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
 | `mhs::sim::fluid` | `fluid/`                                                                | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、局部采样辅助、导出场      |
-| `mhs::logger`     | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |
+| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、温度范围                    |
+| `mhs::logger`     | `logger/`                                                                | 独立日志服务                             |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

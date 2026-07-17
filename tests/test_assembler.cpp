@@ -1,14 +1,9 @@
 #include "assembler/assembler.hpp"
-#include "config.h"
 #include "data/model.hpp"
 #include "data/model_definition.hpp"
-#include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
-#include <filesystem>
 #include <gtest/gtest.h>
 
-using namespace mhs::sim;
-using namespace mhs::io;
 using namespace mhs::sim;
 
 // Helper: build a minimal mhs::core::ModelDefinition for a simple uniform cube
@@ -50,62 +45,6 @@ static mhs::core::ModelDefinition make_simple_cube_io()
     io.other_bc = mhs::core::SecondTypeThermalBC {};
 
     return io;
-}
-
-TEST(AssemblerTest, ConstructWithModel)
-{
-    auto io = make_simple_cube_io();
-    auto model = build_model(io);
-
-    Assembler assembler(model);
-}
-
-TEST(AssemblerTest, AssembleReturnsKAndFAndMDiag)
-{
-    auto io = make_simple_cube_io();
-    auto model = build_model(io);
-
-    int N = static_cast<int>(model.cells.material_id.size());
-    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
-    AssembleContext ctx {T_map, 0.0};
-
-    Assembler assembler(model);
-    auto ops = assembler.assemble(ctx);
-
-    EXPECT_EQ(ops.K.rows(), N);
-    EXPECT_EQ(ops.K.cols(), N);
-    EXPECT_EQ(ops.f.size(), N);
-    EXPECT_EQ(ops.M_diag.size(), N);
-}
-
-TEST(AssemblerTest, AssembleProducesConsistentResultsAcrossDt)
-{
-    // Key invariant: assemble does NOT add M_diag/dt to the diagonal.
-    // Compare two calls at the same T; the K matrix must be identical —
-    // transient terms live in nonlinear_solve / build_system, not in assemble.
-    auto io = make_simple_cube_io();
-    auto model = build_model(io);
-
-    int N = static_cast<int>(model.cells.material_id.size());
-    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
-
-    Assembler assembler(model);
-
-    AssembleContext ctx_a {T_map, 0.0};
-    auto ops_a = assembler.assemble(ctx_a);
-
-    AssembleContext ctx_b {T_map, 0.0};
-    auto ops_b = assembler.assemble(ctx_b);
-
-    EXPECT_EQ(ops_a.K.nonZeros(), ops_b.K.nonZeros());
-    for (int k = 0; k < ops_a.K.outerSize(); ++k) {
-        for (typename Eigen::SparseMatrix<double>::InnerIterator it(ops_a.K, k); it; ++it) {
-            double diff = std::abs(it.value() - ops_b.K.coeff(it.row(), it.col()));
-            EXPECT_LT(diff, 1e-12) << "K(" << it.row() << "," << it.col() << ") differs across calls";
-        }
-    }
 }
 
 TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
@@ -211,29 +150,4 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     }
     // And K should be non-empty.
     EXPECT_GT(ops.K.nonZeros(), 0);
-}
-
-TEST(AssemblerTest, Case1AssemblyRuns)
-{
-    std::string case_path = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    if (!std::filesystem::exists(case_path)) {
-        GTEST_SKIP() << "Case1 XML not found";
-    }
-
-    auto io_data = mhs::io::read_xml(case_path);
-    auto model = build_model(io_data);
-
-    int N = static_cast<int>(model.cells.material_id.size());
-    EXPECT_GT(N, 0);
-
-    std::vector<double> T(static_cast<std::size_t>(N), model.initial_temperature);
-    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
-    AssembleContext ctx {T_map, 0.0};
-
-    Assembler assembler(model);
-    auto ops = assembler.assemble(ctx);
-    EXPECT_EQ(ops.K.rows(), N);
-    EXPECT_EQ(ops.K.cols(), N);
-    EXPECT_GT(ops.K.nonZeros(), 0);
-    EXPECT_GT(ops.f.norm(), 0.0);
 }

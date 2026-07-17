@@ -111,7 +111,7 @@ mhs::sim::register_all_functions(symbols, ios.functions);  // typed Function →
 double half_w = mhs::core::eval_geometry("w_top/2", symbols);
 
 // 场
-auto k = mhs::core::parse("k_copper + 0.01*T", symbols);
+auto k = mhs::core::parse("400 + 0.01*T", symbols);
 double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ```
 

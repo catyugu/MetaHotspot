@@ -20,7 +20,7 @@ struct ModelDefinition {
     std::vector<Boundary> boundaries;
 
     double transient_duration = 0.0;
-    double transient_time_step = 1.0;
+    double transient_time_step = 1.0; // output interval
     std::variant<FirstTypeThermalBC,
                  SecondTypeThermalBC,
                  ThirdTypeThermalBC> other_bc;
