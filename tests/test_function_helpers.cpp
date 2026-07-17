@@ -132,10 +132,10 @@ namespace {
         EXPECT_EQ(out, "T+1");
     }
 
-    TEST(Substitute, UnknownFunctionPanics)
+    TEST(Substitute, UnknownFunctionNotWorking)
     {
         std::unordered_map<std::string, mhs::core::Function> fns;
-        EXPECT_DEATH(substitute_function_args("foo(x)", "T", fns), "");
+        EXPECT_EQ(substitute_function_args("foo(x)", "T", fns), "foo(x)");
     }
 
     // ---- 注册 native + 端到端 eval --------------------------------------

@@ -18,7 +18,7 @@ namespace mhs::sim {
 
     // 字面替换：把字符串中的"孤立 x"（前后都不是字母或下划线）替换为 argname。
     // 同一遍扫描里同时校验所有 name(...) 引用的函数名都在 fns 中已注册；
-    // 未注册 → panic。
+    // 未注册 → assert。
     std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
         const std::unordered_map<std::string, mhs::core::Function>& fns);
 

@@ -592,8 +592,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     const auto model = build_model(definition);
     const auto cell = model.cells.grid_to_cell[0];
     ASSERT_NE(cell, mhs::invalidIndex);
-    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM),
-        mhs::core::BcType::ThirdType);
+    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM), mhs::core::BcType::ThirdType);
 
     const uint16_t param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
     const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};

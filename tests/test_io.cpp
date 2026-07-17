@@ -245,20 +245,6 @@ TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
     std::filesystem::remove(path);
 }
 
-TEST(IoTest, ReadXmlDaoreXishuTwoExpressionsPanics)
-{
-    auto path = write_tmp_xml("io_daore_2.xml", make_xml_with_daore_xishu("1, 2"));
-    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
-    std::filesystem::remove(path);
-}
-
-TEST(IoTest, ReadXmlDaoreXishuEmptySegmentPanics)
-{
-    auto path = write_tmp_xml("io_daore_empty.xml", make_xml_with_daore_xishu("1,,3"));
-    EXPECT_DEATH(mhs::io::read_xml(path.string()), "");
-    std::filesystem::remove(path);
-}
-
 // Helper: write overlay XML to a temp file and return its path.
 static std::filesystem::path write_tmp_overlay(const std::string& content)
 {

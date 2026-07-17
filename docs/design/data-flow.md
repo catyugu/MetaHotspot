@@ -43,20 +43,20 @@ XML
 
 ## 各阶段
 
-| 阶段              | 输入                                  | 输出                        | 关键                                                     |
-|-------------------|---------------------------------------|-----------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `ModelDefinition`           | tinyxml2                                                 |
-| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`              | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`   | 预求 Z 范围 + Block XY                                   |
+| 阶段              | 输入                                  | 输出                            | 关键                                                     |
+|-------------------|---------------------------------------|---------------------------------|----------------------------------------------------------|
+| XML 解析          | XML 文件                              | `ModelDefinition`               | tinyxml2                                                 |
+| 预处理-几何       | `mesh_vertex_*`                       | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
+| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
 | 预处理-单元拓扑   | mesh + 层几何                         | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`               | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
-| 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable` | 6 面独立 + `other_bc` 兜底                               |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`        | muparser 或 `make_constant`                              |
-| 组装              | `Model` + `AssembleContext`           | `AssemblyResult`            | TBB 并行；`eval()` 锁无关                                |
-| 线性求解          | `A x = b`                             | `x`                         | EigenSparseLU / EigenBiCGSTAB                            |
-| 非线性更新        | 线性解 `G(T)`                         | 下一温度迭代值              | Anderson 加速或欠松弛                                    |
-| 后处理            | `Model` + `T`                         | VTU + XML                   | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`              | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
+| 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
+| 预处理-面 BC      | mesh + `Boundaries`                   | `face_bcs` + `BCParamTable`     | 6 面独立 + `other_bc` 兜底                               |
+| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
+| 组装              | `Model` + `AssembleContext`           | `AssemblyResult`                | TBB 并行；`eval()` 锁无关                                |
+| 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
+| 非线性更新        | 线性解 `G(T)`                         | 下一温度迭代值                  | Anderson 加速或欠松弛                                    |
+| 后处理            | `Model` + `T`                         | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
+| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
 ## 关键设计原则
 
@@ -84,11 +84,7 @@ XML
 
 模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `build_model()` 调用互不共享构建状态。
 
-### 7. 错误边界
-
-模块可用 `std::exception` 报告解析和计算错误；`bin/main.cpp` 统一捕获并通过 `MHS_FATAL` 记录后退出。
-
-### 8. 各向异性热导率 — 面法向匹配与后处理距离权重
+### 7. 各向异性热导率 — 面法向匹配与后处理距离权重
 
 `MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和面中心外推权重中使用各向异性逆距离
 

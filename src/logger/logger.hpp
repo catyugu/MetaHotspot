@@ -13,9 +13,6 @@ namespace mhs::logger {
     // 手动刷新日志缓冲
     void flush();
 
-    // 记录错误、刷新缓冲并退出进程 (由 MHS_FATAL 宏调用)
-    [[noreturn]] void panic();
-
     // ---------------------------------------------------------
     // 内部转发接口 (用户通常应通过下方的宏来调用以实现条件编译)
     // ---------------------------------------------------------
@@ -35,11 +32,6 @@ namespace mhs::logger {
         spdlog::warn(fmt, std::forward<Args>(args)...);
     }
 
-    template <typename... Args> void error(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    {
-        spdlog::error(fmt, std::forward<Args>(args)...);
-    }
-
 } // namespace mhs::logger
 
 // ---------------------------------------------------------
@@ -49,4 +41,3 @@ namespace mhs::logger {
 #define MHS_LOG_DEBUG(...) ::mhs::logger::debug(__VA_ARGS__)
 #define MHS_LOG_INFO(...) ::mhs::logger::info(__VA_ARGS__)
 #define MHS_LOG_WARN(...) ::mhs::logger::warn(__VA_ARGS__)
-#define MHS_FATAL(...) (::mhs::logger::error(__VA_ARGS__), ::mhs::logger::panic())

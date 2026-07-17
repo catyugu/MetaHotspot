@@ -1,7 +1,6 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include <cstdlib>
 #include <vector>
 
 #include "logger.hpp"
@@ -54,12 +53,6 @@ namespace mhs::logger {
         if (auto logger = spdlog::default_logger()) {
             logger->flush();
         }
-    }
-
-    void panic()
-    {
-        flush(); // 确保崩溃退出前，致命错误被写入文件
-        std::exit(1);
     }
 
 } // namespace mhs::logger

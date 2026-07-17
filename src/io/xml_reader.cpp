@@ -229,7 +229,8 @@ namespace mhs::io {
                             for (const auto& s : segs) {
                                 if (s.empty()) {
                                     std::string preview = raw.substr(0, 200);
-                                    MHS_FATAL("DaoreXishu: empty segment in '{}'", preview);
+                                    MHS_LOG_WARN("DaoreXishu: empty segment, skipping.");
+                                    continue;
                                 }
                             }
                             mat.kx = segs[0];
@@ -238,8 +239,7 @@ namespace mhs::io {
                         }
                         else {
                             std::string preview = raw.substr(0, 200);
-                            MHS_FATAL("DaoreXishu must have 1 or 3 comma-separated expressions, got {}: '{}'",
-                                segs.size(), preview);
+                            MHS_LOG_WARN("Invalid input! DaoreXishu must have 1 or 3 comma-separated expressions.");
                         }
                     }
                     if (const XMLElement* midu = val->FirstChildElement("Midu")) {

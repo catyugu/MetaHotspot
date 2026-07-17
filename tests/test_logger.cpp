@@ -27,10 +27,4 @@ namespace {
         std::remove(test_log.c_str());
     }
 
-    TEST(LoggerPanic, ErrorThenPanic)
-    {
-        mhs::logger::init("", true);
-        EXPECT_DEATH(MHS_FATAL("Fatal error test"), "");
-    }
-
 } // namespace

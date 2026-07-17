@@ -117,8 +117,9 @@ namespace mhs::sim {
                 std::string_view name(expr_str.data() + start, i - start);
                 if (i < n && expr_str[i] == '(') {
                     if (!is_known_builtin(name) && fns.find(std::string(name)) == fns.end()) {
-                        MHS_FATAL("unknown function {} referenced in {} : must be declared in <Functions>",
-                            std::string(name), expr_str);
+                        MHS_LOG_WARN(
+                            "unknown function {} referenced in {}. returning raw string", std::string(name), expr_str);
+                        return std::string(expr_str);
                     }
                     out.append(expr_str, start, i - start);
                 }

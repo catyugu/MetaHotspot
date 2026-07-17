@@ -74,12 +74,11 @@ namespace mhs::logger {
 
 宏：
 
-| 宏              | 含义                            |
-|-----------------|---------------------------------|
+| 宏              | 含义                                            |
+|-----------------|-------------------------------------------------|
 | `MHS_LOG_DEBUG` | 记录 debug；`VERBOSE=ON` 时 logger 级别允许输出 |
-| `MHS_LOG_INFO`  | 始终启用                        |
-| `MHS_LOG_WARN`  | 记录警告 + 报告回退值           |
-| `MHS_FATAL`     | 记录后 `panic()` 退出           |
+| `MHS_LOG_INFO`  | 始终启用                                        |
+| `MHS_LOG_WARN`  | 记录警告 + 报告回退值                           |
 
 `spdlog::flush_on(spdlog::level::warn)` — 警告及以上自动 flush，保证 panic 前不丢日志。
 
@@ -93,11 +92,11 @@ namespace mhs::logger {
 |-------------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::core`       | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `utils/`                                                                 | 网格、FaceKey、采样和物理助手            |
+| `mhs::utils`      | `utils/`                                                                | 网格、FaceKey、采样和物理助手            |
 | `mhs::sim`        | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
 | `mhs::sim::fluid` | `fluid/`                                                                | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、温度范围                    |
-| `mhs::logger`     | `logger/`                                                                | 独立日志服务                             |
+| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、温度范围                  |
+| `mhs::logger`     | `logger/`                                                               | 独立日志服务                             |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。
