@@ -1,9 +1,13 @@
 #include "assembler.hpp"
+
 #include "data/tolerance_config.hpp"
+#include "fluid/fluid_assembler.hpp"
 #include "utils/mesh_utils.hpp"
-#include "utils/physics_utils.hpp"
+
 #include <Eigen/Sparse>
 #include <cassert>
+#include <limits>
+#include <tbb/blocked_range.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
 
@@ -22,201 +26,106 @@ namespace mhs::sim {
         const auto& bc_params = model_.bc_params;
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
-
-        const mhs::Index N = static_cast<mhs::Index>(model_.cells.material_id.size());
+        const mhs::Index active_count = static_cast<mhs::Index>(cells.material_id.size());
         const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
 
+        assert(active_count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_count = static_cast<Eigen::Index>(active_count);
+        Eigen::VectorXd rhs = Eigen::VectorXd::Zero(eigen_count);
+        Eigen::VectorXd mass_diagonal = Eigen::VectorXd::Zero(eigen_count);
         auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([]() { return ThreadLocalData {}; });
 
-        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
-        const auto eigen_N = static_cast<Eigen::Index>(N);
-        Eigen::VectorXd b = Eigen::VectorXd::Zero(eigen_N);
-        Eigen::VectorXd M_diag = Eigen::VectorXd::Zero(eigen_N);
-
-        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, total), [&](const tbb::blocked_range<mhs::Index>& r) {
-            for (mhs::Index old_idx = r.begin(); old_idx < r.end(); ++old_idx) {
-                if (cells.index_map[old_idx] == mhs::invalidIndex)
+        // Base thermal path: diffusion, material mass, heat sources, and thermal
+        // boundary conditions only. Fluid physics is appended as a separate
+        // increment after this pass.
+        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, total), [&](const tbb::blocked_range<mhs::Index>& range) {
+            for (mhs::Index old = range.begin(); old < range.end(); ++old) {
+                const mhs::Index cell = cells.index_map[old];
+                if (cell == mhs::invalidIndex)
                     continue;
 
-                auto& local = thread_data.local();
+                auto& entries = thread_data.local().triplets;
                 mhs::Index ix, iy, iz;
-                mhs::utils::decode_index(old_idx, mesh.ny, mesh.nz, ix, iy, iz);
+                mhs::utils::decode_index(old, mesh.ny, mesh.nz, ix, iy, iz);
+                const double dx = mesh.dx[ix];
+                const double dy = mesh.dy[iy];
+                const double dz = mesh.dz[iz];
+                const double volume = dx * dy * dz;
 
-                mhs::Index c_idx = cells.index_map[old_idx];
-                assert(c_idx != mhs::invalidIndex);
-                assert(c_idx < N);
-                double dx_cell = mesh.dx[ix];
-                double dy_cell = mesh.dy[iy];
-                double dz_cell = mesh.dz[iz];
-                double vol = dx_cell * dy_cell * dz_cell;
+                const auto& material = materials[cells.material_id[cell]];
+                const mhs::core::FieldContext cell_context {
+                    mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[static_cast<Eigen::Index>(cell)], ctx.current_time};
+                const double kx = material.kx.eval(cell_context);
+                const double ky = material.ky.eval(cell_context);
+                const double kz = material.kz.eval(cell_context);
+                const double density = material.rho.eval(cell_context);
+                const double heat_capacity = material.c.eval(cell_context);
+                mass_diagonal(static_cast<Eigen::Index>(cell)) += density * heat_capacity * volume;
 
-                const auto& mp = materials[cells.material_id[c_idx]];
-                const mhs::core::FieldContext ctx_c {
-                    mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[static_cast<Eigen::Index>(c_idx)], ctx.current_time};
-                const double kx_c = mp.kx.eval(ctx_c);
-                const double ky_c = mp.ky.eval(ctx_c);
-                const double kz_c = mp.kz.eval(ctx_c);
+                const uint16_t source_index = cells.heat_source_idx[cell];
+                rhs(static_cast<Eigen::Index>(cell))
+                    += model_.heat_source_table[source_index].eval(cell_context) * volume;
 
-                const double rho = mp.rho.eval(ctx_c);
-                const double c_heat = mp.c.eval(ctx_c);
-                M_diag(static_cast<Eigen::Index>(c_idx)) += rho * c_heat * vol;
-
-                uint16_t hs_idx = cells.heat_source_idx[c_idx];
-                const double Q = model_.heat_source_table[hs_idx].eval(ctx_c);
-                b(static_cast<Eigen::Index>(c_idx)) += Q * vol;
-
-                double diag = 0.0;
-                bool cell_is_fluid = !model_.fluid.is_fluid.empty() && c_idx < model_.fluid.is_fluid.size()
-                    && model_.fluid.is_fluid[c_idx];
-                const double rho_a = cell_is_fluid ? materials[cells.material_id[c_idx]].rho.eval(ctx_c) : 0.0;
-                const double cp_c = cell_is_fluid ? materials[cells.material_id[c_idx]].c.eval(ctx_c) : 0.0;
-                double netOutflux = 0.0;
-
-                const auto* fc = &face_bcs[c_idx * mhs::core::FACE_COUNT];
-
-                for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
-                    mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-
-                    mhs::Index neighbor_old
+                double diagonal = 0.0;
+                const auto* cell_face_bcs = &face_bcs[cell * mhs::core::FACE_COUNT];
+                for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
+                    const auto dir = mhs::core::FACE_DIRS[face];
+                    const mhs::Index neighbor_old
                         = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                    const double area = mhs::utils::face_area(dir, dx, dy, dz);
+                    const double half_distance = mhs::utils::half_length_along(dir, dx, dy, dz);
+                    const double face_k = mhs::utils::k_along(dir, kx, ky, kz);
+
                     if (neighbor_old != mhs::invalidIndex) {
-                        mhs::Index n_idx = cells.index_map[neighbor_old];
-                        assert(n_idx != mhs::invalidIndex);
-                        mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
-                        mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);
-                        mhs::Index niz = mhs::utils::neighbor_iz(dir, iz);
-
-                        const auto& mp_n = materials[cells.material_id[n_idx]];
-                        const mhs::core::FieldContext ctx_n {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
-                            ctx.T[static_cast<Eigen::Index>(n_idx)], ctx.current_time};
-                        double k_neighbor
-                            = utils::k_along(dir, mp_n.kx.eval(ctx_n), mp_n.ky.eval(ctx_n), mp_n.kz.eval(ctx_n));
-
-                        double d_half_neighbor
+                        const mhs::Index neighbor = cells.index_map[neighbor_old];
+                        assert(neighbor != mhs::invalidIndex);
+                        const mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
+                        const mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);
+                        const mhs::Index niz = mhs::utils::neighbor_iz(dir, iz);
+                        const auto& neighbor_material = materials[cells.material_id[neighbor]];
+                        const mhs::core::FieldContext neighbor_context {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
+                            ctx.T[static_cast<Eigen::Index>(neighbor)], ctx.current_time};
+                        const double neighbor_k = mhs::utils::k_along(dir, neighbor_material.kx.eval(neighbor_context),
+                            neighbor_material.ky.eval(neighbor_context), neighbor_material.kz.eval(neighbor_context));
+                        const double neighbor_half_distance
                             = mhs::utils::half_length_along(dir, mesh.dx[nix], mesh.dy[niy], mesh.dz[niz]);
-
-                        const double A_f = mhs::utils::face_area(dir, dx_cell, dy_cell, dz_cell);
-                        const double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
-                        const double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-
-                        double cond = 0.0;
-                        bool n_is_fluid = n_idx < model_.fluid.is_fluid.size() && model_.fluid.is_fluid[n_idx];
-
-                        if (cell_is_fluid != n_is_fluid) {
-                            mhs::Index f_id = cell_is_fluid ? c_idx : n_idx;
-                            mhs::Index f_idx = model_.fluid.global_to_fluid[f_id];
-                            assert(f_idx != mhs::invalidIndex);
-                            double kf = cell_is_fluid ? k_face : k_neighbor;
-                            double d_h = model_.fluid.hydraulic_diameter[f_idx];
-                            double ch_w = model_.fluid.channel_width[f_idx];
-                            double ch_h = model_.fluid.channel_height[f_idx];
-                            double Nu = mhs::utils::nusselt_rectangular(ch_w, ch_h);
-                            double h_f = Nu * kf / d_h;
-                            double half_dist_solid = cell_is_fluid ? d_half_neighbor : half_dist;
-                            double k_solid = cell_is_fluid ? k_neighbor : k_face;
-                            double R = half_dist_solid / (k_solid * A_f) + 1.0 / (h_f * A_f);
-                            cond = 1.0 / R;
-                        }
-                        else {
-                            cond = A_f / (half_dist / k_face + d_half_neighbor / k_neighbor);
-                        }
-                        diag += cond;
-                        local.triplets.emplace_back(
-                            static_cast<Eigen::Index>(c_idx), static_cast<Eigen::Index>(n_idx), -cond);
-
-                        if (cell_is_fluid && n_is_fluid) {
-                            mhs::Index f_idx = model_.fluid.global_to_fluid[c_idx];
-                            assert(f_idx != mhs::invalidIndex);
-                            mhs::Index fn_idx = model_.fluid.global_to_fluid[n_idx];
-                            if (f_idx != mhs::invalidIndex && fn_idx != mhs::invalidIndex) {
-                                int axis = mhs::utils::AXIS_OF_DIR[f];
-                                const auto& hc = model_.fluid.hydroC[axis];
-                                double hc_a = hc[f_idx];
-                                double hc_b = hc[fn_idx];
-                                if (hc_a > mhs::core::zero_guard && hc_b > mhs::core::zero_guard) {
-                                    double C_eff = mhs::utils::harmonicAverage(hc_a, hc_b);
-                                    double rho_b = mp_n.rho.eval(ctx_n);
-                                    double rho_avg = 0.5 * (rho_a + rho_b);
-                                    double dP = model_.fluid.pressure[f_idx] - model_.fluid.pressure[fn_idx];
-                                    double massFlux = dP * C_eff * rho_avg;
-                                    netOutflux += massFlux;
-                                    if (std::fabs(massFlux) > mhs::core::zero_guard) {
-                                        if (massFlux > 0) {
-                                            local.triplets.emplace_back(static_cast<Eigen::Index>(c_idx),
-                                                static_cast<Eigen::Index>(c_idx), massFlux * cp_c);
-                                        }
-                                        else {
-                                            double cp_n = mp_n.c.eval(ctx_n);
-                                            local.triplets.emplace_back(static_cast<Eigen::Index>(c_idx),
-                                                static_cast<Eigen::Index>(n_idx), massFlux * cp_n);
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        const double conductance
+                            = area / (half_distance / face_k + neighbor_half_distance / neighbor_k);
+                        diagonal += conductance;
+                        entries.emplace_back(
+                            static_cast<Eigen::Index>(cell), static_cast<Eigen::Index>(neighbor), -conductance);
+                        continue;
                     }
-                    else {
-                        const auto& fb = fc[f];
-                        if (fb.type == mhs::core::BcType::None)
-                            continue;
 
-                        const double A_f = mhs::utils::face_area(dir, dx_cell, dy_cell, dz_cell);
-                        const double half_dist = mhs::utils::half_length_along(dir, dx_cell, dy_cell, dz_cell);
-                        const double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-
-                        switch (fb.type) {
-                        case mhs::core::BcType::FirstType: {
-                            double T_bc_val = bc_params.dirichlet_T[fb.param_idx].eval(ctx_c);
-                            double cond = k_face * A_f / half_dist;
-                            local.triplets.emplace_back(
-                                static_cast<Eigen::Index>(c_idx), static_cast<Eigen::Index>(c_idx), cond);
-                            b(static_cast<Eigen::Index>(c_idx)) += cond * T_bc_val;
-                            break;
-                        }
-                        case mhs::core::BcType::SecondType: {
-                            double q = bc_params.neumann_q[fb.param_idx].eval(ctx_c);
-                            b(static_cast<Eigen::Index>(c_idx)) += q * A_f;
-                            break;
-                        }
-                        case mhs::core::BcType::ThirdType: {
-                            double h = bc_params.cauchy_h[fb.param_idx].eval(ctx_c);
-                            double T_inf = bc_params.cauchy_T_inf[fb.param_idx].eval(ctx_c);
-                            double coeff = k_face * h * A_f / (k_face + h * half_dist);
-                            local.triplets.emplace_back(
-                                static_cast<Eigen::Index>(c_idx), static_cast<Eigen::Index>(c_idx), coeff);
-                            b(static_cast<Eigen::Index>(c_idx)) += coeff * T_inf;
-                            break;
-                        }
-                        default:
-                            break;
-                        }
+                    const auto& boundary = cell_face_bcs[face];
+                    switch (boundary.type) {
+                    case mhs::core::BcType::FirstType: {
+                        const double temperature = bc_params.dirichlet_T[boundary.param_idx].eval(cell_context);
+                        const double conductance = face_k * area / half_distance;
+                        entries.emplace_back(
+                            static_cast<Eigen::Index>(cell), static_cast<Eigen::Index>(cell), conductance);
+                        rhs(static_cast<Eigen::Index>(cell)) += conductance * temperature;
+                        break;
+                    }
+                    case mhs::core::BcType::SecondType:
+                        rhs(static_cast<Eigen::Index>(cell))
+                            += bc_params.neumann_q[boundary.param_idx].eval(cell_context) * area;
+                        break;
+                    case mhs::core::BcType::ThirdType: {
+                        const double h = bc_params.cauchy_h[boundary.param_idx].eval(cell_context);
+                        const double ambient = bc_params.cauchy_T_inf[boundary.param_idx].eval(cell_context);
+                        const double coefficient = face_k * h * area / (face_k + h * half_distance);
+                        entries.emplace_back(
+                            static_cast<Eigen::Index>(cell), static_cast<Eigen::Index>(cell), coefficient);
+                        rhs(static_cast<Eigen::Index>(cell)) += coefficient * ambient;
+                        break;
+                    }
+                    case mhs::core::BcType::None:
+                    default:
+                        break;
                     }
                 }
-
-                local.triplets.emplace_back(static_cast<Eigen::Index>(c_idx), static_cast<Eigen::Index>(c_idx), diag);
-
-                if (cell_is_fluid) {
-                    mhs::Index f_idx = model_.fluid.global_to_fluid[c_idx];
-                    const auto& bc = model_.fluid.fluid_bcs[f_idx];
-                    if (bc.kind == mhs::core::FluidBCType::MassFlowRateType) {
-                        netOutflux = model_.fluid.fluid_bc_params.mass_flow_rate[bc.param_idx];
-                    }
-                    else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
-                        netOutflux
-                            = model_.fluid.fluid_bc_params.velocity[bc.param_idx] * model_.fluid.fluid_face_area[f_idx];
-                    }
-
-                    if (netOutflux != 0.0) {
-                        double T_boundary = model_.fluid.boundary_temperature_fluid[f_idx];
-                        if (netOutflux > 0.0 && !std::isnan(T_boundary)) {
-                            b(static_cast<Eigen::Index>(c_idx)) += netOutflux * cp_c * T_boundary;
-                        }
-                        else {
-                            local.triplets.emplace_back(
-                                static_cast<Eigen::Index>(c_idx), static_cast<Eigen::Index>(c_idx), -netOutflux * cp_c);
-                        }
-                    }
-                }
+                entries.emplace_back(static_cast<Eigen::Index>(cell), static_cast<Eigen::Index>(cell), diagonal);
             }
         });
 
@@ -224,12 +133,14 @@ namespace mhs::sim {
         thread_data.combine_each([&](const ThreadLocalData& local) {
             triplets.insert(triplets.end(), local.triplets.begin(), local.triplets.end());
         });
-        thread_data.clear();
 
-        Eigen::SparseMatrix<double> K(eigen_N, eigen_N);
-        K.setFromTriplets(triplets.begin(), triplets.end());
+        auto fluid_increment = mhs::sim::fluid::assemble_increment(model_, ctx.T, ctx.current_time);
+        triplets.insert(triplets.end(), fluid_increment.matrix_entries.begin(), fluid_increment.matrix_entries.end());
+        rhs += fluid_increment.rhs;
 
-        return {std::move(K), std::move(b), std::move(M_diag)};
+        Eigen::SparseMatrix<double> matrix(eigen_count, eigen_count);
+        matrix.setFromTriplets(triplets.begin(), triplets.end());
+        return {std::move(matrix), std::move(rhs), std::move(mass_diagonal)};
     }
 
 } // namespace mhs::sim

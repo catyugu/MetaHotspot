@@ -22,6 +22,7 @@ MetaHotspot/
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
 │   ├── common/                  # mhs::logger, mhs::utils (mesh_utils)
 │   ├── preprocessor/            # mhs::sim (子组织)      build_model + 构建辅助函数
+│   ├── fluid/                   # mhs::sim::fluid        冻结流场预处理 + 热装配增量
 │   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
 │   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
 │   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
@@ -94,6 +95,7 @@ namespace mhs::logger {
 | `mhs::core`   | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
 | `mhs::utils`  | `common/mesh_utils.hpp`                                                 | 面法向查表                               |
 | `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
+| `mhs::sim::fluid` | `fluid/` | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`     | `io/`                                                                   | XML I/O、VTU 输出                        |
 | `mhs::post`   | `postprocessor/*`                                                       | 单元→节点插值、局部采样辅助、导出场      |
 | `mhs::logger` | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |

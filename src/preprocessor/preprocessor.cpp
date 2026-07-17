@@ -1,9 +1,9 @@
+#include "preprocessor.hpp"
 #include "expr/expr.hpp"
 #include "face_key_processor.hpp"
-#include "fluid_preprocessor.hpp"
+#include "fluid/fluid_preprocessor.hpp"
 #include "function_helpers.hpp"
 #include "layer_processor.hpp"
-#include "preprocessor.hpp"
 #include "utils/mesh_utils.hpp"
 
 #include <algorithm>
@@ -134,6 +134,9 @@ namespace mhs::sim {
 
         // Compile material property expressions.
         model.material_table.resize(material_names.size());
+        mhs::sim::fluid::FluidMaterialData fluid_materials;
+        fluid_materials.is_fluid.assign(material_names.size(), 0);
+        fluid_materials.initial_viscosity.assign(material_names.size(), 0.0);
         for (size_t m = 0; m < material_names.size(); m++) {
             const auto& mat = definition.materials.at(material_names[m]);
             auto compile = [&](const std::string& expr) {
@@ -145,9 +148,11 @@ namespace mhs::sim {
             props.kz = compile(mat.kz);
             props.rho = compile(mat.midu);
             props.c = compile(mat.bi_rerong);
-            props.is_fluid = !mat.dynamic_viscosity.empty();
-            props.dynamic_viscosity
-                = props.is_fluid ? compile(mat.dynamic_viscosity) : mhs::core::CompiledExpression::make_constant(0.0);
+            if (!mat.dynamic_viscosity.empty()) {
+                fluid_materials.is_fluid[m] = 1;
+                fluid_materials.initial_viscosity[m]
+                    = compile(mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
+            }
         }
 
         // Build heat source table + index map (must precede assign_cell_layers).
@@ -186,11 +191,10 @@ namespace mhs::sim {
         resolve_boundary_patches(mesh, model.cells, parsed_keys, other_bc, model.face_bcs);
 
         // Fluid coupling.
-        const bool has_fluid_material = std::any_of(model.material_table.begin(), model.material_table.end(),
-            [](const mhs::core::MaterialProps& material) { return material.is_fluid; });
+        const bool has_fluid_material = std::any_of(
+            fluid_materials.is_fluid.begin(), fluid_materials.is_fluid.end(), [](uint8_t value) { return value != 0; });
         if (has_fluid_material) {
-            mhs::sim::prepare_fluid_domain(model, definition.fluid_boundaries, si_scale);
-            mhs::sim::solve_fluid_flow(model);
+            mhs::sim::fluid::build_domain(model, definition.fluid_boundaries, si_scale, fluid_materials);
         }
 
         return model;

@@ -86,9 +86,24 @@ mhs::core::ModelDefinition
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
-        ├─> prepare_fluid_domain()     // 材料粘度和流体边界已在 ModelDefinition 中
+        ├─> fluid::build_domain()      // 水力临时状态局部化，只输出热组装所需字段
         └─> mhs::core::Model ready
 ```
+
+## `fluid`
+
+`fluid_lib` 独立负责两件事：
+
+1. `build_domain()` 在局部工作区中完成流体映射、通道几何、水力导通、边界解析和压力求解，最终只持久化冻结面流量、流固换热因子和边界热数据。
+2. `assemble_increment()` 返回流固界面修正、流体内部迎风对流和入口/出口项。所有矩阵坐标均为已有对角或直接邻居位置，不改变基础热算子的稀疏模式。
+
+流固界面在基础导热系数上追加差量：
+
+```text
+delta = conductance(interface convection) - conductance(base diffusion)
+```
+
+因此基础 Assembler 不需要流体分支，而总算子与原公式保持一致。
 
 ## `assembler`
 
@@ -123,7 +138,7 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**。每线程独立 `tbb::enumerable_thread_specific<ThreadLocalData>` 持 triplet 列表 + RHS 向量 + 质量向量，并行结束后 `combine_each` 合并为 `AssemblyResult {K, f, M_diag}`。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`，不再在 assembler 内定义 switch 分支。组装项：
+`assemble()` 首先用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**，生成与物理类型无关的基础热算子；随后合并 `fluid::assemble_increment()`，最后只构造一次稀疏矩阵。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`。基础组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）

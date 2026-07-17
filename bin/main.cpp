@@ -57,8 +57,7 @@ int main(int argc, char* argv[])
                     MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
                 }
                 else {
-                    MHS_LOG_WARN(
-                        "Fluid data file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
+                    MHS_LOG_WARN("Fluid data file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
                 }
             }
         }
@@ -69,12 +68,8 @@ int main(int argc, char* argv[])
             model.mesh.nx, model.mesh.ny, model.mesh.nz);
 
         // Count fluid cells for diagnostics
-        if (!model.fluid.is_fluid.empty()) {
-            int fluidCount = 0;
-            for (uint8_t v : model.fluid.is_fluid) {
-                if (v)
-                    ++fluidCount;
-            }
+        if (!model.fluid.fluid_to_global.empty()) {
+            const auto fluidCount = model.fluid.fluid_to_global.size();
             if (fluidCount > 0) {
                 MHS_LOG_INFO("Fluid cells: {}", fluidCount);
             }

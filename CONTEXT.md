@@ -48,7 +48,9 @@ XML → core::ModelDefinition via io::read_xml
     → sim::solve → core::Solution
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
-        ├─ sim::Assembler::assemble(ctx)               [K, f, M_diag] (单次 TBB 遍历)
+        ├─ sim::Assembler::assemble(ctx)               [K, f, M_diag]
+        │   ├─ base thermal assembly（无流体分支）
+        │   └─ sim::fluid::assemble_increment（不改变稀疏模式）
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
         ├─ sim::nonlinear_solve(provider, T, *solver)  [Anderson 加速定点迭代]
@@ -85,6 +87,7 @@ XML → core::ModelDefinition via io::read_xml
 | `mhs::core`             | `data/` + `expr/`                                                       | ModelDefinition、Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、FluidBCType、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                  |
 | `mhs::utils`            | `utils/`                                                                | mesh_utils 查表 + physics_utils + sampling（最小二乘+面外推）                                                                                                                                                          |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::fluid`       | `fluid/`                                                                | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                |
 | `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid                        |
 | `mhs::io`               | `io/`                                                                   | read_xml / merge_fluid_xml / write_vtu / write_xml                                                                                                                                                              |
 | `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + 局部采样辅助 `mhs::utils`                                                                                                                                                      |

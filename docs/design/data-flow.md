@@ -14,19 +14,22 @@ XML
                       ├─> mhs::sim::assign_cell_layers       (index_map [full-grid]; material_id + heat_source_idx [compact])
                       ├─> heat_source_table        (去重 ti_reyuan_expr)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
+                      ├─> mhs::sim::fluid::build_domain
+                      │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
                               └─> mhs::sim::solve
                                     ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
                                     │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
                                     │     ├─> mhs::sim::Assembler::assemble(ctx)
-                                    │     │     ├─> tbb::parallel_for(0, total)   // skip virtual
+                                    │     │     ├─> base thermal parallel_for    // no fluid branches
                                     │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ ctx.T
                                     │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ ctx.T
                                     │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
                                     │     │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     │     └─> thread-local triplets + b + mass
-                                    │     │     └─> combine_each merge → AssemblyResult {K, f, M_diag}
+                                    │     │     ├─> fluid::assemble_increment    // same sparse coordinates
+                                    │     │     └─> merge once → AssemblyResult {K, f, M_diag}
                                     │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
                                     │     ├─> mhs::sim::nonlinear_solve(ls_provider, T, solver) [Anderson 加速定点迭代]
                                     │     └─> mhs::sim::time_scheme::estimate_error(hist, T, dt, cfg) → ErrorEstimate

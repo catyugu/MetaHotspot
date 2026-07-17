@@ -150,12 +150,9 @@ TEST(PreprocessorTest, FluidDataInModelDefinitionUsesNormalBuildPath)
     auto model = build_model(definition);
 
     ASSERT_EQ(model.material_table.size(), 1u);
-    EXPECT_TRUE(model.material_table[0].is_fluid);
-    EXPECT_EQ(model.fluid.n_fluid, model.cells.material_id.size());
     EXPECT_EQ(model.fluid.fluid_to_global.size(), model.cells.material_id.size());
-    for (double viscosity : model.fluid.dynamic_viscosity) {
-        EXPECT_DOUBLE_EQ(viscosity, 0.001);
-    }
+    EXPECT_EQ(model.fluid.global_to_fluid.size(), model.cells.material_id.size());
+    EXPECT_EQ(model.fluid.face_volume_flux.size(), model.cells.material_id.size() * mhs::core::FACE_COUNT);
 }
 
 TEST(PreprocessorTest, MaterialAssignment)

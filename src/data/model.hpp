@@ -37,9 +37,6 @@ namespace mhs::core {
         CompiledExpression kz;
         CompiledExpression rho;
         CompiledExpression c;
-        CompiledExpression dynamic_viscosity; // μ; 非 fluid = make_constant(0)
-
-        bool is_fluid = false;
     };
 
     // ── BC parameter table (per-BC-type expression vectors) ──────────────

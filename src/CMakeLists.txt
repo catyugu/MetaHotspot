@@ -2,8 +2,9 @@ add_subdirectory(io)
 add_subdirectory(expr)
 add_subdirectory(utils)
 add_subdirectory(logger)
-add_subdirectory(assembler)
 add_subdirectory(linear_solver)
+add_subdirectory(fluid)
+add_subdirectory(assembler)
 add_subdirectory(preprocessor)
 mhs_add_library(mhs_lib
     SOURCES
@@ -21,5 +22,6 @@ mhs_add_library(mhs_lib
     logger_lib
     io_lib
     linear_solver_lib
+    fluid_lib
     assembler_lib
 )

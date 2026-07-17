@@ -50,10 +50,10 @@ struct MaterialProps {
     CompiledExpression kx, ky, kz;      // thermal conductivity [W/(m·K)]
     CompiledExpression rho;              // density [kg/m³]
     CompiledExpression c;                // specific heat [J/(kg·K)]
-    CompiledExpression dynamic_viscosity; // μ [Pa·s]; 非 fluid = make_constant(0)
-    bool is_fluid = false;
 };
 ```
+
+流体标记与初始粘度只参与 `fluid::build_domain()`，不进入运行时材料表。
 
 ## BCParamTable
 
@@ -97,25 +97,18 @@ struct Model {
 
 ```cpp
 struct FluidDomain {
-    int n_fluid = 0;
-    std::vector<int> fluid_to_global;
-    std::vector<int> global_to_fluid;
-    std::vector<uint8_t> is_fluid;
-
-    std::vector<double> dynamic_viscosity;
-    std::vector<double> pressure;
-    std::vector<int8_t> flow_axes;
-    std::array<std::vector<double>, 3> hydroC;
-    std::vector<double> hydraulic_diameter;
-    std::vector<double> channel_width;
-    std::vector<double> channel_height;
-
-    std::vector<FluidCellBC> fluid_bcs;
-    FluidBCParamTable fluid_bc_params;
-    std::vector<double> fluid_face_area;
-    std::vector<double> boundary_temperature_fluid;
+    std::vector<Index> fluid_to_global;   // fluid index → active cell
+    std::vector<Index> global_to_fluid;   // active cell → fluid index / invalidIndex
+    std::vector<double> face_volume_flux; // [N_fluid * 6], frozen signed flux
+    std::vector<double> interface_heat_transfer_factor; // Nu / D_h
+    std::vector<double> boundary_outflux; // NaN = use pressure-derived net flux
+    std::vector<double> boundary_temperature;
 };
 ```
+
+压力、粘度、水力导通系数、通道尺寸和流体 BC 参数表仅存在于
+`fluid_preprocessor.cpp` 的局部 `FluidPreprocessWorkspace`。压力求解结束后，
+只把热组装需要的冻结面流量和换热因子写入 `FluidDomain`。
 
 ## 设计要点
 
@@ -124,4 +117,4 @@ struct FluidDomain {
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。
 - **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向查表（`k_along` / `half_length_along` / `face_area` / `neighbor_*`）统一定义在 `mhs::utils`（`src/common/mesh_utils.hpp`），由装配器和预处理器共享。
-- **流体域**：`FluidDomain` 包含预求解的冻结流场（压力、流量轴、水力直径等），以及流体 BC 表
+- **流体域**：`FluidDomain` 只包含热组装所需的冻结面流量、流固换热因子和边界出流/温度；水力预处理状态不进入 `Model`
