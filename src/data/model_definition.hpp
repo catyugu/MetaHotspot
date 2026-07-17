@@ -24,6 +24,8 @@ namespace mhs::core {
     };
 
     struct Block {
+        // Ordered CSG operations. For a point covered by multiple rectangles,
+        // the last matching Add/Subtract operation determines membership.
         std::vector<Rect> all_rects;
         std::string material_name;
         std::string x_offset_expr;
@@ -33,6 +35,8 @@ namespace mhs::core {
     };
 
     struct Layer {
+        // Ordered overlays. The last block containing a point supplies both
+        // its material properties and heat source.
         std::vector<Block> blocks;
         std::string thickness_expr;
         std::string x_offset_expr;
@@ -134,6 +138,8 @@ namespace mhs::core {
         std::vector<Variable> variables;
         std::vector<Layer> layers;
         std::unordered_map<std::string, Material> materials;
+        // Ordered overlays on exposed faces. The last matching boundary wins;
+        // other_bc is used only when no explicit boundary matches.
         std::vector<Boundary> boundaries;
 
         double transient_duration = 0.0;

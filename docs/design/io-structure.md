@@ -79,6 +79,12 @@ struct Boundary {
 };
 ```
 
+### 顺序与覆盖语义
+
+- `Layer::blocks` 表示有序覆盖层。一个单元同时落入多个 Block 时，后出现的 Block 获胜，并同时提供材料属性和体热源。
+- `Block::all_rects` 是有序 CSG 操作。从“不属于该 Block”开始，依次执行 Rect 的 Add/Sub；覆盖该点的最后一次操作决定该点是否属于 Block。后续 Add 可以重新填回先前 Sub 删除的区域。
+- `ModelDefinition::boundaries` 独立于 Block 按顺序附加在暴露面上。多个边界覆盖同一面区域时，后出现者获胜；只有没有显式边界匹配时才使用 `other_bc`。
+
 材料名称只作为 `ModelDefinition::materials` 的 key 和 `Block::material_name` 的引用存在，不在 `Material` 内重复存储。
 
 `DaoreXishu` 的 XML 解析规则保持不变：单表达式同时赋给 `kx/ky/kz`；三个逗号分隔表达式依次赋给三轴；其他段数报错。

@@ -152,6 +152,41 @@ TEST(PreprocessorTest, CellMappingsAreExactInverses)
     }
 }
 
+TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
+{
+    auto definition = make_simple_io();
+    definition.mesh_vertex_x = {0.0, 5.0, 10.0, 15.0};
+    definition.mesh_vertex_y = {0.0, 5.0};
+    definition.mesh_vertex_z = {0.0, 5.0};
+    definition.layers[0].thickness_expr = "5";
+
+    auto& rects = definition.layers[0].blocks[0].all_rects;
+    rects[0].width_expr = "15";
+    rects[0].height_expr = "5";
+
+    mhs::core::Rect subtract;
+    subtract.add_sub = false;
+    subtract.x_expr = "5";
+    subtract.y_expr = "0";
+    subtract.width_expr = "10";
+    subtract.height_expr = "5";
+    rects.push_back(subtract);
+
+    mhs::core::Rect add_back;
+    add_back.add_sub = true;
+    add_back.x_expr = "10";
+    add_back.y_expr = "0";
+    add_back.width_expr = "5";
+    add_back.height_expr = "5";
+    rects.push_back(add_back);
+
+    const auto model = build_model(definition);
+
+    EXPECT_NE(model.cells.grid_to_cell[0], mhs::invalidIndex) << "The initial Add must keep the first cell";
+    EXPECT_EQ(model.cells.grid_to_cell[1], mhs::invalidIndex) << "The later Subtract must remove the middle cell";
+    EXPECT_NE(model.cells.grid_to_cell[2], mhs::invalidIndex) << "The final Add must restore the last cell";
+}
+
 TEST(PreprocessorTest, MaterialAssignment)
 {
     auto io = make_simple_io();
@@ -521,15 +556,51 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     EXPECT_NE(model.cells.grid_to_cell[idx_overlap], mhs::invalidIndex);
     int c_overlap = (int)model.cells.grid_to_cell[idx_overlap];
 
-    // mhs::core::Material should be silicon (block2), not copper (block1)
-    // name_to_idx order: "copper" = 0, "silicon" = 1
-    EXPECT_EQ(model.cells.material_id[c_overlap], 1)
-        << "Overlapping cell must get material from later block (silicon), not earlier (copper)";
+    const mhs::core::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
+    const auto overlap_material = model.cells.material_id[c_overlap];
+    const auto overlap_heat_source = model.cells.heat_source_idx[c_overlap];
+    EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
+        << "Overlapping cell must get material from the later block";
+    EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source].eval(ctx), 1e7)
+        << "Overlapping cell must get heat source from the same later block";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
     int c_only_block1 = (int)model.cells.grid_to_cell[idx_only_block1];
-    EXPECT_EQ(model.cells.material_id[c_only_block1], 0) << "Cell in only block1 must get copper material";
+    const auto background_material = model.cells.material_id[c_only_block1];
+    const auto background_heat_source = model.cells.heat_source_idx[c_only_block1];
+    EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
+        << "Cell outside the overlap must retain the earlier block material";
+    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 0.0)
+        << "Cell outside the overlap must retain the earlier block heat source";
+}
+
+TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
+{
+    auto definition = make_simple_io();
+
+    mhs::core::Boundary earlier;
+    earlier.face_keys.push_back("Z|E|0|0,10,0,10");
+    earlier.bc = mhs::core::FirstTypeThermalBC {"310"};
+    definition.boundaries.push_back(earlier);
+
+    mhs::core::Boundary later;
+    later.face_keys.push_back("Z|E|0|0,10,0,10");
+    later.bc = mhs::core::ThirdTypeThermalBC {"42", "280"};
+    definition.boundaries.push_back(later);
+
+    const auto model = build_model(definition);
+    const auto cell = model.cells.grid_to_cell[0];
+    ASSERT_NE(cell, mhs::invalidIndex);
+    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM),
+        mhs::core::BcType::ThirdType);
+
+    const uint16_t param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
+    const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
+    ASSERT_LT(param_idx, model.bc_params.cauchy_h.size());
+    ASSERT_LT(param_idx, model.bc_params.cauchy_T_inf.size());
+    EXPECT_DOUBLE_EQ(model.bc_params.cauchy_h[param_idx].eval(ctx), 42.0);
+    EXPECT_DOUBLE_EQ(model.bc_params.cauchy_T_inf[param_idx].eval(ctx), 280.0);
 }
 
 TEST(PreprocessorTest, ParseFaceKey_XFormatSevenParts)

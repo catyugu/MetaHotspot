@@ -50,7 +50,10 @@ namespace mhs::sim {
             const double a_val = centers[ta];
             const double b_val = centers[tb];
 
-            for (const auto& pk : parsed_keys) {
+            // Boundary definitions are ordered overlays: the last matching
+            // definition wins, just like later blocks in a layer.
+            for (auto it = parsed_keys.rbegin(); it != parsed_keys.rend(); ++it) {
+                const auto& pk = *it;
                 if (pk.fk.axis == face_axis_letter
                     && std::abs(face_coord - pk.fk.coord_value) < mhs::core::geometry_eps) {
                     if (point_in_face_rects(pk.fk, a_val, b_val))
