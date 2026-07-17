@@ -54,10 +54,10 @@ namespace mhs::post {
                                     continue;
 
                                 mhs::Index cell_grid_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                                if (cells.index_map[cell_grid_idx] == mhs::invalidIndex)
+                                if (cells.grid_to_cell[cell_grid_idx] == mhs::invalidIndex)
                                     continue;
 
-                                mhs::Index compact_idx = cells.index_map[cell_grid_idx];
+                                mhs::Index compact_idx = cells.grid_to_cell[cell_grid_idx];
                                 assert(compact_idx != mhs::invalidIndex);
                                 double T_c = cell_temperature[compact_idx];
 

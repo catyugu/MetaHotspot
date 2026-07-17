@@ -41,7 +41,8 @@ namespace mhs::sim {
         const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
 
     // Assign every grid cell to its layer + block and write volumetric cell fields.
-    // Returns CellFields with index_map (full-grid; invalidIndex = virtual),
+    // Returns CellFields with exact inverse topology maps: grid_to_cell
+    // (full-grid; invalidIndex = virtual) and cell_to_grid (compact), plus
     // material_id and heat_source_idx (both compact by active count).
     //
     // `block_hs_map[l][b]` = heat_source_table index for layer l / block b.
@@ -54,7 +55,7 @@ namespace mhs::sim {
     // Single grid traversal: writes directly into boundary.face_bcs[]. No
     // prefix-sum or intermediate scan needed — face_bcs is [N_active * 6].
     //
-    // `cells` must already have a valid index_map (from assign_cell_layers).
+    // `cells` must already have a valid grid_to_cell (from assign_cell_layers).
     // `parsed_face_keys` comes from parse_all_face_keys().
     // Other_bc is the fallback BC for faces that don't match any face key.
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,

@@ -126,7 +126,45 @@ TEST(PreprocessorTest, AllCellsValidWhenSingleFullBlock)
     // All 8 cells should be valid
     EXPECT_EQ(model.cells.material_id.size(), 8u);
     for (int i = 0; i < 8; i++) {
-        EXPECT_NE(model.cells.index_map[i], mhs::invalidIndex);
+        EXPECT_NE(model.cells.grid_to_cell[i], mhs::invalidIndex);
+    }
+}
+
+TEST(PreprocessorTest, CellMappingsAreExactInverses)
+{
+    auto definition = make_simple_io();
+
+    mhs::core::Rect cutout;
+    cutout.add_sub = false;
+    cutout.x_expr = "0";
+    cutout.y_expr = "0";
+    cutout.width_expr = "5";
+    cutout.height_expr = "5";
+    definition.layers[0].blocks[0].all_rects.push_back(cutout);
+
+    const auto model = build_model(definition);
+    const auto& cells = model.cells;
+
+    EXPECT_EQ(cells.grid_to_cell.size(), 8u);
+    EXPECT_EQ(cells.cell_to_grid.size(), 6u);
+    EXPECT_EQ(cells.cell_to_grid.size(), cells.material_id.size());
+
+    std::size_t active_count = 0;
+    for (mhs::Index grid = 0; grid < cells.grid_to_cell.size(); ++grid) {
+        const mhs::Index cell = cells.grid_to_cell[grid];
+        if (cell == mhs::invalidIndex)
+            continue;
+
+        ++active_count;
+        ASSERT_LT(cell, cells.cell_to_grid.size());
+        EXPECT_EQ(cells.cell_to_grid[cell], grid);
+    }
+
+    EXPECT_EQ(active_count, cells.cell_to_grid.size());
+    for (mhs::Index cell = 0; cell < cells.cell_to_grid.size(); ++cell) {
+        const mhs::Index grid = cells.cell_to_grid[cell];
+        ASSERT_LT(grid, cells.grid_to_cell.size());
+        EXPECT_EQ(cells.grid_to_cell[grid], cell);
     }
 }
 
@@ -277,17 +315,17 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     // Check cell (ix=0, iy=1, iz=0) -> layer2, not subtracted, in (0,0,100,100) -> valid
     // Actually cell at cy=75e-3 is NOT in sub-rect (0,0,50,50), so it IS valid
     int idx_01_0 = 0 * ny * nz + 1 * nz + 0;
-    EXPECT_NE(model.cells.index_map[idx_01_0], mhs::invalidIndex); // valid in layer2
+    EXPECT_NE(model.cells.grid_to_cell[idx_01_0], mhs::invalidIndex); // valid in layer2
 
     // Check cell (ix=0, iy=0, iz=5) -> layer0 (top), (ix=0, iy=0) cx=25mm, cy=25mm in rect1 -> valid
     // iz=5 means cz=12.5mm, which is in top layer (z=10..30mm)
     int idx_00_5 = 0 * ny * nz + 0 * nz + 5;
-    EXPECT_NE(model.cells.index_map[idx_00_5], mhs::invalidIndex);
+    EXPECT_NE(model.cells.grid_to_cell[idx_00_5], mhs::invalidIndex);
 
     // Cell (ix=0, iy=0, iz=4) -> layer1 (substrate), cx=25mm cy=25mm -> subtracted -> virtual
     // iz=4 means cz=9mm, in substrate layer (z=0..10mm)
     int idx_00_4 = 0 * ny * nz + 0 * nz + 4;
-    EXPECT_EQ(model.cells.index_map[idx_00_4], mhs::invalidIndex);
+    EXPECT_EQ(model.cells.grid_to_cell[idx_00_4], mhs::invalidIndex);
 }
 
 // ---- FaceKey / BC Tests ----
@@ -341,7 +379,7 @@ TEST(PreprocessorTest, FaceKeyParsing_ZE_Dirichlet)
     int ny_bc = model.mesh.ny;
     int nz_bc = model.mesh.nz;
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    size_t compact = model.cells.index_map[idx_bc];
+    size_t compact = model.cells.grid_to_cell[idx_bc];
     ASSERT_NE(compact, mhs::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
@@ -369,7 +407,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     int ny = model.mesh.ny;
     int nz = model.mesh.nz;
     int idx = 0 * ny * nz + 0 * nz + 0;
-    size_t compact = model.cells.index_map[idx];
+    size_t compact = model.cells.grid_to_cell[idx];
     ASSERT_NE(compact, mhs::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
@@ -379,7 +417,7 @@ TEST(PreprocessorTest, OtherBCFallback)
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> None (no patch)
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
-    size_t compact_inner = model.cells.index_map[idx_inner];
+    size_t compact_inner = model.cells.grid_to_cell[idx_inner];
     ASSERT_NE(compact_inner, mhs::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
@@ -466,12 +504,12 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm >= rx=25mm, should be valid
     int idx0 = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model.cells.index_map[idx0], mhs::invalidIndex);
+    EXPECT_NE(model.cells.grid_to_cell[idx0], mhs::invalidIndex);
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm exactly equals rx+rw=75mm
     // Without epsilon tolerance, this cell is incorrectly classified as virtual
     int idx1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model.cells.index_map[idx1], mhs::invalidIndex);
+    EXPECT_NE(model.cells.grid_to_cell[idx1], mhs::invalidIndex);
 }
 
 TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
@@ -543,8 +581,8 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(model.cells.index_map[idx_overlap], mhs::invalidIndex);
-    int c_overlap = (int)model.cells.index_map[idx_overlap];
+    EXPECT_NE(model.cells.grid_to_cell[idx_overlap], mhs::invalidIndex);
+    int c_overlap = (int)model.cells.grid_to_cell[idx_overlap];
 
     // mhs::core::Material should be silicon (block2), not copper (block1)
     // name_to_idx order: "copper" = 0, "silicon" = 1
@@ -553,7 +591,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    int c_only_block1 = (int)model.cells.index_map[idx_only_block1];
+    int c_only_block1 = (int)model.cells.grid_to_cell[idx_only_block1];
     EXPECT_EQ(model.cells.material_id[c_only_block1], 0) << "Cell in only block1 must get copper material";
 }
 
@@ -626,7 +664,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     int nz = model.mesh.nz;
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
-        int compact = (int)model.cells.index_map[idx];
+        int compact = (int)model.cells.grid_to_cell[idx];
         EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
             << "Y-format face key should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
@@ -634,7 +672,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_AssignsYFormatToYPBoundary)
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the other_bc (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
-    int compact_out = (int)model.cells.index_map[idx_outside];
+    int compact_out = (int)model.cells.grid_to_cell[idx_outside];
     EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
@@ -695,7 +733,7 @@ TEST(PreprocessorTest, ResolveFaceKeys_MultipleFaceKeysInOneBoundary)
     // and specifically the three faces the keys target must be ThirdType.
     auto check_face = [&](int ix, int iy, int iz, mhs::core::FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
-        int compact = (int)model.cells.index_map[idx];
+        int compact = (int)model.cells.grid_to_cell[idx];
         EXPECT_EQ(get_bc_type(model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be ThirdType from one of the boundary face_keys";

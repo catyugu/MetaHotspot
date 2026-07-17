@@ -25,9 +25,9 @@ namespace mhs::sim {
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
         const mhs::Index active_count = static_cast<mhs::Index>(cells.material_id.size());
-        const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
 
         assert(active_count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        assert(cells.cell_to_grid.size() == cells.material_id.size());
         const auto eigen_count = static_cast<Eigen::Index>(active_count);
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(eigen_count);
         Eigen::VectorXd mass_diagonal = Eigen::VectorXd::Zero(eigen_count);
@@ -36,12 +36,9 @@ namespace mhs::sim {
         // Base thermal path: diffusion, material mass, heat sources, and thermal
         // boundary conditions only. Fluid physics is appended as a separate
         // increment after this pass.
-        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, total), [&](const tbb::blocked_range<mhs::Index>& range) {
-            for (mhs::Index old = range.begin(); old < range.end(); ++old) {
-                const mhs::Index cell = cells.index_map[old];
-                if (cell == mhs::invalidIndex)
-                    continue;
-
+        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, active_count), [&](const tbb::blocked_range<mhs::Index>& range) {
+            for (mhs::Index cell = range.begin(); cell < range.end(); ++cell) {
+                const mhs::Index old = cells.cell_to_grid[cell];
                 auto& entries = thread_data.local().triplets;
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, mesh.ny, mesh.nz, ix, iy, iz);
@@ -69,13 +66,13 @@ namespace mhs::sim {
                 for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                     const auto dir = mhs::core::FACE_DIRS[face];
                     const mhs::Index neighbor_old
-                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map);
+                        = mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell);
                     const double area = mhs::utils::face_area(dir, dx, dy, dz);
                     const double half_distance = mhs::utils::half_length_along(dir, dx, dy, dz);
                     const double face_k = mhs::utils::k_along(dir, kx, ky, kz);
 
                     if (neighbor_old != mhs::invalidIndex) {
-                        const mhs::Index neighbor = cells.index_map[neighbor_old];
+                        const mhs::Index neighbor = cells.grid_to_cell[neighbor_old];
                         assert(neighbor != mhs::invalidIndex);
                         const mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
                         const mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);

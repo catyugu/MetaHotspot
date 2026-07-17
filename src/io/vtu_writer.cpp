@@ -77,7 +77,7 @@ namespace mhs::io {
             for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
                 for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
                     const mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.index_map[old_idx] == mhs::invalidIndex)
+                    if (cells.grid_to_cell[old_idx] == mhs::invalidIndex)
                         continue;
 
                     const int n[8] = {static_cast<int>(node_idx(ix, iy, iz, node_ny, node_nz)),

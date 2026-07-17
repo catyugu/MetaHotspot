@@ -78,7 +78,7 @@ namespace mhs::utils {
     inline mhs::Index neighbor_grid_index(
         mhs::Index ix, mhs::Index iy, mhs::Index iz, mhs::core::FaceDir dir,
         mhs::Index nx, mhs::Index ny, mhs::Index nz,
-        const std::vector<mhs::Index>& index_map)
+        const std::vector<mhs::Index>& grid_to_cell)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         mhs::Index nix = neighbor_ix(dir, ix);
@@ -87,7 +87,7 @@ namespace mhs::utils {
         if (nix >= nx || niy >= ny || niz >= nz)
             return mhs::invalidIndex;
         mhs::Index idx = nix * ny * nz + niy * nz + niz;
-        return index_map[idx] != mhs::invalidIndex ? idx : mhs::invalidIndex;
+        return grid_to_cell[idx] != mhs::invalidIndex ? idx : mhs::invalidIndex;
     }
 
     // ── Face-axis-relative geometric lookups ───────────────────────────

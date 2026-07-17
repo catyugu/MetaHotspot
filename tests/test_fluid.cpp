@@ -24,17 +24,6 @@ namespace {
         return mhs::sim::build_model(definition);
     }
 
-    std::vector<mhs::Index> compact_to_old(const mhs::core::Model& model)
-    {
-        std::vector<mhs::Index> result(model.cells.material_id.size(), mhs::invalidIndex);
-        for (mhs::Index old = 0; old < model.cells.index_map.size(); ++old) {
-            const mhs::Index compact = model.cells.index_map[old];
-            if (compact != mhs::invalidIndex)
-                result[compact] = old;
-        }
-        return result;
-    }
-
 } // namespace
 
 TEST(FluidModuleTest, PreprocessorStoresOnlyAssemblyReadyFields)
@@ -71,21 +60,20 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 {
     auto model = load_microfluid_case();
-    const auto old_of_compact = compact_to_old(model);
 
     for (mhs::Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
         const mhs::Index cell = model.fluid.fluid_to_global[fi];
-        const mhs::Index old = old_of_compact[cell];
+        const mhs::Index old = model.cells.cell_to_grid[cell];
         mhs::Index ix, iy, iz;
         mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
 
         for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
             const auto dir = mhs::core::FACE_DIRS[face];
             const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.index_map);
+                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
             if (neighbor_old == mhs::invalidIndex)
                 continue;
-            const mhs::Index neighbor = model.cells.index_map[neighbor_old];
+            const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
             const mhs::Index fn = model.fluid.global_to_fluid[neighbor];
             if (fn == mhs::invalidIndex)
                 continue;
@@ -103,7 +91,6 @@ TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
     const Eigen::VectorXd temperature
         = Eigen::VectorXd::Constant(static_cast<Eigen::Index>(model.cells.material_id.size()), 300.0);
     const auto increment = mhs::sim::fluid::assemble_increment(model, temperature, 0.0);
-    const auto old_of_compact = compact_to_old(model);
 
     for (const auto& entry : increment.matrix_entries) {
         const mhs::Index row = static_cast<mhs::Index>(entry.row());
@@ -111,15 +98,15 @@ TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
         if (row == col)
             continue;
 
-        const mhs::Index old = old_of_compact[row];
+        const mhs::Index old = model.cells.cell_to_grid[row];
         mhs::Index ix, iy, iz;
         mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
 
         bool direct_neighbor = false;
         for (auto dir : mhs::core::FACE_DIRS) {
             const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.index_map);
-            if (neighbor_old != mhs::invalidIndex && model.cells.index_map[neighbor_old] == col) {
+                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
+            if (neighbor_old != mhs::invalidIndex && model.cells.grid_to_cell[neighbor_old] == col) {
                 direct_neighbor = true;
                 break;
             }

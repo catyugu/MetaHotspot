@@ -81,7 +81,7 @@ mhs::core::ModelDefinition
         ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
-        ├─> assign_cell_layers()       // index_map (full-grid), material_id + heat_source_idx (compact)
+        ├─> assign_cell_layers()       // grid_to_cell (full-grid), cell_to_grid + fields (compact)
         ├─> heat_source_table          // 去重 ti_reyuan_expr，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
         ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
@@ -138,7 +138,7 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 首先用 `tbb::parallel_for(0, total)` 扫描全网格，**跳过虚拟单元**，生成与物理类型无关的基础热算子；随后合并 `fluid::assemble_increment()`，最后只构造一次稀疏矩阵。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`。基础组装项：
+`assemble()` 首先用 `tbb::parallel_for(0, N_active)` 遍历 `cell_to_grid`，生成与物理类型无关的基础热算子；`fluid::assemble_increment()` 则只遍历 `fluid_to_global`。两条路径都不再扫描整个结构化网格。增量合并后只构造一次稀疏矩阵。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`。基础组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `cell_bc.types[f]` 走 Dirichlet/Neumann/Cauchy 分支）

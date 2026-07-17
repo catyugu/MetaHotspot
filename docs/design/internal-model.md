@@ -23,7 +23,8 @@ struct FaceBC {
 };
 
 struct CellFields {
-    std::vector<uint32_t> index_map;         // old grid index → compact; invalidIndex = virtual
+    std::vector<uint32_t> grid_to_cell;      // grid index → active cell; invalidIndex = virtual
+    std::vector<uint32_t> cell_to_grid;      // active cell → grid index
     std::vector<uint16_t> material_id;       // index into material_table
     std::vector<uint16_t> heat_source_idx;   // index into heat_source_table
 };
@@ -31,7 +32,7 @@ struct CellFields {
 
 ### 虚拟单元
 
-结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`index_map`（full-grid tier）的 `invalidIndex` 值即标记虚拟单元，矩阵维度 = `N_active`，由 `cells.material_id.size()` 唯一确定（`cells` 是 compact tier 字段）。
+结构化网格 `nx × ny × nz` 包含大量无效单元（封装有空洞）。`grid_to_cell`（full-grid tier）的 `invalidIndex` 值即标记虚拟单元；`cell_to_grid` 是活跃单元到结构化网格的精确逆映射。矩阵维度 = `N_active`，由 `cells.material_id.size()` 唯一确定。基础装配直接遍历 `cell_to_grid`，不再扫描并跳过整个结构化网格。
 
 `face_bcs` 存储在 `Model` 中，为 `[N_active * 6]` 扁平数组：`face_bcs[c * 6 + dir]` 给出单元 c 方向 dir 的 BC。无 `CellBC` 结构体。
 
@@ -112,7 +113,7 @@ struct FluidDomain {
 
 ## 设计要点
 
-- **虚拟单元**：assembler 跳过 `index_map[idx]==invalidIndex`，postprocessor 用 `index_map` 展开，虚拟位置写 NaN
+- **双向拓扑**：assembler 通过 `cell_to_grid` 只遍历活跃单元；邻居查询和 postprocessor 通过 `grid_to_cell` 识别虚拟位置
 - **面级 BC**：`face_bcs` 为 `[N_active * 6]` 扁平数组，消除了 `CellBC` 结构体。`face_bcs[c*6 + dir]` 直接索引。虚拟邻居已在 `resolve_boundary_patches()` 阶段填好 `other_bc`
 - **`other_bc` 在预处理阶段填充**，不在装配时
 - **Ring buffer (`SolutionHistory`)**：BDF-k 多步法历史缓冲，容量 = `max_order + 1`。`accepted.current() == T` 在每步接受后成立。

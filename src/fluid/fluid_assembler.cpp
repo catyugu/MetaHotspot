@@ -46,16 +46,13 @@ namespace mhs::sim::fluid {
 
         auto thread_entries
             = tbb::enumerable_thread_specific<ThreadLocalEntries>([]() { return ThreadLocalEntries {}; });
-        const mhs::Index total = model.mesh.nx * model.mesh.ny * model.mesh.nz;
+        const mhs::Index fluid_count = static_cast<mhs::Index>(model.fluid.fluid_to_global.size());
 
-        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, total), [&](const tbb::blocked_range<mhs::Index>& range) {
-            for (mhs::Index old = range.begin(); old < range.end(); ++old) {
-                const mhs::Index cell = model.cells.index_map[old];
-                if (cell == mhs::invalidIndex || !is_fluid(model.fluid, cell))
-                    continue;
-
+        tbb::parallel_for(tbb::blocked_range<mhs::Index>(0, fluid_count), [&](const tbb::blocked_range<mhs::Index>& range) {
+            for (mhs::Index fi = range.begin(); fi < range.end(); ++fi) {
+                const mhs::Index cell = model.fluid.fluid_to_global[fi];
+                const mhs::Index old = model.cells.cell_to_grid[cell];
                 auto& local = thread_entries.local().matrix_entries;
-                const mhs::Index fi = model.fluid.global_to_fluid[cell];
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                 const double dx = model.mesh.dx[ix];
@@ -75,11 +72,11 @@ namespace mhs::sim::fluid {
                 for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                     const auto dir = mhs::core::FACE_DIRS[face];
                     const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.index_map);
+                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
                     if (neighbor_old == mhs::invalidIndex)
                         continue;
 
-                    const mhs::Index neighbor = model.cells.index_map[neighbor_old];
+                    const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
                     assert(neighbor != mhs::invalidIndex);
                     const mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
                     const mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);

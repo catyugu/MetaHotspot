@@ -155,7 +155,8 @@ namespace mhs::sim {
         const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
 
         mhs::core::CellFields cells;
-        cells.index_map.resize(total, mhs::invalidIndex);
+        cells.grid_to_cell.resize(total, mhs::invalidIndex);
+        cells.cell_to_grid.reserve(total);
         cells.material_id.reserve(total);
         cells.heat_source_idx.reserve(total);
 
@@ -185,7 +186,8 @@ namespace mhs::sim {
                     if (layer_idx != mhs::invalidIndex && block_idx != mhs::invalidIndex) {
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
                         const mhs::Index c_idx = static_cast<mhs::Index>(cells.material_id.size());
-                        cells.index_map[old_idx] = c_idx;
+                        cells.grid_to_cell[old_idx] = c_idx;
+                        cells.cell_to_grid.push_back(old_idx);
                         cells.material_id.push_back(static_cast<uint16_t>(name_to_idx.at(block.material_name)));
                         cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
                     }
@@ -206,13 +208,13 @@ namespace mhs::sim {
             for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
                 for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
                     mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    mhs::Index c_idx = cells.index_map[old_idx];
+                    mhs::Index c_idx = cells.grid_to_cell[old_idx];
                     if (c_idx == mhs::invalidIndex)
                         continue;
 
                     for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                         mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.index_map)
+                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell)
                             != mhs::invalidIndex)
                             continue;
 

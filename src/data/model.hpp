@@ -47,12 +47,15 @@ namespace mhs::core {
         std::vector<CompiledExpression> cauchy_T_inf;
     };
 
-    // ── Per-cell fields (compact, N_active entries) ──────────────────────
+    // ── Cell topology and compact per-active-cell fields ────────────────
     struct CellFields {
+        // Explicit topology between the full structured grid and compact
+        // active-cell storage.
+        std::vector<Index> grid_to_cell; // grid index → active cell / invalidIndex
+        std::vector<Index> cell_to_grid; // active cell → grid index
+
         std::vector<uint16_t> material_id; // index into material_table
         std::vector<uint16_t> heat_source_idx; // index into heat_source_table
-        std::vector<Index> index_map; // old grid index → compact;
-                                      // invalidIndex = virtual / inactive
     };
 
     // ── Probe / observation point ────────────────────────────────────────

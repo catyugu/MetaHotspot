@@ -55,7 +55,8 @@ The fluid subsystem is independent of thermal BC storage: thermal BCs and fluid 
 ModelDefinition
   └─> build_model()
         ├─> preprocessor::assign_cell_layers()
-        │     ├─> index_map                   (full-grid)
+        │     ├─> grid_to_cell                   (full-grid)
+        │     ├─> cell_to_grid                   (compact inverse)
         │     └─> material_id + heat_source_idx (compact)
         ├─> preprocessor::parse_all_face_keys()
         │     └─> flatten (boundary, face_key) pairs

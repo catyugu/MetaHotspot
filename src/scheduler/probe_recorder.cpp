@@ -60,7 +60,7 @@ namespace mhs::sim {
             }
             else {
                 slot.grid_idx = slot.ix * model.mesh.ny * model.mesh.nz + slot.iy * model.mesh.nz + slot.iz;
-                slot.valid = (model.cells.index_map[slot.grid_idx] != mhs::invalidIndex);
+                slot.valid = (model.cells.grid_to_cell[slot.grid_idx] != mhs::invalidIndex);
             }
             slots_.push_back(std::move(slot));
         }
@@ -93,7 +93,7 @@ namespace mhs::sim {
         const double py = slot.py;
         const double pz = slot.pz;
 
-        mhs::Index compact_idx = cells.index_map[grid_idx];
+        mhs::Index compact_idx = cells.grid_to_cell[grid_idx];
         assert(compact_idx != mhs::invalidIndex);
 
         std::vector<mhs::utils::SampleDataPoint> pts;
@@ -110,9 +110,9 @@ namespace mhs::sim {
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
                     mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.index_map[ng] == mhs::invalidIndex)
+                    if (cells.grid_to_cell[ng] == mhs::invalidIndex)
                         continue;
-                    sum_T += cell_T[cells.index_map[ng]];
+                    sum_T += cell_T[cells.grid_to_cell[ng]];
                     ++cnt;
                 }
             }
@@ -145,9 +145,9 @@ namespace mhs::sim {
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
                     mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.index_map[ng] == mhs::invalidIndex)
+                    if (cells.grid_to_cell[ng] == mhs::invalidIndex)
                         continue;
-                    double T_i = cell_T[cells.index_map[ng]];
+                    double T_i = cell_T[cells.grid_to_cell[ng]];
                     double cdx = mesh.cx[ngx] - px;
                     double cdy = mesh.cy[ngy] - py;
                     double cdz = mesh.cz[ngz] - pz;

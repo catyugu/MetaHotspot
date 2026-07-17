@@ -29,7 +29,6 @@ namespace mhs::sim::fluid {
         };
 
         struct FluidPreprocessWorkspace {
-            std::vector<mhs::Index> compact_to_old;
             std::vector<double> viscosity;
             std::vector<double> pressure;
             std::array<std::vector<double>, 3> hydraulic_conductance;
@@ -46,22 +45,12 @@ namespace mhs::sim::fluid {
             return static_cast<mhs::Index>(model.fluid.fluid_to_global.size());
         }
 
-        void build_compact_to_old(const mhs::core::Model& model, FluidPreprocessWorkspace& workspace)
-        {
-            workspace.compact_to_old.assign(model.cells.material_id.size(), mhs::invalidIndex);
-            for (mhs::Index old = 0; old < model.cells.index_map.size(); ++old) {
-                const mhs::Index compact = model.cells.index_map[old];
-                if (compact != mhs::invalidIndex)
-                    workspace.compact_to_old[compact] = old;
-            }
-        }
-
         bool is_fluid_cell(const mhs::core::Model& model, mhs::Index ix, mhs::Index iy, mhs::Index iz)
         {
             if (ix >= model.mesh.nx || iy >= model.mesh.ny || iz >= model.mesh.nz)
                 return false;
             const mhs::Index old = ix * model.mesh.ny * model.mesh.nz + iy * model.mesh.nz + iz;
-            const mhs::Index compact = model.cells.index_map[old];
+            const mhs::Index compact = model.cells.grid_to_cell[old];
             return compact != mhs::invalidIndex && model.fluid.global_to_fluid[compact] != mhs::invalidIndex;
         }
 
@@ -96,7 +85,7 @@ namespace mhs::sim::fluid {
         void compute_channel_dimensions(mhs::core::Model& model, FluidPreprocessWorkspace& workspace)
         {
             for (mhs::Index fi = 0; fi < fluid_count(model); ++fi) {
-                const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
 
@@ -155,7 +144,7 @@ namespace mhs::sim::fluid {
                     std::vector<mhs::Index> matched;
                     matched.reserve(64);
                     for (mhs::Index fi = 0; fi < fluid_count(model); ++fi) {
-                        const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                        const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                         mhs::Index ix, iy, iz;
                         mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                         const double centers[3] = {model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz]};
@@ -192,7 +181,7 @@ namespace mhs::sim::fluid {
                             model.fluid.boundary_outflux[fi] = value;
                         }
                         else if (boundary.kind == mhs::core::FluidBCType::VelocityType) {
-                            const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                            const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                             mhs::Index ix, iy, iz;
                             mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                             workspace.boundary_face_area[fi] = face_area(face_key, model.mesh, ix, iy, iz);
@@ -203,11 +192,10 @@ namespace mhs::sim::fluid {
             }
         }
 
-        double evaluate_rho_at_initial_temperature(
-            const mhs::core::Model& model, const FluidPreprocessWorkspace& workspace, mhs::Index fi)
+        double evaluate_rho_at_initial_temperature(const mhs::core::Model& model, mhs::Index fi)
         {
             const mhs::Index cell = model.fluid.fluid_to_global[fi];
-            const mhs::Index old = workspace.compact_to_old[cell];
+            const mhs::Index old = model.cells.cell_to_grid[cell];
             mhs::Index ix, iy, iz;
             mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
             const auto& material = model.material_table[model.cells.material_id[cell]];
@@ -218,7 +206,7 @@ namespace mhs::sim::fluid {
         void initialize_hydraulic_conductance(const mhs::core::Model& model, FluidPreprocessWorkspace& workspace)
         {
             for (mhs::Index fi = 0; fi < fluid_count(model); ++fi) {
-                const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                 const double dx = model.mesh.dx[ix];
@@ -243,7 +231,7 @@ namespace mhs::sim::fluid {
             Eigen::VectorXd rhs = Eigen::VectorXd::Zero(eigen_count);
 
             for (mhs::Index fi = 0; fi < count; ++fi) {
-                const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                 double diagonal = 0.0;
@@ -251,10 +239,10 @@ namespace mhs::sim::fluid {
                 for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                     const auto dir = mhs::core::FACE_DIRS[face];
                     const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.index_map);
+                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
                     if (neighbor_old == mhs::invalidIndex)
                         continue;
-                    const mhs::Index neighbor = model.cells.index_map[neighbor_old];
+                    const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
                     const mhs::Index fn = model.fluid.global_to_fluid[neighbor];
                     if (fn == mhs::invalidIndex)
                         continue;
@@ -274,7 +262,7 @@ namespace mhs::sim::fluid {
                     rhs(static_cast<Eigen::Index>(fi)) = workspace.bc_params.pressure[bc.param_idx] * diagonal;
                 }
                 else if (bc.kind == mhs::core::FluidBCType::MassFlowRateType) {
-                    const double density = evaluate_rho_at_initial_temperature(model, workspace, fi);
+                    const double density = evaluate_rho_at_initial_temperature(model, fi);
                     const double mass_flow = workspace.bc_params.mass_flow_rate[bc.param_idx];
                     rhs(static_cast<Eigen::Index>(fi)) = density > mhs::core::zero_guard ? mass_flow / density : 0.0;
                 }
@@ -300,16 +288,16 @@ namespace mhs::sim::fluid {
         void compute_face_volume_flux(mhs::core::Model& model, FluidPreprocessWorkspace& workspace)
         {
             for (mhs::Index fi = 0; fi < fluid_count(model); ++fi) {
-                const mhs::Index old = workspace.compact_to_old[model.fluid.fluid_to_global[fi]];
+                const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                 mhs::Index ix, iy, iz;
                 mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                 for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                     const auto dir = mhs::core::FACE_DIRS[face];
                     const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.index_map);
+                        ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
                     if (neighbor_old == mhs::invalidIndex)
                         continue;
-                    const mhs::Index neighbor = model.cells.index_map[neighbor_old];
+                    const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
                     const mhs::Index fn = model.fluid.global_to_fluid[neighbor];
                     if (fn == mhs::invalidIndex)
                         continue;
@@ -350,7 +338,6 @@ namespace mhs::sim::fluid {
             return;
         }
 
-        build_compact_to_old(model, workspace);
         workspace.pressure.assign(count, 0.0);
         for (auto& conductance : workspace.hydraulic_conductance)
             conductance.assign(count, 0.0);
