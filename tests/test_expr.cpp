@@ -224,7 +224,6 @@ namespace {
 
 } // namespace
 
-
 namespace {
 
     TEST(SymbolTable, EvalGeometryIsolatesPerCall)

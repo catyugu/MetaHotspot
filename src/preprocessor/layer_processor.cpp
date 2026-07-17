@@ -60,7 +60,7 @@ namespace mhs::sim {
 
             if (other_bc.type != mhs::core::BcType::None)
                 return {other_bc.type, other_bc.param_idx};
-            return {mhs::core::BcType::None, 0};
+            return {mhs::core::BcType::None, static_cast<uint16_t>(0)};
         }
     } // anonymous namespace
 
@@ -214,7 +214,8 @@ namespace mhs::sim {
 
                     for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                         mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
-                        if (mhs::utils::neighbor_grid_index(ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell)
+                        if (mhs::utils::neighbor_grid_index(
+                                ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell)
                             != mhs::invalidIndex)
                             continue;
 

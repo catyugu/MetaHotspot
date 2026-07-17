@@ -252,11 +252,11 @@ namespace mhs::sim::fluid {
                     const double effective = mhs::utils::harmonicAverage(conductance[fi], conductance[fn]);
                     diagonal += effective;
                     if (workspace.cell_bcs[fi].kind != mhs::core::FluidBCType::PressureType) {
-                        triplets.emplace_back(static_cast<Eigen::Index>(fi), static_cast<Eigen::Index>(fn), -effective);
+                        triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fn), -effective);
                     }
                 }
 
-                triplets.emplace_back(static_cast<Eigen::Index>(fi), static_cast<Eigen::Index>(fi), diagonal);
+                triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fi), diagonal);
                 const auto& bc = workspace.cell_bcs[fi];
                 if (bc.kind == mhs::core::FluidBCType::PressureType) {
                     rhs(static_cast<Eigen::Index>(fi)) = workspace.bc_params.pressure[bc.param_idx] * diagonal;

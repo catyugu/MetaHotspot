@@ -1,16 +1,12 @@
-#include "config.h"
 #include "data/model.hpp"
 #include "data/model_definition.hpp"
 #include "expr/expr.hpp"
-#include "io/io.hpp"
 #include "preprocessor/face_key_processor.hpp"
 #include "preprocessor/preprocessor.hpp"
-#include <filesystem>
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
 using namespace mhs::sim;
-using namespace mhs::io;
 
 // Helpers for testing patch-based BC assignment.
 
