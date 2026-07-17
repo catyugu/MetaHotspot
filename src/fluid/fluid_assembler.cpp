@@ -5,7 +5,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <limits>
 #include <tbb/blocked_range.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
@@ -18,7 +17,9 @@ namespace mhs::sim::fluid {
         };
 
         bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::Index cell)
-        { return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::invalidIndex; }
+        {
+            return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::invalidIndex;
+        }
 
         void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::Index fluid_cell,
             mhs::Index solid_cell, double correction)

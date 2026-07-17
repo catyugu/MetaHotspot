@@ -1,12 +1,10 @@
 #include "assembler.hpp"
 
-#include "data/tolerance_config.hpp"
 #include "fluid/fluid_assembler.hpp"
 #include "utils/mesh_utils.hpp"
 
 #include <Eigen/Sparse>
 #include <cassert>
-#include <limits>
 #include <tbb/blocked_range.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>

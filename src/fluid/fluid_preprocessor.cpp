@@ -42,7 +42,9 @@ namespace mhs::sim::fluid {
         };
 
         mhs::Index fluid_count(const mhs::core::Model& model)
-        { return static_cast<mhs::Index>(model.fluid.fluid_to_global.size()); }
+        {
+            return static_cast<mhs::Index>(model.fluid.fluid_to_global.size());
+        }
 
         void build_compact_to_old(const mhs::core::Model& model, FluidPreprocessWorkspace& workspace)
         {

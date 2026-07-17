@@ -89,15 +89,15 @@ namespace mhs::logger {
 
 ## 命名空间
 
-| 命名空间      | 源目录                                                                  | 角色                                     |
-|---------------|-------------------------------------------------------------------------|------------------------------------------|
-| `mhs`         | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
-| `mhs::core`   | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`  | `common/mesh_utils.hpp`                                                 | 面法向查表                               |
-| `mhs::sim`    | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
-| `mhs::sim::fluid` | `fluid/` | 冻结流场构建与不改变稀疏模式的热装配增量 |
-| `mhs::io`     | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`   | `postprocessor/*`                                                       | 单元→节点插值、局部采样辅助、导出场      |
-| `mhs::logger` | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |
+| 命名空间          | 源目录                                                                  | 角色                                     |
+|-------------------|-------------------------------------------------------------------------|------------------------------------------|
+| `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
+| `mhs::core`       | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`      | `common/mesh_utils.hpp`                                                 | 面法向查表                               |
+| `mhs::sim`        | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
+| `mhs::sim::fluid` | `fluid/`                                                                | 冻结流场构建与不改变稀疏模式的热装配增量 |
+| `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |
+| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、局部采样辅助、导出场      |
+| `mhs::logger`     | `common/logger.hpp`、`common/logger.cpp`                                | 独立日志服务（不并入 core）              |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

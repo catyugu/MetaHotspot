@@ -1,5 +1,4 @@
 #include "config.h"
-#include "data/model_definition.hpp"
 #include "fluid/fluid_assembler.hpp"
 #include "io/io.hpp"
 #include "preprocessor/preprocessor.hpp"
