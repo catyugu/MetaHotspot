@@ -1,14 +1,11 @@
-#include "model/model_builder.hpp"
 #include "compiler/model_compiler.hpp"
+#include "model/model_builder.hpp"
 
 #include <gtest/gtest.h>
 
 namespace {
 
-mhs::model::FaceRegion bottom_face()
-{
-    return {mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}};
-}
+    mhs::model::FaceRegion bottom_face() { return {mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}}; }
 
 } // namespace
 

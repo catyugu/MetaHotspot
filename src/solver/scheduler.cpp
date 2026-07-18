@@ -1,11 +1,11 @@
-#include "solver/assembler.hpp"
 #include "compiler/constants.hpp"
+#include "logging/logger.hpp"
+#include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/scheduler.hpp"
 #include "solver/solution_history.hpp"
 #include "solver/time_integration.hpp"
-#include "logging/logger.hpp"
 
 #include <Eigen/Core>
 #include <algorithm>

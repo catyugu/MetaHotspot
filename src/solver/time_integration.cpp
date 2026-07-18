@@ -7,13 +7,11 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <limits>
 
 namespace mhs::sim::time_scheme {
     namespace {
 
-        LinearSystem build_bdf1(
-            const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf1(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::Index count = static_cast<mhs::Index>(ops.f.size());
             assert(count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -27,8 +25,7 @@ namespace mhs::sim::time_scheme {
             return {std::move(matrix), std::move(rhs)};
         }
 
-        LinearSystem build_bdf2(
-            const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf2(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::Index count = static_cast<mhs::Index>(ops.f.size());
             assert(count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -43,15 +40,11 @@ namespace mhs::sim::time_scheme {
 
             Eigen::SparseMatrix<double> matrix = ops.K;
             matrix.diagonal() += alpha0 * ops.M_diag;
-            Eigen::VectorXd rhs
-                = ops.f - ops.M_diag.cwiseProduct(alpha1 * current + alpha2 * previous);
+            Eigen::VectorXd rhs = ops.f - ops.M_diag.cwiseProduct(alpha1 * current + alpha2 * previous);
             return {std::move(matrix), std::move(rhs)};
         }
 
-        double grid_tolerance(double time) noexcept
-        {
-            return mhs::core::zero_guard * std::max(1.0, std::abs(time));
-        }
+        double grid_tolerance(double time) noexcept { return mhs::core::zero_guard * std::max(1.0, std::abs(time)); }
 
     } // namespace
 
@@ -86,10 +79,8 @@ namespace mhs::sim::time_scheme {
             error_vector = (trial - current).cwiseAbs();
         }
 
-        const double error
-            = error_vector.cwiseQuotient(trial.cwiseAbs().cwiseMax(1.0)).maxCoeff();
-        const double factor = config.safety
-            * std::pow(config.abs_tol / std::max(error, mhs::core::zero_guard), 0.5);
+        const double error = error_vector.cwiseQuotient(trial.cwiseAbs().cwiseMax(1.0)).maxCoeff();
+        const double factor = config.safety * std::pow(config.abs_tol / std::max(error, mhs::core::zero_guard), 0.5);
         return {error / config.abs_tol, std::clamp(factor, 0.5, 2.0)};
     }
 

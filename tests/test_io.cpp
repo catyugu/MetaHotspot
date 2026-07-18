@@ -1,5 +1,5 @@
-#include "model/model_definition.hpp"
 #include "io/io.hpp"
+#include "model/model_definition.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>

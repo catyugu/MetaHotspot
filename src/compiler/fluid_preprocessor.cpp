@@ -249,8 +249,7 @@ namespace mhs::sim::fluid {
                 }
                 else if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowRate) {
                     const double density = evaluate_rho_at_initial_temperature(model, fi);
-                    rhs(static_cast<Eigen::Index>(fi))
-                        = density > mhs::core::zero_guard ? bc.value / density : 0.0;
+                    rhs(static_cast<Eigen::Index>(fi)) = density > mhs::core::zero_guard ? bc.value / density : 0.0;
                 }
                 else if (bc.kind == mhs::model::FluidBoundaryKind::Velocity) {
                     rhs(static_cast<Eigen::Index>(fi)) = bc.value * workspace.boundary_face_area[fi];

@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
-#include "solver/scheduler.hpp"
 #include "model_test_utils.hpp"
+#include "solver/scheduler.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
 

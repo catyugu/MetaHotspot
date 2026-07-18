@@ -2,7 +2,6 @@
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_compiler.hpp"
 #include "compiler/model_functions.hpp"
-#include "compiler/mesh.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include <algorithm>
@@ -97,8 +96,7 @@ namespace mhs::sim {
         std::vector<std::vector<uint16_t>> build_heat_source_table(
             std::vector<mhs::core::CompiledExpression>& heat_source_table,
             const std::vector<ResolvedLayerGeometry>& resolved_layers,
-            const std::vector<mhs::model::NamedFunction>& functions,
-            const mhs::core::SymbolTable& symbols)
+            const std::vector<mhs::model::NamedFunction>& functions, const mhs::core::SymbolTable& symbols)
         {
             heat_source_table.clear();
 
@@ -251,8 +249,7 @@ namespace mhs::sim {
             = compile_boundary_patches(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
 
         // Compile the default boundary fallback.
-        auto default_boundary
-            = compile_thermal_boundary(definition.default_boundary, bc_params, bc_rewriter, symbols);
+        auto default_boundary = compile_thermal_boundary(definition.default_boundary, bc_params, bc_rewriter, symbols);
 
         // Cell assignment and boundary resolution.
         model.cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);

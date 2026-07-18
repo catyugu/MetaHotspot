@@ -1,7 +1,7 @@
-#include "solver/assembler.hpp"
+#include "compiler/model_compiler.hpp"
 #include "compiler/runtime_model.hpp"
 #include "model/model_definition.hpp"
-#include "compiler/model_compiler.hpp"
+#include "solver/assembler.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;

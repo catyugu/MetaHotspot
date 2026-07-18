@@ -1,5 +1,5 @@
-#include "solver/interpolation.hpp"
 #include "compiler/mesh.hpp"
+#include "solver/interpolation.hpp"
 
 #include <Eigen/Dense>
 #include <cmath>

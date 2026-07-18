@@ -1,7 +1,7 @@
+#include "compiler/model_compiler.hpp"
 #include "compiler/runtime_model.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "compiler/model_compiler.hpp"
 #include "numerics/expression/expr.hpp"
 #include <gtest/gtest.h>
 
@@ -360,7 +360,8 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     // mhs::model::BoundaryPatch: Dirichlet 500K on Z bottom face
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 50.0, 50.0, 100.0}, {50.0, 100.0, 0.0, 50.0}, {50.0, 100.0, 50.0, 100.0}}));
+    boundary.regions.push_back(mhs::test::face_region(
+        mhs::model::Axis::Z, 0.0, {{0.0, 50.0, 50.0, 100.0}, {50.0, 100.0, 0.0, 50.0}, {50.0, 100.0, 50.0, 100.0}}));
     io.boundaries.push_back(boundary);
 
     io.default_boundary = mhs::model::NeumannBoundary {};
@@ -641,7 +642,8 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Convection on the upper half of the y=10mm Y+ face
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
+    boundary.regions.push_back(
+        mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
     io.boundaries.push_back(boundary);
 
     io.default_boundary = mhs::model::NeumannBoundary {};
@@ -709,9 +711,12 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
     // One boundary, three regions targeting three different exposed faces
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::X, 0.0, {{0.0, 10.0, 0.0, 10.0}})); // XM face, all cz
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
+    boundary.regions.push_back(
+        mhs::test::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
+    boundary.regions.push_back(
+        mhs::test::face_region(mhs::model::Axis::X, 0.0, {{0.0, 10.0, 0.0, 10.0}})); // XM face, all cz
+    boundary.regions.push_back(
+        mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
     io.boundaries.push_back(boundary);
 
     io.default_boundary = mhs::model::NeumannBoundary {};

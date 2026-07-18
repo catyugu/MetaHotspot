@@ -16,8 +16,8 @@ namespace mhs::sim {
         bool point_in_region(const CompiledBoundaryRegion& region, double a, double b)
         {
             return std::any_of(region.rectangles.begin(), region.rectangles.end(), [&](const auto& rectangle) {
-                return a >= rectangle.a_min - EPS && a <= rectangle.a_max + EPS
-                    && b >= rectangle.b_min - EPS && b <= rectangle.b_max + EPS;
+                return a >= rectangle.a_min - EPS && a <= rectangle.a_max + EPS && b >= rectangle.b_min - EPS
+                    && b <= rectangle.b_max + EPS;
             });
         }
 
@@ -42,8 +42,8 @@ namespace mhs::sim {
         }
 
         std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, mhs::Index ix, mhs::Index iy,
-            mhs::Index iz, const mhs::core::MeshGeometry& mesh,
-            const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary)
+            mhs::Index iz, const mhs::core::MeshGeometry& mesh, const std::vector<CompiledBoundaryRegion>& boundaries,
+            const DefaultBoundary& default_boundary)
         {
             assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
             const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
@@ -231,8 +231,7 @@ namespace mhs::sim {
                             != mhs::invalidIndex)
                             continue;
 
-                        auto [type, param_idx]
-                            = match_face_bc(dir, ix, iy, iz, mesh, boundaries, default_boundary);
+                        auto [type, param_idx] = match_face_bc(dir, ix, iy, iz, mesh, boundaries, default_boundary);
                         face_bcs[c_idx * mhs::core::FACE_COUNT + f] = {type, param_idx};
                     }
                 }
