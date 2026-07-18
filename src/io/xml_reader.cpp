@@ -5,7 +5,7 @@
 
 #include "io.hpp"
 #include "io/face_region_parser.hpp"
-#include "logger/logger.hpp"
+#include "logging/logger.hpp"
 
 namespace mhs::io {
 

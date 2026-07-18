@@ -16,27 +16,16 @@
 
 ## 架构
 
-### 核心模块
+### 构建目标
 
-- **model**（领域 `mhs::model`）：轻量建模库，不依赖第三方库。提供 `ModelDefinition`、有序的 Layer/Block/Rect/Boundary 描述和 `ModelBuilder`。
-- **data**（领域 `mhs::core`）：求解运行期的共享数据契约。**纯头文件，不做独立库目标**。
-    - `data/types.hpp` — 求解期 `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
-    - `data/model.hpp` — 扁平化 SoA 内部模型（`mhs::core::Model`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`）。
-    - `data/solution.hpp` — 求解输出（`mhs::core::Solution`、`mhs::core::ProbeTrace`）。
-- **logger**（领域 `mhs::logger`）：`logger/logger.hpp` / `logger.cpp` 封装 spdlog。
-- **utils**（领域 `mhs::utils`）：`utils/mesh_utils.hpp` 提供面法向与网格助手，`utils/sampling.hpp` 提供局部 3D 采样与外推。
-- **io**（领域 `mhs::io`）：XML/FaceKey 只在这里作为外部格式解析，并转换为结构化的 `mhs::model::ModelDefinition`。
-- **preprocessor**（领域 `mhs::sim`）：`build_model(const mhs::model::ModelDefinition&) → mhs::core::Model`，将建模输入编译为内部 SoA 模型。
-- **assembler**（领域 `mhs::sim`）：消费内部模型和 `AssembleContext`，基础热路径与流体增量合并后返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 注入。
-- **linear_solver**（领域 `mhs::sim`）：`LinearSolver::create()` 选择 `EigenSparseLU`、`EigenBiCGSTAB` 或 `Pardiso`；接口为 `compute(A)`、`solve(b)` 和求解诊断。
-- **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数由 `NonLinearConfig` 持有，`solve` 在每个时间步内调用它。
-- **scheduler**（领域 `mhs::sim`）：`mhs::sim::solve(const Model&, const SolveOptions&) → Solution` 完成稳态或瞬态求解；不存在可观察的半初始化调度器状态。
-- **postprocessor**（领域 `mhs::post`）：单元到节点插值及最大/最小温度计算；采样辅助位于 `mhs::utils`。纯计算，不做 IO。
+- **`mhs_model`**：轻量建模契约和 `ModelBuilder`，不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
+- **`mhs_engine`**：本地运行期实现的唯一内聚目标，包含模型编译、网格/采样、热与流体组装、非线性、时间积分、调度和后处理。
+- **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
+- **`mhs_linear`**：Eigen / MKL 线性求解封装；与建模代码的增量编译隔离。
+- **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
+- **`mhs_logging`**：spdlog 封装。
 
-### 工具模块
-
-- **expr**（领域 `mhs::core`）：表达式解析与求值，封装 muparser。基于显式 `SymbolTable`（变量 + native 闭包）按值传递，无全局注册表与互斥锁。`mhs::core::{CompiledExpression, SymbolTable, make_constant, make_evaluator, parse, eval_geometry, ...}`。
-- **time_scheme**（领域 `mhs::sim::time_scheme`）：三个正交组件的函数式组合。`mhs::sim::time_scheme::{IntegratorKind, build_system, StepStrategy, StepController, ErrorControlConfig, ErrorEstimate, estimate_error}`。旧 OOP `TimeScheme` 层次已拆除。
+`mhs_engine` 内仍按职责保留独立 `.cpp`，但不再为每个实现细节创建目录和静态库。第三方依赖边界才是独立目标边界。
 
 ### 数据流
 
@@ -116,8 +105,8 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 
 - **CPM**：用于引入其余依赖项。
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
-- **spdlog**：结构化日志，由 `logger` 模块（`mhs::logger`）封装。
-- **muparser**：数学表达式解析和即时编译。由 `expr` 用于评估用户定义的函数、材料律、边界条件。
+- **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
+- **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵，以及 EigenSparseLU / EigenBiCGSTAB 求解器。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
@@ -125,10 +114,10 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 ## 注意事项
 
 - **通用设计**：你必须将所有问题都原生地视为非线性，以获得最佳通用性。所有问题均按瞬态设计。稳态时表达式求值取 `t=0`，调度器直接做非线性迭代（不推进时间）；瞬态从 `t=0` 起按时间步推进。瞬态和非线性迭代由 `scheduler` 驱动，`assembler` 无状态。
-- **表达式特殊处理**：用户从前端定义的表达式函数奇怪地到处使用 `x` 作为变量，该变量实际上可以表示 `T`（如果出现在材料属性中）或 `t`（如果出现在热源等中）。应该在 `preprocessor` 中适当处理转换。
+- **表达式特殊处理**：用户从前端定义的表达式函数奇怪地到处使用 `x` 作为变量，该变量实际上可以表示 `T`（如果出现在材料属性中）或 `t`（如果出现在热源等中）。应该在模型编译阶段适当处理转换。
 - **网格描述**：块（Blocks）由一系列添加/移除操作定义，仅在 XY 平面描述几何形状。层（Layers）由层的厚度定义，每个 Block 的 Z 范围默认继承其所在 Layer 的厚度（layer 0 支持 Block 级可变厚度 `thickness`）。建模层用结构化 `FaceRegion` 描述边界；旧 XML 的 ``Face|Direction|CoordValue|...`` 编码只在 `io` 适配器内解析，其中 CoordValue 是边界平面的空间坐标（不是层索引）。
-- **内部使用结构化网格**：`preprocessor` 生成全局 3D 结构化网格，按层/材质标记每个单元（SoA 布局）。
-- **边界条件**：采用 cell-centered 自由度，边界条件通过面积分直接施加到单元方程中，无需在面上额外存储 DOF。`preprocessor` 预计算每个面的 BC 类型和参数索引。
-- **表达式求值**：`expr` 模块仅用于场/边界条件表达式，上下文为 `{T, t, x, y, z}`。几何表达式在 `preprocessor` 中求值为具体数值后构建网格，与场表达式求值分离。
+- **内部使用结构化网格**：`model_compiler` 生成全局 3D 结构化网格，按层/材质标记每个单元（SoA 布局）。
+- **边界条件**：采用 cell-centered 自由度，边界条件通过面积分直接施加到单元方程中，无需在面上额外存储 DOF。模型编译阶段预计算每个面的 BC 类型和参数索引。
+- **表达式求值**：`mhs_expression` 仅用于场/边界条件表达式，上下文为 `{T, t, x, y, z}`。几何表达式在模型编译阶段求值为具体数值后构建网格，与场表达式求值分离。
 - **材料属性、热源、边界条件参数**：支持任意函数形式的材料属性，上下文为 `{x, y, z, T, t}`。
 - **变量绑定**：几何变量（如 `w_top`、`t_middle`）在预处理阶段解析为具体数值；场/边界条件表达式中不引用几何变量，仅使用 `{T, t, x, y, z}`。

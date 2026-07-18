@@ -16,20 +16,13 @@ MetaHotspot/
 │       ├── other.cmake
 │       └── tbb.cmake
 ├── src/
-│   ├── model/                   # mhs::model              纯建模契约与 ModelBuilder（无第三方依赖）
-│   ├── data/                    # mhs::core               求解期数据契约（types, model, solution）
-│   ├── io/                      # mhs::io                 XML 适配、XML 写、VTU 写（同一 io_lib）
-│   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
-│   ├── utils/                   # mhs::utils              网格、采样和物理助手
-│   ├── logger/                  # mhs::logger             spdlog 封装
-│   ├── preprocessor/            # mhs::sim (子组织)      build_model + 构建辅助函数
-│   ├── fluid/                   # mhs::sim::fluid        冻结流场预处理 + 热装配增量
-│   ├── assembler/               # mhs::sim (子组织)      TBB 并行组装
-│   ├── linear_solver/          # mhs::sim (子组织)      LinearSolver + 求解器实现
-│   ├── nonlinear/               # mhs::sim (子组织)      Anderson 加速
-│   ├── scheduler/               # mhs::sim (子组织)      时间 + 非线性调度，ProbeRecorder
-│   ├── time_scheme/            # mhs::sim::time_scheme   纯函数积分器 + StepController
-│   └── postprocessor/           # mhs::post (子组织)     单元→节点插值、局部采样
+│   ├── model/                   # mhs_model       纯建模契约与 ModelBuilder（无第三方依赖）
+│   ├── engine/                  # mhs_engine      模型编译、求解运行期、调度与后处理
+│   ├── numerics/
+│   │   ├── expression/          # mhs_expression  muparser + TBB 表达式封装
+│   │   └── linear/              # mhs_linear      Eigen / MKL 线性求解封装
+│   ├── io/                      # mhs_io          tinyxml2 适配、XML / VTU 写出
+│   └── logging/                 # mhs_logging     spdlog 封装
 ├── tests/                       # GTest, 每模块一个套件
 └── bin/                         # 主程序入口
 ```
@@ -93,12 +86,12 @@ namespace mhs::logger {
 |-------------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::model`      | `model/`                                                                | 建模契约与顺序式 ModelBuilder             |
-| `mhs::core`       | `data/` + `expr/`                                                       | 求解模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `utils/`                                                                | 网格、采样和物理助手                     |
-| `mhs::sim`        | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
-| `mhs::sim::fluid` | `fluid/`                                                                | 冻结流场构建与不改变稀疏模式的热装配增量 |
+| `mhs::core`       | `engine/` + `numerics/expression/` | 求解模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`      | `engine/`                          | 网格、采样和物理助手                     |
+| `mhs::sim`        | `engine/` + `numerics/linear/`     | 数值引擎：组装、线性/非线性求解、调度    |
+| `mhs::sim::fluid` | `engine/`                          | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`       | `postprocessor/*`                                                       | 单元→节点插值、温度范围                  |
-| `mhs::logger`     | `logger/`                                                               | 独立日志服务                             |
+| `mhs::post`       | `engine/`                          | 单元→节点插值、温度范围                  |
+| `mhs::logger`     | `logging/`                         | 独立日志服务                             |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

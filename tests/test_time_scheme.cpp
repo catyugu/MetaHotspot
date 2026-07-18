@@ -1,9 +1,6 @@
-#include "data/linear_system.hpp"
-#include "data/solution_history.hpp"
-#include "time_scheme/detail/build_ops.hpp"
-#include "time_scheme/error_controller.hpp"
-#include "time_scheme/integrator.hpp"
-#include "time_scheme/step_controller.hpp"
+#include "engine/linear_system.hpp"
+#include "engine/solution_history.hpp"
+#include "engine/time_integration.hpp"
 
 #include <Eigen/Sparse>
 #include <gtest/gtest.h>
@@ -45,7 +42,7 @@ namespace {
         std::vector<double> T0 = {100.0, 200.0, 300.0};
         hist.initialize(T0, 0.0);
 
-        auto ls = mhs::sim::time_scheme::detail::build_bdf1_ls(ops, hist, dt);
+        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, dt);
 
         ASSERT_EQ(ls.A.rows(), 3);
         ASSERT_EQ(ls.A.cols(), 3);
@@ -88,7 +85,7 @@ namespace {
         mhs::core::SolutionHistory hist(2, 2);
         hist.initialize({50.0, 60.0}, 0.0);
 
-        auto ls = mhs::sim::time_scheme::detail::build_bdf1_ls(ops, hist, 0.5);
+        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, 0.5);
 
         EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 5.0);
         EXPECT_DOUBLE_EQ(ls.A.coeff(1, 1), 10.0);
@@ -116,7 +113,7 @@ namespace {
         hist.initialize(T0, 0.0);
         hist.accept(T1, 0.4);
 
-        auto ls = mhs::sim::time_scheme::detail::build_bdf2_ls(ops, hist, dt);
+        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, dt);
 
         ASSERT_EQ(ls.A.rows(), 3);
         ASSERT_EQ(ls.b.size(), 3);

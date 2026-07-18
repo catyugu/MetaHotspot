@@ -1,5 +1,5 @@
-#include "preprocessor/preprocessor.hpp"
-#include "scheduler/scheduler.hpp"
+#include "engine/model_compiler.hpp"
+#include "engine/scheduler.hpp"
 #include "model_test_utils.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>

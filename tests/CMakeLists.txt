@@ -11,7 +11,9 @@ add_executable(mhs_tests
 )
 
 target_link_libraries(mhs_tests PRIVATE
-    mhs_lib
+    mhs_engine
+    mhs_io
+    mhs_logging
     gtest_main
 )
 

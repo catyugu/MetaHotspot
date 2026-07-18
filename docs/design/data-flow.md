@@ -94,4 +94,4 @@ w = 1 / (dx²/kx + dy²/ky + dz²/kz)
 
 以使 k 大的方向传播得快的影响更显著，与扩散方程的各向异性一致。
 
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向助手统一定义在 `src/utils/mesh_utils.hpp`（`mhs::utils` 命名空间）。
+`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向助手统一定义在 `src/engine/mesh.hpp`（`mhs::utils` 命名空间）。

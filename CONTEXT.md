@@ -34,7 +34,7 @@
 - **几何** — `mhs::core::eval_geometry(formula, symbols)`，依赖 `symbols.variables` 中的命名变量（`w_top`、`h_middle` 等，SI 米）
 - **场 / BC / 热源** — `mhs::core::parse(formula, symbols)`，上下文 `{x, y, z, T, t}`，返回轻量句柄 `mhs::core::CompiledExpression`
 
-`FieldContext` / `FieldEvaluator` / `SymbolTable` / `CompiledExpression` **定义在 `mhs::core`（`src/expr/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
+`FieldContext` / `FieldEvaluator` / `SymbolTable` / `CompiledExpression` **定义在 `mhs::core`（`src/numerics/expression/expr.hpp`）**。依赖方向 `mhs::sim → mhs::core`，**从不超过此方向**。
 
 **线程模型**：每次 `build_model()` 调用在 setup 阶段构造本地 `SymbolTable`、按值贯穿 setup 路径；`parse()` 主线程试编译；`eval()` **无锁** — TBB ETS 包装，每个工作线程懒构造独立 muparser 实例。`SymbolTable` 在构造时按值复制到 `MuCompiledTLS`，运行时不依赖任何外部状态。
 
@@ -74,7 +74,7 @@ XML → model::ModelDefinition via io::read_xml
 7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
 8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 9. TBB 并行组装 — 基础路径遍历 `cell_to_grid`，流体路径遍历 `fluid_to_global`，线程局部 triplet 最后合并
-10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/data/types.hpp`，两者仅在预处理入口转换
+10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/engine/engine_types.hpp`，两者仅在模型编译入口转换
 11. 模块通过 `std::exception` 报告错误，`bin/main.cpp` 统一捕获并转为日志和进程退出
 12. POD / 纯函数优先
 
@@ -85,14 +85,14 @@ XML → model::ModelDefinition via io::read_xml
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mhs::model`            | `model/`                                                                | ModelDefinition、ModelBuilder、LayerSpec、BlockSpec、BoundaryPatch、MaterialSpec、NamedFunction                                                                                               |
-| `mhs::core`             | `data/` + `expr/`                                                       | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
-| `mhs::utils`            | `utils/`                                                                | mesh_utils 查表 + physics_utils + sampling（最小二乘+面外推）                                                                                                                                   |
-| `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve()                        |
-| `mhs::sim::fluid`       | `fluid/`                                                                | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                                    |
-| `mhs::sim::time_scheme` | `time_scheme/`                                                          | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid |
+| `mhs::core`             | `engine/` + `numerics/expression/`                                      | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
+| `mhs::utils`            | `engine/`                                                               | 网格、物理和采样辅助                                                                                                                                                                           |
+| `mhs::sim`              | `engine/` + `numerics/linear/`                                          | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve()                        |
+| `mhs::sim::fluid`       | `engine/`                                                               | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                                    |
+| `mhs::sim::time_scheme` | `engine/time_integration.*`                                             | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid |
 | `mhs::io`               | `io/`                                                                   | read_xml / merge_fluid_xml / write_vtu / write_xml                                                                                                                                              |
-| `mhs::post`             | `postprocessor/`                                                        | interpolate_cell_to_node 及导出场函数 + 局部采样辅助 `mhs::utils`                                                                                                                               |
-| `mhs::logger`           | `logger/`                                                               | init / flush + 模板 debug/info/warn                                                                                                                                                             |
+| `mhs::post`             | `engine/`                                                               | interpolate_cell_to_node 及导出场函数 + 局部采样辅助 `mhs::utils`                                                                                                                               |
+| `mhs::logger`           | `logging/`                                                              | init / flush + 模板 debug/info/warn                                                                                                                                                             |
 
 ### 铁律
 

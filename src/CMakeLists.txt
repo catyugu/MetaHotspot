@@ -1,28 +1,5 @@
 add_subdirectory(model)
+add_subdirectory(numerics)
+add_subdirectory(logging)
 add_subdirectory(io)
-add_subdirectory(expr)
-add_subdirectory(utils)
-add_subdirectory(logger)
-add_subdirectory(linear_solver)
-add_subdirectory(fluid)
-add_subdirectory(assembler)
-add_subdirectory(preprocessor)
-mhs_add_library(mhs_lib
-    SOURCES
-    nonlinear/nonlinear_solver.cpp
-    scheduler/scheduler.cpp
-    scheduler/probe_recorder.cpp
-    postprocessor/postprocessor.cpp
-    time_scheme/integrator.cpp
-    time_scheme/step_controller.cpp
-    time_scheme/error_controller.cpp
-    PUBLIC_LINKS
-    preprocessor_lib
-    expr_lib
-    utils_lib
-    logger_lib
-    io_lib
-    linear_solver_lib
-    fluid_lib
-    assembler_lib
-)
+add_subdirectory(engine)

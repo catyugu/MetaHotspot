@@ -30,7 +30,7 @@ Two separate paths.
 
 ### Heat source table
 
-`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, indexed by `CellFields::heat_source_idx` (`std::vector<uint16_t>`). Index 0 is reserved for `make_constant(0.0)`. Cells share their Block's compiled expression, so each cell stores only the 2-byte index.
+`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, indexed by `CellFields::heat_source_idx` (`std::vector<uint16_t>`). Cells share their Block's compiled expression, so each cell stores only the 2-byte index.
 
 ### Native functions
 
@@ -45,5 +45,5 @@ Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::s
 
 ## Notes
 
-- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `src/expr/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
+- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `src/numerics/expression/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
 - After preprocessing, no raw expression strings remain in the internal model.

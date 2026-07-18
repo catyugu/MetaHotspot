@@ -28,10 +28,6 @@ namespace mhs::sim {
         const mhs::model::ModelDefinition& definition);
 }
 
-namespace mhs::utils {
-double length_unit_to_si(mhs::model::LengthUnit unit);
-}
-
 namespace mhs::sim {
 
 struct ResolvedRect         { GeometryOperation operation; double x, y, width, height; };  // SI
@@ -58,11 +54,6 @@ void resolve_boundary_patches(
     const DefaultBoundary& default_boundary,
     std::vector<mhs::core::FaceBC>& face_bcs);
 
-std::vector<CompiledBoundaryRegion> compile_boundary_patches(
-    const std::vector<mhs::model::BoundaryPatch>& boundaries,
-    mhs::core::BCParamTable& bc_params, double si_scale,
-    const std::function<std::string(const std::string&)>& rewriter,
-    const mhs::core::SymbolTable& symbols);
 }
 ```
 
@@ -76,9 +67,9 @@ mhs::model::ModelDefinition
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
         ├─> assign_cell_layers()       // grid_to_cell (full-grid), cell_to_grid + fields (compact)
-        ├─> heat_source_table          // 按 Block 编译，idx 0 = constant(0)
+        ├─> heat_source_table          // 每个 Block 一条编译表达式
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> compile_boundary_patches(symbols) // 编译结构化边界和参数
+        ├─> 编译结构化边界和参数（model_compiler 私有步骤）
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
         ├─> fluid::build_domain()      // 水力临时状态局部化，只输出热组装所需字段
         └─> mhs::core::Model ready
@@ -86,7 +77,7 @@ mhs::model::ModelDefinition
 
 ## `fluid`
 
-`fluid_lib` 独立负责两件事：
+`mhs_engine` 的流体实现负责两件事：
 
 1. `build_domain()` 在局部工作区中完成流体映射、通道几何、水力导通、边界解析和压力求解，最终只持久化冻结面流量、流固换热因子和边界热数据。
 2. `assemble_increment()` 返回流固界面修正、流体内部迎风对流和入口/出口项。所有矩阵坐标均为已有对角或直接邻居位置，不改变基础热算子的稀疏模式。

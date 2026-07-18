@@ -1,8 +1,8 @@
 #include "config.h"
-#include "fluid/fluid_assembler.hpp"
+#include "engine/fluid_assembler.hpp"
 #include "io/io.hpp"
-#include "preprocessor/preprocessor.hpp"
-#include "utils/mesh_utils.hpp"
+#include "engine/mesh.hpp"
+#include "engine/model_compiler.hpp"
 
 #include <algorithm>
 #include <cmath>

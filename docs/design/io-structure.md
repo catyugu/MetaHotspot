@@ -1,8 +1,8 @@
 # Authoring Model
 
-`src/model/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，由独立的轻量 `mhs_model_lib` 拥有。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
+`src/model/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，由独立的轻量 `mhs_model` 拥有。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 
-`mhs_model_lib` 本身不链接第三方目标。XML 适配、表达式编译、流体预处理和求解器各自留在下游库中；因此只修改 builder 实现时，不会重新编译这些较慢的第三方依赖及其封装目标。
+`mhs_model` 本身不链接第三方目标。XML 适配、表达式编译和线性求解分别留在 `mhs_io`、`mhs_expression` 与 `mhs_linear`；因此修改 builder 或模型契约时，不会重新编译这些较慢的第三方依赖及其封装目标。
 
 XML reader 和外部代码都生成同一个 `ModelDefinition`，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 
@@ -77,7 +77,7 @@ struct BoundaryPatch {
 };
 ```
 
-BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，preprocessor 不解析字符串。
+BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，模型编译器不解析外部格式字符串。
 
 旧 XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
 

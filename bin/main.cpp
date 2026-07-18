@@ -1,9 +1,9 @@
 #include "cli.hpp"
 #include "io/io.hpp"
-#include "logger/logger.hpp"
-#include "postprocessor/postprocessor.hpp"
-#include "preprocessor/preprocessor.hpp"
-#include "scheduler/scheduler.hpp"
+#include "engine/model_compiler.hpp"
+#include "engine/postprocessor.hpp"
+#include "engine/scheduler.hpp"
+#include "logging/logger.hpp"
 #include <filesystem>
 #include <iostream>
 #include <optional>

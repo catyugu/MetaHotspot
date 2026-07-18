@@ -1,5 +1,5 @@
 #include "model/model_builder.hpp"
-#include "preprocessor/preprocessor.hpp"
+#include "engine/model_compiler.hpp"
 
 #include <gtest/gtest.h>
 

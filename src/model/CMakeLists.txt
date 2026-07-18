@@ -1,3 +1,3 @@
-mhs_add_library(mhs_model_lib
+mhs_add_library(mhs_model
     SOURCES model_builder.cpp
 )
