@@ -165,7 +165,7 @@ namespace mhs::io {
         // Variables
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement("a:KeyValueOfstringdouble"); kv;
-                 kv = kv->NextSiblingElement("a:KeyValueOfstringdouble")) {
+                kv = kv->NextSiblingElement("a:KeyValueOfstringdouble")) {
                 mhs::model::VariableSpec var;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     var.name = get_text(key);
@@ -182,7 +182,7 @@ namespace mhs::io {
         // Materials
         if (const XMLElement* mats = root->FirstChildElement("Materials")) {
             for (const XMLElement* kv = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz"); kv;
-                 kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
+                kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
                 mhs::model::MaterialSpec mat;
                 std::string name;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
@@ -242,7 +242,7 @@ namespace mhs::io {
         // Functions (5 类单变元函数)
         if (const XMLElement* funcs = root->FirstChildElement("Functions")) {
             for (const XMLElement* kv = funcs->FirstChildElement("a:KeyValueOfstringFunctionAdzryM2O"); kv;
-                 kv = kv->NextSiblingElement("a:KeyValueOfstringFunctionAdzryM2O")) {
+                kv = kv->NextSiblingElement("a:KeyValueOfstringFunctionAdzryM2O")) {
                 std::string name;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     name = get_text(key);
@@ -282,7 +282,7 @@ namespace mhs::io {
                         mhs::model::PiecewiseFunctionSpec pw;
                         if (const XMLElement* points = val->FirstChildElement("b:Points")) {
                             for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
-                                 pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
+                                pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
                                 mhs::model::PiecewiseFunctionSpec::Point p;
                                 read_double_member(pt, "b:X", p.x);
                                 read_double_member(pt, "b:Y", p.y);
@@ -309,7 +309,7 @@ namespace mhs::io {
         // Layers
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
-                 layer_elem = layer_elem->NextSiblingElement("Layer")) {
+                layer_elem = layer_elem->NextSiblingElement("Layer")) {
                 mhs::model::LayerParams layer;
 
                 if (const XMLElement* thickness = layer_elem->FirstChildElement("ThicknessExpression")) {
@@ -326,7 +326,7 @@ namespace mhs::io {
                 // Blocks
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
-                         block_elem = block_elem->NextSiblingElement("Block")) {
+                        block_elem = block_elem->NextSiblingElement("Block")) {
                         mhs::model::BlockParams block;
 
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
@@ -349,7 +349,7 @@ namespace mhs::io {
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
-                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
+                                rect_elem = rect_elem->NextSiblingElement("Rect")) {
                                 mhs::model::RectOperation rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.operation = get_text(adds) == "true" ? mhs::model::GeometryOperation::Add
@@ -378,13 +378,13 @@ namespace mhs::io {
         // Boundaries
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
-                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
+                bound_elem = bound_elem->NextSiblingElement("Boundary")) {
                 mhs::model::BoundaryPatch boundary;
 
                 // FaceKeys
                 if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
                     for (const XMLElement* fk = fkeys->FirstChildElement("a:string"); fk;
-                         fk = fk->NextSiblingElement("a:string")) {
+                        fk = fk->NextSiblingElement("a:string")) {
                         std::string key = get_text(fk);
                         if (!key.empty()) {
                             boundary.regions.push_back(detail::parse_face_region(key));
@@ -433,19 +433,19 @@ namespace mhs::io {
                 if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
-                             val = val->NextSiblingElement("a:double")) {
+                            val = val->NextSiblingElement("a:double")) {
                             mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
@@ -457,7 +457,7 @@ namespace mhs::io {
         // x/y/z 保留为 muparser 表达式字符串，由 preprocessor 在加载时统一求值。
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
-                 pt = pt->NextSiblingElement("ObservePoint3D")) {
+                pt = pt->NextSiblingElement("ObservePoint3D")) {
                 mhs::model::ObservationPointSpec op;
                 if (const XMLElement* name = pt->FirstChildElement("Name")) {
                     op.name = get_text(name);

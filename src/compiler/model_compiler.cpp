@@ -1,6 +1,6 @@
-#include "compiler/model_compiler.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
+#include "compiler/model_compiler.hpp"
 #include "compiler/model_functions.hpp"
 #include "numerics/expression/expr.hpp"
 

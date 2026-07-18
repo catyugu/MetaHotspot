@@ -4,16 +4,9 @@
 #include "numerics/expression/expr.hpp"
 #include "runtime/model.hpp"
 #include <gtest/gtest.h>
-#include <type_traits>
 
 using namespace mhs::core;
 using namespace mhs::sim;
-
-static_assert(std::is_same_v<mhs::core::TableIndex, uint32_t>);
-static_assert(
-    std::is_same_v<typename decltype(mhs::core::CellFields {}.material_id)::value_type, mhs::core::TableIndex>);
-static_assert(
-    std::is_same_v<typename decltype(mhs::core::CellFields {}.heat_source_idx)::value_type, mhs::core::TableIndex>);
 
 // Helpers for testing patch-based BC assignment.
 

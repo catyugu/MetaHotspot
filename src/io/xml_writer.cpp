@@ -122,7 +122,7 @@ namespace mhs::io {
         for (const auto& trace : observation_traces) {
             XMLElement* target = nullptr;
             for (XMLElement* candidate = results_elem->FirstChildElement("a:anyType"); candidate;
-                 candidate = candidate->NextSiblingElement("a:anyType")) {
+                candidate = candidate->NextSiblingElement("a:anyType")) {
                 const char* type = candidate->Attribute("i:type");
                 if (!type || std::string(type).find("Result0DTransient") == std::string::npos)
                     continue;

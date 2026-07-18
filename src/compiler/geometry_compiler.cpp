@@ -4,7 +4,6 @@
 #include "runtime/mesh.hpp"
 #include <Eigen/Dense>
 #include <algorithm>
-#include <cstdint>
 #include <unordered_map>
 
 namespace mhs::sim {
@@ -25,7 +24,7 @@ namespace mhs::sim {
             const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
         {
             for (mhs::core::Index b = static_cast<mhs::core::Index>(resolved_layer.blocks.size()) - 1;
-                 b != mhs::core::invalidIndex; b--) {
+                b != mhs::core::invalidIndex; b--) {
                 const auto& block = resolved_layer.blocks[b];
                 if (cz < block.z_start - EPS || cz > block.z_end + EPS)
                     continue;
