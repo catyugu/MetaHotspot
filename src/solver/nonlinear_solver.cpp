@@ -1,7 +1,7 @@
 #include "solver/nonlinear_solver.hpp"
 
-#include "runtime/types.hpp"
 #include "logging/logger.hpp"
+#include "runtime/types.hpp"
 #include <Eigen/QR>
 
 #include <algorithm>

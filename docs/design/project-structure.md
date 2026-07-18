@@ -84,16 +84,16 @@ namespace mhs::logger {
 
 ## 命名空间
 
-| 命名空间          | 源目录                                           | 角色                                     |
-| ----------------- | ------------------------------------------------ | ---------------------------------------- |
-| `mhs`             | —                                                | 库品牌前缀（壳，不含类型定义）           |
-| `mhs::model`      | `model/`                                         | 建模契约与顺序式 ModelBuilder            |
-| `mhs::core`       | `runtime/` + `solver/` + `numerics/expression/`  | 求解模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `runtime/` + `compiler/` + `solver/`             | 网格、采样和物理助手                     |
-| `mhs::sim`        | `compiler/` + `solver/` + `numerics/linear/`     | 模型编译、组装、线性/非线性求解与调度    |
-| `mhs::sim::fluid` | `compiler/` + `solver/`                          | 冻结流场构建与不改变稀疏模式的热装配增量 |
-| `mhs::io`         | `io/`                                            | XML I/O、VTU 输出                        |
-| `mhs::post`       | `solver/`                                        | 单元→节点插值、温度范围                  |
-| `mhs::logger`     | `logging/`                                       | 独立日志服务                             |
+| 命名空间          | 源目录                                          | 角色                                     |
+| ----------------- | ----------------------------------------------- | ---------------------------------------- |
+| `mhs`             | —                                               | 库品牌前缀（壳，不含类型定义）           |
+| `mhs::model`      | `model/`                                        | 建模契约与顺序式 ModelBuilder            |
+| `mhs::core`       | `runtime/` + `solver/` + `numerics/expression/` | 求解模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`      | `runtime/` + `compiler/` + `solver/`            | 网格、采样和物理助手                     |
+| `mhs::sim`        | `compiler/` + `solver/` + `numerics/linear/`    | 模型编译、组装、线性/非线性求解与调度    |
+| `mhs::sim::fluid` | `compiler/` + `solver/`                         | 冻结流场构建与不改变稀疏模式的热装配增量 |
+| `mhs::io`         | `io/`                                           | XML I/O、VTU 输出                        |
+| `mhs::post`       | `solver/`                                       | 单元→节点插值、温度范围                  |
+| `mhs::logger`     | `logging/`                                      | 独立日志服务                             |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

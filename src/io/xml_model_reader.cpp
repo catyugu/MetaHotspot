@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "io/model_io.hpp"
 #include "io/face_region_parser.hpp"
+#include "io/model_io.hpp"
 #include "io/xml_helpers.hpp"
 #include "logging/logger.hpp"
 

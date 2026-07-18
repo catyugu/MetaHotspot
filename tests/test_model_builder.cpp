@@ -58,10 +58,11 @@ TEST(ModelBuilderTest, BuildsWithExistingCompilerAndKeepsLastWinsSemantics)
     builder.add_material({"foreground", {"130", "130", "130", "1", "1", std::nullopt}});
 
     const auto layer = builder.add_layer(mhs::model::LayerParams {"10", "0", "0"});
-    const auto background = builder.add_block(layer, mhs::model::BlockParams {"background", "0", "0", "0", std::nullopt});
+    const auto background
+        = builder.add_block(layer, mhs::model::BlockParams {"background", "0", "0", "0", std::nullopt});
     builder.add_rect(background, {mhs::model::GeometryOperation::Add, {"0", "0", "10", "10"}});
-    const auto foreground =
-        builder.add_block(layer, mhs::model::BlockParams {"foreground", "1e7", "0", "0", std::nullopt});
+    const auto foreground
+        = builder.add_block(layer, mhs::model::BlockParams {"foreground", "1e7", "0", "0", std::nullopt});
     builder.add_rect(foreground, {mhs::model::GeometryOperation::Add, {"0", "0", "5", "10"}});
     builder.set_default_boundary(mhs::model::NeumannBoundary {});
 
@@ -77,11 +78,9 @@ TEST(ModelBuilderTest, KeepsHandlesStableAcrossInterleavedAssembly)
     mhs::model::ModelBuilder builder;
 
     const auto lower = builder.add_layer(mhs::model::LayerParams {"1", "0", "0"});
-    const auto lower_block =
-        builder.add_block(lower, mhs::model::BlockParams {"lower", "1", "0", "0", std::nullopt});
+    const auto lower_block = builder.add_block(lower, mhs::model::BlockParams {"lower", "1", "0", "0", std::nullopt});
     const auto upper = builder.add_layer(mhs::model::LayerParams {"2", "0", "0"});
-    const auto upper_block =
-        builder.add_block(upper, mhs::model::BlockParams {"upper", "2", "0", "0", std::nullopt});
+    const auto upper_block = builder.add_block(upper, mhs::model::BlockParams {"upper", "2", "0", "0", std::nullopt});
 
     builder.add_rect(lower_block, {mhs::model::GeometryOperation::Add, {"0", "0", "1", "1"}});
     builder.add_rect(upper_block, {mhs::model::GeometryOperation::Subtract, {"1", "1", "2", "2"}});

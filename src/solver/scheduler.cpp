@@ -1,5 +1,5 @@
-#include "runtime/constants.hpp"
 #include "logging/logger.hpp"
+#include "runtime/constants.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"

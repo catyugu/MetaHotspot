@@ -1,10 +1,10 @@
 #include "compiler/fluid_preprocessor.hpp"
 
-#include "runtime/constants.hpp"
 #include "compiler/fluid_physics.hpp"
-#include "runtime/mesh.hpp"
 #include "logging/logger.hpp"
 #include "numerics/linear/linear_solver.hpp"
+#include "runtime/constants.hpp"
+#include "runtime/mesh.hpp"
 
 #include <Eigen/Sparse>
 #include <algorithm>

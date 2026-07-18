@@ -23,8 +23,8 @@ namespace mhs::io {
             return false;
         }
 
-        for (const tinyxml2::XMLElement* material_element = root->FirstChildElement("FluidMaterial");
-            material_element; material_element = material_element->NextSiblingElement("FluidMaterial")) {
+        for (const tinyxml2::XMLElement* material_element = root->FirstChildElement("FluidMaterial"); material_element;
+            material_element = material_element->NextSiblingElement("FluidMaterial")) {
             std::string name;
             if (const char* attribute = material_element->Attribute("name")) {
                 name = attribute;

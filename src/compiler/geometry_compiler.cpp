@@ -1,7 +1,7 @@
-#include "runtime/constants.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "runtime/mesh.hpp"
 #include "numerics/expression/expr.hpp"
+#include "runtime/constants.hpp"
+#include "runtime/mesh.hpp"
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cstdint>

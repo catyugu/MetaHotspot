@@ -1,8 +1,8 @@
 #include "compiler/model_compiler.hpp"
-#include "runtime/model.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
+#include "runtime/model.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
