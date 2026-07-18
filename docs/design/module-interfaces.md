@@ -4,9 +4,9 @@
 
 ```cpp
 namespace mhs::io {
-    mhs::core::ModelDefinition read_xml(const std::string& xml_path);
+    mhs::model::ModelDefinition read_xml(const std::string& xml_path);
     bool merge_fluid_xml(const std::string& xml_path,
-                         mhs::core::ModelDefinition& definition);
+                         mhs::model::ModelDefinition& definition);
 
     void write_vtu(const std::string& path,
                    const mhs::core::Model& model,
@@ -25,24 +25,24 @@ namespace mhs::io {
 ```cpp
 namespace mhs::sim {
     mhs::core::Model build_model(
-        const mhs::core::ModelDefinition& definition);
+        const mhs::model::ModelDefinition& definition);
 }
 
 namespace mhs::utils {
-double length_unit_to_si(mhs::core::LengthUnit unit);
+double length_unit_to_si(mhs::model::LengthUnit unit);
 }
 
 namespace mhs::sim {
 
-struct ResolvedRect         { bool add_sub; double x, y, width, height; };  // SI
+struct ResolvedRect         { GeometryOperation operation; double x, y, width, height; };  // SI
 struct ResolvedBlock        { std::vector<ResolvedRect> rects;
-                              std::string material_name;
-                              std::string ti_reyuan_expr; };  // 字符串，待 parse
+                              std::string material;
+                              std::string volumetric_heat_source; };
 struct ResolvedLayerGeometry{ std::vector<ResolvedBlock> blocks;
                               double z_start, z_end; };  // SI
 
 std::vector<ResolvedLayerGeometry> resolve_geometry(
-    const std::vector<mhs::core::Layer>& layers, double si_scale,
+    const std::vector<mhs::model::LayerSpec>& layers, double si_scale,
     const mhs::core::SymbolTable& symbols);
 
 mhs::core::CellFields assign_cell_layers(
@@ -54,19 +54,12 @@ mhs::core::CellFields assign_cell_layers(
 void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,
     const mhs::core::CellFields& cells,
-    const std::vector<ParsedFaceKey>& parsed_face_keys,
-    const OtherBC& other_bc,
+    const std::vector<CompiledBoundaryRegion>& boundaries,
+    const DefaultBoundary& default_boundary,
     std::vector<mhs::core::FaceBC>& face_bcs);
 
-struct FaceKeyInfo { char axis = 'Z'; char side = 'E';
-                     double coord_value = 0.0;
-                     std::vector<std::array<double,4>> rects; };  // SI
-
-FaceKeyInfo parse_face_key(const std::string& key, double si_scale);
-bool point_in_face_rects(const FaceKeyInfo& fk, double a, double b);
-
-std::vector<ParsedFaceKey> parse_all_face_keys(
-    const std::vector<mhs::core::Boundary>& boundaries,
+std::vector<CompiledBoundaryRegion> compile_boundary_patches(
+    const std::vector<mhs::model::BoundaryPatch>& boundaries,
     mhs::core::BCParamTable& bc_params, double si_scale,
     const std::function<std::string(const std::string&)>& rewriter,
     const mhs::core::SymbolTable& symbols);
@@ -76,16 +69,16 @@ std::vector<ParsedFaceKey> parse_all_face_keys(
 ### 预处理流程
 
 ```text
-mhs::core::ModelDefinition
+mhs::model::ModelDefinition
   └─> build_model()
         ├─> 构造本地 mhs::core::SymbolTable（几何变量 + register_all_functions 注入 native）
-        ├─> MeshGeometry from mesh_vertex_x/y/z (×si_scale)
+        ├─> MeshGeometry from mesh.{x,y,z}_vertices (×si_scale)
         ├─> resolve_geometry(symbols)  // 预求层 Z 范围 + Block XY 坐标
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
         ├─> assign_cell_layers()       // grid_to_cell (full-grid), cell_to_grid + fields (compact)
         ├─> heat_source_table          // 按 Block 编译，idx 0 = constant(0)
         │     + cells.heat_source_idx[c_idx] = uint16_t
-        ├─> parse_all_face_keys(symbols)  // 展平 (boundary, face_key) → ParsedFaceKey[]
+        ├─> compile_boundary_patches(symbols) // 编译结构化边界和参数
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
         ├─> fluid::build_domain()      // 水力临时状态局部化，只输出热组装所需字段
         └─> mhs::core::Model ready

@@ -25,7 +25,7 @@
 
 > 各项异性 `k`（ADR-0002 cell-level-bc 中讨论）：装配时按面法向选 `k_along(dir) ∈ {kx, ky, kz}`。
 
-`other_bc` 在预处理阶段由 `resolve_boundary_patches` 填到所有未显式指定的面 + 虚拟邻居面（写入 `Model::face_bcs` 扁平数组）。
+默认边界条件在预处理阶段由 `resolve_boundary_patches` 填到所有未显式指定的面 + 虚拟邻居面（写入 `Model::face_bcs` 扁平数组）。显式边界按添加顺序应用，后出现的覆盖先出现的。
 
 ## 表达式（ADR-0004）
 
@@ -43,7 +43,7 @@
 ## 求解流程
 
 ```text
-XML → core::ModelDefinition via io::read_xml
+XML → model::ModelDefinition via io::read_xml
   → sim::build_model → core::Model
     → sim::solve → core::Solution
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
@@ -74,7 +74,7 @@ XML → core::ModelDefinition via io::read_xml
 7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
 8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 9. TBB 并行组装 — 基础路径遍历 `cell_to_grid`，流体路径遍历 `fluid_to_global`，线程局部 triplet 最后合并
-10. 域类型定义在 `src/data/types.hpp` — 内部枚举 `mhs::core::StudyType` / `BcType` / `FaceDir` 的唯一真源
+10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/data/types.hpp`，两者仅在预处理入口转换
 11. 模块通过 `std::exception` 报告错误，`bin/main.cpp` 统一捕获并转为日志和进程退出
 12. POD / 纯函数优先
 
@@ -84,7 +84,8 @@ XML → core::ModelDefinition via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::core`             | `data/` + `expr/`                                                       | ModelDefinition、Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、FluidBCType、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry             |
+| `mhs::model`            | `model/`                                                                | ModelDefinition、ModelBuilder、LayerSpec、BlockSpec、BoundaryPatch、MaterialSpec、NamedFunction                                                                                               |
+| `mhs::core`             | `data/` + `expr/`                                                       | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
 | `mhs::utils`            | `utils/`                                                                | mesh_utils 查表 + physics_utils + sampling（最小二乘+面外推）                                                                                                                                   |
 | `mhs::sim`              | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve()                        |
 | `mhs::sim::fluid`       | `fluid/`                                                                | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                                    |
@@ -108,13 +109,13 @@ XML → core::ModelDefinition via io::read_xml
 | Layer           | 层       | 多 Block 的 Z 厚度堆叠                                                |
 | Block           | 块       | XY 平面 add/sub Rect 几何；Z 范围继承父层                             |
 | Rect            | 矩形     | 块几何的 add/sub 单元                                                 |
-| FaceKey         | 面键     | 字符串 `Face\|Direction\|CoordValue\|RectList`，CoordValue 是空间坐标 |
+| FaceRegion      | 面区域   | 轴、坐标及若干矩形组成的结构化边界区域                                 |
 | Material        | 材料     | 含 kx/ky/kz / ρ / c（均为字符串表达式）                               |
-| BC / `other_bc` | 边界条件 | 三种类型 + 默认兜底                                                   |
+| BC / default boundary | 边界条件 | 三种类型 + 默认兜底；显式边界后出现者覆盖先出现者                |
 | Daore Xishu     | 导热系数 | kx/ky/kz, W/(m·K); 1 或 3 段逗号分隔                                  |
 | Midu            | 密度     | ρ, kg/m³                                                              |
 | Bi Rerong       | 比热容   | c, J/(kg·K)                                                           |
-| ti_reyuan_expr  | 体热源   | Block 的体热源密度表达式 [W/m³]                                       |
+| volumetric_heat_source | 体热源 | Block 的体热源密度表达式 [W/m³]                                |
 
 ## 详细参考
 

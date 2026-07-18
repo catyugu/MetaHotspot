@@ -3,7 +3,6 @@
 #include "data/tolerance_config.hpp"
 #include "linear_solver/linear_solver.hpp"
 #include "logger/logger.hpp"
-#include "utils/face_key.hpp"
 #include "utils/mesh_utils.hpp"
 #include "utils/physics_utils.hpp"
 
@@ -24,7 +23,7 @@ namespace mhs::sim::fluid {
         };
 
         struct FluidCellBC {
-            mhs::core::FluidBCType kind = mhs::core::FluidBCType::None;
+            mhs::model::FluidBoundaryKind kind = mhs::model::FluidBoundaryKind::None;
             uint16_t param_idx = std::numeric_limits<uint16_t>::max();
         };
 
@@ -106,40 +105,56 @@ namespace mhs::sim::fluid {
             }
         }
 
-        uint16_t register_bc_param(FluidBCParamTable& params, const mhs::core::FluidBoundary& boundary, double value)
+        uint16_t register_bc_param(
+            FluidBCParamTable& params, const mhs::model::FluidBoundarySpec& boundary, double value)
         {
             switch (boundary.kind) {
-            case mhs::core::FluidBCType::PressureType:
+            case mhs::model::FluidBoundaryKind::Pressure:
                 params.pressure.push_back(value);
                 return static_cast<uint16_t>(params.pressure.size() - 1);
-            case mhs::core::FluidBCType::MassFlowRateType:
+            case mhs::model::FluidBoundaryKind::MassFlowRate:
                 params.mass_flow_rate.push_back(value);
                 return static_cast<uint16_t>(params.mass_flow_rate.size() - 1);
-            case mhs::core::FluidBCType::VelocityType:
+            case mhs::model::FluidBoundaryKind::Velocity:
                 params.velocity.push_back(value);
                 return static_cast<uint16_t>(params.velocity.size() - 1);
-            case mhs::core::FluidBCType::None:
+            case mhs::model::FluidBoundaryKind::None:
             default:
                 return std::numeric_limits<uint16_t>::max();
             }
         }
 
-        double face_area(const mhs::utils::FaceKeyInfo& face_key, const mhs::core::MeshGeometry& mesh, mhs::Index ix,
+        int axis_index(mhs::model::Axis axis)
+        {
+            return axis == mhs::model::Axis::X ? 0 : axis == mhs::model::Axis::Y ? 1 : 2;
+        }
+
+        bool point_in_region(const mhs::model::FaceRegion& region, double a, double b, double si_scale)
+        {
+            return std::any_of(region.rectangles.begin(), region.rectangles.end(), [&](const auto& rectangle) {
+                return a >= rectangle.a_min * si_scale - mhs::core::geometry_eps
+                    && a <= rectangle.a_max * si_scale + mhs::core::geometry_eps
+                    && b >= rectangle.b_min * si_scale - mhs::core::geometry_eps
+                    && b <= rectangle.b_max * si_scale + mhs::core::geometry_eps;
+            });
+        }
+
+        double face_area(const mhs::model::FaceRegion& region, const mhs::core::MeshGeometry& mesh, mhs::Index ix,
             mhs::Index iy, mhs::Index iz)
         {
-            const int axis = face_key.axis == 'X' ? 0 : face_key.axis == 'Y' ? 1 : 2;
+            const int axis = axis_index(region.axis);
             const double a = axis == 0 ? mesh.dy[iy] : mesh.dx[ix];
             const double b = axis == 2 ? mesh.dy[iy] : mesh.dz[iz];
             return a * b;
         }
 
         void apply_boundaries(mhs::core::Model& model, FluidPreprocessWorkspace& workspace,
-            const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale)
+            const std::vector<mhs::model::FluidBoundarySpec>& boundaries, double si_scale)
         {
             for (const auto& boundary : boundaries) {
-                for (const auto& key : boundary.face_keys) {
-                    const auto face_key = mhs::utils::parse_face_key(key, si_scale);
-                    const int axis = face_key.axis == 'X' ? 0 : face_key.axis == 'Y' ? 1 : 2;
+                for (const auto& region : boundary.regions) {
+                    const int axis = axis_index(region.axis);
+                    const double coordinate = region.coordinate * si_scale;
 
                     std::vector<mhs::Index> matched;
                     matched.reserve(64);
@@ -151,15 +166,14 @@ namespace mhs::sim::fluid {
                         const double widths[3] = {model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]};
                         const double face_minus = centers[axis] - widths[axis] * 0.5;
                         const double face_plus = centers[axis] + widths[axis] * 0.5;
-                        if (std::abs(face_minus - face_key.coord_value) >= mhs::core::geometry_eps
-                            && std::abs(face_plus - face_key.coord_value) >= mhs::core::geometry_eps) {
+                        if (std::abs(face_minus - coordinate) >= mhs::core::geometry_eps
+                            && std::abs(face_plus - coordinate) >= mhs::core::geometry_eps) {
                             continue;
                         }
 
-                        const double a = centers[(axis + 1) % 3];
-                        const double b = centers[(axis + 2) % 3];
-                        if (mhs::utils::point_in_face_rects(face_key, a, b)
-                            || mhs::utils::point_in_face_rects(face_key, b, a)) {
+                        const double a = axis == 0 ? centers[1] : centers[0];
+                        const double b = axis == 2 ? centers[1] : centers[2];
+                        if (point_in_region(region, a, b, si_scale)) {
                             matched.push_back(fi);
                         }
                     }
@@ -168,7 +182,7 @@ namespace mhs::sim::fluid {
                         continue;
 
                     double value = boundary.value;
-                    if (boundary.kind == mhs::core::FluidBCType::MassFlowRateType)
+                    if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowRate)
                         value /= static_cast<double>(matched.size());
                     const uint16_t param_index = register_bc_param(workspace.bc_params, boundary, value);
 
@@ -177,14 +191,14 @@ namespace mhs::sim::fluid {
                         if (!std::isnan(boundary.inlet_temperature))
                             model.fluid.boundary_temperature[fi] = boundary.inlet_temperature;
 
-                        if (boundary.kind == mhs::core::FluidBCType::MassFlowRateType) {
+                        if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowRate) {
                             model.fluid.boundary_outflux[fi] = value;
                         }
-                        else if (boundary.kind == mhs::core::FluidBCType::VelocityType) {
+                        else if (boundary.kind == mhs::model::FluidBoundaryKind::Velocity) {
                             const mhs::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                             mhs::Index ix, iy, iz;
                             mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-                            workspace.boundary_face_area[fi] = face_area(face_key, model.mesh, ix, iy, iz);
+                            workspace.boundary_face_area[fi] = face_area(region, model.mesh, ix, iy, iz);
                             model.fluid.boundary_outflux[fi] = value * workspace.boundary_face_area[fi];
                         }
                     }
@@ -251,22 +265,22 @@ namespace mhs::sim::fluid {
                     const auto& conductance = workspace.hydraulic_conductance[axis];
                     const double effective = mhs::utils::harmonicAverage(conductance[fi], conductance[fn]);
                     diagonal += effective;
-                    if (workspace.cell_bcs[fi].kind != mhs::core::FluidBCType::PressureType) {
+                    if (workspace.cell_bcs[fi].kind != mhs::model::FluidBoundaryKind::Pressure) {
                         triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fn), -effective);
                     }
                 }
 
                 triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fi), diagonal);
                 const auto& bc = workspace.cell_bcs[fi];
-                if (bc.kind == mhs::core::FluidBCType::PressureType) {
+                if (bc.kind == mhs::model::FluidBoundaryKind::Pressure) {
                     rhs(static_cast<Eigen::Index>(fi)) = workspace.bc_params.pressure[bc.param_idx] * diagonal;
                 }
-                else if (bc.kind == mhs::core::FluidBCType::MassFlowRateType) {
+                else if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowRate) {
                     const double density = evaluate_rho_at_initial_temperature(model, fi);
                     const double mass_flow = workspace.bc_params.mass_flow_rate[bc.param_idx];
                     rhs(static_cast<Eigen::Index>(fi)) = density > mhs::core::zero_guard ? mass_flow / density : 0.0;
                 }
-                else if (bc.kind == mhs::core::FluidBCType::VelocityType) {
+                else if (bc.kind == mhs::model::FluidBoundaryKind::Velocity) {
                     rhs(static_cast<Eigen::Index>(fi))
                         = workspace.bc_params.velocity[bc.param_idx] * workspace.boundary_face_area[fi];
                 }
@@ -315,8 +329,8 @@ namespace mhs::sim::fluid {
 
     } // namespace
 
-    void build_domain(mhs::core::Model& model, const std::vector<mhs::core::FluidBoundary>& boundaries, double si_scale,
-        const FluidMaterialData& materials)
+    void build_domain(mhs::core::Model& model, const std::vector<mhs::model::FluidBoundarySpec>& boundaries,
+        double si_scale, const FluidMaterialData& materials)
     {
         model.fluid = {};
         const mhs::Index active_count = static_cast<mhs::Index>(model.cells.material_id.size());

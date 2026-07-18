@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "io.hpp"
+#include "io/face_region_parser.hpp"
 #include "logger/logger.hpp"
 
 namespace mhs::io {
@@ -48,7 +49,8 @@ namespace mhs::io {
             target = get_text(e);
         }
     }
-    mhs::core::ModelDefinition read_xml(const std::string& xml_path)
+
+    mhs::model::ModelDefinition read_xml(const std::string& xml_path)
     {
         XMLDocument doc;
         XMLError err = doc.LoadFile(xml_path.c_str());
@@ -56,7 +58,7 @@ namespace mhs::io {
             throw std::runtime_error("Failed to load XML file: " + xml_path);
         }
 
-        mhs::core::ModelDefinition structure;
+        mhs::model::ModelDefinition structure;
 
         const XMLElement* root = doc.FirstChildElement("Structure");
         if (!root) {
@@ -67,10 +69,10 @@ namespace mhs::io {
         const char* study_type_str = root->Attribute("StudyType");
         if (study_type_str) {
             if (std::string(study_type_str) == "Steady") {
-                structure.study_type = mhs::core::StudyType::Steady;
+                structure.settings.study_type = mhs::model::StudyType::Steady;
             }
             else {
-                structure.study_type = mhs::core::StudyType::Transient;
+                structure.settings.study_type = mhs::model::StudyType::Transient;
             }
         }
         else {
@@ -79,10 +81,10 @@ namespace mhs::io {
             if (study_elem) {
                 std::string val = get_text(study_elem);
                 if (val == "Steady") {
-                    structure.study_type = mhs::core::StudyType::Steady;
+                    structure.settings.study_type = mhs::model::StudyType::Steady;
                 }
                 else {
-                    structure.study_type = mhs::core::StudyType::Transient;
+                    structure.settings.study_type = mhs::model::StudyType::Transient;
                 }
             }
         }
@@ -92,22 +94,22 @@ namespace mhs::io {
         if (unit_str) {
             std::string u = unit_str;
             if (u == "M") {
-                structure.length_unit = mhs::core::LengthUnit::M;
+                structure.settings.length_unit = mhs::model::LengthUnit::Meter;
             }
             else if (u == "Mm") {
-                structure.length_unit = mhs::core::LengthUnit::Mm;
+                structure.settings.length_unit = mhs::model::LengthUnit::Millimeter;
             }
             else if (u == "Um") {
-                structure.length_unit = mhs::core::LengthUnit::Um;
+                structure.settings.length_unit = mhs::model::LengthUnit::Micrometer;
             }
             else if (u == "Nm") {
-                structure.length_unit = mhs::core::LengthUnit::Nm;
+                structure.settings.length_unit = mhs::model::LengthUnit::Nanometer;
             }
             else if (u == "Inch") {
-                structure.length_unit = mhs::core::LengthUnit::Inch;
+                structure.settings.length_unit = mhs::model::LengthUnit::Inch;
             }
             else if (u == "Mil") {
-                structure.length_unit = mhs::core::LengthUnit::Mil;
+                structure.settings.length_unit = mhs::model::LengthUnit::Mil;
             }
         }
         else {
@@ -116,65 +118,65 @@ namespace mhs::io {
             if (unit_elem) {
                 std::string u = get_text(unit_elem);
                 if (u == "M") {
-                    structure.length_unit = mhs::core::LengthUnit::M;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Meter;
                 }
                 else if (u == "Mm") {
-                    structure.length_unit = mhs::core::LengthUnit::Mm;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Millimeter;
                 }
                 else if (u == "Um") {
-                    structure.length_unit = mhs::core::LengthUnit::Um;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Micrometer;
                 }
                 else if (u == "Nm") {
-                    structure.length_unit = mhs::core::LengthUnit::Nm;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Nanometer;
                 }
                 else if (u == "Inch") {
-                    structure.length_unit = mhs::core::LengthUnit::Inch;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Inch;
                 }
                 else if (u == "Mil") {
-                    structure.length_unit = mhs::core::LengthUnit::Mil;
+                    structure.settings.length_unit = mhs::model::LengthUnit::Mil;
                 }
             }
         }
 
         // Temperature settings
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
-            structure.initial_temperature = parse_double(get_text(init));
+            structure.settings.initial_temperature = parse_double(get_text(init));
         }
 
         // Transient settings
         if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
-            structure.transient_duration = parse_double(get_text(trans));
+            structure.settings.transient_duration = parse_double(get_text(trans));
         }
         if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
-            structure.transient_time_step = parse_double(get_text(step));
+            structure.settings.transient_output_interval = parse_double(get_text(step));
         }
         // OtherThermalBoundary (default BC)
         if (const XMLElement* other = root->FirstChildElement("OtherThermalBondary")) {
             const char* type = other->Attribute("i:type");
             std::string type_str = type ? type : "";
             if (type_str.find("FirstType") != std::string::npos) {
-                mhs::core::FirstTypeThermalBC bc;
+                mhs::model::DirichletBoundary bc;
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
                     bc.temperature = get_text(temp);
                 }
-                structure.other_bc = std::move(bc);
+                structure.default_boundary = std::move(bc);
             }
             else if (type_str.find("SecondType") != std::string::npos) {
-                mhs::core::SecondTypeThermalBC bc;
+                mhs::model::NeumannBoundary bc;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
                     bc.heat_flux = get_text(flux);
                 }
-                structure.other_bc = std::move(bc);
+                structure.default_boundary = std::move(bc);
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
-                mhs::core::ThirdTypeThermalBC bc;
+                mhs::model::ConvectionBoundary bc;
                 if (const XMLElement* h = other->FirstChildElement("a:ConvectionCoefficient")) {
-                    bc.convection_coeff = get_text(h);
+                    bc.coefficient = get_text(h);
                 }
                 if (const XMLElement* t = other->FirstChildElement("a:EnvironmentTemperature")) {
-                    bc.T_inf = get_text(t);
+                    bc.ambient_temperature = get_text(t);
                 }
-                structure.other_bc = std::move(bc);
+                structure.default_boundary = std::move(bc);
             }
         }
 
@@ -182,7 +184,7 @@ namespace mhs::io {
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement("a:KeyValueOfstringdouble"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringdouble")) {
-                mhs::core::Variable var;
+                mhs::model::VariableSpec var;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
                     var.name = get_text(key);
                 }
@@ -199,10 +201,10 @@ namespace mhs::io {
         if (const XMLElement* mats = root->FirstChildElement("Materials")) {
             for (const XMLElement* kv = mats->FirstChildElement("a:KeyValueOfstringMaterialGyu7GfTz"); kv;
                 kv = kv->NextSiblingElement("a:KeyValueOfstringMaterialGyu7GfTz")) {
-                mhs::core::Material mat;
-                std::string material_name;
+                mhs::model::MaterialSpec mat;
+                std::string name;
                 if (const XMLElement* key = kv->FirstChildElement("a:Key")) {
-                    material_name = get_text(key);
+                    name = get_text(key);
                 }
                 const XMLElement* val = kv->FirstChildElement("a:Value");
                 if (val) {
@@ -223,7 +225,7 @@ namespace mhs::io {
                             start = end + 1;
                         }
                         if (segs.size() == 1) {
-                            mat.kx = mat.ky = mat.kz = segs[0];
+                            mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = segs[0];
                         }
                         else if (segs.size() == 3) {
                             for (const auto& s : segs) {
@@ -233,24 +235,24 @@ namespace mhs::io {
                                     continue;
                                 }
                             }
-                            mat.kx = segs[0];
-                            mat.ky = segs[1];
-                            mat.kz = segs[2];
+                            mat.conductivity_x = segs[0];
+                            mat.conductivity_y = segs[1];
+                            mat.conductivity_z = segs[2];
                         }
                         else {
                             std::string preview = raw.substr(0, 200);
                             MHS_LOG_WARN("Invalid input! DaoreXishu must have 1 or 3 comma-separated expressions.");
                         }
                     }
-                    if (const XMLElement* midu = val->FirstChildElement("Midu")) {
-                        mat.midu = get_text(midu);
+                    if (const XMLElement* density = val->FirstChildElement("Midu")) {
+                        mat.density = get_text(density);
                     }
                     if (const XMLElement* birerong = val->FirstChildElement("BiRerong")) {
-                        mat.bi_rerong = get_text(birerong);
+                        mat.specific_heat = get_text(birerong);
                     }
                 }
-                if (!material_name.empty()) {
-                    structure.materials[material_name] = std::move(mat);
+                if (!name.empty()) {
+                    structure.materials.push_back({std::move(name), std::move(mat)});
                 }
             }
         }
@@ -264,42 +266,42 @@ namespace mhs::io {
                     name = get_text(key);
                 }
                 const XMLElement* val = kv->FirstChildElement("a:Value");
-                mhs::core::Function fn;
+                mhs::model::FunctionSpec fn;
                 if (val) {
                     const char* type = val->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("ExpressionFunction") != std::string::npos) {
-                        mhs::core::ExpressionFunction expr;
+                        mhs::model::ExpressionFunctionSpec expr;
                         read_string_member(val, "b:Expression", expr.expression);
                         fn = std::move(expr);
                     }
                     else if (type_str.find("DoubleExponentialFunction") != std::string::npos) {
-                        mhs::core::DoubleExponentialFunction de;
-                        read_double_member(val, "b:A", de.a);
+                        mhs::model::DoubleExponentialFunctionSpec de;
+                        read_double_member(val, "b:A", de.amplitude);
                         read_double_member(val, "b:Alpha", de.alpha);
                         read_double_member(val, "b:Beta", de.beta);
                         fn = std::move(de);
                     }
                     else if (type_str.find("GaussFunction") != std::string::npos) {
-                        mhs::core::GaussFunction g;
-                        read_double_member(val, "b:A", g.a);
+                        mhs::model::GaussFunctionSpec g;
+                        read_double_member(val, "b:A", g.amplitude);
                         read_double_member(val, "b:Tau", g.tau);
-                        read_double_member(val, "b:X0", g.x0);
+                        read_double_member(val, "b:X0", g.center);
                         fn = std::move(g);
                     }
                     else if (type_str.find("SineFunction") != std::string::npos) {
-                        mhs::core::SineFunction s;
-                        read_double_member(val, "b:A", s.a);
-                        read_double_member(val, "b:Omega", s.omega);
-                        read_double_member(val, "b:Phi", s.phi);
+                        mhs::model::SineFunctionSpec s;
+                        read_double_member(val, "b:A", s.amplitude);
+                        read_double_member(val, "b:Omega", s.angular_frequency);
+                        read_double_member(val, "b:Phi", s.phase);
                         fn = std::move(s);
                     }
                     else if (type_str.find("PieceWiseFunction") != std::string::npos) {
-                        mhs::core::PieceWiseFunction pw;
+                        mhs::model::PiecewiseFunctionSpec pw;
                         if (const XMLElement* points = val->FirstChildElement("b:Points")) {
                             for (const XMLElement* pt = points->FirstChildElement("b:PieceWiseFunction.Point"); pt;
                                 pt = pt->NextSiblingElement("b:PieceWiseFunction.Point")) {
-                                mhs::core::PieceWiseFunction::Point p;
+                                mhs::model::PiecewiseFunctionSpec::Point p;
                                 read_double_member(pt, "b:X", p.x);
                                 read_double_member(pt, "b:Y", p.y);
                                 pw.points.push_back(p);
@@ -307,8 +309,8 @@ namespace mhs::io {
                             // Pre-sort by X so the closure can binary-search without
                             // sorting again at registration time.
                             std::sort(pw.points.begin(), pw.points.end(),
-                                [](const mhs::core::PieceWiseFunction::Point& a,
-                                    const mhs::core::PieceWiseFunction::Point& b) { return a.x < b.x; });
+                                [](const mhs::model::PiecewiseFunctionSpec::Point& a,
+                                    const mhs::model::PiecewiseFunctionSpec::Point& b) { return a.x < b.x; });
                         }
                         fn = std::move(pw);
                     }
@@ -317,7 +319,7 @@ namespace mhs::io {
                     }
                 }
                 if (!name.empty()) {
-                    structure.functions[name] = fn;
+                    structure.functions.push_back({std::move(name), std::move(fn)});
                 }
             }
         }
@@ -326,60 +328,61 @@ namespace mhs::io {
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
                 layer_elem = layer_elem->NextSiblingElement("Layer")) {
-                mhs::core::Layer layer;
+                mhs::model::LayerSpec layer;
 
                 if (const XMLElement* thickness = layer_elem->FirstChildElement("ThicknessExpression")) {
-                    layer.thickness_expr = get_text(thickness);
+                    layer.thickness = get_text(thickness);
                 }
                 if (const XMLElement* xoff = layer_elem->FirstChildElement("XOffsetExpression")) {
-                    layer.x_offset_expr = get_text(xoff);
+                    layer.x_offset = get_text(xoff);
                 }
                 if (const XMLElement* yoff = layer_elem->FirstChildElement("YOffsetExpression")) {
-                    layer.y_offset_expr = get_text(yoff);
+                    layer.y_offset = get_text(yoff);
                 }
                 // Blocks
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
                         block_elem = block_elem->NextSiblingElement("Block")) {
-                        mhs::core::Block block;
+                        mhs::model::BlockSpec block;
 
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
-                            block.material_name = get_text(mat);
+                            block.material = get_text(mat);
                         }
                         if (const XMLElement* ti = block_elem->FirstChildElement("TiReyuan")) {
-                            block.ti_reyuan_expr = get_text(ti);
+                            block.volumetric_heat_source = get_text(ti);
                         }
                         if (const XMLElement* xoff = block_elem->FirstChildElement("XOffsetExpression")) {
-                            block.x_offset_expr = get_text(xoff);
+                            block.x_offset = get_text(xoff);
                         }
                         if (const XMLElement* yoff = block_elem->FirstChildElement("YOffsetExpression")) {
-                            block.y_offset_expr = get_text(yoff);
+                            block.y_offset = get_text(yoff);
                         }
                         if (const XMLElement* thickness = block_elem->FirstChildElement("ThicknessExpression")) {
-                            block.thickness_expr = get_text(thickness);
+                            block.thickness = get_text(thickness);
                         }
 
                         // Rects (AllRects)
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
-                                mhs::core::Rect rect;
+                                mhs::model::RectOperation rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
-                                    rect.add_sub = std::string(get_text(adds)) == "true";
+                                    rect.operation = get_text(adds) == "true" ? mhs::model::GeometryOperation::Add
+                                                                              : mhs::model::GeometryOperation::Subtract;
                                 }
                                 if (const XMLElement* w = rect_elem->FirstChildElement("WidthExpression")) {
-                                    rect.width_expr = get_text(w);
+                                    rect.rect.width = get_text(w);
                                 }
                                 if (const XMLElement* h = rect_elem->FirstChildElement("HeightExpression")) {
-                                    rect.height_expr = get_text(h);
+                                    rect.rect.height = get_text(h);
                                 }
                                 if (const XMLElement* x = rect_elem->FirstChildElement("XExpression")) {
-                                    rect.x_expr = get_text(x);
+                                    rect.rect.x = get_text(x);
                                 }
                                 if (const XMLElement* y = rect_elem->FirstChildElement("YExpression")) {
-                                    rect.y_expr = get_text(y);
+                                    rect.rect.y = get_text(y);
                                 }
-                                block.all_rects.push_back(rect);
+                                block.geometry.push_back(std::move(rect));
                             }
                         }
 
@@ -395,7 +398,7 @@ namespace mhs::io {
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-                mhs::core::Boundary boundary;
+                mhs::model::BoundaryPatch boundary;
 
                 // FaceKeys
                 if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
@@ -403,7 +406,7 @@ namespace mhs::io {
                         fk = fk->NextSiblingElement("a:string")) {
                         std::string key = get_text(fk);
                         if (!key.empty()) {
-                            boundary.face_keys.push_back(key);
+                            boundary.regions.push_back(detail::parse_face_region(key));
                         }
                     }
                 }
@@ -414,28 +417,28 @@ namespace mhs::io {
                     const char* type = thermal->Attribute("i:type");
                     std::string type_str = type ? type : "";
                     if (type_str.find("FirstType") != std::string::npos) {
-                        mhs::core::FirstTypeThermalBC bc;
+                        mhs::model::DirichletBoundary bc;
                         if (const XMLElement* t = thermal->FirstChildElement("a:Temperature")) {
                             bc.temperature = get_text(t);
                         }
-                        boundary.bc = std::move(bc);
+                        boundary.condition = std::move(bc);
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
-                        mhs::core::SecondTypeThermalBC bc;
+                        mhs::model::NeumannBoundary bc;
                         if (const XMLElement* q = thermal->FirstChildElement("a:HeatFlux")) {
                             bc.heat_flux = get_text(q);
                         }
-                        boundary.bc = std::move(bc);
+                        boundary.condition = std::move(bc);
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
-                        mhs::core::ThirdTypeThermalBC bc;
+                        mhs::model::ConvectionBoundary bc;
                         if (const XMLElement* h = thermal->FirstChildElement("a:ConvectionCoefficient")) {
-                            bc.convection_coeff = get_text(h);
+                            bc.coefficient = get_text(h);
                         }
                         if (const XMLElement* t = thermal->FirstChildElement("a:EnvironmentTemperature")) {
-                            bc.T_inf = get_text(t);
+                            bc.ambient_temperature = get_text(t);
                         }
-                        boundary.bc = std::move(bc);
+                        boundary.condition = std::move(bc);
                     }
                 }
 
@@ -450,19 +453,19 @@ namespace mhs::io {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            structure.mesh_vertex_x.push_back(parse_double(get_text(val)));
+                            structure.mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            structure.mesh_vertex_y.push_back(parse_double(get_text(val)));
+                            structure.mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            structure.mesh_vertex_z.push_back(parse_double(get_text(val)));
+                            structure.mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                 }
@@ -474,7 +477,7 @@ namespace mhs::io {
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
-                mhs::core::ObservationPoint3D op;
+                mhs::model::ObservationPointSpec op;
                 if (const XMLElement* name = pt->FirstChildElement("Name")) {
                     op.name = get_text(name);
                 }
@@ -498,7 +501,7 @@ namespace mhs::io {
     // Fluid overlay XML parser
     // =========================================================================
 
-    bool merge_fluid_xml(const std::string& xml_path, mhs::core::ModelDefinition& definition)
+    bool merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition)
     {
         XMLDocument doc;
         XMLError err = doc.LoadFile(xml_path.c_str());
@@ -522,16 +525,17 @@ namespace mhs::io {
             if (const XMLElement* visc = mat_elem->FirstChildElement("DynamicViscosity")) {
                 dynamic_viscosity = get_text(visc);
             }
-            auto material = definition.materials.find(name);
+            auto material = std::find_if(definition.materials.begin(), definition.materials.end(),
+                [&](const mhs::model::NamedMaterial& item) { return item.name == name; });
             if (material != definition.materials.end()) {
-                material->second.dynamic_viscosity = std::move(dynamic_viscosity);
+                material->value.dynamic_viscosity = std::move(dynamic_viscosity);
             }
         }
 
         // Parse Boundary nodes (fluidic)
         for (const XMLElement* bound_elem = root->FirstChildElement("Boundary"); bound_elem;
             bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-            mhs::core::FluidBoundary fb;
+            mhs::model::FluidBoundarySpec fb;
 
             // FaceKeys
             if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
@@ -539,7 +543,7 @@ namespace mhs::io {
                     fk = fk->NextSiblingElement("string")) {
                     std::string key = get_text(fk);
                     if (!key.empty()) {
-                        fb.face_keys.push_back(key);
+                        fb.regions.push_back(detail::parse_face_region(key));
                     }
                 }
             }
@@ -547,15 +551,15 @@ namespace mhs::io {
             // Pressure / MassFlowRate / Velocity (mutually exclusive, drives fb.kind)
             if (const XMLElement* p = bound_elem->FirstChildElement("Pressure")) {
                 fb.value = parse_double(get_text(p));
-                fb.kind = mhs::core::FluidBCType::PressureType;
+                fb.kind = mhs::model::FluidBoundaryKind::Pressure;
             }
             else if (const XMLElement* mfr = bound_elem->FirstChildElement("MassFlowRate")) {
                 fb.value = parse_double(get_text(mfr));
-                fb.kind = mhs::core::FluidBCType::MassFlowRateType;
+                fb.kind = mhs::model::FluidBoundaryKind::MassFlowRate;
             }
             else if (const XMLElement* vel = bound_elem->FirstChildElement("Velocity")) {
                 fb.value = parse_double(get_text(vel));
-                fb.kind = mhs::core::FluidBCType::VelocityType;
+                fb.kind = mhs::model::FluidBoundaryKind::Velocity;
             }
 
             // InletTemperature (optional)
@@ -563,7 +567,7 @@ namespace mhs::io {
                 fb.inlet_temperature = parse_double(get_text(tin));
             }
 
-            if (fb.kind != mhs::core::FluidBCType::None && !fb.face_keys.empty()) {
+            if (fb.kind != mhs::model::FluidBoundaryKind::None && !fb.regions.empty()) {
                 definition.fluid_boundaries.push_back(std::move(fb));
             }
         }

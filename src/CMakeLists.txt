@@ -1,3 +1,4 @@
+add_subdirectory(model)
 add_subdirectory(io)
 add_subdirectory(expr)
 add_subdirectory(utils)

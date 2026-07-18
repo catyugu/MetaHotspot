@@ -4,7 +4,7 @@
 #include "gtest/gtest.h"
 
 #include <cmath>
-#include <unordered_map>
+#include <vector>
 
 using namespace mhs::core;
 using namespace mhs::sim;
@@ -57,7 +57,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
     {
-        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, -1.0};
         const double t = -1.0;
@@ -66,7 +66,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
     {
-        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         FieldContext ctx {0, 0, 0, 0, 10.0};
         const double t = 10.0;
@@ -75,7 +75,7 @@ namespace {
 
     TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
     {
-        std::vector<mhs::core::PieceWiseFunction::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
+        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
         auto ev = make_piecewise_evaluator(pts);
         // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
         FieldContext ctx {0, 0, 0, 0, 3.0};
@@ -85,24 +85,21 @@ namespace {
 
     // ---- 字面替换 --------------------------------------------------------
 
-    std::unordered_map<std::string, mhs::core::Function> fns_with_gauss()
+    std::vector<mhs::model::NamedFunction> functions_with_gauss()
     {
-        std::unordered_map<std::string, mhs::core::Function> fns;
-        mhs::core::Function g = mhs::core::GaussFunction {5.0, 10.0, 20.0};
-        fns["test_gaussian"] = g;
-        return fns;
+        return {{"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}}};
     }
 
     TEST(Substitute, BasicCallReplacesXForT)
     {
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         auto out = substitute_function_args("test_gaussian(x)", "T", fns);
         EXPECT_EQ(out, "test_gaussian(T)");
     }
 
     TEST(Substitute, MultipleXReplaced)
     {
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         // test_gaussian(x)/(x*0.01+1) → test_gaussian(t)/(t*0.01+1)
         auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t", fns);
         EXPECT_EQ(out, "test_gaussian(t)/(t*0.01+1)");
@@ -110,7 +107,7 @@ namespace {
 
     TEST(Substitute, XFollowedByUnderscoreNotReplaced)
     {
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         // "2*x + x_next" → "2*t + x_next"（第二个 x 后面是 _，不替换）
         auto out = substitute_function_args("2*x + x_next", "t", fns);
         EXPECT_EQ(out, "2*t + x_next");
@@ -118,7 +115,7 @@ namespace {
 
     TEST(Substitute, XBetweenLettersNotReplaced)
     {
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         // "xx + axb" 中所有 x 都不替换
         auto out = substitute_function_args("xx + axb", "t", fns);
         EXPECT_EQ(out, "xx + axb");
@@ -127,14 +124,14 @@ namespace {
     TEST(Substitute, NoFunctionsNoChange)
     {
         // 没有引用任何函数时，孤立 x 仍然替换
-        std::unordered_map<std::string, mhs::core::Function> fns;
+        std::vector<mhs::model::NamedFunction> fns;
         auto out = substitute_function_args("x+1", "T", fns);
         EXPECT_EQ(out, "T+1");
     }
 
     TEST(Substitute, UnknownFunctionNotWorking)
     {
-        std::unordered_map<std::string, mhs::core::Function> fns;
+        std::vector<mhs::model::NamedFunction> fns;
         EXPECT_EQ(substitute_function_args("foo(x)", "T", fns), "foo(x)");
     }
 
@@ -143,7 +140,7 @@ namespace {
     TEST(EndToEnd, ParseTakesRegisteredNative)
     {
         mhs::core::SymbolTable sym;
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         register_all_functions(sym, fns);
 
         // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
@@ -160,7 +157,7 @@ namespace {
     TEST(EndToEnd, NativeReadsTheBoundSymbol)
     {
         mhs::core::SymbolTable sym;
-        auto fns = fns_with_gauss();
+        auto fns = functions_with_gauss();
         register_all_functions(sym, fns);
 
         // 不做字面替换（"test_gaussian(x)" 直接编译），muparser 把 x 槽绑定。

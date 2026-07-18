@@ -1,4 +1,4 @@
-#include "data/model_definition.hpp"
+#include "model/model_definition.hpp"
 #include "io/io.hpp"
 #include <filesystem>
 #include <fstream>
@@ -73,7 +73,7 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     </ObservePoints3D>)";
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.observation_points.size(), 2u);
     EXPECT_EQ(io_structure.observation_points[0].name, "p1");
     // 坐标保留为 muparser 表达式字符串，由 build_model() 统一求值。
@@ -88,7 +88,7 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
 TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io_structure.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
@@ -226,22 +226,24 @@ static std::string make_xml_with_daore_xishu(const std::string& daore_text)
 TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
 {
     auto path = write_tmp_xml("io_daore_trim.xml", make_xml_with_daore_xishu("  5  "));
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
-    ASSERT_TRUE(io_structure.materials.count("mat"));
-    EXPECT_EQ(io_structure.materials.at("mat").kx, "5");
-    EXPECT_EQ(io_structure.materials.at("mat").ky, "5");
-    EXPECT_EQ(io_structure.materials.at("mat").kz, "5");
+    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    ASSERT_EQ(io_structure.materials.size(), 1u);
+    EXPECT_EQ(io_structure.materials[0].name, "mat");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "5");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "5");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "5");
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
 {
     auto path = write_tmp_xml("io_daore_3trim.xml", make_xml_with_daore_xishu("  1.5e2 , 2.5 , 0 "));
-    mhs::core::ModelDefinition io_structure = mhs::io::read_xml(path.string());
-    ASSERT_TRUE(io_structure.materials.count("mat"));
-    EXPECT_EQ(io_structure.materials.at("mat").kx, "1.5e2");
-    EXPECT_EQ(io_structure.materials.at("mat").ky, "2.5");
-    EXPECT_EQ(io_structure.materials.at("mat").kz, "0");
+    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    ASSERT_EQ(io_structure.materials.size(), 1u);
+    EXPECT_EQ(io_structure.materials[0].name, "mat");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "1.5e2");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "2.5");
+    EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "0");
     std::filesystem::remove(path);
 }
 
@@ -279,28 +281,33 @@ TEST(IoTest, MergeFluidXmlAddsMaterialsAndBoundariesToDefinition)
     </Boundary>
 </FluidOverlay>)";
 
-    mhs::core::ModelDefinition definition;
-    definition.materials["water"] = mhs::core::Material {};
+    mhs::model::ModelDefinition definition;
+    definition.materials.push_back({"water", mhs::model::MaterialSpec {}});
 
     auto path = write_tmp_overlay(xml);
     const bool merged = mhs::io::merge_fluid_xml(path.string(), definition);
     std::filesystem::remove(path);
 
     ASSERT_TRUE(merged);
-    EXPECT_EQ(definition.materials.at("water").dynamic_viscosity, "0.00089");
+    ASSERT_EQ(definition.materials.size(), 1u);
+    EXPECT_EQ(definition.materials[0].value.dynamic_viscosity, "0.00089");
     ASSERT_EQ(definition.fluid_boundaries.size(), 2u);
-    EXPECT_EQ(definition.fluid_boundaries[0].kind, mhs::core::FluidBCType::PressureType);
+    EXPECT_EQ(definition.fluid_boundaries[0].kind, mhs::model::FluidBoundaryKind::Pressure);
     EXPECT_DOUBLE_EQ(definition.fluid_boundaries[0].value, 500.0);
-    EXPECT_EQ(definition.fluid_boundaries[0].face_keys, std::vector<std::string>({"X|E|0|0.5|1.5|0.3|0.5"}));
-    EXPECT_EQ(definition.fluid_boundaries[1].kind, mhs::core::FluidBCType::PressureType);
+    ASSERT_EQ(definition.fluid_boundaries[0].regions.size(), 1u);
+    EXPECT_EQ(definition.fluid_boundaries[0].regions[0].axis, mhs::model::Axis::X);
+    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[0].regions[0].coordinate, 0.0);
+    EXPECT_EQ(definition.fluid_boundaries[1].kind, mhs::model::FluidBoundaryKind::Pressure);
     EXPECT_DOUBLE_EQ(definition.fluid_boundaries[1].value, 0.0);
-    EXPECT_EQ(definition.fluid_boundaries[1].face_keys, std::vector<std::string>({"X|E|8|0.5|1.5|0.3|0.5"}));
+    ASSERT_EQ(definition.fluid_boundaries[1].regions.size(), 1u);
+    EXPECT_EQ(definition.fluid_boundaries[1].regions[0].axis, mhs::model::Axis::X);
+    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[1].regions[0].coordinate, 8.0);
 }
 
 TEST(IoTest, MergeFluidXmlMissingElementReturnsFalse)
 {
     std::string xml = "<?xml version=\"1.0\"?><Root/>";
-    mhs::core::ModelDefinition definition;
+    mhs::model::ModelDefinition definition;
     auto path = write_tmp_overlay(xml);
     const bool merged = mhs::io::merge_fluid_xml(path.string(), definition);
     std::filesystem::remove(path);
@@ -312,6 +319,6 @@ TEST(IoTest, MergeFluidXmlMissingElementReturnsFalse)
 
 TEST(IoTest, MergeFluidXmlNonexistentFileReturnsFalse)
 {
-    mhs::core::ModelDefinition definition;
+    mhs::model::ModelDefinition definition;
     EXPECT_FALSE(mhs::io::merge_fluid_xml("nonexistent_overlay.xml", definition));
 }

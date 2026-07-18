@@ -4,7 +4,7 @@
 
 - 语言：C++17
 - 构建系统：CMake
-- 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
+- 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
 - 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -18,15 +18,15 @@
 
 ### 核心模块
 
-- **data**（领域 `mhs::core`）：共享数据契约——域类型、IO 模型、内部模型。**纯头文件，不做独立库目标**。
-    - `data/types.hpp` — `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
-    - `data/model_definition.hpp` — 可由 XML 或外部代码构造的领域输入（`mhs::core::ModelDefinition` 及其几何、材料、边界 POD）。
+- **model**（领域 `mhs::model`）：轻量建模库，不依赖第三方库。提供 `ModelDefinition`、有序的 Layer/Block/Rect/Boundary 描述和 `ModelBuilder`。
+- **data**（领域 `mhs::core`）：求解运行期的共享数据契约。**纯头文件，不做独立库目标**。
+    - `data/types.hpp` — 求解期 `mhs::core::StudyType`、`mhs::core::BcType`、`mhs::core::FaceDir`、`mhs::core::FACE_DIRS` 等。
     - `data/model.hpp` — 扁平化 SoA 内部模型（`mhs::core::Model`、`mhs::core::MeshGeometry`、`mhs::core::MaterialProps`、`mhs::core::CellFields`、`mhs::core::BCParamTable`）。
     - `data/solution.hpp` — 求解输出（`mhs::core::Solution`、`mhs::core::ProbeTrace`）。
 - **logger**（领域 `mhs::logger`）：`logger/logger.hpp` / `logger.cpp` 封装 spdlog。
 - **utils**（领域 `mhs::utils`）：`utils/mesh_utils.hpp` 提供面法向与网格助手，`utils/sampling.hpp` 提供局部 3D 采样与外推。
-- **io**（领域 `mhs::io`）：XML 读取、XML 写回与 VTU 输出分别实现在三个 `.cpp`，仍组成同一个 `io_lib`。`read_xml` 和 `merge_fluid_xml` 只生成/补充 `ModelDefinition`。
-- **preprocessor**（领域 `mhs::sim`）：`mhs::sim::build_model(const ModelDefinition&) → Model` 将领域输入转换为内部 SoA 模型；没有可变预处理器对象或所有权包装。
+- **io**（领域 `mhs::io`）：XML/FaceKey 只在这里作为外部格式解析，并转换为结构化的 `mhs::model::ModelDefinition`。
+- **preprocessor**（领域 `mhs::sim`）：`build_model(const mhs::model::ModelDefinition&) → mhs::core::Model`，将建模输入编译为内部 SoA 模型。
 - **assembler**（领域 `mhs::sim`）：消费内部模型和 `AssembleContext`，基础热路径与流体增量合并后返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 注入。
 - **linear_solver**（领域 `mhs::sim`）：`LinearSolver::create()` 选择 `EigenSparseLU`、`EigenBiCGSTAB` 或 `Pardiso`；接口为 `compute(A)`、`solve(b)` 和求解诊断。
 - **nonlinear**（领域 `mhs::sim`）：非线性迭代求解（`mhs::sim::{NonLinearConfig, NonLinearResult, nonlinear_solve}`）。所有非线性控制参数由 `NonLinearConfig` 持有，`solve` 在每个时间步内调用它。
@@ -43,7 +43,7 @@
 ```mermaid
 flowchart TD
     XML["XML 输入文件"] --> io_read["io: 反序列化 (tinyxml2)"]
-    io_read --> ModelDefinition["IO 模型"]
+    io_read --> ModelDefinition["mhs::model::ModelDefinition"]
     ModelDefinition --> pre["build_model()"]
     pre -- "构建双向映射、SoA、预编译表达式和冻结流场" --> Model["内部模型"]
 
@@ -126,7 +126,7 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 
 - **通用设计**：你必须将所有问题都原生地视为非线性，以获得最佳通用性。所有问题均按瞬态设计。稳态时表达式求值取 `t=0`，调度器直接做非线性迭代（不推进时间）；瞬态从 `t=0` 起按时间步推进。瞬态和非线性迭代由 `scheduler` 驱动，`assembler` 无状态。
 - **表达式特殊处理**：用户从前端定义的表达式函数奇怪地到处使用 `x` 作为变量，该变量实际上可以表示 `T`（如果出现在材料属性中）或 `t`（如果出现在热源等中）。应该在 `preprocessor` 中适当处理转换。
-- **网格描述**：块（Blocks）由一系列添加/移除操作定义，仅在 XY 平面描述几何形状。层（Layers）由层的厚度定义，每个 Block 的 Z 范围默认继承其所在 Layer 的厚度（layer 0 支持 Block 级可变厚度 `thickness_expr`）。面或边界由特定的字符串表示定义，格式为 ``Face|Direction|CoordValue|X1_min,X1_max,Y1_min,Y1_max;X2_min,X2_max,Y2_min,Y2_max;...``，例如，`Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100`。其中 CoordValue 是边界平面的空间坐标（不是层索引）。
+- **网格描述**：块（Blocks）由一系列添加/移除操作定义，仅在 XY 平面描述几何形状。层（Layers）由层的厚度定义，每个 Block 的 Z 范围默认继承其所在 Layer 的厚度（layer 0 支持 Block 级可变厚度 `thickness`）。建模层用结构化 `FaceRegion` 描述边界；旧 XML 的 ``Face|Direction|CoordValue|...`` 编码只在 `io` 适配器内解析，其中 CoordValue 是边界平面的空间坐标（不是层索引）。
 - **内部使用结构化网格**：`preprocessor` 生成全局 3D 结构化网格，按层/材质标记每个单元（SoA 布局）。
 - **边界条件**：采用 cell-centered 自由度，边界条件通过面积分直接施加到单元方程中，无需在面上额外存储 DOF。`preprocessor` 预计算每个面的 BC 类型和参数索引。
 - **表达式求值**：`expr` 模块仅用于场/边界条件表达式，上下文为 `{T, t, x, y, z}`。几何表达式在 `preprocessor` 中求值为具体数值后构建网格，与场表达式求值分离。

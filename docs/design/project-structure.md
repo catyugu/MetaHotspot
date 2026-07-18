@@ -16,10 +16,11 @@ MetaHotspot/
 │       ├── other.cmake
 │       └── tbb.cmake
 ├── src/
-│   ├── data/                    # mhs::core               数据契约（types, model_definition, model, solution）
-│   ├── io/                      # mhs::io                 XML 读、XML 写、VTU 写（同一 io_lib）
+│   ├── model/                   # mhs::model              纯建模契约与 ModelBuilder（无第三方依赖）
+│   ├── data/                    # mhs::core               求解期数据契约（types, model, solution）
+│   ├── io/                      # mhs::io                 XML 适配、XML 写、VTU 写（同一 io_lib）
 │   ├── expr/                    # mhs::core (子组织)     muparser 封装, CompiledExpression
-│   ├── utils/                   # mhs::utils              网格、FaceKey、采样和物理助手
+│   ├── utils/                   # mhs::utils              网格、采样和物理助手
 │   ├── logger/                  # mhs::logger             spdlog 封装
 │   ├── preprocessor/            # mhs::sim (子组织)      build_model + 构建辅助函数
 │   ├── fluid/                   # mhs::sim::fluid        冻结流场预处理 + 热装配增量
@@ -91,8 +92,9 @@ namespace mhs::logger {
 | 命名空间          | 源目录                                                                  | 角色                                     |
 |-------------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
-| `mhs::core`       | `data/` + `expr/`                                                       | 数据模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `utils/`                                                                | 网格、FaceKey、采样和物理助手            |
+| `mhs::model`      | `model/`                                                                | 建模契约与顺序式 ModelBuilder             |
+| `mhs::core`       | `data/` + `expr/`                                                       | 求解模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`      | `utils/`                                                                | 网格、采样和物理助手                     |
 | `mhs::sim`        | `assembler/` `linear_solver/` `scheduler/` `nonlinear/` `preprocessor/` | 数值引擎：组装、线性/非线性求解、调度    |
 | `mhs::sim::fluid` | `fluid/`                                                                | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |

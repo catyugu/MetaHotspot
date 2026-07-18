@@ -1,48 +1,48 @@
 #include "assembler/assembler.hpp"
 #include "data/model.hpp"
-#include "data/model_definition.hpp"
+#include "model/model_definition.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
 
-// Helper: build a minimal mhs::core::ModelDefinition for a simple uniform cube
-static mhs::core::ModelDefinition make_simple_cube_io()
+// Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
+static mhs::model::ModelDefinition make_simple_cube_io()
 {
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
 
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "400";
-    mat.midu = "8920";
-    mat.bi_rerong = "385";
-    io.materials["copper"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    mat.density = "8920";
+    mat.specific_heat = "385";
+    io.materials.push_back({"copper", mat});
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -73,36 +73,36 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
-    mhs::core::Block block;
-    block.material_name = "mat";
-    block.ti_reyuan_expr = "0";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
+    mhs::model::BlockSpec block;
+    block.material = "mat";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "100 + T";
-    io.materials["mat"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
+    io.materials.push_back({"mat", mat});
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = build_model(io);
 

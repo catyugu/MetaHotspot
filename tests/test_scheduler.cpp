@@ -1,5 +1,6 @@
 #include "preprocessor/preprocessor.hpp"
 #include "scheduler/scheduler.hpp"
+#include "model_test_utils.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
 
@@ -8,44 +9,44 @@ using namespace mhs::sim;
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
 
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "1e6"; // heat source
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "1e6"; // heat source
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    io.materials.push_back({"copper", mat});
 
     // Dirichlet 300K on bottom face (Z=0)
-    mhs::core::Boundary boundary1;
-    boundary1.bc = mhs::core::FirstTypeThermalBC {"300"};
-    boundary1.face_keys.push_back("Z|E|0|0,10,0,10");
+    mhs::model::BoundaryPatch boundary1;
+    boundary1.condition = mhs::model::DirichletBoundary {"300"};
+    boundary1.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary1);
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = build_model(io);
 
@@ -65,50 +66,50 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     // 瞬态 5 步，2 个观察点。ProbeRecorder 应在 t=0 起点 + 5 个步末各记录 1 次。
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Transient;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Transient;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "1e8";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "1e8";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "400";
-    mat.midu = "8920";
-    mat.bi_rerong = "385";
-    io.materials["copper"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    mat.density = "8920";
+    mat.specific_heat = "385";
+    io.materials.push_back({"copper", mat});
 
-    io.transient_duration = 5.0;
-    io.transient_time_step = 1.0;
+    io.settings.transient_duration = 5.0;
+    io.settings.transient_output_interval = 1.0;
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     // 两个观察点：中心 (5,5,5) mm + Dirichlet 面 z=0 上的 (5,5,0)
-    mhs::core::ObservationPoint3D op1;
+    mhs::model::ObservationPointSpec op1;
     op1.name = "center";
     op1.x = "5";
     op1.y = "5";
     op1.z = "5";
     io.observation_points.push_back(op1);
-    mhs::core::ObservationPoint3D op2;
+    mhs::model::ObservationPointSpec op2;
     op2.name = "z0";
     op2.x = "5";
     op2.y = "5";
@@ -116,9 +117,9 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.observation_points.push_back(op2);
 
     // z=0 设为 Dirichlet 500K，确保 op2 走 Dirichlet 早返回路径
-    mhs::core::Boundary boundary;
-    boundary.bc = mhs::core::FirstTypeThermalBC {"500"};
-    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    mhs::model::BoundaryPatch boundary;
+    boundary.condition = mhs::model::DirichletBoundary {"500"};
+    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
     auto model = build_model(io);
@@ -158,51 +159,51 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     // 导致时间依赖的 BC 表达式在 t>0 时被错误求值。本测试在 z=0 面上用
     // 时间依赖 Dirichlet "500 + 100*t"，跑 5 步瞬态 (dt=1)，验证每步末的
     // 探针温度严格等于 500 + 100*t，而非恒为 500。
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Transient;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Transient;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    io.materials.push_back({"copper", mat});
 
-    io.transient_duration = 5.0;
-    io.transient_time_step = 1.0;
+    io.settings.transient_duration = 5.0;
+    io.settings.transient_output_interval = 1.0;
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     // Dirichlet 探针位于 z=0 面中心；BC 表达式随时间线性增长
-    mhs::core::ObservationPoint3D op;
+    mhs::model::ObservationPointSpec op;
     op.name = "z0_dirichlet";
     op.x = "5";
     op.y = "5";
     op.z = "0";
     io.observation_points.push_back(op);
 
-    mhs::core::Boundary boundary;
-    boundary.bc = mhs::core::FirstTypeThermalBC {"500 + 100*t"};
-    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    mhs::model::BoundaryPatch boundary;
+    boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
+    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
     auto model = build_model(io);

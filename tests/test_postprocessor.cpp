@@ -1,46 +1,47 @@
 #include "data/model.hpp"
-#include "data/model_definition.hpp"
+#include "model/model_definition.hpp"
+#include "model_test_utils.hpp"
 #include "postprocessor/postprocessor.hpp"
 #include "preprocessor/preprocessor.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
 
-// Helper: build a minimal mhs::core::ModelDefinition with a uniform grid
-static mhs::core::ModelDefinition make_simple_uniform_grid_io()
+// Helper: build a minimal mhs::model::ModelDefinition with a uniform grid
+static mhs::model::ModelDefinition make_simple_uniform_grid_io()
 {
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
 
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material mat;
-    mat.kx = mat.ky = mat.kz = "400";
-    io.materials["copper"] = mat;
+    mhs::model::MaterialSpec mat;
+    mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    io.materials.push_back({"copper", mat});
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -91,45 +92,45 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // touches both. Without Dirichlet priority, the result would be an
     // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
     // With Dirichlet priority, the result must be exactly 500K.
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
 
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material copper;
-    copper.kx = copper.ky = copper.kz = "400";
-    io.materials["copper"] = copper;
+    mhs::model::MaterialSpec copper;
+    copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
+    io.materials.push_back({"copper", copper});
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
-    mhs::core::Boundary boundary_dirichlet;
-    boundary_dirichlet.bc = mhs::core::FirstTypeThermalBC {"500"};
-    boundary_dirichlet.face_keys.push_back("Z|E|0|0,10,0,10");
+    mhs::model::BoundaryPatch boundary_dirichlet;
+    boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
+    boundary_dirichlet.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = build_model(io);
 
@@ -163,44 +164,44 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 导致时间依赖的 BC 表达式在任意时刻都被求值成 t=0 时的结果。
     // 本测试对 z=0 面上 Dirichlet 表达式 "500 + 100*t" 在 t=0 和 t=10
     // 两个时间点分别求值，验证两者差异严格为 1000K（旧实现会得到 0K 差异）。
-    mhs::core::ModelDefinition io;
-    io.study_type = mhs::core::StudyType::Steady;
-    io.length_unit = mhs::core::LengthUnit::Mm;
-    io.initial_temperature = 300.0;
+    mhs::model::ModelDefinition io;
+    io.settings.study_type = mhs::model::StudyType::Steady;
+    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.initial_temperature = 300.0;
 
-    io.mesh_vertex_x = {0.0, 5.0, 10.0};
-    io.mesh_vertex_y = {0.0, 5.0, 10.0};
-    io.mesh_vertex_z = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::core::Layer layer;
-    layer.thickness_expr = "10";
+    mhs::model::LayerSpec layer;
+    layer.thickness = "10";
 
-    mhs::core::Block block;
-    block.material_name = "copper";
-    block.ti_reyuan_expr = "0";
+    mhs::model::BlockSpec block;
+    block.material = "copper";
+    block.volumetric_heat_source = "0";
 
-    mhs::core::Rect rect;
-    rect.add_sub = true;
-    rect.x_expr = "0";
-    rect.y_expr = "0";
-    rect.width_expr = "10";
-    rect.height_expr = "10";
-    block.all_rects.push_back(rect);
+    mhs::model::RectOperation rect;
+    rect.operation = mhs::model::GeometryOperation::Add;
+    rect.rect.x = "0";
+    rect.rect.y = "0";
+    rect.rect.width = "10";
+    rect.rect.height = "10";
+    block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
     io.layers.push_back(layer);
 
-    mhs::core::Material copper;
-    copper.kx = copper.ky = copper.kz = "400";
-    io.materials["copper"] = copper;
+    mhs::model::MaterialSpec copper;
+    copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
+    io.materials.push_back({"copper", copper});
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
-    mhs::core::Boundary boundary;
-    boundary.bc = mhs::core::FirstTypeThermalBC {"500 + 100*t"};
-    boundary.face_keys.push_back("Z|E|0|0,10,0,10");
+    mhs::model::BoundaryPatch boundary;
+    boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
+    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    io.other_bc = mhs::core::SecondTypeThermalBC {};
+    io.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = build_model(io);
 

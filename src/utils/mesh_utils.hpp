@@ -1,9 +1,9 @@
 #pragma once
 
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "data/tolerance_config.hpp"
 #include "data/types.hpp"
+#include "model/model_definition.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -12,20 +12,20 @@
 namespace mhs::utils {
 
     /// Convert length unit to SI (meters) scale factor.
-    inline double length_unit_to_si(mhs::core::LengthUnit unit)
+    inline double length_unit_to_si(mhs::model::LengthUnit unit)
     {
         switch (unit) {
-        case mhs::core::LengthUnit::M:
+        case mhs::model::LengthUnit::Meter:
             return 1.0;
-        case mhs::core::LengthUnit::Mm:
+        case mhs::model::LengthUnit::Millimeter:
             return 1e-3;
-        case mhs::core::LengthUnit::Um:
+        case mhs::model::LengthUnit::Micrometer:
             return 1e-6;
-        case mhs::core::LengthUnit::Nm:
+        case mhs::model::LengthUnit::Nanometer:
             return 1e-9;
-        case mhs::core::LengthUnit::Inch:
+        case mhs::model::LengthUnit::Inch:
             return 0.0254;
-        case mhs::core::LengthUnit::Mil:
+        case mhs::model::LengthUnit::Mil:
             return 2.54e-5;
         default:
             return 1e-3;

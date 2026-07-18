@@ -3,17 +3,17 @@
 #include <string>
 #include <vector>
 
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "data/solution.hpp"
+#include "model/model_definition.hpp"
 
 namespace mhs::io {
 
-    mhs::core::ModelDefinition read_xml(const std::string& xml_path);
+    mhs::model::ModelDefinition read_xml(const std::string& xml_path);
 
     // Merge an optional fluid XML document into an existing model definition.
     // Returns false when the file cannot be loaded or has no FluidOverlay element.
-    bool merge_fluid_xml(const std::string& xml_path, mhs::core::ModelDefinition& definition);
+    bool merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition);
 
     void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature);
 

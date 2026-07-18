@@ -1,15 +1,15 @@
 #pragma once
 
-#include "data/model_definition.hpp"
 #include "data/model.hpp"
 #include "expr/expr.hpp"
-#include "face_key_processor.hpp" // for ParsedFaceKey
+#include "model/model_definition.hpp"
+#include "preprocessor/boundary_processor.hpp"
 
 namespace mhs::sim {
 
     // Pre-resolved geometry for a single rect (all values in SI meters)
     struct ResolvedRect {
-        bool add_sub;
+        mhs::model::GeometryOperation operation;
         double x; // absolute SI x coordinate of rect origin
         double y; // absolute SI y coordinate of rect origin
         double width; // SI width (always positive after normalization)
@@ -19,8 +19,8 @@ namespace mhs::sim {
     // Pre-resolved geometry for a single block
     struct ResolvedBlock {
         std::vector<ResolvedRect> rects;
-        std::string material_name;
-        std::string ti_reyuan_expr; // kept as string for later mhs::core::parse
+        std::string material;
+        std::string volumetric_heat_source;
 
         // 该 Block 在世界坐标系中的 Z 范围
         double z_start = 0.0;
@@ -38,7 +38,7 @@ namespace mhs::sim {
     // This eliminates repeated eval_geometry calls in the cell loops.
     // `symbols` provides the geometry variables each expression may reference.
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::core::Layer>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
+        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
 
     // Assign every grid cell to its layer + block and write volumetric cell fields.
     // Returns CellFields with exact inverse topology maps: grid_to_cell
@@ -56,10 +56,11 @@ namespace mhs::sim {
     // prefix-sum or intermediate scan needed — face_bcs is [N_active * 6].
     //
     // `cells` must already have a valid grid_to_cell (from assign_cell_layers).
-    // `parsed_face_keys` comes from parse_all_face_keys().
-    // Other_bc is the fallback BC for faces that don't match any face key.
+    // Boundaries are already structured and scaled by compile_boundary_patches().
+    // The default boundary is the fallback for exposed faces that do not
+    // match any explicit structured region.
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<ParsedFaceKey>& parsed_face_keys, const OtherBC& other_bc,
+        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
         std::vector<mhs::core::FaceBC>& face_bcs);
 
 } // namespace mhs::sim

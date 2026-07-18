@@ -54,7 +54,7 @@ namespace mhs::sim {
         };
     }
 
-    mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::core::PieceWiseFunction::Point> pts)
+    mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
     {
         // Points are pre-sorted by X in the IO parser, so no resort needed.
         return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
@@ -66,7 +66,7 @@ namespace mhs::sim {
             if (x >= pts.back().x)
                 return pts.back().y;
             auto it = std::upper_bound(pts.begin(), pts.end(), x,
-                [](double v, const mhs::core::PieceWiseFunction::Point& p) { return v < p.x; });
+                [](double v, const mhs::model::PiecewiseFunctionSpec::Point& p) { return v < p.x; });
             const auto& p1 = *(it - 1);
             const auto& p2 = *it;
             double t = (x - p1.x) / (p2.x - p1.x);
@@ -95,10 +95,16 @@ namespace mhs::sim {
         // identifier-start 判定：[A-Za-z_]（与 is_id_char 的区别在数字）
         bool is_id_start(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; }
 
+        bool has_function(const std::vector<mhs::model::NamedFunction>& functions, std::string_view name)
+        {
+            return std::any_of(functions.begin(), functions.end(),
+                [&](const mhs::model::NamedFunction& function) { return function.name == name; });
+        }
+
     } // namespace
 
     std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
-        const std::unordered_map<std::string, mhs::core::Function>& fns)
+        const std::vector<mhs::model::NamedFunction>& functions)
     {
         // 单次扫描：找到每个 identifier-start → 读到 identifier 末尾 →
         //   1) 若紧跟 `(` 且不在白名单也不在 fns → panic
@@ -116,7 +122,7 @@ namespace mhs::sim {
                     i++;
                 std::string_view name(expr_str.data() + start, i - start);
                 if (i < n && expr_str[i] == '(') {
-                    if (!is_known_builtin(name) && fns.find(std::string(name)) == fns.end()) {
+                    if (!is_known_builtin(name) && !has_function(functions, name)) {
                         MHS_LOG_WARN(
                             "unknown function {} referenced in {}. returning raw string", std::string(name), expr_str);
                         return std::string(expr_str);
@@ -141,31 +147,31 @@ namespace mhs::sim {
     // ---- 写入 SymbolTable -------------------------------------------------
 
     void register_all_functions(
-        mhs::core::SymbolTable& symbols, const std::unordered_map<std::string, mhs::core::Function>& fns)
+        mhs::core::SymbolTable& symbols, const std::vector<mhs::model::NamedFunction>& functions)
     {
-        for (const auto& [key, fn] : fns) {
+        for (const auto& function : functions) {
             mhs::core::FieldEvaluator ev = nullptr;
             std::visit(
                 [&](const auto& variant) {
                     using T = std::decay_t<decltype(variant)>;
-                    if constexpr (std::is_same_v<T, mhs::core::ExpressionFunction>) {
+                    if constexpr (std::is_same_v<T, mhs::model::ExpressionFunctionSpec>) {
                         ev = make_expression_evaluator(variant.expression, symbols);
                     }
-                    else if constexpr (std::is_same_v<T, mhs::core::DoubleExponentialFunction>) {
-                        ev = make_double_exp_evaluator(variant.a, variant.alpha, variant.beta);
+                    else if constexpr (std::is_same_v<T, mhs::model::DoubleExponentialFunctionSpec>) {
+                        ev = make_double_exp_evaluator(variant.amplitude, variant.alpha, variant.beta);
                     }
-                    else if constexpr (std::is_same_v<T, mhs::core::GaussFunction>) {
-                        ev = make_gauss_evaluator(variant.a, variant.tau, variant.x0);
+                    else if constexpr (std::is_same_v<T, mhs::model::GaussFunctionSpec>) {
+                        ev = make_gauss_evaluator(variant.amplitude, variant.tau, variant.center);
                     }
-                    else if constexpr (std::is_same_v<T, mhs::core::SineFunction>) {
-                        ev = make_sine_evaluator(variant.a, variant.omega, variant.phi);
+                    else if constexpr (std::is_same_v<T, mhs::model::SineFunctionSpec>) {
+                        ev = make_sine_evaluator(variant.amplitude, variant.angular_frequency, variant.phase);
                     }
-                    else if constexpr (std::is_same_v<T, mhs::core::PieceWiseFunction>) {
+                    else if constexpr (std::is_same_v<T, mhs::model::PiecewiseFunctionSpec>) {
                         ev = make_piecewise_evaluator(variant.points);
                     }
                 },
-                fn);
-            symbols.natives[key] = std::move(ev);
+                function.value);
+            symbols.natives[function.name] = std::move(ev);
         }
     }
 

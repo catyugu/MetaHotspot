@@ -6,7 +6,7 @@ Accepted. Combines the original ADR-0002 (cell-centered DOF, no face DOF, BCs as
 
 ## Context
 
-The XML uses face-key strings to specify BCs. The mesh uses cell-centered DOFs. BC types: Dirichlet / Neumann / Cauchy. A future microfluid phase might want face DOFs for velocity/pressure.
+The authoring model uses structured face regions to specify BCs; the XML adapter translates its legacy face-key encoding at the I/O boundary. The mesh uses cell-centered DOFs. BC types: Dirichlet / Neumann / Cauchy. A future microfluid phase might want face DOFs for velocity/pressure.
 
 Two storage concerns must be answered together:
 
@@ -35,14 +35,14 @@ Discrete treatments:
 
 Anisotropic `k`: at assembly, pick `k_along(dir) ∈ {kx, ky, kz}` per face normal.
 
-`other_bc` is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated per-face BC for every cell.
+The default boundary is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated per-face BC for every cell. Explicit patches are applied in authoring order, so later patches override earlier ones.
 
 The fluid subsystem is independent of thermal BC storage: thermal faces use `FaceBC`; fluid boundary records are temporary preprocessing state and only assembly-ready values enter `FluidDomain`.
 
 ## Rationale
 
 - **No projection ambiguity.** Each individual face BC is independent; overlapping blocks each carry their own resolution.
-- **Virtual-neighbor consistency.** When a cell's neighbor is virtual, the cell's face BC is already set to `other_bc` during preprocessing — same channel as overlap resolution.
+- **Virtual-neighbor consistency.** When a cell's neighbor is virtual, the cell's face BC is already set to the default boundary during preprocessing — the same channel as overlap resolution.
 - **Flexibility.** Different cells in the same layer can have different BC types on the same directional face.
 - **Simpler preprocessing.** No global face arrays; assignment is at cell level.
 - **Flux-type BCs need no face DOF.** They are integrals, and the ghost-cell pattern handles Dirichlet without face storage.
@@ -58,8 +58,8 @@ ModelDefinition
         │     ├─> grid_to_cell                   (full-grid)
         │     ├─> cell_to_grid                   (compact inverse)
         │     └─> material_id + heat_source_idx (compact)
-        ├─> preprocessor::parse_all_face_keys()
-        │     └─> flatten (boundary, face_key) pairs
+        ├─> preprocessor::compile_boundary_patches()
+        │     └─> flatten ordered (condition, FaceRegion) pairs
         ├─> preprocessor::resolve_boundary_patches()
         │     └─> face_bcs [N_active * 6] (handles overlap)
         └─> Compile expressions → BCParamTable + heat_source_table
@@ -68,7 +68,7 @@ ModelDefinition
 ## Notes
 
 - `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
-- `other_bc` is applied during preprocessing, not at assembly time. Virtual neighbors: the active cell's face touching a virtual cell gets `other_bc` set during `resolve_boundary_patches()`.
+- The default boundary is applied during preprocessing, not at assembly time. For virtual neighbors, the active cell's touching face is populated during `resolve_boundary_patches()`.
 - The heat source is **not** part of `FaceBC` — it is stored in a Block-level expression table indexed per cell by `uint16_t`.
-- The preprocessor pre-resolves every face-key string into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no string parsing.
+- The preprocessor resolves every structured `FaceRegion` into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no region matching or string parsing.
 - All geometry stays in SI meters.

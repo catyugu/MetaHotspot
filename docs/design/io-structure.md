@@ -1,129 +1,88 @@
-# `ModelDefinition` 输入结构
+# Authoring Model
 
-`src/data/model_definition.hpp` 定义模型构建所需的领域输入。它不是 XML DOM 的逐字段镜像：XML 读取器把外部格式裁剪并转换成这些 POD，外部代码也可以直接构造同一结构，然后调用 `mhs::sim::build_model()`。
+`src/model/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，由独立的轻量 `mhs_model_lib` 拥有。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 
-求解输出不在这里；`Solution` 和 `ProbeTrace` 位于 `src/data/solution.hpp`。
+`mhs_model_lib` 本身不链接第三方目标。XML 适配、表达式编译、流体预处理和求解器各自留在下游库中；因此只修改 builder 实现时，不会重新编译这些较慢的第三方依赖及其封装目标。
+
+XML reader 和外部代码都生成同一个 `ModelDefinition`，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 
 ## 顶层结构
 
 ```cpp
-namespace mhs::core {
-
 struct ModelDefinition {
-    StudyType study_type = StudyType::Steady;
-    LengthUnit length_unit = LengthUnit::M;
-    double initial_temperature = 300.0;
-
-    std::vector<Variable> variables;
-    std::vector<Layer> layers;
-    std::unordered_map<std::string, Material> materials;
-    std::vector<Boundary> boundaries;
-
-    double transient_duration = 0.0;
-    double transient_time_step = 1.0; // output interval
-    std::variant<FirstTypeThermalBC,
-                 SecondTypeThermalBC,
-                 ThirdTypeThermalBC> other_bc;
-
-    std::vector<double> mesh_vertex_x;
-    std::vector<double> mesh_vertex_y;
-    std::vector<double> mesh_vertex_z;
-
-    std::unordered_map<std::string, Function> functions;
-    std::vector<ObservationPoint3D> observation_points;
-    std::vector<FluidBoundary> fluid_boundaries;
+    ModelSettings settings;
+    MeshSpec mesh;
+    std::vector<VariableSpec> variables;
+    std::vector<NamedFunction> functions;
+    std::vector<NamedMaterial> materials;
+    std::vector<LayerSpec> layers;
+    std::vector<BoundaryPatch> boundaries;
+    ThermalBoundary default_boundary;
+    std::vector<ObservationPointSpec> observation_points;
+    std::vector<FluidBoundarySpec> fluid_boundaries;
 };
-
-}
 ```
 
-已删除不会参与模型构建的 XML/UI 字段，例如对象显示名称、绘图区间、周期显示参数、瞬态时间单位和未实现的维度枚举。
+材料库与函数库使用有序 vector 作为事实存储。Compiler 可以临时建立名称索引，但不得用无序容器取代输入顺序。
 
-## 几何、材料与边界
+## 几何
 
 ```cpp
-struct Variable { std::string name; std::string value; };
-
-struct Rect {
-    bool add_sub = true;
-    std::string width_expr, height_expr;
-    std::string x_expr, y_expr;
+struct RectOperation {
+    GeometryOperation operation; // Add / Subtract
+    RectSpec rect;
 };
 
-struct Block {
-    std::vector<Rect> all_rects;
-    std::string material_name;
-    std::string x_offset_expr, y_offset_expr;
-    std::string ti_reyuan_expr;
-    std::string thickness_expr;
+struct BlockSpec {
+    std::string material;
+    Expression volumetric_heat_source;
+    Expression x_offset;
+    Expression y_offset;
+    std::optional<Expression> thickness;
+    std::vector<RectOperation> geometry;
 };
 
-struct Layer {
-    std::vector<Block> blocks;
-    std::string thickness_expr;
-    std::string x_offset_expr, y_offset_expr;
-};
-
-struct Material {
-    std::string kx = "0.0", ky = "0.0", kz = "0.0";
-    std::string midu = "0.0";
-    std::string bi_rerong = "0.0";
-    std::string dynamic_viscosity; // 空字符串表示固体
-};
-
-struct Boundary {
-    std::vector<std::string> face_keys;
-    std::variant<FirstTypeThermalBC,
-                 SecondTypeThermalBC,
-                 ThirdTypeThermalBC> bc;
+struct LayerSpec {
+    Expression thickness;
+    Expression x_offset;
+    Expression y_offset;
+    std::vector<BlockSpec> blocks;
 };
 ```
 
-### 顺序与覆盖语义
+顺序是模型契约：
 
-- `Layer::blocks` 表示有序覆盖层。一个单元同时落入多个 Block 时，后出现的 Block 获胜，并同时提供材料属性和体热源。
-- `Block::all_rects` 是有序 CSG 操作。从“不属于该 Block”开始，依次执行 Rect 的 Add/Sub；覆盖该点的最后一次操作决定该点是否属于 Block。后续 Add 可以重新填回先前 Sub 删除的区域。
-- `ModelDefinition::boundaries` 独立于 Block 按顺序附加在暴露面上。多个边界覆盖同一面区域时，后出现者获胜；只有没有显式边界匹配时才使用 `other_bc`。
+- RectOperation 按 append 顺序执行；一个点最后命中的 Add/Subtract 决定其是否属于 Block。
+- 同一 Layer 中后出现的 Block 覆盖前者，并同时提供材料和体热源。
+- `layers[0]` 保持为最上层，后续层依次向下堆叠。
 
-材料名称只作为 `ModelDefinition::materials` 的 key 和 `Block::material_name` 的引用存在，不在 `Material` 内重复存储。
+## 材料与函数
 
-`DaoreXishu` 的 XML 解析规则保持不变：单表达式同时赋给 `kx/ky/kz`；三个逗号分隔表达式依次赋给三轴；其他段数报错。
+`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。旧 XML 名称只允许出现在 `src/io/xml_reader.cpp` 的 tag 解析中。
 
-## 流体输入
+函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec` 和 `PiecewiseFunctionSpec` 组成 `FunctionSpec` variant。
 
-流体数据直接属于模型定义，不再存在 `FluidOverlay` 领域类型：
+## 结构化边界
 
 ```cpp
-struct FluidBoundary {
-    std::vector<std::string> face_keys;
-    FluidBCType kind = FluidBCType::None;
-    double value = 0.0;
-    double inlet_temperature =
-        std::numeric_limits<double>::quiet_NaN();
+struct FaceRegion {
+    Axis axis;
+    double coordinate;
+    std::vector<RegionRect> rectangles;
+};
+
+struct BoundaryPatch {
+    std::vector<FaceRegion> regions;
+    ThermalBoundary condition;
 };
 ```
 
-- 材料的 `dynamic_viscosity` 非空时，`build_model()` 将该材料编译为流体材料。
-- `fluid_boundaries` 与热边界一样直接参与模型构建。
-- 兼容的附加流体 XML 由 `merge_fluid_xml(path, definition)` 一次性合并到材料表和 `fluid_boundaries`，之后与代码直接构造的定义走相同的 `build_model()` 路径。
+BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，preprocessor 不解析字符串。
 
-## 表达式函数
+旧 XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
 
-`Function` 是以下五种输入的 `std::variant`：
+## ModelBuilder
 
-- `ExpressionFunction { expression }`
-- `DoubleExponentialFunction { a, alpha, beta }`
-- `GaussFunction { a, tau, x0 }`
-- `SineFunction { a, omega, phi }`
-- `PieceWiseFunction { points }`
+`ModelBuilder` 是未来 C opaque-pointer API 的内部落点。C ABI 将公开 `typedef void *mhs_model_handle` 这类纯指针句柄，内部再转换为私有的 `ModelBuilder`；不会在公共头中声明或暴露 opaque struct tag。
 
-绘图范围属于 UI 元数据，不参与表达式编译，因此不在 `ModelDefinition` 中。
-
-## Face key
-
-格式为 `Axis|Category|Coordinate|RectList`。坐标和矩形范围使用 `length_unit`，在 `build_model()` 中统一转换成 SI：
-
-- Z 面矩形：`xmin,xmax,ymin,ymax;...`
-- X/Y 面矩形：`min1|max1|min2|max2`
-
-例如：`Z|E|0|0,50,50,100;50,100,0,50`。
+当前 `ModelBuilder` 只提供 append-only 建模：添加变量、函数、材料、Layer、Block、Rect、Boundary 和观察点，最后由 `finish() &&` 移出 `ModelDefinition`。当前阶段不承担校验、删除、插入或重排序，也不保留旧 C++ 建模结构的兼容别名。
