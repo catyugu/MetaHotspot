@@ -11,6 +11,20 @@ namespace mhs::model {
     using LayerId = uint32_t;
     using BlockId = uint32_t;
 
+    struct LayerParams {
+        Expression thickness;
+        Expression x_offset;
+        Expression y_offset;
+    };
+
+    struct BlockParams {
+        std::string material;
+        Expression volumetric_heat_source;
+        Expression x_offset;
+        Expression y_offset;
+        std::optional<Expression> thickness;
+    };
+
     class ModelBuilder final {
     public:
         void set_settings(ModelSettings settings) { model_.settings = std::move(settings); }
@@ -19,8 +33,8 @@ namespace mhs::model {
         void add_function(NamedFunction function) { model_.functions.push_back(std::move(function)); }
         void add_material(NamedMaterial material) { model_.materials.push_back(std::move(material)); }
 
-        LayerId add_layer(LayerSpec layer);
-        BlockId add_block(LayerId layer, BlockSpec block);
+        LayerId add_layer(LayerParams layer);
+        BlockId add_block(LayerId layer, BlockParams block);
         void add_rect(BlockId block, RectOperation operation);
 
         void add_boundary(BoundaryPatch boundary) { model_.boundaries.push_back(std::move(boundary)); }

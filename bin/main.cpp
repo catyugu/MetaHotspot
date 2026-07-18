@@ -1,6 +1,7 @@
 #include "cli.hpp"
-#include "io/io.hpp"
 #include "compiler/model_compiler.hpp"
+#include "io/model_io.hpp"
+#include "io/result_io.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp"
 #include "logging/logger.hpp"

@@ -1,6 +1,6 @@
 #include "solver/time_integration.hpp"
 
-#include "compiler/constants.hpp"
+#include "runtime/constants.hpp"
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>

@@ -11,7 +11,7 @@
 //   - mhs::post::interpolate_cell_to_node  (whole-grid node sampling)
 //   - mhs::sim::ProbeRecorder::sample_one  (per-probe local sampling)
 
-#include "compiler/runtime_model.hpp"
+#include "runtime/model.hpp"
 
 #include <cstdint>
 #include <vector>

@@ -1,4 +1,4 @@
-#include "compiler/mesh.hpp"
+#include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
 
 #include <Eigen/Dense>

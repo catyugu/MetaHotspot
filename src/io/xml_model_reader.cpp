@@ -3,38 +3,16 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "io.hpp"
+#include "io/model_io.hpp"
 #include "io/face_region_parser.hpp"
+#include "io/xml_helpers.hpp"
 #include "logging/logger.hpp"
 
 namespace mhs::io {
 
     using namespace tinyxml2;
-
-    static std::string trim(const std::string& str)
-    {
-        size_t first = str.find_first_not_of(" \t\r\n");
-        if (std::string::npos == first)
-            return "";
-        size_t last = str.find_last_not_of(" \t\r\n");
-        return str.substr(first, (last - first + 1));
-    }
-
-    static std::string get_text(const XMLElement* elem)
-    {
-        if (!elem)
-            return "";
-        const char* text = elem->GetText();
-        return text ? trim(text) : "";
-    }
-
-    static double parse_double(const std::string& s)
-    {
-        if (s.empty()) {
-            return 0.0;
-        }
-        return std::stod(s);
-    }
+    using detail::get_text;
+    using detail::parse_double;
 
     // Helpers for the <Functions> block: pull one double-typed child or no-op.
     static void read_double_member(const XMLElement* parent, const char* tag, double& target)
@@ -495,84 +473,6 @@ namespace mhs::io {
         }
 
         return structure;
-    }
-
-    // =========================================================================
-    // Fluid overlay XML parser
-    // =========================================================================
-
-    bool merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition)
-    {
-        XMLDocument doc;
-        XMLError err = doc.LoadFile(xml_path.c_str());
-        if (err != XML_SUCCESS) {
-            return false;
-        }
-
-        const XMLElement* root = doc.FirstChildElement("FluidOverlay");
-        if (!root) {
-            return false;
-        }
-
-        // Merge fluid properties into the material table used by build_model().
-        for (const XMLElement* mat_elem = root->FirstChildElement("FluidMaterial"); mat_elem;
-            mat_elem = mat_elem->NextSiblingElement("FluidMaterial")) {
-            std::string name;
-            if (const char* attr = mat_elem->Attribute("name")) {
-                name = attr;
-            }
-            std::string dynamic_viscosity;
-            if (const XMLElement* visc = mat_elem->FirstChildElement("DynamicViscosity")) {
-                dynamic_viscosity = get_text(visc);
-            }
-            auto material = std::find_if(definition.materials.begin(), definition.materials.end(),
-                [&](const mhs::model::NamedMaterial& item) { return item.name == name; });
-            if (material != definition.materials.end()) {
-                material->value.dynamic_viscosity = std::move(dynamic_viscosity);
-            }
-        }
-
-        // Parse Boundary nodes (fluidic)
-        for (const XMLElement* bound_elem = root->FirstChildElement("Boundary"); bound_elem;
-            bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-            mhs::model::FluidBoundarySpec fb;
-
-            // FaceKeys
-            if (const XMLElement* fkeys = bound_elem->FirstChildElement("FaceKeys")) {
-                for (const XMLElement* fk = fkeys->FirstChildElement("string"); fk;
-                    fk = fk->NextSiblingElement("string")) {
-                    std::string key = get_text(fk);
-                    if (!key.empty()) {
-                        fb.regions.push_back(detail::parse_face_region(key));
-                    }
-                }
-            }
-
-            // Pressure / MassFlowRate / Velocity (mutually exclusive, drives fb.kind)
-            if (const XMLElement* p = bound_elem->FirstChildElement("Pressure")) {
-                fb.value = parse_double(get_text(p));
-                fb.kind = mhs::model::FluidBoundaryKind::Pressure;
-            }
-            else if (const XMLElement* mfr = bound_elem->FirstChildElement("MassFlowRate")) {
-                fb.value = parse_double(get_text(mfr));
-                fb.kind = mhs::model::FluidBoundaryKind::MassFlowRate;
-            }
-            else if (const XMLElement* vel = bound_elem->FirstChildElement("Velocity")) {
-                fb.value = parse_double(get_text(vel));
-                fb.kind = mhs::model::FluidBoundaryKind::Velocity;
-            }
-
-            // InletTemperature (optional)
-            if (const XMLElement* tin = bound_elem->FirstChildElement("InletTemperature")) {
-                fb.inlet_temperature = parse_double(get_text(tin));
-            }
-
-            if (fb.kind != mhs::model::FluidBoundaryKind::None && !fb.regions.empty()) {
-                definition.fluid_boundaries.push_back(std::move(fb));
-            }
-        }
-
-        return true;
     }
 
 } // namespace mhs::io

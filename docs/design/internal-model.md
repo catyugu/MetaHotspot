@@ -1,6 +1,6 @@
 # 内部模型结构（SoA）
 
-扁平 SoA，针对缓存局部性和向量化优化。`src/compiler/runtime_model.hpp`。**所有几何 SI 米**。
+扁平 SoA，针对缓存局部性和向量化优化。`src/runtime/model.hpp`。**所有几何 SI 米**。
 
 ## MeshGeometry
 
@@ -116,5 +116,5 @@ struct FluidDomain {
 - **面级 BC**：`face_bcs` 为 `[N_active * 6]` 扁平数组，消除了 `CellBC` 结构体。`face_bcs[c*6 + dir]` 直接索引。虚拟邻居已在 `resolve_boundary_patches()` 阶段填好默认边界
 - **默认边界在预处理阶段填充**，不在装配时；显式边界按顺序覆盖
 - **Ring buffer (`SolutionHistory`)**：容量由构造函数显式指定；当前调度器使用容量 2。`accepted.current() == T` 在每步接受后成立。
-- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向助手统一定义在 `src/compiler/mesh.hpp`。
+- **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向助手统一定义在 `src/runtime/mesh.hpp`。
 - **流体域**：`FluidDomain` 只包含热组装所需的冻结面流量、流固换热因子和边界出流/温度；水力预处理状态不进入 `Model`

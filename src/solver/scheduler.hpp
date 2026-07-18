@@ -1,8 +1,8 @@
 #pragma once
 
 #include "solver/nonlinear_solver.hpp"
-#include "compiler/runtime_model.hpp"
-#include "solver/solution.hpp"
+#include "runtime/model.hpp"
+#include "runtime/solution.hpp"
 
 namespace mhs::sim {
 

@@ -1,19 +1,12 @@
 #pragma once
 
+#include "runtime/model.hpp"
+#include "runtime/solution.hpp"
+
 #include <string>
 #include <vector>
 
-#include "compiler/runtime_model.hpp"
-#include "solver/solution.hpp"
-#include "model/model_definition.hpp"
-
 namespace mhs::io {
-
-    mhs::model::ModelDefinition read_xml(const std::string& xml_path);
-
-    // Merge an optional fluid XML document into an existing model definition.
-    // Returns false when the file cannot be loaded or has no FluidOverlay element.
-    bool merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition);
 
     void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature);
 

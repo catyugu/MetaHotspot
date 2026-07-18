@@ -19,6 +19,7 @@
 ### 构建目标
 
 - **`mhs_model`**：轻量建模契约和 `ModelBuilder`，不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
+- **`mhs_runtime`**：header-only 的运行期数据契约与网格助手，作为 compiler、solver 和结果 IO 的稳定依赖边界。
 - **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
 - **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。
 - **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
@@ -26,7 +27,7 @@
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-本地运行期只划分 `compiler` 与 `solver` 两个模块：前者完成 setup，后者完成 solve。模块内按职责保留独立 `.cpp`，不再为 assembler、scheduler、fluid 等实现细节逐一建库。
+运行期只划分一个无编译成本的契约层 `runtime` 和两个实现模块：`compiler` 完成 setup，`solver` 完成 solve。模块内按职责保留独立 `.cpp`，不再为 assembler、scheduler、fluid 等实现细节逐一建库。
 
 ### 数据流
 

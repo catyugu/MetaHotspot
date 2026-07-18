@@ -1,6 +1,6 @@
-#include "compiler/constants.hpp"
+#include "runtime/constants.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "compiler/mesh.hpp"
+#include "runtime/mesh.hpp"
 #include "numerics/expression/expr.hpp"
 #include <Eigen/Dense>
 #include <algorithm>

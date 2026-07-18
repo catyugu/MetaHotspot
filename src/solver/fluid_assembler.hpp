@@ -1,6 +1,6 @@
 #pragma once
 
-#include "compiler/runtime_model.hpp"
+#include "runtime/model.hpp"
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>

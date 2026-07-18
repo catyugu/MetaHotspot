@@ -9,9 +9,8 @@ mhs_add_library(mhs_solver
     scheduler.cpp
     time_integration.cpp
     PUBLIC_LINKS
-    mhs_compiler
+    mhs_runtime
     mhs_linear
-    Eigen3::Eigen
     PRIVATE_LINKS
     mhs_logging
     TBB::tbb

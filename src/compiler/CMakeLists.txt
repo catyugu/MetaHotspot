@@ -6,7 +6,7 @@ mhs_add_library(mhs_compiler
     model_functions.cpp
     PUBLIC_LINKS
     mhs_model
-    mhs_expression
+    mhs_runtime
     PRIVATE_LINKS
     mhs_linear
     mhs_logging

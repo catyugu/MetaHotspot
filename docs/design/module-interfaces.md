@@ -2,6 +2,8 @@
 
 ## `io`
 
+建模输入与结果输出分别由 `io/model_io.hpp`、`io/result_io.hpp` 暴露；调用方只依赖实际使用的契约。
+
 ```cpp
 namespace mhs::io {
     mhs::model::ModelDefinition read_xml(const std::string& xml_path);

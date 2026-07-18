@@ -58,7 +58,7 @@ struct LayerSpec {
 
 ## 材料与函数
 
-`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。旧 XML 名称只允许出现在 `src/io/xml_reader.cpp` 的 tag 解析中。
+`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。旧 XML 名称只允许出现在 `src/io/xml_model_reader.cpp` 的 tag 解析中。
 
 函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec` 和 `PiecewiseFunctionSpec` 组成 `FunctionSpec` variant。
 
@@ -85,4 +85,4 @@ BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 
 
 `ModelBuilder` 是未来 C opaque-pointer API 的内部落点。C ABI 将公开 `typedef void *mhs_model_handle` 这类纯指针句柄，内部再转换为私有的 `ModelBuilder`；不会在公共头中声明或暴露 opaque struct tag。
 
-当前 `ModelBuilder` 只提供 append-only 建模：添加变量、函数、材料、Layer、Block、Rect、Boundary 和观察点，最后由 `finish() &&` 移出 `ModelDefinition`。当前阶段不承担校验、删除、插入或重排序，也不保留旧 C++ 建模结构的兼容别名。
+当前 `ModelBuilder` 只提供 append-only 建模：`add_layer(LayerParams)` 与 `add_block(LayerId, BlockParams)` 的参数不含子节点，Block 和 Rect 只能通过各自的追加操作进入模型；最后由 `finish() &&` 移出 `ModelDefinition`。当前阶段不承担校验、删除、插入或重排序，也不保留旧 C++ 建模结构的兼容别名。

@@ -74,7 +74,7 @@ XML → model::ModelDefinition via io::read_xml
 7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
 8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 9. TBB 并行组装 — 基础路径遍历 `cell_to_grid`，流体路径遍历 `fluid_to_global`，线程局部 triplet 最后合并
-10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/compiler/engine_types.hpp`，两者仅在模型编译入口转换
+10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/runtime/types.hpp`，两者仅在模型编译入口转换
 11. 模块通过 `std::exception` 报告错误，`bin/main.cpp` 统一捕获并转为日志和进程退出
 12. POD / 纯函数优先
 
@@ -84,9 +84,9 @@ XML → model::ModelDefinition via io::read_xml
 
 | 命名空间                | 源目录                                                                  | 暴露类型 / 函数                                                                                                                                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mhs::model`            | `model/`                                                                | ModelDefinition、ModelBuilder、LayerSpec、BlockSpec、BoundaryPatch、MaterialSpec、NamedFunction                                                                                               |
-| `mhs::core`             | `compiler/` + `solver/` + `numerics/expression/`                         | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
-| `mhs::utils`            | `compiler/` + `solver/`                                                  | 网格、物理和采样辅助                                                                                                                                                                           |
+| `mhs::model`            | `model/`                                                                | ModelDefinition、ModelBuilder、LayerParams、BlockParams、LayerSpec、BlockSpec、BoundaryPatch、MaterialSpec、NamedFunction                                                                     |
+| `mhs::core`             | `runtime/` + `solver/` + `numerics/expression/`                          | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
+| `mhs::utils`            | `runtime/` + `compiler/` + `solver/`                                     | 网格、物理和采样辅助                                                                                                                                                                           |
 | `mhs::sim`              | `compiler/` + `solver/` + `numerics/linear/`                             | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve()                        |
 | `mhs::sim::fluid`       | `compiler/` + `solver/`                                                  | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                                    |
 | `mhs::sim::time_scheme` | `solver/time_integration.*`                                             | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid |
