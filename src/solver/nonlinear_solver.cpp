@@ -113,8 +113,8 @@ namespace mhs::sim {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
-        const mhs::Index N = static_cast<mhs::Index>(T.size());
-        assert(N <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const mhs::core::Index N = static_cast<mhs::core::Index>(T.size());
+        assert(N <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_N = static_cast<Eigen::Index>(N);
 
         AndersonMixer mixer;

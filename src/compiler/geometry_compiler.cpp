@@ -21,10 +21,11 @@ namespace mhs::sim {
             });
         }
 
-        mhs::Index find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
+        mhs::core::Index find_block_for_cell(
+            const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
         {
-            for (mhs::Index b = static_cast<mhs::Index>(resolved_layer.blocks.size()) - 1; b != mhs::invalidIndex;
-                 b--) {
+            for (mhs::core::Index b = static_cast<mhs::core::Index>(resolved_layer.blocks.size()) - 1;
+                 b != mhs::core::invalidIndex; b--) {
                 const auto& block = resolved_layer.blocks[b];
                 if (cz < block.z_start - EPS || cz > block.z_end + EPS)
                     continue;
@@ -38,11 +39,11 @@ namespace mhs::sim {
                 if (is_inside)
                     return b;
             }
-            return mhs::invalidIndex;
+            return mhs::core::invalidIndex;
         }
 
-        std::pair<mhs::core::BcType, mhs::core::TableIndex> match_face_bc(mhs::core::FaceDir dir, mhs::Index ix,
-            mhs::Index iy, mhs::Index iz, const mhs::core::MeshGeometry& mesh,
+        std::pair<mhs::core::BcType, mhs::core::TableIndex> match_face_bc(mhs::core::FaceDir dir, mhs::core::Index ix,
+            mhs::core::Index iy, mhs::core::Index iz, const mhs::core::MeshGeometry& mesh,
             const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary)
         {
             assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
@@ -78,12 +79,12 @@ namespace mhs::sim {
     std::vector<ResolvedLayerGeometry> resolve_geometry(
         const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols)
     {
-        mhs::Index num_layers = static_cast<mhs::Index>(layers.size());
+        mhs::core::Index num_layers = static_cast<mhs::core::Index>(layers.size());
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
 
         std::vector<double> thickness(num_layers);
         double z_cursor = 0.0;
-        for (mhs::Index l = 0; l < num_layers; l++) {
+        for (mhs::core::Index l = 0; l < num_layers; l++) {
             if (l == 0) {
                 double max_t = 0.0;
                 for (const auto& b : layers[l].blocks) {
@@ -103,13 +104,13 @@ namespace mhs::sim {
             }
             z_cursor += thickness[l];
         }
-        for (mhs::Index l = 0; l < num_layers; l++) {
+        for (mhs::core::Index l = 0; l < num_layers; l++) {
             resolved[l].z_start = z_cursor - thickness[l];
             resolved[l].z_end = z_cursor;
             z_cursor -= thickness[l];
         }
 
-        for (mhs::Index l = 0; l < num_layers; l++) {
+        for (mhs::core::Index l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
             double layer_x_off_si = mhs::core::eval_geometry(layer.x_offset, symbols) * si_scale;
             double layer_y_off_si = mhs::core::eval_geometry(layer.y_offset, symbols) * si_scale;
@@ -163,31 +164,31 @@ namespace mhs::sim {
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
         const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map)
     {
-        const mhs::Index num_layers = static_cast<mhs::Index>(resolved_layers.size());
-        const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
+        const mhs::core::Index num_layers = static_cast<mhs::core::Index>(resolved_layers.size());
+        const mhs::core::Index total = mesh.nx * mesh.ny * mesh.nz;
 
         mhs::core::CellFields cells;
-        cells.grid_to_cell.resize(total, mhs::invalidIndex);
+        cells.grid_to_cell.resize(total, mhs::core::invalidIndex);
         cells.cell_to_grid.reserve(total);
         cells.material_id.reserve(total);
         cells.heat_source_idx.reserve(total);
 
-        for (mhs::Index ix = 0; ix < mesh.nx; ix++) {
-            for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
-                for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
-                    mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+        for (mhs::core::Index ix = 0; ix < mesh.nx; ix++) {
+            for (mhs::core::Index iy = 0; iy < mesh.ny; iy++) {
+                for (mhs::core::Index iz = 0; iz < mesh.nz; iz++) {
+                    mhs::core::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
 
                     double cx = mesh.cx[ix];
                     double cy = mesh.cy[iy];
                     double cz = mesh.cz[iz];
 
-                    mhs::Index layer_idx = mhs::invalidIndex;
-                    mhs::Index block_idx = mhs::invalidIndex;
+                    mhs::core::Index layer_idx = mhs::core::invalidIndex;
+                    mhs::core::Index block_idx = mhs::core::invalidIndex;
 
-                    for (mhs::Index l = 0; l < num_layers; l++) {
+                    for (mhs::core::Index l = 0; l < num_layers; l++) {
                         if (cz >= resolved_layers[l].z_start - EPS && cz <= resolved_layers[l].z_end + EPS) {
-                            mhs::Index b = find_block_for_cell(resolved_layers[l], cx, cy, cz);
-                            if (b != mhs::invalidIndex) {
+                            mhs::core::Index b = find_block_for_cell(resolved_layers[l], cx, cy, cz);
+                            if (b != mhs::core::invalidIndex) {
                                 layer_idx = l;
                                 block_idx = b;
                                 break;
@@ -195,9 +196,9 @@ namespace mhs::sim {
                         }
                     }
 
-                    if (layer_idx != mhs::invalidIndex && block_idx != mhs::invalidIndex) {
+                    if (layer_idx != mhs::core::invalidIndex && block_idx != mhs::core::invalidIndex) {
                         const auto& block = resolved_layers[layer_idx].blocks[block_idx];
-                        const mhs::Index c_idx = static_cast<mhs::Index>(cells.material_id.size());
+                        const mhs::core::Index c_idx = static_cast<mhs::core::Index>(cells.material_id.size());
                         cells.grid_to_cell[old_idx] = c_idx;
                         cells.cell_to_grid.push_back(old_idx);
                         cells.material_id.push_back(static_cast<mhs::core::TableIndex>(name_to_idx.at(block.material)));
@@ -213,22 +214,22 @@ namespace mhs::sim {
         const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
         std::vector<mhs::core::FaceBC>& face_bcs)
     {
-        const mhs::Index compact_count = static_cast<mhs::Index>(cells.material_id.size());
+        const mhs::core::Index compact_count = static_cast<mhs::core::Index>(cells.material_id.size());
         face_bcs.assign(compact_count * mhs::core::FACE_COUNT, mhs::core::FaceBC {});
 
-        for (mhs::Index ix = 0; ix < mesh.nx; ix++) {
-            for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
-                for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
-                    mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    mhs::Index c_idx = cells.grid_to_cell[old_idx];
-                    if (c_idx == mhs::invalidIndex)
+        for (mhs::core::Index ix = 0; ix < mesh.nx; ix++) {
+            for (mhs::core::Index iy = 0; iy < mesh.ny; iy++) {
+                for (mhs::core::Index iz = 0; iz < mesh.nz; iz++) {
+                    mhs::core::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    mhs::core::Index c_idx = cells.grid_to_cell[old_idx];
+                    if (c_idx == mhs::core::invalidIndex)
                         continue;
 
                     for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
                         mhs::core::FaceDir dir = mhs::core::FACE_DIRS[f];
                         if (mhs::utils::neighbor_grid_index(
                                 ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell)
-                            != mhs::invalidIndex)
+                            != mhs::core::invalidIndex)
                             continue;
 
                         auto [type, param_idx] = match_face_bc(dir, ix, iy, iz, mesh, boundaries, default_boundary);

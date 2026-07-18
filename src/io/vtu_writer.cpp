@@ -15,27 +15,26 @@ namespace mhs::io {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
-        const mhs::Index node_nx = mesh.nx + 1;
-        const mhs::Index node_ny = mesh.ny + 1;
-        const mhs::Index node_nz = mesh.nz + 1;
+        const mhs::core::Index node_nx = mesh.nx + 1;
+        const mhs::core::Index node_ny = mesh.ny + 1;
+        const mhs::core::Index node_nz = mesh.nz + 1;
 
-        const mhs::Index total_nodes = node_nx * node_ny * node_nz;
-        std::vector<mhs::Index> node_remap(total_nodes, mhs::invalidIndex);
+        const mhs::core::Index total_nodes = node_nx * node_ny * node_nz;
+        std::vector<mhs::core::Index> node_remap(total_nodes, mhs::core::invalidIndex);
         std::vector<double> active_temps;
 
-        auto node_idx = [](mhs::Index vx, mhs::Index vy, mhs::Index vz, mhs::Index nny, mhs::Index nnz) {
-            return vx * nny * nnz + vy * nnz + vz;
-        };
+        auto node_idx = [](mhs::core::Index vx, mhs::core::Index vy, mhs::core::Index vz, mhs::core::Index nny,
+                            mhs::core::Index nnz) { return vx * nny * nnz + vy * nnz + vz; };
 
         char buf[64];
-        for (mhs::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::Index vz = 0; vz < node_nz; vz++) {
-                    const mhs::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
+        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
+                    const mhs::core::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
                     const double T = node_temperature[i];
                     if (std::isnan(T))
                         continue;
-                    node_remap[i] = static_cast<mhs::Index>(active_temps.size());
+                    node_remap[i] = static_cast<mhs::core::Index>(active_temps.size());
                     active_temps.push_back(T);
                 }
             }
@@ -44,11 +43,11 @@ namespace mhs::io {
         const int num_points = static_cast<int>(active_temps.size());
 
         std::string coords_str;
-        for (mhs::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::Index vz = 0; vz < node_nz; vz++) {
-                    const mhs::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
-                    if (node_remap[i] == mhs::invalidIndex)
+        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
+                    const mhs::core::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
+                    if (node_remap[i] == mhs::core::invalidIndex)
                         continue;
                     const double node_x
                         = (vx == 0) ? mesh.cx[0] - mesh.dx[0] * 0.5 : mesh.cx[vx - 1] + mesh.dx[vx - 1] * 0.5;
@@ -73,11 +72,11 @@ namespace mhs::io {
         std::string type_str;
         int cell_num = 0;
 
-        for (mhs::Index ix = 0; ix < mesh.nx; ix++) {
-            for (mhs::Index iy = 0; iy < mesh.ny; iy++) {
-                for (mhs::Index iz = 0; iz < mesh.nz; iz++) {
-                    const mhs::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.grid_to_cell[old_idx] == mhs::invalidIndex)
+        for (mhs::core::Index ix = 0; ix < mesh.nx; ix++) {
+            for (mhs::core::Index iy = 0; iy < mesh.ny; iy++) {
+                for (mhs::core::Index iz = 0; iz < mesh.nz; iz++) {
+                    const mhs::core::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.grid_to_cell[old_idx] == mhs::core::invalidIndex)
                         continue;
 
                     const int n[8] = {static_cast<int>(node_idx(ix, iy, iz, node_ny, node_nz)),

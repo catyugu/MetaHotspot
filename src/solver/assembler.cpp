@@ -24,9 +24,9 @@ namespace mhs::sim {
         const auto& bc_params = model_.bc_params;
         const auto& face_bcs = model_.face_bcs;
         const auto& materials = model_.material_table;
-        const mhs::Index active_count = static_cast<mhs::Index>(cells.material_id.size());
+        const mhs::core::Index active_count = static_cast<mhs::core::Index>(cells.material_id.size());
 
-        assert(active_count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        assert(active_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         assert(cells.cell_to_grid.size() == cells.material_id.size());
         const auto eigen_count = static_cast<Eigen::Index>(active_count);
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(eigen_count);
@@ -36,12 +36,12 @@ namespace mhs::sim {
         // Base thermal path: diffusion, material mass, heat sources, and thermal
         // boundary conditions only. Fluid physics is appended as a separate
         // increment after this pass.
-        tbb::parallel_for(
-            tbb::blocked_range<mhs::Index>(0, active_count), [&](const tbb::blocked_range<mhs::Index>& range) {
-                for (mhs::Index cell = range.begin(); cell < range.end(); ++cell) {
-                    const mhs::Index old = cells.cell_to_grid[cell];
+        tbb::parallel_for(tbb::blocked_range<mhs::core::Index>(0, active_count),
+            [&](const tbb::blocked_range<mhs::core::Index>& range) {
+                for (mhs::core::Index cell = range.begin(); cell < range.end(); ++cell) {
+                    const mhs::core::Index old = cells.cell_to_grid[cell];
                     auto& entries = thread_data.local().triplets;
-                    mhs::Index ix, iy, iz;
+                    mhs::core::Index ix, iy, iz;
                     mhs::utils::decode_index(old, mesh.ny, mesh.nz, ix, iy, iz);
                     const double dx = mesh.dx[ix];
                     const double dy = mesh.dy[iy];
@@ -66,18 +66,18 @@ namespace mhs::sim {
                     const auto* cell_face_bcs = &face_bcs[cell * mhs::core::FACE_COUNT];
                     for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                         const auto dir = mhs::core::FACE_DIRS[face];
-                        const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
+                        const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
                             ix, iy, iz, dir, mesh.nx, mesh.ny, mesh.nz, cells.grid_to_cell);
                         const double area = mhs::utils::face_area(dir, dx, dy, dz);
                         const double half_distance = mhs::utils::half_length_along(dir, dx, dy, dz);
                         const double face_k = mhs::utils::k_along(dir, kx, ky, kz);
 
-                        if (neighbor_old != mhs::invalidIndex) {
-                            const mhs::Index neighbor = cells.grid_to_cell[neighbor_old];
-                            assert(neighbor != mhs::invalidIndex);
-                            const mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
-                            const mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);
-                            const mhs::Index niz = mhs::utils::neighbor_iz(dir, iz);
+                        if (neighbor_old != mhs::core::invalidIndex) {
+                            const mhs::core::Index neighbor = cells.grid_to_cell[neighbor_old];
+                            assert(neighbor != mhs::core::invalidIndex);
+                            const mhs::core::Index nix = mhs::utils::neighbor_ix(dir, ix);
+                            const mhs::core::Index niy = mhs::utils::neighbor_iy(dir, iy);
+                            const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                             const auto& neighbor_material = materials[cells.material_id[neighbor]];
                             const mhs::core::FieldContext neighbor_context {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
                                 ctx.T[static_cast<Eigen::Index>(neighbor)], ctx.current_time};

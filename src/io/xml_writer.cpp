@@ -86,13 +86,13 @@ namespace mhs::io {
             data_elem->DeleteChild(child);
         }
 
-        const mhs::Index node_nx = model.mesh.nx + 1;
-        const mhs::Index node_ny = model.mesh.ny + 1;
-        const mhs::Index node_nz = model.mesh.nz + 1;
+        const mhs::core::Index node_nx = model.mesh.nx + 1;
+        const mhs::core::Index node_ny = model.mesh.ny + 1;
+        const mhs::core::Index node_nz = model.mesh.nz + 1;
 
-        for (mhs::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::Index vz = 0; vz < node_nz; vz++) {
+        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
                     const double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
 
                     XMLElement* double_elem = doc.NewElement("a:double");
@@ -122,7 +122,7 @@ namespace mhs::io {
         for (const auto& trace : observation_traces) {
             XMLElement* target = nullptr;
             for (XMLElement* candidate = results_elem->FirstChildElement("a:anyType"); candidate;
-                candidate = candidate->NextSiblingElement("a:anyType")) {
+                 candidate = candidate->NextSiblingElement("a:anyType")) {
                 const char* type = candidate->Attribute("i:type");
                 if (!type || std::string(type).find("Result0DTransient") == std::string::npos)
                     continue;

@@ -13,8 +13,8 @@ namespace mhs::sim::time_scheme {
 
         LinearSystem build_bdf1(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
         {
-            const mhs::Index count = static_cast<mhs::Index>(ops.f.size());
-            assert(count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+            const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
+            assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
             const auto eigen_count = static_cast<Eigen::Index>(count);
             Eigen::Map<const Eigen::VectorXd> previous(history.current().data(), eigen_count);
             const Eigen::VectorXd mass_over_dt = ops.M_diag / dt;
@@ -27,8 +27,8 @@ namespace mhs::sim::time_scheme {
 
         LinearSystem build_bdf2(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
         {
-            const mhs::Index count = static_cast<mhs::Index>(ops.f.size());
-            assert(count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+            const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
+            assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
             const auto eigen_count = static_cast<Eigen::Index>(count);
             const double ratio = dt / history.previous_dt();
             const double alpha0 = (1.0 + 2.0 * ratio) / (dt * (1.0 + ratio));
@@ -59,10 +59,10 @@ namespace mhs::sim::time_scheme {
     ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
         double trial_dt, const ErrorControlConfig& config)
     {
-        const mhs::Index count = static_cast<mhs::Index>(trial_T.size());
+        const mhs::core::Index count = static_cast<mhs::core::Index>(trial_T.size());
         if (count == 0)
             return {0.0, 1.0};
-        assert(count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_count = static_cast<Eigen::Index>(count);
 
         Eigen::Map<const Eigen::VectorXd> trial(trial_T.data(), eigen_count);

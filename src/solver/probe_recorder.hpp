@@ -37,8 +37,9 @@ namespace mhs::sim {
         // 预解析的探针槽位，避免 record 时重复二分。
         struct ProbeSlot {
             double px = 0.0, py = 0.0, pz = 0.0; // 用户坐标系下的探针坐标（用于 LSQ 锚点）
-            mhs::Index ix = mhs::invalidIndex, iy = mhs::invalidIndex, iz = mhs::invalidIndex; // 包围 cell 在网格中的下标
-            mhs::Index grid_idx = mhs::invalidIndex; // ix*ny*nz + iy*nz + iz
+            mhs::core::Index ix = mhs::core::invalidIndex, iy = mhs::core::invalidIndex,
+                             iz = mhs::core::invalidIndex; // 包围 cell 在网格中的下标
+            mhs::core::Index grid_idx = mhs::core::invalidIndex; // ix*ny*nz + iy*nz + iz
             bool valid = false; // 网格内 + grid_to_cell[grid_idx] != invalidIndex
         };
         std::vector<ProbeSlot> slots_;

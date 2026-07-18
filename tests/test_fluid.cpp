@@ -61,21 +61,21 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 {
     auto model = load_microfluid_case();
 
-    for (mhs::Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
-        const mhs::Index cell = model.fluid.fluid_to_global[fi];
-        const mhs::Index old = model.cells.cell_to_grid[cell];
-        mhs::Index ix, iy, iz;
+    for (mhs::core::Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
+        const mhs::core::Index cell = model.fluid.fluid_to_global[fi];
+        const mhs::core::Index old = model.cells.cell_to_grid[cell];
+        mhs::core::Index ix, iy, iz;
         mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
 
         for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
             const auto dir = mhs::core::FACE_DIRS[face];
-            const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
+            const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
                 ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-            if (neighbor_old == mhs::invalidIndex)
+            if (neighbor_old == mhs::core::invalidIndex)
                 continue;
-            const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
-            const mhs::Index fn = model.fluid.global_to_fluid[neighbor];
-            if (fn == mhs::invalidIndex)
+            const mhs::core::Index neighbor = model.cells.grid_to_cell[neighbor_old];
+            const mhs::core::Index fn = model.fluid.global_to_fluid[neighbor];
+            if (fn == mhs::core::invalidIndex)
                 continue;
 
             const std::size_t opposite = face ^ 1U;
@@ -93,20 +93,20 @@ TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
     const auto increment = mhs::sim::fluid::assemble_increment(model, temperature, 0.0);
 
     for (const auto& entry : increment.matrix_entries) {
-        const mhs::Index row = static_cast<mhs::Index>(entry.row());
-        const mhs::Index col = static_cast<mhs::Index>(entry.col());
+        const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row());
+        const mhs::core::Index col = static_cast<mhs::core::Index>(entry.col());
         if (row == col)
             continue;
 
-        const mhs::Index old = model.cells.cell_to_grid[row];
-        mhs::Index ix, iy, iz;
+        const mhs::core::Index old = model.cells.cell_to_grid[row];
+        mhs::core::Index ix, iy, iz;
         mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
 
         bool direct_neighbor = false;
         for (auto dir : mhs::core::FACE_DIRS) {
-            const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
+            const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
                 ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-            if (neighbor_old != mhs::invalidIndex && model.cells.grid_to_cell[neighbor_old] == col) {
+            if (neighbor_old != mhs::core::invalidIndex && model.cells.grid_to_cell[neighbor_old] == col) {
                 direct_neighbor = true;
                 break;
             }

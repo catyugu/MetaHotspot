@@ -28,8 +28,8 @@ namespace mhs::utils {
     inline constexpr int TANGENT_B_OF_DIR[mhs::core::FACE_COUNT] = {2, 2, 2, 2, 1, 1};
 
     /// Decode flat grid index to (ix, iy, iz) coordinates.
-    inline void decode_index(mhs::Index old_idx, mhs::Index ny, mhs::Index nz,
-        mhs::Index& ix, mhs::Index& iy, mhs::Index& iz)
+    inline void decode_index(mhs::core::Index old_idx, mhs::core::Index ny, mhs::core::Index nz, mhs::core::Index& ix,
+        mhs::core::Index& iy, mhs::core::Index& iz)
     {
         ix = old_idx / (ny * nz);
         iy = (old_idx % (ny * nz)) / nz;
@@ -37,35 +37,34 @@ namespace mhs::utils {
     }
 
     // ── Neighbor coordinate lookups ─────────────────────────────────────
-    inline mhs::Index neighbor_ix(mhs::core::FaceDir dir, mhs::Index ix)
+    inline mhs::core::Index neighbor_ix(mhs::core::FaceDir dir, mhs::core::Index ix)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
-        return static_cast<mhs::Index>(static_cast<int64_t>(ix) + DIR_DX[static_cast<size_t>(dir)]);
+        return static_cast<mhs::core::Index>(static_cast<int64_t>(ix) + DIR_DX[static_cast<size_t>(dir)]);
     }
-    inline mhs::Index neighbor_iy(mhs::core::FaceDir dir, mhs::Index iy)
+    inline mhs::core::Index neighbor_iy(mhs::core::FaceDir dir, mhs::core::Index iy)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
-        return static_cast<mhs::Index>(static_cast<int64_t>(iy) + DIR_DY[static_cast<size_t>(dir)]);
+        return static_cast<mhs::core::Index>(static_cast<int64_t>(iy) + DIR_DY[static_cast<size_t>(dir)]);
     }
-    inline mhs::Index neighbor_iz(mhs::core::FaceDir dir, mhs::Index iz)
+    inline mhs::core::Index neighbor_iz(mhs::core::FaceDir dir, mhs::core::Index iz)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
-        return static_cast<mhs::Index>(static_cast<int64_t>(iz) + DIR_DZ[static_cast<size_t>(dir)]);
+        return static_cast<mhs::core::Index>(static_cast<int64_t>(iz) + DIR_DZ[static_cast<size_t>(dir)]);
     }
 
-    inline mhs::Index neighbor_grid_index(
-        mhs::Index ix, mhs::Index iy, mhs::Index iz, mhs::core::FaceDir dir,
-        mhs::Index nx, mhs::Index ny, mhs::Index nz,
-        const std::vector<mhs::Index>& grid_to_cell)
+    inline mhs::core::Index neighbor_grid_index(mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
+        mhs::core::FaceDir dir, mhs::core::Index nx, mhs::core::Index ny, mhs::core::Index nz,
+        const std::vector<mhs::core::Index>& grid_to_cell)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
-        mhs::Index nix = neighbor_ix(dir, ix);
-        mhs::Index niy = neighbor_iy(dir, iy);
-        mhs::Index niz = neighbor_iz(dir, iz);
+        mhs::core::Index nix = neighbor_ix(dir, ix);
+        mhs::core::Index niy = neighbor_iy(dir, iy);
+        mhs::core::Index niz = neighbor_iz(dir, iz);
         if (nix >= nx || niy >= ny || niz >= nz)
-            return mhs::invalidIndex;
-        mhs::Index idx = nix * ny * nz + niy * nz + niz;
-        return grid_to_cell[idx] != mhs::invalidIndex ? idx : mhs::invalidIndex;
+            return mhs::core::invalidIndex;
+        mhs::core::Index idx = nix * ny * nz + niy * nz + niz;
+        return grid_to_cell[idx] != mhs::core::invalidIndex ? idx : mhs::core::invalidIndex;
     }
 
     // ── Face-axis-relative geometric lookups ───────────────────────────
@@ -91,9 +90,8 @@ namespace mhs::utils {
         return d[(a + 1) % 3] * d[(a + 2) % 3];
     }
 
-    inline double face_coord_value(mhs::core::FaceDir dir,
-        mhs::Index ix, mhs::Index iy, mhs::Index iz,
-        const mhs::core::MeshGeometry& mesh)
+    inline double face_coord_value(mhs::core::FaceDir dir, mhs::core::Index ix, mhs::core::Index iy,
+        mhs::core::Index iz, const mhs::core::MeshGeometry& mesh)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const int axis = AXIS_OF_DIR[static_cast<size_t>(dir)];
@@ -103,37 +101,45 @@ namespace mhs::utils {
         return centers[axis] + sign * sizes[axis] * 0.5;
     }
 
-    inline void face_center_3d(mhs::core::FaceDir dir,
-        mhs::Index ix, mhs::Index iy, mhs::Index iz,
-        const mhs::core::MeshGeometry& mesh,
-        double& fx, double& fy, double& fz)
+    inline void face_center_3d(mhs::core::FaceDir dir, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
+        const mhs::core::MeshGeometry& mesh, double& fx, double& fy, double& fz)
     {
         fx = mesh.cx[ix];
         fy = mesh.cy[iy];
         fz = mesh.cz[iz];
         double half = half_length_along(dir, mesh.dx[ix], mesh.dy[iy], mesh.dz[iz]);
         switch (dir) {
-        case mhs::core::FaceDir::XM: fx -= half; break;
-        case mhs::core::FaceDir::XP: fx += half; break;
-        case mhs::core::FaceDir::YM: fy -= half; break;
-        case mhs::core::FaceDir::YP: fy += half; break;
-        case mhs::core::FaceDir::ZM: fz -= half; break;
-        case mhs::core::FaceDir::ZP: fz += half; break;
+        case mhs::core::FaceDir::XM:
+            fx -= half;
+            break;
+        case mhs::core::FaceDir::XP:
+            fx += half;
+            break;
+        case mhs::core::FaceDir::YM:
+            fy -= half;
+            break;
+        case mhs::core::FaceDir::YP:
+            fy += half;
+            break;
+        case mhs::core::FaceDir::ZM:
+            fz -= half;
+            break;
+        case mhs::core::FaceDir::ZP:
+            fz += half;
+            break;
         }
     }
 
-    inline bool is_grid_boundary_face(
-        mhs::core::FaceDir dir,
-        mhs::Index ix, mhs::Index iy, mhs::Index iz,
-        const mhs::core::MeshGeometry& mesh)
+    inline bool is_grid_boundary_face(mhs::core::FaceDir dir, mhs::core::Index ix, mhs::core::Index iy,
+        mhs::core::Index iz, const mhs::core::MeshGeometry& mesh)
     {
         assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
         const int axis = AXIS_OF_DIR[static_cast<size_t>(dir)];
         const int sign = DIR_SIGN[static_cast<size_t>(dir)];
-        const mhs::Index sizes[3] = {mesh.nx, mesh.ny, mesh.nz};
-        const mhs::Index idx[3] = {ix, iy, iz};
-        const mhs::Index i = idx[axis];
-        const mhs::Index n = sizes[axis];
+        const mhs::core::Index sizes[3] = {mesh.nx, mesh.ny, mesh.nz};
+        const mhs::core::Index idx[3] = {ix, iy, iz};
+        const mhs::core::Index i = idx[axis];
+        const mhs::core::Index n = sizes[axis];
         return (sign < 0 && i == 0) || (sign > 0 && i == n - 1);
     }
 

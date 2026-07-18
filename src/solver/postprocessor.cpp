@@ -1,6 +1,6 @@
+#include "solver/postprocessor.hpp"
 #include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
-#include "solver/postprocessor.hpp"
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -16,17 +16,17 @@ namespace mhs::post {
         const auto& face_bcs = model.face_bcs;
         const auto& bc_params = model.bc_params;
 
-        mhs::Index node_nx = mesh.nx + 1;
-        mhs::Index node_ny = mesh.ny + 1;
-        mhs::Index node_nz = mesh.nz + 1;
-        mhs::Index total_nodes = node_nx * node_ny * node_nz;
+        mhs::core::Index node_nx = mesh.nx + 1;
+        mhs::core::Index node_ny = mesh.ny + 1;
+        mhs::core::Index node_nz = mesh.nz + 1;
+        mhs::core::Index total_nodes = node_nx * node_ny * node_nz;
 
         std::vector<double> node_T(total_nodes, std::numeric_limits<double>::quiet_NaN());
 
-        for (mhs::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::Index vz = 0; vz < node_nz; vz++) {
-                    mhs::Index node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
+        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
+            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
+                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
+                    mhs::core::Index node_idx = vx * node_ny * node_nz + vy * node_nz + vz;
 
                     double node_x = (vx == 0) ? mesh.cx[0] - mesh.dx[0] * 0.5 : mesh.cx[vx - 1] + mesh.dx[vx - 1] * 0.5;
                     double node_y = (vy == 0) ? mesh.cy[0] - mesh.dy[0] * 0.5 : mesh.cy[vy - 1] + mesh.dy[vy - 1] * 0.5;
@@ -39,26 +39,26 @@ namespace mhs::post {
 
                     // 遍历该节点周边相接的最多 8 个体元
                     for (int dx = -1; dx <= 0; dx++) {
-                        mhs::Index ix = static_cast<mhs::Index>(static_cast<int64_t>(vx) + dx);
+                        mhs::core::Index ix = static_cast<mhs::core::Index>(static_cast<int64_t>(vx) + dx);
                         if (ix >= mesh.nx)
                             continue;
 
                         for (int dy = -1; dy <= 0; dy++) {
-                            mhs::Index iy = static_cast<mhs::Index>(static_cast<int64_t>(vy) + dy);
+                            mhs::core::Index iy = static_cast<mhs::core::Index>(static_cast<int64_t>(vy) + dy);
                             if (iy >= mesh.ny)
                                 continue;
 
                             for (int dz = -1; dz <= 0; dz++) {
-                                mhs::Index iz = static_cast<mhs::Index>(static_cast<int64_t>(vz) + dz);
+                                mhs::core::Index iz = static_cast<mhs::core::Index>(static_cast<int64_t>(vz) + dz);
                                 if (iz >= mesh.nz)
                                     continue;
 
-                                mhs::Index cell_grid_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                                if (cells.grid_to_cell[cell_grid_idx] == mhs::invalidIndex)
+                                mhs::core::Index cell_grid_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                                if (cells.grid_to_cell[cell_grid_idx] == mhs::core::invalidIndex)
                                     continue;
 
-                                mhs::Index compact_idx = cells.grid_to_cell[cell_grid_idx];
-                                assert(compact_idx != mhs::invalidIndex);
+                                mhs::core::Index compact_idx = cells.grid_to_cell[cell_grid_idx];
+                                assert(compact_idx != mhs::core::invalidIndex);
                                 double T_c = cell_temperature[compact_idx];
 
                                 double cx = mesh.cx[ix];

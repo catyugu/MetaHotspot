@@ -38,8 +38,8 @@ namespace mhs::sim {
         inline void compute_cell_spacing(
             const std::vector<double>& vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
         {
-            const mhs::Index n = static_cast<mhs::Index>(d.size());
-            for (mhs::Index i = 0; i < n; ++i) {
+            const mhs::core::Index n = static_cast<mhs::core::Index>(d.size());
+            for (mhs::core::Index i = 0; i < n; ++i) {
                 const double v0 = vertices[i] * si_scale;
                 const double v1 = vertices[i + 1] * si_scale;
                 d[i] = v1 - v0;
@@ -190,9 +190,9 @@ namespace mhs::sim {
         model.observation_points = build_observation_points(definition.observation_points, symbols, si_scale);
 
         auto& mesh = model.mesh;
-        mesh.nx = static_cast<mhs::Index>(definition.mesh.x_vertices.size()) - 1;
-        mesh.ny = static_cast<mhs::Index>(definition.mesh.y_vertices.size()) - 1;
-        mesh.nz = static_cast<mhs::Index>(definition.mesh.z_vertices.size()) - 1;
+        mesh.nx = static_cast<mhs::core::Index>(definition.mesh.x_vertices.size()) - 1;
+        mesh.ny = static_cast<mhs::core::Index>(definition.mesh.y_vertices.size()) - 1;
+        mesh.nz = static_cast<mhs::core::Index>(definition.mesh.z_vertices.size()) - 1;
 
         assert(mesh.nx > 0 && mesh.ny > 0 && mesh.nz > 0);
         mesh.dx.resize(static_cast<size_t>(mesh.nx));

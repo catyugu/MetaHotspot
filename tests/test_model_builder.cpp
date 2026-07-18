@@ -68,7 +68,7 @@ TEST(ModelBuilderTest, BuildsWithExistingCompilerAndKeepsLastWinsSemantics)
 
     const auto model = mhs::sim::build_model(std::move(builder).finish());
     const auto first_cell = model.cells.grid_to_cell[0];
-    ASSERT_NE(first_cell, mhs::invalidIndex);
+    ASSERT_NE(first_cell, mhs::core::invalidIndex);
     EXPECT_DOUBLE_EQ(model.material_table[model.cells.material_id[first_cell]].kx.eval({}), 130.0);
     EXPECT_DOUBLE_EQ(model.heat_source_table[model.cells.heat_source_idx[first_cell]].eval({}), 1e7);
 }

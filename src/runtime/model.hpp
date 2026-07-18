@@ -19,7 +19,7 @@ namespace mhs::core {
 
     // ── Structured mesh geometry ─────────────────────────────────────────
     struct MeshGeometry {
-        mhs::Index nx = 0, ny = 0, nz = 0;
+        Index nx = 0, ny = 0, nz = 0;
 
         std::vector<double> dx;
         std::vector<double> dy;

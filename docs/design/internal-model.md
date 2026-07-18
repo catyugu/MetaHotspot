@@ -6,7 +6,7 @@
 
 ```cpp
 struct MeshGeometry {
-    mhs::Index nx = 0, ny = 0, nz = 0;
+    mhs::core::Index nx = 0, ny = 0, nz = 0;
 
     std::vector<double> dx, dy, dz;                    // sizes nx, ny, nz
     std::vector<double> cx, cy, cz;                    // sizes nx, ny, nz (centers)

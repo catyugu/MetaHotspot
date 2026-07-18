@@ -16,13 +16,13 @@ namespace mhs::sim::fluid {
             std::vector<Eigen::Triplet<double>> matrix_entries;
         };
 
-        bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::Index cell)
+        bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::core::Index cell)
         {
-            return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::invalidIndex;
+            return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::core::invalidIndex;
         }
 
-        void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::Index fluid_cell,
-            mhs::Index solid_cell, double correction)
+        void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::core::Index fluid_cell,
+            mhs::core::Index solid_cell, double correction)
         {
             const auto f = static_cast<int>(fluid_cell);
             const auto s = static_cast<int>(solid_cell);
@@ -37,8 +37,8 @@ namespace mhs::sim::fluid {
     FluidAssemblyIncrement assemble_increment(
         const mhs::core::Model& model, Eigen::Ref<const Eigen::VectorXd> temperature, double current_time)
     {
-        const mhs::Index active_count = static_cast<mhs::Index>(model.cells.material_id.size());
-        assert(active_count <= static_cast<mhs::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const mhs::core::Index active_count = static_cast<mhs::core::Index>(model.cells.material_id.size());
+        assert(active_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         FluidAssemblyIncrement result;
         result.rhs = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(active_count));
         if (model.fluid.fluid_to_global.empty())
@@ -46,15 +46,15 @@ namespace mhs::sim::fluid {
 
         auto thread_entries
             = tbb::enumerable_thread_specific<ThreadLocalEntries>([]() { return ThreadLocalEntries {}; });
-        const mhs::Index fluid_count = static_cast<mhs::Index>(model.fluid.fluid_to_global.size());
+        const mhs::core::Index fluid_count = static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size());
 
-        tbb::parallel_for(
-            tbb::blocked_range<mhs::Index>(0, fluid_count), [&](const tbb::blocked_range<mhs::Index>& range) {
-                for (mhs::Index fi = range.begin(); fi < range.end(); ++fi) {
-                    const mhs::Index cell = model.fluid.fluid_to_global[fi];
-                    const mhs::Index old = model.cells.cell_to_grid[cell];
+        tbb::parallel_for(tbb::blocked_range<mhs::core::Index>(0, fluid_count),
+            [&](const tbb::blocked_range<mhs::core::Index>& range) {
+                for (mhs::core::Index fi = range.begin(); fi < range.end(); ++fi) {
+                    const mhs::core::Index cell = model.fluid.fluid_to_global[fi];
+                    const mhs::core::Index old = model.cells.cell_to_grid[cell];
                     auto& local = thread_entries.local().matrix_entries;
-                    mhs::Index ix, iy, iz;
+                    mhs::core::Index ix, iy, iz;
                     mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                     const double dx = model.mesh.dx[ix];
                     const double dy = model.mesh.dy[iy];
@@ -72,16 +72,16 @@ namespace mhs::sim::fluid {
 
                     for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
                         const auto dir = mhs::core::FACE_DIRS[face];
-                        const mhs::Index neighbor_old = mhs::utils::neighbor_grid_index(
+                        const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
                             ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-                        if (neighbor_old == mhs::invalidIndex)
+                        if (neighbor_old == mhs::core::invalidIndex)
                             continue;
 
-                        const mhs::Index neighbor = model.cells.grid_to_cell[neighbor_old];
-                        assert(neighbor != mhs::invalidIndex);
-                        const mhs::Index nix = mhs::utils::neighbor_ix(dir, ix);
-                        const mhs::Index niy = mhs::utils::neighbor_iy(dir, iy);
-                        const mhs::Index niz = mhs::utils::neighbor_iz(dir, iz);
+                        const mhs::core::Index neighbor = model.cells.grid_to_cell[neighbor_old];
+                        assert(neighbor != mhs::core::invalidIndex);
+                        const mhs::core::Index nix = mhs::utils::neighbor_ix(dir, ix);
+                        const mhs::core::Index niy = mhs::utils::neighbor_iy(dir, iy);
+                        const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                         const auto& neighbor_material = model.material_table[model.cells.material_id[neighbor]];
                         const mhs::core::FieldContext neighbor_context {model.mesh.cx[nix], model.mesh.cy[niy],
                             model.mesh.cz[niz], temperature[static_cast<Eigen::Index>(neighbor)], current_time};

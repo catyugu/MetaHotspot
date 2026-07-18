@@ -10,7 +10,7 @@ namespace mhs::utils {
     double sample_solve_least_squares(
         const std::vector<SampleDataPoint>& pts, double node_x, double node_y, double node_z)
     {
-        mhs::Index M = static_cast<mhs::Index>(pts.size());
+        mhs::core::Index M = static_cast<mhs::core::Index>(pts.size());
         if (M == 0)
             return std::numeric_limits<double>::quiet_NaN();
         if (M == 1)
@@ -22,7 +22,7 @@ namespace mhs::utils {
         B.setZero();
 
         double sum_w = 0.0;
-        for (mhs::Index i = 0; i < M; ++i) {
+        for (mhs::core::Index i = 0; i < M; ++i) {
             double sqrt_w = std::sqrt(pts[i].weight);
             A(i, 0) = sqrt_w;
             A(i, 1) = sqrt_w * (pts[i].x - node_x);
@@ -42,15 +42,15 @@ namespace mhs::utils {
         return X(0);
     }
 
-    void sample_face_center(mhs::core::FaceDir dir, mhs::Index ix, mhs::Index iy, mhs::Index iz,
+    void sample_face_center(mhs::core::FaceDir dir, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
         const mhs::core::MeshGeometry& mesh, double& fx, double& fy, double& fz)
     {
         mhs::utils::face_center_3d(dir, ix, iy, iz, mesh, fx, fy, fz);
     }
 
     double sample_extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type,
-        mhs::core::TableIndex param_idx, double T_c, double k, const mhs::core::MeshGeometry& mesh, mhs::Index ix,
-        mhs::Index iy, mhs::Index iz, const mhs::core::BCParamTable& bc_params, double time)
+        mhs::core::TableIndex param_idx, double T_c, double k, const mhs::core::MeshGeometry& mesh, mhs::core::Index ix,
+        mhs::core::Index iy, mhs::core::Index iz, const mhs::core::BCParamTable& bc_params, double time)
     {
         double fx, fy, fz;
         sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);

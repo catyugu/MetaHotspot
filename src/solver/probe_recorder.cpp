@@ -1,6 +1,6 @@
+#include "solver/probe_recorder.hpp"
 #include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
-#include "solver/probe_recorder.hpp"
 
 #include <limits>
 
@@ -8,19 +8,19 @@ namespace mhs::sim {
 
     namespace {
         template <typename T>
-        mhs::Index locate_cell_index(const std::vector<T>& centers, const std::vector<T>& sizes, T value)
+        mhs::core::Index locate_cell_index(const std::vector<T>& centers, const std::vector<T>& sizes, T value)
         {
-            mhs::Index n = static_cast<mhs::Index>(centers.size());
+            mhs::core::Index n = static_cast<mhs::core::Index>(centers.size());
             if (n == 0)
-                return mhs::invalidIndex;
+                return mhs::core::invalidIndex;
             T lo_bound = centers[0] - sizes[0] * T(0.5);
             T hi_bound = centers[n - 1] + sizes[n - 1] * T(0.5);
             if (value < lo_bound || value > hi_bound)
-                return mhs::invalidIndex;
+                return mhs::core::invalidIndex;
 
-            mhs::Index lo = 0, hi = n - 1;
+            mhs::core::Index lo = 0, hi = n - 1;
             while (lo < hi) {
-                mhs::Index mid = (lo + hi + 1) / 2;
+                mhs::core::Index mid = (lo + hi + 1) / 2;
                 if (centers[mid] <= value)
                     lo = mid;
                 else
@@ -55,12 +55,13 @@ namespace mhs::sim {
             slot.ix = locate_cell_index(model.mesh.cx, model.mesh.dx, op.x);
             slot.iy = locate_cell_index(model.mesh.cy, model.mesh.dy, op.y);
             slot.iz = locate_cell_index(model.mesh.cz, model.mesh.dz, op.z);
-            if (slot.ix == mhs::invalidIndex || slot.iy == mhs::invalidIndex || slot.iz == mhs::invalidIndex) {
+            if (slot.ix == mhs::core::invalidIndex || slot.iy == mhs::core::invalidIndex
+                || slot.iz == mhs::core::invalidIndex) {
                 slot.valid = false;
             }
             else {
                 slot.grid_idx = slot.ix * model.mesh.ny * model.mesh.nz + slot.iy * model.mesh.nz + slot.iz;
-                slot.valid = (model.cells.grid_to_cell[slot.grid_idx] != mhs::invalidIndex);
+                slot.valid = (model.cells.grid_to_cell[slot.grid_idx] != mhs::core::invalidIndex);
             }
             slots_.push_back(std::move(slot));
         }
@@ -85,32 +86,32 @@ namespace mhs::sim {
         const auto& cells = model_->cells;
         const auto& face_bcs = model_->face_bcs;
         const auto& bc_params = model_->bc_params;
-        const mhs::Index ix = slot.ix;
-        const mhs::Index iy = slot.iy;
-        const mhs::Index iz = slot.iz;
-        const mhs::Index grid_idx = slot.grid_idx;
+        const mhs::core::Index ix = slot.ix;
+        const mhs::core::Index iy = slot.iy;
+        const mhs::core::Index iz = slot.iz;
+        const mhs::core::Index grid_idx = slot.grid_idx;
         const double px = slot.px;
         const double py = slot.py;
         const double pz = slot.pz;
 
-        mhs::Index compact_idx = cells.grid_to_cell[grid_idx];
-        assert(compact_idx != mhs::invalidIndex);
+        mhs::core::Index compact_idx = cells.grid_to_cell[grid_idx];
+        assert(compact_idx != mhs::core::invalidIndex);
 
         std::vector<mhs::utils::SampleDataPoint> pts;
         pts.reserve(8 + mhs::core::FACE_COUNT);
 
         double sum_T = 0.0;
-        mhs::Index cnt = 0;
-        for (mhs::Index dx = 0; dx <= 1; ++dx) {
-            for (mhs::Index dy = 0; dy <= 1; ++dy) {
-                for (mhs::Index dz = 0; dz <= 1; ++dz) {
-                    mhs::Index ngx = ix + dx;
-                    mhs::Index ngy = iy + dy;
-                    mhs::Index ngz = iz + dz;
+        mhs::core::Index cnt = 0;
+        for (mhs::core::Index dx = 0; dx <= 1; ++dx) {
+            for (mhs::core::Index dy = 0; dy <= 1; ++dy) {
+                for (mhs::core::Index dz = 0; dz <= 1; ++dz) {
+                    mhs::core::Index ngx = ix + dx;
+                    mhs::core::Index ngy = iy + dy;
+                    mhs::core::Index ngz = iz + dz;
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
-                    mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.grid_to_cell[ng] == mhs::invalidIndex)
+                    mhs::core::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
+                    if (cells.grid_to_cell[ng] == mhs::core::invalidIndex)
                         continue;
                     sum_T += cell_T[cells.grid_to_cell[ng]];
                     ++cnt;
@@ -136,16 +137,16 @@ namespace mhs::sim {
         double ky_c = mp.ky.eval(ctx);
         double kz_c = mp.kz.eval(ctx);
 
-        for (mhs::Index dx = 0; dx <= 1; ++dx) {
-            for (mhs::Index dy = 0; dy <= 1; ++dy) {
-                for (mhs::Index dz = 0; dz <= 1; ++dz) {
-                    mhs::Index ngx = ix + dx;
-                    mhs::Index ngy = iy + dy;
-                    mhs::Index ngz = iz + dz;
+        for (mhs::core::Index dx = 0; dx <= 1; ++dx) {
+            for (mhs::core::Index dy = 0; dy <= 1; ++dy) {
+                for (mhs::core::Index dz = 0; dz <= 1; ++dz) {
+                    mhs::core::Index ngx = ix + dx;
+                    mhs::core::Index ngy = iy + dy;
+                    mhs::core::Index ngz = iz + dz;
                     if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
                         continue;
-                    mhs::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.grid_to_cell[ng] == mhs::invalidIndex)
+                    mhs::core::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
+                    if (cells.grid_to_cell[ng] == mhs::core::invalidIndex)
                         continue;
                     double T_i = cell_T[cells.grid_to_cell[ng]];
                     double cdx = mesh.cx[ngx] - px;

@@ -1,9 +1,9 @@
+#include "solver/scheduler.hpp"
 #include "logging/logger.hpp"
 #include "runtime/constants.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
-#include "solver/scheduler.hpp"
 #include "solver/solution_history.hpp"
 #include "solver/time_integration.hpp"
 
@@ -46,7 +46,7 @@ namespace mhs::sim {
         probe_recorder.initialize(model);
         StepState step;
 
-        const mhs::Index N = static_cast<mhs::Index>(model.cells.material_id.size());
+        const mhs::core::Index N = static_cast<mhs::core::Index>(model.cells.material_id.size());
         step.T.resize(N);
 
         std::fill_n(step.T.data(), N, model.initial_temperature);
