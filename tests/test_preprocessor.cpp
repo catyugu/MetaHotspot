@@ -1,7 +1,7 @@
-#include "engine/runtime_model.hpp"
+#include "compiler/runtime_model.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "engine/model_compiler.hpp"
+#include "compiler/model_compiler.hpp"
 #include "numerics/expression/expr.hpp"
 #include <gtest/gtest.h>
 

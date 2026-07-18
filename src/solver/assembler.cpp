@@ -1,7 +1,7 @@
-#include "engine/assembler.hpp"
+#include "solver/assembler.hpp"
 
-#include "engine/fluid_assembler.hpp"
-#include "engine/mesh.hpp"
+#include "solver/fluid_assembler.hpp"
+#include "compiler/mesh.hpp"
 
 #include <Eigen/Sparse>
 #include <cassert>

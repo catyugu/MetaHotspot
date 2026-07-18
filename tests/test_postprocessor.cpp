@@ -1,8 +1,8 @@
-#include "engine/runtime_model.hpp"
+#include "compiler/runtime_model.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "engine/model_compiler.hpp"
-#include "engine/postprocessor.hpp"
+#include "compiler/model_compiler.hpp"
+#include "solver/postprocessor.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;

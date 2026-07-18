@@ -1,4 +1,4 @@
-#include "engine/model_functions.hpp"
+#include "compiler/model_functions.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include "gtest/gtest.h"

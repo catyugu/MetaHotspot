@@ -17,7 +17,8 @@ MetaHotspot/
 │       └── tbb.cmake
 ├── src/
 │   ├── model/                   # mhs_model       纯建模契约与 ModelBuilder（无第三方依赖）
-│   ├── engine/                  # mhs_engine      模型编译、求解运行期、调度与后处理
+│   ├── compiler/                # mhs_compiler    ModelDefinition → 运行期 SoA、冻结流场
+│   ├── solver/                  # mhs_solver      组装、迭代、时间推进、探针与后处理
 │   ├── numerics/
 │   │   ├── expression/          # mhs_expression  muparser + TBB 表达式封装
 │   │   └── linear/              # mhs_linear      Eigen / MKL 线性求解封装
@@ -86,12 +87,12 @@ namespace mhs::logger {
 |-------------------|-------------------------------------------------------------------------|------------------------------------------|
 | `mhs`             | —                                                                       | 库品牌前缀（壳，不含类型定义）           |
 | `mhs::model`      | `model/`                                                                | 建模契约与顺序式 ModelBuilder             |
-| `mhs::core`       | `engine/` + `numerics/expression/` | 求解模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `engine/`                          | 网格、采样和物理助手                     |
-| `mhs::sim`        | `engine/` + `numerics/linear/`     | 数值引擎：组装、线性/非线性求解、调度    |
-| `mhs::sim::fluid` | `engine/`                          | 冻结流场构建与不改变稀疏模式的热装配增量 |
+| `mhs::core`       | `compiler/` + `solver/` + `numerics/expression/` | 求解模型、表达式、POD 枚举、共享基础设施 |
+| `mhs::utils`      | `compiler/` + `solver/`                         | 网格、采样和物理助手                     |
+| `mhs::sim`        | `compiler/` + `solver/` + `numerics/linear/`    | 模型编译、组装、线性/非线性求解与调度    |
+| `mhs::sim::fluid` | `compiler/` + `solver/`                         | 冻结流场构建与不改变稀疏模式的热装配增量 |
 | `mhs::io`         | `io/`                                                                   | XML I/O、VTU 输出                        |
-| `mhs::post`       | `engine/`                          | 单元→节点插值、温度范围                  |
+| `mhs::post`       | `solver/`                          | 单元→节点插值、温度范围                  |
 | `mhs::logger`     | `logging/`                         | 独立日志服务                             |
 
 公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。

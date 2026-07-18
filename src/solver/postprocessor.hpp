@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine/runtime_model.hpp"
+#include "compiler/runtime_model.hpp"
 #include <vector>
 
 namespace mhs::post {

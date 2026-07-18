@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Eigen/SparseCore"
-#include "engine/runtime_model.hpp"
+#include "compiler/runtime_model.hpp"
 #include <Eigen/Core>
 
 namespace mhs::sim {

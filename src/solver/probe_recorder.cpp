@@ -1,6 +1,6 @@
-#include "engine/probe_recorder.hpp"
-#include "engine/interpolation.hpp"
-#include "engine/mesh.hpp"
+#include "solver/probe_recorder.hpp"
+#include "solver/interpolation.hpp"
+#include "compiler/mesh.hpp"
 
 #include <limits>
 

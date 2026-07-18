@@ -1,6 +1,6 @@
-#include "engine/linear_system.hpp"
-#include "engine/solution_history.hpp"
-#include "engine/time_integration.hpp"
+#include "solver/linear_system.hpp"
+#include "solver/solution_history.hpp"
+#include "solver/time_integration.hpp"
 
 #include <Eigen/Sparse>
 #include <gtest/gtest.h>

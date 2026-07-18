@@ -19,13 +19,14 @@
 ### 构建目标
 
 - **`mhs_model`**：轻量建模契约和 `ModelBuilder`，不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
-- **`mhs_engine`**：本地运行期实现的唯一内聚目标，包含模型编译、网格/采样、热与流体组装、非线性、时间积分、调度和后处理。
+- **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
+- **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。
 - **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
 - **`mhs_linear`**：Eigen / MKL 线性求解封装；与建模代码的增量编译隔离。
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-`mhs_engine` 内仍按职责保留独立 `.cpp`，但不再为每个实现细节创建目录和静态库。第三方依赖边界才是独立目标边界。
+本地运行期只划分 `compiler` 与 `solver` 两个模块：前者完成 setup，后者完成 solve。模块内按职责保留独立 `.cpp`，不再为 assembler、scheduler、fluid 等实现细节逐一建库。
 
 ### 数据流
 

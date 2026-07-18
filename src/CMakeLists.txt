@@ -1,5 +1,6 @@
 add_subdirectory(model)
 add_subdirectory(numerics)
 add_subdirectory(logging)
+add_subdirectory(compiler)
+add_subdirectory(solver)
 add_subdirectory(io)
-add_subdirectory(engine)

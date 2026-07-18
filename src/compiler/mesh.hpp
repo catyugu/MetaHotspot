@@ -1,8 +1,8 @@
 #pragma once
 
-#include "engine/constants.hpp"
-#include "engine/engine_types.hpp"
-#include "engine/runtime_model.hpp"
+#include "compiler/constants.hpp"
+#include "compiler/engine_types.hpp"
+#include "compiler/runtime_model.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

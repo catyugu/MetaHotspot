@@ -1,7 +1,7 @@
-#include "engine/fluid_assembler.hpp"
+#include "solver/fluid_assembler.hpp"
 
-#include "engine/constants.hpp"
-#include "engine/mesh.hpp"
+#include "compiler/constants.hpp"
+#include "compiler/mesh.hpp"
 
 #include <cassert>
 #include <cmath>

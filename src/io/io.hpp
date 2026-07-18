@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "engine/runtime_model.hpp"
-#include "engine/solution.hpp"
+#include "compiler/runtime_model.hpp"
+#include "solver/solution.hpp"
 #include "model/model_definition.hpp"
 
 namespace mhs::io {

@@ -1,6 +1,6 @@
-#include "engine/nonlinear_solver.hpp"
+#include "solver/nonlinear_solver.hpp"
 
-#include "engine/engine_types.hpp"
+#include "compiler/engine_types.hpp"
 #include "logging/logger.hpp"
 #include <Eigen/QR>
 

@@ -1,6 +1,6 @@
-#include "engine/postprocessor.hpp"
-#include "engine/interpolation.hpp"
-#include "engine/mesh.hpp"
+#include "solver/postprocessor.hpp"
+#include "solver/interpolation.hpp"
+#include "compiler/mesh.hpp"
 #include <cassert>
 #include <cmath>
 #include <limits>

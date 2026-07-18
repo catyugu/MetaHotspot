@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "engine/engine_types.hpp"
-#include "engine/fluid_domain.hpp"
+#include "compiler/engine_types.hpp"
+#include "compiler/fluid_domain.hpp"
 #include "numerics/expression/expr.hpp"
 
 namespace mhs::core {

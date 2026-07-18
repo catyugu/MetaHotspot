@@ -1,20 +1,15 @@
-mhs_add_library(mhs_engine
+mhs_add_library(mhs_solver
     SOURCES
     assembler.cpp
     fluid_assembler.cpp
-    fluid_preprocessor.cpp
-    geometry_compiler.cpp
     interpolation.cpp
-    model_compiler.cpp
-    model_functions.cpp
     nonlinear_solver.cpp
     postprocessor.cpp
     probe_recorder.cpp
     scheduler.cpp
     time_integration.cpp
     PUBLIC_LINKS
-    mhs_model
-    mhs_expression
+    mhs_compiler
     mhs_linear
     Eigen3::Eigen
     PRIVATE_LINKS

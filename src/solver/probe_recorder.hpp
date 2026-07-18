@@ -1,7 +1,7 @@
 #pragma once
 
-#include "engine/runtime_model.hpp"
-#include "engine/solution.hpp"
+#include "compiler/runtime_model.hpp"
+#include "solver/solution.hpp"
 
 #include <vector>
 

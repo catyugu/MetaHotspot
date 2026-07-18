@@ -1,8 +1,8 @@
 #pragma once
 
-#include "engine/assembler.hpp"
-#include "engine/linear_system.hpp"
-#include "engine/solution_history.hpp"
+#include "solver/assembler.hpp"
+#include "solver/linear_system.hpp"
+#include "solver/solution_history.hpp"
 
 #include <cstddef>
 #include <utility>

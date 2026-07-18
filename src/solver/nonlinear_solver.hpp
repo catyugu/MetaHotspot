@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine/linear_system.hpp"
+#include "solver/linear_system.hpp"
 #include "numerics/linear/linear_solver.hpp"
 
 #include <functional>

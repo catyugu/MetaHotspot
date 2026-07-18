@@ -1,8 +1,8 @@
 #include "cli.hpp"
 #include "io/io.hpp"
-#include "engine/model_compiler.hpp"
-#include "engine/postprocessor.hpp"
-#include "engine/scheduler.hpp"
+#include "compiler/model_compiler.hpp"
+#include "solver/postprocessor.hpp"
+#include "solver/scheduler.hpp"
 #include "logging/logger.hpp"
 #include <filesystem>
 #include <iostream>

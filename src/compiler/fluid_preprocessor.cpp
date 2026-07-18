@@ -1,8 +1,8 @@
-#include "engine/fluid_preprocessor.hpp"
+#include "compiler/fluid_preprocessor.hpp"
 
-#include "engine/constants.hpp"
-#include "engine/fluid_physics.hpp"
-#include "engine/mesh.hpp"
+#include "compiler/constants.hpp"
+#include "compiler/fluid_physics.hpp"
+#include "compiler/mesh.hpp"
 #include "logging/logger.hpp"
 #include "numerics/linear/linear_solver.hpp"
 

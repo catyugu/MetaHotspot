@@ -1,10 +1,10 @@
-#include "engine/assembler.hpp"
-#include "engine/constants.hpp"
-#include "engine/nonlinear_solver.hpp"
-#include "engine/probe_recorder.hpp"
-#include "engine/scheduler.hpp"
-#include "engine/solution_history.hpp"
-#include "engine/time_integration.hpp"
+#include "solver/assembler.hpp"
+#include "compiler/constants.hpp"
+#include "solver/nonlinear_solver.hpp"
+#include "solver/probe_recorder.hpp"
+#include "solver/scheduler.hpp"
+#include "solver/solution_history.hpp"
+#include "solver/time_integration.hpp"
 #include "logging/logger.hpp"
 
 #include <Eigen/Core>
