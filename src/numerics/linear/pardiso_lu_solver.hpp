@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef MHS_ENABLE_PARDISO
 #include "numerics/linear/linear_solver.hpp"
 
 #include <Eigen/PardisoSupport>
@@ -25,3 +26,5 @@ namespace mhs::sim {
     };
 
 } // namespace mhs::sim
+
+#endif
