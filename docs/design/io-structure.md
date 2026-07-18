@@ -4,7 +4,7 @@
 
 `mhs_model` 本身不链接第三方目标。XML 适配、表达式编译和线性求解分别留在 `mhs_io`、`mhs_expression` 与 `mhs_linear`；因此修改 builder 或模型契约时，不会重新编译这些较慢的第三方依赖及其封装目标。
 
-XML reader 和外部代码都生成同一个 `ModelDefinition`，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
+XML reader 和外部代码都通过 `ModelBuilder` 的追加操作生成同一个 `ModelDefinition`，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 
 ## 顶层结构
 

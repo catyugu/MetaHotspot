@@ -66,7 +66,7 @@ XML → model::ModelDefinition via io::read_xml
 ## 关键设计原则
 
 1. 内部模型不含原始字符串 — 表达式预编译为 `CompiledExpression`
-2. 热源表 — `heat_source_table` 按 Block 编译，单元用 `uint16_t heat_source_idx` 引用
+2. 热源表 — `heat_source_table` 按 Block 编译，单元用 `TableIndex heat_source_idx` 引用
 3. 面级 BC — `Model::face_bcs[N_active * 6]` 扁平数组，无 `CellBC`
 4. 含流体-固体耦合子系统 — `Model::fluid`（`FluidDomain`）
 5. 流体增量只写对角或直接邻居坐标，不扩展基础热算子的稀疏模式

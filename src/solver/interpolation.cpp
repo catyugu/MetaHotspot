@@ -1,5 +1,5 @@
-#include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
+#include "runtime/mesh.hpp"
 
 #include <Eigen/Dense>
 #include <cmath>
@@ -48,9 +48,9 @@ namespace mhs::utils {
         mhs::utils::face_center_3d(dir, ix, iy, iz, mesh, fx, fy, fz);
     }
 
-    double sample_extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type, uint16_t param_idx,
-        double T_c, double k, const mhs::core::MeshGeometry& mesh, mhs::Index ix, mhs::Index iy, mhs::Index iz,
-        const mhs::core::BCParamTable& bc_params, double time)
+    double sample_extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type,
+        mhs::core::TableIndex param_idx, double T_c, double k, const mhs::core::MeshGeometry& mesh, mhs::Index ix,
+        mhs::Index iy, mhs::Index iz, const mhs::core::BCParamTable& bc_params, double time)
     {
         double fx, fy, fz;
         sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);

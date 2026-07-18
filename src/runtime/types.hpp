@@ -12,6 +12,8 @@ namespace mhs {
 
 namespace mhs::core {
 
+    using TableIndex = uint32_t;
+
     enum class StudyType { Steady, Transient };
 
     enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };

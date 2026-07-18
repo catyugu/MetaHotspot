@@ -30,7 +30,7 @@ Two separate paths.
 
 ### Heat source table
 
-`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, indexed by `CellFields::heat_source_idx` (`std::vector<uint16_t>`). Cells share their Block's compiled expression, so each cell stores only the 2-byte index.
+`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, indexed by `CellFields::heat_source_idx` (`std::vector<TableIndex>`). Cells share their Block's compiled expression, while the 32-bit index avoids silent truncation in generated models.
 
 ### Native functions
 

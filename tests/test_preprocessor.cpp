@@ -4,9 +4,16 @@
 #include "numerics/expression/expr.hpp"
 #include "runtime/model.hpp"
 #include <gtest/gtest.h>
+#include <type_traits>
 
 using namespace mhs::core;
 using namespace mhs::sim;
+
+static_assert(std::is_same_v<mhs::core::TableIndex, uint32_t>);
+static_assert(
+    std::is_same_v<typename decltype(mhs::core::CellFields {}.material_id)::value_type, mhs::core::TableIndex>);
+static_assert(
+    std::is_same_v<typename decltype(mhs::core::CellFields {}.heat_source_idx)::value_type, mhs::core::TableIndex>);
 
 // Helpers for testing patch-based BC assignment.
 
@@ -26,7 +33,7 @@ static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
 }
 
 /// Return the param_idx on cell_idx for direction dir, or 0 if not found.
-static uint16_t get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
+static mhs::core::TableIndex get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     auto* p = find_face_bc(model, cell_idx, dir);
     return p ? p->param_idx : 0;
@@ -595,7 +602,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     ASSERT_NE(cell, mhs::invalidIndex);
     ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM), mhs::core::BcType::ThirdType);
 
-    const uint16_t param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
+    const mhs::core::TableIndex param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
     const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
     ASSERT_LT(param_idx, model.bc_params.cauchy_h.size());
     ASSERT_LT(param_idx, model.bc_params.cauchy_T_inf.size());

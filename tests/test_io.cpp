@@ -94,6 +94,60 @@ TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
     std::filesystem::remove(path);
 }
 
+TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
+{
+    const std::string xml = R"(<?xml version="1.0" encoding="utf-8"?>
+<Structure StudyType="Steady" LengthUnit="Mm">
+    <Layers>
+        <Layer>
+            <ThicknessExpression>10</ThicknessExpression>
+            <XOffsetExpression>0</XOffsetExpression>
+            <YOffsetExpression>0</YOffsetExpression>
+            <Blocks>
+                <Block>
+                    <MaterialName>background</MaterialName>
+                    <TiReyuan>1</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <AllRects>
+                        <Rect><Add_sub>true</Add_sub><XExpression>0</XExpression><YExpression>0</YExpression><WidthExpression>10</WidthExpression><HeightExpression>10</HeightExpression></Rect>
+                        <Rect><Add_sub>false</Add_sub><XExpression>5</XExpression><YExpression>0</YExpression><WidthExpression>5</WidthExpression><HeightExpression>10</HeightExpression></Rect>
+                    </AllRects>
+                </Block>
+                <Block>
+                    <MaterialName>foreground</MaterialName>
+                    <TiReyuan>2</TiReyuan>
+                    <XOffsetExpression>0</XOffsetExpression>
+                    <YOffsetExpression>0</YOffsetExpression>
+                    <AllRects>
+                        <Rect><Add_sub>true</Add_sub><XExpression>0</XExpression><YExpression>0</YExpression><WidthExpression>5</WidthExpression><HeightExpression>10</HeightExpression></Rect>
+                    </AllRects>
+                </Block>
+            </Blocks>
+        </Layer>
+    </Layers>
+    <Boundaries>
+        <Boundary><ThermalBoundary i:type="FirstType"><a:Temperature>310</a:Temperature></ThermalBoundary></Boundary>
+        <Boundary><ThermalBoundary i:type="ThirdType"><a:ConvectionCoefficient>42</a:ConvectionCoefficient><a:EnvironmentTemperature>280</a:EnvironmentTemperature></ThermalBoundary></Boundary>
+    </Boundaries>
+</Structure>)";
+    const auto path = write_tmp_xml("io_builder_order.xml", xml);
+
+    const auto definition = mhs::io::read_xml(path.string());
+    std::filesystem::remove(path);
+
+    ASSERT_EQ(definition.layers.size(), 1u);
+    ASSERT_EQ(definition.layers[0].blocks.size(), 2u);
+    EXPECT_EQ(definition.layers[0].blocks[0].material, "background");
+    EXPECT_EQ(definition.layers[0].blocks[1].material, "foreground");
+    ASSERT_EQ(definition.layers[0].blocks[0].geometry.size(), 2u);
+    EXPECT_EQ(definition.layers[0].blocks[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
+    EXPECT_EQ(definition.layers[0].blocks[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.boundaries.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.boundaries[0].condition));
+    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.boundaries[1].condition));
+}
+
 TEST(IoTest, WriteXmlEmitsResult0DTransient)
 {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>

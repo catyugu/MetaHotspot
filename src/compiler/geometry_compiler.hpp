@@ -1,7 +1,7 @@
 #pragma once
 
-#include "runtime/model.hpp"
 #include "model/model_definition.hpp"
+#include "runtime/model.hpp"
 
 #include <vector>
 
@@ -12,12 +12,12 @@ namespace mhs::sim {
         double coordinate = 0.0;
         std::vector<mhs::model::RegionRect> rectangles;
         mhs::core::BcType type = mhs::core::BcType::None;
-        uint16_t parameter_index = 0;
+        mhs::core::TableIndex parameter_index = 0;
     };
 
     struct DefaultBoundary {
         mhs::core::BcType type = mhs::core::BcType::None;
-        uint16_t parameter_index = 0;
+        mhs::core::TableIndex parameter_index = 0;
     };
 
     // Pre-resolved geometry for a single rect (all values in SI meters)
@@ -62,7 +62,7 @@ namespace mhs::sim {
     // No BC parameters needed — boundary resolution is a separate step.
     mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map);
+        const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map);
 
     // Resolve boundary patches for every exposed face of every active cell.
     // Single grid traversal: writes directly into boundary.face_bcs[]. No

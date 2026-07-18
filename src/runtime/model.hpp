@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
+#include "numerics/expression/expr.hpp"
 #include "runtime/fluid_domain.hpp"
 #include "runtime/types.hpp"
-#include "numerics/expression/expr.hpp"
 
 namespace mhs::core {
 
@@ -14,7 +14,7 @@ namespace mhs::core {
     // [N_active * 6] in row-major order (dir 0..5 per cell).
     struct FaceBC {
         BcType type = BcType::None; // None = internal face or adiabatic
-        uint16_t param_idx = 0; // → BCParamTable
+        TableIndex param_idx = 0; // → BCParamTable
     };
 
     // ── Structured mesh geometry ─────────────────────────────────────────
@@ -54,8 +54,8 @@ namespace mhs::core {
         std::vector<Index> grid_to_cell; // grid index → active cell / invalidIndex
         std::vector<Index> cell_to_grid; // active cell → grid index
 
-        std::vector<uint16_t> material_id; // index into material_table
-        std::vector<uint16_t> heat_source_idx; // index into heat_source_table
+        std::vector<TableIndex> material_id; // index into material_table
+        std::vector<TableIndex> heat_source_idx; // index into heat_source_table
     };
 
     // ── Probe / observation point ────────────────────────────────────────

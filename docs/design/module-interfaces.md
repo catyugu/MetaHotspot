@@ -47,7 +47,7 @@ mhs::core::CellFields assign_cell_layers(
     const std::vector<ResolvedLayerGeometry>& resolved_layers,
     const mhs::core::MeshGeometry& mesh,
     const std::unordered_map<std::string, size_t>& name_to_idx,
-    const std::vector<std::vector<uint16_t>>& block_hs_map);
+    const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map);
 
 void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,
@@ -70,7 +70,7 @@ mhs::model::ModelDefinition
         ├─> material_table             // 解析 k/rho/c，parse(formula, symbols)
         ├─> assign_cell_layers()       // grid_to_cell (full-grid), cell_to_grid + fields (compact)
         ├─> heat_source_table          // 每个 Block 一条编译表达式
-        │     + cells.heat_source_idx[c_idx] = uint16_t
+        │     + cells.heat_source_idx[c_idx] = TableIndex
         ├─> 编译结构化边界和参数（model_compiler 私有步骤）
         ├─> resolve_boundary_patches()    // 单次网格遍历写 face_bcs
         ├─> fluid::build_domain()      // 水力临时状态局部化，只输出热组装所需字段

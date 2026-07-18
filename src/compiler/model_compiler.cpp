@@ -1,6 +1,6 @@
+#include "compiler/model_compiler.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "compiler/model_compiler.hpp"
 #include "compiler/model_functions.hpp"
 #include "numerics/expression/expr.hpp"
 
@@ -93,18 +93,18 @@ namespace mhs::sim {
 
         /// Build the heat source expression table and the per-layer, per-block index map.
         /// Returns block_hs_map[l][b] = index into heat_source_table for layer l, block b.
-        std::vector<std::vector<uint16_t>> build_heat_source_table(
+        std::vector<std::vector<mhs::core::TableIndex>> build_heat_source_table(
             std::vector<mhs::core::CompiledExpression>& heat_source_table,
             const std::vector<ResolvedLayerGeometry>& resolved_layers,
             const std::vector<mhs::model::NamedFunction>& functions, const mhs::core::SymbolTable& symbols)
         {
             heat_source_table.clear();
 
-            std::vector<std::vector<uint16_t>> block_hs_map(resolved_layers.size());
+            std::vector<std::vector<mhs::core::TableIndex>> block_hs_map(resolved_layers.size());
             for (size_t l = 0; l < resolved_layers.size(); l++) {
                 block_hs_map[l].resize(resolved_layers[l].blocks.size(), 0);
                 for (size_t b = 0; b < resolved_layers[l].blocks.size(); b++) {
-                    const uint16_t hs_idx = static_cast<uint16_t>(heat_source_table.size());
+                    const auto hs_idx = static_cast<mhs::core::TableIndex>(heat_source_table.size());
                     const std::string& raw = resolved_layers[l].blocks[b].volumetric_heat_source;
                     heat_source_table.push_back(
                         mhs::core::parse(substitute_function_args(raw, "t", functions), symbols));
@@ -132,17 +132,18 @@ namespace mhs::sim {
             std::visit(overloaded {
                            [&](const mhs::model::DirichletBoundary& value) {
                                result.type = mhs::core::BcType::FirstType;
-                               result.parameter_index = static_cast<uint16_t>(parameters.dirichlet_T.size());
+                               result.parameter_index
+                                   = static_cast<mhs::core::TableIndex>(parameters.dirichlet_T.size());
                                parameters.dirichlet_T.push_back(mhs::core::parse(rewriter(value.temperature), symbols));
                            },
                            [&](const mhs::model::NeumannBoundary& value) {
                                result.type = mhs::core::BcType::SecondType;
-                               result.parameter_index = static_cast<uint16_t>(parameters.neumann_q.size());
+                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.neumann_q.size());
                                parameters.neumann_q.push_back(mhs::core::parse(rewriter(value.heat_flux), symbols));
                            },
                            [&](const mhs::model::ConvectionBoundary& value) {
                                result.type = mhs::core::BcType::ThirdType;
-                               result.parameter_index = static_cast<uint16_t>(parameters.cauchy_h.size());
+                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.cauchy_h.size());
                                parameters.cauchy_h.push_back(mhs::core::parse(rewriter(value.coefficient), symbols));
                                parameters.cauchy_T_inf.push_back(
                                    mhs::core::parse(rewriter(value.ambient_temperature), symbols));

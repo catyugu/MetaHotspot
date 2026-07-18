@@ -66,7 +66,7 @@ XML
 
 ### 2. 热源索引表
 
-`heat_source_table` 按 Block 编译为 `vector<CompiledExpression>`；每个活跃单元只保存一个 `uint16_t` 索引。
+`heat_source_table` 按 Block 编译为 `vector<CompiledExpression>`；每个活跃单元只保存一个 `TableIndex` 索引。
 
 ### 3. 面级别 BC
 

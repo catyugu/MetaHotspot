@@ -24,7 +24,7 @@ namespace mhs::sim {
         mhs::Index find_block_for_cell(const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
         {
             for (mhs::Index b = static_cast<mhs::Index>(resolved_layer.blocks.size()) - 1; b != mhs::invalidIndex;
-                b--) {
+                 b--) {
                 const auto& block = resolved_layer.blocks[b];
                 if (cz < block.z_start - EPS || cz > block.z_end + EPS)
                     continue;
@@ -41,9 +41,9 @@ namespace mhs::sim {
             return mhs::invalidIndex;
         }
 
-        std::pair<mhs::core::BcType, uint16_t> match_face_bc(mhs::core::FaceDir dir, mhs::Index ix, mhs::Index iy,
-            mhs::Index iz, const mhs::core::MeshGeometry& mesh, const std::vector<CompiledBoundaryRegion>& boundaries,
-            const DefaultBoundary& default_boundary)
+        std::pair<mhs::core::BcType, mhs::core::TableIndex> match_face_bc(mhs::core::FaceDir dir, mhs::Index ix,
+            mhs::Index iy, mhs::Index iz, const mhs::core::MeshGeometry& mesh,
+            const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary)
         {
             assert(static_cast<size_t>(dir) < mhs::core::FACE_COUNT);
             const int axis = mhs::utils::AXIS_OF_DIR[static_cast<size_t>(dir)];
@@ -71,7 +71,7 @@ namespace mhs::sim {
 
             if (default_boundary.type != mhs::core::BcType::None)
                 return {default_boundary.type, default_boundary.parameter_index};
-            return {mhs::core::BcType::None, static_cast<uint16_t>(0)};
+            return {mhs::core::BcType::None, 0};
         }
     } // anonymous namespace
 
@@ -161,7 +161,7 @@ namespace mhs::sim {
 
     mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
         const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<uint16_t>>& block_hs_map)
+        const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map)
     {
         const mhs::Index num_layers = static_cast<mhs::Index>(resolved_layers.size());
         const mhs::Index total = mesh.nx * mesh.ny * mesh.nz;
@@ -200,7 +200,7 @@ namespace mhs::sim {
                         const mhs::Index c_idx = static_cast<mhs::Index>(cells.material_id.size());
                         cells.grid_to_cell[old_idx] = c_idx;
                         cells.cell_to_grid.push_back(old_idx);
-                        cells.material_id.push_back(static_cast<uint16_t>(name_to_idx.at(block.material)));
+                        cells.material_id.push_back(static_cast<mhs::core::TableIndex>(name_to_idx.at(block.material)));
                         cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
                     }
                 }

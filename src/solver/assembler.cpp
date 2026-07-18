@@ -58,7 +58,7 @@ namespace mhs::sim {
                     const double heat_capacity = material.c.eval(cell_context);
                     mass_diagonal(static_cast<Eigen::Index>(cell)) += density * heat_capacity * volume;
 
-                    const uint16_t source_index = cells.heat_source_idx[cell];
+                    const mhs::core::TableIndex source_index = cells.heat_source_idx[cell];
                     rhs(static_cast<Eigen::Index>(cell))
                         += model_.heat_source_table[source_index].eval(cell_context) * volume;
 

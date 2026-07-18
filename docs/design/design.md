@@ -23,7 +23,7 @@
 ## 关键原则
 
 1. 内部模型不含原始字符串 — 所有表达式预编译为 `CompiledExpression`
-2. 热源索引表 — `Model::heat_source_table` + 每单元 `uint16_t` 索引
+2. 热源索引表 — `Model::heat_source_table` + 每单元 `TableIndex` 索引
 3. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, ctx)` 下无状态）
 4. SoA 贯穿内部模型
 5. expr 预编译，`eval()` 锁无关

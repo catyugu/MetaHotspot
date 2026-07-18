@@ -20,7 +20,7 @@ Two storage concerns must be answered together:
 ```cpp
 struct FaceBC {
     BcType type = BcType::None;
-    uint16_t param_idx = 0;      // → BCParamTable
+    TableIndex param_idx = 0;    // → BCParamTable
 };
 
 // Model::face_bcs is std::vector<FaceBC> with size N_active * 6.
@@ -69,6 +69,6 @@ ModelDefinition
 
 - `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
 - The default boundary is applied during preprocessing, not at assembly time. For virtual neighbors, the active cell's touching face is populated during `resolve_boundary_patches()`.
-- The heat source is **not** part of `FaceBC` — it is stored in a Block-level expression table indexed per cell by `uint16_t`.
+- The heat source is **not** part of `FaceBC` — it is stored in a Block-level expression table indexed per cell by the 32-bit `TableIndex`.
 - The preprocessor resolves every structured `FaceRegion` into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no region matching or string parsing.
 - All geometry stays in SI meters.

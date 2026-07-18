@@ -19,14 +19,14 @@ struct MeshGeometry {
 // Per-cell per-face BC (ADR-0002) — stored as flat array on Model
 struct FaceBC {
     BcType type = BcType::None;  // None = internal face or adiabatic
-    uint16_t param_idx = 0;      // → BCParamTable
+    TableIndex param_idx = 0;    // → BCParamTable
 };
 
 struct CellFields {
     std::vector<Index> grid_to_cell;         // grid index → active cell; invalidIndex = virtual
     std::vector<Index> cell_to_grid;         // active cell → grid index
-    std::vector<uint16_t> material_id;       // index into material_table
-    std::vector<uint16_t> heat_source_idx;   // index into heat_source_table
+    std::vector<TableIndex> material_id;       // index into material_table
+    std::vector<TableIndex> heat_source_idx;   // index into heat_source_table
 };
 ```
 
