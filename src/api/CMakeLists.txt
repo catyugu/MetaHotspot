@@ -1,0 +1,9 @@
+mhs_add_library(mhs_c_api
+    SOURCES
+        metahotspot.cpp
+    PUBLIC_LINKS
+        mhs_compiler
+        mhs_solver
+        mhs_io
+        mhs_logging
+)

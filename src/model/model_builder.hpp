@@ -39,10 +39,16 @@ namespace mhs::model {
 
         void add_boundary(BoundaryPatch boundary) { model_.boundaries.push_back(std::move(boundary)); }
         void set_default_boundary(ThermalBoundary boundary) { model_.default_boundary = std::move(boundary); }
-        void add_observation_point(ObservationPointSpec point) { model_.observation_points.push_back(std::move(point)); }
+        void add_observation_point(ObservationPointSpec point)
+        {
+            model_.observation_points.push_back(std::move(point));
+        }
         void add_fluid_boundary(FluidBoundarySpec boundary) { model_.fluid_boundaries.push_back(std::move(boundary)); }
 
         ModelDefinition finish() && { return std::move(model_); }
+
+        /** Const access to the underlying definition (for compilation without consumption). */
+        const ModelDefinition& peek() const { return model_; }
 
     private:
         struct BlockLocation {
