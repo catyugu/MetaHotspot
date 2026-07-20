@@ -10,7 +10,6 @@
 // Used by:
 //   - mhs::post::interpolate_cell_to_node  (whole-grid node sampling)
 //   - mhs::sim::ProbeRecorder::sample_one  (per-probe local sampling)
-
 #include "runtime/model.hpp"
 
 #include <vector>
@@ -22,12 +21,9 @@ namespace mhs::utils {
         double y = 0.0;
         double z = 0.0;
         double temperature = 0.0;
-        double weight = 1.0;
         double kx = 1.0;
         double ky = 1.0;
         double kz = 1.0;
-        mhs::core::TableIndex material = 0;
-        bool is_cell_center = true;
     };
 
     struct TemperatureGradient {
@@ -45,11 +41,10 @@ namespace mhs::utils {
     double extrapolate_cell_temperature(double cell_temperature, const TemperatureGradient& gradient, double cell_x,
         double cell_y, double cell_z, double point_x, double point_y, double point_z);
 
-    // Dimension-adaptive weighted affine recovery. One rank-revealing solve
-    // handles every stencil in its intrinsic dimension, without a tuning
-    // parameter. At an axis-aligned material interface, the normal coordinate
-    // is thermal resistance (distance / conductivity), enforcing continuous
-    // normal heat flux.
+    // Inverse-distance weighted average (IDW p=2) at the query point.
+    // Uses anisotropic thermal distance Δx²/kx + Δy²/ky + Δz²/kz.
+    // Convex combination of sample temperatures — naturally bounded,
+    // no linear algebra needed.
     double recover_point_temperature(
         const std::vector<PointTemperatureSample>& samples, double point_x, double point_y, double point_z);
 

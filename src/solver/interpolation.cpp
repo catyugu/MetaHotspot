@@ -1,111 +1,39 @@
 #include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
 
-#include <Eigen/Dense>
-#include <algorithm>
-#include <array>
 #include <cassert>
-#include <cmath>
+#include <cstddef>
 #include <limits>
 
 namespace mhs::utils {
     namespace {
+
+        // Inverse distance weighting (IDW p=2) with anisotropic thermal
+        // distance. Each sample weight w = 1/r² where r² = Δx²/kx + Δy²/ky
+        // + Δz²/kz. The result is a convex combination of sample temperatures
+        // (naturally bounded between min/max of input, no clamping needed).
+        double inverse_distance_weighted_average(
+            const std::vector<PointTemperatureSample>& samples, double px, double py, double pz)
+        {
+            double numerator = 0.0;
+            double denominator = 0.0;
+            for (const auto& s : samples) {
+                const double dx = px - s.x;
+                const double dy = py - s.y;
+                const double dz = pz - s.z;
+                const double r2 = dx * dx / s.kx + dy * dy / s.ky + dz * dz / s.kz;
+                const double w = 1.0 / (r2 + std::numeric_limits<double>::epsilon());
+                numerator += w * s.temperature;
+                denominator += w;
+            }
+            return numerator / denominator;
+        }
 
         struct Conductivity {
             double x;
             double y;
             double z;
         };
-
-        using Coordinate = std::array<double, 3>;
-
-        struct RecoveryGeometry {
-            std::vector<Coordinate> offsets;
-            Coordinate scale {};
-            std::array<int, 3> active_axes {};
-            int active_axis_count = 0;
-            double maximum_weight = 0.0;
-        };
-
-        std::array<bool, 3> detect_resistance_axes(
-            const std::vector<PointTemperatureSample>& samples, const Coordinate& query)
-        {
-            std::array<bool, 3> result {};
-            for (int axis = 0; axis < 3; ++axis) {
-                bool have_negative = false;
-                bool have_positive = false;
-                bool planar = true;
-                mhs::core::TableIndex negative_material = 0;
-                mhs::core::TableIndex positive_material = 0;
-                for (const auto& sample : samples) {
-                    if (!sample.is_cell_center)
-                        continue;
-                    const Coordinate position {sample.x, sample.y, sample.z};
-                    const double offset = position[axis] - query[axis];
-                    if (offset < 0.0) {
-                        if (!have_negative) {
-                            negative_material = sample.material;
-                            have_negative = true;
-                        }
-                        else if (negative_material != sample.material) {
-                            planar = false;
-                        }
-                    }
-                    else if (offset > 0.0) {
-                        if (!have_positive) {
-                            positive_material = sample.material;
-                            have_positive = true;
-                        }
-                        else if (positive_material != sample.material) {
-                            planar = false;
-                        }
-                    }
-                }
-                result[axis] = planar && have_negative && have_positive && negative_material != positive_material;
-            }
-            return result;
-        }
-
-        RecoveryGeometry analyze_recovery_geometry(
-            const std::vector<PointTemperatureSample>& samples, const Coordinate& query)
-        {
-            const auto resistance_axes = detect_resistance_axes(samples, query);
-            RecoveryGeometry result;
-            result.offsets.resize(samples.size());
-            Coordinate coordinate_min {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(),
-                std::numeric_limits<double>::infinity()};
-            Coordinate coordinate_max {-std::numeric_limits<double>::infinity(),
-                -std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()};
-
-            for (std::size_t row = 0; row < samples.size(); ++row) {
-                const auto& sample = samples[row];
-                assert(std::isfinite(sample.x) && std::isfinite(sample.y) && std::isfinite(sample.z));
-                assert(std::isfinite(sample.temperature));
-                assert(sample.weight > 0.0 && std::isfinite(sample.weight));
-                assert(sample.kx > 0.0 && std::isfinite(sample.kx));
-                assert(sample.ky > 0.0 && std::isfinite(sample.ky));
-                assert(sample.kz > 0.0 && std::isfinite(sample.kz));
-                const Coordinate position {sample.x, sample.y, sample.z};
-                const Coordinate conductivity {sample.kx, sample.ky, sample.kz};
-                for (int axis = 0; axis < 3; ++axis) {
-                    const double metric = resistance_axes[axis] ? conductivity[axis] : 1.0;
-                    const double offset = (position[axis] - query[axis]) / metric;
-                    result.offsets[row][axis] = offset;
-                    result.scale[axis] = std::max(result.scale[axis], std::abs(offset));
-                    coordinate_min[axis] = std::min(coordinate_min[axis], offset);
-                    coordinate_max[axis] = std::max(coordinate_max[axis], offset);
-                }
-                result.maximum_weight = std::max(result.maximum_weight, sample.weight);
-            }
-
-            constexpr double dimension_tolerance = 64.0 * std::numeric_limits<double>::epsilon();
-            for (int axis = 0; axis < 3; ++axis) {
-                const double range = coordinate_max[axis] - coordinate_min[axis];
-                if (result.scale[axis] > 0.0 && range > dimension_tolerance * result.scale[axis])
-                    result.active_axes[result.active_axis_count++] = axis;
-            }
-            return result;
-        }
 
         Conductivity evaluate_conductivity(const mhs::core::Model& model, const std::vector<double>& temperature,
             mhs::core::Index compact, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz, double time)
@@ -219,25 +147,7 @@ namespace mhs::utils {
     {
         assert(!samples.empty());
         assert(std::isfinite(point_x) && std::isfinite(point_y) && std::isfinite(point_z));
-
-        const auto geometry = analyze_recovery_geometry(samples, {point_x, point_y, point_z});
-        const Eigen::Index column_count = 1 + geometry.active_axis_count;
-        Eigen::MatrixXd design(samples.size(), column_count);
-        Eigen::VectorXd values(samples.size());
-        for (std::size_t row = 0; row < samples.size(); ++row) {
-            const double normalized_weight = samples[row].weight / geometry.maximum_weight;
-            const double square_root_weight = std::sqrt(normalized_weight);
-            design(static_cast<Eigen::Index>(row), 0) = square_root_weight;
-            for (int column = 0; column < geometry.active_axis_count; ++column) {
-                const int axis = geometry.active_axes[column];
-                design(static_cast<Eigen::Index>(row), column + 1)
-                    = square_root_weight * geometry.offsets[row][axis] / geometry.scale[axis];
-            }
-            values[static_cast<Eigen::Index>(row)] = square_root_weight * samples[row].temperature;
-        }
-
-        Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixXd> decomposition(design);
-        return decomposition.solve(values)[0];
+        return inverse_distance_weighted_average(samples, point_x, point_y, point_z);
     }
 
     double sample_extrapolate_face_temperature(mhs::core::FaceDir dir, mhs::core::BcType bc_type,

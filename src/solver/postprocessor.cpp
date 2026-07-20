@@ -1,7 +1,5 @@
-#include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
 #include "solver/postprocessor.hpp"
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -37,11 +35,9 @@ namespace mhs::post {
                     int dirichlet_count = 0;
 
                     std::vector<mhs::utils::PointTemperatureSample> samples;
-                    samples.reserve(16);
-                    double stencil_min = std::numeric_limits<double>::infinity();
-                    double stencil_max = -std::numeric_limits<double>::infinity();
+                    samples.reserve(8);
 
-                    // 遍历该节点周边相接的最多 8 个体元
+                    // Walk the (at most 8) cells that share this node
                     for (int dx = -1; dx <= 0; dx++) {
                         mhs::core::Index ix = static_cast<mhs::core::Index>(static_cast<int64_t>(vx) + dx);
                         if (ix >= mesh.nx)
@@ -64,8 +60,6 @@ namespace mhs::post {
                                 mhs::core::Index compact_idx = cells.grid_to_cell[cell_grid_idx];
                                 assert(compact_idx != mhs::core::invalidIndex);
                                 double T_c = cell_temperature[compact_idx];
-                                stencil_min = std::min(stencil_min, T_c);
-                                stencil_max = std::max(stencil_max, T_c);
 
                                 double cx = mesh.cx[ix];
                                 double cy = mesh.cy[iy];
@@ -75,48 +69,24 @@ namespace mhs::post {
                                 const double kx = material.kx.eval(context);
                                 const double ky = material.ky.eval(context);
                                 const double kz = material.kz.eval(context);
-                                double c_dx = cx - node_x;
-                                double c_dy = cy - node_y;
-                                double c_dz = cz - node_z;
-                                const double thermal_distance_squared
-                                    = c_dx * c_dx / kx + c_dy * c_dy / ky + c_dz * c_dz / kz;
-                                samples.push_back({cx, cy, cz, T_c, 1.0 / thermal_distance_squared, kx, ky, kz,
-                                    cells.material_id[compact_idx], true});
 
+                                // Check for Dirichlet on any face of this cell that touches the node
                                 mhs::core::FaceDir f_x = (dx == -1) ? mhs::core::FaceDir::XP : mhs::core::FaceDir::XM;
                                 mhs::core::FaceDir f_y = (dy == -1) ? mhs::core::FaceDir::YP : mhs::core::FaceDir::YM;
                                 mhs::core::FaceDir f_z = (dz == -1) ? mhs::core::FaceDir::ZP : mhs::core::FaceDir::ZM;
-
                                 mhs::core::FaceDir dirs[3] = {f_x, f_y, f_z};
 
                                 auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
                                 for (mhs::core::FaceDir dir : dirs) {
                                     const auto& fb = fc[static_cast<size_t>(dir)];
-                                    if (fb.type == mhs::core::BcType::None)
-                                        continue;
-
                                     if (fb.type == mhs::core::BcType::FirstType) {
                                         dirichlet_sum += bc_params.dirichlet_T[fb.param_idx].eval(
                                             {node_x, node_y, node_z, T_c, time});
                                         dirichlet_count++;
                                     }
-                                    else {
-                                        const double face_k = mhs::utils::k_along(dir, kx, ky, kz);
-                                        const double face_temperature = mhs::utils::sample_extrapolate_face_temperature(
-                                            dir, fb.type, fb.param_idx, T_c, face_k, mesh, ix, iy, iz, bc_params, time);
-                                        stencil_min = std::min(stencil_min, face_temperature);
-                                        stencil_max = std::max(stencil_max, face_temperature);
-                                        double fx, fy, fz;
-                                        mhs::utils::face_center_3d(dir, ix, iy, iz, mesh, fx, fy, fz);
-                                        const double fdx = fx - node_x;
-                                        const double fdy = fy - node_y;
-                                        const double fdz = fz - node_z;
-                                        const double face_distance_squared
-                                            = fdx * fdx / kx + fdy * fdy / ky + fdz * fdz / kz;
-                                        samples.push_back({fx, fy, fz, face_temperature, 1.0 / face_distance_squared,
-                                            kx, ky, kz, cells.material_id[compact_idx], false});
-                                    }
                                 }
+
+                                samples.push_back({cx, cy, cz, T_c, kx, ky, kz});
                             }
                         }
                     }
@@ -125,9 +95,7 @@ namespace mhs::post {
                         node_T[node_idx] = dirichlet_sum / dirichlet_count;
                     }
                     else if (!samples.empty()) {
-                        node_T[node_idx]
-                            = std::clamp(mhs::utils::recover_point_temperature(samples, node_x, node_y, node_z),
-                                stencil_min, stencil_max);
+                        node_T[node_idx] = mhs::utils::recover_point_temperature(samples, node_x, node_y, node_z);
                     }
                 }
             }
