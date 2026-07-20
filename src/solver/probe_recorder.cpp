@@ -97,30 +97,7 @@ namespace mhs::sim {
         mhs::core::Index compact_idx = cells.grid_to_cell[grid_idx];
         assert(compact_idx != mhs::core::invalidIndex);
 
-        std::vector<mhs::utils::SampleDataPoint> pts;
-        pts.reserve(8 + mhs::core::FACE_COUNT);
-
-        double sum_T = 0.0;
-        mhs::core::Index cnt = 0;
-        for (mhs::core::Index dx = 0; dx <= 1; ++dx) {
-            for (mhs::core::Index dy = 0; dy <= 1; ++dy) {
-                for (mhs::core::Index dz = 0; dz <= 1; ++dz) {
-                    mhs::core::Index ngx = ix + dx;
-                    mhs::core::Index ngy = iy + dy;
-                    mhs::core::Index ngz = iz + dz;
-                    if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
-                        continue;
-                    mhs::core::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.grid_to_cell[ng] == mhs::core::invalidIndex)
-                        continue;
-                    sum_T += cell_T[cells.grid_to_cell[ng]];
-                    ++cnt;
-                }
-            }
-        }
-        if (cnt == 0)
-            return std::numeric_limits<double>::quiet_NaN();
-        const double T_c = sum_T / static_cast<double>(cnt);
+        const double T_c = cell_T[compact_idx];
 
         auto* fc = &face_bcs[compact_idx * mhs::core::FACE_COUNT];
         for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
@@ -131,53 +108,9 @@ namespace mhs::sim {
             }
         }
 
-        const auto& mp = model_->material_table[cells.material_id[compact_idx]];
-        mhs::core::FieldContext ctx {px, py, pz, T_c, time};
-        double kx_c = mp.kx.eval(ctx);
-        double ky_c = mp.ky.eval(ctx);
-        double kz_c = mp.kz.eval(ctx);
-
-        for (mhs::core::Index dx = 0; dx <= 1; ++dx) {
-            for (mhs::core::Index dy = 0; dy <= 1; ++dy) {
-                for (mhs::core::Index dz = 0; dz <= 1; ++dz) {
-                    mhs::core::Index ngx = ix + dx;
-                    mhs::core::Index ngy = iy + dy;
-                    mhs::core::Index ngz = iz + dz;
-                    if (ngx >= mesh.nx || ngy >= mesh.ny || ngz >= mesh.nz)
-                        continue;
-                    mhs::core::Index ng = ngx * mesh.ny * mesh.nz + ngy * mesh.nz + ngz;
-                    if (cells.grid_to_cell[ng] == mhs::core::invalidIndex)
-                        continue;
-                    double T_i = cell_T[cells.grid_to_cell[ng]];
-                    double cdx = mesh.cx[ngx] - px;
-                    double cdy = mesh.cy[ngy] - py;
-                    double cdz = mesh.cz[ngz] - pz;
-                    double dist_k = (cdx * cdx) / kx_c + (cdy * cdy) / ky_c + (cdz * cdz) / kz_c;
-                    pts.push_back({mesh.cx[ngx], mesh.cy[ngy], mesh.cz[ngz], T_i, 1.0 / dist_k});
-                }
-            }
-        }
-
-        for (size_t f = 0; f < mhs::core::FACE_COUNT; f++) {
-            const auto& fb = fc[f];
-            if (fb.type == mhs::core::BcType::None || fb.type == mhs::core::BcType::FirstType)
-                continue;
-
-            auto dir = mhs::core::FACE_DIRS[f];
-            double k_face = mhs::utils::k_along(dir, kx_c, ky_c, kz_c);
-            double T_f = mhs::utils::sample_extrapolate_face_temperature(
-                dir, fb.type, fb.param_idx, T_c, k_face, mesh, ix, iy, iz, bc_params, time);
-
-            double fx, fy, fz;
-            mhs::utils::sample_face_center(dir, ix, iy, iz, mesh, fx, fy, fz);
-            double fdx = fx - px;
-            double fdy = fy - py;
-            double fdz = fz - pz;
-            double fdist_k = (fdx * fdx) / kx_c + (fdy * fdy) / ky_c + (fdz * fdz) / kz_c;
-            pts.push_back({fx, fy, fz, T_f, 1.0 / fdist_k});
-        }
-
-        return mhs::utils::sample_solve_least_squares(pts, px, py, pz);
+        const auto gradient = mhs::utils::reconstruct_cell_gradient(*model_, cell_T, time, ix, iy, iz);
+        return mhs::utils::extrapolate_cell_temperature(
+            T_c, gradient, mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], px, py, pz);
     }
 
 } // namespace mhs::sim

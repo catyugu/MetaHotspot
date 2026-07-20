@@ -13,26 +13,45 @@
 
 #include "runtime/model.hpp"
 
-#include <cstdint>
 #include <vector>
 
 namespace mhs::utils {
 
-    struct SampleDataPoint {
-        double x = 0.0, y = 0.0, z = 0.0;
-        double T = 0.0;
-        double weight = 0.0;
+    struct PointTemperatureSample {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+        double temperature = 0.0;
+        double weight = 1.0;
+        double kx = 1.0;
+        double ky = 1.0;
+        double kz = 1.0;
+        mhs::core::TableIndex material = 0;
+        bool is_cell_center = true;
     };
 
-    // Least-squares fit T(x,y,z) ? T_node + gx·x + gy·y + gz·z at the node
-    // (node_x, node_y, node_z), with Tikhonov regularization on the gradient.
-    // Returns X(0) = interpolated T at the node. NaN if no points.
-    double sample_solve_least_squares(
-        const std::vector<SampleDataPoint>& pts, double node_x, double node_y, double node_z);
+    struct TemperatureGradient {
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
 
-    // World coordinates of the center of the (ix, iy, iz) cell face `dir`.
-    void sample_face_center(mhs::core::FaceDir dir, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
-        const mhs::core::MeshGeometry& mesh, double& fx, double& fy, double& fz);
+    // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
+    // use the same two-point thermal-resistance law as the diffusion assembly.
+    TemperatureGradient reconstruct_cell_gradient(const mhs::core::Model& model,
+        const std::vector<double>& cell_temperature, double time, mhs::core::Index ix, mhs::core::Index iy,
+        mhs::core::Index iz);
+
+    double extrapolate_cell_temperature(double cell_temperature, const TemperatureGradient& gradient, double cell_x,
+        double cell_y, double cell_z, double point_x, double point_y, double point_z);
+
+    // Dimension-adaptive weighted affine recovery. One rank-revealing solve
+    // handles every stencil in its intrinsic dimension, without a tuning
+    // parameter. At an axis-aligned material interface, the normal coordinate
+    // is thermal resistance (distance / conductivity), enforcing continuous
+    // normal heat flux.
+    double recover_point_temperature(
+        const std::vector<PointTemperatureSample>& samples, double point_x, double point_y, double point_z);
 
     // Extrapolate temperature from the cell center to the face center using
     // the BC law (Neumann/Cauchy). Dirichlet and None are caller-handled.
