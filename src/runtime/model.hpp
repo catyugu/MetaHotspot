@@ -55,6 +55,10 @@ namespace mhs::core {
 
         std::vector<TableIndex> material_id; // index into material_table
         std::vector<TableIndex> heat_source_idx; // index into heat_source_table
+
+        // Per-cell layer/block indices (for region selection).
+        std::vector<TableIndex> layer_id;
+        std::vector<TableIndex> block_id;
     };
 
     // ── Probe / observation point ────────────────────────────────────────

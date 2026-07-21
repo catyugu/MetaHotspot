@@ -44,6 +44,7 @@ extern "C" {
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
+typedef struct mhs_assembly_t mhs_assembly_t;
 
 /* ------------------------------------------------------------------ */
 /*  ID types  (int32_t, -1 = invalid)                                  */
@@ -177,16 +178,12 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
     double initial_temperature_K, double duration, double output_interval);
 
-/** Set mesh vertices along the X axis.
- *  count >= 2; vertices must be strictly increasing.
+/** Set mesh vertices for all three axes atomically.
+ *  count must be >= 2 for any axis being set; pass 0 for unused axes.
+ *  vertices pointers may be NULL when count is 0.
  *  Coordinate unit is determined by mhs_model_set_settings(). */
-MHS_API mhs_status_t mhs_model_set_mesh_x(mhs_model_t* m, int32_t count, const double* vertices);
-
-/** Set mesh vertices along the Y axis.  Same contract as set_mesh_x. */
-MHS_API mhs_status_t mhs_model_set_mesh_y(mhs_model_t* m, int32_t count, const double* vertices);
-
-/** Set mesh vertices along the Z axis.  Same contract as set_mesh_x. */
-MHS_API mhs_status_t mhs_model_set_mesh_z(mhs_model_t* m, int32_t count, const double* vertices);
+MHS_API mhs_status_t mhs_model_set_mesh(
+    mhs_model_t* m, int32_t nx, const double* x, int32_t ny, const double* y, int32_t nz, const double* z);
 
 /** Add a named geometry variable (e.g. "w_top = 0.01").
  *  Variable expressions are evaluated at geometry-resolution time and may
@@ -324,6 +321,24 @@ MHS_API int32_t mhs_compiled_node_count(const mhs_compiled_t* c);
 MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c);
 MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c);
 
+/** Number of layers in the compiled model. */
+MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c);
+
+/** Number of blocks in a given layer (0-based).
+ *  Returns 0 if layer is out of range. */
+MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer);
+
+/** Const access to per-cell layer IDs, length cell_count().
+ *  layer_id[i] == L selects cells belonging to the L-th layer (0-based).
+ *  Pointer valid until the compiled model is destroyed. */
+MHS_API const int32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c);
+
+/** Const access to per-cell block IDs, length cell_count().
+ *  block_id[i] == B selects cells belonging to the B-th block within
+ *  their layer (0-based).  Combined with layer_id for unique selection.
+ *  Pointer valid until the compiled model is destroyed. */
+MHS_API const int32_t* mhs_compiled_block_ids(const mhs_compiled_t* c);
+
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
@@ -339,6 +354,52 @@ MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mh
 
 /** Destroy a solution handle.  Passing NULL is a no-op. */
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
+
+/* ------------------------------------------------------------------ */
+/*  Assembly (matrix + RHS extraction)                                */
+/* ------------------------------------------------------------------ */
+
+/** Opaque handle for an assembled linear system K*x = f.
+ *  The matrix is stored in CSC (compressed sparse column) format.
+ *  Must be freed with mhs_assembly_destroy(). */
+typedef struct mhs_assembly_t mhs_assembly_t;
+
+/** Assemble K, f at a given temperature field and time.
+ *  The compiled model must have been produced by mhs_model_compile().
+ *  T may be NULL to use the model's initial temperature for every cell.
+ *  The returned handle is independent — the compiled model can be modified
+ *  or destroyed without affecting this handle. */
+MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double* T, double time, mhs_assembly_t** out);
+
+/** Destroy an assembly handle.  Passing NULL is a no-op. */
+MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
+
+/** Matrix dimension (number of active cells). */
+MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a);
+
+/** Number of non-zero entries in the sparse matrix. */
+MHS_API int32_t mhs_assembly_nnz(const mhs_assembly_t* a);
+
+/** CSC column pointers, length n+1.
+ *  outer_indices[i] is the start of row i in inner_indices / values.
+ *  Pointer valid until the assembly handle is destroyed. */
+MHS_API const int32_t* mhs_assembly_outer_indices(const mhs_assembly_t* a);
+
+/** CSC row indices for each non-zero, length nnz.
+ *  Pointer valid until the assembly handle is destroyed. */
+MHS_API const int32_t* mhs_assembly_inner_indices(const mhs_assembly_t* a);
+
+/** CSC non-zero values, length nnz, parallel to inner_indices.
+ *  Pointer valid until the assembly handle is destroyed. */
+MHS_API const double* mhs_assembly_values(const mhs_assembly_t* a);
+
+/** Right-hand side vector, length n.
+ *  Pointer valid until the assembly handle is destroyed. */
+MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a);
+
+/** Mass diagonal vector, length n.
+ *  Pointer valid until the assembly handle is destroyed. */
+MHS_API const double* mhs_assembly_mass_diagonal(const mhs_assembly_t* a);
 
 /* ------------------------------------------------------------------ */
 /*  Solution accessors                                                 */
@@ -394,6 +455,13 @@ MHS_API const char* mhs_model_material_name(const mhs_model_t* m, int32_t index)
 
 /** Number of materials currently registered. */
 MHS_API int32_t mhs_model_material_count(const mhs_model_t* m);
+
+/** Number of layers in the compiled model. */
+MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c);
+
+/** Number of blocks in a given layer (0-based).
+ *  Returns 0 if layer is out of range. */
+MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer);
 
 #ifdef __cplusplus
 } /* extern "C" */

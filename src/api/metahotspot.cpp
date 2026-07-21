@@ -5,11 +5,14 @@
 #include "io/model_io.hpp"
 #include "model/model_builder.hpp"
 #include "model/model_definition.hpp"
+#include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp"
 
+#include <Eigen/Core>
+
 #include <memory>
-#include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -33,20 +36,24 @@ struct PendingBoundary {
 struct mhs_model_t {
     mhs::model::ModelBuilder builder;
     std::vector<PendingBoundary> pending_boundaries;
-    bool has_default_bc = false;
     mhs::model::ThermalBoundary default_bc = mhs::model::NeumannBoundary {};
     std::vector<mhs::model::FluidBoundarySpec> pending_fluid;
+};
 
-    /* Tracking counters for ID-based returns.
-     * ModelBuilder's internals are private, so we shadow what we need. */
-    int32_t material_count = 0;
-    int32_t function_count = 0;
-    int32_t probe_count = 0;
-    std::vector<std::string> material_names;
+struct mhs_assembly_t {
+    int32_t n = 0;
+    int32_t nnz = 0;
+    std::vector<int32_t> outer_indices;
+    std::vector<int32_t> inner_indices;
+    std::vector<double> values;
+    std::vector<double> rhs;
+    std::vector<double> mass_diagonal;
 };
 
 struct mhs_compiled_t {
     mhs::core::Model model;
+    int32_t node_count = 0;
+    int32_t cell_count = 0;
 };
 
 struct mhs_solution_t {
@@ -100,8 +107,9 @@ static mhs::model::StudyType _to_model_study(mhs_study_t s)
         return mhs::model::StudyType::Steady;
     case MHS_STUDY_TRANSIENT:
         return mhs::model::StudyType::Transient;
+    default:
+        return mhs::model::StudyType::Steady;
     }
-    return mhs::model::StudyType::Steady;
 }
 
 static mhs::model::LengthUnit _to_unit(mhs_length_unit_t u)
@@ -119,8 +127,9 @@ static mhs::model::LengthUnit _to_unit(mhs_length_unit_t u)
         return mhs::model::LengthUnit::Inch;
     case MHS_UNIT_MIL:
         return mhs::model::LengthUnit::Mil;
+    default:
+        return mhs::model::LengthUnit::Meter;
     }
-    return mhs::model::LengthUnit::Meter;
 }
 
 static mhs_study_t _from_core_study(mhs::core::StudyType s)
@@ -130,8 +139,9 @@ static mhs_study_t _from_core_study(mhs::core::StudyType s)
         return MHS_STUDY_STEADY;
     case mhs::core::StudyType::Transient:
         return MHS_STUDY_TRANSIENT;
+    default:
+        return MHS_STUDY_STEADY;
     }
-    return MHS_STUDY_STEADY;
 }
 
 static mhs::model::FaceRegion _make_face_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
@@ -198,8 +208,7 @@ static mhs_status_t _flush_boundaries(mhs_model_t* m)
     }
     m->pending_boundaries.clear();
 
-    if (m->has_default_bc)
-        m->builder.set_default_boundary(m->default_bc);
+    m->builder.set_default_boundary(m->default_bc);
 
     /* Flush pending fluid boundaries. */
     for (auto& fb : m->pending_fluid)
@@ -304,13 +313,8 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
         /* Reset model handle state. */
         m->builder = mhs::model::ModelBuilder {};
         m->pending_boundaries.clear();
-        m->has_default_bc = false;
         m->default_bc = mhs::model::NeumannBoundary {};
         m->pending_fluid.clear();
-        m->material_count = 0;
-        m->function_count = 0;
-        m->probe_count = 0;
-        m->material_names.clear();
 
         /* Populate builder. */
         m->builder.set_settings(def.settings);
@@ -318,15 +322,10 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
 
         for (auto& v : def.variables)
             m->builder.add_variable(std::move(v));
-        for (auto& fn : def.functions) {
+        for (auto& fn : def.functions)
             m->builder.add_function(std::move(fn));
-            m->function_count++;
-        }
-        for (auto& mat : def.materials) {
-            m->material_names.push_back(mat.name);
+        for (auto& mat : def.materials)
             m->builder.add_material(std::move(mat));
-            m->material_count++;
-        }
 
         for (auto& layer : def.layers) {
             mhs::model::LayerParams lp {
@@ -360,12 +359,9 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
         }
 
         m->default_bc = std::move(def.default_boundary);
-        m->has_default_bc = true;
 
-        for (auto& ob : def.observation_points) {
+        for (auto& ob : def.observation_points)
             m->builder.add_observation_point(std::move(ob));
-            m->probe_count++;
-        }
         for (auto& fb : def.fluid_boundaries)
             m->pending_fluid.push_back(std::move(fb));
 
@@ -403,59 +399,30 @@ MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, m
     }
 }
 
-MHS_API mhs_status_t mhs_model_set_mesh_x(mhs_model_t* m, int32_t count, const double* vertices)
+MHS_API mhs_status_t mhs_model_set_mesh(
+    mhs_model_t* m, int32_t nx, const double* x, int32_t ny, const double* y, int32_t nz, const double* z)
 {
     CHECK_NULL(m);
-    CHECK_NULL(vertices);
-    if (count < 2) {
-        SET_ERR("set_mesh_x: count must be >= 2, got " << count);
-        return MHS_ERR_MESH;
-    }
     try {
-        m->builder.set_mesh({std::vector<double>(vertices, vertices + count), {}, {}});
+        auto spec = m->builder.peek().mesh;
+        if (nx >= 2) {
+            CHECK_NULL(x);
+            spec.x_vertices.assign(x, x + nx);
+        }
+        if (ny >= 2) {
+            CHECK_NULL(y);
+            spec.y_vertices.assign(y, y + ny);
+        }
+        if (nz >= 2) {
+            CHECK_NULL(z);
+            spec.z_vertices.assign(z, z + nz);
+        }
+        m->builder.set_mesh(std::move(spec));
         tls_err.clear();
         return MHS_OK;
     }
     catch (const std::exception& e) {
-        SET_ERR("set_mesh_x: " << e.what());
-        return MHS_ERR_MESH;
-    }
-}
-
-MHS_API mhs_status_t mhs_model_set_mesh_y(mhs_model_t* m, int32_t count, const double* vertices)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(vertices);
-    if (count < 2) {
-        SET_ERR("set_mesh_y: count must be >= 2, got " << count);
-        return MHS_ERR_MESH;
-    }
-    try {
-        m->builder.set_mesh({{}, std::vector<double>(vertices, vertices + count), {}});
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("set_mesh_y: " << e.what());
-        return MHS_ERR_MESH;
-    }
-}
-
-MHS_API mhs_status_t mhs_model_set_mesh_z(mhs_model_t* m, int32_t count, const double* vertices)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(vertices);
-    if (count < 2) {
-        SET_ERR("set_mesh_z: count must be >= 2, got " << count);
-        return MHS_ERR_MESH;
-    }
-    try {
-        m->builder.set_mesh({{}, {}, std::vector<double>(vertices, vertices + count)});
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("set_mesh_z: " << e.what());
+        SET_ERR("set_mesh: " << e.what());
         return MHS_ERR_MESH;
     }
 }
@@ -493,18 +460,21 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
     }
     try {
         mhs::model::MaterialSpec spec;
-        spec.conductivity_x = kx ? kx : "0.0";
-        spec.conductivity_y = ky ? ky : "0.0";
-        spec.conductivity_z = kz ? kz : "0.0";
-        spec.density = rho ? rho : "0.0";
-        spec.specific_heat = c ? c : "0.0";
+        if (kx)
+            spec.conductivity_x = kx;
+        if (ky)
+            spec.conductivity_y = ky;
+        if (kz)
+            spec.conductivity_z = kz;
+        if (rho)
+            spec.density = rho;
+        if (c)
+            spec.specific_heat = c;
         if (dynamic_viscosity)
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
 
         m->builder.add_material({name, std::move(spec)});
-        m->material_names.push_back(name ? name : "");
-        const auto id = static_cast<mhs_material_id_t>(m->material_count);
-        m->material_count++;
+        const auto id = static_cast<mhs_material_id_t>(m->builder.peek().materials.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -615,6 +585,14 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mh
 /*  Model construction  —  boundary conditions (two-step build)       */
 /* ------------------------------------------------------------------ */
 
+static mhs_status_t _check_boundary_id(const mhs_model_t* m, mhs_boundary_id_t id)
+{
+    if (id >= 0 && static_cast<size_t>(id) < m->pending_boundaries.size())
+        return MHS_OK;
+    SET_ERR("invalid boundary id: " << id);
+    return MHS_ERR_BOUNDARY;
+}
+
 MHS_API mhs_boundary_id_t mhs_model_add_boundary(mhs_model_t* m)
 {
     CHECK_NULL(m);
@@ -634,10 +612,9 @@ MHS_API mhs_status_t mhs_boundary_set_dirichlet(mhs_model_t* m, mhs_boundary_id_
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    if (id < 0 || static_cast<size_t>(id) >= m->pending_boundaries.size()) {
-        SET_ERR("invalid boundary id: " << id);
-        return MHS_ERR_BOUNDARY;
-    }
+    auto st = _check_boundary_id(m, id);
+    if (st != MHS_OK)
+        return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
     pb.type = PendingBoundary::Dirichlet;
     pb.dirichlet = {temperature};
@@ -649,10 +626,9 @@ MHS_API mhs_status_t mhs_boundary_set_neumann(mhs_model_t* m, mhs_boundary_id_t 
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    if (id < 0 || static_cast<size_t>(id) >= m->pending_boundaries.size()) {
-        SET_ERR("invalid boundary id: " << id);
-        return MHS_ERR_BOUNDARY;
-    }
+    auto st = _check_boundary_id(m, id);
+    if (st != MHS_OK)
+        return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
     pb.type = PendingBoundary::Neumann;
     pb.neumann = {heat_flux};
@@ -666,10 +642,9 @@ MHS_API mhs_status_t mhs_boundary_set_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    if (id < 0 || static_cast<size_t>(id) >= m->pending_boundaries.size()) {
-        SET_ERR("invalid boundary id: " << id);
-        return MHS_ERR_BOUNDARY;
-    }
+    auto st = _check_boundary_id(m, id);
+    if (st != MHS_OK)
+        return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
     pb.type = PendingBoundary::Convection;
     pb.convection = {coefficient, ambient_temperature};
@@ -681,10 +656,9 @@ MHS_API mhs_status_t mhs_boundary_add_face_region(
     mhs_model_t* m, mhs_boundary_id_t id, mhs_axis_t axis, double coordinate, mhs_rect2d_t region)
 {
     CHECK_NULL(m);
-    if (id < 0 || static_cast<size_t>(id) >= m->pending_boundaries.size()) {
-        SET_ERR("invalid boundary id: " << id);
-        return MHS_ERR_BOUNDARY;
-    }
+    auto st = _check_boundary_id(m, id);
+    if (st != MHS_OK)
+        return st;
     try {
         m->pending_boundaries[static_cast<size_t>(id)].regions.push_back(_make_face_region(axis, coordinate, region));
         tls_err.clear();
@@ -702,7 +676,6 @@ MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char*
     CHECK_NULL(m);
     CHECK_NULL(temperature);
     m->default_bc = mhs::model::DirichletBoundary {temperature};
-    m->has_default_bc = true;
     tls_err.clear();
     return MHS_OK;
 }
@@ -712,7 +685,6 @@ MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* h
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
     m->default_bc = mhs::model::NeumannBoundary {heat_flux};
-    m->has_default_bc = true;
     tls_err.clear();
     return MHS_OK;
 }
@@ -724,7 +696,6 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     m->default_bc = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
-    m->has_default_bc = true;
     tls_err.clear();
     return MHS_OK;
 }
@@ -746,8 +717,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char
     }
     try {
         m->builder.add_function({name, mhs::model::ExpressionFunctionSpec {expression}});
-        const auto id = static_cast<mhs_function_id_t>(m->function_count);
-        m->function_count++;
+        const auto id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -767,8 +737,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_gauss(
     }
     try {
         m->builder.add_function({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}});
-        const auto id = static_cast<mhs_function_id_t>(m->function_count);
-        m->function_count++;
+        const auto id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -788,8 +757,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_sine(
     }
     try {
         m->builder.add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}});
-        const auto id = static_cast<mhs_function_id_t>(m->function_count);
-        m->function_count++;
+        const auto id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -809,8 +777,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
     }
     try {
         m->builder.add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}});
-        const auto id = static_cast<mhs_function_id_t>(m->function_count);
-        m->function_count++;
+        const auto id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -841,8 +808,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
         for (int32_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
         m->builder.add_function({name, std::move(spec)});
-        const auto id = static_cast<mhs_function_id_t>(m->function_count);
-        m->function_count++;
+        const auto id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -865,8 +831,7 @@ MHS_API mhs_probe_id_t mhs_model_add_probe(mhs_model_t* m, const char* name, dou
     }
     try {
         m->builder.add_observation_point({name, std::to_string(x), std::to_string(y), std::to_string(z)});
-        const auto id = static_cast<mhs_probe_id_t>(m->probe_count);
-        m->probe_count++;
+        const auto id = static_cast<mhs_probe_id_t>(m->builder.peek().observation_points.size()) - 1;
         tls_err.clear();
         return id;
     }
@@ -904,16 +869,17 @@ MHS_API const char* mhs_model_material_name(const mhs_model_t* m, int32_t index)
 {
     if (!m)
         return nullptr;
-    if (index < 0 || static_cast<size_t>(index) >= m->material_names.size())
+    const auto& materials = m->builder.peek().materials;
+    if (index < 0 || static_cast<size_t>(index) >= materials.size())
         return nullptr;
-    return m->material_names[static_cast<size_t>(index)].c_str();
+    return materials[static_cast<size_t>(index)].name.c_str();
 }
 
 MHS_API int32_t mhs_model_material_count(const mhs_model_t* m)
 {
     if (!m)
         return 0;
-    return m->material_count;
+    return static_cast<int32_t>(m->builder.peek().materials.size());
 }
 
 /* ------------------------------------------------------------------ */
@@ -943,6 +909,8 @@ MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out)
             SET_ERR("memory allocation failed");
             return MHS_ERR_OOM;
         }
+        c->node_count = static_cast<int32_t>((c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1));
+        c->cell_count = static_cast<int32_t>(c->model.cells.cell_to_grid.size());
 
         *out = c;
         tls_err.clear();
@@ -966,14 +934,14 @@ MHS_API int32_t mhs_compiled_cell_count(const mhs_compiled_t* c)
 {
     if (!c)
         return 0;
-    return static_cast<int32_t>(c->model.cells.cell_to_grid.size());
+    return c->cell_count;
 }
 
 MHS_API int32_t mhs_compiled_node_count(const mhs_compiled_t* c)
 {
     if (!c)
         return 0;
-    return static_cast<int32_t>((c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1));
+    return c->node_count;
 }
 
 MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c)
@@ -983,11 +951,161 @@ MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c)
     return c->model.initial_temperature;
 }
 
+static_assert(sizeof(int32_t) == sizeof(mhs::core::TableIndex), "TableIndex must be int32_t-compatible");
+
+MHS_API const int32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c)
+{
+    if (!c)
+        return nullptr;
+    return reinterpret_cast<const int32_t*>(c->model.cells.layer_id.data());
+}
+
+MHS_API const int32_t* mhs_compiled_block_ids(const mhs_compiled_t* c)
+{
+    if (!c)
+        return nullptr;
+    return reinterpret_cast<const int32_t*>(c->model.cells.block_id.data());
+}
+
+MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c)
+{
+    if (!c)
+        return 0;
+    /* Count unique layer IDs by scanning for the max value. */
+    if (c->model.cells.layer_id.empty())
+        return 0;
+    auto max_l = *std::max_element(c->model.cells.layer_id.begin(), c->model.cells.layer_id.end());
+    return static_cast<int32_t>(max_l) + 1;
+}
+
+MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer)
+{
+    if (!c || layer < 0)
+        return 0;
+    /* Count unique (layer, block) combos for that layer. */
+    std::set<uint32_t> seen;
+    for (size_t i = 0; i < c->model.cells.block_id.size(); i++) {
+        if (c->model.cells.layer_id[i] == static_cast<mhs::core::TableIndex>(layer))
+            seen.insert(c->model.cells.block_id[i]);
+    }
+    return static_cast<int32_t>(seen.size());
+}
+
 MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c)
 {
     if (!c)
         return MHS_STUDY_STEADY;
     return _from_core_study(c->model.study_type);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Assembly (K, f, M_diag in CSC format)                              */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double* T, double time, mhs_assembly_t** out)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(out);
+    try {
+        mhs::sim::Assembler assembler(c->model);
+
+        /* Build temperature vector: if T is NULL, use initial_temperature. */
+        const auto n = static_cast<Eigen::Index>(c->model.cells.cell_to_grid.size());
+        Eigen::VectorXd T_vec;
+        if (T) {
+            T_vec = Eigen::Map<const Eigen::VectorXd>(T, n);
+        }
+        else {
+            T_vec = Eigen::VectorXd::Constant(n, c->model.initial_temperature);
+        }
+
+        mhs::sim::AssembleContext ctx {T_vec, time};
+        auto result = assembler.assemble(ctx);
+
+        /* Convert Eigen SparseMatrix to flat CSC arrays (int32_t indices). */
+        auto& K = result.K;
+        K.makeCompressed();
+
+        const int32_t dim = static_cast<int32_t>(K.rows());
+        const int32_t nnz = static_cast<int32_t>(K.nonZeros());
+        const int32_t* outer = K.outerIndexPtr();
+        const int32_t* inner = K.innerIndexPtr();
+        const double* vals = K.valuePtr();
+
+        auto h = std::make_unique<mhs_assembly_t>();
+        h->n = dim;
+        h->nnz = nnz;
+        h->outer_indices.assign(outer, outer + dim + 1);
+        h->inner_indices.assign(inner, inner + nnz);
+        h->values.assign(vals, vals + nnz);
+        h->rhs.assign(result.f.data(), result.f.data() + dim);
+        h->mass_diagonal.assign(result.M_diag.data(), result.M_diag.data() + dim);
+
+        *out = h.release();
+        tls_err.clear();
+        return MHS_OK;
+    }
+    catch (const std::exception& e) {
+        *out = nullptr;
+        SET_ERR("assemble: " << e.what());
+        return MHS_ERR_COMPILE;
+    }
+}
+
+MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a)
+{
+    delete a;
+    tls_err.clear();
+    return MHS_OK;
+}
+
+MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a)
+{
+    if (!a)
+        return 0;
+    return a->n;
+}
+
+MHS_API int32_t mhs_assembly_nnz(const mhs_assembly_t* a)
+{
+    if (!a)
+        return 0;
+    return a->nnz;
+}
+
+MHS_API const int32_t* mhs_assembly_outer_indices(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->outer_indices.data();
+}
+
+MHS_API const int32_t* mhs_assembly_inner_indices(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->inner_indices.data();
+}
+
+MHS_API const double* mhs_assembly_values(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->values.data();
+}
+
+MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->rhs.data();
+}
+
+MHS_API const double* mhs_assembly_mass_diagonal(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->mass_diagonal.data();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1016,11 +1134,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
         /* Compute node temperatures from cell-centroid solution. */
         auto node_T = mhs::post::interpolate_cell_to_node(c->model, sol.temperature, sol.time);
 
-        const auto node_count
-            = static_cast<int32_t>((c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1));
-
-        auto* s = new (std::nothrow) mhs_solution_t {
-            std::move(sol), std::move(node_T), node_count, static_cast<int32_t>(c->model.cells.cell_to_grid.size())};
+        auto* s = new (std::nothrow) mhs_solution_t {std::move(sol), std::move(node_T), c->node_count, c->cell_count};
 
         if (!s) {
             *out = nullptr;

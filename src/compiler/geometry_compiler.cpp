@@ -202,6 +202,8 @@ namespace mhs::sim {
                         cells.cell_to_grid.push_back(old_idx);
                         cells.material_id.push_back(static_cast<mhs::core::TableIndex>(name_to_idx.at(block.material)));
                         cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
+                        cells.layer_id.push_back(static_cast<mhs::core::TableIndex>(layer_idx));
+                        cells.block_id.push_back(static_cast<mhs::core::TableIndex>(block_idx));
                     }
                 }
             }
