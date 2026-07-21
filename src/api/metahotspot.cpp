@@ -242,18 +242,12 @@ MHS_API const char* mhs_status_string(mhs_status_t status)
         return "OK";
     case MHS_ERR_NULL_PTR:
         return "NULL pointer";
-    case MHS_ERR_LAYER:
-        return "invalid layer index or error";
-    case MHS_ERR_BLOCK:
-        return "invalid block index or error";
-    case MHS_ERR_BOUNDARY:
-        return "invalid boundary index or error";
-    case MHS_ERR_MATERIAL:
-        return "material error";
-    case MHS_ERR_FUNCTION:
-        return "function error";
+    case MHS_ERR_INVALID_ARG:
+        return "invalid argument";
     case MHS_ERR_COMPILE:
         return "compilation error";
+    case MHS_ERR_ASSEMBLE:
+        return "assemble error";
     case MHS_ERR_SOLVE:
         return "solver did not converge";
     case MHS_ERR_IO:
@@ -262,14 +256,8 @@ MHS_API const char* mhs_status_string(mhs_status_t status)
         return "out of memory";
     case MHS_ERR_UNSET:
         return "unset required field";
-    case MHS_ERR_FLUID:
-        return "fluid boundary error";
-    case MHS_ERR_MESH:
-        return "mesh error";
-    case MHS_ERR_VARIABLE:
-        return "variable error";
-    case MHS_ERR_PROBE:
-        return "probe error";
+    case MHS_ERR_RUNTIME:
+        return "internal runtime error";
     default:
         return "unknown error";
     }
@@ -395,7 +383,7 @@ MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, m
     }
     catch (const std::exception& e) {
         SET_ERR("set_settings: " << e.what());
-        return MHS_ERR_COMPILE;
+        return MHS_ERR_RUNTIME;
     }
 }
 
@@ -423,7 +411,7 @@ MHS_API mhs_status_t mhs_model_set_mesh(
     }
     catch (const std::exception& e) {
         SET_ERR("set_mesh: " << e.what());
-        return MHS_ERR_MESH;
+        return MHS_ERR_INVALID_ARG;
     }
 }
 
@@ -439,7 +427,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
     }
     catch (const std::exception& e) {
         SET_ERR("add_variable(" << name << "): " << e.what());
-        return MHS_ERR_VARIABLE;
+        return MHS_ERR_INVALID_ARG;
     }
 }
 
@@ -548,7 +536,7 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mh
     CHECK_NULL(m);
     if (block < 0) {
         SET_ERR("invalid block ID: " << block);
-        return MHS_ERR_BLOCK;
+        return MHS_ERR_INVALID_ARG;
     }
     if (!x) {
         SET_ERR("NULL pointer: x");
@@ -577,7 +565,7 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mh
     }
     catch (const std::exception& e) {
         SET_ERR("add_rect: " << e.what());
-        return MHS_ERR_BLOCK;
+        return MHS_ERR_INVALID_ARG;
     }
 }
 
@@ -590,7 +578,7 @@ static mhs_status_t _check_boundary_id(const mhs_model_t* m, mhs_boundary_id_t i
     if (id >= 0 && static_cast<size_t>(id) < m->pending_boundaries.size())
         return MHS_OK;
     SET_ERR("invalid boundary id: " << id);
-    return MHS_ERR_BOUNDARY;
+    return MHS_ERR_INVALID_ARG;
 }
 
 MHS_API mhs_boundary_id_t mhs_model_add_boundary(mhs_model_t* m)
@@ -666,7 +654,7 @@ MHS_API mhs_status_t mhs_boundary_add_face_region(
     }
     catch (const std::exception& e) {
         SET_ERR("add_face_region: " << e.what());
-        return MHS_ERR_BOUNDARY;
+        return MHS_ERR_INVALID_ARG;
     }
 }
 
@@ -857,7 +845,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
     }
     catch (const std::exception& e) {
         SET_ERR("add_fluid_boundary: " << e.what());
-        return MHS_ERR_FLUID;
+        return MHS_ERR_INVALID_ARG;
     }
 }
 
@@ -1048,7 +1036,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double
     catch (const std::exception& e) {
         *out = nullptr;
         SET_ERR("assemble: " << e.what());
-        return MHS_ERR_COMPILE;
+        return MHS_ERR_ASSEMBLE;
     }
 }
 

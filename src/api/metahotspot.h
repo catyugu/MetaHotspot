@@ -88,20 +88,14 @@ typedef enum { MHS_FLUID_NONE, MHS_FLUID_PRESSURE, MHS_FLUID_MASS_FLOW, MHS_FLUI
 typedef enum {
     MHS_OK = 0,
     MHS_ERR_NULL_PTR = -1,
-    MHS_ERR_LAYER = -2,
-    MHS_ERR_BLOCK = -3,
-    MHS_ERR_BOUNDARY = -4,
-    MHS_ERR_MATERIAL = -5,
-    MHS_ERR_FUNCTION = -6,
-    MHS_ERR_COMPILE = -7,
-    MHS_ERR_SOLVE = -8,
-    MHS_ERR_IO = -9,
-    MHS_ERR_OOM = -10,
-    MHS_ERR_UNSET = -11,
-    MHS_ERR_FLUID = -12,
-    MHS_ERR_MESH = -13,
-    MHS_ERR_VARIABLE = -14,
-    MHS_ERR_PROBE = -15
+    MHS_ERR_INVALID_ARG = -2,
+    MHS_ERR_COMPILE = -3,
+    MHS_ERR_ASSEMBLE = -4,
+    MHS_ERR_SOLVE = -5,
+    MHS_ERR_IO = -6,
+    MHS_ERR_OOM = -7,
+    MHS_ERR_UNSET = -8,
+    MHS_ERR_RUNTIME = -9,
 } mhs_status_t;
 
 /* ------------------------------------------------------------------ */

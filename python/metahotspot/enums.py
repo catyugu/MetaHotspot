@@ -8,20 +8,14 @@ import enum
 class Status(enum.IntEnum):
     OK = 0
     ERR_NULL_PTR = -1
-    ERR_LAYER = -2
-    ERR_BLOCK = -3
-    ERR_BOUNDARY = -4
-    ERR_MATERIAL = -5
-    ERR_FUNCTION = -6
-    ERR_COMPILE = -7
-    ERR_SOLVE = -8
-    ERR_IO = -9
-    ERR_OOM = -10
-    ERR_UNSET = -11
-    ERR_FLUID = -12
-    ERR_MESH = -13
-    ERR_VARIABLE = -14
-    ERR_PROBE = -15
+    ERR_INVALID_ARG = -2
+    ERR_COMPILE = -3
+    ERR_ASSEMBLE = -4
+    ERR_SOLVE = -5
+    ERR_IO = -6
+    ERR_OOM = -7
+    ERR_UNSET = -8
+    ERR_RUNTIME = -9
 
 
 class Study(enum.IntEnum):
