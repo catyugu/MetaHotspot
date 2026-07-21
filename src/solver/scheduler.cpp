@@ -57,13 +57,12 @@ namespace mhs::sim {
 
         // Steady: single non-linear solve, then output.
         if (model.study_type == mhs::core::StudyType::Steady) {
-            LinearSystemProvider build_ls = [&](Eigen::Ref<const Eigen::VectorXd> T_in) -> LinearSystem {
+            LinearSystemProvider build_ls = [&](std::vector<double>& T_in) -> LinearSystem {
                 AssembleContext ctx {T_in, step.current_time};
                 auto ops = assembler.assemble(ctx);
                 return {std::move(ops.K), std::move(ops.f)};
             };
-            Eigen::Map<Eigen::VectorXd> T_map(step.T.data(), static_cast<Eigen::Index>(N));
-            nonlinear_solve(build_ls, T_map, *solver, options.nonlinear);
+            nonlinear_solve(build_ls, step.T, *solver, options.nonlinear);
             probe_recorder.record(step.current_time, step.T);
             return {std::move(step.T), step.current_time, probe_recorder.traces()};
         }
@@ -88,8 +87,6 @@ namespace mhs::sim {
         double dt_sug = std::clamp(output_dt / 10.0, min_dt, max_dt);
         double dt = dt_sug;
 
-        Eigen::Map<Eigen::VectorXd> T_map(step.T.data(), static_cast<Eigen::Index>(N));
-
         while (step.current_time < duration - mhs::core::zero_guard) {
             dt = step_ctrl.prepare(dt_sug, step.current_time, duration);
             if (dt <= 0.0)
@@ -98,12 +95,12 @@ namespace mhs::sim {
 
             // Re-assembles K, f inside each non-linear iteration; M_diag is
             // frozen at accepted.current() via build_system's BDF stencil logic.
-            LinearSystemProvider provider = [&](Eigen::Ref<const Eigen::VectorXd> T_in) -> LinearSystem {
+            LinearSystemProvider provider = [&](std::vector<double>& T_in) -> LinearSystem {
                 AssembleContext ctx {T_in, step.current_time};
                 return time_scheme::build_system(
                     time_scheme::IntegratorKind::Bdf1, assembler.assemble(ctx), step.accepted, step.dt);
             };
-            auto nl = nonlinear_solve(provider, T_map, *solver, options.nonlinear);
+            auto nl = nonlinear_solve(provider, step.T, *solver, options.nonlinear);
             if (!nl.converged) {
                 MHS_LOG_WARN("Non-linear iteration did not converge at step {}", step.time_step);
             }

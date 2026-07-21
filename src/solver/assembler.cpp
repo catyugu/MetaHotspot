@@ -49,8 +49,8 @@ namespace mhs::sim {
                     const double volume = dx * dy * dz;
 
                     const auto& material = materials[cells.material_id[cell]];
-                    const mhs::core::FieldContext cell_context {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                        ctx.T[static_cast<Eigen::Index>(cell)], ctx.current_time};
+                    const mhs::core::FieldContext cell_context {
+                        mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], ctx.T[static_cast<std::size_t>(cell)], ctx.current_time};
                     const double kx = material.kx.eval(cell_context);
                     const double ky = material.ky.eval(cell_context);
                     const double kz = material.kz.eval(cell_context);
@@ -80,7 +80,7 @@ namespace mhs::sim {
                             const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                             const auto& neighbor_material = materials[cells.material_id[neighbor]];
                             const mhs::core::FieldContext neighbor_context {mesh.cx[nix], mesh.cy[niy], mesh.cz[niz],
-                                ctx.T[static_cast<Eigen::Index>(neighbor)], ctx.current_time};
+                                ctx.T[static_cast<std::size_t>(neighbor)], ctx.current_time};
                             const double neighbor_k
                                 = mhs::utils::k_along(dir, neighbor_material.kx.eval(neighbor_context),
                                     neighbor_material.ky.eval(neighbor_context),

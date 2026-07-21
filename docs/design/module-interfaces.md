@@ -113,7 +113,7 @@ namespace mhs::sim {
     /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
     /// Invariant (caller-enforced): T.size() == N_active.
     struct AssembleContext {
-        Eigen::Ref<const Eigen::VectorXd> T;
+        std::vector<double>& T;
         double current_time = 0.0;
     };
 

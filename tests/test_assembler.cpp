@@ -54,8 +54,7 @@ TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
 
     int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
-    AssembleContext ctx {T_map, 0.0};
+    AssembleContext ctx {T, 0.0};
 
     Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
@@ -111,10 +110,10 @@ TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
     std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
-    AssembleContext s1 {Eigen::Map<const Eigen::VectorXd>(T300.data(), N), 0.0};
+    AssembleContext s1 {T300, 0.0};
     auto k1 = assembler.assemble(s1).K;
 
-    AssembleContext s2 {Eigen::Map<const Eigen::VectorXd>(T500.data(), N), 0.0};
+    AssembleContext s2 {T500, 0.0};
     auto k2 = assembler.assemble(s2).K;
 
     bool differs = false;
@@ -138,8 +137,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 
     int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    Eigen::Map<const Eigen::VectorXd> T_map(T.data(), N);
-    AssembleContext ctx {T_map, 0.0};
+    AssembleContext ctx {T, 0.0};
 
     Assembler assembler(model);
     auto ops = assembler.assemble(ctx);

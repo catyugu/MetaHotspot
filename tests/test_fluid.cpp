@@ -88,8 +88,8 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
 {
     auto model = load_microfluid_case();
-    const Eigen::VectorXd temperature
-        = Eigen::VectorXd::Constant(static_cast<Eigen::Index>(model.cells.material_id.size()), 300.0);
+    const auto n = model.cells.material_id.size();
+    std::vector<double> temperature(n, 300.0);
     const auto increment = mhs::sim::fluid::assemble_increment(model, temperature, 0.0);
 
     for (const auto& entry : increment.matrix_entries) {

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "solver/linear_system.hpp"
 #include "numerics/linear/linear_solver.hpp"
+#include "solver/linear_system.hpp"
 
 #include <functional>
+#include <vector>
 
 namespace mhs::sim {
 
@@ -20,11 +21,11 @@ namespace mhs::sim {
     };
 
     /// Per-iteration linear-system factory. Receives the current temperature
-    /// iterate as a writable Eigen::Ref so callers can pass a Map alias of an
-    /// existing std::vector without copying.
-    using LinearSystemProvider = std::function<LinearSystem(Eigen::Ref<const Eigen::VectorXd>)>;
+    /// iterate as a reference to std::vector<double> that the provider forwards
+    /// into AssembleContext.
+    using LinearSystemProvider = std::function<LinearSystem(std::vector<double>&)>;
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, Eigen::Ref<Eigen::VectorXd> T,
-        LinearSolver& solver, const NonLinearConfig& cfg = {});
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& T, LinearSolver& solver,
+        const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

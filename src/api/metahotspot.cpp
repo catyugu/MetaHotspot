@@ -9,8 +9,7 @@
 #include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp"
 
-#include <Eigen/Core>
-
+#include <algorithm>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -998,13 +997,13 @@ MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double
         mhs::sim::Assembler assembler(c->model);
 
         /* Build temperature vector: if T is NULL, use initial_temperature. */
-        const auto n = static_cast<Eigen::Index>(c->model.cells.cell_to_grid.size());
-        Eigen::VectorXd T_vec;
+        const auto n = static_cast<std::size_t>(c->model.cells.cell_to_grid.size());
+        std::vector<double> T_vec(n);
         if (T) {
-            T_vec = Eigen::Map<const Eigen::VectorXd>(T, n);
+            std::copy_n(T, n, T_vec.begin());
         }
         else {
-            T_vec = Eigen::VectorXd::Constant(n, c->model.initial_temperature);
+            std::fill_n(T_vec.begin(), n, c->model.initial_temperature);
         }
 
         mhs::sim::AssembleContext ctx {T_vec, time};
