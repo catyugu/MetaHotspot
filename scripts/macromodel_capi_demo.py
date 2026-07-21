@@ -25,9 +25,17 @@ from scipy.sparse.linalg import splu
 # ---------------------------------------------------------------------------
 #  ctypes wrapper
 # ---------------------------------------------------------------------------
-DLL = ctypes.CDLL(
-    str(Path(__file__).resolve().parent.parent / "build/src/api/mhs_c_api.dll")
-)
+_LIB_DIR = Path(__file__).resolve().parent.parent / "build" / "src" / "api"
+if sys.platform.startswith("linux"):
+    _LIB_NAME = "libmhs_c_api.so"
+elif sys.platform == "darwin":
+    _LIB_NAME = "libmhs_c_api.dylib"
+elif sys.platform == "win32":
+    _LIB_NAME = "mhs_c_api.dll"
+else:
+    raise OSError("Unsupported platform for MetaHotspot C API: {}".format(sys.platform))
+
+DLL = ctypes.CDLL(str(_LIB_DIR / _LIB_NAME))
 
 
 class MhsModel(ctypes.Structure):
