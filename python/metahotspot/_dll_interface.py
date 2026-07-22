@@ -250,19 +250,19 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_compiled_study_type.restype = ctypes.c_int32
     dll.mhs_compiled_study_type.argtypes = [ctypes.POINTER(MhsCompiled)]
 
-    dll.mhs_compiled_layer_count.restype = ctypes.c_int32
+    dll.mhs_compiled_layer_count.restype = ctypes.c_uint32
     dll.mhs_compiled_layer_count.argtypes = [ctypes.POINTER(MhsCompiled)]
 
-    dll.mhs_compiled_block_count.restype = ctypes.c_int32
+    dll.mhs_compiled_block_count.restype = ctypes.c_uint32
     dll.mhs_compiled_block_count.argtypes = [
         ctypes.POINTER(MhsCompiled),
-        ctypes.c_int32,
+        ctypes.c_uint32,
     ]
 
-    dll.mhs_compiled_layer_ids.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_compiled_layer_ids.restype = ctypes.POINTER(ctypes.c_uint32)
     dll.mhs_compiled_layer_ids.argtypes = [ctypes.POINTER(MhsCompiled)]
 
-    dll.mhs_compiled_block_ids.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_compiled_block_ids.restype = ctypes.POINTER(ctypes.c_uint32)
     dll.mhs_compiled_block_ids.argtypes = [ctypes.POINTER(MhsCompiled)]
 
     # ---- Model introspection ----

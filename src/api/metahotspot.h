@@ -9,9 +9,6 @@
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
  *
- * ID types are plain int32_t sentinels — they index into internal arrays and have
- * no ownership semantics.
- *
  * All mutation functions return mhs_status_t.  Functions returning an ID return
  * MHS_*_ID_INVALID on failure.  Detailed error messages are available via
  * mhs_last_error(), which is thread-local and reset on every API call.
@@ -316,22 +313,22 @@ MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c);
 MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c);
 
 /** Number of layers in the compiled model. */
-MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c);
+MHS_API uint32_t mhs_compiled_layer_count(const mhs_compiled_t* c);
 
 /** Number of blocks in a given layer (0-based).
  *  Returns 0 if layer is out of range. */
-MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer);
+MHS_API uint32_t mhs_compiled_block_count(const mhs_compiled_t* c, uint32_t layer);
 
 /** Const access to per-cell layer IDs, length cell_count().
  *  layer_id[i] == L selects cells belonging to the L-th layer (0-based).
  *  Pointer valid until the compiled model is destroyed. */
-MHS_API const int32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c);
+MHS_API const uint32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c);
 
 /** Const access to per-cell block IDs, length cell_count().
  *  block_id[i] == B selects cells belonging to the B-th block within
  *  their layer (0-based).  Combined with layer_id for unique selection.
  *  Pointer valid until the compiled model is destroyed. */
-MHS_API const int32_t* mhs_compiled_block_ids(const mhs_compiled_t* c);
+MHS_API const uint32_t* mhs_compiled_block_ids(const mhs_compiled_t* c);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
@@ -449,13 +446,6 @@ MHS_API const char* mhs_model_material_name(const mhs_model_t* m, int32_t index)
 
 /** Number of materials currently registered. */
 MHS_API int32_t mhs_model_material_count(const mhs_model_t* m);
-
-/** Number of layers in the compiled model. */
-MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c);
-
-/** Number of blocks in a given layer (0-based).
- *  Returns 0 if layer is out of range. */
-MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer);
 
 #ifdef __cplusplus
 } /* extern "C" */

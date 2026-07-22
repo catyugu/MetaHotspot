@@ -926,23 +926,21 @@ MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c)
     return c->model.initial_temperature;
 }
 
-static_assert(sizeof(int32_t) == sizeof(mhs::core::TableIndex), "TableIndex must be int32_t-compatible");
-
-MHS_API const int32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c)
+MHS_API const uint32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c)
 {
     if (!c)
         return nullptr;
-    return reinterpret_cast<const int32_t*>(c->model.cells.layer_id.data());
+    return c->model.cells.layer_id.data();
 }
 
-MHS_API const int32_t* mhs_compiled_block_ids(const mhs_compiled_t* c)
+MHS_API const uint32_t* mhs_compiled_block_ids(const mhs_compiled_t* c)
 {
     if (!c)
         return nullptr;
-    return reinterpret_cast<const int32_t*>(c->model.cells.block_id.data());
+    return c->model.cells.block_id.data();
 }
 
-MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c)
+MHS_API uint32_t mhs_compiled_layer_count(const mhs_compiled_t* c)
 {
     if (!c)
         return 0;
@@ -950,12 +948,12 @@ MHS_API int32_t mhs_compiled_layer_count(const mhs_compiled_t* c)
     if (c->model.cells.layer_id.empty())
         return 0;
     auto max_l = *std::max_element(c->model.cells.layer_id.begin(), c->model.cells.layer_id.end());
-    return static_cast<int32_t>(max_l) + 1;
+    return max_l + 1;
 }
 
-MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer)
+MHS_API uint32_t mhs_compiled_block_count(const mhs_compiled_t* c, uint32_t layer)
 {
-    if (!c || layer < 0)
+    if (!c)
         return 0;
     /* Count unique (layer, block) combos for that layer. */
     std::set<uint32_t> seen;
@@ -963,7 +961,7 @@ MHS_API int32_t mhs_compiled_block_count(const mhs_compiled_t* c, int32_t layer)
         if (c->model.cells.layer_id[i] == static_cast<mhs::core::TableIndex>(layer))
             seen.insert(c->model.cells.block_id[i]);
     }
-    return static_cast<int32_t>(seen.size());
+    return static_cast<uint32_t>(seen.size());
 }
 
 MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c)
