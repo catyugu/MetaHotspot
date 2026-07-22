@@ -177,47 +177,6 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Internal helpers — flush pending boundaries into the builder       */
-/* ------------------------------------------------------------------ */
-static mhs_status_t _flush_boundaries(mhs_model_t* m)
-{
-    for (size_t i = 0; i < m->pending_boundaries.size(); ++i) {
-        auto& pb = m->pending_boundaries[i];
-        if (pb.type == PendingBoundary::Unset) {
-            SET_ERR("boundary slot " << i
-                                     << " has no condition set (call set_dirichlet/"
-                                        "set_neumann/set_convection)");
-            return MHS_ERR_UNSET;
-        }
-        mhs::model::ThermalBoundary cond;
-        switch (pb.type) {
-        case PendingBoundary::Dirichlet:
-            cond = std::move(pb.dirichlet);
-            break;
-        case PendingBoundary::Neumann:
-            cond = std::move(pb.neumann);
-            break;
-        case PendingBoundary::Convection:
-            cond = std::move(pb.convection);
-            break;
-        default:
-            break;
-        }
-        m->builder.add_boundary({std::move(pb.regions), std::move(cond)});
-    }
-    m->pending_boundaries.clear();
-
-    m->builder.set_default_boundary(m->default_bc);
-
-    /* Flush pending fluid boundaries. */
-    for (auto& fb : m->pending_fluid)
-        m->builder.add_fluid_boundary(std::move(fb));
-    m->pending_fluid.clear();
-
-    return MHS_OK;
-}
-
-/* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -878,16 +837,45 @@ MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out)
     CHECK_NULL(m);
     CHECK_NULL(out);
     try {
-        /* Flush pending boundaries into the builder. */
-        auto st = _flush_boundaries(m);
-        if (st != MHS_OK) {
-            *out = nullptr;
-            return st;
+        mhs::model::ModelDefinition def = m->builder.peek();
+
+        /* Validate and append pending thermal boundaries (copy). */
+        def.boundaries.reserve(def.boundaries.size() + m->pending_boundaries.size());
+        for (size_t i = 0; i < m->pending_boundaries.size(); ++i) {
+            const auto& pb = m->pending_boundaries[i];
+            if (pb.type == PendingBoundary::Unset) {
+                SET_ERR("boundary slot " << i
+                                         << " has no condition set (call set_dirichlet/"
+                                            "set_neumann/set_convection)");
+                *out = nullptr;
+                return MHS_ERR_UNSET;
+            }
+            mhs::model::ThermalBoundary cond;
+            switch (pb.type) {
+            case PendingBoundary::Dirichlet:
+                cond = pb.dirichlet;
+                break;
+            case PendingBoundary::Neumann:
+                cond = pb.neumann;
+                break;
+            case PendingBoundary::Convection:
+                cond = pb.convection;
+                break;
+            default:
+                break;
+            }
+            def.boundaries.push_back({pb.regions, cond});
         }
 
-        /* Compile from the builder's current state without consuming it.
-         * build_model() takes a const ref, so peek() suffices. */
-        auto core_model = mhs::sim::build_model(m->builder.peek());
+        /* Append pending fluid boundaries (copy). */
+        def.fluid_boundaries.reserve(def.fluid_boundaries.size() + m->pending_fluid.size());
+        for (const auto& fb : m->pending_fluid)
+            def.fluid_boundaries.push_back(fb);
+
+        def.default_boundary = m->default_bc;
+
+        /* Compile from the composed definition. */
+        auto core_model = mhs::sim::build_model(def);
 
         /* Wrap in opaque handle. */
         auto* c = new (std::nothrow) mhs_compiled_t {std::move(core_model)};

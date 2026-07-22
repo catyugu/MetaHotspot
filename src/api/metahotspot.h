@@ -297,12 +297,12 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
 
 /** Compile a model into its runtime representation.
  *
- *  The model handle m remains valid and can be further modified or
- *  compiled again later.  The returned mhs_compiled_t is read-only and
- *  independent — destroying m does not invalidate the compiled model.
+ *  The model handle m is not modified — pending boundary slots are NOT
+ *  consumed and remain valid for further editing.  The returned
+ *  mhs_compiled_t is a snapshot of the current model state and is
+ *  independent of m (destroying m does not invalidate the compiled model).
  *
- *  All pending boundary conditions (those added via mhs_model_add_boundary
- *  and friends) are flushed into the compiled output. */
+ *  Call again after any modifications to produce an updated snapshot. */
 MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out);
 
 /** Destroy a compiled model handle.  Passing NULL is a no-op. */
