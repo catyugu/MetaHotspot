@@ -85,16 +85,14 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
     }
 }
 
-TEST(FluidModuleTest, ContributionDoesNotIntroduceNewSparseCoordinates)
+TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
 {
     auto model = load_microfluid_case();
-    mhs::sim::AssembleContext context {model.initial_state, 0.0};
-    const auto contribution = mhs::sim::fluid::assemble_operator(model, context);
-    const auto state_offset = model.dofs.cell_states.begin;
+    const auto increment = mhs::sim::fluid::assemble_increment(model, model.initial_state, 0.0);
 
-    for (const auto& entry : contribution.stiffness) {
-        const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row()) - state_offset;
-        const mhs::core::Index col = static_cast<mhs::core::Index>(entry.col()) - state_offset;
+    for (const auto& entry : increment.matrix_entries) {
+        const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row());
+        const mhs::core::Index col = static_cast<mhs::core::Index>(entry.col());
         if (row == col)
             continue;
 
@@ -111,7 +109,6 @@ TEST(FluidModuleTest, ContributionDoesNotIntroduceNewSparseCoordinates)
                 break;
             }
         }
-        EXPECT_TRUE(direct_neighbor)
-            << "fluid contribution added non-neighbor coordinate (" << row << ", " << col << ")";
+        EXPECT_TRUE(direct_neighbor) << "fluid increment added non-neighbor coordinate (" << row << ", " << col << ")";
     }
 }

@@ -82,7 +82,7 @@ mhs::model::ModelDefinition
 流体实现跨越一个明确的 setup / solve 边界：
 
 1. `mhs_compiler` 中的 `build_domain()` 在局部工作区完成流体映射、通道几何、水力导通、边界解析和压力求解，最终只持久化冻结面流量、流固换热因子和边界热数据。
-2. `mhs_solver` 中的 `assemble_operator()` 返回流固界面修正、流体内部迎风对流和入口/出口项。贡献使用全局状态坐标，且所有矩阵坐标均为已有对角或直接邻居位置，不改变基础热算子的稀疏模式。
+2. `mhs_solver` 中的 `assemble_increment()` 返回流固界面修正、流体内部迎风对流和入口/出口项。所有矩阵坐标均为已有对角或直接邻居位置，不改变基础热算子的稀疏模式。
 
 流固界面在基础导热系数上追加差量：
 
@@ -114,19 +114,6 @@ namespace mhs::sim {
         double current_time = 0.0;
     };
 
-    struct OperatorContribution {
-        std::vector<Eigen::Triplet<double>> stiffness;
-        std::vector<Eigen::Triplet<double>> capacity;
-        std::vector<SourceEntry> source;
-    };
-
-    class OperatorAccumulator {
-    public:
-        explicit OperatorAccumulator(Eigen::Index state_count);
-        void add(OperatorContribution contribution);
-        AssemblyResult finish() &&;
-    };
-
     class Assembler {
     public:
         explicit Assembler(const mhs::core::Model& model);
@@ -135,10 +122,7 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 只负责收集 `assemble_cell_domain()` 与 `fluid::assemble_operator()` 返回的
-`OperatorContribution`，最后由 `OperatorAccumulator` 统一构造一次 `K`、`C` 和 `f`。贡献者不共享可变 RHS，所有源项也以条目形式在串行归并阶段累加。
-
-单元路径用 `tbb::parallel_for(0, cell_count)` 遍历 `cell_to_grid`；流体路径只遍历 `fluid_to_global`。两条路径都不扫描整个结构化网格。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils`。基础组装项：
+`assemble()` 依次收集 `assemble_cells()` 与 `assemble_fluid()` 的贡献，最后统一构造 `K`、`C`。单元路径用 `tbb::parallel_for(0, cell_count)` 遍历 `cell_to_grid`；流体路径只遍历 `fluid_to_global`。两条路径都不扫描整个结构化网格。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils`。基础组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `face_bcs[cell * 6 + face]` 走 Dirichlet/Neumann/Cauchy 分支）

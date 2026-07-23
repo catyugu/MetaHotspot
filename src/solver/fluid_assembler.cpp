@@ -12,9 +12,8 @@
 namespace mhs::sim::fluid {
 
     namespace {
-        struct ThreadLocalContribution {
-            std::vector<Eigen::Triplet<double>> stiffness;
-            std::vector<SourceEntry> source;
+        struct ThreadLocalEntries {
+            std::vector<Eigen::Triplet<double>> matrix_entries;
         };
 
         bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::core::Index cell)
@@ -25,8 +24,8 @@ namespace mhs::sim::fluid {
         void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::core::Index fluid_cell,
             mhs::core::Index solid_cell, double correction)
         {
-            const auto f = static_cast<Eigen::Index>(fluid_cell);
-            const auto s = static_cast<Eigen::Index>(solid_cell);
+            const auto f = static_cast<int>(fluid_cell);
+            const auto s = static_cast<int>(solid_cell);
             entries.emplace_back(f, f, correction);
             entries.emplace_back(f, s, -correction);
             entries.emplace_back(s, s, correction);
@@ -35,15 +34,19 @@ namespace mhs::sim::fluid {
 
     } // namespace
 
-    OperatorContribution assemble_operator(const mhs::core::Model& model, const AssembleContext& context)
+    FluidAssemblyIncrement assemble_increment(
+        const mhs::core::Model& model, const std::vector<double>& state, double current_time)
     {
+        const mhs::core::Index active_count = static_cast<mhs::core::Index>(model.cells.material_id.size());
         const mhs::core::Index state_offset = model.dofs.cell_states.begin;
-        OperatorContribution result;
+        assert(active_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
+        FluidAssemblyIncrement result;
+        result.rhs = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(active_count));
         if (model.fluid.fluid_to_global.empty())
             return result;
 
         auto thread_entries
-            = tbb::enumerable_thread_specific<ThreadLocalContribution>([]() { return ThreadLocalContribution {}; });
+            = tbb::enumerable_thread_specific<ThreadLocalEntries>([]() { return ThreadLocalEntries {}; });
         const mhs::core::Index fluid_count = static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size());
 
         tbb::parallel_for(tbb::blocked_range<mhs::core::Index>(0, fluid_count),
@@ -51,7 +54,7 @@ namespace mhs::sim::fluid {
                 for (mhs::core::Index fi = range.begin(); fi < range.end(); ++fi) {
                     const mhs::core::Index cell = model.fluid.fluid_to_global[fi];
                     const mhs::core::Index old = model.cells.cell_to_grid[cell];
-                    auto& local = thread_entries.local();
+                    auto& local = thread_entries.local().matrix_entries;
                     mhs::core::Index ix, iy, iz;
                     mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
                     const double dx = model.mesh.dx[ix];
@@ -60,7 +63,7 @@ namespace mhs::sim::fluid {
 
                     const auto& material = model.material_table[model.cells.material_id[cell]];
                     const mhs::core::FieldContext cell_context {model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz],
-                        context.state[static_cast<std::size_t>(state_offset + cell)], context.current_time};
+                        state[static_cast<std::size_t>(state_offset + cell)], current_time};
                     const double kx = material.kx.eval(cell_context);
                     const double ky = material.ky.eval(cell_context);
                     const double kz = material.kz.eval(cell_context);
@@ -82,8 +85,7 @@ namespace mhs::sim::fluid {
                         const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                         const auto& neighbor_material = model.material_table[model.cells.material_id[neighbor]];
                         const mhs::core::FieldContext neighbor_context {model.mesh.cx[nix], model.mesh.cy[niy],
-                            model.mesh.cz[niz], context.state[static_cast<std::size_t>(state_offset + neighbor)],
-                            context.current_time};
+                            model.mesh.cz[niz], state[static_cast<std::size_t>(state_offset + neighbor)], current_time};
 
                         if (is_fluid(model.fluid, neighbor)) {
                             const double volume_flux = model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face];
@@ -95,12 +97,11 @@ namespace mhs::sim::fluid {
                             if (std::abs(mass_flux) <= mhs::core::zero_guard)
                                 continue;
                             if (mass_flux > 0.0) {
-                                local.stiffness.emplace_back(static_cast<Eigen::Index>(state_offset + cell),
-                                    static_cast<Eigen::Index>(state_offset + cell), mass_flux * heat_capacity);
+                                local.emplace_back(
+                                    static_cast<int>(cell), static_cast<int>(cell), mass_flux * heat_capacity);
                             }
                             else {
-                                local.stiffness.emplace_back(static_cast<Eigen::Index>(state_offset + cell),
-                                    static_cast<Eigen::Index>(state_offset + neighbor),
+                                local.emplace_back(static_cast<int>(cell), static_cast<int>(neighbor),
                                     mass_flux * neighbor_material.c.eval(neighbor_context));
                             }
                             continue;
@@ -119,8 +120,7 @@ namespace mhs::sim::fluid {
                         const double interface_resistance
                             = solid_half_distance / (solid_k * area) + 1.0 / (heat_transfer * area);
                         const double interface_conductance = 1.0 / interface_resistance;
-                        add_interface_correction(local.stiffness, state_offset + cell, state_offset + neighbor,
-                            interface_conductance - base_conductance);
+                        add_interface_correction(local, cell, neighbor, interface_conductance - base_conductance);
                     }
 
                     if (!std::isnan(model.fluid.boundary_outflux[fi]))
@@ -130,19 +130,19 @@ namespace mhs::sim::fluid {
 
                     const double boundary_temperature = model.fluid.boundary_temperature[fi];
                     if (net_outflux > 0.0 && !std::isnan(boundary_temperature)) {
-                        local.source.push_back({static_cast<Eigen::Index>(state_offset + cell),
-                            net_outflux * heat_capacity * boundary_temperature});
+                        result.rhs(static_cast<Eigen::Index>(cell))
+                            += net_outflux * heat_capacity * boundary_temperature;
                     }
                     else {
-                        local.stiffness.emplace_back(static_cast<Eigen::Index>(state_offset + cell),
-                            static_cast<Eigen::Index>(state_offset + cell), -net_outflux * heat_capacity);
+                        local.emplace_back(
+                            static_cast<int>(cell), static_cast<int>(cell), -net_outflux * heat_capacity);
                     }
                 }
             });
 
-        thread_entries.combine_each([&](const ThreadLocalContribution& local) {
-            result.stiffness.insert(result.stiffness.end(), local.stiffness.begin(), local.stiffness.end());
-            result.source.insert(result.source.end(), local.source.begin(), local.source.end());
+        thread_entries.combine_each([&](const ThreadLocalEntries& local) {
+            result.matrix_entries.insert(
+                result.matrix_entries.end(), local.matrix_entries.begin(), local.matrix_entries.end());
         });
         return result;
     }

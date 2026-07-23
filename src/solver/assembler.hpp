@@ -1,10 +1,26 @@
 #pragma once
 
+#include "Eigen/SparseCore"
 #include "runtime/model.hpp"
-#include "solver/operator_assembly.hpp"
+#include <Eigen/Core>
 #include <vector>
 
 namespace mhs::sim {
+
+    struct AssemblyResult {
+        Eigen::SparseMatrix<double> K;
+        Eigen::SparseMatrix<double> C;
+        Eigen::VectorXd f;
+    };
+
+    /// Runtime state used to evaluate state-dependent operators.
+    ///
+    /// Invariant (caller-enforced):
+    ///   - state.size() == model.dofs.total_count
+    struct AssembleContext {
+        const std::vector<double>& state;
+        double current_time = 0.0;
+    };
 
     class Assembler {
     public:
