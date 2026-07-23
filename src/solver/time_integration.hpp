@@ -25,7 +25,7 @@ namespace mhs::sim::time_scheme {
         double suggested_factor = 1.0;
     };
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_state,
         double trial_dt, const ErrorControlConfig& config);
 
     class OutputTimeGrid {

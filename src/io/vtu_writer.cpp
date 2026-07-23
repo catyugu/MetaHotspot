@@ -32,16 +32,12 @@ namespace mhs::io {
                     if (cells.grid_to_cell[old_idx] == mhs::core::invalidIndex)
                         continue;
 
-                    const mhs::core::Index n[8] = {
-                        node_idx(ix, iy, iz, node_ny, node_nz),
-                        node_idx(ix + 1, iy, iz, node_ny, node_nz),
-                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz),
-                        node_idx(ix, iy + 1, iz, node_ny, node_nz),
-                        node_idx(ix, iy, iz + 1, node_ny, node_nz),
-                        node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
-                        node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
-                        node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)
-                    };
+                    const mhs::core::Index n[8]
+                        = {node_idx(ix, iy, iz, node_ny, node_nz), node_idx(ix + 1, iy, iz, node_ny, node_nz),
+                            node_idx(ix + 1, iy + 1, iz, node_ny, node_nz), node_idx(ix, iy + 1, iz, node_ny, node_nz),
+                            node_idx(ix, iy, iz + 1, node_ny, node_nz), node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
+                            node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
+                            node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)};
                     for (int k = 0; k < 8; k++) {
                         if (node_remap[n[k]] == mhs::core::invalidIndex)
                             node_remap[n[k]] = 0; // mark as referenced

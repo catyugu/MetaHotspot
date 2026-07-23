@@ -20,12 +20,10 @@ namespace mhs::sim {
         double absolute_tolerance = 1e-12;
     };
 
-    /// Per-iteration linear-system factory. Receives the current temperature
-    /// iterate as a reference to std::vector<double> that the provider forwards
-    /// into AssembleContext.
+    /// Per-iteration linear-system factory evaluated at the current state.
     using LinearSystemProvider = std::function<LinearSystem(std::vector<double>&)>;
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& T, LinearSolver& solver,
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, LinearSolver& solver,
         const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

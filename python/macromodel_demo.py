@@ -173,7 +173,8 @@ def main():
     block_ids = compiled.block_ids().copy()
 
     assembly = compiled.assemble()
-    K, rhs = assembly.as_csc()
+    K = assembly.stiffness_matrix()
+    rhs = assembly.rhs()
     assembly.close()
     print("  K: {}x{}, {} NNZ".format(K.shape[0], K.shape[1], K.nnz))
 

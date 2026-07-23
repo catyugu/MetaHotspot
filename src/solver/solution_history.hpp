@@ -5,7 +5,7 @@
 
 namespace mhs::core {
 
-    /// Ring-buffer of accepted (temperature, time) snapshots for BDF-k multi-step schemes.
+    /// Ring-buffer of accepted (state, time) snapshots for BDF-k multi-step schemes.
     ///
     /// Indexing convention (valid for i < size()):
     ///   at(0) == current()  — most recently accepted solution
@@ -16,26 +16,26 @@ namespace mhs::core {
     /// initialize() is called.
     class SolutionHistory {
     public:
-        explicit SolutionHistory(std::size_t cell_count, std::size_t capacity)
-            : slots_(capacity, std::vector<double>(cell_count)), times_(capacity, 0.0), cap_(capacity)
+        explicit SolutionHistory(std::size_t state_count, std::size_t capacity)
+            : slots_(capacity, std::vector<double>(state_count)), times_(capacity, 0.0), cap_(capacity)
         {
         }
 
         /// Initialize with the first (t=0) solution snapshot.
-        /// Post-condition: size() == 1, current() == T_init, time_at(0) == t0.
-        inline void initialize(const std::vector<double>& T_init, double t0 = 0.0)
+        /// Post-condition: size() == 1, current() == initial_state, time_at(0) == t0.
+        inline void initialize(const std::vector<double>& initial_state, double t0 = 0.0)
         {
             head_ = 1;
             stored_ = 1;
-            slots_[0] = T_init;
+            slots_[0] = initial_state;
             times_[0] = t0;
         }
 
         /// Record a newly accepted solution snapshot.
         /// The buffer wraps around once full so the k most recent steps are kept.
-        inline void accept(const std::vector<double>& T_new, double time)
+        inline void accept(const std::vector<double>& state, double time)
         {
-            slots_[head_] = T_new;
+            slots_[head_] = state;
             times_[head_] = time;
             if (stored_ < cap_)
                 ++stored_;

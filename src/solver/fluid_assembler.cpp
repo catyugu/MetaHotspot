@@ -35,9 +35,10 @@ namespace mhs::sim::fluid {
     } // namespace
 
     FluidAssemblyIncrement assemble_increment(
-        const mhs::core::Model& model, std::vector<double>& temperature, double current_time)
+        const mhs::core::Model& model, const std::vector<double>& state, double current_time)
     {
         const mhs::core::Index active_count = static_cast<mhs::core::Index>(model.cells.material_id.size());
+        const mhs::core::Index state_offset = model.dofs.cell_states.begin;
         assert(active_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         FluidAssemblyIncrement result;
         result.rhs = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(active_count));
@@ -62,7 +63,7 @@ namespace mhs::sim::fluid {
 
                     const auto& material = model.material_table[model.cells.material_id[cell]];
                     const mhs::core::FieldContext cell_context {model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz],
-                        temperature[static_cast<std::size_t>(cell)], current_time};
+                        state[static_cast<std::size_t>(state_offset + cell)], current_time};
                     const double kx = material.kx.eval(cell_context);
                     const double ky = material.ky.eval(cell_context);
                     const double kz = material.kz.eval(cell_context);
@@ -84,7 +85,7 @@ namespace mhs::sim::fluid {
                         const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                         const auto& neighbor_material = model.material_table[model.cells.material_id[neighbor]];
                         const mhs::core::FieldContext neighbor_context {model.mesh.cx[nix], model.mesh.cy[niy],
-                            model.mesh.cz[niz], temperature[static_cast<std::size_t>(neighbor)], current_time};
+                            model.mesh.cz[niz], state[static_cast<std::size_t>(state_offset + neighbor)], current_time};
 
                         if (is_fluid(model.fluid, neighbor)) {
                             const double volume_flux = model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face];

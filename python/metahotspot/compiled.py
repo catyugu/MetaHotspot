@@ -54,6 +54,9 @@ class Compiled:
     def cell_count(self) -> int:
         return self._dll.mhs_compiled_cell_count(self._handle)
 
+    def state_count(self) -> int:
+        return self._dll.mhs_compiled_state_count(self._handle)
+
     def node_count(self) -> int:
         return self._dll.mhs_compiled_node_count(self._handle)
 
@@ -93,18 +96,18 @@ class Compiled:
 
     def assemble(
         self,
-        T: np.ndarray | None = None,
+        state: np.ndarray | None = None,
         time: float = 0.0,
     ) -> Assembly:
         """Assemble K, f at a given temperature field and time.
 
         Parameters
         ----------
-        T : ndarray or None
-            Per-cell temperatures.  None = use initial temperature.
+        state : ndarray or None
+            Complete system state. None = use the initial state.
         time : float
             Current simulation time.
         """
         from metahotspot.assembly import Assembly
 
-        return Assembly._assemble(self._dll, self._handle, T, time)
+        return Assembly._assemble(self._dll, self._handle, state, time)

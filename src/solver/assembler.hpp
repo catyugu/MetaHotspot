@@ -9,15 +9,16 @@ namespace mhs::sim {
 
     struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
+        Eigen::SparseMatrix<double> C;
         Eigen::VectorXd f;
-        Eigen::VectorXd M_diag;
     };
-    /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
+
+    /// Runtime state used to evaluate state-dependent operators.
     ///
     /// Invariant (caller-enforced):
-    ///   - T.size() == N_active
+    ///   - state.size() == model.dofs.total_count
     struct AssembleContext {
-        std::vector<double>& T;
+        const std::vector<double>& state;
         double current_time = 0.0;
     };
 
@@ -26,9 +27,7 @@ namespace mhs::sim {
         explicit Assembler(const mhs::core::Model& model) : model_(model) { }
         ~Assembler() = default;
 
-        /// Build K, f, M_diag in a single sweep over the active grid.
-        /// Diffusion coefficients, BC terms, heat sources, and mass coefficients
-        /// are all evaluated at ctx.T / ctx.current_time.
+        /// Assemble C * dx/dt + K * x = f over the complete state layout.
         AssemblyResult assemble(const AssembleContext& ctx) const;
 
     private:

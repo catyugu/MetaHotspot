@@ -1,4 +1,4 @@
-"""High-level wrapper for ``mhs_assembly_t`` — assembled linear system."""
+"""High-level wrapper for assembled thermal operators."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from metahotspot.types import MhsAssembly
 
 
 class Assembly:
-    """Assembled linear system ``K * x = f`` in CSC format.
+    """Assembled operators ``C * dx/dt + K * x = f``.
 
     Do not instantiate directly — use ``Compiled.assemble()``.
     """
@@ -23,13 +23,19 @@ class Assembly:
         self._owned = True
 
     @classmethod
-    def _assemble(cls, dll, compiled_handle, T=None, time=0.0) -> Assembly:
+    def _assemble(cls, dll, compiled_handle, state=None, time=0.0) -> Assembly:
         self = cls()
         self._dll = dll
         pp = ctypes.POINTER(MhsAssembly)()
-        T_ptr = T.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if T is not None else None
+        state_ptr = (
+            state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            if state is not None
+            else None
+        )
         check(
-            dll.mhs_compiled_assemble(compiled_handle, T_ptr, time, ctypes.byref(pp)),
+            dll.mhs_compiled_assemble(
+                compiled_handle, state_ptr, time, ctypes.byref(pp)
+            ),
             "assemble",
         )
         self._handle = pp
@@ -43,44 +49,42 @@ class Assembly:
             self._dll.mhs_assembly_destroy(self._handle)
             self._handle = None
 
-    # ---- Accessors ----
-
     def n(self) -> int:
-        """Matrix dimension (number of active cells)."""
+        """Operator dimension (number of global states)."""
         return self._dll.mhs_assembly_n(self._handle)
 
-    def nnz(self) -> int:
-        """Number of non-zero entries."""
-        return self._dll.mhs_assembly_nnz(self._handle)
-
-    def as_csc(self) -> csc_matrix:
-        """Return ``(K, f)`` — the stiffness matrix as ``scipy.sparse.csc_matrix``
-        and the right-hand side as a 1-D ndarray (copies, not views)."""  # noqa: E501
+    def _matrix(self, name: str) -> csc_matrix:
         n = self.n()
-        nnz = self.nnz()
-
+        nnz = getattr(self._dll, f"mhs_assembly_{name}_nnz")(self._handle)
         outer = np.ctypeslib.as_array(
-            self._dll.mhs_assembly_outer_indices(self._handle),
+            getattr(self._dll, f"mhs_assembly_{name}_outer_indices")(self._handle),
             shape=(n + 1,),
         ).copy()
         inner = np.ctypeslib.as_array(
-            self._dll.mhs_assembly_inner_indices(self._handle),
+            getattr(self._dll, f"mhs_assembly_{name}_inner_indices")(self._handle),
             shape=(nnz,),
         ).copy()
-        vals = np.ctypeslib.as_array(
-            self._dll.mhs_assembly_values(self._handle),
+        values = np.ctypeslib.as_array(
+            getattr(self._dll, f"mhs_assembly_{name}_values")(self._handle),
             shape=(nnz,),
         ).copy()
-        rhs = np.ctypeslib.as_array(
+        return csc_matrix((values, inner, outer), shape=(n, n))
+
+    def stiffness_matrix(self) -> csc_matrix:
+        """Return a copy of the stiffness/conductance matrix K."""
+        return self._matrix("stiffness")
+
+    def capacity_matrix(self) -> csc_matrix:
+        """Return a copy of the capacity matrix C."""
+        return self._matrix("capacity")
+
+    def rhs(self) -> np.ndarray:
+        """Return a copy of the right-hand side f."""
+        return np.ctypeslib.as_array(
             self._dll.mhs_assembly_rhs(self._handle),
-            shape=(n,),
+            shape=(self.n(),),
         ).copy()
 
-        K = csc_matrix((vals, inner, outer), shape=(n, n))
-        return K, rhs
-
-    def mass_diagonal(self) -> np.ndarray:
-        """Mass diagonal vector (copy)."""
-        n = self.n()
-        ptr = self._dll.mhs_assembly_mass_diagonal(self._handle)
-        return np.ctypeslib.as_array(ptr, shape=(n,)).copy()
+    def operators(self) -> tuple[csc_matrix, csc_matrix, np.ndarray]:
+        """Return copies of ``(K, C, f)``."""
+        return self.stiffness_matrix(), self.capacity_matrix(), self.rhs()

@@ -12,7 +12,7 @@ Usage::
 
     # Access the assembled linear system for custom workflows
     assembly = compiled.assemble()
-    K, f = assembly.as_csc()
+    K, C, f = assembly.operators()
 """
 
 from metahotspot.model import Model

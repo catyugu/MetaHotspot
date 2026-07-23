@@ -47,7 +47,18 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     return io;
 }
 
-TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
+TEST(AssemblerTest, CompileBuildsCellStateLayout)
+{
+    auto model = build_model(make_simple_cube_io());
+    const auto cell_count = model.cells.material_id.size();
+
+    EXPECT_EQ(model.dofs.cell_states.begin, 0U);
+    EXPECT_EQ(model.dofs.cell_states.count, cell_count);
+    EXPECT_TRUE(model.dofs.component_states.empty());
+    EXPECT_EQ(model.dofs.total_count, cell_count);
+}
+
+TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
     auto model = build_model(io);
@@ -59,16 +70,18 @@ TEST(AssemblerTest, AssembleMassDiagMatchesExpected)
     Assembler assembler(model);
     auto ops = assembler.assemble(ctx);
 
-    EXPECT_EQ(ops.M_diag.size(), N);
+    EXPECT_EQ(ops.C.rows(), N);
+    EXPECT_EQ(ops.C.cols(), N);
+    EXPECT_EQ(ops.C.nonZeros(), N);
     // Each cell: rho=8920, c=385, vol = (5e-3)^3 = 1.25e-7
-    // M_diag = 8920 * 385 * 1.25e-7 = 0.4293
+    // C(i,i) = 8920 * 385 * 1.25e-7 = 0.4293
     double expected = 8920.0 * 385.0 * 1.25e-7;
     for (int i = 0; i < N; ++i) {
-        EXPECT_NEAR(ops.M_diag(i), expected, 1e-6) << "Cell " << i;
+        EXPECT_NEAR(ops.C.coeff(i, i), expected, 1e-6) << "Cell " << i;
     }
 }
 
-TEST(AssemblerTest, AssembleReadsTemperatureForKAndMDiag)
+TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.

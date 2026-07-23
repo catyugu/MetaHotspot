@@ -17,11 +17,10 @@ namespace mhs::sim::time_scheme {
             assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
             const auto eigen_count = static_cast<Eigen::Index>(count);
             Eigen::Map<const Eigen::VectorXd> previous(history.current().data(), eigen_count);
-            const Eigen::VectorXd mass_over_dt = ops.M_diag / dt;
 
             Eigen::SparseMatrix<double> matrix = ops.K;
-            matrix.diagonal() += mass_over_dt;
-            Eigen::VectorXd rhs = ops.f + mass_over_dt.cwiseProduct(previous);
+            matrix += (1.0 / dt) * ops.C;
+            Eigen::VectorXd rhs = ops.f + (ops.C * previous) / dt;
             return {std::move(matrix), std::move(rhs)};
         }
 
@@ -39,8 +38,8 @@ namespace mhs::sim::time_scheme {
             Eigen::Map<const Eigen::VectorXd> previous(history.at(1).data(), eigen_count);
 
             Eigen::SparseMatrix<double> matrix = ops.K;
-            matrix.diagonal() += alpha0 * ops.M_diag;
-            Eigen::VectorXd rhs = ops.f - ops.M_diag.cwiseProduct(alpha1 * current + alpha2 * previous);
+            matrix += alpha0 * ops.C;
+            Eigen::VectorXd rhs = ops.f - ops.C * (alpha1 * current + alpha2 * previous);
             return {std::move(matrix), std::move(rhs)};
         }
 
@@ -56,16 +55,16 @@ namespace mhs::sim::time_scheme {
         return build_bdf1(ops, history, dt);
     }
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_state,
         double trial_dt, const ErrorControlConfig& config)
     {
-        const mhs::core::Index count = static_cast<mhs::core::Index>(trial_T.size());
+        const mhs::core::Index count = static_cast<mhs::core::Index>(trial_state.size());
         if (count == 0)
             return {0.0, 1.0};
         assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_count = static_cast<Eigen::Index>(count);
 
-        Eigen::Map<const Eigen::VectorXd> trial(trial_T.data(), eigen_count);
+        Eigen::Map<const Eigen::VectorXd> trial(trial_state.data(), eigen_count);
         Eigen::Map<const Eigen::VectorXd> current(accepted.current().data(), eigen_count);
 
         Eigen::VectorXd error_vector;

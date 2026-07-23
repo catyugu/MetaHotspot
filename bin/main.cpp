@@ -2,9 +2,9 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
+#include "logging/logger.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp"
-#include "logging/logger.hpp"
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = result.temperature;
+        const auto& solution = result.cell_temperature;
 
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)

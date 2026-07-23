@@ -110,16 +110,25 @@ class Model:
         ny = len(y) if y is not None else 0
         nz = len(z) if z is not None else 0
 
-        x_ptr = x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if x is not None else None
-        y_ptr = y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if y is not None else None
-        z_ptr = z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if z is not None else None
+        x_ptr = (
+            x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if x is not None else None
+        )
+        y_ptr = (
+            y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if y is not None else None
+        )
+        z_ptr = (
+            z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if z is not None else None
+        )
 
         check(
             self._dll.mhs_model_set_mesh(
                 self._handle,
-                nx, x_ptr,
-                ny, y_ptr,
-                nz, z_ptr,
+                nx,
+                x_ptr,
+                ny,
+                y_ptr,
+                nz,
+                z_ptr,
             ),
             "set_mesh",
         )
@@ -146,7 +155,9 @@ class Model:
         dynamic_viscosity: str | None = None,
     ) -> int:
         """Register a material.  Returns the material ID."""
-        dv = dynamic_viscosity.encode("utf-8") if dynamic_viscosity is not None else None
+        dv = (
+            dynamic_viscosity.encode("utf-8") if dynamic_viscosity is not None else None
+        )
         mid = self._dll.mhs_model_add_material(
             self._handle,
             name.encode("utf-8"),
@@ -162,7 +173,9 @@ class Model:
             raise RuntimeError(f"add_material failed: {err}")
         return mid
 
-    def add_layer(self, thickness: str, x_offset: str = "0", y_offset: str = "0") -> int:
+    def add_layer(
+        self, thickness: str, x_offset: str = "0", y_offset: str = "0"
+    ) -> int:
         """Add a layer.  Returns the layer ID."""
         lid = self._dll.mhs_model_add_layer(
             self._handle,
@@ -249,7 +262,9 @@ class Model:
             "set_neumann",
         )
 
-    def set_convection(self, boundary: int, coefficient: str, ambient_temperature: str) -> None:
+    def set_convection(
+        self, boundary: int, coefficient: str, ambient_temperature: str
+    ) -> None:
         check(
             self._dll.mhs_boundary_set_convection(
                 self._handle,
@@ -294,7 +309,9 @@ class Model:
             "set_default_neumann",
         )
 
-    def set_default_convection(self, coefficient: str, ambient_temperature: str) -> None:
+    def set_default_convection(
+        self, coefficient: str, ambient_temperature: str
+    ) -> None:
         check(
             self._dll.mhs_model_set_default_convection(
                 self._handle,
@@ -317,7 +334,9 @@ class Model:
             raise RuntimeError(f"add_function_expr failed: {err}")
         return fid
 
-    def add_function_gauss(self, name: str, amplitude: float, tau: float, center: float) -> int:
+    def add_function_gauss(
+        self, name: str, amplitude: float, tau: float, center: float
+    ) -> int:
         fid = self._dll.mhs_model_add_function_gauss(
             self._handle, name.encode("utf-8"), amplitude, tau, center
         )
@@ -326,7 +345,9 @@ class Model:
             raise RuntimeError(f"add_function_gauss failed: {err}")
         return fid
 
-    def add_function_sine(self, name: str, amplitude: float, angular_frequency: float, phase: float) -> int:
+    def add_function_sine(
+        self, name: str, amplitude: float, angular_frequency: float, phase: float
+    ) -> int:
         fid = self._dll.mhs_model_add_function_sine(
             self._handle, name.encode("utf-8"), amplitude, angular_frequency, phase
         )
@@ -369,9 +390,7 @@ class Model:
     # ---- Probes & fluid boundaries ----
 
     def add_probe(self, name: str, x: float, y: float, z: float) -> int:
-        pid = self._dll.mhs_model_add_probe(
-            self._handle, name.encode("utf-8"), x, y, z
-        )
+        pid = self._dll.mhs_model_add_probe(self._handle, name.encode("utf-8"), x, y, z)
         if pid == MHS_PROBE_ID_INVALID:
             err = self._dll.mhs_last_error()
             raise RuntimeError(f"add_probe failed: {err}")

@@ -9,6 +9,7 @@
 
 #include <Eigen/Core>
 #include <algorithm>
+#include <cstddef>
 
 namespace mhs::sim {
 
@@ -19,21 +20,27 @@ namespace mhs::sim {
             int time_step = 0;
             double dt = 0.0;
             mhs::core::SolutionHistory accepted {0, 1};
-            std::vector<double> T;
+            std::vector<double> state;
         };
 
-        /// Linear interpolation of the temperature field between two snapshots.
-        inline std::vector<double> lerp_T(
-            double t0, const std::vector<double>& T0, double t1, const std::vector<double>& T1, double t)
+        std::vector<double> extract_cell_temperature(const mhs::core::Model& model, const std::vector<double>& state)
+        {
+            const auto& cells = model.dofs.cell_states;
+            return {state.begin() + static_cast<std::ptrdiff_t>(cells.begin),
+                state.begin() + static_cast<std::ptrdiff_t>(cells.end())};
+        }
+
+        /// Linear interpolation of the state between two snapshots.
+        inline std::vector<double> interpolate_state(
+            double t0, const std::vector<double>& x0, double t1, const std::vector<double>& x1, double t)
         {
             const double dt = t1 - t0;
             if (dt <= 0.0)
-                return T0;
+                return x0;
             const double s = (t - t0) / dt; // ∈ [0, 1]
-            const std::size_t N = T0.size();
-            std::vector<double> out(N);
-            for (std::size_t i = 0; i < N; ++i)
-                out[i] = T0[i] + s * (T1[i] - T0[i]);
+            std::vector<double> out(x0.size());
+            for (std::size_t i = 0; i < x0.size(); ++i)
+                out[i] = x0[i] + s * (x1[i] - x0[i]);
             return out;
         }
 
@@ -46,10 +53,10 @@ namespace mhs::sim {
         probe_recorder.initialize(model);
         StepState step;
 
-        const mhs::core::Index N = static_cast<mhs::core::Index>(model.cells.material_id.size());
-        step.T.resize(N);
+        const mhs::core::Index state_count = model.dofs.total_count;
+        step.state.resize(state_count);
 
-        std::fill_n(step.T.data(), N, model.initial_temperature);
+        std::fill(step.state.begin(), step.state.end(), model.initial_temperature);
         step.current_time = 0.0;
         step.time_step = 0;
 
@@ -57,14 +64,15 @@ namespace mhs::sim {
 
         // Steady: single non-linear solve, then output.
         if (model.study_type == mhs::core::StudyType::Steady) {
-            LinearSystemProvider build_ls = [&](std::vector<double>& T_in) -> LinearSystem {
-                AssembleContext ctx {T_in, step.current_time};
+            LinearSystemProvider build_ls = [&](std::vector<double>& state) -> LinearSystem {
+                AssembleContext ctx {state, step.current_time};
                 auto ops = assembler.assemble(ctx);
                 return {std::move(ops.K), std::move(ops.f)};
             };
-            nonlinear_solve(build_ls, step.T, *solver, options.nonlinear);
-            probe_recorder.record(step.current_time, step.T);
-            return {std::move(step.T), step.current_time, probe_recorder.traces()};
+            nonlinear_solve(build_ls, step.state, *solver, options.nonlinear);
+            auto cell_temperature = extract_cell_temperature(model, step.state);
+            probe_recorder.record(step.current_time, cell_temperature);
+            return {std::move(step.state), std::move(cell_temperature), step.current_time, probe_recorder.traces()};
         }
 
         // Transient.
@@ -78,11 +86,11 @@ namespace mhs::sim {
 
         // Solution-history ring buffer: capacity 2 (one for current, one for
         // the previous step — enough for BDF2's startup sequence).
-        step.accepted = mhs::core::SolutionHistory(static_cast<std::size_t>(N), 2);
+        step.accepted = mhs::core::SolutionHistory(static_cast<std::size_t>(state_count), 2);
         step_ctrl.rebuild(duration, output_dt);
 
-        step.accepted.initialize(step.T, step.current_time);
-        probe_recorder.record(step.current_time, step.T);
+        step.accepted.initialize(step.state, step.current_time);
+        probe_recorder.record(step.current_time, extract_cell_temperature(model, step.state));
 
         double dt_sug = std::clamp(output_dt / 10.0, min_dt, max_dt);
         double dt = dt_sug;
@@ -93,38 +101,37 @@ namespace mhs::sim {
                 break;
             step.dt = dt;
 
-            // Re-assembles K, f inside each non-linear iteration; M_diag is
-            // frozen at accepted.current() via build_system's BDF stencil logic.
-            LinearSystemProvider provider = [&](std::vector<double>& T_in) -> LinearSystem {
-                AssembleContext ctx {T_in, step.current_time};
+            // Re-assemble state-dependent operators inside each non-linear iteration.
+            LinearSystemProvider provider = [&](std::vector<double>& state) -> LinearSystem {
+                AssembleContext ctx {state, step.current_time};
                 return time_scheme::build_system(
                     time_scheme::IntegratorKind::Bdf1, assembler.assemble(ctx), step.accepted, step.dt);
             };
-            auto nl = nonlinear_solve(provider, step.T, *solver, options.nonlinear);
+            auto nl = nonlinear_solve(provider, step.state, *solver, options.nonlinear);
             if (!nl.converged) {
                 MHS_LOG_WARN("Non-linear iteration did not converge at step {}", step.time_step);
             }
 
-            auto est = time_scheme::estimate_error(step.accepted, step.T, dt, /*err_cfg=*/ {});
+            auto est = time_scheme::estimate_error(step.accepted, step.state, dt, /*err_cfg=*/ {});
             dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
             const bool accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
 
             if (accepted_step) {
                 step.current_time += dt;
                 step.time_step++;
-                step.accepted.accept(step.T, step.current_time);
+                step.accepted.accept(step.state, step.current_time);
 
                 MHS_LOG_DEBUG("Time: {} solved (dt={})", step.current_time, dt);
 
                 // Free mode: step end may overshoot output time → interpolate.
                 auto out = step_ctrl.flush_outputs(step.current_time);
                 for (double t_out : out) {
-                    auto T_interp = lerp_T(
+                    auto state_at_output = interpolate_state(
                         /* t0 = */ step.accepted.time_at(1),
-                        /* T0 = */ step.accepted.at(1),
+                        /* x0 = */ step.accepted.at(1),
                         /* t1 = */ step.current_time,
-                        /* T1 = */ step.T, t_out);
-                    probe_recorder.record(t_out, T_interp);
+                        /* x1 = */ step.state, t_out);
+                    probe_recorder.record(t_out, extract_cell_temperature(model, state_at_output));
                 }
             }
             else {
@@ -133,7 +140,8 @@ namespace mhs::sim {
             }
         }
 
-        return {std::move(step.T), step.current_time, probe_recorder.traces()};
+        auto cell_temperature = extract_cell_temperature(model, step.state);
+        return {std::move(step.state), std::move(cell_temperature), step.current_time, probe_recorder.traces()};
     }
 
 } // namespace mhs::sim

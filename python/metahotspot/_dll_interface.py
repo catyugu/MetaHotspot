@@ -55,9 +55,12 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_model_set_mesh.restype = ctypes.c_int32
     dll.mhs_model_set_mesh.argtypes = [
         ctypes.POINTER(MhsModel),
-        ctypes.c_int32, ctypes.POINTER(ctypes.c_double),  # nx, x
-        ctypes.c_int32, ctypes.POINTER(ctypes.c_double),  # ny, y
-        ctypes.c_int32, ctypes.POINTER(ctypes.c_double),  # nz, z
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_double),  # nx, x
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_double),  # ny, y
+        ctypes.c_int32,
+        ctypes.POINTER(ctypes.c_double),  # nz, z
     ]
 
     dll.mhs_model_add_variable.restype = ctypes.c_int32
@@ -241,6 +244,9 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_compiled_cell_count.restype = ctypes.c_int32
     dll.mhs_compiled_cell_count.argtypes = [ctypes.POINTER(MhsCompiled)]
 
+    dll.mhs_compiled_state_count.restype = ctypes.c_int32
+    dll.mhs_compiled_state_count.argtypes = [ctypes.POINTER(MhsCompiled)]
+
     dll.mhs_compiled_node_count.restype = ctypes.c_int32
     dll.mhs_compiled_node_count.argtypes = [ctypes.POINTER(MhsCompiled)]
 
@@ -308,25 +314,37 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_assembly_n.restype = ctypes.c_int32
     dll.mhs_assembly_n.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_nnz.restype = ctypes.c_int32
-    dll.mhs_assembly_nnz.argtypes = [ctypes.POINTER(MhsAssembly)]
+    dll.mhs_assembly_stiffness_nnz.restype = ctypes.c_int32
+    dll.mhs_assembly_stiffness_nnz.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_outer_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_outer_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
+    dll.mhs_assembly_stiffness_outer_indices.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_assembly_stiffness_outer_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_inner_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_inner_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
+    dll.mhs_assembly_stiffness_inner_indices.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_assembly_stiffness_inner_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_values.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_assembly_values.argtypes = [ctypes.POINTER(MhsAssembly)]
+    dll.mhs_assembly_stiffness_values.restype = ctypes.POINTER(ctypes.c_double)
+    dll.mhs_assembly_stiffness_values.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_capacity_nnz.restype = ctypes.c_int32
+    dll.mhs_assembly_capacity_nnz.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_capacity_outer_indices.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_assembly_capacity_outer_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_capacity_inner_indices.restype = ctypes.POINTER(ctypes.c_int32)
+    dll.mhs_assembly_capacity_inner_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_capacity_values.restype = ctypes.POINTER(ctypes.c_double)
+    dll.mhs_assembly_capacity_values.argtypes = [ctypes.POINTER(MhsAssembly)]
 
     dll.mhs_assembly_rhs.restype = ctypes.POINTER(ctypes.c_double)
     dll.mhs_assembly_rhs.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_mass_diagonal.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_assembly_mass_diagonal.argtypes = [ctypes.POINTER(MhsAssembly)]
-
     # ---- Solution accessors ----
+    dll.mhs_solution_state_count.restype = ctypes.c_int32
+    dll.mhs_solution_state_count.argtypes = [ctypes.POINTER(MhsSolution)]
+
     dll.mhs_solution_cell_count.restype = ctypes.c_int32
     dll.mhs_solution_cell_count.argtypes = [ctypes.POINTER(MhsSolution)]
 
@@ -335,6 +353,9 @@ def configure_dll(dll: ctypes.CDLL) -> None:
 
     dll.mhs_solution_time.restype = ctypes.c_double
     dll.mhs_solution_time.argtypes = [ctypes.POINTER(MhsSolution)]
+
+    dll.mhs_solution_states.restype = ctypes.POINTER(ctypes.c_double)
+    dll.mhs_solution_states.argtypes = [ctypes.POINTER(MhsSolution)]
 
     dll.mhs_solution_cell_temperatures.restype = ctypes.POINTER(ctypes.c_double)
     dll.mhs_solution_cell_temperatures.argtypes = [ctypes.POINTER(MhsSolution)]

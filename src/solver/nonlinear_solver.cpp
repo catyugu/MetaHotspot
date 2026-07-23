@@ -108,21 +108,21 @@ namespace mhs::sim {
     } // namespace
 
     NonLinearResult nonlinear_solve(
-        LinearSystemProvider ls_provider, std::vector<double>& T, LinearSolver& solver, const NonLinearConfig& cfg)
+        LinearSystemProvider ls_provider, std::vector<double>& state, LinearSolver& solver, const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
-        const mhs::core::Index N = static_cast<mhs::core::Index>(T.size());
+        const mhs::core::Index N = static_cast<mhs::core::Index>(state.size());
         assert(N <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_N = static_cast<Eigen::Index>(N);
-        Eigen::Map<Eigen::VectorXd> T_map(T.data(), eigen_N);
+        Eigen::Map<Eigen::VectorXd> state_map(state.data(), eigen_N);
 
         AndersonMixer mixer;
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
-            LinearSystem linear_system = ls_provider(T);
-            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
+            LinearSystem linear_system = ls_provider(state);
+            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * state_map;
 
             const double max_residual = residual_vec.cwiseAbs().maxCoeff();
             const double max_b = linear_system.b.cwiseAbs().maxCoeff();
@@ -139,7 +139,7 @@ namespace mhs::sim {
             if (!solver.success()) {
                 MHS_LOG_WARN("Linear solver failed at Non-Linear iteration {}", iter);
             }
-            const Eigen::VectorXd x_k = T_map; // capture pre-update state
+            const Eigen::VectorXd x_k = state_map; // capture pre-update state
 
             std::optional<Eigen::VectorXd> x_prop = mixer.step(x_k, G_k);
 
@@ -153,10 +153,10 @@ namespace mhs::sim {
             }
 
             const double max_update = (next - x_k).cwiseAbs().maxCoeff();
-            const double max_T = next.cwiseAbs().maxCoeff();
-            T_map = next;
+            const double max_state = next.cwiseAbs().maxCoeff();
+            state_map = next;
 
-            const double update_threshold = rel_tol * max_T + abs_tol;
+            const double update_threshold = rel_tol * max_state + abs_tol;
 
             MHS_LOG_DEBUG("\t->Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e} ({}AA)", iter,
                 max_update, max_residual, use_aa ? "" : "no ");

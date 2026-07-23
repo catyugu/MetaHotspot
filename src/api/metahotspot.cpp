@@ -39,14 +39,18 @@ struct mhs_model_t {
     std::vector<mhs::model::FluidBoundarySpec> pending_fluid;
 };
 
-struct mhs_assembly_t {
+struct CscMatrixData {
     int32_t n = 0;
     int32_t nnz = 0;
     std::vector<int32_t> outer_indices;
     std::vector<int32_t> inner_indices;
     std::vector<double> values;
+};
+
+struct mhs_assembly_t {
+    CscMatrixData stiffness;
+    CscMatrixData capacity;
     std::vector<double> rhs;
-    std::vector<double> mass_diagonal;
 };
 
 struct mhs_compiled_t {
@@ -912,6 +916,13 @@ MHS_API int32_t mhs_compiled_cell_count(const mhs_compiled_t* c)
     return c->cell_count;
 }
 
+MHS_API int32_t mhs_compiled_state_count(const mhs_compiled_t* c)
+{
+    if (!c)
+        return 0;
+    return static_cast<int32_t>(c->model.dofs.total_count);
+}
+
 MHS_API int32_t mhs_compiled_node_count(const mhs_compiled_t* c)
 {
     if (!c)
@@ -972,47 +983,42 @@ MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Assembly (K, f, M_diag in CSC format)                              */
+/*  Assembly (K, C, f in CSC format)                                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double* T, double time, mhs_assembly_t** out)
+MHS_API mhs_status_t mhs_compiled_assemble(
+    const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
     try {
         mhs::sim::Assembler assembler(c->model);
 
-        /* Build temperature vector: if T is NULL, use initial_temperature. */
-        const auto n = static_cast<std::size_t>(c->model.cells.cell_to_grid.size());
-        std::vector<double> T_vec(n);
-        if (T) {
-            std::copy_n(T, n, T_vec.begin());
+        const auto n = static_cast<std::size_t>(c->model.dofs.total_count);
+        std::vector<double> current_state(n);
+        if (state) {
+            std::copy_n(state, n, current_state.begin());
         }
         else {
-            std::fill_n(T_vec.begin(), n, c->model.initial_temperature);
+            std::fill(current_state.begin(), current_state.end(), c->model.initial_temperature);
         }
 
-        mhs::sim::AssembleContext ctx {T_vec, time};
+        mhs::sim::AssembleContext ctx {current_state, time};
         auto result = assembler.assemble(ctx);
 
-        /* Convert Eigen SparseMatrix to flat CSC arrays (int32_t indices). */
-        auto& K = result.K;
-        K.makeCompressed();
-
-        const int32_t dim = static_cast<int32_t>(K.rows());
-        const int32_t nnz = static_cast<int32_t>(K.nonZeros());
-        const int32_t* outer = K.outerIndexPtr();
-        const int32_t* inner = K.innerIndexPtr();
-        const double* vals = K.valuePtr();
-
         auto h = std::make_unique<mhs_assembly_t>();
-        h->n = dim;
-        h->nnz = nnz;
-        h->outer_indices.assign(outer, outer + dim + 1);
-        h->inner_indices.assign(inner, inner + nnz);
-        h->values.assign(vals, vals + nnz);
+        const auto copy_matrix = [](Eigen::SparseMatrix<double>& source, CscMatrixData& destination) {
+            source.makeCompressed();
+            destination.n = static_cast<int32_t>(source.rows());
+            destination.nnz = static_cast<int32_t>(source.nonZeros());
+            destination.outer_indices.assign(source.outerIndexPtr(), source.outerIndexPtr() + destination.n + 1);
+            destination.inner_indices.assign(source.innerIndexPtr(), source.innerIndexPtr() + destination.nnz);
+            destination.values.assign(source.valuePtr(), source.valuePtr() + destination.nnz);
+        };
+        copy_matrix(result.K, h->stiffness);
+        copy_matrix(result.C, h->capacity);
+        const int32_t dim = h->stiffness.n;
         h->rhs.assign(result.f.data(), result.f.data() + dim);
-        h->mass_diagonal.assign(result.M_diag.data(), result.M_diag.data() + dim);
 
         *out = h.release();
         tls_err.clear();
@@ -1036,35 +1042,35 @@ MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a)
 {
     if (!a)
         return 0;
-    return a->n;
+    return a->stiffness.n;
 }
 
-MHS_API int32_t mhs_assembly_nnz(const mhs_assembly_t* a)
+MHS_API int32_t mhs_assembly_stiffness_nnz(const mhs_assembly_t* a)
 {
     if (!a)
         return 0;
-    return a->nnz;
+    return a->stiffness.nnz;
 }
 
-MHS_API const int32_t* mhs_assembly_outer_indices(const mhs_assembly_t* a)
+MHS_API const int32_t* mhs_assembly_stiffness_outer_indices(const mhs_assembly_t* a)
 {
     if (!a)
         return nullptr;
-    return a->outer_indices.data();
+    return a->stiffness.outer_indices.data();
 }
 
-MHS_API const int32_t* mhs_assembly_inner_indices(const mhs_assembly_t* a)
+MHS_API const int32_t* mhs_assembly_stiffness_inner_indices(const mhs_assembly_t* a)
 {
     if (!a)
         return nullptr;
-    return a->inner_indices.data();
+    return a->stiffness.inner_indices.data();
 }
 
-MHS_API const double* mhs_assembly_values(const mhs_assembly_t* a)
+MHS_API const double* mhs_assembly_stiffness_values(const mhs_assembly_t* a)
 {
     if (!a)
         return nullptr;
-    return a->values.data();
+    return a->stiffness.values.data();
 }
 
 MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
@@ -1074,11 +1080,32 @@ MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
     return a->rhs.data();
 }
 
-MHS_API const double* mhs_assembly_mass_diagonal(const mhs_assembly_t* a)
+MHS_API int32_t mhs_assembly_capacity_nnz(const mhs_assembly_t* a)
+{
+    if (!a)
+        return 0;
+    return a->capacity.nnz;
+}
+
+MHS_API const int32_t* mhs_assembly_capacity_outer_indices(const mhs_assembly_t* a)
 {
     if (!a)
         return nullptr;
-    return a->mass_diagonal.data();
+    return a->capacity.outer_indices.data();
+}
+
+MHS_API const int32_t* mhs_assembly_capacity_inner_indices(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->capacity.inner_indices.data();
+}
+
+MHS_API const double* mhs_assembly_capacity_values(const mhs_assembly_t* a)
+{
+    if (!a)
+        return nullptr;
+    return a->capacity.values.data();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1105,7 +1132,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
         auto sol = mhs::sim::solve(c->model, so);
 
         /* Compute node temperatures from cell-centroid solution. */
-        auto node_T = mhs::post::interpolate_cell_to_node(c->model, sol.temperature, sol.time);
+        auto node_T = mhs::post::interpolate_cell_to_node(c->model, sol.cell_temperature, sol.time);
 
         auto* s = new (std::nothrow) mhs_solution_t {std::move(sol), std::move(node_T), c->node_count, c->cell_count};
 
@@ -1180,6 +1207,13 @@ MHS_API int32_t mhs_solution_cell_count(const mhs_solution_t* s)
     return s->cell_count;
 }
 
+MHS_API int32_t mhs_solution_state_count(const mhs_solution_t* s)
+{
+    if (!s)
+        return 0;
+    return static_cast<int32_t>(s->solution.state.size());
+}
+
 MHS_API int32_t mhs_solution_node_count(const mhs_solution_t* s)
 {
     if (!s)
@@ -1198,7 +1232,14 @@ MHS_API const double* mhs_solution_cell_temperatures(const mhs_solution_t* s)
 {
     if (!s)
         return nullptr;
-    return s->solution.temperature.data();
+    return s->solution.cell_temperature.data();
+}
+
+MHS_API const double* mhs_solution_states(const mhs_solution_t* s)
+{
+    if (!s)
+        return nullptr;
+    return s->solution.state.data();
 }
 
 MHS_API const double* mhs_solution_node_temperatures(const mhs_solution_t* s)

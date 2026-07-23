@@ -308,6 +308,7 @@ MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c);
 /** Query the compiler output without solving.
  *  Useful for pre-allocating arrays in scripting languages. */
 MHS_API int32_t mhs_compiled_cell_count(const mhs_compiled_t* c);
+MHS_API int32_t mhs_compiled_state_count(const mhs_compiled_t* c);
 MHS_API int32_t mhs_compiled_node_count(const mhs_compiled_t* c);
 MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c);
 MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c);
@@ -350,51 +351,63 @@ MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 /*  Assembly (matrix + RHS extraction)                                */
 /* ------------------------------------------------------------------ */
 
-/** Opaque handle for an assembled linear system K*x = f.
- *  The matrix is stored in CSC (compressed sparse column) format.
+/** Opaque handle for assembled C * dx/dt + K * x = f operators.
+ *  Both matrices are stored in CSC (compressed sparse column) format.
  *  Must be freed with mhs_assembly_destroy(). */
 typedef struct mhs_assembly_t mhs_assembly_t;
 
-/** Assemble K, f at a given temperature field and time.
+/** Assemble K, C, f at a given state and time.
  *  The compiled model must have been produced by mhs_model_compile().
- *  T may be NULL to use the model's initial temperature for every cell.
+ *  state may be NULL to use the model's initial state.
  *  The returned handle is independent — the compiled model can be modified
  *  or destroyed without affecting this handle. */
-MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t* c, const double* T, double time, mhs_assembly_t** out);
+MHS_API mhs_status_t mhs_compiled_assemble(
+    const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out);
 
 /** Destroy an assembly handle.  Passing NULL is a no-op. */
 MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
 
-/** Matrix dimension (number of active cells). */
+/** Operator dimension (number of global states). */
 MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a);
 
-/** Number of non-zero entries in the sparse matrix. */
-MHS_API int32_t mhs_assembly_nnz(const mhs_assembly_t* a);
+/** Number of non-zero entries in K. */
+MHS_API int32_t mhs_assembly_stiffness_nnz(const mhs_assembly_t* a);
 
-/** CSC column pointers, length n+1.
- *  outer_indices[i] is the start of row i in inner_indices / values.
+/** K CSC column pointers, length n+1.
+ *  outer_indices[i] is the start of column i in inner_indices / values.
  *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const int32_t* mhs_assembly_outer_indices(const mhs_assembly_t* a);
+MHS_API const int32_t* mhs_assembly_stiffness_outer_indices(const mhs_assembly_t* a);
 
-/** CSC row indices for each non-zero, length nnz.
+/** K CSC row indices for each non-zero, length stiffness_nnz().
  *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const int32_t* mhs_assembly_inner_indices(const mhs_assembly_t* a);
+MHS_API const int32_t* mhs_assembly_stiffness_inner_indices(const mhs_assembly_t* a);
 
-/** CSC non-zero values, length nnz, parallel to inner_indices.
+/** K CSC values, length stiffness_nnz(), parallel to inner_indices.
  *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const double* mhs_assembly_values(const mhs_assembly_t* a);
+MHS_API const double* mhs_assembly_stiffness_values(const mhs_assembly_t* a);
+
+/** Number of non-zero entries in C. */
+MHS_API int32_t mhs_assembly_capacity_nnz(const mhs_assembly_t* a);
+
+/** C CSC column pointers, length n+1. */
+MHS_API const int32_t* mhs_assembly_capacity_outer_indices(const mhs_assembly_t* a);
+
+/** C CSC row indices, length capacity_nnz(). */
+MHS_API const int32_t* mhs_assembly_capacity_inner_indices(const mhs_assembly_t* a);
+
+/** C CSC values, length capacity_nnz(). */
+MHS_API const double* mhs_assembly_capacity_values(const mhs_assembly_t* a);
 
 /** Right-hand side vector, length n.
  *  Pointer valid until the assembly handle is destroyed. */
 MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a);
 
-/** Mass diagonal vector, length n.
- *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const double* mhs_assembly_mass_diagonal(const mhs_assembly_t* a);
-
 /* ------------------------------------------------------------------ */
 /*  Solution accessors                                                 */
 /* ------------------------------------------------------------------ */
+
+/** Number of global system states. */
+MHS_API int32_t mhs_solution_state_count(const mhs_solution_t* s);
 
 /** Number of active cells in the mesh. */
 MHS_API int32_t mhs_solution_cell_count(const mhs_solution_t* s);
@@ -404,6 +417,10 @@ MHS_API int32_t mhs_solution_node_count(const mhs_solution_t* s);
 
 /** Final simulation time (zero for steady-state). */
 MHS_API double mhs_solution_time(const mhs_solution_t* s);
+
+/** Complete system state, length = state_count().
+ *  Entries are not necessarily temperatures. */
+MHS_API const double* mhs_solution_states(const mhs_solution_t* s);
 
 /** Cell-centroid temperature field, length = cell_count().
  *  Pointer is valid until the solution handle is destroyed. */

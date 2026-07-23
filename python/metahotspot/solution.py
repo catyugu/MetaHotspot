@@ -22,18 +22,24 @@ class Solution:
         self._owned = True
 
     @classmethod
-    def _solve_compiled(cls, dll, compiled_handle, opts: SolverOpts | None = None) -> Solution:
+    def _solve_compiled(
+        cls, dll, compiled_handle, opts: SolverOpts | None = None
+    ) -> Solution:
         """Solve a compiled model and wrap the result."""
         self = cls()
         self._dll = dll
         pp = ctypes.POINTER(MhsSolution)()
         opts_ptr = ctypes.byref(opts) if opts is not None else None
-        check(dll.mhs_compiled_solve(compiled_handle, opts_ptr, ctypes.byref(pp)), "solve")
+        check(
+            dll.mhs_compiled_solve(compiled_handle, opts_ptr, ctypes.byref(pp)), "solve"
+        )
         self._handle = pp
         return self
 
     @classmethod
-    def _solve_model(cls, dll, model_handle, opts: SolverOpts | None = None) -> Solution:
+    def _solve_model(
+        cls, dll, model_handle, opts: SolverOpts | None = None
+    ) -> Solution:
         """Compile-and-solve a model, wrapping the result."""
         self = cls()
         self._dll = dll
@@ -53,6 +59,9 @@ class Solution:
 
     # ---- Accessors ----
 
+    def state_count(self) -> int:
+        return self._dll.mhs_solution_state_count(self._handle)
+
     def cell_count(self) -> int:
         return self._dll.mhs_solution_cell_count(self._handle)
 
@@ -61,6 +70,12 @@ class Solution:
 
     def time(self) -> float:
         return self._dll.mhs_solution_time(self._handle)
+
+    def states(self) -> np.ndarray:
+        """Complete system state (read-only view). Entries may not be temperatures."""
+        n = self.state_count()
+        ptr = self._dll.mhs_solution_states(self._handle)
+        return np.ctypeslib.as_array(ptr, shape=(n,))
 
     def cell_temperatures(self) -> np.ndarray:
         """Cell-centroid temperature field (read-only view)."""

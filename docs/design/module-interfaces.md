@@ -101,19 +101,16 @@ namespace mhs::sim {
         Eigen::VectorXd b;
     };
 
-    /// Result of a single assembler sweep over the active grid.
-    /// All terms (diffusion, BC, source, mass) are evaluated at the
-    /// temperature field and time passed in via AssembleContext.
+    /// Operators for C * dx/dt + K * x = f.
     struct AssemblyResult {
         Eigen::SparseMatrix<double> K;
+        Eigen::SparseMatrix<double> C;
         Eigen::VectorXd f;
-        Eigen::VectorXd M_diag;
     };
 
-    /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
-    /// Invariant (caller-enforced): T.size() == N_active.
+    /// Invariant: state.size() == model.dofs.total_count.
     struct AssembleContext {
-        std::vector<double>& T;
+        const std::vector<double>& state;
         double current_time = 0.0;
     };
 
@@ -125,12 +122,12 @@ namespace mhs::sim {
 }
 ```
 
-`assemble()` 首先用 `tbb::parallel_for(0, N_active)` 遍历 `cell_to_grid`，生成与物理类型无关的基础热算子；`fluid::assemble_increment()` 则只遍历 `fluid_to_global`。两条路径都不再扫描整个结构化网格。增量合并后只构造一次稀疏矩阵。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils` 的 `mesh_utils`。基础组装项：
+`assemble()` 依次收集 `assemble_cells()` 与 `assemble_fluid()` 的贡献，最后统一构造 `K`、`C`。单元路径用 `tbb::parallel_for(0, cell_count)` 遍历 `cell_to_grid`；流体路径只遍历 `fluid_to_global`。两条路径都不扫描整个结构化网格。面法向相关的几何查表（`k_along` / `face_area` / `half_length_along` / `neighbor_grid_index`）全部来自 `mhs::utils`。基础组装项：
 
 - 扩散项（与 `k` 求值，邻居平均传导率）
 - 每面 BC（按 `face_bcs[cell * 6 + face]` 走 Dirichlet/Neumann/Cauchy 分支）
 - 体热源 `Q = heat_source_table[hs_idx].eval(ctx)`，累入 RHS
-- 质量项 `M_diag[c] = ρ·c·vol`，在 `ctx.T` 处求值
+- 容量项 `C[c,c] = ρ·c·vol`，在对应单元温度状态处求值
 
 所有 `eval()` 走 TBB ETS，无锁。
 
@@ -159,7 +156,7 @@ namespace mhs::sim::time_scheme {
     };
 
     ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted,
-                                 const std::vector<double>& trial_T, double trial_dt,
+                                 const std::vector<double>& trial_state, double trial_dt,
                                  const ErrorControlConfig& cfg);
 
     // ── 3. Step controller (strategy + output-grid) ─────────────────

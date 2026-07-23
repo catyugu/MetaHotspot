@@ -52,8 +52,10 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     auto result = solve(model);
 
-    const auto& solution = result.temperature;
-    EXPECT_EQ(solution.size(), model.cells.material_id.size());
+    EXPECT_EQ(result.state.size(), model.dofs.total_count);
+    const auto& solution = result.cell_temperature;
+    EXPECT_EQ(solution.size(), model.dofs.cell_states.count);
+    EXPECT_TRUE(std::equal(solution.begin(), solution.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
