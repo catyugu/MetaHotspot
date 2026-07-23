@@ -60,40 +60,7 @@ XML
 | 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
 | 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
-## 关键设计原则
-
-### 1. 内部模型不含原始字符串
-
-所有表达式预编译为 `mhs::core::CompiledExpression`。
-
-### 2. 热源索引表
-
-`heat_source_table` 按 Block 编译为 `vector<CompiledExpression>`；每个活跃单元只保存一个 `TableIndex` 索引。
-
-### 3. 面级别 BC
-
-`Model::face_bcs[N_active * 6]` 扁平数组。`face_bcs[c * 6 + dir]` 直接索引。
-
-### 4. 虚拟单元
-
-`grid_to_cell` 标记虚拟网格，`cell_to_grid` 让 Assembler 只遍历活跃单元；Postprocessor 用前者展开并在虚拟位置写 NaN。
-
-### 5. SoA 贯穿内部模型
-
-所有热循环数组按字段连续存储。
-
-### 6. 无共享可变状态
-
-模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `build_model()` 调用互不共享构建状态。
-
-### 7. 各向异性热导率 — 面法向匹配与后处理距离权重
-
-`MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和面中心外推权重中使用各向异性逆距离
-
-```text
-w = 1 / (dx²/kx + dy²/ky + dz²/kz)
-```
-
-以使 k 大的方向传播得快的影响更显著，与扩散方程的各向异性一致。
-
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向助手统一定义在 `src/runtime/mesh.hpp`（`mhs::utils` 命名空间）。
+运行期字段、SoA、面 BC 和虚拟单元约定见
+[internal-model.md](internal-model.md)；表达式线程模型见
+[expr-api.md](expr-api.md)；各向异性插值契约见
+[module-interfaces.md](module-interfaces.md) 的 postprocessor 小节。

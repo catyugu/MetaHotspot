@@ -177,30 +177,9 @@ namespace mhs::sim::time_scheme {
 }
 ```
 
-The `solve()` main loop is:
-
-```text
-while (current_time < duration):
-    dt      = step_ctrl.prepare(dt_sug, t, duration)
-    ops     = assembler.assemble(ctx)
-    ls      = build_system(kind, ops, accepted, dt)
-    nonlinear_solve(provider, T, solver)
-    est     = estimate_error(accepted, T, dt, cfg)
-    if accepted:
-        dt_sug = clamp(dt * est.suggested_factor, min, max)
-        accepted.accept(T, t + dt)
-        t     += dt
-        for t_out in step_ctrl.flush_outputs(t):
-            if strategy == Free: interpolate T → T_out
-            else:               record directly at T
-    else:
-        dt_sug = dt * 0.5  // retry with smaller dt
-```
-
-The `SolutionHistory` (`mhs::core::SolutionHistory`) is a ring buffer storing
-the most recently accepted (T, time) pairs. Capacity is explicit; `solve()` currently uses 2.
-
-当前 `solve()` 使用 `StepStrategy::Free` 和 `IntegratorKind::Bdf1`；其余策略与 BDF2 由 `time_scheme` 接口提供。
+完整时间推进顺序只在 [data-flow.md](data-flow.md) 维护。`SolutionHistory`
+保存最近接受的 `(state, time)`，容量显式指定；当前 `solve()` 使用容量 2、
+`StepStrategy::Free` 和 `IntegratorKind::Bdf1`。
 
 ## `linear_solver`
 
@@ -251,13 +230,13 @@ namespace mhs::sim {
     };
 
     NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider,
-                                    Eigen::Ref<Eigen::VectorXd> T,
+                                    std::vector<double>& state,
                                     LinearSolver& solver,
                                     const NonLinearConfig& cfg = {});
 }
 ```
 
-`nonlinear_solve()` 通过 `LinearSystemProvider` 取得当前温度对应的线性系统，执行 Anderson 加速、欠松弛和收敛判断。控制参数由 `NonLinearConfig` 提供。
+`nonlinear_solve()` 通过 `LinearSystemProvider` 取得当前状态对应的线性系统，执行 Anderson 加速、欠松弛和收敛判断。控制参数由 `NonLinearConfig` 提供。
 
 ## `scheduler`
 

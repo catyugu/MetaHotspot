@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -24,19 +25,13 @@
 using MhsModelAxis = mhs::model::Axis;
 
 struct PendingBoundary {
-    enum Type : uint8_t { Unset, Dirichlet, Neumann, Convection };
-    Type type = Unset;
-    mhs::model::DirichletBoundary dirichlet;
-    mhs::model::NeumannBoundary neumann;
-    mhs::model::ConvectionBoundary convection;
+    std::optional<mhs::model::ThermalBoundary> condition;
     std::vector<mhs::model::FaceRegion> regions;
 };
 
 struct mhs_model_t {
     mhs::model::ModelBuilder builder;
     std::vector<PendingBoundary> pending_boundaries;
-    mhs::model::ThermalBoundary default_bc = mhs::model::NeumannBoundary {};
-    std::vector<mhs::model::FluidBoundarySpec> pending_fluid;
 };
 
 struct CscMatrixData {
@@ -263,8 +258,6 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
         /* Reset model handle state. */
         m->builder = mhs::model::ModelBuilder {};
         m->pending_boundaries.clear();
-        m->default_bc = mhs::model::NeumannBoundary {};
-        m->pending_fluid.clear();
 
         /* Populate builder. */
         m->builder.set_settings(def.settings);
@@ -294,26 +287,15 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
         for (auto& bp : def.boundaries) {
             auto& pb = m->pending_boundaries.emplace_back();
             pb.regions = std::move(bp.regions);
-            if (auto* d = std::get_if<mhs::model::DirichletBoundary>(&bp.condition)) {
-                pb.type = PendingBoundary::Dirichlet;
-                pb.dirichlet = std::move(*d);
-            }
-            else if (auto* n = std::get_if<mhs::model::NeumannBoundary>(&bp.condition)) {
-                pb.type = PendingBoundary::Neumann;
-                pb.neumann = std::move(*n);
-            }
-            else if (auto* cv = std::get_if<mhs::model::ConvectionBoundary>(&bp.condition)) {
-                pb.type = PendingBoundary::Convection;
-                pb.convection = std::move(*cv);
-            }
+            pb.condition = std::move(bp.condition);
         }
 
-        m->default_bc = std::move(def.default_boundary);
+        m->builder.set_default_boundary(std::move(def.default_boundary));
 
         for (auto& ob : def.observation_points)
             m->builder.add_observation_point(std::move(ob));
         for (auto& fb : def.fluid_boundaries)
-            m->pending_fluid.push_back(std::move(fb));
+            m->builder.add_fluid_boundary(std::move(fb));
 
         tls_err.clear();
         return MHS_OK;
@@ -566,8 +548,7 @@ MHS_API mhs_status_t mhs_boundary_set_dirichlet(mhs_model_t* m, mhs_boundary_id_
     if (st != MHS_OK)
         return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
-    pb.type = PendingBoundary::Dirichlet;
-    pb.dirichlet = {temperature};
+    pb.condition = mhs::model::DirichletBoundary {temperature};
     tls_err.clear();
     return MHS_OK;
 }
@@ -580,8 +561,7 @@ MHS_API mhs_status_t mhs_boundary_set_neumann(mhs_model_t* m, mhs_boundary_id_t 
     if (st != MHS_OK)
         return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
-    pb.type = PendingBoundary::Neumann;
-    pb.neumann = {heat_flux};
+    pb.condition = mhs::model::NeumannBoundary {heat_flux};
     tls_err.clear();
     return MHS_OK;
 }
@@ -596,8 +576,7 @@ MHS_API mhs_status_t mhs_boundary_set_convection(
     if (st != MHS_OK)
         return st;
     auto& pb = m->pending_boundaries[static_cast<size_t>(id)];
-    pb.type = PendingBoundary::Convection;
-    pb.convection = {coefficient, ambient_temperature};
+    pb.condition = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
     tls_err.clear();
     return MHS_OK;
 }
@@ -625,7 +604,7 @@ MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char*
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    m->default_bc = mhs::model::DirichletBoundary {temperature};
+    m->builder.set_default_boundary(mhs::model::DirichletBoundary {temperature});
     tls_err.clear();
     return MHS_OK;
 }
@@ -634,7 +613,7 @@ MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* h
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    m->default_bc = mhs::model::NeumannBoundary {heat_flux};
+    m->builder.set_default_boundary(mhs::model::NeumannBoundary {heat_flux});
     tls_err.clear();
     return MHS_OK;
 }
@@ -645,7 +624,7 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    m->default_bc = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
+    m->builder.set_default_boundary(mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     tls_err.clear();
     return MHS_OK;
 }
@@ -801,7 +780,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
         fb.kind = _to_fluid_kind(kind);
         fb.value = value;
         fb.inlet_temperature = inlet_temperature;
-        m->pending_fluid.push_back(std::move(fb));
+        m->builder.add_fluid_boundary(std::move(fb));
         tls_err.clear();
         return MHS_OK;
     }
@@ -847,36 +826,15 @@ MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out)
         def.boundaries.reserve(def.boundaries.size() + m->pending_boundaries.size());
         for (size_t i = 0; i < m->pending_boundaries.size(); ++i) {
             const auto& pb = m->pending_boundaries[i];
-            if (pb.type == PendingBoundary::Unset) {
+            if (!pb.condition.has_value()) {
                 SET_ERR("boundary slot " << i
                                          << " has no condition set (call set_dirichlet/"
                                             "set_neumann/set_convection)");
                 *out = nullptr;
                 return MHS_ERR_UNSET;
             }
-            mhs::model::ThermalBoundary cond;
-            switch (pb.type) {
-            case PendingBoundary::Dirichlet:
-                cond = pb.dirichlet;
-                break;
-            case PendingBoundary::Neumann:
-                cond = pb.neumann;
-                break;
-            case PendingBoundary::Convection:
-                cond = pb.convection;
-                break;
-            default:
-                break;
-            }
-            def.boundaries.push_back({pb.regions, cond});
+            def.boundaries.push_back({pb.regions, *pb.condition});
         }
-
-        /* Append pending fluid boundaries (copy). */
-        def.fluid_boundaries.reserve(def.fluid_boundaries.size() + m->pending_fluid.size());
-        for (const auto& fb : m->pending_fluid)
-            def.fluid_boundaries.push_back(fb);
-
-        def.default_boundary = m->default_bc;
 
         /* Compile from the composed definition. */
         auto core_model = mhs::sim::build_model(def);
