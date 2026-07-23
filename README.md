@@ -29,50 +29,6 @@
 
 运行期只划分一个无编译成本的契约层 `runtime` 和两个实现模块：`compiler` 完成 setup，`solver` 完成 solve。模块内按职责保留独立 `.cpp`，不再为 assembler、scheduler、fluid 等实现细节逐一建库。
 
-### 数据流
-
-```mermaid
-flowchart TD
-    XML["XML 输入文件"] --> io_read["io: 反序列化 (tinyxml2)"]
-    io_read --> ModelDefinition["mhs::model::ModelDefinition"]
-    ModelDefinition --> pre["build_model()"]
-    pre -- "构建双向映射、SoA、预编译表达式和冻结流场" --> Model["内部模型"]
-
-    Model --> sched
-
-    subgraph SimulationLoop ["solve(): 时间步与非线性迭代"]
-        direction TB
-        sched["求解流程（推进时间，控制迭代）"]
-        stat["局部温度与已接受历史"]
-        assembler["基础热组装 + 流体增量"]
-        Asys["AssemblyResult → LinearSystem"]
-        solver["线性求解器"]
-        Dx["新温度迭代值"]
-        converged{"非线性收敛？"}
-
-        sched --> stat
-        stat -- "当前状态快照，预编译表达式等组装所需内容" --> assembler
-        assembler -- "组装" --> Asys
-        Asys --> solver
-        solver -- "G(T)" --> Dx
-        Dx --> converged
-
-        converged -- "否" --> update_guess["Anderson / 欠松弛更新"] --> stat
-        converged -- "是" --> accept["接受时间步（更新状态和历史）"]
-        accept -- "最终状态" --> stat
-        accept --> next_time{"更多时间步？"}
-        next_time -- "是" --> sched
-        next_time -- "否" --> loop_done["循环结束"]
-    end
-
-    loop_done --> post["后处理器（插值，计算导出场）"]
-    post --> Pdata["后处理数据"]
-    Pdata --> io_write["IO: 序列化"]
-    io_write --> XMLout["XML 结果文件"]
-    io_write --> VTU["VTU/VTK 调试输出"]
-
-```
-
 ## 运行
 
 `metahotspot` 的命令行参数解析统一由 `mhs::cli`（`bin/cli.hpp`）完成，
@@ -112,14 +68,3 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 - **Eigen**：稠密向量、稀疏矩阵，以及 EigenSparseLU / EigenBiCGSTAB 求解器。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
-
-## 注意事项
-
-- **通用设计**：你必须将所有问题都原生地视为非线性，以获得最佳通用性。所有问题均按瞬态设计。稳态时表达式求值取 `t=0`，调度器直接做非线性迭代（不推进时间）；瞬态从 `t=0` 起按时间步推进。瞬态和非线性迭代由 `scheduler` 驱动，`assembler` 无状态。
-- **表达式特殊处理**：用户从前端定义的表达式函数奇怪地到处使用 `x` 作为变量，该变量实际上可以表示 `T`（如果出现在材料属性中）或 `t`（如果出现在热源等中）。应该在模型编译阶段适当处理转换。
-- **网格描述**：块（Blocks）由一系列添加/移除操作定义，仅在 XY 平面描述几何形状。层（Layers）由层的厚度定义，每个 Block 的 Z 范围默认继承其所在 Layer 的厚度（layer 0 支持 Block 级可变厚度 `thickness`）。建模层用结构化 `FaceRegion` 描述边界；旧 XML 的 ``Face|Direction|CoordValue|...`` 编码只在 `io` 适配器内解析，其中 CoordValue 是边界平面的空间坐标（不是层索引）。
-- **内部使用结构化网格**：`model_compiler` 生成全局 3D 结构化网格，按层/材质标记每个单元（SoA 布局）。
-- **边界条件**：采用 cell-centered 自由度，边界条件通过面积分直接施加到单元方程中，无需在面上额外存储 DOF。模型编译阶段预计算每个面的 BC 类型和参数索引。
-- **表达式求值**：`mhs_expression` 仅用于场/边界条件表达式，上下文为 `{T, t, x, y, z}`。几何表达式在模型编译阶段求值为具体数值后构建网格，与场表达式求值分离。
-- **材料属性、热源、边界条件参数**：支持任意函数形式的材料属性，上下文为 `{x, y, z, T, t}`。
-- **变量绑定**：几何变量（如 `w_top`、`t_middle`）在预处理阶段解析为具体数值；场/边界条件表达式中不引用几何变量，仅使用 `{T, t, x, y, z}`。
