@@ -12,6 +12,7 @@ from metahotspot.types import (
     MhsCompiled,
     MhsSolution,
     MhsAssembly,
+    CscView,
     SolverOpts,
     Rect2D,
     Point2D,
@@ -314,29 +315,12 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_assembly_n.restype = ctypes.c_int32
     dll.mhs_assembly_n.argtypes = [ctypes.POINTER(MhsAssembly)]
 
-    dll.mhs_assembly_stiffness_nnz.restype = ctypes.c_int32
-    dll.mhs_assembly_stiffness_nnz.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_stiffness_outer_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_stiffness_outer_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_stiffness_inner_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_stiffness_inner_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_stiffness_values.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_assembly_stiffness_values.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_capacity_nnz.restype = ctypes.c_int32
-    dll.mhs_assembly_capacity_nnz.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_capacity_outer_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_capacity_outer_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_capacity_inner_indices.restype = ctypes.POINTER(ctypes.c_int32)
-    dll.mhs_assembly_capacity_inner_indices.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_capacity_values.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_assembly_capacity_values.argtypes = [ctypes.POINTER(MhsAssembly)]
+    dll.mhs_assembly_matrix.restype = ctypes.c_int32
+    dll.mhs_assembly_matrix.argtypes = [
+        ctypes.POINTER(MhsAssembly),
+        ctypes.c_int32,
+        ctypes.POINTER(CscView),
+    ]
 
     dll.mhs_assembly_rhs.restype = ctypes.POINTER(ctypes.c_double)
     dll.mhs_assembly_rhs.argtypes = [ctypes.POINTER(MhsAssembly)]

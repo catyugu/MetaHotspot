@@ -8,7 +8,8 @@ import numpy as np
 from scipy.sparse import csc_matrix
 
 from metahotspot._error import check
-from metahotspot.types import MhsAssembly
+from metahotspot.enums import Operator
+from metahotspot.types import CscView, MhsAssembly
 
 
 class Assembly:
@@ -53,30 +54,36 @@ class Assembly:
         """Operator dimension (number of global states)."""
         return self._dll.mhs_assembly_n(self._handle)
 
-    def _matrix(self, name: str) -> csc_matrix:
-        n = self.n()
-        nnz = getattr(self._dll, f"mhs_assembly_{name}_nnz")(self._handle)
+    def _matrix(self, which: Operator) -> csc_matrix:
+        view = CscView()
+        check(
+            self._dll.mhs_assembly_matrix(self._handle, which, ctypes.byref(view)),
+            "assembly_matrix",
+        )
         outer = np.ctypeslib.as_array(
-            getattr(self._dll, f"mhs_assembly_{name}_outer_indices")(self._handle),
-            shape=(n + 1,),
+            view.outer_indices,
+            shape=(view.columns + 1,),
         ).copy()
         inner = np.ctypeslib.as_array(
-            getattr(self._dll, f"mhs_assembly_{name}_inner_indices")(self._handle),
-            shape=(nnz,),
+            view.inner_indices,
+            shape=(view.nnz,),
         ).copy()
         values = np.ctypeslib.as_array(
-            getattr(self._dll, f"mhs_assembly_{name}_values")(self._handle),
-            shape=(nnz,),
+            view.values,
+            shape=(view.nnz,),
         ).copy()
-        return csc_matrix((values, inner, outer), shape=(n, n))
+        return csc_matrix(
+            (values, inner, outer),
+            shape=(view.rows, view.columns),
+        )
 
     def stiffness_matrix(self) -> csc_matrix:
         """Return a copy of the stiffness/conductance matrix K."""
-        return self._matrix("stiffness")
+        return self._matrix(Operator.STIFFNESS)
 
     def capacity_matrix(self) -> csc_matrix:
         """Return a copy of the capacity matrix C."""
-        return self._matrix("capacity")
+        return self._matrix(Operator.CAPACITY)
 
     def rhs(self) -> np.ndarray:
         """Return a copy of the right-hand side f."""

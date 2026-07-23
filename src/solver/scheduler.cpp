@@ -9,6 +9,7 @@
 
 #include <Eigen/Core>
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 
 namespace mhs::sim {
@@ -54,9 +55,8 @@ namespace mhs::sim {
         StepState step;
 
         const mhs::core::Index state_count = model.dofs.total_count;
-        step.state.resize(state_count);
-
-        std::fill(step.state.begin(), step.state.end(), model.initial_temperature);
+        step.state = model.initial_state;
+        assert(step.state.size() == state_count);
         step.current_time = 0.0;
         step.time_step = 0;
 

@@ -12,7 +12,8 @@ XML
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> mhs::sim::assign_cell_layers       (grid_to_cell [full-grid]; cell_to_grid + fields [compact])
-                      ├─> mhs::core::DofLayout               (cell_states + component_states + total_count)
+                      ├─> mhs::core::DofLayout               (cell_states + total_count)
+                      ├─> initial_state             (与全局状态布局同维)
                       ├─> heat_source_table        (按 Block 编译 volumetric_heat_source)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
                       ├─> mhs::sim::fluid::build_domain
@@ -22,15 +23,15 @@ XML
                                     ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
                                     │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
                                     │     ├─> mhs::sim::Assembler::assemble(ctx)
-                                    │     │     ├─> assemble_cells parallel_for // no fluid branches
+                                    │     │     ├─> assemble_cell_domain parallel_for // no fluid branches
                                     │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
                                     │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state
                                     │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
                                     │     │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
                                     │     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     │     └─> thread-local K/C triplets + f
-                                    │     │     ├─> assemble_fluid               // same sparse coordinates
-                                    │     │     └─> merge once → AssemblyResult {K, C, f}
+                                    │     │     ├─> fluid::assemble_operator      // global state coordinates
+                                    │     │     └─> OperatorAccumulator::finish → AssemblyResult {K, C, f}
                                     │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
                                     │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
                                     │     └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
@@ -53,7 +54,7 @@ XML
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
-| 组装              | `Model` + `AssembleContext`           | `AssemblyResult {K,C,f}`        | TBB 并行；`eval()` 锁无关                                |
+| 组装              | `Model` + `AssembleContext`           | `AssemblyResult {K,C,f}`        | 独立贡献统一归并；TBB 并行；`eval()` 锁无关              |
 | 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
 | 非线性更新        | 线性解 `G(x)`                         | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
 | 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |

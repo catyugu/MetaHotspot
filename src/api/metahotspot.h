@@ -82,6 +82,8 @@ typedef enum { MHS_SOLVER_PARDISO, MHS_SOLVER_EIGEN_SPARSE_LU, MHS_SOLVER_EIGEN_
 
 typedef enum { MHS_FLUID_NONE, MHS_FLUID_PRESSURE, MHS_FLUID_MASS_FLOW, MHS_FLUID_VELOCITY } mhs_fluid_bc_t;
 
+typedef enum { MHS_OPERATOR_STIFFNESS, MHS_OPERATOR_CAPACITY } mhs_operator_t;
+
 typedef enum {
     MHS_OK = 0,
     MHS_ERR_NULL_PTR = -1,
@@ -128,6 +130,17 @@ typedef struct {
     double nonlinear_relative_tolerance;
     double nonlinear_absolute_tolerance;
 } mhs_solver_opts_t;
+
+/** Non-owning CSC matrix view.  Pointers remain valid while the source
+ *  assembly handle remains alive. */
+typedef struct {
+    int32_t rows;
+    int32_t columns;
+    int32_t nnz;
+    const int32_t* outer_indices;
+    const int32_t* inner_indices;
+    const double* values;
+} mhs_csc_view_t;
 
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
@@ -354,7 +367,6 @@ MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 /** Opaque handle for assembled C * dx/dt + K * x = f operators.
  *  Both matrices are stored in CSC (compressed sparse column) format.
  *  Must be freed with mhs_assembly_destroy(). */
-typedef struct mhs_assembly_t mhs_assembly_t;
 
 /** Assemble K, C, f at a given state and time.
  *  The compiled model must have been produced by mhs_model_compile().
@@ -370,33 +382,9 @@ MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
 /** Operator dimension (number of global states). */
 MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a);
 
-/** Number of non-zero entries in K. */
-MHS_API int32_t mhs_assembly_stiffness_nnz(const mhs_assembly_t* a);
-
-/** K CSC column pointers, length n+1.
- *  outer_indices[i] is the start of column i in inner_indices / values.
- *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const int32_t* mhs_assembly_stiffness_outer_indices(const mhs_assembly_t* a);
-
-/** K CSC row indices for each non-zero, length stiffness_nnz().
- *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const int32_t* mhs_assembly_stiffness_inner_indices(const mhs_assembly_t* a);
-
-/** K CSC values, length stiffness_nnz(), parallel to inner_indices.
- *  Pointer valid until the assembly handle is destroyed. */
-MHS_API const double* mhs_assembly_stiffness_values(const mhs_assembly_t* a);
-
-/** Number of non-zero entries in C. */
-MHS_API int32_t mhs_assembly_capacity_nnz(const mhs_assembly_t* a);
-
-/** C CSC column pointers, length n+1. */
-MHS_API const int32_t* mhs_assembly_capacity_outer_indices(const mhs_assembly_t* a);
-
-/** C CSC row indices, length capacity_nnz(). */
-MHS_API const int32_t* mhs_assembly_capacity_inner_indices(const mhs_assembly_t* a);
-
-/** C CSC values, length capacity_nnz(). */
-MHS_API const double* mhs_assembly_capacity_values(const mhs_assembly_t* a);
+/** Retrieve K or C through one non-owning CSC view. */
+MHS_API mhs_status_t mhs_assembly_matrix(
+    const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
 
 /** Right-hand side vector, length n.
  *  Pointer valid until the assembly handle is destroyed. */

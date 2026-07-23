@@ -48,9 +48,10 @@ XML → model::ModelDefinition via io::read_xml
     → sim::solve → core::Solution
         ├─ sim::time_scheme::StepController (Free/Strict/Intermediate/Manual)
         │   └─ adjust dt via strategy + output-time grid
-        ├─ sim::Assembler::assemble(ctx)               [K, f, M_diag]
-        │   ├─ base thermal assembly（无流体分支）
-        │   └─ sim::fluid::assemble_increment（不改变稀疏模式）
+        ├─ sim::Assembler::assemble(ctx)               [K, C, f]
+        │   ├─ assemble_cell_domain() → OperatorContribution
+        │   ├─ sim::fluid::assemble_operator() → OperatorContribution
+        │   └─ OperatorAccumulator::finish()（每个全局算子只构造一次）
         ├─ sim::time_scheme::build_system(kind, ops, hist, dt)
         │   └─ 纯函数: BDF1 / BDF2 stencil
         ├─ sim::nonlinear_solve(provider, T, *solver)  [Anderson 加速定点迭代]
@@ -69,9 +70,9 @@ XML → model::ModelDefinition via io::read_xml
 2. 热源表 — `heat_source_table` 按 Block 编译，单元用 `TableIndex heat_source_idx` 引用
 3. 面级 BC — `Model::face_bcs[N_active * 6]` 扁平数组，无 `CellBC`
 4. 含流体-固体耦合子系统 — `Model::fluid`（`FluidDomain`）
-5. 流体增量只写对角或直接邻居坐标，不扩展基础热算子的稀疏模式
+5. 流体贡献只写对角或直接邻居坐标，不扩展基础热算子的稀疏模式
 6. 调度器当前使用 Backward Euler；`build_system` 同时提供 BDF2 及启动阶段回退
-7. 算法与组装解耦 — `Assembler::assemble` 一次遍历返回 `AssemblyResult {K, f, M_diag}`；时间离散由 `time_scheme::build_system` 纯函数注入
+7. 算法与组装解耦 — 独立物理路径返回 `OperatorContribution`，`Assembler::assemble` 统一归并为 `AssemblyResult {K, C, f}`；时间离散由 `time_scheme::build_system` 纯函数注入
 8. 步长控制与时间积分完全解耦 — `StepController`（策略模式）+ `estimate_error`（纯函数）替代旧 OOP `TimeScheme` 层次
 9. TBB 并行组装 — 基础路径遍历 `cell_to_grid`，流体路径遍历 `fluid_to_global`，线程局部 triplet 最后合并
 10. 建模枚举定义在 `src/model/model_definition.hpp`；求解期枚举定义在 `src/runtime/types.hpp`，两者仅在模型编译入口转换
@@ -87,8 +88,8 @@ XML → model::ModelDefinition via io::read_xml
 | `mhs::model`            | `model/`                                                                | ModelDefinition、ModelBuilder、LayerParams、BlockParams、LayerSpec、BlockSpec、BoundaryPatch、MaterialSpec、NamedFunction                                                                     |
 | `mhs::core`             | `runtime/` + `solver/` + `numerics/expression/`                          | Model、Solution、FluidDomain、SolutionHistory、StudyType、BcType、FaceBC、FaceDir、CompiledExpression、Material、ProbePoint、CellFields、MeshGeometry                                           |
 | `mhs::utils`            | `runtime/` + `compiler/` + `solver/`                                     | 网格、物理和采样辅助                                                                                                                                                                           |
-| `mhs::sim`              | `compiler/` + `solver/` + `numerics/linear/`                             | build_model()、solve()、SolveOptions、LinearSolver、Assembler、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve()                        |
-| `mhs::sim::fluid`       | `compiler/` + `solver/`                                                  | build_domain()、assemble_increment()、FluidAssemblyIncrement                                                                                                                                    |
+| `mhs::sim`              | `compiler/` + `solver/` + `numerics/linear/`                             | build_model()、solve()、SolveOptions、LinearSolver、Assembler、OperatorContribution、OperatorAccumulator、AssemblyResult、LinearSystem、LinearSystemProvider、NonLinearConfig / NonLinearResult / nonlinear_solve() |
+| `mhs::sim::fluid`       | `compiler/` + `solver/`                                                  | build_domain()、assemble_operator()                                                                                                                                                              |
 | `mhs::sim::time_scheme` | `solver/time_integration.*`                                             | StepController (策略类) + IntegratorKind 枚举 + build_system/estimate_error 纯函数 + ErrorControlConfig / ErrorEstimate + StepStrategy 枚举（Free/Strict/Intermediate/Manual） + OutputTimeGrid |
 | `mhs::io`               | `io/`                                                                   | read_xml / merge_fluid_xml / write_vtu / write_xml                                                                                                                                              |
 | `mhs::post`             | `solver/`                                                               | interpolate_cell_to_node 及导出场函数 + 局部采样辅助 `mhs::utils`                                                                                                                               |

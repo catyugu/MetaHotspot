@@ -1,9 +1,11 @@
 mhs_add_library(mhs_solver
     SOURCES
     assembler.cpp
+    cell_assembler.cpp
     fluid_assembler.cpp
     interpolation.cpp
     nonlinear_solver.cpp
+    operator_assembly.cpp
     postprocessor.cpp
     probe_recorder.cpp
     scheduler.cpp

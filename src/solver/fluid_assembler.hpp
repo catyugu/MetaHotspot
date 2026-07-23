@@ -1,21 +1,11 @@
 #pragma once
 
 #include "runtime/model.hpp"
-
-#include <Eigen/Core>
-#include <Eigen/SparseCore>
-#include <vector>
+#include "solver/operator_assembly.hpp"
 
 namespace mhs::sim::fluid {
 
-    struct FluidAssemblyIncrement {
-        std::vector<Eigen::Triplet<double>> matrix_entries;
-        Eigen::VectorXd rhs;
-    };
-
-    // Return fluid-only corrections to the base thermal operator. Every matrix
-    // coordinate is either a diagonal or an existing direct-neighbor entry.
-    FluidAssemblyIncrement assemble_increment(
-        const mhs::core::Model& model, const std::vector<double>& state, double current_time);
+    /// Return fluid-only corrections in global state coordinates.
+    OperatorContribution assemble_operator(const mhs::core::Model& model, const AssembleContext& context);
 
 } // namespace mhs::sim::fluid

@@ -2,6 +2,7 @@
 #include "model/model_definition.hpp"
 #include "runtime/model.hpp"
 #include "solver/assembler.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
@@ -54,8 +55,10 @@ TEST(AssemblerTest, CompileBuildsCellStateLayout)
 
     EXPECT_EQ(model.dofs.cell_states.begin, 0U);
     EXPECT_EQ(model.dofs.cell_states.count, cell_count);
-    EXPECT_TRUE(model.dofs.component_states.empty());
     EXPECT_EQ(model.dofs.total_count, cell_count);
+    ASSERT_EQ(model.initial_state.size(), model.dofs.total_count);
+    EXPECT_TRUE(std::all_of(model.initial_state.begin(), model.initial_state.end(),
+        [&](double value) { return value == model.initial_temperature; }));
 }
 
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)

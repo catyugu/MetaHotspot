@@ -19,7 +19,7 @@ MetaHotspot/
 │   ├── model/                   # mhs_model       纯建模契约与 ModelBuilder（无第三方依赖）
 │   ├── runtime/                 # mhs_runtime     header-only 运行期契约与网格助手
 │   ├── compiler/                # mhs_compiler    ModelDefinition → 运行期 SoA、冻结流场
-│   ├── solver/                  # mhs_solver      组装、迭代、时间推进、探针与后处理
+│   ├── solver/                  # mhs_solver      独立算子贡献、统一归并、迭代、时间推进与后处理
 │   ├── numerics/
 │   │   ├── expression/          # mhs_expression  muparser + TBB 表达式封装
 │   │   └── linear/              # mhs_linear      Eigen / MKL 线性求解封装

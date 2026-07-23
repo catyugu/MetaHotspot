@@ -1000,7 +1000,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
             std::copy_n(state, n, current_state.begin());
         }
         else {
-            std::fill(current_state.begin(), current_state.end(), c->model.initial_temperature);
+            current_state = c->model.initial_state;
         }
 
         mhs::sim::AssembleContext ctx {current_state, time};
@@ -1045,34 +1045,6 @@ MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a)
     return a->stiffness.n;
 }
 
-MHS_API int32_t mhs_assembly_stiffness_nnz(const mhs_assembly_t* a)
-{
-    if (!a)
-        return 0;
-    return a->stiffness.nnz;
-}
-
-MHS_API const int32_t* mhs_assembly_stiffness_outer_indices(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->stiffness.outer_indices.data();
-}
-
-MHS_API const int32_t* mhs_assembly_stiffness_inner_indices(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->stiffness.inner_indices.data();
-}
-
-MHS_API const double* mhs_assembly_stiffness_values(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->stiffness.values.data();
-}
-
 MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
 {
     if (!a)
@@ -1080,32 +1052,29 @@ MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
     return a->rhs.data();
 }
 
-MHS_API int32_t mhs_assembly_capacity_nnz(const mhs_assembly_t* a)
+MHS_API mhs_status_t mhs_assembly_matrix(
+    const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out)
 {
-    if (!a)
-        return 0;
-    return a->capacity.nnz;
-}
+    CHECK_NULL(a);
+    CHECK_NULL(out);
 
-MHS_API const int32_t* mhs_assembly_capacity_outer_indices(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->capacity.outer_indices.data();
-}
+    const CscMatrixData* matrix = nullptr;
+    switch (which) {
+    case MHS_OPERATOR_STIFFNESS:
+        matrix = &a->stiffness;
+        break;
+    case MHS_OPERATOR_CAPACITY:
+        matrix = &a->capacity;
+        break;
+    default:
+        SET_ERR("invalid operator: " << static_cast<int>(which));
+        return MHS_ERR_INVALID_ARG;
+    }
 
-MHS_API const int32_t* mhs_assembly_capacity_inner_indices(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->capacity.inner_indices.data();
-}
-
-MHS_API const double* mhs_assembly_capacity_values(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->capacity.values.data();
+    *out = {matrix->n, matrix->n, matrix->nnz, matrix->outer_indices.data(), matrix->inner_indices.data(),
+        matrix->values.data()};
+    tls_err.clear();
+    return MHS_OK;
 }
 
 /* ------------------------------------------------------------------ */

@@ -54,3 +54,8 @@ class FluidBC(enum.IntEnum):
     PRESSURE = 1
     MASS_FLOW = 2
     VELOCITY = 3
+
+
+class Operator(enum.IntEnum):
+    STIFFNESS = 0
+    CAPACITY = 1

@@ -13,7 +13,7 @@ Cases include both steady and transient studies. CLAUDE.md mandates treating all
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
 - `solve()` branches on `Model::study_type`:
-    - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once, starting from `T = initial_temperature`.
+    - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once, starting from `Model::initial_state`.
     - `Transient` — step from `t = 0` up to `transient_duration`. Each step runs `assemble → build_system → nonlinear_solve → estimate_error`; on accept, `accepted.accept(T, t)` and `current_time += dt`.
 - Time stepping composes three orthogonal pieces:
     - `mhs::sim::time_scheme::StepController` (strategy: Free / Strict / Intermediate / Manual) drives output-time alignment and step sizing.

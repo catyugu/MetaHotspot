@@ -58,6 +58,17 @@ class SolverOpts(ctypes.Structure):
     ]
 
 
+class CscView(ctypes.Structure):
+    _fields_ = [
+        ("rows", ctypes.c_int32),
+        ("columns", ctypes.c_int32),
+        ("nnz", ctypes.c_int32),
+        ("outer_indices", ctypes.POINTER(ctypes.c_int32)),
+        ("inner_indices", ctypes.POINTER(ctypes.c_int32)),
+        ("values", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # ID types are plain int32_t
 # ---------------------------------------------------------------------------
