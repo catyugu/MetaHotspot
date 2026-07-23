@@ -2,7 +2,6 @@
 
 #include <tinyxml2.h>
 
-#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -10,7 +9,7 @@
 
 namespace mhs::io {
 
-    void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& node_temperature)
+    void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& cell_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;
@@ -21,27 +20,46 @@ namespace mhs::io {
 
         const mhs::core::Index total_nodes = node_nx * node_ny * node_nz;
         std::vector<mhs::core::Index> node_remap(total_nodes, mhs::core::invalidIndex);
-        std::vector<double> active_temps;
 
         auto node_idx = [](mhs::core::Index vx, mhs::core::Index vy, mhs::core::Index vz, mhs::core::Index nny,
                             mhs::core::Index nnz) { return vx * nny * nnz + vy * nnz + vz; };
 
-        char buf[64];
-        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
-                    const mhs::core::Index i = node_idx(vx, vy, vz, node_ny, node_nz);
-                    const double T = node_temperature[i];
-                    if (std::isnan(T))
+        // Pass 1: mark all nodes referenced by at least one active cell
+        for (mhs::core::Index ix = 0; ix < mesh.nx; ix++) {
+            for (mhs::core::Index iy = 0; iy < mesh.ny; iy++) {
+                for (mhs::core::Index iz = 0; iz < mesh.nz; iz++) {
+                    const mhs::core::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
+                    if (cells.grid_to_cell[old_idx] == mhs::core::invalidIndex)
                         continue;
-                    node_remap[i] = static_cast<mhs::core::Index>(active_temps.size());
-                    active_temps.push_back(T);
+
+                    const mhs::core::Index n[8] = {
+                        node_idx(ix, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy, iz, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz, node_ny, node_nz),
+                        node_idx(ix, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy, iz + 1, node_ny, node_nz),
+                        node_idx(ix + 1, iy + 1, iz + 1, node_ny, node_nz),
+                        node_idx(ix, iy + 1, iz + 1, node_ny, node_nz)
+                    };
+                    for (int k = 0; k < 8; k++) {
+                        if (node_remap[n[k]] == mhs::core::invalidIndex)
+                            node_remap[n[k]] = 0; // mark as referenced
+                    }
                 }
             }
         }
 
-        const int num_points = static_cast<int>(active_temps.size());
+        // Pass 2: compact node remap — assign sequential output indices
+        mhs::core::Index compact_count = 0;
+        for (mhs::core::Index i = 0; i < total_nodes; i++) {
+            if (node_remap[i] != mhs::core::invalidIndex)
+                node_remap[i] = compact_count++;
+        }
 
+        const int num_points = static_cast<int>(compact_count);
+
+        char buf[64];
         std::string coords_str;
         for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
             for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
@@ -61,22 +79,18 @@ namespace mhs::io {
             }
         }
 
-        std::string temp_str;
-        for (double T : active_temps) {
-            std::snprintf(buf, sizeof(buf), "%.8g\n", T);
-            temp_str += buf;
-        }
-
         std::string conn_str;
         std::string off_str;
         std::string type_str;
+        std::string cell_temp_str;
         int cell_num = 0;
 
         for (mhs::core::Index ix = 0; ix < mesh.nx; ix++) {
             for (mhs::core::Index iy = 0; iy < mesh.ny; iy++) {
                 for (mhs::core::Index iz = 0; iz < mesh.nz; iz++) {
                     const mhs::core::Index old_idx = ix * mesh.ny * mesh.nz + iy * mesh.nz + iz;
-                    if (cells.grid_to_cell[old_idx] == mhs::core::invalidIndex)
+                    const mhs::core::Index compact_cell = cells.grid_to_cell[old_idx];
+                    if (compact_cell == mhs::core::invalidIndex)
                         continue;
 
                     const int n[8] = {static_cast<int>(node_idx(ix, iy, iz, node_ny, node_nz)),
@@ -99,6 +113,9 @@ namespace mhs::io {
                     std::snprintf(buf, sizeof(buf), "%d\n", cell_num * 8);
                     off_str += buf;
                     type_str += "12\n";
+
+                    std::snprintf(buf, sizeof(buf), "%.8g\n", cell_temperature[compact_cell]);
+                    cell_temp_str += buf;
                 }
             }
         }
@@ -118,6 +135,7 @@ namespace mhs::io {
         piece_elem->SetAttribute("NumberOfCells", cell_num);
         grid_elem->InsertEndChild(piece_elem);
 
+        // Points: node coordinates (active nodes only)
         XMLElement* points_elem = doc.NewElement("Points");
         piece_elem->InsertEndChild(points_elem);
         XMLElement* coords_arr = doc.NewElement("DataArray");
@@ -127,16 +145,18 @@ namespace mhs::io {
         coords_arr->SetText(coords_str.c_str());
         points_elem->InsertEndChild(coords_arr);
 
-        XMLElement* point_data = doc.NewElement("PointData");
-        piece_elem->InsertEndChild(point_data);
+        // CellData: per-active-cell temperature (body-centered, no interpolation)
+        XMLElement* cell_data = doc.NewElement("CellData");
+        piece_elem->InsertEndChild(cell_data);
         XMLElement* temp_arr = doc.NewElement("DataArray");
         temp_arr->SetAttribute("type", "Float64");
         temp_arr->SetAttribute("Name", "Temperature");
         temp_arr->SetAttribute("NumberOfComponents", "1");
         temp_arr->SetAttribute("format", "ascii");
-        temp_arr->SetText(temp_str.c_str());
-        point_data->InsertEndChild(temp_arr);
+        temp_arr->SetText(cell_temp_str.c_str());
+        cell_data->InsertEndChild(temp_arr);
 
+        // Cells: hexahedral topology
         XMLElement* cells_elem = doc.NewElement("Cells");
         piece_elem->InsertEndChild(cells_elem);
 

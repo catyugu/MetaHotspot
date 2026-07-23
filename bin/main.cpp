@@ -83,13 +83,13 @@ int main(int argc, char* argv[])
 
         const auto& solution = result.temperature;
 
-        // Postprocess
-        auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
-
         // Write outputs
-        mhs::io::write_vtu(output_vtu, model, node_temperature);
+        // VTU: writes cell-centered body temperature directly (no node interpolation)
+        mhs::io::write_vtu(output_vtu, model, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
+        // XML: still uses node-centered data (legacy format)
+        auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
         mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
