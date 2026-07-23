@@ -1,12 +1,12 @@
 # expr 模块接口
 
-封装 muparser。`src/expr/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
+封装 muparser。`src/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
 
 ---
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::core` (`src/expr/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
+**定义**：`mhs::core` (`src/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
 
 ```cpp
 namespace mhs::core {
@@ -103,7 +103,7 @@ namespace mhs::core {
 ### 典型用法
 
 ```cpp
-// Preprocessor：构造本地 SymbolTable 贯穿 setup 路径
+// build_model：构造本地 SymbolTable 贯穿 setup 路径
 mhs::core::SymbolTable symbols;
 mhs::sim::register_all_functions(symbols, ios.functions);  // typed Function → FieldEvaluator
 
@@ -111,7 +111,7 @@ mhs::sim::register_all_functions(symbols, ios.functions);  // typed Function →
 double half_w = mhs::core::eval_geometry("w_top/2", symbols);
 
 // 场
-auto k = mhs::core::parse("k_copper + 0.01*T", symbols);
+auto k = mhs::core::parse("400 + 0.01*T", symbols);
 double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ```
 
@@ -122,7 +122,7 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 | `parse()` / `eval_geometry()` / `register_all_functions` | 主线程，构造本地 `SymbolTable` |
 | `CompiledExpression::eval()`                             | **无锁**（ETS 每线程独立 AST） |
 
-`SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `Preprocessor` 实例可同时 `load()` 互不干扰。
+`SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
 
 TBB 并行 `assemble()` 内部：所有工作线程首次 `tls.local()` 时懒构造自己线程专属的 muparser 实例；之后整个仿真期间零同步。
 

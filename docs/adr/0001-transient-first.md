@@ -12,7 +12,7 @@ Cases include both steady and transient studies. CLAUDE.md mandates treating all
 
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
-- `Scheduler::run()` branches on `Model::study_type`:
+- `solve()` branches on `Model::study_type`:
     - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once, starting from `T = initial_temperature`.
     - `Transient` — step from `t = 0` up to `transient_duration`. Each step runs `assemble → build_system → nonlinear_solve → estimate_error`; on accept, `accepted.accept(T, t)` and `current_time += dt`.
 - Time stepping composes three orthogonal pieces:
@@ -23,7 +23,7 @@ The whole system is designed for transient simulation. Steady state is a single 
 
 ## Rationale
 
-- One code path for time-stepping. Steady is the degenerate one-step case, so steady and transient share the entire solver, error estimator, and probe pipeline.
+- Steady and transient share assembly, nonlinear solve, linear solve, and probe recording; only transient uses time integration and error control.
 - Treating every case as nonlinear natively means Cauchy BCs, temperature-dependent `k`, and fluid-solid coupling all go through the same fixed-point loop.
 - Splitting strategy / algebra / error-control into three orthogonal pieces (vs. an OOP `TimeScheme` hierarchy) keeps the inner loops free of virtual calls and lets the integrator kind be selected per step without subclass gymnastics.
 
@@ -31,4 +31,4 @@ The whole system is designed for transient simulation. Steady state is a single 
 
 - **Steady evaluation context.** When `study_type == Steady`, expressions are evaluated with `t = 0`. Steady means equilibrium, not time advancing.
 - **Step history.** The accepted-solution ring buffer (`mhs::core::SolutionHistory`) carries the snapshots needed for the BDF stencil. BDF2 is selected by the integrator kind in `build_system`; the buffer's capacity (currently 2) is sized to its needs.
-- **Time-step loop in `Scheduler::run()`.** The transient branch builds a `LinearSystemProvider` lambda per step that calls `assembler.assemble(ctx)` and then `build_system(IntegratorKind::Bdf1, ops, accepted, dt)`. The LTE estimate from `estimate_error` drives the next step's `dt` via `StepController::prepare`.
+- **Time-step loop in `solve()`.** The transient branch builds a `LinearSystemProvider` lambda per step that calls `assembler.assemble(ctx)` and then `build_system(IntegratorKind::Bdf1, ops, accepted, dt)`. The LTE estimate from `estimate_error` drives the next step's `dt` via `StepController::prepare`.

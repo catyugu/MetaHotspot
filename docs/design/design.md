@@ -13,21 +13,19 @@
 
 ## 决策摘要（详见 `docs/adr/`）
 
-| ADR  | 决策                                                                               |
-|------|:-----------------------------------------------------------------------------------|
-| 0001 | 全系统按瞬态设计；稳态 = t=0 时的单次非线性迭代                                    |
-| 0002 | Cell-centered DOF；BC 走面积分，不存面 DOF；`face_bcs` 扁平数组存储（合并原 0005） |
-| 0003 | 内部模型全部 SoA                                                                   |
-| 0004 | 几何 vs 场/BC 表达式分离；TBB ETS 锁无关求值；热源字典化                           |
-| 0005 | Cell-level BC：每单元存 6 面 BC，无面投影歧义                                      |
+| ADR  | 决策                                                                |
+|------|:--------------------------------------------------------------------|
+| 0001 | 全系统按瞬态设计；稳态 = t=0 时的单次非线性迭代                     |
+| 0002 | Cell-centered DOF；BC 走面积分，不存面 DOF；`face_bcs` 扁平数组存储 |
+| 0003 | 内部模型全部 SoA                                                    |
+| 0004 | 几何 vs 场/BC 表达式分离；TBB ETS 锁无关求值；热源索引表            |
 
 ## 关键原则
 
 1. 内部模型不含原始字符串 — 所有表达式预编译为 `CompiledExpression`
-2. 热源字典化 — `Model::heat_source_table` + 每单元 `uint16_t` 索引
-3. 无异常 — 错误走 `mhs::logger::panic()`，**程序入口 `bin/main.cpp` 的 `try/catch` 是唯一例外**（捕获 tinyxml2/muparser 抛出的 std::exception 并转 panic 退出）
-4. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, ctx)` 下无状态）
-5. SoA 贯穿内部模型
-6. expr 预编译，`eval()` 锁无关
-7. 复杂形式用 native function — `mhs::sim::register_all_functions(symbols, ...)` 将 `IOStructure::Function` 写入本地 `mhs::core::SymbolTable::natives`，由 `parse(formula, symbols)` 在编译时绑定
-8. **不支持 2D** — `Dimension::Dimension2D` 在 IO 解析阶段会被赋值，但预处理阶段未实现 2D 网格构建。
+2. 热源索引表 — `Model::heat_source_table` + 每单元 `TableIndex` 索引
+3. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, ctx)` 下无状态）
+4. SoA 贯穿内部模型
+5. expr 预编译，`eval()` 锁无关
+6. 复杂形式用 native function — `mhs::sim::register_all_functions(symbols, ...)` 将有序的 `ModelDefinition::functions` 写入本地 `mhs::core::SymbolTable::natives`，由 `parse(formula, symbols)` 在编译时绑定
+7. **不支持 2D** — `ModelDefinition` 只描述当前实现支持的 3D 网格，不保留未生效的维度枚举。

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "metahotspot"
+version = "0.1.0"
+description = "MetaHotspot — thermal simulation C API Python bindings"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21",
+]
+
+[project.urls]
+Homepage = "https://github.com/catyugu/MetaHotspot"

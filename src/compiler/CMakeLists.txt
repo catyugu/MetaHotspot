@@ -1,0 +1,13 @@
+mhs_add_library(mhs_compiler
+    SOURCES
+    fluid_preprocessor.cpp
+    geometry_compiler.cpp
+    model_compiler.cpp
+    model_functions.cpp
+    PUBLIC_LINKS
+    mhs_model
+    mhs_runtime
+    PRIVATE_LINKS
+    mhs_linear
+    mhs_logging
+)

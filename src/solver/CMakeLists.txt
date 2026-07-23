@@ -1,0 +1,17 @@
+mhs_add_library(mhs_solver
+    SOURCES
+    assembler.cpp
+    fluid_assembler.cpp
+    interpolation.cpp
+    nonlinear_solver.cpp
+    postprocessor.cpp
+    probe_recorder.cpp
+    scheduler.cpp
+    time_integration.cpp
+    PUBLIC_LINKS
+    mhs_runtime
+    mhs_linear
+    PRIVATE_LINKS
+    mhs_logging
+    TBB::tbb
+)
