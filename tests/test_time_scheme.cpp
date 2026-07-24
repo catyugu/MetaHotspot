@@ -87,7 +87,7 @@ namespace {
         mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
 
         mhs::core::SolutionHistory hist(2, 2);
-        hist.initialize({50.0, 60.0}, 0.0);
+        hist.initialize(std::vector{50.0, 60.0}, 0.0);
 
         auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, 0.5);
 
@@ -109,7 +109,7 @@ namespace {
         Eigen::VectorXd f = Eigen::VectorXd::Zero(2);
         mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
         mhs::core::SolutionHistory history(2, 2);
-        history.initialize({10.0, 20.0}, 0.0);
+        history.initialize(std::vector{10.0, 20.0}, 0.0);
 
         auto system
             = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, history, 2.0);
@@ -188,7 +188,7 @@ namespace {
         auto ops = make_known_3dof_ops();
         // Only 1 snapshot — not enough for BDF2.
         mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize({100.0, 200.0, 300.0}, 0.0);
+        hist.initialize(std::vector{100.0, 200.0, 300.0}, 0.0);
 
         auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, 1.0);
 
@@ -206,7 +206,7 @@ namespace {
 namespace {
 
     mhs::core::SolutionHistory make_hist(
-        const std::vector<double>& T_init, const std::vector<double>& T_prev, double dt_prev, double t0 = 0.0)
+        std::span<const double> T_init, std::span<const double> T_prev, double dt_prev, double t0 = 0.0)
     {
         mhs::core::SolutionHistory hist(static_cast<int>(T_init.size()), 2);
         hist.initialize(T_init, t0);

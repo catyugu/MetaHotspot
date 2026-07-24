@@ -55,7 +55,7 @@ namespace mhs::sim::time_scheme {
         return build_bdf1(ops, history, dt);
     }
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_state,
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config)
     {
         const mhs::core::Index count = static_cast<mhs::core::Index>(trial_state.size());

@@ -8,7 +8,7 @@
 namespace mhs::post {
 
     std::vector<double> interpolate_cell_to_node(
-        const mhs::core::Model& model, const std::vector<double>& cell_temperature, double time)
+        const mhs::core::Model& model, std::span<const double> cell_temperature, double time)
     {
         const auto& mesh = model.mesh;
         const auto& cells = model.cells;
@@ -104,7 +104,7 @@ namespace mhs::post {
         return node_T;
     }
 
-    double max_temperature(const std::vector<double>& T)
+    double max_temperature(std::span<const double> T)
     {
         if (T.empty())
             return 0.0;
@@ -118,7 +118,7 @@ namespace mhs::post {
         return std::isnan(max_val) ? 0.0 : max_val;
     }
 
-    double min_temperature(const std::vector<double>& T)
+    double min_temperature(std::span<const double> T)
     {
         if (T.empty())
             return 0.0;

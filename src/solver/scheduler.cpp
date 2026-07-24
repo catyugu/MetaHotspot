@@ -24,7 +24,7 @@ namespace mhs::sim {
             std::vector<double> state;
         };
 
-        std::vector<double> extract_cell_temperature(const mhs::core::Model& model, const std::vector<double>& state)
+        std::vector<double> extract_cell_temperature(const mhs::core::Model& model, std::span<const double> state)
         {
             const auto& cells = model.dofs.cell_states;
             return {state.begin() + static_cast<std::ptrdiff_t>(cells.begin),
@@ -33,11 +33,11 @@ namespace mhs::sim {
 
         /// Linear interpolation of the state between two snapshots.
         inline std::vector<double> interpolate_state(
-            double t0, const std::vector<double>& x0, double t1, const std::vector<double>& x1, double t)
+            double t0, std::span<const double> x0, double t1, std::span<const double> x1, double t)
         {
             const double dt = t1 - t0;
             if (dt <= 0.0)
-                return x0;
+                return std::vector<double>(x0.begin(), x0.end());
             const double s = (t - t0) / dt; // ∈ [0, 1]
             std::vector<double> out(x0.size());
             for (std::size_t i = 0; i < x0.size(); ++i)

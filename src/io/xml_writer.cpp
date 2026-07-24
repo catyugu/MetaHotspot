@@ -1,12 +1,10 @@
 #include "io/result_io.hpp"
-
 #include <tinyxml2.h>
 
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
-#include <vector>
 
 namespace mhs::io {
 
@@ -30,7 +28,7 @@ namespace mhs::io {
         }
 
         void refill_double_list(
-            tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, const std::vector<double>& data, bool allow_nan)
+            tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, std::span<const double> data, bool allow_nan)
         {
             if (!parent)
                 return;
@@ -52,7 +50,7 @@ namespace mhs::io {
     } // namespace
 
     void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
-        const std::vector<double>& node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
+        std::span<const double> node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
     {
         using namespace tinyxml2;
 

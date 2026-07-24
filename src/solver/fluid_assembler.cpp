@@ -35,7 +35,7 @@ namespace mhs::sim::fluid {
     } // namespace
 
     FluidAssemblyIncrement assemble_increment(
-        const mhs::core::Model& model, const std::vector<double>& state, double current_time)
+        const mhs::core::Model& model, std::span<const double> state, double current_time)
     {
         const mhs::core::Index active_count = static_cast<mhs::core::Index>(model.cells.material_id.size());
         const mhs::core::Index state_offset = model.dofs.cell_states.begin;

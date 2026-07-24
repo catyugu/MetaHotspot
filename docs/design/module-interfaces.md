@@ -12,12 +12,12 @@ namespace mhs::io {
 
     void write_vtu(const std::string& path,
                    const mhs::core::Model& model,
-                   const std::vector<double>& node_temperature);
+                   std::span<const double> node_temperature);
 
     void write_xml(const std::string& input_path,
                    const std::string& output_path,
                    const mhs::core::Model& model,
-                   const std::vector<double>& node_temperature,
+                   std::span<const double> node_temperature,
                    const std::vector<mhs::core::ProbeTrace>& observation_traces = {});
 }
 ```
@@ -110,7 +110,7 @@ namespace mhs::sim {
 
     /// Invariant: state.size() == model.dofs.total_count.
     struct AssembleContext {
-        const std::vector<double>& state;
+        std::span<const double> state;
         double current_time = 0.0;
     };
 
@@ -156,7 +156,7 @@ namespace mhs::sim::time_scheme {
     };
 
     ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted,
-                                 const std::vector<double>& trial_state, double trial_dt,
+                                 std::span<const double> trial_state, double trial_dt,
                                  const ErrorControlConfig& cfg);
 
     // ── 3. Step controller (strategy + output-grid) ─────────────────
@@ -256,7 +256,7 @@ namespace mhs::sim {
     class ProbeRecorder {
     public:
         void initialize(const mhs::core::Model& model);
-        void record(double time, const std::vector<double>& cell_T);
+        void record(double time, std::span<const double> cell_T);
         const std::vector<mhs::core::ProbeTrace>& traces() const;
     };
 }
@@ -286,11 +286,11 @@ namespace mhs::post {
     // 稳态场景传 0.0 即可；瞬态由调用方提供当前求解时刻。
     std::vector<double> interpolate_cell_to_node(
         const mhs::core::Model& model,
-        const std::vector<double>& cell_temperature,
+        std::span<const double> cell_temperature,
         double time);
 
-    double max_temperature(const std::vector<double>& T);
-    double min_temperature(const std::vector<double>& T);
+    double max_temperature(std::span<const double> T);
+    double min_temperature(std::span<const double> T);
 }
 ```
 

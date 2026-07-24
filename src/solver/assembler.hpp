@@ -3,7 +3,7 @@
 #include "Eigen/SparseCore"
 #include "runtime/model.hpp"
 #include <Eigen/Core>
-#include <vector>
+#include <span>
 
 namespace mhs::sim {
 
@@ -18,7 +18,7 @@ namespace mhs::sim {
     /// Invariant (caller-enforced):
     ///   - state.size() == model.dofs.total_count
     struct AssembleContext {
-        const std::vector<double>& state;
+        std::span<const double> state;
         double current_time = 0.0;
     };
 

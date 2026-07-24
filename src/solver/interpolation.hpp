@@ -12,6 +12,7 @@
 //   - mhs::sim::ProbeRecorder::sample_one  (per-probe local sampling)
 #include "runtime/model.hpp"
 
+#include <span>
 #include <vector>
 
 namespace mhs::utils {
@@ -35,7 +36,7 @@ namespace mhs::utils {
     // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
     // use the same two-point thermal-resistance law as the diffusion assembly.
     TemperatureGradient reconstruct_cell_gradient(const mhs::core::Model& model,
-        const std::vector<double>& cell_temperature, double time, mhs::core::Index ix, mhs::core::Index iy,
+        std::span<const double> cell_temperature, double time, mhs::core::Index ix, mhs::core::Index iy,
         mhs::core::Index iz);
 
     double extrapolate_cell_temperature(double cell_temperature, const TemperatureGradient& gradient, double cell_x,

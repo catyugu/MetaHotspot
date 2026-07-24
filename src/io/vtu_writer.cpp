@@ -9,7 +9,7 @@
 
 namespace mhs::io {
 
-    void write_vtu(const std::string& path, const mhs::core::Model& model, const std::vector<double>& cell_temperature)
+    void write_vtu(const std::string& path, const mhs::core::Model& model, std::span<const double> cell_temperature)
     {
         using namespace tinyxml2;
         const auto& mesh = model.mesh;

@@ -3,6 +3,7 @@
 #include "runtime/model.hpp"
 #include "runtime/solution.hpp"
 
+#include <span>
 #include <vector>
 
 namespace mhs::sim {
@@ -25,7 +26,7 @@ namespace mhs::sim {
         void initialize(const mhs::core::Model& model);
 
         // 记录一个时间点。稳态/瞬态通用：稳态求解场景下调用一次即可。
-        void record(double time, const std::vector<double>& cell_T);
+        void record(double time, std::span<const double> cell_T);
 
         // 对外只读访问。
         const std::vector<mhs::core::ProbeTrace>& traces() const { return traces_; }
@@ -47,7 +48,7 @@ namespace mhs::sim {
         // 在 cell 邻域内做局部 LSQ 拟合，返回探针点温度；越界或邻域无有效 cell
         // 返回 NaN。`time` 注入 FieldContext.t，让时间依赖的 BC/材料表达式
         // 在正确的时刻被求值。
-        double sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T, double time) const;
+        double sample_one(const ProbeSlot& slot, std::span<const double> cell_T, double time) const;
     };
 
 } // namespace mhs::sim

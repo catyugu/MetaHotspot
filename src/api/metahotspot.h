@@ -383,8 +383,7 @@ MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
 MHS_API int32_t mhs_assembly_n(const mhs_assembly_t* a);
 
 /** Retrieve K or C through one non-owning CSC view. */
-MHS_API mhs_status_t mhs_assembly_matrix(
-    const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
+MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
 
 /** Right-hand side vector, length n.
  *  Pointer valid until the assembly handle is destroyed. */

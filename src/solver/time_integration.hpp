@@ -25,7 +25,7 @@ namespace mhs::sim::time_scheme {
         double suggested_factor = 1.0;
     };
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_state,
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config);
 
     class OutputTimeGrid {
@@ -44,7 +44,7 @@ namespace mhs::sim::time_scheme {
 
         explicit OutputTimeGrid(std::vector<double> times) : times_(std::move(times)) { }
 
-        const std::vector<double>& times() const noexcept { return times_; }
+        std::span<const double> times() const noexcept { return times_; }
         std::size_t size() const noexcept { return times_.size(); }
         bool empty() const noexcept { return times_.empty(); }
 

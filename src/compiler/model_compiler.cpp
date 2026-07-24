@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <span>
 #include <stdexcept>
 
 namespace mhs::sim {
@@ -36,7 +37,7 @@ namespace mhs::sim {
 
         /// Compute cell widths (d) and centers (c) from vertex coordinates along one axis.
         inline void compute_cell_spacing(
-            const std::vector<double>& vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
+            std::span<const double> vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
         {
             const mhs::core::Index n = static_cast<mhs::core::Index>(d.size());
             for (mhs::core::Index i = 0; i < n; ++i) {

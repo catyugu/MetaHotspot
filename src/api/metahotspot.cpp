@@ -1010,8 +1010,7 @@ MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
     return a->rhs.data();
 }
 
-MHS_API mhs_status_t mhs_assembly_matrix(
-    const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out)
+MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out)
 {
     CHECK_NULL(a);
     CHECK_NULL(out);
