@@ -336,7 +336,7 @@ MHS_API mhs_status_t mhs_model_set_mesh(
 {
     CHECK_NULL(m);
     try {
-        auto spec = m->builder.peek().mesh;
+        mhs::model::MeshSpec spec;
         if (nx >= 2) {
             CHECK_NULL(x);
             spec.x_vertices.assign(x, x + nx);
