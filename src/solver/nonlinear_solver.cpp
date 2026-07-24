@@ -6,8 +6,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <deque>
 #include <optional>
-#include <vector>
 
 namespace mhs::sim {
 
@@ -19,12 +19,11 @@ namespace mhs::sim {
             double max_growth = 1.5; // divergence guard (infinity-norm ratio)
             int reset_on_growth = 1; // reset history when guard trips
 
-            // Ring buffers of size `depth`. Index 0 is most recent. When the
-            // history is not yet full, hist_len < depth and we use fewer
-            // columns in F.
-            std::vector<Eigen::VectorXd> G_hist;
-            std::vector<Eigen::VectorXd> x_hist;
-            int hist_len = 0;
+            // History of size `depth`. Index 0 is most recent, stored as a
+            // deque so that push_front is O(1) — insert(begin()) on vector
+            // would be O(N) and we call push() every nonlinear iteration.
+            std::deque<Eigen::VectorXd> G_hist;
+            std::deque<Eigen::VectorXd> x_hist;
             int iter_count = 0;
 
             // Returns the next iterate proposal, or std::nullopt to fall back
@@ -33,12 +32,12 @@ namespace mhs::sim {
             std::optional<Eigen::VectorXd> step(const Eigen::VectorXd& x_k, const Eigen::VectorXd& G_k)
             {
                 // Disabled, in warm-up, or no history -> plain Picard path.
-                if (depth == 0 || iter_count < warmup_iters || hist_len == 0) {
+                if (depth == 0 || iter_count < warmup_iters || G_hist.empty()) {
                     return std::nullopt;
                 }
 
                 const Eigen::VectorXd f_k = G_k - x_k;
-                const int m_k = std::min(hist_len, depth);
+                const int m_k = std::min(static_cast<int>(G_hist.size()), depth);
 
                 // AA solve: F * alpha = f_k  (LS, m_k columns).
                 // Build the m_k x m_k normal-equation system FᵀF · α = Fᵀ·f_k
@@ -73,7 +72,6 @@ namespace mhs::sim {
                         if (reset_on_growth) {
                             G_hist.clear();
                             x_hist.clear();
-                            hist_len = 0;
                         }
                         return std::nullopt;
                     }
@@ -87,13 +85,12 @@ namespace mhs::sim {
                 if (depth == 0) {
                     return;
                 }
-                G_hist.insert(G_hist.begin(), G_k);
-                x_hist.insert(x_hist.begin(), x_k);
+                G_hist.push_front(G_k);
+                x_hist.push_front(x_k);
                 if (static_cast<int>(G_hist.size()) > depth) {
                     G_hist.pop_back();
                     x_hist.pop_back();
                 }
-                hist_len = static_cast<int>(G_hist.size());
                 ++iter_count;
             }
 
@@ -101,7 +98,6 @@ namespace mhs::sim {
             {
                 G_hist.clear();
                 x_hist.clear();
-                hist_len = 0;
             }
         };
 
