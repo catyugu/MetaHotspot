@@ -373,12 +373,8 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity)
 {
-    if (!m) {
-        SET_ERR("NULL pointer: m");
-        return MHS_MATERIAL_ID_INVALID;
-    }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
+    if (!m || !name) {
+        SET_ERR("NULL pointer");
         return MHS_MATERIAL_ID_INVALID;
     }
     try {
@@ -397,7 +393,7 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
 
         m->builder.add_material({name, std::move(spec)});
-        mhs_material_id_t id = m->builder.peek().materials.size() - 1;
+        mhs_material_id_t id = static_cast<mhs_material_id_t>(m->builder.peek().materials.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -410,7 +406,10 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
 MHS_API mhs_layer_id_t mhs_model_add_layer(
     mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_LAYER_ID_INVALID;
+    }
     if (!thickness) {
         SET_ERR("NULL pointer: thickness");
         return MHS_LAYER_ID_INVALID;
@@ -437,7 +436,10 @@ MHS_API mhs_layer_id_t mhs_model_add_layer(
 MHS_API mhs_block_id_t mhs_model_add_block(mhs_model_t* m, mhs_layer_id_t layer, const char* material_name,
     const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_BLOCK_ID_INVALID;
+    }
     if (layer == MHS_LAYER_ID_INVALID) {
         SET_ERR("invalid layer ID");
         return MHS_BLOCK_ID_INVALID;
@@ -506,10 +508,13 @@ static mhs_status_t _check_boundary_id(const mhs_model_t* m, mhs_boundary_id_t i
 
 MHS_API mhs_boundary_id_t mhs_model_add_boundary(mhs_model_t* m)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_BOUNDARY_ID_INVALID;
+    }
     try {
         m->pending_boundaries.emplace_back();
-        mhs_boundary_id_t id = m->pending_boundaries.size() - 1;
+        mhs_boundary_id_t id = static_cast<mhs_boundary_id_t>(m->pending_boundaries.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -610,7 +615,10 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
 
 MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_FUNCTION_ID_INVALID;
@@ -621,7 +629,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char
     }
     try {
         m->builder.add_function({name, mhs::model::ExpressionFunctionSpec {expression}});
-        mhs_function_id_t id = m->builder.peek().functions.size() - 1;
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -634,14 +642,17 @@ MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char
 MHS_API mhs_function_id_t mhs_model_add_function_gauss(
     mhs_model_t* m, const char* name, double amplitude, double tau, double center)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_FUNCTION_ID_INVALID;
     }
     try {
         m->builder.add_function({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}});
-        mhs_function_id_t id = m->builder.peek().functions.size() - 1;
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -654,14 +665,17 @@ MHS_API mhs_function_id_t mhs_model_add_function_gauss(
 MHS_API mhs_function_id_t mhs_model_add_function_sine(
     mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_FUNCTION_ID_INVALID;
     }
     try {
         m->builder.add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}});
-        mhs_function_id_t id = m->builder.peek().functions.size() - 1;
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -674,14 +688,17 @@ MHS_API mhs_function_id_t mhs_model_add_function_sine(
 MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
     mhs_model_t* m, const char* name, double amplitude, double alpha, double beta)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_FUNCTION_ID_INVALID;
     }
     try {
         m->builder.add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}});
-        mhs_function_id_t id = m->builder.peek().functions.size() - 1;
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -694,7 +711,10 @@ MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
 MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
     mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_FUNCTION_ID_INVALID;
@@ -712,7 +732,7 @@ MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
         m->builder.add_function({name, std::move(spec)});
-        mhs_function_id_t id = m->builder.peek().functions.size() - 1;
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
         tls_err.clear();
         return id;
     }
@@ -728,14 +748,17 @@ MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
 
 MHS_API mhs_probe_id_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
 {
-    CHECK_NULL(m);
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_PROBE_ID_INVALID;
+    }
     if (!name) {
         SET_ERR("NULL pointer: name");
         return MHS_PROBE_ID_INVALID;
     }
     try {
         m->builder.add_observation_point({name, std::to_string(x), std::to_string(y), std::to_string(z)});
-        mhs_probe_id_t id = m->builder.peek().observation_points.size() - 1;
+        mhs_probe_id_t id = static_cast<mhs_probe_id_t>(m->builder.peek().observation_points.size() - 1);
         tls_err.clear();
         return id;
     }
