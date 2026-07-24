@@ -84,6 +84,28 @@ class Compiled:
         n = self.cell_count()
         return np.ctypeslib.as_array(ptr, shape=(n,))
 
+    # ---- Grid topology ----
+
+    def grid_count(self) -> int:
+        """Total number of cells in the Cartesian grid (nx * ny * nz)."""
+        return self._dll.mhs_compiled_grid_count(self._handle)
+
+    def grid_to_cell(self) -> np.ndarray:
+        """Map from linear grid index (ix-iy-iz) to active-cell index.
+
+        Returns a ``size_t`` array (``np.uintp``) of length grid_count().
+        Entry ``SIZE_MAX`` (``np.iinfo(np.uintp).max``) means the grid cell
+        is inactive (not part of any layer/block).  Non-negative values are
+        indices into cell-level arrays such as *cell_temperatures*,
+        *layer_ids*, *block_ids*, etc.
+
+        The linear grid index follows the ix-iy-iz convention:
+            idx = ix * (ny * nz) + iy * nz + iz
+        """
+        ptr = self._dll.mhs_compiled_grid_to_cell(self._handle)
+        n = self.grid_count()
+        return np.ctypeslib.as_array(ptr, shape=(n,))
+
     # ---- Solve ----
 
     def solve(self, opts: SolverOpts | None = None) -> Solution:

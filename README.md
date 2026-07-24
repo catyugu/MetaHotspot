@@ -68,3 +68,19 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 - **Eigen**：稠密向量、稀疏矩阵，以及 EigenSparseLU / EigenBiCGSTAB 求解器。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
+
+## 单元排序约定
+
+整个代码库（几何编译器、组装器、VTU写入器、Python API）统一使用 **ix-iy-iz** 遍历顺序。
+
+```text
+for (ix = 0; ix < nx; ix++)
+  for (iy = 0; iy < ny; iy++)
+    for (iz = 0; iz < nz; iz++)
+```
+
+线性化公式：`grid_index = ix * (ny * nz) + iy * nz + iz`
+
+活跃单元（属于某个 layer/block 的网格单元）被连续编号，称为 **SoA（Structure-of-Arrays）顺序**。`grid_to_cell[grid_index]` 返回该网格位置对应的活跃单元索引，-1 表示非活跃。`cell_temperatures()`、`layer_ids()`、`block_ids()` 等所有单元级数组都按 SoA 顺序排列。
+
+**层的 Z 方向：** 层从上（高 Z）到下（低 Z）排列。Layer 0 在顶部（最高 Z 值），Layer N-1 在底部。

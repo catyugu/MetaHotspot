@@ -70,12 +70,12 @@ class CscView(ctypes.Structure):
 
 
 # ---------------------------------------------------------------------------
-# ID types are plain int32_t
+# ID types are uint32_t (UINT32_MAX = invalid)
 # ---------------------------------------------------------------------------
 
-MHS_LAYER_ID_INVALID = -1
-MHS_BLOCK_ID_INVALID = -1
-MHS_MATERIAL_ID_INVALID = -1
-MHS_BOUNDARY_ID_INVALID = -1
-MHS_FUNCTION_ID_INVALID = -1
-MHS_PROBE_ID_INVALID = -1
+MHS_LAYER_ID_INVALID = 0xFFFFFFFF
+MHS_BLOCK_ID_INVALID = 0xFFFFFFFF
+MHS_MATERIAL_ID_INVALID = 0xFFFFFFFF
+MHS_BOUNDARY_ID_INVALID = 0xFFFFFFFF
+MHS_FUNCTION_ID_INVALID = 0xFFFFFFFF
+MHS_PROBE_ID_INVALID = 0xFFFFFFFF
