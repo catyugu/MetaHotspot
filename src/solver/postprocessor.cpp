@@ -1,5 +1,6 @@
 #include "solver/interpolation.hpp"
 #include "solver/postprocessor.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <limits>
