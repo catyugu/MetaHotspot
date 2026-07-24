@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <ranges>
 #include <vector>
 
 namespace mhs::post {
@@ -106,30 +107,18 @@ namespace mhs::post {
 
     double max_temperature(std::span<const double> T)
     {
-        if (T.empty())
+        auto filtered = T | std::views::filter([](double v) { return !std::isnan(v); });
+        if (filtered.empty())
             return 0.0;
-        double max_val = std::numeric_limits<double>::quiet_NaN();
-        for (double v : T) {
-            if (std::isnan(v))
-                continue;
-            if (std::isnan(max_val) || v > max_val)
-                max_val = v;
-        }
-        return std::isnan(max_val) ? 0.0 : max_val;
+        return std::ranges::max(filtered);
     }
 
     double min_temperature(std::span<const double> T)
     {
-        if (T.empty())
+        auto filtered = T | std::views::filter([](double v) { return !std::isnan(v); });
+        if (filtered.empty())
             return 0.0;
-        double min_val = std::numeric_limits<double>::quiet_NaN();
-        for (double v : T) {
-            if (std::isnan(v))
-                continue;
-            if (std::isnan(min_val) || v < min_val)
-                min_val = v;
-        }
-        return std::isnan(min_val) ? 0.0 : min_val;
+        return std::ranges::min(filtered);
     }
 
 } // namespace mhs::post
