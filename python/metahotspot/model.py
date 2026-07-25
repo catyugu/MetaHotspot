@@ -387,6 +387,35 @@ class Model:
             raise RuntimeError(f"add_function_piecewise failed: {err}")
         return fid
 
+    def add_function_periodic_piecewise_constant(
+        self, name: str, values: np.ndarray, period: float
+    ) -> int:
+        """Register a periodic piecewise-constant function.
+
+        The function repeats ``values`` cyclically with the given period.
+        In the first period [0, period) the output is ``values[0]``,
+        in the second [period, 2*period) it is ``values[1]``, ...,
+        wrapping around after the last value.
+
+        Parameters
+        ----------
+        values : ndarray of shape (N,) — the constant values per cycle.
+        period : float — duration of one cycle.
+        """
+        n = values.shape[0]
+        c_values = (ctypes.c_double * n)()
+        for i in range(n):
+            c_values[i] = values[i]
+        fid = self._dll.mhs_model_add_function_periodic_piecewise_constant(
+            self._handle, name.encode("utf-8"), c_values, n, period
+        )
+        if fid == MHS_FUNCTION_ID_INVALID:
+            err = self._dll.mhs_last_error()
+            raise RuntimeError(
+                f"add_function_periodic_piecewise_constant failed: {err}"
+            )
+        return fid
+
     # ---- Probes & fluid boundaries ----
 
     def add_probe(self, name: str, x: float, y: float, z: float) -> int:

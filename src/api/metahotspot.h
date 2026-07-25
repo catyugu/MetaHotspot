@@ -226,6 +226,8 @@ MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
     mhs_model_t* m, const char* name, double amplitude, double alpha, double beta);
 MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
     mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count);
+MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
+    mhs_model_t* m, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */

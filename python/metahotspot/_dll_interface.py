@@ -211,6 +211,15 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         ctypes.c_size_t,
     ]
 
+    dll.mhs_model_add_function_periodic_piecewise_constant.restype = ctypes.c_uint32
+    dll.mhs_model_add_function_periodic_piecewise_constant.argtypes = [
+        ctypes.POINTER(MhsModel),
+        ctypes.c_char_p,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+        ctypes.c_double,
+    ]
+
     # ---- Probes / fluid boundaries ----
     dll.mhs_model_add_probe.restype = ctypes.c_uint32
     dll.mhs_model_add_probe.argtypes = [

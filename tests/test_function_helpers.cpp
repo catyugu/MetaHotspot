@@ -83,6 +83,68 @@ namespace {
         EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 2.5);
     }
 
+    // ---- 周期分段常数 ------------------------------------------------------
+
+    TEST(FunctionHelpers, PeriodicPiecewiseConstantBasic)
+    {
+        // period=10, values=[1,2,3]
+        // [0,10)     → 1
+        // [10,20)    → 2
+        // [20,30)    → 3
+        // [30,40)    → 1  (wrap)
+        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {1.0, 2.0, 3.0});
+        FieldContext ctx {};
+        const double t0 = 0.0;
+        EXPECT_DOUBLE_EQ(ev(&t0, 1, ctx), 1.0);
+        const double t1 = 5.0;
+        EXPECT_DOUBLE_EQ(ev(&t1, 1, ctx), 1.0);
+        const double t2 = 9.999;
+        EXPECT_DOUBLE_EQ(ev(&t2, 1, ctx), 1.0);
+        const double t3 = 10.0;
+        EXPECT_DOUBLE_EQ(ev(&t3, 1, ctx), 2.0);
+        const double t4 = 15.0;
+        EXPECT_DOUBLE_EQ(ev(&t4, 1, ctx), 2.0);
+        const double t5 = 20.0;
+        EXPECT_DOUBLE_EQ(ev(&t5, 1, ctx), 3.0);
+        const double t6 = 30.0;
+        EXPECT_DOUBLE_EQ(ev(&t6, 1, ctx), 1.0);
+        const double t7 = 35.0;
+        EXPECT_DOUBLE_EQ(ev(&t7, 1, ctx), 1.0);
+    }
+
+    TEST(FunctionHelpers, PeriodicPiecewiseConstantEmpty)
+    {
+        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {});
+        FieldContext ctx {};
+        const double t = 5.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 0.0);
+    }
+
+    TEST(FunctionHelpers, PeriodicPiecewiseConstantSingleValue)
+    {
+        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {42.0});
+        FieldContext ctx {};
+        for (double t = -20.0; t <= 20.0; t += 5.0) {
+            EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 42.0);
+        }
+    }
+
+    TEST(FunctionHelpers, PeriodicPiecewiseConstantNegativeTime)
+    {
+        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {1.0, 2.0, 3.0});
+        FieldContext ctx {};
+        // period=10, values=[1,2,3]
+        // 时间轴：
+        // ...[-30,-20)→values[0]=1  [-20,-10)→values[1]=2  [-10,0)→values[2]=3
+        // [0,10)→values[0]=1  [10,20)→values[1]=2  [20,30)→values[2]=3 ...
+        const double t = -5.0;
+        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 3.0);
+        const double t2 = -15.0;
+        EXPECT_DOUBLE_EQ(ev(&t2, 1, ctx), 2.0);
+        const double t3 = -30.0;
+        EXPECT_DOUBLE_EQ(ev(&t3, 1, ctx), 1.0);
+    }
+
     // ---- 字面替换 --------------------------------------------------------
 
     std::vector<mhs::model::NamedFunction> functions_with_gauss()

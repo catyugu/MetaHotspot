@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -71,6 +72,30 @@ namespace mhs::sim {
             const auto& p2 = *it;
             double t = (x - p1.x) / (p2.x - p1.x);
             return p1.y + t * (p2.y - p1.y);
+        };
+    }
+
+    mhs::core::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values)
+    {
+        return [period, values = std::move(values)](
+                   const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+            double t_val = args[0];
+            if (values.empty())
+                return 0.0;
+            const std::size_t n = values.size();
+            if (period <= 0.0 || n == 1)
+                return values.front();
+
+            // 每个完整周期 period 对应一个 values[i]，
+            // 第 i 个周期 [i*period, (i+1)*period) 取 values[i % n]
+            // cycle = floor(t / period)，C++ 整数除法向零截断不适合负数，
+            // 所以手动用 std::floor。
+            const double ratio = t_val / period;
+            const auto cycle = static_cast<std::int64_t>(std::floor(ratio));
+            auto idx = cycle % static_cast<std::int64_t>(n);
+            if (idx < 0)
+                idx += static_cast<std::int64_t>(n);
+            return values[static_cast<std::size_t>(idx)];
         };
     }
 
@@ -168,6 +193,9 @@ namespace mhs::sim {
                     }
                     else if constexpr (std::is_same_v<T, mhs::model::PiecewiseFunctionSpec>) {
                         ev = make_piecewise_evaluator(variant.points);
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::model::PeriodicPiecewiseConstantFunctionSpec>) {
+                        ev = make_periodic_piecewise_constant_evaluator(variant.period, variant.values);
                     }
                 },
                 function.value);

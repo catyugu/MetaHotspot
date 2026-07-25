@@ -742,6 +742,44 @@ MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
     }
 }
 
+MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
+    mhs_model_t* m, const char* name, const double* values, size_t count, double period)
+{
+    if (!m) {
+        SET_ERR("NULL pointer");
+        return MHS_FUNCTION_ID_INVALID;
+    }
+    if (!name) {
+        SET_ERR("NULL pointer: name");
+        return MHS_FUNCTION_ID_INVALID;
+    }
+    if (!values) {
+        SET_ERR("NULL pointer: values");
+        return MHS_FUNCTION_ID_INVALID;
+    }
+    if (count < 1) {
+        SET_ERR("periodic_piecewise_constant requires count >= 1");
+        return MHS_FUNCTION_ID_INVALID;
+    }
+    if (period <= 0.0) {
+        SET_ERR("period must be positive");
+        return MHS_FUNCTION_ID_INVALID;
+    }
+    try {
+        mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
+        spec.period = period;
+        spec.values.assign(values, values + count);
+        m->builder.add_function({name, std::move(spec)});
+        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
+        tls_err.clear();
+        return id;
+    }
+    catch (const std::exception& e) {
+        SET_ERR("add_function_periodic_piecewise_constant(" << name << "): " << e.what());
+        return MHS_FUNCTION_ID_INVALID;
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
