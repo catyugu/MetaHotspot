@@ -65,13 +65,13 @@ namespace mhs::sim {
         // Steady: single non-linear solve, then output.
         if (model.study_type == mhs::core::StudyType::Steady) {
             LinearSystemProvider build_ls = [&](std::vector<double>& state) -> LinearSystem {
-                AssembleContext ctx {state, step.current_time};
+                AssembleContext ctx {state, 0.0};
                 auto ops = assembler.assemble(ctx);
                 return {std::move(ops.K), std::move(ops.f)};
             };
             nonlinear_solve(build_ls, step.state, *solver, options.nonlinear);
             auto cell_temperature = extract_cell_temperature(model, step.state);
-            probe_recorder.record(step.current_time, cell_temperature);
+            probe_recorder.record(0.0, cell_temperature);
             return {std::move(step.state), std::move(cell_temperature), step.current_time, probe_recorder.traces()};
         }
 
@@ -84,8 +84,6 @@ namespace mhs::sim {
         const double min_dt = step_ctrl.min_dt();
         const double max_dt = step_ctrl.max_dt();
 
-        // Solution-history ring buffer: capacity 2 (one for current, one for
-        // the previous step — enough for BDF2's startup sequence).
         step.accepted = mhs::core::SolutionHistory(static_cast<std::size_t>(state_count), 2);
         step_ctrl.rebuild(duration, output_dt);
 
@@ -103,7 +101,7 @@ namespace mhs::sim {
 
             // Re-assemble state-dependent operators inside each non-linear iteration.
             LinearSystemProvider provider = [&](std::vector<double>& state) -> LinearSystem {
-                AssembleContext ctx {state, step.current_time};
+                AssembleContext ctx {state, step.current_time + step.dt};
                 return time_scheme::build_system(
                     time_scheme::IntegratorKind::Bdf1, assembler.assemble(ctx), step.accepted, step.dt);
             };
