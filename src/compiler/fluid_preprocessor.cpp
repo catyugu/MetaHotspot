@@ -1,7 +1,6 @@
 #include "compiler/fluid_preprocessor.hpp"
 
 #include "compiler/fluid_physics.hpp"
-#include "logging/logger.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include "runtime/constants.hpp"
 #include "runtime/mesh.hpp"
@@ -263,8 +262,7 @@ namespace mhs::sim::fluid {
             solver->compute(matrix);
             Eigen::VectorXd pressure = solver->solve(rhs);
             if (!solver->success()) {
-                MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", count, static_cast<int>(matrix.nonZeros()));
-                return false;
+                throw std::runtime_error("fluid pressure solve failed");
             }
             workspace.pressure.assign(pressure.data(), pressure.data() + pressure.size());
             return true;
@@ -340,8 +338,8 @@ namespace mhs::sim::fluid {
         apply_boundaries(model, workspace, boundaries, si_scale);
         compute_channel_dimensions(model, workspace);
         initialize_hydraulic_conductance(model, workspace);
-        if (solve_pressure(model, workspace))
-            compute_face_volume_flux(model, workspace);
+        solve_pressure(model, workspace);
+        compute_face_volume_flux(model, workspace);
     }
 
 } // namespace mhs::sim::fluid

@@ -3,17 +3,32 @@
 from __future__ import annotations
 
 import ctypes
+from typing import NamedTuple
 
 import numpy as np
 
 from metahotspot._error import check
-from metahotspot.types import MhsSolution, SolverOpts
+from metahotspot.types import MhsSolution, SolutionView, SolverOpts
+
+
+SolutionViewData = NamedTuple(
+    "SolutionViewData",
+    [
+        ("cell_count", int),
+        ("state_count", int),
+        ("node_count", int),
+        ("time", float),
+        ("cell_temperatures", np.ndarray),
+        ("states", np.ndarray),
+        ("node_temperatures", np.ndarray),
+    ],
+)
 
 
 class Solution:
     """Read-only simulation result.
 
-    Do not instantiate directly — use ``Compiled.solve()`` or ``Model.solve()``.
+    Do not instantiate directly — use ``Compiled.solve()``.
     """
 
     def __init__(self) -> None:
@@ -38,19 +53,6 @@ class Solution:
         self._compiled_handle = compiled_handle  # keep for write_vtu
         return self
 
-    @classmethod
-    def _solve_model(
-        cls, dll, model_handle, opts: SolverOpts | None = None
-    ) -> Solution:
-        """Compile-and-solve a model, wrapping the result."""
-        self = cls()
-        self._dll = dll
-        pp = ctypes.POINTER(MhsSolution)()
-        opts_ptr = ctypes.byref(opts) if opts is not None else None
-        check(dll.mhs_solve(model_handle, opts_ptr, ctypes.byref(pp)), "solve")
-        self._handle = pp
-        return self
-
     def __del__(self) -> None:
         self.close()
 
@@ -59,37 +61,53 @@ class Solution:
             self._dll.mhs_solution_destroy(self._handle)
             self._handle = None
 
-    # ---- Accessors ----
+    # ---- View (single C call replaces ~7 individual accessors) ----
+
+    def view(self) -> SolutionViewData:
+        """Return all solution bulk data in one call to the C layer."""
+        v = SolutionView()
+        check(
+            self._dll.mhs_solution_view(self._handle, ctypes.byref(v)), "solution_view"
+        )
+        return SolutionViewData(
+            cell_count=v.cell_count,
+            state_count=v.state_count,
+            node_count=v.node_count,
+            time=v.time,
+            cell_temperatures=np.ctypeslib.as_array(
+                v.cell_temperatures, shape=(v.cell_count,)
+            ),
+            states=np.ctypeslib.as_array(v.states, shape=(v.state_count,)),
+            node_temperatures=np.ctypeslib.as_array(
+                v.node_temperatures, shape=(v.node_count,)
+            ),
+        )
+
+    # ---- Shortcuts (convenience wrappers around view()) ----
 
     def state_count(self) -> int:
-        return self._dll.mhs_solution_state_count(self._handle)
+        return self.view().state_count
 
     def cell_count(self) -> int:
-        return self._dll.mhs_solution_cell_count(self._handle)
+        return self.view().cell_count
 
     def node_count(self) -> int:
-        return self._dll.mhs_solution_node_count(self._handle)
+        return self.view().node_count
 
     def time(self) -> float:
-        return self._dll.mhs_solution_time(self._handle)
+        return self.view().time
 
     def states(self) -> np.ndarray:
-        """Complete system state (read-only view). Entries may not be temperatures."""
-        n = self.state_count()
-        ptr = self._dll.mhs_solution_states(self._handle)
-        return np.ctypeslib.as_array(ptr, shape=(n,))
+        """Complete system state (read-only view)."""
+        return self.view().states
 
     def cell_temperatures(self) -> np.ndarray:
         """Cell-centroid temperature field (read-only view)."""
-        n = self.cell_count()
-        ptr = self._dll.mhs_solution_cell_temperatures(self._handle)
-        return np.ctypeslib.as_array(ptr, shape=(n,))
+        return self.view().cell_temperatures
 
     def node_temperatures(self) -> np.ndarray:
-        """Node temperature field from cell-to-node interpolation (read-only view)."""
-        n = self.node_count()
-        ptr = self._dll.mhs_solution_node_temperatures(self._handle)
-        return np.ctypeslib.as_array(ptr, shape=(n,))
+        """Node temperature field (read-only view)."""
+        return self.view().node_temperatures
 
     # ---- Probes ----
 
@@ -119,24 +137,9 @@ class Solution:
     # ---- VTU export ----
 
     def write_vtu(self, path: str) -> None:
-        """Export the temperature field to a VTU file.
-
-        Writes an unstructured-grid VTU with hexahedral cells matching the
-        active subset of the simulation mesh.  Only active cells (those
-        belonging to a layer/block) are included; inactive grid cells are
-        omitted.
-
-        Parameters
-        ----------
-        path : str or Path
-            Output ``.vtu`` file path.  Parent directories are created
-            automatically.
-        """
+        """Export the temperature field to a VTU file."""
         if self._compiled_handle is None:
-            raise RuntimeError(
-                "write_vtu requires a solution from Compiled.solve(). "
-                "Solutions from Model.solve() do not retain the compiled handle."
-            )
+            raise RuntimeError("write_vtu requires a solution from Compiled.solve().")
         check(
             self._dll.mhs_compiled_write_vtu(
                 self._compiled_handle,

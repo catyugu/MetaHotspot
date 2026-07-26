@@ -12,7 +12,7 @@ namespace mhs::io {
 
     void write_vtu(const std::string& path,
                    const mhs::core::Model& model,
-                   std::span<const double> node_temperature);
+                   std::span<const double> cell_temperature);
 
     void write_xml(const std::string& input_path,
                    const std::string& output_path,
@@ -34,8 +34,8 @@ namespace mhs::sim {
 
 struct ResolvedRect         { GeometryOperation operation; double x, y, width, height; };  // SI
 struct ResolvedBlock        { std::vector<ResolvedRect> rects;
-                              std::string material;
-                              std::string volumetric_heat_source; };
+                              TableIndex material_id;
+                              TableIndex heat_source_idx; };
 struct ResolvedLayerGeometry{ std::vector<ResolvedBlock> blocks;
                               double z_start, z_end; };  // SI
 
@@ -45,9 +45,7 @@ std::vector<ResolvedLayerGeometry> resolve_geometry(
 
 mhs::core::CellFields assign_cell_layers(
     const std::vector<ResolvedLayerGeometry>& resolved_layers,
-    const mhs::core::MeshGeometry& mesh,
-    const std::unordered_map<std::string, size_t>& name_to_idx,
-    const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map);
+    const mhs::core::MeshGeometry& mesh);
 
 void resolve_boundary_patches(
     const mhs::core::MeshGeometry& mesh,

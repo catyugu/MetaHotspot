@@ -1,10 +1,10 @@
 #include "compiler/model_functions.hpp"
-#include "logging/logger.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -148,9 +148,8 @@ namespace mhs::sim {
                 std::string_view name(expr_str.data() + start, i - start);
                 if (i < n && expr_str[i] == '(') {
                     if (!is_known_builtin(name) && !has_function(functions, name)) {
-                        MHS_LOG_WARN(
-                            "unknown function {} referenced in {}. returning raw string", std::string(name), expr_str);
-                        return std::string(expr_str);
+                        throw std::runtime_error(
+                            "unknown function '" + std::string(name) + "' referenced in expression '" + expr_str + "'");
                     }
                     out.append(expr_str, start, i - start);
                 }

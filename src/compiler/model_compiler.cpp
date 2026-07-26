@@ -35,7 +35,6 @@ namespace mhs::sim {
             return 1.0;
         }
 
-        /// Compute cell widths (d) and centers (c) from vertex coordinates along one axis.
         inline void compute_cell_spacing(
             std::span<const double> vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
         {
@@ -48,7 +47,6 @@ namespace mhs::sim {
             }
         }
 
-        /// Copy scalar study parameters from the definition to Model.
         inline void copy_scalar_parameters(mhs::core::Model& model, const mhs::model::ModelDefinition& definition)
         {
             model.study_type = definition.settings.study_type == mhs::model::StudyType::Transient
@@ -59,8 +57,6 @@ namespace mhs::sim {
             model.transient_time_step = definition.settings.transient_output_interval;
         }
 
-        /// Evaluate geometry variables and register all user-defined functions.
-        /// Returns a SymbolTable populated with both geometry variables and native functions.
         mhs::core::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec>& variables,
             const std::vector<mhs::model::NamedFunction>& functions)
         {
@@ -74,7 +70,6 @@ namespace mhs::sim {
             return symbols;
         }
 
-        /// Convert observation point expressions to SI-unit ProbePoints.
         std::vector<mhs::core::ProbePoint> build_observation_points(
             const std::vector<mhs::model::ObservationPointSpec>& src, const mhs::core::SymbolTable& symbols,
             double si_scale)
@@ -90,39 +85,6 @@ namespace mhs::sim {
                 out.push_back(std::move(p));
             }
             return out;
-        }
-
-        /// Build the heat source expression table and the per-layer, per-block index map.
-        /// Returns block_hs_map[l][b] = index into heat_source_table for layer l, block b.
-        std::vector<std::vector<mhs::core::TableIndex>> build_heat_source_table(
-            std::vector<mhs::core::CompiledExpression>& heat_source_table,
-            const std::vector<ResolvedLayerGeometry>& resolved_layers,
-            const std::vector<mhs::model::NamedFunction>& functions, const mhs::core::SymbolTable& symbols)
-        {
-            heat_source_table.clear();
-
-            std::vector<std::vector<mhs::core::TableIndex>> block_hs_map(resolved_layers.size());
-            for (size_t l = 0; l < resolved_layers.size(); l++) {
-                block_hs_map[l].resize(resolved_layers[l].blocks.size(), 0);
-                for (size_t b = 0; b < resolved_layers[l].blocks.size(); b++) {
-                    const auto hs_idx = static_cast<mhs::core::TableIndex>(heat_source_table.size());
-                    const std::string& raw = resolved_layers[l].blocks[b].volumetric_heat_source;
-                    heat_source_table.push_back(
-                        mhs::core::parse(substitute_function_args(raw, "t", functions), symbols));
-                    block_hs_map[l][b] = hs_idx;
-                }
-            }
-            return block_hs_map;
-        }
-
-        const mhs::model::MaterialSpec& find_material(
-            const std::vector<mhs::model::NamedMaterial>& materials, const std::string& name)
-        {
-            const auto it = std::find_if(materials.begin(), materials.end(),
-                [&](const mhs::model::NamedMaterial& material) { return material.name == name; });
-            if (it == materials.end())
-                throw std::out_of_range("Unknown material: " + name);
-            return it->value;
         }
 
         DefaultBoundary compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
@@ -179,6 +141,48 @@ namespace mhs::sim {
             return compiled;
         }
 
+        // Build name-to-index from ModelDefinition::materials (insertion order).
+        std::unordered_map<std::string, size_t> build_name_to_idx(
+            const std::vector<mhs::model::NamedMaterial>& materials)
+        {
+            std::unordered_map<std::string, size_t> map;
+            map.reserve(materials.size());
+            for (size_t i = 0; i < materials.size(); ++i)
+                map[materials[i].name] = i;
+            return map;
+        }
+
+        // Assign material_id and heat_source_idx to ResolvedBlocks, and populate the heat source table.
+        // Walks definition.layers in parallel with resolved_layers so each ResolvedBlock
+        // gets the correct index from the parent BlockSpec's material name + heat source expression.
+        void assign_block_indices(std::vector<ResolvedLayerGeometry>& resolved_layers,
+            const std::vector<mhs::model::LayerSpec>& layer_specs,
+            const std::unordered_map<std::string, size_t>& name_to_idx,
+            std::vector<mhs::core::CompiledExpression>& heat_source_table,
+            const std::vector<mhs::model::NamedFunction>& functions, const mhs::core::SymbolTable& symbols)
+        {
+            heat_source_table.clear();
+            for (size_t l = 0; l < layer_specs.size() && l < resolved_layers.size(); ++l) {
+                auto& rl = resolved_layers[l];
+                const auto& ls = layer_specs[l];
+                for (size_t b = 0; b < ls.blocks.size() && b < rl.blocks.size(); ++b) {
+                    auto& rb = rl.blocks[b];
+                    const auto& bs = ls.blocks[b];
+
+                    // material_id from name table
+                    auto it = name_to_idx.find(bs.material);
+                    if (it == name_to_idx.end())
+                        throw std::out_of_range("unknown material: " + bs.material);
+                    rb.material_id = static_cast<mhs::core::TableIndex>(it->second);
+
+                    // heat_source_idx: compile the heat source expression, append to table
+                    rb.heat_source_idx = static_cast<mhs::core::TableIndex>(heat_source_table.size());
+                    heat_source_table.push_back(
+                        mhs::core::parse(substitute_function_args(bs.volumetric_heat_source, "t", functions), symbols));
+                }
+            }
+        }
+
     } // namespace
 
     mhs::core::Model build_model(const mhs::model::ModelDefinition& definition)
@@ -207,7 +211,6 @@ namespace mhs::sim {
         compute_cell_spacing(definition.mesh.y_vertices, mesh.dy, mesh.cy, si_scale);
         compute_cell_spacing(definition.mesh.z_vertices, mesh.dz, mesh.cz, si_scale);
 
-        // Copy original mesh vertices (SI) for later query via C API.
         auto scale_verts = [&](std::span<const double> src, std::vector<double>& dst) {
             dst.resize(src.size());
             for (size_t i = 0; i < src.size(); ++i)
@@ -219,52 +222,45 @@ namespace mhs::sim {
 
         auto resolved_layers = resolve_geometry(definition.layers, si_scale, symbols);
 
-        // Collect unique material names from resolved blocks.
-        std::vector<std::string> material_names;
-        std::unordered_map<std::string, size_t> name_to_idx;
-        for (const auto& rl : resolved_layers)
-            for (const auto& rb : rl.blocks)
-                if (name_to_idx.find(rb.material) == name_to_idx.end()) {
-                    name_to_idx[rb.material] = material_names.size();
-                    material_names.push_back(rb.material);
-                }
+        // Build material index from ModelDefinition::materials order.
+        auto name_to_idx = build_name_to_idx(definition.materials);
 
-        // Compile material property expressions.
-        model.material_table.resize(material_names.size());
+        // Compile material properties in ModelDefinition::materials order.
+        model.material_table.resize(definition.materials.size());
         mhs::sim::fluid::FluidMaterialData fluid_materials;
-        fluid_materials.initial_viscosity.assign(material_names.size(), std::nullopt);
-        for (size_t m = 0; m < material_names.size(); m++) {
-            const auto& mat = find_material(definition.materials, material_names[m]);
-            auto compile = [&](const std::string& expr) {
+        fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
+
+        for (size_t m = 0; m < definition.materials.size(); m++) {
+            const auto& mat = definition.materials[m].value;
+            auto compile_mat = [&](const std::string& expr) {
                 return mhs::core::parse(substitute_function_args(expr, "T", definition.functions), symbols);
             };
             auto& props = model.material_table[m];
-            props.kx = compile(mat.conductivity_x);
-            props.ky = compile(mat.conductivity_y);
-            props.kz = compile(mat.conductivity_z);
-            props.rho = compile(mat.density);
-            props.c = compile(mat.specific_heat);
+            props.kx = compile_mat(mat.conductivity_x);
+            props.ky = compile_mat(mat.conductivity_y);
+            props.kz = compile_mat(mat.conductivity_z);
+            props.rho = compile_mat(mat.density);
+            props.c = compile_mat(mat.specific_heat);
             if (mat.dynamic_viscosity.has_value()) {
                 fluid_materials.initial_viscosity[m]
-                    = compile(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
+                    = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
             }
         }
 
-        // Build heat source table + index map (must precede assign_cell_layers).
-        auto block_hs_map
-            = build_heat_source_table(model.heat_source_table, resolved_layers, definition.functions, symbols);
+        // Assign material_id and heat_source_idx to resolved blocks.
+        assign_block_indices(
+            resolved_layers, definition.layers, name_to_idx, model.heat_source_table, definition.functions, symbols);
 
-        // Compile ordered boundary patches and register BC parameters.
+        // Compile boundary patches.
         auto& bc_params = model.bc_params;
         auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T", definition.functions); };
         auto compiled_boundaries
             = compile_boundary_patches(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
 
-        // Compile the default boundary fallback.
         auto default_boundary = compile_thermal_boundary(definition.default_boundary, bc_params, bc_rewriter, symbols);
 
         // Cell assignment and boundary resolution.
-        model.cells = assign_cell_layers(resolved_layers, mesh, name_to_idx, block_hs_map);
+        model.cells = assign_cell_layers(resolved_layers, mesh);
         model.dofs.cell_states = {0, model.cells.cell_to_grid.size()};
         model.dofs.total_count = model.dofs.cell_states.count;
         model.initial_state.assign(model.dofs.total_count, model.initial_temperature);

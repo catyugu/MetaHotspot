@@ -50,42 +50,41 @@ typedef struct mhs_assembly_t mhs_assembly_t;
 typedef uint32_t mhs_layer_id_t;
 typedef uint32_t mhs_block_id_t;
 typedef uint32_t mhs_material_id_t;
-typedef uint32_t mhs_boundary_id_t;
 typedef uint32_t mhs_function_id_t;
 typedef uint32_t mhs_probe_id_t;
 
 #define MHS_LAYER_ID_INVALID UINT32_MAX
 #define MHS_BLOCK_ID_INVALID UINT32_MAX
 #define MHS_MATERIAL_ID_INVALID UINT32_MAX
-#define MHS_BOUNDARY_ID_INVALID UINT32_MAX
 #define MHS_FUNCTION_ID_INVALID UINT32_MAX
 #define MHS_PROBE_ID_INVALID UINT32_MAX
 
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
 /* ------------------------------------------------------------------ */
-typedef enum { MHS_STUDY_STEADY, MHS_STUDY_TRANSIENT } mhs_study_t;
+typedef int32_t mhs_study_t;
+enum { MHS_STUDY_STEADY = 0, MHS_STUDY_TRANSIENT = 1 };
 
-typedef enum {
-    MHS_UNIT_METER,
-    MHS_UNIT_MILLIMETER,
-    MHS_UNIT_MICROMETER,
-    MHS_UNIT_NANOMETER,
-    MHS_UNIT_INCH,
-    MHS_UNIT_MIL
-} mhs_length_unit_t;
+typedef int32_t mhs_length_unit_t;
+enum { MHS_UNIT_METER = 0, MHS_UNIT_MILLIMETER, MHS_UNIT_MICROMETER, MHS_UNIT_NANOMETER, MHS_UNIT_INCH, MHS_UNIT_MIL };
 
-typedef enum { MHS_AXIS_X, MHS_AXIS_Y, MHS_AXIS_Z } mhs_axis_t;
+typedef int32_t mhs_axis_t;
+enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
 
-typedef enum { MHS_GEOM_ADD, MHS_GEOM_SUB } mhs_geometry_op_t;
+typedef int32_t mhs_geometry_op_t;
+enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
-typedef enum { MHS_SOLVER_PARDISO, MHS_SOLVER_EIGEN_SPARSE_LU, MHS_SOLVER_EIGEN_BICGSTAB } mhs_solver_type_t;
+typedef int32_t mhs_solver_type_t;
+enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_EIGEN_SPARSE_LU = 1, MHS_SOLVER_EIGEN_BICGSTAB = 2 };
 
-typedef enum { MHS_FLUID_NONE, MHS_FLUID_PRESSURE, MHS_FLUID_MASS_FLOW, MHS_FLUID_VELOCITY } mhs_fluid_bc_t;
+typedef int32_t mhs_fluid_bc_t;
+enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE = 1, MHS_FLUID_MASS_FLOW = 2, MHS_FLUID_VELOCITY = 3 };
 
-typedef enum { MHS_OPERATOR_STIFFNESS, MHS_OPERATOR_CAPACITY } mhs_operator_t;
+typedef int32_t mhs_operator_t;
+enum { MHS_OPERATOR_STIFFNESS = 0, MHS_OPERATOR_CAPACITY = 1 };
 
-typedef enum {
+typedef int32_t mhs_status_t;
+enum {
     MHS_OK = 0,
     MHS_ERR_NULL_PTR = -1,
     MHS_ERR_INVALID_ARG = -2,
@@ -96,7 +95,7 @@ typedef enum {
     MHS_ERR_OOM = -7,
     MHS_ERR_UNSET = -8,
     MHS_ERR_RUNTIME = -9,
-} mhs_status_t;
+};
 
 /* ------------------------------------------------------------------ */
 /*  Composite types                                                    */
@@ -104,17 +103,20 @@ typedef enum {
 
 /** Axis-aligned rectangle on a boundary face. */
 typedef struct {
-    double a_min;
-    double a_max;
-    double b_min;
-    double b_max;
+    double a_min, a_max, b_min, b_max;
 } mhs_rect2d_t;
 
 /** 2-D point (for piecewise-function knot data). */
 typedef struct {
-    double x;
-    double y;
+    double x, y;
 } mhs_point2d_t;
+
+/** One face region for use with atomic boundary functions. */
+typedef struct {
+    mhs_axis_t axis;
+    double coordinate;
+    mhs_rect2d_t rectangle;
+} mhs_face_region_t;
 
 /** Solver options.  Populate with mhs_solver_opts_default(). */
 typedef struct {
@@ -130,31 +132,72 @@ typedef struct {
 /** Non-owning CSC matrix view.  Pointers remain valid while the source
  *  assembly handle remains alive. */
 typedef struct {
-    int32_t rows;
-    int32_t columns;
-    int32_t nnz;
+    int32_t rows, columns, nnz;
     const int32_t* outer_indices;
     const int32_t* inner_indices;
     const double* values;
 } mhs_csc_view_t;
 
-/** Structured mesh geometry (SI units). */
-typedef struct {
-    size_t nx; // cells per axis
-    size_t ny;
-    size_t nz;
-    const double* x_verts; // length nx+1 — valid while compiled handle lives
-    const double* y_verts; // length ny+1
-    const double* z_verts; // length nz+1
-} mhs_mesh_info_t;
-
 /** Diagnostics returned by mhs_compiled_step(). */
 typedef struct {
+    int32_t accepted; // 0/1
     double error_ratio;
     double suggested_dt_factor;
     int32_t nonlinear_iterations;
-    int32_t accepted; // 1 = step accepted, 0 = rejected (LTE exceeded)
 } mhs_step_info_t;
+
+/**
+ * Compiled model metadata view — replaces ~12 individual accessor functions.
+ *
+ * All pointer fields are valid until the compiled model is destroyed.
+ * Grid index: linear_idx = ix * (ny * nz) + iy * nz + iz
+ * grid_to_cell entry == SIZE_MAX means inactive (hole/void).
+ */
+typedef struct {
+    size_t cell_count;
+    size_t state_count;
+    size_t node_count;
+    size_t grid_count; // nx * ny * nz
+    mhs_study_t study_type;
+    double initial_temperature;
+    const uint32_t* layer_ids; // [cell_count]
+    const uint32_t* block_ids; // [cell_count]
+    const size_t* grid_to_cell; // [grid_count]
+    size_t nx, ny, nz;
+    const double* x_verts; // [nx+1]
+    const double* y_verts; // [ny+1]
+    const double* z_verts; // [nz+1]
+} mhs_compiled_metadata_t;
+
+/**
+ * Solution bulk data view.
+ *
+ * All pointer fields are valid until the solution handle is destroyed.
+ * cell_temperatures is the cell-centroid field [cell_count].
+ * states is the full DOF state vector [state_count].
+ * node_temperatures is interpolated to vertices [node_count].
+ */
+typedef struct {
+    size_t cell_count;
+    size_t state_count;
+    size_t node_count;
+    double time;
+    const double* cell_temperatures; // [cell_count]
+    const double* states; // [state_count]
+    const double* node_temperatures; // [node_count]
+} mhs_solution_view_t;
+
+/**
+ * Probe metadata — names and record counts.
+ *
+ * Populated by mhs_solution_probe_metadata().  Must be freed via
+ * mhs_solution_probe_metadata_free() to release heap-allocated arrays.
+ */
+typedef struct {
+    size_t count;
+    const char* const* names; // [count]
+    const size_t* record_counts; // [count]
+} mhs_probe_metadata_t;
 
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
@@ -215,16 +258,20 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mh
     const char* y, const char* width, const char* height);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  boundary conditions (two-step build)       */
+/*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_boundary_id_t mhs_model_add_boundary(mhs_model_t* m);
-MHS_API mhs_status_t mhs_boundary_set_dirichlet(mhs_model_t* m, mhs_boundary_id_t id, const char* temperature);
-MHS_API mhs_status_t mhs_boundary_set_neumann(mhs_model_t* m, mhs_boundary_id_t id, const char* heat_flux);
-MHS_API mhs_status_t mhs_boundary_set_convection(
-    mhs_model_t* m, mhs_boundary_id_t id, const char* coefficient, const char* ambient_temperature);
-MHS_API mhs_status_t mhs_boundary_add_face_region(
-    mhs_model_t* m, mhs_boundary_id_t id, mhs_axis_t axis, double coordinate, mhs_rect2d_t region);
+/** Add a Dirichlet (fixed-temperature) boundary with one or more face regions. */
+MHS_API mhs_status_t mhs_model_add_dirichlet(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature);
+
+/** Add a Neumann (fixed-heat-flux) boundary with one or more face regions. */
+MHS_API mhs_status_t mhs_model_add_neumann(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux);
+
+/** Add a convection (Robin / Cauchy) boundary with one or more face regions. */
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+    const char* coefficient, const char* ambient_temperature);
 
 MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
 MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux);
@@ -259,76 +306,14 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
 /*  Compilation                                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out);
+MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** out);
 MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c);
 
-MHS_API size_t mhs_compiled_cell_count(const mhs_compiled_t* c);
-MHS_API size_t mhs_compiled_state_count(const mhs_compiled_t* c);
-MHS_API size_t mhs_compiled_node_count(const mhs_compiled_t* c);
-MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c);
-MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c);
-
-MHS_API size_t mhs_compiled_layer_count(const mhs_compiled_t* c);
-MHS_API size_t mhs_compiled_block_count(const mhs_compiled_t* c, uint32_t layer);
-
-/** Const access to per-cell layer IDs, length cell_count(). */
-MHS_API const uint32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c);
-/** Const access to per-cell block IDs, length cell_count(). */
-MHS_API const uint32_t* mhs_compiled_block_ids(const mhs_compiled_t* c);
-
-/** Total number of cells in the Cartesian grid (nx * ny * nz). */
-MHS_API size_t mhs_compiled_grid_count(const mhs_compiled_t* c);
-
-/**
- * Map from linear grid index to active-cell index.
- * Length = grid_count().  Entry == SIZE_MAX means inactive.
- * Linear index: idx = ix * (ny * nz) + iy * nz + iz
- * Pointer valid until the compiled model is destroyed. */
-MHS_API const size_t* mhs_compiled_grid_to_cell(const mhs_compiled_t* c);
-
-/** Structured mesh geometry (SI units).  Pointers in *out* are valid while
- *  the compiled handle lives. */
-MHS_API mhs_status_t mhs_compiled_mesh(const mhs_compiled_t* c, mhs_mesh_info_t* out);
-
-/** Execute a single transient step (BDF1).
- *
- *  Advances *state* (length state_count()) from *time* by *dt* and writes
- *  the result into *out_state* (pre-allocated, same length).  *info* receives
- *  diagnostics; pass NULL to skip.
- *
- *  The compiled model must have study = TRANSIENT.  Internally reuses the
- *  same assembly/solver cache across repeated calls for efficiency. */
-MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
-    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts);
-
 /* ------------------------------------------------------------------ */
-/*  Compiled model — pre-solve configuration                           */
+/*  Compiled metadata view (replaces ~12 individual accessors)         */
 /* ------------------------------------------------------------------ */
 
-/**
- * Override the initial state on a compiled model.
- *
- * ``state`` must have length ``mhs_compiled_state_count(c)``.
- * This is useful for chaining a steady-state solve into a transient solve:
- * solve steady, extract the state, set it as the initial state of the
- * transient model, then solve transient.
- */
-MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count);
-
-/* ------------------------------------------------------------------ */
-/*  Solve                                                              */
-/* ------------------------------------------------------------------ */
-
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solver_opts_t* opts, mhs_solution_t** out);
-MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mhs_solution_t** out);
-MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
-
-/* ------------------------------------------------------------------ */
-/*  VTU export                                                         */
-/* ------------------------------------------------------------------ */
-
-/** Write a VTU file from a compiled model + solution (mesh + temperature). */
-MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
+MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly (matrix + RHS extraction)                                */
@@ -337,22 +322,45 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out);
 MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
-
 MHS_API size_t mhs_assembly_n(const mhs_assembly_t* a);
 MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
 MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a);
 
+MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count);
+
 /* ------------------------------------------------------------------ */
-/*  Solution accessors                                                 */
+/*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API size_t mhs_solution_state_count(const mhs_solution_t* s);
-MHS_API size_t mhs_solution_cell_count(const mhs_solution_t* s);
-MHS_API size_t mhs_solution_node_count(const mhs_solution_t* s);
-MHS_API double mhs_solution_time(const mhs_solution_t* s);
-MHS_API const double* mhs_solution_states(const mhs_solution_t* s);
-MHS_API const double* mhs_solution_cell_temperatures(const mhs_solution_t* s);
-MHS_API const double* mhs_solution_node_temperatures(const mhs_solution_t* s);
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solver_opts_t* opts, mhs_solution_t** out);
+MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
+
+/* ------------------------------------------------------------------ */
+/*  Single transient step (BDF1)                                       */
+/* ------------------------------------------------------------------ */
+
+/** Execute a single transient step (BDF1).
+ *
+ *  Advances *state* (length state_count()) from *time* by *dt* and writes
+ *  the result into *out_state* (pre-allocated, same length).  *info* receives
+ *  diagnostics; pass NULL to skip.
+ *
+ *  The compiled model must have study = TRANSIENT. */
+MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
+    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts);
+
+/* ------------------------------------------------------------------ */
+/*  VTU export                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Write a VTU file from a compiled model and solution. */
+MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
+
+/* ------------------------------------------------------------------ */
+/*  Solution view (replaces ~7 individual accessors)                   */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */
@@ -363,6 +371,8 @@ MHS_API const char* mhs_solution_probe_name(const mhs_solution_t* s, size_t inde
 MHS_API size_t mhs_solution_probe_record_count(const mhs_solution_t* s, size_t probe_index);
 MHS_API const double* mhs_solution_probe_times(const mhs_solution_t* s, size_t probe_index);
 MHS_API const double* mhs_solution_probe_values(const mhs_solution_t* s, size_t probe_index);
+MHS_API mhs_status_t mhs_solution_probe_metadata(const mhs_solution_t* s, mhs_probe_metadata_t* out);
+MHS_API mhs_status_t mhs_solution_probe_metadata_free(mhs_probe_metadata_t* meta);
 
 /* ------------------------------------------------------------------ */
 /*  Model introspection (before compile)                               */

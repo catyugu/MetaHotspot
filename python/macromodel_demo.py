@@ -166,11 +166,12 @@ def main():
     model = metahotspot.Model()
     model.read_xml(case_path)
     compiled = model.compile()
-    nc = compiled.cell_count()
+    meta = compiled.metadata()
+    nc = meta.cell_count
     print("  Active cells: {}".format(nc))
 
-    layer_ids = compiled.layer_ids().copy()
-    block_ids = compiled.block_ids().copy()
+    layer_ids = meta.layer_ids.copy()
+    block_ids = meta.block_ids.copy()
 
     assembly = compiled.assemble()
     K = assembly.stiffness_matrix()

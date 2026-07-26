@@ -20,7 +20,7 @@ namespace {
         EXPECT_TRUE(std::filesystem::exists(overlay));
 
         auto definition = mhs::io::read_xml(input);
-        EXPECT_TRUE(mhs::io::merge_fluid_xml(overlay, definition));
+        EXPECT_NO_THROW(mhs::io::merge_fluid_xml(overlay, definition));
         return mhs::sim::build_model(definition);
     }
 

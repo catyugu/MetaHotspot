@@ -133,7 +133,7 @@ namespace mhs::sim {
             solver.compute(linear_system.A);
             const Eigen::VectorXd G_k = solver.solve(linear_system.b);
             if (!solver.success()) {
-                MHS_LOG_WARN("Linear solver failed at Non-Linear iteration {}", iter);
+                throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
             }
             const Eigen::VectorXd x_k = state_map; // capture pre-update state
 

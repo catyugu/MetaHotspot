@@ -6,21 +6,22 @@
 #include <tinyxml2.h>
 
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 
 namespace mhs::io {
 
-    bool merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition)
+    void merge_fluid_xml(const std::string& xml_path, mhs::model::ModelDefinition& definition)
     {
         tinyxml2::XMLDocument doc;
         const tinyxml2::XMLError error = doc.LoadFile(xml_path.c_str());
         if (error != tinyxml2::XML_SUCCESS) {
-            return false;
+            throw std::runtime_error("failed to load fluid overlay XML: " + xml_path);
         }
 
         const tinyxml2::XMLElement* root = doc.FirstChildElement("FluidOverlay");
         if (!root) {
-            return false;
+            throw std::runtime_error("fluid overlay XML '" + xml_path + "' has no <FluidOverlay> root element");
         }
 
         for (const tinyxml2::XMLElement* material_element = root->FirstChildElement("FluidMaterial"); material_element;
@@ -76,8 +77,6 @@ namespace mhs::io {
                 definition.fluid_boundaries.push_back(std::move(boundary));
             }
         }
-
-        return true;
     }
 
 } // namespace mhs::io

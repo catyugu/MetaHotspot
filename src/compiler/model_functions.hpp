@@ -8,15 +8,6 @@
 
 namespace mhs::sim {
 
-    // 闭包构造器。Expression 类型需要传入 SymbolTable 以便内层表达式能正确解析。
-    mhs::core::FieldEvaluator make_expression_evaluator(
-        const std::string& inner_expr, const mhs::core::SymbolTable& symbols);
-    mhs::core::FieldEvaluator make_double_exp_evaluator(double a, double alpha, double beta);
-    mhs::core::FieldEvaluator make_gauss_evaluator(double a, double tau, double x0);
-    mhs::core::FieldEvaluator make_sine_evaluator(double a, double omega, double phi);
-    mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts);
-    mhs::core::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values);
-
     // 字面替换：把字符串中的"孤立 x"（前后都不是字母或下划线）替换为 argname。
     // 同一遍扫描里同时校验所有 name(...) 引用的函数名都在 fns 中已注册；
     // 未注册 → assert。

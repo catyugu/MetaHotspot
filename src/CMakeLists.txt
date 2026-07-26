@@ -1,4 +1,3 @@
-add_subdirectory(model)
 add_subdirectory(numerics)
 add_subdirectory(logging)
 add_subdirectory(runtime)

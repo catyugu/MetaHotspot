@@ -10,6 +10,8 @@
 namespace mhs::model {
 
     using Expression = std::string;
+    using LayerId = uint32_t;
+    using BlockId = uint32_t;
 
     enum class StudyType : uint8_t { Steady, Transient };
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };

@@ -97,7 +97,10 @@ TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
 {
     const std::string xml = R"(<?xml version="1.0" encoding="utf-8"?>
-<Structure StudyType="Steady" LengthUnit="Mm">
+<Structure>
+    <StudyType>Steady</StudyType>
+    <LengthUnit>Mm</LengthUnit>
+    <InitialTemperature>300</InitialTemperature>
     <Layers>
         <Layer>
             <ThicknessExpression>10</ThicknessExpression>
@@ -340,10 +343,9 @@ TEST(IoTest, MergeFluidXmlAddsMaterialsAndBoundariesToDefinition)
     definition.materials.push_back({"water", mhs::model::MaterialSpec {}});
 
     auto path = write_tmp_overlay(xml);
-    const bool merged = mhs::io::merge_fluid_xml(path.string(), definition);
+    ASSERT_NO_THROW(mhs::io::merge_fluid_xml(path.string(), definition));
     std::filesystem::remove(path);
 
-    ASSERT_TRUE(merged);
     ASSERT_EQ(definition.materials.size(), 1u);
     EXPECT_EQ(definition.materials[0].value.dynamic_viscosity, "0.00089");
     ASSERT_EQ(definition.fluid_boundaries.size(), 2u);
@@ -359,21 +361,20 @@ TEST(IoTest, MergeFluidXmlAddsMaterialsAndBoundariesToDefinition)
     EXPECT_DOUBLE_EQ(definition.fluid_boundaries[1].regions[0].coordinate, 8.0);
 }
 
-TEST(IoTest, MergeFluidXmlMissingElementReturnsFalse)
+TEST(IoTest, MergeFluidXmlMissingElementThrows)
 {
     std::string xml = "<?xml version=\"1.0\"?><Root/>";
     mhs::model::ModelDefinition definition;
     auto path = write_tmp_overlay(xml);
-    const bool merged = mhs::io::merge_fluid_xml(path.string(), definition);
+    EXPECT_THROW(mhs::io::merge_fluid_xml(path.string(), definition), std::runtime_error);
     std::filesystem::remove(path);
 
-    EXPECT_FALSE(merged);
     EXPECT_TRUE(definition.materials.empty());
     EXPECT_TRUE(definition.fluid_boundaries.empty());
 }
 
-TEST(IoTest, MergeFluidXmlNonexistentFileReturnsFalse)
+TEST(IoTest, MergeFluidXmlNonexistentFileThrows)
 {
     mhs::model::ModelDefinition definition;
-    EXPECT_FALSE(mhs::io::merge_fluid_xml("nonexistent_overlay.xml", definition));
+    EXPECT_THROW(mhs::io::merge_fluid_xml("nonexistent_overlay.xml", definition), std::runtime_error);
 }

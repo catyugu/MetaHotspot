@@ -4,7 +4,6 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
-#include "model/model_builder.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
@@ -14,7 +13,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
-#include <set>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,17 +22,14 @@
 /*  Internal opaque handle definitions (hidden from the header)        */
 /* ------------------------------------------------------------------ */
 
-/* Bridge types. */
-using MhsModelAxis = mhs::model::Axis;
-
-struct PendingBoundary {
-    std::optional<mhs::model::ThermalBoundary> condition;
-    std::vector<mhs::model::FaceRegion> regions;
+struct BlockLocation {
+    uint32_t layer;
+    uint32_t block;
 };
 
 struct mhs_model_t {
-    mhs::model::ModelBuilder builder;
-    std::vector<PendingBoundary> pending_boundaries;
+    mhs::model::ModelDefinition def;
+    std::vector<BlockLocation> block_locations;
 };
 
 struct CscMatrixData {
@@ -52,13 +48,6 @@ struct mhs_assembly_t {
 
 struct mhs_compiled_t {
     mhs::core::Model model;
-
-    // Lazy-created state for repeated take_step() calls.
-    // Set on first mhs_compiled_step() call, unused by mhs_compiled_solve().
-    std::unique_ptr<mhs::sim::Assembler> step_assembler;
-    std::unique_ptr<mhs::sim::LinearSolver> step_solver;
-    std::unique_ptr<mhs::core::SolutionHistory> step_history;
-    std::vector<double> step_work_state;
 };
 
 struct mhs_solution_t {
@@ -86,20 +75,45 @@ static thread_local std::string tls_err;
         }                                                                                                              \
     } while (0)
 
+// Unified try/catch wrapper for mhs_status_t-returning functions.
+#define MHS_TRY(err_code, ...)                                                                                         \
+    try {                                                                                                              \
+        tls_err.clear();                                                                                               \
+        __VA_ARGS__;                                                                                                   \
+        tls_err.clear();                                                                                               \
+        return MHS_OK;                                                                                                 \
+    }                                                                                                                  \
+    catch (const std::exception& e) {                                                                                  \
+        SET_ERR(e.what());                                                                                             \
+        return err_code;                                                                                               \
+    }
+
+// Unified try/catch wrapper for uint32_t ID-returning functions.
+// The block must contain a 'return <id_value>;' statement.
+#define MHS_TRY_ID(invalid, ...)                                                                                       \
+    try {                                                                                                              \
+        tls_err.clear();                                                                                               \
+        __VA_ARGS__;                                                                                                   \
+    }                                                                                                                  \
+    catch (const std::exception& e) {                                                                                  \
+        SET_ERR(e.what());                                                                                             \
+        return invalid;                                                                                                \
+    }
+
 /* ------------------------------------------------------------------ */
 /*  Enum conversions                                                   */
 /* ------------------------------------------------------------------ */
-static MhsModelAxis _to_axis(mhs_axis_t a)
+static mhs::model::Axis _to_axis(mhs_axis_t a)
 {
     switch (a) {
     case MHS_AXIS_X:
-        return MhsModelAxis::X;
+        return mhs::model::Axis::X;
     case MHS_AXIS_Y:
-        return MhsModelAxis::Y;
+        return mhs::model::Axis::Y;
     case MHS_AXIS_Z:
-        return MhsModelAxis::Z;
+        return mhs::model::Axis::Z;
     default:
-        return MhsModelAxis::Z;
+        return mhs::model::Axis::Z;
     }
 }
 
@@ -162,7 +176,7 @@ static mhs::sim::SolverType _to_solver_type(mhs_solver_type_t t)
     case MHS_SOLVER_EIGEN_BICGSTAB:
         return mhs::sim::SolverType::EigenBiCGSTAB;
     }
-    return mhs::sim::SolverType::Pardiso;
+    return mhs::sim::SolverType::EigenSparseLU;
 }
 
 static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
@@ -257,53 +271,10 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
 {
     CHECK_NULL(m);
     CHECK_NULL(path);
-    try {
-        auto def = mhs::io::read_xml(path);
-        m->builder = mhs::model::ModelBuilder {};
-        m->pending_boundaries.clear();
-
-        m->builder.set_settings(def.settings);
-        m->builder.set_mesh(def.mesh);
-
-        for (auto& v : def.variables)
-            m->builder.add_variable(std::move(v));
-        for (auto& fn : def.functions)
-            m->builder.add_function(std::move(fn));
-        for (auto& mat : def.materials)
-            m->builder.add_material(std::move(mat));
-
-        for (auto& layer : def.layers) {
-            mhs::model::LayerParams lp {
-                std::move(layer.thickness), std::move(layer.x_offset), std::move(layer.y_offset)};
-            auto lid = m->builder.add_layer(std::move(lp));
-            for (auto& block : layer.blocks) {
-                mhs::model::BlockParams bp {std::move(block.material), std::move(block.volumetric_heat_source),
-                    std::move(block.x_offset), std::move(block.y_offset), std::move(block.thickness)};
-                auto bid = m->builder.add_block(lid, std::move(bp));
-                for (auto& rect : block.geometry)
-                    m->builder.add_rect(bid, std::move(rect));
-            }
-        }
-
-        for (auto& bp : def.boundaries) {
-            auto& pb = m->pending_boundaries.emplace_back();
-            pb.regions = std::move(bp.regions);
-            pb.condition = std::move(bp.condition);
-        }
-        m->builder.set_default_boundary(std::move(def.default_boundary));
-
-        for (auto& ob : def.observation_points)
-            m->builder.add_observation_point(std::move(ob));
-        for (auto& fb : def.fluid_boundaries)
-            m->builder.add_fluid_boundary(std::move(fb));
-
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("read_xml: " << e.what());
-        return MHS_ERR_IO;
-    }
+    MHS_TRY(MHS_ERR_IO, {
+        m->def = mhs::io::read_xml(path);
+        m->block_locations.clear();
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -314,49 +285,36 @@ MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, m
     double initial_temperature_K, double duration, double output_interval)
 {
     CHECK_NULL(m);
-    try {
-        mhs::model::ModelSettings s;
-        s.study_type = _to_model_study(study);
-        s.length_unit = _to_unit(length_unit);
-        s.initial_temperature = initial_temperature_K;
-        s.transient_duration = duration;
-        s.transient_output_interval = output_interval;
-        m->builder.set_settings(std::move(s));
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("set_settings: " << e.what());
-        return MHS_ERR_RUNTIME;
-    }
+    MHS_TRY(MHS_ERR_RUNTIME, {
+        m->def.settings.study_type = _to_model_study(study);
+        m->def.settings.length_unit = _to_unit(length_unit);
+        m->def.settings.initial_temperature = initial_temperature_K;
+        m->def.settings.transient_duration = duration;
+        m->def.settings.transient_output_interval = output_interval;
+    });
 }
 
 MHS_API mhs_status_t mhs_model_set_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z)
 {
     CHECK_NULL(m);
-    try {
-        mhs::model::MeshSpec spec;
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        m->def.mesh.x_vertices.clear();
+        m->def.mesh.y_vertices.clear();
+        m->def.mesh.z_vertices.clear();
         if (nx >= 2) {
             CHECK_NULL(x);
-            spec.x_vertices.assign(x, x + nx);
+            m->def.mesh.x_vertices.assign(x, x + nx);
         }
         if (ny >= 2) {
             CHECK_NULL(y);
-            spec.y_vertices.assign(y, y + ny);
+            m->def.mesh.y_vertices.assign(y, y + ny);
         }
         if (nz >= 2) {
             CHECK_NULL(z);
-            spec.z_vertices.assign(z, z + nz);
+            m->def.mesh.z_vertices.assign(z, z + nz);
         }
-        m->builder.set_mesh(std::move(spec));
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("set_mesh: " << e.what());
-        return MHS_ERR_INVALID_ARG;
-    }
+    });
 }
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression)
@@ -364,15 +322,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    try {
-        m->builder.add_variable({name, expression});
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_variable(" << name << "): " << e.what());
-        return MHS_ERR_INVALID_ARG;
-    }
+    MHS_TRY(MHS_ERR_INVALID_ARG, { m->def.variables.push_back({name, expression}); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -386,7 +336,7 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
         SET_ERR("NULL pointer");
         return MHS_MATERIAL_ID_INVALID;
     }
-    try {
+    MHS_TRY_ID(MHS_MATERIAL_ID_INVALID, {
         mhs::model::MaterialSpec spec;
         if (kx)
             spec.conductivity_x = kx;
@@ -401,15 +351,9 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
         if (dynamic_viscosity)
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
 
-        m->builder.add_material({name, std::move(spec)});
-        mhs_material_id_t id = static_cast<mhs_material_id_t>(m->builder.peek().materials.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_material(" << (name ? name : "?") << "): " << e.what());
-        return MHS_MATERIAL_ID_INVALID;
-    }
+        m->def.materials.push_back({name, std::move(spec)});
+        return static_cast<mhs_material_id_t>(m->def.materials.size() - 1);
+    });
 }
 
 MHS_API mhs_layer_id_t mhs_model_add_layer(
@@ -419,27 +363,14 @@ MHS_API mhs_layer_id_t mhs_model_add_layer(
         SET_ERR("NULL pointer");
         return MHS_LAYER_ID_INVALID;
     }
-    if (!thickness) {
-        SET_ERR("NULL pointer: thickness");
+    if (!thickness || !x_offset || !y_offset) {
+        SET_ERR("NULL pointer in layer params");
         return MHS_LAYER_ID_INVALID;
     }
-    if (!x_offset) {
-        SET_ERR("NULL pointer: x_offset");
-        return MHS_LAYER_ID_INVALID;
-    }
-    if (!y_offset) {
-        SET_ERR("NULL pointer: y_offset");
-        return MHS_LAYER_ID_INVALID;
-    }
-    try {
-        auto id = m->builder.add_layer({thickness, x_offset, y_offset});
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_layer: " << e.what());
-        return MHS_LAYER_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_LAYER_ID_INVALID, {
+        m->def.layers.push_back({thickness, x_offset, y_offset, {}});
+        return static_cast<mhs_layer_id_t>(m->def.layers.size() - 1);
+    });
 }
 
 MHS_API mhs_block_id_t mhs_model_add_block(mhs_model_t* m, mhs_layer_id_t layer, const char* material_name,
@@ -457,23 +388,20 @@ MHS_API mhs_block_id_t mhs_model_add_block(mhs_model_t* m, mhs_layer_id_t layer,
         SET_ERR("NULL pointer: material_name");
         return MHS_BLOCK_ID_INVALID;
     }
-    try {
-        mhs::model::BlockParams bp;
-        bp.material = material_name;
-        bp.volumetric_heat_source = heat_source ? heat_source : "0.0";
-        bp.x_offset = x_offset ? x_offset : "0.0";
-        bp.y_offset = y_offset ? y_offset : "0.0";
+    MHS_TRY_ID(MHS_BLOCK_ID_INVALID, {
+        mhs::model::BlockSpec block;
+        block.material = material_name;
+        block.volumetric_heat_source = heat_source ? heat_source : "0.0";
+        block.x_offset = x_offset ? x_offset : "0.0";
+        block.y_offset = y_offset ? y_offset : "0.0";
         if (thickness)
-            bp.thickness = std::string(thickness);
+            block.thickness = std::string(thickness);
 
-        auto id = m->builder.add_block(layer, std::move(bp));
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_block: " << e.what());
-        return MHS_BLOCK_ID_INVALID;
-    }
+        m->def.layers[layer].blocks.push_back(std::move(block));
+        const auto block_idx = static_cast<uint32_t>(m->def.layers[layer].blocks.size() - 1);
+        m->block_locations.push_back({layer, block_idx});
+        return static_cast<mhs_block_id_t>(m->block_locations.size() - 1);
+    });
 }
 
 MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mhs_geometry_op_t op, const char* x,
@@ -488,123 +416,81 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mh
         SET_ERR("NULL pointer in rect params");
         return MHS_ERR_NULL_PTR;
     }
-    try {
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        const auto loc = m->block_locations[block];
         mhs::model::RectOperation rect_op;
         rect_op.operation
             = (op == MHS_GEOM_SUB) ? mhs::model::GeometryOperation::Subtract : mhs::model::GeometryOperation::Add;
         rect_op.rect = {x, y, width, height};
-        m->builder.add_rect(block, std::move(rect_op));
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_rect: " << e.what());
-        return MHS_ERR_INVALID_ARG;
-    }
+        m->def.layers[loc.layer].blocks[loc.block].geometry.push_back(std::move(rect_op));
+    });
 }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  boundary conditions (two-step build)       */
+/*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-static mhs_status_t _check_boundary_id(const mhs_model_t* m, mhs_boundary_id_t id)
-{
-    if (id < m->pending_boundaries.size())
-        return MHS_OK;
-    SET_ERR("invalid boundary id: " << id);
-    return MHS_ERR_INVALID_ARG;
-}
-
-MHS_API mhs_boundary_id_t mhs_model_add_boundary(mhs_model_t* m)
-{
-    if (!m) {
-        SET_ERR("NULL pointer");
-        return MHS_BOUNDARY_ID_INVALID;
-    }
-    try {
-        m->pending_boundaries.emplace_back();
-        mhs_boundary_id_t id = static_cast<mhs_boundary_id_t>(m->pending_boundaries.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_boundary: " << e.what());
-        return MHS_BOUNDARY_ID_INVALID;
-    }
-}
-
-MHS_API mhs_status_t mhs_boundary_set_dirichlet(mhs_model_t* m, mhs_boundary_id_t id, const char* temperature)
+MHS_API mhs_status_t mhs_model_add_dirichlet(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature)
 {
     CHECK_NULL(m);
+    CHECK_NULL(regions);
     CHECK_NULL(temperature);
-    auto st = _check_boundary_id(m, id);
-    if (st != MHS_OK)
-        return st;
-    m->pending_boundaries[id].condition = mhs::model::DirichletBoundary {temperature};
-    tls_err.clear();
-    return MHS_OK;
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        mhs::model::BoundaryPatch bp;
+        bp.condition = mhs::model::DirichletBoundary {temperature};
+        bp.regions.reserve(n_regions);
+        for (size_t i = 0; i < n_regions; ++i)
+            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        m->def.boundaries.push_back(std::move(bp));
+    });
 }
 
-MHS_API mhs_status_t mhs_boundary_set_neumann(mhs_model_t* m, mhs_boundary_id_t id, const char* heat_flux)
+MHS_API mhs_status_t mhs_model_add_neumann(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux)
 {
     CHECK_NULL(m);
+    CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
-    auto st = _check_boundary_id(m, id);
-    if (st != MHS_OK)
-        return st;
-    m->pending_boundaries[id].condition = mhs::model::NeumannBoundary {heat_flux};
-    tls_err.clear();
-    return MHS_OK;
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        mhs::model::BoundaryPatch bp;
+        bp.condition = mhs::model::NeumannBoundary {heat_flux};
+        bp.regions.reserve(n_regions);
+        for (size_t i = 0; i < n_regions; ++i)
+            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        m->def.boundaries.push_back(std::move(bp));
+    });
 }
 
-MHS_API mhs_status_t mhs_boundary_set_convection(
-    mhs_model_t* m, mhs_boundary_id_t id, const char* coefficient, const char* ambient_temperature)
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+    const char* coefficient, const char* ambient_temperature)
 {
     CHECK_NULL(m);
+    CHECK_NULL(regions);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    auto st = _check_boundary_id(m, id);
-    if (st != MHS_OK)
-        return st;
-    m->pending_boundaries[id].condition = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
-    tls_err.clear();
-    return MHS_OK;
-}
-
-MHS_API mhs_status_t mhs_boundary_add_face_region(
-    mhs_model_t* m, mhs_boundary_id_t id, mhs_axis_t axis, double coordinate, mhs_rect2d_t region)
-{
-    CHECK_NULL(m);
-    auto st = _check_boundary_id(m, id);
-    if (st != MHS_OK)
-        return st;
-    try {
-        m->pending_boundaries[id].regions.push_back(_make_face_region(axis, coordinate, region));
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_face_region: " << e.what());
-        return MHS_ERR_INVALID_ARG;
-    }
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        mhs::model::BoundaryPatch bp;
+        bp.condition = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
+        bp.regions.reserve(n_regions);
+        for (size_t i = 0; i < n_regions; ++i)
+            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        m->def.boundaries.push_back(std::move(bp));
+    });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    m->builder.set_default_boundary(mhs::model::DirichletBoundary {temperature});
-    tls_err.clear();
-    return MHS_OK;
+    MHS_TRY(MHS_ERR_RUNTIME, { m->def.default_boundary = mhs::model::DirichletBoundary {temperature}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    m->builder.set_default_boundary(mhs::model::NeumannBoundary {heat_flux});
-    tls_err.clear();
-    return MHS_OK;
+    MHS_TRY(MHS_ERR_RUNTIME, { m->def.default_boundary = mhs::model::NeumannBoundary {heat_flux}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_convection(
@@ -613,9 +499,8 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    m->builder.set_default_boundary(mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
-    tls_err.clear();
-    return MHS_OK;
+    MHS_TRY(MHS_ERR_RUNTIME,
+        { m->def.default_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
 }
 
 /* ------------------------------------------------------------------ */
@@ -624,146 +509,80 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
 
 MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
 {
-    if (!m) {
+    if (!m || !name || !expression) {
         SET_ERR("NULL pointer");
         return MHS_FUNCTION_ID_INVALID;
     }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    if (!expression) {
-        SET_ERR("NULL pointer: expression");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    try {
-        m->builder.add_function({name, mhs::model::ExpressionFunctionSpec {expression}});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_expr(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+        m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 MHS_API mhs_function_id_t mhs_model_add_function_gauss(
     mhs_model_t* m, const char* name, double amplitude, double tau, double center)
 {
-    if (!m) {
+    if (!m || !name) {
         SET_ERR("NULL pointer");
         return MHS_FUNCTION_ID_INVALID;
     }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    try {
-        m->builder.add_function({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_gauss(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+        m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 MHS_API mhs_function_id_t mhs_model_add_function_sine(
     mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase)
 {
-    if (!m) {
+    if (!m || !name) {
         SET_ERR("NULL pointer");
         return MHS_FUNCTION_ID_INVALID;
     }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    try {
-        m->builder.add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_sine(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+        m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
     mhs_model_t* m, const char* name, double amplitude, double alpha, double beta)
 {
-    if (!m) {
+    if (!m || !name) {
         SET_ERR("NULL pointer");
         return MHS_FUNCTION_ID_INVALID;
     }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    try {
-        m->builder.add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_double_exp(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+        m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
     mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count)
 {
-    if (!m) {
+    if (!m || !name || !points) {
         SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    if (!points) {
-        SET_ERR("NULL pointer: points");
         return MHS_FUNCTION_ID_INVALID;
     }
     if (count < 2) {
         SET_ERR("piecewise requires count >= 2");
         return MHS_FUNCTION_ID_INVALID;
     }
-    try {
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
-        m->builder.add_function({name, std::move(spec)});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_piecewise(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+        m->def.functions.push_back({name, std::move(spec)});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
     mhs_model_t* m, const char* name, const double* values, size_t count, double period)
 {
-    if (!m) {
+    if (!m || !name || !values) {
         SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    if (!values) {
-        SET_ERR("NULL pointer: values");
         return MHS_FUNCTION_ID_INVALID;
     }
     if (count < 1) {
@@ -774,19 +593,13 @@ MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
         SET_ERR("period must be positive");
         return MHS_FUNCTION_ID_INVALID;
     }
-    try {
+    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
         spec.values.assign(values, values + count);
-        m->builder.add_function({name, std::move(spec)});
-        mhs_function_id_t id = static_cast<mhs_function_id_t>(m->builder.peek().functions.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_function_periodic_piecewise_constant(" << name << "): " << e.what());
-        return MHS_FUNCTION_ID_INVALID;
-    }
+        m->def.functions.push_back({name, std::move(spec)});
+        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -795,44 +608,28 @@ MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
 
 MHS_API mhs_probe_id_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
 {
-    if (!m) {
+    if (!m || !name) {
         SET_ERR("NULL pointer");
         return MHS_PROBE_ID_INVALID;
     }
-    if (!name) {
-        SET_ERR("NULL pointer: name");
-        return MHS_PROBE_ID_INVALID;
-    }
-    try {
-        m->builder.add_observation_point({name, std::to_string(x), std::to_string(y), std::to_string(z)});
-        mhs_probe_id_t id = static_cast<mhs_probe_id_t>(m->builder.peek().observation_points.size() - 1);
-        tls_err.clear();
-        return id;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_probe(" << (name ? name : "?") << "): " << e.what());
-        return MHS_PROBE_ID_INVALID;
-    }
+    MHS_TRY_ID(MHS_PROBE_ID_INVALID, {
+        m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)});
+        return static_cast<mhs_probe_id_t>(m->def.observation_points.size() - 1);
+    });
 }
 
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
     mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature)
 {
     CHECK_NULL(m);
-    try {
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
         mhs::model::FluidBoundarySpec fb;
         fb.regions.push_back(_make_face_region(axis, coordinate, region));
         fb.kind = _to_fluid_kind(kind);
         fb.value = value;
         fb.inlet_temperature = inlet_temperature;
-        m->builder.add_fluid_boundary(std::move(fb));
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("add_fluid_boundary: " << e.what());
-        return MHS_ERR_INVALID_ARG;
-    }
+        m->def.fluid_boundaries.push_back(std::move(fb));
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -843,60 +640,39 @@ MHS_API const char* mhs_model_material_name(const mhs_model_t* m, size_t index)
 {
     if (!m)
         return nullptr;
-    const auto& materials = m->builder.peek().materials;
-    if (index >= materials.size())
+    if (index >= m->def.materials.size())
         return nullptr;
-    return materials[index].name.c_str();
+    return m->def.materials[index].name.c_str();
 }
 
 MHS_API size_t mhs_model_material_count(const mhs_model_t* m)
 {
     if (!m)
         return 0;
-    return m->builder.peek().materials.size();
+    return m->def.materials.size();
 }
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_compile(mhs_model_t* m, mhs_compiled_t** out)
+MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** out)
 {
     CHECK_NULL(m);
     CHECK_NULL(out);
-    try {
-        mhs::model::ModelDefinition def = m->builder.peek();
-
-        /* Validate and append pending thermal boundaries (copy). */
-        def.boundaries.reserve(def.boundaries.size() + m->pending_boundaries.size());
-        for (size_t i = 0; i < m->pending_boundaries.size(); ++i) {
-            const auto& pb = m->pending_boundaries[i];
-            if (!pb.condition.has_value()) {
-                SET_ERR("boundary slot " << i << " has no condition set");
-                *out = nullptr;
-                return MHS_ERR_UNSET;
-            }
-            def.boundaries.push_back({pb.regions, *pb.condition});
-        }
-
-        auto core_model = mhs::sim::build_model(def);
+    MHS_TRY(MHS_ERR_COMPILE, {
+        auto core_model = mhs::sim::build_model(m->def);
 
         auto* c = new (std::nothrow) mhs_compiled_t {};
         if (!c) {
             *out = nullptr;
             SET_ERR("memory allocation failed");
+            tls_err.clear();
             return MHS_ERR_OOM;
         }
         c->model = std::move(core_model);
         *out = c;
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        *out = nullptr;
-        SET_ERR("compile: " << e.what());
-        return MHS_ERR_COMPILE;
-    }
+    });
 }
 
 MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c)
@@ -906,70 +682,23 @@ MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c)
     return MHS_OK;
 }
 
-MHS_API size_t mhs_compiled_cell_count(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 0;
-    return c->model.cells.cell_to_grid.size();
-}
-
-MHS_API size_t mhs_compiled_state_count(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 0;
-    return c->model.dofs.total_count;
-}
-
-MHS_API size_t mhs_compiled_node_count(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 0;
-    return (c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1);
-}
-
-MHS_API double mhs_compiled_initial_temperature(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 300.0;
-    return c->model.initial_temperature;
-}
-
-MHS_API const uint32_t* mhs_compiled_layer_ids(const mhs_compiled_t* c)
-{
-    if (!c)
-        return nullptr;
-    return c->model.cells.layer_id.data();
-}
-
-MHS_API const uint32_t* mhs_compiled_block_ids(const mhs_compiled_t* c)
-{
-    if (!c)
-        return nullptr;
-    return c->model.cells.block_id.data();
-}
-
-MHS_API size_t mhs_compiled_grid_count(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 0;
-    return c->model.mesh.nx * c->model.mesh.ny * c->model.mesh.nz;
-}
-
-MHS_API const size_t* mhs_compiled_grid_to_cell(const mhs_compiled_t* c)
-{
-    if (!c)
-        return nullptr;
-    return c->model.cells.grid_to_cell.data();
-}
-
 /* ------------------------------------------------------------------ */
-/*  Mesh geometry query                                                */
+/*  Compiled metadata view                                             */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_mesh(const mhs_compiled_t* c, mhs_mesh_info_t* out)
+MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
+    out->cell_count = c->model.cells.cell_to_grid.size();
+    out->state_count = c->model.dofs.total_count;
+    out->node_count = (c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1);
+    out->grid_count = c->model.mesh.nx * c->model.mesh.ny * c->model.mesh.nz;
+    out->study_type = _from_core_study(c->model.study_type);
+    out->initial_temperature = c->model.initial_temperature;
+    out->layer_ids = c->model.cells.layer_id.data();
+    out->block_ids = c->model.cells.block_id.data();
+    out->grid_to_cell = c->model.cells.grid_to_cell.data();
     out->nx = c->model.mesh.nx;
     out->ny = c->model.mesh.ny;
     out->nz = c->model.mesh.nz;
@@ -996,25 +725,19 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
         return MHS_ERR_INVALID_ARG;
     }
 
-    try {
-        // Non-const access for lazy init — the 'const' on mhs_compiled_t is a
-        // C-level contract; the step cache is logically internal mutable state.
-        auto& self = const_cast<mhs_compiled_t&>(*c);
+    MHS_TRY(MHS_ERR_SOLVE, {
+        const auto n = static_cast<std::size_t>(c->model.dofs.total_count);
 
-        // Lazy-create the step cache.
-        if (!self.step_assembler) {
-            self.step_assembler = std::make_unique<mhs::sim::Assembler>(c->model);
-            self.step_solver = mhs::sim::LinearSolver::create();
-            self.step_history
-                = std::make_unique<mhs::core::SolutionHistory>(static_cast<std::size_t>(c->model.dofs.total_count), 2);
-        }
+        // Local state for this step — no mutable cache on the compiled model.
+        mhs::sim::Assembler assembler(c->model);
+        auto solver = mhs::sim::LinearSolver::create();
+        mhs::core::SolutionHistory history(n, 2);
 
         // Copy input state into work buffer.
-        const auto n = static_cast<std::size_t>(c->model.dofs.total_count);
-        self.step_work_state.assign(state, state + n);
+        std::vector<double> work_state(state, state + n);
 
-        // Initialise history for this step (caller's view: single step, no past).
-        self.step_history->initialize(self.step_work_state, time);
+        // Initialise history for this step.
+        history.initialize(work_state, time);
 
         // Solver options.
         mhs::sim::NonLinearConfig nl_cfg;
@@ -1026,11 +749,10 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
         }
 
         // Execute the shared kernel.
-        auto result = mhs::sim::take_step(
-            *self.step_assembler, *self.step_solver, *self.step_history, self.step_work_state, time, dt, nl_cfg);
+        auto result = mhs::sim::take_step(assembler, *solver, history, work_state, time, dt, nl_cfg);
 
         // Copy result out.
-        std::copy(self.step_work_state.begin(), self.step_work_state.end(), out_state);
+        std::copy(work_state.begin(), work_state.end(), out_state);
 
         if (info) {
             info->accepted = result.accepted ? 1 : 0;
@@ -1038,43 +760,7 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
             info->suggested_dt_factor = result.suggested_dt_factor;
             info->nonlinear_iterations = static_cast<int32_t>(result.nonlinear_iterations);
         }
-
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("step: " << e.what());
-        return MHS_ERR_SOLVE;
-    }
-}
-
-MHS_API size_t mhs_compiled_layer_count(const mhs_compiled_t* c)
-{
-    if (!c)
-        return 0;
-    if (c->model.cells.layer_id.empty())
-        return 0;
-    auto max_l = *std::max_element(c->model.cells.layer_id.begin(), c->model.cells.layer_id.end());
-    return max_l + 1;
-}
-
-MHS_API size_t mhs_compiled_block_count(const mhs_compiled_t* c, uint32_t layer)
-{
-    if (!c)
-        return 0;
-    std::set<uint32_t> seen;
-    for (size_t i = 0; i < c->model.cells.block_id.size(); i++) {
-        if (c->model.cells.layer_id[i] == layer)
-            seen.insert(c->model.cells.block_id[i]);
-    }
-    return seen.size();
-}
-
-MHS_API mhs_study_t mhs_compiled_study_type(const mhs_compiled_t* c)
-{
-    if (!c)
-        return MHS_STUDY_STEADY;
-    return _from_core_study(c->model.study_type);
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1086,7 +772,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    try {
+    MHS_TRY(MHS_ERR_ASSEMBLE, {
         mhs::sim::Assembler assembler(c->model);
 
         const auto n = c->model.dofs.total_count;
@@ -1116,14 +802,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
         h->rhs.assign(result.f.data(), result.f.data() + dim);
 
         *out = h.release();
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        *out = nullptr;
-        SET_ERR("assemble: " << e.what());
-        return MHS_ERR_ASSEMBLE;
-    }
+    });
 }
 
 MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a)
@@ -1172,26 +851,21 @@ MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t
 }
 
 /* ------------------------------------------------------------------ */
-/*  Compiled model — pre-solve configuration                           */
+/*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
-    try {
+    MHS_TRY(MHS_ERR_RUNTIME, {
         if (count != static_cast<size_t>(c->model.dofs.total_count)) {
             SET_ERR("set_initial_state: expected " << c->model.dofs.total_count << " values, got " << count);
+            tls_err.clear();
             return MHS_ERR_INVALID_ARG;
         }
         c->model.initial_state.assign(state, state + count);
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("set_initial_state: " << e.what());
-        return MHS_ERR_RUNTIME;
-    }
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1202,7 +876,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    try {
+    MHS_TRY(MHS_ERR_SOLVE, {
         mhs::sim::SolveOptions so;
         if (opts) {
             so.solver.type = _to_solver_type(opts->solver_type);
@@ -1221,48 +895,11 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
         if (!s) {
             *out = nullptr;
             SET_ERR("memory allocation failed");
+            tls_err.clear();
             return MHS_ERR_OOM;
         }
         *out = s;
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        *out = nullptr;
-        SET_ERR("solve: " << e.what());
-        return MHS_ERR_SOLVE;
-    }
-}
-
-MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mhs_solution_t** out)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(out);
-    try {
-        mhs_compiled_t* compiled = nullptr;
-        auto st = mhs_model_compile(m, &compiled);
-        if (st != MHS_OK) {
-            *out = nullptr;
-            return st;
-        }
-
-        auto compiled_guard = std::unique_ptr<mhs_compiled_t>(compiled);
-        mhs_solution_t* sol = nullptr;
-        st = mhs_compiled_solve(compiled_guard.get(), opts, &sol);
-        if (st != MHS_OK) {
-            *out = nullptr;
-            return st;
-        }
-
-        *out = sol;
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        *out = nullptr;
-        SET_ERR("solve (single-step): " << e.what());
-        return MHS_ERR_SOLVE;
-    }
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1274,15 +911,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
     CHECK_NULL(c);
     CHECK_NULL(s);
     CHECK_NULL(path);
-    try {
-        mhs::io::write_vtu(path, c->model, s->solution.cell_temperature);
-        tls_err.clear();
-        return MHS_OK;
-    }
-    catch (const std::exception& e) {
-        SET_ERR("write_vtu: " << e.what());
-        return MHS_ERR_IO;
-    }
+    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.cell_temperature); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1297,56 +926,22 @@ MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s)
 }
 
 /* ------------------------------------------------------------------ */
-/*  Solution accessors                                                 */
+/*  Solution view                                                      */
 /* ------------------------------------------------------------------ */
 
-MHS_API size_t mhs_solution_cell_count(const mhs_solution_t* s)
+MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out)
 {
-    if (!s)
-        return 0;
-    return s->solution.cell_temperature.size();
-}
-
-MHS_API size_t mhs_solution_state_count(const mhs_solution_t* s)
-{
-    if (!s)
-        return 0;
-    return s->solution.state.size();
-}
-
-MHS_API size_t mhs_solution_node_count(const mhs_solution_t* s)
-{
-    if (!s)
-        return 0;
-    return s->node_temperatures.size();
-}
-
-MHS_API double mhs_solution_time(const mhs_solution_t* s)
-{
-    if (!s)
-        return 0.0;
-    return s->solution.time;
-}
-
-MHS_API const double* mhs_solution_cell_temperatures(const mhs_solution_t* s)
-{
-    if (!s)
-        return nullptr;
-    return s->solution.cell_temperature.data();
-}
-
-MHS_API const double* mhs_solution_states(const mhs_solution_t* s)
-{
-    if (!s)
-        return nullptr;
-    return s->solution.state.data();
-}
-
-MHS_API const double* mhs_solution_node_temperatures(const mhs_solution_t* s)
-{
-    if (!s)
-        return nullptr;
-    return s->node_temperatures.data();
+    CHECK_NULL(s);
+    CHECK_NULL(out);
+    out->cell_count = s->solution.cell_temperature.size();
+    out->state_count = s->solution.state.size();
+    out->node_count = s->node_temperatures.size();
+    out->time = s->solution.time;
+    out->cell_temperatures = s->solution.cell_temperature.data();
+    out->states = s->solution.state.data();
+    out->node_temperatures = s->node_temperatures.data();
+    tls_err.clear();
+    return MHS_OK;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1395,4 +990,35 @@ MHS_API const double* mhs_solution_probe_values(const mhs_solution_t* s, size_t 
     if (probe_index >= s->solution.probe_traces.size())
         return nullptr;
     return s->solution.probe_traces[probe_index].values.data();
+}
+
+MHS_API mhs_status_t mhs_solution_probe_metadata(const mhs_solution_t* s, mhs_probe_metadata_t* out)
+{
+    CHECK_NULL(s);
+    CHECK_NULL(out);
+    out->count = s->solution.probe_traces.size();
+    // Build arrays of C string pointers and record counts.
+    // These are heap-allocated and freed by the caller via mhs_solution_probe_metadata_free().
+    auto** names = new const char*[out->count];
+    auto* record_counts = new size_t[out->count];
+    for (size_t i = 0; i < out->count; ++i) {
+        names[i] = s->solution.probe_traces[i].name.c_str();
+        record_counts[i] = s->solution.probe_traces[i].values.size();
+    }
+    out->names = names;
+    out->record_counts = record_counts;
+    tls_err.clear();
+    return MHS_OK;
+}
+
+MHS_API mhs_status_t mhs_solution_probe_metadata_free(mhs_probe_metadata_t* meta)
+{
+    CHECK_NULL(meta);
+    delete[] meta->names;
+    delete[] meta->record_counts;
+    meta->names = nullptr;
+    meta->record_counts = nullptr;
+    meta->count = 0;
+    tls_err.clear();
+    return MHS_OK;
 }

@@ -83,13 +83,13 @@ namespace mhs::core {
         double eval(const FieldContext& ctx)
         {
             if (!valid_)
-                return 0.0;
+                throw std::runtime_error("expression is not valid (compile failed)");
             current_ctx_ = ctx;
             try {
                 return parser_.Eval();
             }
-            catch (const mu::ParserError&) {
-                return 0.0;
+            catch (const mu::ParserError& e) {
+                throw std::runtime_error(std::string("expression eval error: ") + e.GetMsg());
             }
         }
 
@@ -148,6 +148,9 @@ namespace mhs::core {
 
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols)
     {
+        if (formula.empty())
+            return CompiledExpression::make_constant(0.0);
+
         char* end = nullptr;
         double val = std::strtod(formula.c_str(), &end);
         if (end != formula.c_str() && *end == '\0') {
@@ -158,7 +161,7 @@ namespace mhs::core {
         {
             MuCompiled test_compile(formula, symbols);
             if (!test_compile.valid()) {
-                return CompiledExpression::make_constant(0.0);
+                throw std::runtime_error("parse error: " + formula + " (syntax or unknown identifier)");
             }
         }
         return CompiledExpression::make_evaluator(formula, symbols);
@@ -166,6 +169,9 @@ namespace mhs::core {
 
     double eval_geometry(const std::string& formula, const SymbolTable& symbols)
     {
+        if (formula.empty())
+            return 0.0;
+
         const auto& vars = symbols.variables;
 
         auto var_it = vars.find(formula);
@@ -188,8 +194,8 @@ namespace mhs::core {
             parser.SetExpr(formula);
             return parser.Eval();
         }
-        catch (const mu::ParserError&) {
-            return 0.0;
+        catch (const mu::ParserError& e) {
+            throw std::runtime_error(std::string("geometry eval error: '") + formula + "': " + e.GetMsg());
         }
     }
 

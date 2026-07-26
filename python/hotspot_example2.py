@@ -240,16 +240,18 @@ def build_model(
         m.add_rect(bid, x="0", y="0", width=str(w), height=str(h))
 
     # -- Convection at sink top (z = TOTAL_Z) --
-    bc_id = m.add_boundary()
-    m.set_convection(bc_id, coefficient=str(H_CONV), ambient_temperature=str(T_AMB))
-    m.add_face_region(
-        bc_id,
-        axis=enums.Axis.Z,
-        coordinate=TOTAL_Z,
-        a_min=-(S_SINK - CHIP_L) / 2,
-        a_max=(S_SINK + CHIP_L) / 2,
-        b_min=-(S_SINK - CHIP_L) / 2,
-        b_max=(S_SINK + CHIP_L) / 2,
+    _regions = [
+        (
+            enums.Axis.Z,
+            TOTAL_Z,
+            -(S_SINK - CHIP_L) / 2,
+            (S_SINK + CHIP_L) / 2,
+            -(S_SINK - CHIP_L) / 2,
+            (S_SINK + CHIP_L) / 2,
+        ),
+    ]
+    m.add_convection(
+        coefficient=str(H_CONV), ambient_temperature=str(T_AMB), regions=_regions
     )
 
     # -- Probes at each block centroid (in chip layer z=0+) --
@@ -322,8 +324,8 @@ def main():
     steady_model = build_model(steady_hs)
     c_steady = steady_model.compile()
     print(
-        f"  Active cells: {c_steady.cell_count()},  "
-        f"Grid cells: {c_steady.grid_count()}"
+        f"  Active cells: {c_steady.metadata().cell_count},  "
+        f"Grid cells: {c_steady.metadata().grid_count}"
     )
     sol_steady = c_steady.solve()
     steady_state = sol_steady.states().copy()

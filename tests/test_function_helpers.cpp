@@ -11,138 +11,150 @@ using namespace mhs::sim;
 
 namespace {
 
-    // ---- 5 类闭包的数学正确性 --------------------------------------------
+    // ---- 通过 register_all_functions 端到端测试函数注册和求值 ----
 
-    TEST(FunctionHelpers, ExpressionEvaluator)
+    TEST(EndToEnd, ParseTakesRegisteredNative)
     {
         mhs::core::SymbolTable sym;
-        auto ev = make_expression_evaluator("2*x+1", sym);
-        FieldContext ctx {3, 0, 0, 0, 0};
-        EXPECT_DOUBLE_EQ(ev(nullptr, 0, ctx), 7.0);
+        std::vector<mhs::model::NamedFunction> fns;
+        fns.push_back({"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}});
+        register_all_functions(sym, fns);
+
+        // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
+        auto out = substitute_function_args("test_gaussian(x)", "T", fns);
+        EXPECT_EQ(out, "test_gaussian(T)");
+
+        auto compiled = mhs::core::parse(out, sym);
+        // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
+        // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
+        FieldContext ctx {0, 0, 0, 20.0, 0.0};
+        EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }
 
-    TEST(FunctionHelpers, GaussEvaluatorAtCenter)
+    TEST(EndToEnd, NativeReadsTheBoundSymbol)
     {
-        auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
-        FieldContext ctx {0, 0, 0, 0, 0};
-        const double t = 0.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 1.0);
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        fns.push_back({"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}});
+        register_all_functions(sym, fns);
+
+        // 不做字面替换（"test_gaussian(x)" 直接编译），muparser 把 x 槽绑定。
+        auto compiled = mhs::core::parse("test_gaussian(x)", sym);
+        FieldContext ctx {20.0, 0, 0, 0, 0};
+        EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }
 
-    TEST(FunctionHelpers, GaussEvaluatorAtOneTau)
+    TEST(EndToEnd, GaussEvaluator)
     {
-        auto ev = make_gauss_evaluator(1.0, 1.0, 0.0);
-        FieldContext ctx {0, 0, 0, 0, 1.0};
-        const double t = 1.0;
-        EXPECT_NEAR(ev(&t, 1, ctx), std::exp(-1.0), 1e-12);
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        fns.push_back({"mygauss", mhs::model::GaussFunctionSpec {1.0, 1.0, 0.0}});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("mygauss(t)", sym);
+        FieldContext ctx {0, 0, 0, 0, 0.0};
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 1.0);
+        ctx.t = 1.0;
+        EXPECT_NEAR(compiled.eval(ctx), std::exp(-1.0), 1e-12);
     }
 
-    TEST(FunctionHelpers, SineEvaluatorWithPhase)
+    TEST(EndToEnd, SineEvaluator)
     {
-        // A=5, omega=200, phi=1.57, t=0 → 5*sin(1.57) ≈ 5
-        auto ev = make_sine_evaluator(5.0, 200.0, 1.57);
-        FieldContext ctx {0, 0, 0, 0, 0};
-        const double t = 0.0;
-        EXPECT_NEAR(ev(&t, 1, ctx), 5.0 * std::sin(1.57), 1e-9);
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        fns.push_back({"mysine", mhs::model::SineFunctionSpec {5.0, 200.0, 1.57}});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("mysine(t)", sym);
+        FieldContext ctx {0, 0, 0, 0, 0.0};
+        EXPECT_NEAR(compiled.eval(ctx), 5.0 * std::sin(1.57), 1e-9);
     }
 
-    TEST(FunctionHelpers, DoubleExpEvaluatorAtZero)
+    TEST(EndToEnd, DoubleExpEvaluator)
     {
-        // A*(exp(alpha*0) - exp(beta*0)) = A*(1-1) = 0
-        auto ev = make_double_exp_evaluator(1.0, 0.5, 0.1);
-        FieldContext ctx {0, 0, 0, 0, 0};
-        const double t = 0.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 0.0);
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        fns.push_back({"mydexp", mhs::model::DoubleExponentialFunctionSpec {1.0, 0.5, 0.1}});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("mydexp(t)", sym);
+        FieldContext ctx {0, 0, 0, 0, 0.0};
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 0.0);
     }
 
-    TEST(FunctionHelpers, PiecewiseEvaluatorBelowFirst)
+    TEST(EndToEnd, PiecewiseEvaluator)
     {
-        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
-        auto ev = make_piecewise_evaluator(pts);
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        mhs::model::PiecewiseFunctionSpec pw;
+        pw.points = {{0, -1}, {1, 2}, {5, 3}};
+        fns.push_back({"mypw", std::move(pw)});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("mypw(t)", sym);
         FieldContext ctx {0, 0, 0, 0, -1.0};
-        const double t = -1.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), -1.0);
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), -1.0);
+        ctx.t = 10.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 3.0);
+        ctx.t = 3.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 2.5);
     }
 
-    TEST(FunctionHelpers, PiecewiseEvaluatorAboveLast)
+    TEST(EndToEnd, PeriodicPiecewiseConstant)
     {
-        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
-        auto ev = make_piecewise_evaluator(pts);
-        FieldContext ctx {0, 0, 0, 0, 10.0};
-        const double t = 10.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 3.0);
-    }
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
+        ppc.period = 10.0;
+        ppc.values = {1.0, 2.0, 3.0};
+        fns.push_back({"myppc", std::move(ppc)});
+        register_all_functions(sym, fns);
 
-    TEST(FunctionHelpers, PiecewiseEvaluatorLinearSegment)
-    {
-        std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts = {{0, -1}, {1, 2}, {5, 3}};
-        auto ev = make_piecewise_evaluator(pts);
-        // 段 [1,2]→[5,3]：x=3 时 t = (3-1)/(5-1) = 0.5，y = 2 + 0.5*(3-2) = 2.5
-        FieldContext ctx {0, 0, 0, 0, 3.0};
-        const double t = 3.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 2.5);
-    }
-
-    // ---- 周期分段常数 ------------------------------------------------------
-
-    TEST(FunctionHelpers, PeriodicPiecewiseConstantBasic)
-    {
-        // period=10, values=[1,2,3]
-        // [0,10)     → 1
-        // [10,20)    → 2
-        // [20,30)    → 3
-        // [30,40)    → 1  (wrap)
-        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {1.0, 2.0, 3.0});
+        auto compiled = mhs::core::parse("myppc(t)", sym);
         FieldContext ctx {};
-        const double t0 = 0.0;
-        EXPECT_DOUBLE_EQ(ev(&t0, 1, ctx), 1.0);
-        const double t1 = 5.0;
-        EXPECT_DOUBLE_EQ(ev(&t1, 1, ctx), 1.0);
-        const double t2 = 9.999;
-        EXPECT_DOUBLE_EQ(ev(&t2, 1, ctx), 1.0);
-        const double t3 = 10.0;
-        EXPECT_DOUBLE_EQ(ev(&t3, 1, ctx), 2.0);
-        const double t4 = 15.0;
-        EXPECT_DOUBLE_EQ(ev(&t4, 1, ctx), 2.0);
-        const double t5 = 20.0;
-        EXPECT_DOUBLE_EQ(ev(&t5, 1, ctx), 3.0);
-        const double t6 = 30.0;
-        EXPECT_DOUBLE_EQ(ev(&t6, 1, ctx), 1.0);
-        const double t7 = 35.0;
-        EXPECT_DOUBLE_EQ(ev(&t7, 1, ctx), 1.0);
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 1.0);
+        ctx.t = 5.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 1.0);
+        ctx.t = 10.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 2.0);
+        ctx.t = 20.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 3.0);
+        ctx.t = 30.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 1.0);
+        ctx.t = -5.0;
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 3.0);
     }
 
-    TEST(FunctionHelpers, PeriodicPiecewiseConstantEmpty)
+    TEST(PeriodicPiecewiseConstant, Empty)
     {
-        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {});
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
+        ppc.period = 10.0;
+        fns.push_back({"emptyppc", std::move(ppc)});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("emptyppc(t)", sym);
         FieldContext ctx {};
-        const double t = 5.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 0.0);
+        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 0.0);
     }
 
-    TEST(FunctionHelpers, PeriodicPiecewiseConstantSingleValue)
+    TEST(PeriodicPiecewiseConstant, SingleValue)
     {
-        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {42.0});
+        mhs::core::SymbolTable sym;
+        std::vector<mhs::model::NamedFunction> fns;
+        mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
+        ppc.period = 10.0;
+        ppc.values = {42.0};
+        fns.push_back({"singleppc", std::move(ppc)});
+        register_all_functions(sym, fns);
+
+        auto compiled = mhs::core::parse("singleppc(t)", sym);
         FieldContext ctx {};
         for (double t = -20.0; t <= 20.0; t += 5.0) {
-            EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 42.0);
+            ctx.t = t;
+            EXPECT_DOUBLE_EQ(compiled.eval(ctx), 42.0);
         }
-    }
-
-    TEST(FunctionHelpers, PeriodicPiecewiseConstantNegativeTime)
-    {
-        auto ev = make_periodic_piecewise_constant_evaluator(10.0, {1.0, 2.0, 3.0});
-        FieldContext ctx {};
-        // period=10, values=[1,2,3]
-        // 时间轴：
-        // ...[-30,-20)→values[0]=1  [-20,-10)→values[1]=2  [-10,0)→values[2]=3
-        // [0,10)→values[0]=1  [10,20)→values[1]=2  [20,30)→values[2]=3 ...
-        const double t = -5.0;
-        EXPECT_DOUBLE_EQ(ev(&t, 1, ctx), 3.0);
-        const double t2 = -15.0;
-        EXPECT_DOUBLE_EQ(ev(&t2, 1, ctx), 2.0);
-        const double t3 = -30.0;
-        EXPECT_DOUBLE_EQ(ev(&t3, 1, ctx), 1.0);
     }
 
     // ---- 字面替换 --------------------------------------------------------
@@ -162,7 +174,6 @@ namespace {
     TEST(Substitute, MultipleXReplaced)
     {
         auto fns = functions_with_gauss();
-        // test_gaussian(x)/(x*0.01+1) → test_gaussian(t)/(t*0.01+1)
         auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t", fns);
         EXPECT_EQ(out, "test_gaussian(t)/(t*0.01+1)");
     }
@@ -170,7 +181,6 @@ namespace {
     TEST(Substitute, XFollowedByUnderscoreNotReplaced)
     {
         auto fns = functions_with_gauss();
-        // "2*x + x_next" → "2*t + x_next"（第二个 x 后面是 _，不替换）
         auto out = substitute_function_args("2*x + x_next", "t", fns);
         EXPECT_EQ(out, "2*t + x_next");
     }
@@ -178,14 +188,12 @@ namespace {
     TEST(Substitute, XBetweenLettersNotReplaced)
     {
         auto fns = functions_with_gauss();
-        // "xx + axb" 中所有 x 都不替换
         auto out = substitute_function_args("xx + axb", "t", fns);
         EXPECT_EQ(out, "xx + axb");
     }
 
     TEST(Substitute, NoFunctionsNoChange)
     {
-        // 没有引用任何函数时，孤立 x 仍然替换
         std::vector<mhs::model::NamedFunction> fns;
         auto out = substitute_function_args("x+1", "T", fns);
         EXPECT_EQ(out, "T+1");
@@ -194,38 +202,7 @@ namespace {
     TEST(Substitute, UnknownFunctionNotWorking)
     {
         std::vector<mhs::model::NamedFunction> fns;
-        EXPECT_EQ(substitute_function_args("foo(x)", "T", fns), "foo(x)");
-    }
-
-    // ---- 注册 native + 端到端 eval --------------------------------------
-
-    TEST(EndToEnd, ParseTakesRegisteredNative)
-    {
-        mhs::core::SymbolTable sym;
-        auto fns = functions_with_gauss();
-        register_all_functions(sym, fns);
-
-        // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
-        auto out = substitute_function_args("test_gaussian(x)", "T", fns);
-        EXPECT_EQ(out, "test_gaussian(T)");
-
-        auto compiled = mhs::core::parse(out, sym);
-        // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
-        // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
-        FieldContext ctx {0, 0, 0, 20.0, 0.0};
-        EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
-    }
-
-    TEST(EndToEnd, NativeReadsTheBoundSymbol)
-    {
-        mhs::core::SymbolTable sym;
-        auto fns = functions_with_gauss();
-        register_all_functions(sym, fns);
-
-        // 不做字面替换（"test_gaussian(x)" 直接编译），muparser 把 x 槽绑定。
-        auto compiled = mhs::core::parse("test_gaussian(x)", sym);
-        FieldContext ctx {20.0, 0, 0, 0, 0};
-        EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
+        EXPECT_THROW(substitute_function_args("foo(x)", "T", fns), std::runtime_error);
     }
 
 } // namespace

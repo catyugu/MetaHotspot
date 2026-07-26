@@ -86,16 +86,11 @@ def build_model(h_value: float) -> metahotspot.Model:
     m.add_rect(b2, x="0", y="0", width="80", height="40")
     m.add_rect(b3, x="0", y="0", width="80", height="40")
 
-    bc_id = m.add_boundary()
-    m.set_convection(bc_id, coefficient=str(h_value), ambient_temperature="300")
-    m.add_face_region(
-        bc_id,
-        axis=enums.Axis.Z,
-        coordinate=30.0,
-        a_min=-50,
-        a_max=150,
-        b_min=-50,
-        b_max=150,
+    _regions = [
+        (enums.Axis.Z, 30.0, -50, 150, -50, 150),
+    ]
+    m.add_convection(
+        coefficient=str(h_value), ambient_temperature="300", regions=_regions
     )
     return m
 
@@ -116,8 +111,9 @@ def partition(compiled, nc, macro_layer, macro_block):
     geometry compiler's mask logic.
     """
     K = compiled.assemble().stiffness_matrix()
-    layer_ids = compiled.layer_ids()
-    block_ids = compiled.block_ids()
+    meta = compiled.metadata()
+    layer_ids = meta.layer_ids
+    block_ids = meta.block_ids
 
     is_macro = (layer_ids == macro_layer) & (block_ids == macro_block)
     macro_set = set(np.where(is_macro)[0])
@@ -348,7 +344,8 @@ def main():
 
     ref = build_model(50.0)
     comp_ref = ref.compile()
-    nc = comp_ref.cell_count()
+    meta = comp_ref.metadata()
+    nc = meta.cell_count
 
     nx, ny, nz = 50, 64, 9
     mesh_x = np.linspace(-50, 150, 51)
@@ -358,7 +355,7 @@ def main():
     # grid_to_cell is flat in ix-iy-iz order:
     #   idx = ix * ny * nz + iy * nz + iz
     # Reshape to (nx, ny, nz) gives g2c[ix, iy, iz] = SoA index or SIZE_MAX
-    g2c_3d = comp_ref.grid_to_cell().reshape(nx, ny, nz)
+    g2c_3d = meta.grid_to_cell.reshape(nx, ny, nz)
 
     e_idx, p_idx, i_idx = partition(comp_ref, nc, MACRO_LAYER, MACRO_BLOCK)
     ne, np_, ni = len(e_idx), len(p_idx), len(i_idx)

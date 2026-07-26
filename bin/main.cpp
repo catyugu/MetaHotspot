@@ -51,15 +51,8 @@ int main(int argc, char* argv[])
 
         // Fluid overlay: 加载与否由 CLI 决定；只有显式传入 --fluid-overlay 时才执行流体相关逻辑。
         if (fluidOverlayPath.has_value()) {
-            std::error_code ec;
-            if (std::filesystem::exists(*fluidOverlayPath, ec)) {
-                if (mhs::io::merge_fluid_xml(*fluidOverlayPath, definition)) {
-                    MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
-                }
-                else {
-                    MHS_LOG_WARN("Fluid data file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
-                }
-            }
+            mhs::io::merge_fluid_xml(*fluidOverlayPath, definition);
+            MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
         }
 
         auto model = mhs::sim::build_model(definition);

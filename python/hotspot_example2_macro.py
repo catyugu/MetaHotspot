@@ -204,16 +204,18 @@ def build_example2_model(
         )
         m.add_rect(bid, x="0", y="0", width=str(w), height=str(h))
 
-    bc_id = m.add_boundary()
-    m.set_convection(bc_id, coefficient=str(_h), ambient_temperature=str(T_AMB))
-    m.add_face_region(
-        bc_id,
-        axis=enums.Axis.Z,
-        coordinate=TOTAL_Z,
-        a_min=-(S_SINK - CHIP_L) / 2,
-        a_max=(S_SINK + CHIP_L) / 2,
-        b_min=-(S_SINK - CHIP_L) / 2,
-        b_max=(S_SINK + CHIP_L) / 2,
+    _regions = [
+        (
+            enums.Axis.Z,
+            TOTAL_Z,
+            -(S_SINK - CHIP_L) / 2,
+            (S_SINK + CHIP_L) / 2,
+            -(S_SINK - CHIP_L) / 2,
+            (S_SINK + CHIP_L) / 2,
+        ),
+    ]
+    m.add_convection(
+        coefficient=str(_h), ambient_temperature=str(T_AMB), regions=_regions
     )
     return m
 
@@ -448,15 +450,23 @@ def main():
 
     ref_model = build_example2_model(h_conv=H_CONV_NOMINAL)
     ref_c = ref_model.compile()
-    nc = ref_c.cell_count()
+    meta = ref_c.metadata()
+    nc = meta.cell_count
 
-    # Query mesh from compiled model (new API).
-    nx, ny, nz, xv, yv, zv = ref_c.mesh()
+    # Query mesh from compiled model.
+    nx, ny, nz, xv, yv, zv = (
+        meta.nx,
+        meta.ny,
+        meta.nz,
+        meta.x_verts,
+        meta.y_verts,
+        meta.z_verts,
+    )
     print(f"  Mesh: {nx}×{ny}×{nz} cells  ({len(xv)}×{len(yv)}×{len(zv)} vertices)")
 
     K_ref = ref_c.assemble().stiffness_matrix()
-    layer_ids = ref_c.layer_ids().copy()
-    block_ids = ref_c.block_ids().copy()
+    layer_ids = meta.layer_ids.copy()
+    block_ids = meta.block_ids.copy()
 
     e_idx, p_idx, i_idx = partition(
         K_ref, nc, layer_ids, block_ids, MACRO_LAYERS, MACRO_BLOCK

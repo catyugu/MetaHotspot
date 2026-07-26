@@ -16,7 +16,10 @@ from metahotspot.types import (
     SolverOpts,
     Rect2D,
     Point2D,
-    MhsMeshInfo,
+    MhsFaceRegion,
+    CompiledMetadataView,
+    SolutionView,
+    ProbeMetadata,
     MhsStepInfo,
 )
 
@@ -80,18 +83,18 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         ctypes.c_char_p,
         ctypes.c_char_p,
         ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
+        ctypes.c_char_p,  # kx, ky, kz
+        ctypes.c_char_p,  # rho
+        ctypes.c_char_p,  # c
+        ctypes.c_char_p,  # dynamic_viscosity
     ]
 
     dll.mhs_model_add_layer.restype = ctypes.c_uint32
     dll.mhs_model_add_layer.argtypes = [
         ctypes.POINTER(MhsModel),
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
+        ctypes.c_char_p,  # thickness
+        ctypes.c_char_p,  # x_offset
+        ctypes.c_char_p,  # y_offset
     ]
 
     dll.mhs_model_add_block.restype = ctypes.c_uint32
@@ -102,53 +105,44 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         ctypes.c_char_p,  # heat_source
         ctypes.c_char_p,  # x_offset
         ctypes.c_char_p,  # y_offset
-        ctypes.c_char_p,  # thickness (NULL = inherit)
+        ctypes.c_char_p,  # thickness (or None)
     ]
 
     dll.mhs_model_add_rect.restype = ctypes.c_int32
     dll.mhs_model_add_rect.argtypes = [
         ctypes.POINTER(MhsModel),
-        ctypes.c_uint32,
+        ctypes.c_uint32,  # block
         ctypes.c_int32,  # op
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
+        ctypes.c_char_p,  # x
+        ctypes.c_char_p,  # y
+        ctypes.c_char_p,  # width
+        ctypes.c_char_p,  # height
+    ]
+
+    # ---- Atomic boundary conditions ----
+    dll.mhs_model_add_dirichlet.restype = ctypes.c_int32
+    dll.mhs_model_add_dirichlet.argtypes = [
+        ctypes.POINTER(MhsModel),
+        ctypes.POINTER(MhsFaceRegion),  # regions
+        ctypes.c_size_t,  # n_regions
+        ctypes.c_char_p,  # temperature
+    ]
+
+    dll.mhs_model_add_neumann.restype = ctypes.c_int32
+    dll.mhs_model_add_neumann.argtypes = [
+        ctypes.POINTER(MhsModel),
+        ctypes.POINTER(MhsFaceRegion),
+        ctypes.c_size_t,
         ctypes.c_char_p,
     ]
 
-    # ---- Boundary conditions ----
-    dll.mhs_model_add_boundary.restype = ctypes.c_uint32
-    dll.mhs_model_add_boundary.argtypes = [ctypes.POINTER(MhsModel)]
-
-    dll.mhs_boundary_set_dirichlet.restype = ctypes.c_int32
-    dll.mhs_boundary_set_dirichlet.argtypes = [
+    dll.mhs_model_add_convection.restype = ctypes.c_int32
+    dll.mhs_model_add_convection.argtypes = [
         ctypes.POINTER(MhsModel),
-        ctypes.c_uint32,
-        ctypes.c_char_p,
-    ]
-
-    dll.mhs_boundary_set_neumann.restype = ctypes.c_int32
-    dll.mhs_boundary_set_neumann.argtypes = [
-        ctypes.POINTER(MhsModel),
-        ctypes.c_uint32,
-        ctypes.c_char_p,
-    ]
-
-    dll.mhs_boundary_set_convection.restype = ctypes.c_int32
-    dll.mhs_boundary_set_convection.argtypes = [
-        ctypes.POINTER(MhsModel),
-        ctypes.c_uint32,
-        ctypes.c_char_p,
-        ctypes.c_char_p,
-    ]
-
-    dll.mhs_boundary_add_face_region.restype = ctypes.c_int32
-    dll.mhs_boundary_add_face_region.argtypes = [
-        ctypes.POINTER(MhsModel),
-        ctypes.c_uint32,
-        ctypes.c_int32,
-        ctypes.c_double,
-        Rect2D,
+        ctypes.POINTER(MhsFaceRegion),
+        ctypes.c_size_t,
+        ctypes.c_char_p,  # coefficient
+        ctypes.c_char_p,  # ambient_temperature
     ]
 
     dll.mhs_model_set_default_dirichlet.restype = ctypes.c_int32
@@ -222,7 +216,7 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         ctypes.c_double,
     ]
 
-    # ---- Probes / fluid boundaries ----
+    # ---- Probes & fluid boundaries ----
     dll.mhs_model_add_probe.restype = ctypes.c_uint32
     dll.mhs_model_add_probe.argtypes = [
         ctypes.POINTER(MhsModel),
@@ -235,15 +229,15 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_model_add_fluid_boundary.restype = ctypes.c_int32
     dll.mhs_model_add_fluid_boundary.argtypes = [
         ctypes.POINTER(MhsModel),
-        ctypes.c_int32,
-        ctypes.c_double,
+        ctypes.c_int32,  # axis
+        ctypes.c_double,  # coordinate
         Rect2D,
-        ctypes.c_int32,
-        ctypes.c_double,
-        ctypes.c_double,
+        ctypes.c_int32,  # kind
+        ctypes.c_double,  # value
+        ctypes.c_double,  # inlet_temperature
     ]
 
-    # ---- Compilation ----
+    # ---- Compiled metadata ----
     dll.mhs_model_compile.restype = ctypes.c_int32
     dll.mhs_model_compile.argtypes = [
         ctypes.POINTER(MhsModel),
@@ -253,62 +247,10 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_compiled_destroy.restype = ctypes.c_int32
     dll.mhs_compiled_destroy.argtypes = [ctypes.POINTER(MhsCompiled)]
 
-    dll.mhs_compiled_cell_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_cell_count.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_state_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_state_count.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_node_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_node_count.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_initial_temperature.restype = ctypes.c_double
-    dll.mhs_compiled_initial_temperature.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_study_type.restype = ctypes.c_int32
-    dll.mhs_compiled_study_type.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_layer_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_layer_count.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_block_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_block_count.argtypes = [
+    dll.mhs_compiled_metadata.restype = ctypes.c_int32
+    dll.mhs_compiled_metadata.argtypes = [
         ctypes.POINTER(MhsCompiled),
-        ctypes.c_uint32,
-    ]
-
-    dll.mhs_compiled_layer_ids.restype = ctypes.POINTER(ctypes.c_uint32)
-    dll.mhs_compiled_layer_ids.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_block_ids.restype = ctypes.POINTER(ctypes.c_uint32)
-    dll.mhs_compiled_block_ids.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_grid_count.restype = ctypes.c_size_t
-    dll.mhs_compiled_grid_count.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_grid_to_cell.restype = ctypes.POINTER(ctypes.c_size_t)
-    dll.mhs_compiled_grid_to_cell.argtypes = [ctypes.POINTER(MhsCompiled)]
-
-    dll.mhs_compiled_mesh.restype = ctypes.c_int32
-    dll.mhs_compiled_mesh.argtypes = [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsMeshInfo)]
-
-    dll.mhs_compiled_step.restype = ctypes.c_int32
-    dll.mhs_compiled_step.argtypes = [
-        ctypes.POINTER(MhsCompiled),
-        ctypes.POINTER(ctypes.c_double),  # state
-        ctypes.c_double,                   # time
-        ctypes.c_double,                   # dt
-        ctypes.POINTER(ctypes.c_double),  # out_state
-        ctypes.POINTER(MhsStepInfo),       # info (nullable)
-        ctypes.POINTER(SolverOpts),        # opts (nullable)
-    ]
-
-    # ---- Compiled model — pre-solve configuration ----
-    dll.mhs_compiled_set_initial_state.restype = ctypes.c_int32
-    dll.mhs_compiled_set_initial_state.argtypes = [
-        ctypes.POINTER(MhsCompiled),
-        ctypes.POINTER(ctypes.c_double),
-        ctypes.c_size_t,
+        ctypes.POINTER(CompiledMetadataView),
     ]
 
     # ---- Model introspection ----
@@ -321,47 +263,78 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_model_material_count.restype = ctypes.c_size_t
     dll.mhs_model_material_count.argtypes = [ctypes.POINTER(MhsModel)]
 
+    # ---- Assembly ----
+    dll.mhs_compiled_assemble.restype = ctypes.c_int32
+    dll.mhs_compiled_assemble.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(ctypes.c_double),  # state or None
+        ctypes.c_double,  # time
+        ctypes.POINTER(ctypes.POINTER(MhsAssembly)),
+    ]
+
+    dll.mhs_assembly_destroy.restype = ctypes.c_int32
+    dll.mhs_assembly_destroy.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_n.restype = ctypes.c_size_t
+    dll.mhs_assembly_n.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_rhs.restype = ctypes.POINTER(ctypes.c_double)
+    dll.mhs_assembly_rhs.argtypes = [ctypes.POINTER(MhsAssembly)]
+
+    dll.mhs_assembly_matrix.restype = ctypes.c_int32
+    dll.mhs_assembly_matrix.argtypes = [
+        ctypes.POINTER(MhsAssembly),
+        ctypes.c_int32,
+        ctypes.POINTER(CscView),
+    ]
+
+    # ---- Pre-solve ----
+    dll.mhs_compiled_set_initial_state.restype = ctypes.c_int32
+    dll.mhs_compiled_set_initial_state.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+    ]
+
     # ---- Solve ----
     dll.mhs_compiled_solve.restype = ctypes.c_int32
     dll.mhs_compiled_solve.argtypes = [
         ctypes.POINTER(MhsCompiled),
-        ctypes.POINTER(SolverOpts),
-        ctypes.POINTER(ctypes.POINTER(MhsSolution)),
-    ]
-
-    dll.mhs_solve.restype = ctypes.c_int32
-    dll.mhs_solve.argtypes = [
-        ctypes.POINTER(MhsModel),
-        ctypes.POINTER(SolverOpts),
+        ctypes.POINTER(SolverOpts),  # or None
         ctypes.POINTER(ctypes.POINTER(MhsSolution)),
     ]
 
     dll.mhs_solution_destroy.restype = ctypes.c_int32
     dll.mhs_solution_destroy.argtypes = [ctypes.POINTER(MhsSolution)]
 
-    # ---- Solution accessors ----
-    dll.mhs_solution_state_count.restype = ctypes.c_size_t
-    dll.mhs_solution_state_count.argtypes = [ctypes.POINTER(MhsSolution)]
+    # ---- Single step ----
+    dll.mhs_compiled_step.restype = ctypes.c_int32
+    dll.mhs_compiled_step.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(ctypes.c_double),  # state
+        ctypes.c_double,  # time
+        ctypes.c_double,  # dt
+        ctypes.POINTER(ctypes.c_double),  # out_state
+        ctypes.POINTER(MhsStepInfo),  # info or None
+        ctypes.POINTER(SolverOpts),  # or None
+    ]
 
-    dll.mhs_solution_cell_count.restype = ctypes.c_size_t
-    dll.mhs_solution_cell_count.argtypes = [ctypes.POINTER(MhsSolution)]
+    # ---- VTU ----
+    dll.mhs_compiled_write_vtu.restype = ctypes.c_int32
+    dll.mhs_compiled_write_vtu.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(MhsSolution),
+        ctypes.c_char_p,
+    ]
 
-    dll.mhs_solution_node_count.restype = ctypes.c_size_t
-    dll.mhs_solution_node_count.argtypes = [ctypes.POINTER(MhsSolution)]
+    # ---- Solution view ----
+    dll.mhs_solution_view.restype = ctypes.c_int32
+    dll.mhs_solution_view.argtypes = [
+        ctypes.POINTER(MhsSolution),
+        ctypes.POINTER(SolutionView),
+    ]
 
-    dll.mhs_solution_time.restype = ctypes.c_double
-    dll.mhs_solution_time.argtypes = [ctypes.POINTER(MhsSolution)]
-
-    dll.mhs_solution_states.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_solution_states.argtypes = [ctypes.POINTER(MhsSolution)]
-
-    dll.mhs_solution_cell_temperatures.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_solution_cell_temperatures.argtypes = [ctypes.POINTER(MhsSolution)]
-
-    dll.mhs_solution_node_temperatures.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_solution_node_temperatures.argtypes = [ctypes.POINTER(MhsSolution)]
-
-    # ---- Probes ----
+    # ---- Probe accessors ----
     dll.mhs_solution_probe_count.restype = ctypes.c_size_t
     dll.mhs_solution_probe_count.argtypes = [ctypes.POINTER(MhsSolution)]
 
@@ -389,35 +362,13 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         ctypes.c_size_t,
     ]
 
-    # ---- VTU export ----
-    dll.mhs_compiled_write_vtu.restype = ctypes.c_int32
-    dll.mhs_compiled_write_vtu.argtypes = [
-        ctypes.POINTER(MhsCompiled),
+    dll.mhs_solution_probe_metadata.restype = ctypes.c_int32
+    dll.mhs_solution_probe_metadata.argtypes = [
         ctypes.POINTER(MhsSolution),
-        ctypes.c_char_p,
+        ctypes.POINTER(ProbeMetadata),
     ]
 
-    # ---- Assembly ----
-    dll.mhs_compiled_assemble.restype = ctypes.c_int32
-    dll.mhs_compiled_assemble.argtypes = [
-        ctypes.POINTER(MhsCompiled),
-        ctypes.POINTER(ctypes.c_double),
-        ctypes.c_double,
-        ctypes.POINTER(ctypes.POINTER(MhsAssembly)),
+    dll.mhs_solution_probe_metadata_free.restype = ctypes.c_int32
+    dll.mhs_solution_probe_metadata_free.argtypes = [
+        ctypes.POINTER(ProbeMetadata),
     ]
-
-    dll.mhs_assembly_destroy.restype = ctypes.c_int32
-    dll.mhs_assembly_destroy.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_n.restype = ctypes.c_size_t
-    dll.mhs_assembly_n.argtypes = [ctypes.POINTER(MhsAssembly)]
-
-    dll.mhs_assembly_matrix.restype = ctypes.c_int32
-    dll.mhs_assembly_matrix.argtypes = [
-        ctypes.POINTER(MhsAssembly),
-        ctypes.c_int32,
-        ctypes.POINTER(CscView),
-    ]
-
-    dll.mhs_assembly_rhs.restype = ctypes.POINTER(ctypes.c_double)
-    dll.mhs_assembly_rhs.argtypes = [ctypes.POINTER(MhsAssembly)]
