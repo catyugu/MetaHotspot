@@ -241,7 +241,6 @@ namespace mhs::sim {
         model.cells = assign_cell_layers(resolved_layers, mesh);
         model.dofs.cell_states = {0, model.cells.cell_to_grid.size()};
         model.dofs.total_count = model.dofs.cell_states.count;
-        model.initial_state.assign(model.dofs.total_count, model.initial_temperature);
         resolve_boundary_patches(mesh, model.cells, compiled_boundaries, default_boundary, model.face_bcs);
 
         // Fluid coupling.

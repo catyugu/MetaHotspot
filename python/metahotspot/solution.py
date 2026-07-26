@@ -36,7 +36,11 @@ class Solution(OwnedHandle):
 
     @classmethod
     def _solve_compiled(
-        cls, dll, compiled_handle, opts: SolverOpts | None = None
+        cls,
+        dll,
+        compiled_handle,
+        state: np.ndarray | None = None,
+        opts: SolverOpts | None = None,
     ) -> Solution:
         """Solve a compiled model and wrap the result."""
         self = cls()
@@ -44,8 +48,17 @@ class Solution(OwnedHandle):
         self._destroy_fn = dll.mhs_solution_destroy
         pp = ctypes.POINTER(MhsSolution)()
         opts_ptr = ctypes.byref(opts) if opts is not None else None
+        state_ptr = (
+            state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            if state is not None
+            else None
+        )
+        state_count = state.size if state is not None else 0
         check(
-            dll.mhs_compiled_solve(compiled_handle, opts_ptr, ctypes.byref(pp)), "solve"
+            dll.mhs_compiled_solve(
+                compiled_handle, state_ptr, state_count, opts_ptr, ctypes.byref(pp)
+            ),
+            "solve",
         )
         self._handle = pp
         self._compiled_handle = compiled_handle  # keep for write_vtu

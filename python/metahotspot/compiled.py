@@ -82,32 +82,39 @@ class Compiled(OwnedHandle):
             nz=view.nz,
         )
 
-    # ---- Pre-solve configuration ----
-
-    def set_initial_state(self, state: np.ndarray) -> None:
-        """Override the initial state from a previous solution."""
-        ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-        check(
-            self._dll.mhs_compiled_set_initial_state(self._handle, ptr, state.size),
-            "set_initial_state",
-        )
-
     # ---- Solve ----
 
-    def solve(self, opts: SolverOpts | None = None) -> Solution:
-        """Solve the compiled model."""
+    def default_state(self) -> np.ndarray:
+        """Return a uniform state vector filled with ``initial_temperature``."""
+        meta = self.metadata()
+        return np.full(meta.state_count, meta.initial_temperature, dtype=np.float64)
+
+    def solve(
+        self,
+        state: np.ndarray | None = None,
+        opts: SolverOpts | None = None,
+    ) -> Solution:
+        """Solve the compiled model.
+
+        If *state* is provided, it is used as the initial condition.
+        Otherwise, the model's initial_temperature is used.
+        """
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self._dll, self._handle, opts)
+        return Solution._solve_compiled(self._dll, self._handle, state, opts)
 
     # ---- Assembly ----
 
     def assemble(
         self,
-        state: np.ndarray | None = None,
+        state: np.ndarray,
         time: float = 0.0,
     ) -> Assembly:
-        """Assemble K, f at a given temperature field and time."""
+        """Assemble K, C, f at a given temperature field and time.
+
+        *state* is required — use ``Compiled.default_state()`` or any
+        compatible state vector.
+        """
         from metahotspot.assembly import Assembly
 
         return Assembly._assemble(self._dll, self._handle, state, time)

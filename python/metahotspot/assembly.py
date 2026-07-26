@@ -23,16 +23,14 @@ class Assembly(OwnedHandle):
         super().__init__(None, None)
 
     @classmethod
-    def _assemble(cls, dll, compiled_handle, state=None, time=0.0) -> Assembly:
+    def _assemble(
+        cls, dll, compiled_handle, state: np.ndarray, time: float = 0.0
+    ) -> Assembly:
         self = cls()
         self._dll = dll
         self._destroy_fn = dll.mhs_assembly_destroy
         pp = ctypes.POINTER(MhsAssembly)()
-        state_ptr = (
-            state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            if state is not None
-            else None
-        )
+        state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
         check(
             dll.mhs_compiled_assemble(
                 compiled_handle, state_ptr, time, ctypes.byref(pp)

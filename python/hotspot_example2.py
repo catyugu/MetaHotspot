@@ -379,12 +379,9 @@ def main():
         output_interval=OUTPUT_INTERVAL,
     )
 
-    # Chain steady-state as initial condition
+    # Chain steady-state as initial condition — pass directly to solve()
     c_transient = transient_model.compile()
-    c_transient.set_initial_state(steady_state)
-
-    # Solve
-    sol_transient = c_transient.solve()
+    sol_transient = c_transient.solve(state=steady_state)
     t_transient = _time.perf_counter() - t0
 
     final_temp = sol_transient.view().cell_temperatures.copy()

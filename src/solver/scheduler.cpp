@@ -91,7 +91,8 @@ namespace mhs::sim {
         return result;
     }
 
-    mhs::core::Solution solve(const mhs::core::Model& model, const SolveOptions& options)
+    mhs::core::Solution solve(
+        const mhs::core::Model& model, const SolveOptions& options, std::span<const double> initial_state)
     {
         auto solver = LinearSolver::create(options.solver);
         ProbeRecorder probe_recorder;
@@ -99,7 +100,12 @@ namespace mhs::sim {
         StepState step;
 
         const mhs::core::Index state_count = model.dofs.total_count;
-        step.state = model.initial_state;
+        if (!initial_state.empty()) {
+            step.state.assign(initial_state.begin(), initial_state.end());
+        }
+        else {
+            step.state.assign(static_cast<std::size_t>(state_count), model.initial_temperature);
+        }
         assert(step.state.size() == state_count);
         step.current_time = 0.0;
         step.time_step = 0;

@@ -322,22 +322,14 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(CscView),
         ],
     ),
-    # ---- Pre-solve ----
-    (
-        "mhs_compiled_set_initial_state",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
-    ),
     # ---- Solve ----
     (
         "mhs_compiled_solve",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
             ctypes.POINTER(SolverOpts),
             ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],

@@ -11,7 +11,7 @@ Usage::
     T_cells = solution.view().cell_temperatures
 
     # Access the assembled linear system for custom workflows
-    assembly = compiled.assemble()
+    assembly = compiled.assemble(compiled.default_state())
     K, C, f = assembly.operators()
 """
 

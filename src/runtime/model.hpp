@@ -97,7 +97,6 @@ namespace mhs::core {
         std::vector<CompiledExpression> heat_source_table;
 
         double initial_temperature = 300.0;
-        std::vector<double> initial_state;
         StudyType study_type = StudyType::Steady;
         double transient_duration = 0.0;
         double transient_time_step = 1.0;

@@ -29,7 +29,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 - 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
-- `Model::initial_state` 与 `Model::dofs.total_count` 同维，调度器不推断额外初值。
+- 初状态由 `solve(state=)` 可选传入，为空时从 `initial_temperature` 构建均匀向量。
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 

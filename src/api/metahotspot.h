@@ -320,13 +320,12 @@ MHS_API size_t mhs_assembly_n(const mhs_assembly_t* a);
 MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
 MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a);
 
-MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count);
-
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solver_opts_t* opts, mhs_solution_t** out);
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
+    const mhs_solver_opts_t* opts, mhs_solution_t** out);
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 
 /* ------------------------------------------------------------------ */

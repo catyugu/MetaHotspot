@@ -24,6 +24,12 @@ namespace {
         return mhs::sim::build_model(definition);
     }
 
+    /// Build the default (uniform initial_temperature) state vector.
+    std::vector<double> default_state(const mhs::core::Model& model)
+    {
+        return std::vector<double>(static_cast<std::size_t>(model.dofs.total_count), model.initial_temperature);
+    }
+
 } // namespace
 
 TEST(FluidModuleTest, PreprocessorStoresOnlyAssemblyReadyFields)
@@ -88,7 +94,7 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
 {
     auto model = load_microfluid_case();
-    const auto increment = mhs::sim::fluid::assemble_increment(model, model.initial_state, 0.0);
+    const auto increment = mhs::sim::fluid::assemble_increment(model, default_state(model), 0.0);
 
     for (const auto& entry : increment.matrix_entries) {
         const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row());

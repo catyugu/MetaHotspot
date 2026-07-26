@@ -13,7 +13,6 @@ XML
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> mhs::sim::assign_cell_layers       (grid_to_cell [full-grid]; cell_to_grid + fields [compact])
                       ├─> mhs::core::DofLayout               (cell_states + total_count)
-                      ├─> initial_state             (与全局状态布局同维)
                       ├─> heat_source_table        (按 Block 编译 volumetric_heat_source)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
                       ├─> mhs::sim::fluid::build_domain

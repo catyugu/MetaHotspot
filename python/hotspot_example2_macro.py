@@ -468,7 +468,7 @@ def main():
     nvx, nvy, nvz = nx + 1, ny + 1, nz + 1
     print(f"  Mesh: {nx}×{ny}×{nz} cells  ({nvx}×{nvy}×{nvz} vertices)")
 
-    K_ref = ref_c.assemble().stiffness_matrix()
+    K_ref = ref_c.assemble(ref_c.default_state()).stiffness_matrix()
     layer_ids = meta.layer_ids.copy()
     block_ids = meta.block_ids.copy()
 
@@ -553,7 +553,7 @@ def main():
         c = m.compile()
         sol = c.solve()
         T_full = sol.view().cell_temperatures.copy()
-        f_test = c.assemble().rhs()
+        f_test = c.assemble(c.default_state()).rhs()
         sol.close()
         c.close()
         m.close()
@@ -651,8 +651,9 @@ def main():
         initial_temperature_K=T_AMB,
     )
     c_rom_t = m_rom_t.compile()
-    K_rom = c_rom_t.assemble().stiffness_matrix()
-    C_rom = c_rom_t.assemble().capacity_matrix()
+    default_T = c_rom_t.default_state()
+    K_rom = c_rom_t.assemble(default_T).stiffness_matrix()
+    C_rom = c_rom_t.assemble(default_T).capacity_matrix()
 
     ctx = bci_transient_setup(K_rom, C_rom, e_idx, p_idx, i_idx, U_r, SAMPLING_INTVL)
 
@@ -660,7 +661,7 @@ def main():
     T_rom_arr = T0.copy()
     for n in range(N_TRANSIENT_STEPS):
         t_np1 = (n + 1) * SAMPLING_INTVL
-        f = c_rom_t.assemble(time=t_np1).rhs()
+        f = c_rom_t.assemble(default_T, time=t_np1).rhs()
         T_rom_arr = bci_transient_step(T_rom_arr, f, ctx, e_idx, p_idx, i_idx, U_r)
         if (n + 1) in checkpts:
             rom_check[n + 1] = T_rom_arr.copy()
@@ -713,8 +714,8 @@ def main():
         c_f = m_f.compile()
         sol = c_f.solve()
         T_full_h = sol.view().cell_temperatures.copy()
-        f_h = c_f.assemble().rhs()
-        K_h = c_f.assemble().stiffness_matrix()
+        f_h = c_f.assemble(c_f.default_state()).rhs()
+        K_h = c_f.assemble(c_f.default_state()).stiffness_matrix()
         sol.close()
         c_f.close()
         m_f.close()

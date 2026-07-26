@@ -173,7 +173,7 @@ def main():
     layer_ids = meta.layer_ids.copy()
     block_ids = meta.block_ids.copy()
 
-    assembly = compiled.assemble()
+    assembly = compiled.assemble(compiled.default_state())
     K = assembly.stiffness_matrix()
     rhs = assembly.rhs()
     assembly.close()

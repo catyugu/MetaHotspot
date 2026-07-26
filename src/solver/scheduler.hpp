@@ -5,6 +5,8 @@
 #include "solver/nonlinear_solver.hpp"
 #include "solver/time_integration.hpp"
 
+#include <span>
+
 namespace mhs::sim {
 
     struct SolveOptions {
@@ -33,6 +35,10 @@ namespace mhs::sim {
         time_scheme::IntegratorKind integrator = time_scheme::IntegratorKind::Bdf1);
 
     /// Solve a steady or transient thermal model.
-    mhs::core::Solution solve(const mhs::core::Model& model, const SolveOptions& options = {});
+    ///
+    /// If initial_state is empty, it is initialized from
+    /// model.initial_temperature.
+    mhs::core::Solution solve(
+        const mhs::core::Model& model, const SolveOptions& options = {}, std::span<const double> initial_state = {});
 
 } // namespace mhs::sim

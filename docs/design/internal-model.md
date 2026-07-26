@@ -94,7 +94,6 @@ struct Model {
     std::vector<CompiledExpression> heat_source_table;  // 每个 Block 一项
 
     double initial_temperature = 300.0;
-    std::vector<double> initial_state; // size == dofs.total_count
     StudyType study_type = StudyType::Steady;
     double transient_duration    = 0.0;
     double transient_time_step   = 1.0; // output interval
@@ -127,7 +126,7 @@ struct FluidDomain {
 - **双向拓扑**：assembler 通过 `cell_to_grid` 只遍历活跃单元；邻居查询和 postprocessor 通过 `grid_to_cell` 识别虚拟位置
 - **面级 BC**：`face_bcs` 为 `[N_active * 6]` 扁平数组，消除了 `CellBC` 结构体。`face_bcs[c*6 + dir]` 直接索引。虚拟邻居已在 `resolve_boundary_patches()` 阶段填好默认边界
 - **默认边界在预处理阶段填充**，不在装配时；显式边界按顺序覆盖
-- **状态所有权唯一**：`DofLayout` 只保存全局布局；各类状态的初值统一保存在与布局同维的 `initial_state` 中，调度器不再推断初值
+- **调度器不再持有初状态**：`Model` 不再包含 `initial_state` 字段；`solve()` 通过可选参数接收初状态，为空时从 `initial_temperature` 构建均匀状态向量。用户可通过 `Compiled.solve(state=)` 传入任意初状态。
 - **Ring buffer (`SolutionHistory`)**：容量由构造函数显式指定；当前调度器使用容量 2。`accepted.current() == T` 在每步接受后成立。
 - **各向异性 k**：`MaterialProps` 按 X / Y / Z 三轴分字段 `kx / ky / kz`，与装配时面法向 1:1 对应。面法向助手统一定义在 `src/runtime/mesh.hpp`。
 - **流体域**：`FluidDomain` 只包含热组装所需的冻结面流量、流固换热因子和边界出流/温度；水力预处理状态不进入 `Model`

@@ -765,18 +765,13 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out)
 {
     CHECK_NULL(c);
+    CHECK_NULL(state);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_ASSEMBLE, {
         mhs::sim::Assembler assembler(c->model);
 
         const auto n = c->model.dofs.total_count;
-        std::vector<double> current_state(n);
-        if (state) {
-            std::copy_n(state, n, current_state.begin());
-        }
-        else {
-            current_state = c->model.initial_state;
-        }
+        std::vector<double> current_state(state, state + n);
 
         mhs::sim::AssembleContext ctx {current_state, time};
         auto result = assembler.assemble(ctx);
@@ -848,24 +843,12 @@ MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count)
-{
-    CHECK_NULL(c);
-    CHECK_NULL(state);
-    MHS_TRY(MHS_ERR_RUNTIME, {
-        if (count != static_cast<size_t>(c->model.dofs.total_count)) {
-            SET_ERR("set_initial_state: expected " << c->model.dofs.total_count << " values, got " << count);
-            return MHS_ERR_INVALID_ARG;
-        }
-        c->model.initial_state.assign(state, state + count);
-    });
-}
-
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solver_opts_t* opts, mhs_solution_t** out)
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
+    const mhs_solver_opts_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
@@ -881,7 +864,12 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
             so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
         }
 
-        auto sol = mhs::sim::solve(c->model, so);
+        std::span<const double> initial_state;
+        if (state && state_count > 0) {
+            initial_state = std::span<const double>(state, state_count);
+        }
+
+        auto sol = mhs::sim::solve(c->model, so, initial_state);
 
         auto* s = new (std::nothrow) mhs_solution_t {std::move(sol)};
         if (!s) {
