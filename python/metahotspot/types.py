@@ -101,9 +101,6 @@ class CompiledMetadataView(ctypes.Structure):
         ("nx", ctypes.c_size_t),
         ("ny", ctypes.c_size_t),
         ("nz", ctypes.c_size_t),
-        ("x_verts", ctypes.POINTER(ctypes.c_double)),
-        ("y_verts", ctypes.POINTER(ctypes.c_double)),
-        ("z_verts", ctypes.POINTER(ctypes.c_double)),
     ]
 
 
@@ -111,11 +108,9 @@ class SolutionView(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
         ("state_count", ctypes.c_size_t),
-        ("node_count", ctypes.c_size_t),
         ("time", ctypes.c_double),
         ("cell_temperatures", ctypes.POINTER(ctypes.c_double)),
         ("states", ctypes.POINTER(ctypes.c_double)),
-        ("node_temperatures", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

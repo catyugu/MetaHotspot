@@ -160,13 +160,10 @@ typedef struct {
     size_t grid_count; // nx * ny * nz
     mhs_study_t study_type;
     double initial_temperature;
-    const uint32_t* layer_ids; // [cell_count]
-    const uint32_t* block_ids; // [cell_count]
+    const uint32_t* layer_ids; // [cell_count] post-processing only
+    const uint32_t* block_ids; // [cell_count] post-processing only
     const size_t* grid_to_cell; // [grid_count]
     size_t nx, ny, nz;
-    const double* x_verts; // [nx+1]
-    const double* y_verts; // [ny+1]
-    const double* z_verts; // [nz+1]
 } mhs_compiled_metadata_t;
 
 /**
@@ -175,16 +172,13 @@ typedef struct {
  * All pointer fields are valid until the solution handle is destroyed.
  * cell_temperatures is the cell-centroid field [cell_count].
  * states is the full DOF state vector [state_count].
- * node_temperatures is interpolated to vertices [node_count].
  */
 typedef struct {
     size_t cell_count;
     size_t state_count;
-    size_t node_count;
     double time;
     const double* cell_temperatures; // [cell_count]
     const double* states; // [state_count]
-    const double* node_temperatures; // [node_count]
 } mhs_solution_view_t;
 
 /**

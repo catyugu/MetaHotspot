@@ -27,11 +27,6 @@ namespace mhs::core {
         std::vector<double> cx;
         std::vector<double> cy;
         std::vector<double> cz;
-
-        // Original mesh vertices (SI units) — populated by build_model().
-        std::vector<double> x_verts;
-        std::vector<double> y_verts;
-        std::vector<double> z_verts;
     };
 
     // ── Material properties ──────────────────────────────────────────────
@@ -61,7 +56,7 @@ namespace mhs::core {
         std::vector<TableIndex> material_id; // index into material_table
         std::vector<TableIndex> heat_source_idx; // index into heat_source_table
 
-        // Per-cell layer/block indices (for region selection).
+        // Per-cell layer/block indices (post-processing only — not read by solver).
         std::vector<TableIndex> layer_id;
         std::vector<TableIndex> block_id;
     };

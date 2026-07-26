@@ -8,7 +8,7 @@ Usage::
     model.read_xml("case.xml")
     compiled = model.compile()
     solution = compiled.solve()
-    T_cells = solution.cell_temperatures()
+    T_cells = solution.view().cell_temperatures
 
     # Access the assembled linear system for custom workflows
     assembly = compiled.assemble()

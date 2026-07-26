@@ -8,6 +8,7 @@ from typing import NamedTuple
 import numpy as np
 
 from metahotspot._error import check
+from metahotspot._handle import OwnedHandle
 from metahotspot.types import (
     MhsCompiled,
     CompiledMetadataView,
@@ -31,41 +32,29 @@ CompiledMetadata = NamedTuple(
         ("nx", int),
         ("ny", int),
         ("nz", int),
-        ("x_verts", np.ndarray),
-        ("y_verts", np.ndarray),
-        ("z_verts", np.ndarray),
     ],
 )
 
 
-class Compiled:
+class Compiled(OwnedHandle):
     """Read-only compiled runtime model.
 
     Do not instantiate directly — use ``Model.compile()``.
     """
 
     def __init__(self) -> None:
-        self._dll = None
-        self._handle: MhsCompiled | None = None
-        self._owned = True
+        super().__init__(None, None)
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
         """Compile *model_handle* and return a new Compiled instance."""
         self = cls()
         self._dll = dll
+        self._destroy_fn = dll.mhs_compiled_destroy
         pp = ctypes.POINTER(MhsCompiled)()
         check(dll.mhs_model_compile(model_handle, ctypes.byref(pp)), "compile")
         self._handle = pp
         return self
-
-    def __del__(self) -> None:
-        self.close()
-
-    def close(self) -> None:
-        if self._owned and self._handle is not None:
-            self._dll.mhs_compiled_destroy(self._handle)
-            self._handle = None
 
     # ---- Metadata view (single C call, replaces ~12 individual accessors) ----
 
@@ -91,22 +80,7 @@ class Compiled:
             nx=view.nx,
             ny=view.ny,
             nz=view.nz,
-            x_verts=np.ctypeslib.as_array(view.x_verts, shape=(view.nx + 1,)),
-            y_verts=np.ctypeslib.as_array(view.y_verts, shape=(view.ny + 1,)),
-            z_verts=np.ctypeslib.as_array(view.z_verts, shape=(view.nz + 1,)),
         )
-
-    # ---- Shortcuts for common metadata fields ----
-    # Prefer calling metadata() once and using the NamedTuple fields.
-
-    def cell_count(self) -> int:
-        return self.metadata().cell_count
-
-    def state_count(self) -> int:
-        return self.metadata().state_count
-
-    def node_count(self) -> int:
-        return self.metadata().node_count
 
     # ---- Pre-solve configuration ----
 
@@ -148,7 +122,7 @@ class Compiled:
         opts: SolverOpts | None = None,
     ) -> tuple[np.ndarray, dict | None]:
         """Execute a single transient time step (BDF1)."""
-        n = self.state_count()
+        n = self.metadata().state_count
         assert len(state) == n, f"state length {len(state)} != {n}"
         out_state = np.empty(n, dtype=np.float64)
         step_info = MhsStepInfo()

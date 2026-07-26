@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -103,14 +102,6 @@ namespace mhs::sim {
 
     namespace {
 
-        // muparser 内建符号（变量 + 常量），引用处出现这些名字不算"未注册函数"。
-        // 仅作宽松白名单；真正的语法校验由后续 mhs::core::parse 负责。
-        bool is_known_builtin(std::string_view name)
-        {
-            return name == "x" || name == "y" || name == "z" || name == "T" || name == "t" || name == "pi"
-                || name == "e";
-        }
-
         // identifier-char 判定：[A-Za-z0-9_]
         bool is_id_char(char c)
         {
@@ -120,21 +111,13 @@ namespace mhs::sim {
         // identifier-start 判定：[A-Za-z_]（与 is_id_char 的区别在数字）
         bool is_id_start(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; }
 
-        bool has_function(const std::vector<mhs::model::NamedFunction>& functions, std::string_view name)
-        {
-            return std::any_of(functions.begin(), functions.end(),
-                [&](const mhs::model::NamedFunction& function) { return function.name == name; });
-        }
-
     } // namespace
 
-    std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
-        const std::vector<mhs::model::NamedFunction>& functions)
+    std::string substitute_function_args(const std::string& expr_str, const std::string& argname)
     {
         // 单次扫描：找到每个 identifier-start → 读到 identifier 末尾 →
-        //   1) 若紧跟 `(` 且不在白名单也不在 fns → panic
-        //   2) 否则是裸 x 且 argname 槽匹配 → 写入 argname
-        //   3) 其余原样拷贝
+        //   1) 若 identifier 是裸 x 且 argname 槽匹配 → 写入 argname
+        //   2) 其余原样拷贝
         const size_t n = expr_str.size();
         std::string out;
         out.reserve(n);
@@ -146,14 +129,7 @@ namespace mhs::sim {
                 while (i < n && is_id_char(expr_str[i]))
                     i++;
                 std::string_view name(expr_str.data() + start, i - start);
-                if (i < n && expr_str[i] == '(') {
-                    if (!is_known_builtin(name) && !has_function(functions, name)) {
-                        throw std::runtime_error(
-                            "unknown function '" + std::string(name) + "' referenced in expression '" + expr_str + "'");
-                    }
-                    out.append(expr_str, start, i - start);
-                }
-                else if (name == "x") {
+                if (name == "x") {
                     out += argname;
                 }
                 else {

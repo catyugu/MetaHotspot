@@ -6,7 +6,6 @@
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
-#include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp" // take_step
 #include "solver/solution_history.hpp"
 
@@ -52,7 +51,6 @@ struct mhs_compiled_t {
 
 struct mhs_solution_t {
     mhs::core::Solution solution;
-    std::vector<double> node_temperatures;
 };
 
 /* ------------------------------------------------------------------ */
@@ -113,7 +111,7 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
     case MHS_AXIS_Z:
         return mhs::model::Axis::Z;
     default:
-        return mhs::model::Axis::Z;
+        throw std::invalid_argument("invalid axis value: " + std::to_string(a));
     }
 }
 
@@ -125,7 +123,7 @@ static mhs::model::StudyType _to_model_study(mhs_study_t s)
     case MHS_STUDY_TRANSIENT:
         return mhs::model::StudyType::Transient;
     default:
-        return mhs::model::StudyType::Steady;
+        throw std::invalid_argument("invalid study type: " + std::to_string(s));
     }
 }
 
@@ -145,7 +143,7 @@ static mhs::model::LengthUnit _to_unit(mhs_length_unit_t u)
     case MHS_UNIT_MIL:
         return mhs::model::LengthUnit::Mil;
     default:
-        return mhs::model::LengthUnit::Meter;
+        throw std::invalid_argument("invalid length unit: " + std::to_string(u));
     }
 }
 
@@ -176,7 +174,7 @@ static mhs::sim::SolverType _to_solver_type(mhs_solver_type_t t)
     case MHS_SOLVER_EIGEN_BICGSTAB:
         return mhs::sim::SolverType::EigenBiCGSTAB;
     }
-    return mhs::sim::SolverType::EigenSparseLU;
+    throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
 
 static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
@@ -191,7 +189,7 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
     case MHS_FLUID_VELOCITY:
         return mhs::model::FluidBoundaryKind::Velocity;
     }
-    return mhs::model::FluidBoundaryKind::None;
+    throw std::invalid_argument("invalid fluid boundary kind: " + std::to_string(k));
 }
 
 /* ------------------------------------------------------------------ */
@@ -667,7 +665,6 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
         if (!c) {
             *out = nullptr;
             SET_ERR("memory allocation failed");
-            tls_err.clear();
             return MHS_ERR_OOM;
         }
         c->model = std::move(core_model);
@@ -702,9 +699,6 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     out->nx = c->model.mesh.nx;
     out->ny = c->model.mesh.ny;
     out->nz = c->model.mesh.nz;
-    out->x_verts = c->model.mesh.x_verts.data();
-    out->y_verts = c->model.mesh.y_verts.data();
-    out->z_verts = c->model.mesh.z_verts.data();
     tls_err.clear();
     return MHS_OK;
 }
@@ -861,7 +855,6 @@ MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const dou
     MHS_TRY(MHS_ERR_RUNTIME, {
         if (count != static_cast<size_t>(c->model.dofs.total_count)) {
             SET_ERR("set_initial_state: expected " << c->model.dofs.total_count << " values, got " << count);
-            tls_err.clear();
             return MHS_ERR_INVALID_ARG;
         }
         c->model.initial_state.assign(state, state + count);
@@ -889,13 +882,11 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solve
         }
 
         auto sol = mhs::sim::solve(c->model, so);
-        auto node_T = mhs::post::interpolate_cell_to_node(c->model, sol.cell_temperature, sol.time);
 
-        auto* s = new (std::nothrow) mhs_solution_t {std::move(sol), std::move(node_T)};
+        auto* s = new (std::nothrow) mhs_solution_t {std::move(sol)};
         if (!s) {
             *out = nullptr;
             SET_ERR("memory allocation failed");
-            tls_err.clear();
             return MHS_ERR_OOM;
         }
         *out = s;
@@ -935,11 +926,9 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
     CHECK_NULL(out);
     out->cell_count = s->solution.cell_temperature.size();
     out->state_count = s->solution.state.size();
-    out->node_count = s->node_temperatures.size();
     out->time = s->solution.time;
     out->cell_temperatures = s->solution.cell_temperature.data();
     out->states = s->solution.state.data();
-    out->node_temperatures = s->node_temperatures.data();
     tls_err.clear();
     return MHS_OK;
 }

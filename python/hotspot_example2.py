@@ -328,8 +328,8 @@ def main():
         f"Grid cells: {c_steady.metadata().grid_count}"
     )
     sol_steady = c_steady.solve()
-    steady_state = sol_steady.states().copy()
-    steady_temp = sol_steady.cell_temperatures().copy()
+    steady_state = sol_steady.view().states.copy()
+    steady_temp = sol_steady.view().cell_temperatures.copy()
     t_steady = _time.perf_counter() - t0
     print(
         f"  Steady T in [{steady_temp.min():.4f}, "
@@ -387,7 +387,7 @@ def main():
     sol_transient = c_transient.solve()
     t_transient = _time.perf_counter() - t0
 
-    final_temp = sol_transient.cell_temperatures().copy()
+    final_temp = sol_transient.view().cell_temperatures.copy()
     print(
         f"  Transient final T in [{final_temp.min():.4f}, "
         f"{final_temp.max():.4f}] K  ({t_transient:.3f}s)"

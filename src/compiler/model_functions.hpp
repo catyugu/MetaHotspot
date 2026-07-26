@@ -4,15 +4,12 @@
 #include "numerics/expression/expr.hpp"
 
 #include <string>
-#include <vector>
 
 namespace mhs::sim {
 
-    // 字面替换：把字符串中的"孤立 x"（前后都不是字母或下划线）替换为 argname。
-    // 同一遍扫描里同时校验所有 name(...) 引用的函数名都在 fns 中已注册；
-    // 未注册 → assert。
-    std::string substitute_function_args(const std::string& expr_str, const std::string& argname,
-        const std::vector<mhs::model::NamedFunction>& functions);
+    // 字面替换：把字符串中的裸 x 替换为 argname。
+    // 更完整的语法校验由后续 mhs::core::parse 负责。
+    std::string substitute_function_args(const std::string& expr_str, const std::string& argname);
 
     // 把 mhs::model::ModelDefinition 的所有 NamedFunction 注册为 SymbolTable 的 natives。
     // 不写任何全局状态；调用方持有 SymbolTable，函数闭包按值存于其中。

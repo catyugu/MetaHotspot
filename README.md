@@ -18,7 +18,7 @@
 
 ### 构建目标
 
-- **`mhs_model`**：轻量建模契约和 `ModelBuilder`，不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
+- **`src/model/`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
 - **`mhs_runtime`**：header-only 的运行期数据契约与网格助手，作为 compiler、solver 和结果 IO 的稳定依赖边界。
 - **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
 - **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。
@@ -34,15 +34,15 @@
 `metahotspot` 的命令行参数解析统一由 `mhs::cli`（`bin/cli.hpp`）完成，
 所有标志都是命名、顺序无关的；不接受位置参数。
 
-| Flag | 默认值 | 说明 |
-|------|--------|------|
-| `--input <file>` | —（必填） | 输入 XML |
-| `--output-vtu <file>` | `./output.vtu` | VTU 输出路径 |
-| `--output-xml <file>` | `./output.xml` | XML 输出路径 |
+| Flag                     | 默认值                       | 说明                                         |
+| ------------------------ | ---------------------------- | -------------------------------------------- |
+| `--input <file>`         | —（必填）                    | 输入 XML                                     |
+| `--output-vtu <file>`    | `./output.vtu`               | VTU 输出路径                                 |
+| `--output-xml <file>`    | `./output.xml`               | XML 输出路径                                 |
 | `--fluid-overlay <file>` | 不加载；跳过所有流体相关逻辑 | 显式指定 fluid overlay；未传则不执行流体逻辑 |
-| `--log-file <file>` | `metahotspot.log` | 日志文件路径 |
-| `--no-console-log` | — | 关闭控制台日志 |
-| `--help` | — | 打印帮助并以 0 退出 |
+| `--log-file <file>`      | `metahotspot.log`            | 日志文件路径                                 |
+| `--no-console-log`       | —                            | 关闭控制台日志                               |
+| `--help`                 | —                            | 打印帮助并以 0 退出                          |
 
 示例：
 

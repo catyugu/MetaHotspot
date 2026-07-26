@@ -4,7 +4,6 @@
 #include "runtime/mesh.hpp"
 #include <algorithm>
 #include <cstddef>
-#include <unordered_map>
 
 namespace mhs::sim {
 
@@ -71,18 +70,6 @@ namespace mhs::sim {
                 return {default_boundary.type, default_boundary.parameter_index};
             return {mhs::core::BcType::None, 0};
         }
-
-        // Build a name -> index map from ModelDefinition::materials order.
-        std::unordered_map<std::string, size_t> build_name_to_idx(
-            const std::vector<mhs::model::NamedMaterial>& materials)
-        {
-            std::unordered_map<std::string, size_t> map;
-            map.reserve(materials.size());
-            for (size_t i = 0; i < materials.size(); ++i)
-                map[materials[i].name] = i;
-            return map;
-        }
-
     } // anonymous namespace
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
@@ -119,8 +106,6 @@ namespace mhs::sim {
             z_cursor -= thickness[l];
         }
 
-        auto name_to_idx = build_name_to_idx({}); // will be built in build_model from materials
-
         for (mhs::core::Index l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
             double layer_x_off_si = mhs::core::eval_geometry(layer.x_offset, symbols) * si_scale;
@@ -130,10 +115,6 @@ namespace mhs::sim {
                 ResolvedBlock rb;
                 double block_x_off_si = mhs::core::eval_geometry(block.x_offset, symbols) * si_scale;
                 double block_y_off_si = mhs::core::eval_geometry(block.y_offset, symbols) * si_scale;
-
-                // material_id and heat_source_idx will be set externally by build_model
-                rb.material_id = 0;
-                rb.heat_source_idx = 0;
 
                 if (l == 0 && block.thickness.has_value()) {
                     double b_thick = mhs::core::eval_geometry(*block.thickness, symbols) * si_scale;

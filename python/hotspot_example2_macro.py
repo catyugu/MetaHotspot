@@ -454,15 +454,19 @@ def main():
     nc = meta.cell_count
 
     # Query mesh from compiled model.
-    nx, ny, nz, xv, yv, zv = (
+    # Reconstruct vertex count from cell count and axis dimensions.
+    # x_verts/y_verts/z_verts were removed from metadata view (solver uses dx/cx).
+    # When raw vertices are needed, reconstruct them from nx/ny/nz + cell centres:
+    #   x[i] = cx[0] - dx[0]*0.5  for i=0,
+    #   x[i] = cx[i-1] + dx[i-1]*0.5  for i>=1
+    # For now, use only the cell count for informational display.
+    nx, ny, nz = (
         meta.nx,
         meta.ny,
         meta.nz,
-        meta.x_verts,
-        meta.y_verts,
-        meta.z_verts,
     )
-    print(f"  Mesh: {nx}×{ny}×{nz} cells  ({len(xv)}×{len(yv)}×{len(zv)} vertices)")
+    nvx, nvy, nvz = nx + 1, ny + 1, nz + 1
+    print(f"  Mesh: {nx}×{ny}×{nz} cells  ({nvx}×{nvy}×{nvz} vertices)")
 
     K_ref = ref_c.assemble().stiffness_matrix()
     layer_ids = meta.layer_ids.copy()
@@ -502,7 +506,7 @@ def main():
         }
         m = build_example2_model(hs, h_conv=H_CONV_NOMINAL)
         sol = m.compile().solve()
-        T = sol.cell_temperatures().copy()
+        T = sol.view().cell_temperatures.copy()
         sol.close()
         snapshots.append(T[p_idx].copy())
         print(
@@ -548,7 +552,7 @@ def main():
         m = build_example2_model(hs, h_conv=H_CONV_NOMINAL)
         c = m.compile()
         sol = c.solve()
-        T_full = sol.cell_temperatures().copy()
+        T_full = sol.view().cell_temperatures.copy()
         f_test = c.assemble().rhs()
         sol.close()
         c.close()
@@ -708,7 +712,7 @@ def main():
         m_f = build_example2_model(hs_avg, h_conv=h_test)
         c_f = m_f.compile()
         sol = c_f.solve()
-        T_full_h = sol.cell_temperatures().copy()
+        T_full_h = sol.view().cell_temperatures.copy()
         f_h = c_f.assemble().rhs()
         K_h = c_f.assemble().stiffness_matrix()
         sol.close()

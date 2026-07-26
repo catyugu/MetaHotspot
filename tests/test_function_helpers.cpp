@@ -21,7 +21,7 @@ namespace {
         register_all_functions(sym, fns);
 
         // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
-        auto out = substitute_function_args("test_gaussian(x)", "T", fns);
+        auto out = substitute_function_args("test_gaussian(x)", "T");
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::core::parse(out, sym);
@@ -159,50 +159,46 @@ namespace {
 
     // ---- 字面替换 --------------------------------------------------------
 
-    std::vector<mhs::model::NamedFunction> functions_with_gauss()
-    {
-        return {{"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}}};
-    }
-
     TEST(Substitute, BasicCallReplacesXForT)
     {
-        auto fns = functions_with_gauss();
-        auto out = substitute_function_args("test_gaussian(x)", "T", fns);
+        auto out = substitute_function_args("test_gaussian(x)", "T");
         EXPECT_EQ(out, "test_gaussian(T)");
     }
 
     TEST(Substitute, MultipleXReplaced)
     {
-        auto fns = functions_with_gauss();
-        auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t", fns);
+        auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t");
         EXPECT_EQ(out, "test_gaussian(t)/(t*0.01+1)");
     }
 
     TEST(Substitute, XFollowedByUnderscoreNotReplaced)
     {
-        auto fns = functions_with_gauss();
-        auto out = substitute_function_args("2*x + x_next", "t", fns);
+        auto out = substitute_function_args("2*x + x_next", "t");
         EXPECT_EQ(out, "2*t + x_next");
     }
 
     TEST(Substitute, XBetweenLettersNotReplaced)
     {
-        auto fns = functions_with_gauss();
-        auto out = substitute_function_args("xx + axb", "t", fns);
+        auto out = substitute_function_args("xx + axb", "t");
         EXPECT_EQ(out, "xx + axb");
     }
 
     TEST(Substitute, NoFunctionsNoChange)
     {
-        std::vector<mhs::model::NamedFunction> fns;
-        auto out = substitute_function_args("x+1", "T", fns);
+        auto out = substitute_function_args("x+1", "T");
         EXPECT_EQ(out, "T+1");
     }
 
-    TEST(Substitute, UnknownFunctionNotWorking)
+    TEST(Substitute, BareFunctionCallNotRewritten)
     {
-        std::vector<mhs::model::NamedFunction> fns;
-        EXPECT_THROW(substitute_function_args("foo(x)", "T", fns), std::runtime_error);
+        auto out = substitute_function_args("foo(x)", "T");
+        EXPECT_EQ(out, "foo(T)");
+    }
+
+    TEST(Substitute, NestedWithOtherVariables)
+    {
+        auto out = substitute_function_args("y + z + T + t + pi", "T");
+        EXPECT_EQ(out, "y + z + T + t + pi");
     }
 
 } // namespace

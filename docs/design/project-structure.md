@@ -4,26 +4,26 @@
 
 ## 构建目标
 
-| 目录                       | 目标                | 职责                                                 |
-|----------------------------|---------------------|------------------------------------------------------|
-| `src/model/`               | `mhs_model`         | 轻量 authoring model 与 `ModelBuilder`；无第三方依赖 |
-| `src/runtime/`             | `mhs_runtime`       | header-only 运行期契约和网格助手                     |
-| `src/compiler/`            | `mhs_compiler`      | 几何解析、SoA 编译和冻结流场构建                     |
-| `src/solver/`              | `mhs_solver`        | 组装、迭代、时间推进、探针和后处理                   |
-| `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                           |
-| `src/numerics/linear/`     | `mhs_linear`        | Eigen / MKL 线性求解封装                             |
-| `src/io/`                  | `mhs_io`            | tinyxml2 适配及 XML/VTU 输出                         |
-| `src/logging/`             | `mhs_logging`       | spdlog 封装                                          |
-| `src/api/`                 | `metahotspot` C API | opaque handle 与 C ABI 适配                          |
-| `bin/`                     | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理                   |
-| `tests/`                   | `mhs_tests`         | 单元测试和模块行为验证                               |
+| 目录                       | 目标                | 职责                                            |
+| -------------------------- | ------------------- | ----------------------------------------------- |
+| `src/model/`               | header-only         | header-only authoring model types；无第三方依赖 |
+| `src/runtime/`             | `mhs_runtime`       | header-only 运行期契约和网格助手                |
+| `src/compiler/`            | `mhs_compiler`      | 几何解析、SoA 编译和冻结流场构建                |
+| `src/solver/`              | `mhs_solver`        | 组装、迭代、时间推进、探针和后处理              |
+| `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                      |
+| `src/numerics/linear/`     | `mhs_linear`        | Eigen / MKL 线性求解封装                        |
+| `src/io/`                  | `mhs_io`            | tinyxml2 适配及 XML/VTU 输出                    |
+| `src/logging/`             | `mhs_logging`       | spdlog 封装                                     |
+| `src/api/`                 | `metahotspot` C API | opaque handle 与 C ABI 适配                     |
+| `bin/`                     | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理              |
+| `tests/`                   | `mhs_tests`         | 单元测试和模块行为验证                          |
 
 模块内按职责拆分 `.cpp`，但 assembler、scheduler、fluid 等实现细节不单独建库。第三方依赖或编译成本边界才构成独立目标。
 
 ## 命名空间
 
 | 命名空间          | 角色                                 |
-|-------------------|--------------------------------------|
+| ----------------- | ------------------------------------ |
 | `mhs`             | 品牌前缀；不定义或重导出类型         |
 | `mhs::model`      | authoring model 与 builder           |
 | `mhs::core`       | 运行期数据契约、表达式句柄和共享枚举 |

@@ -8,8 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from metahotspot._lib import get_dll as _get_dll
-from metahotspot._dll_interface import configure_dll
 from metahotspot._error import check
+from metahotspot._handle import OwnedHandle
 from metahotspot.enums import FluidBC, GeometryOp, Study, LengthUnit, Axis
 from metahotspot.types import (
     MhsModel,
@@ -25,7 +25,7 @@ from metahotspot.types import (
 )
 
 
-class Model:
+class Model(OwnedHandle):
     """A mutable MetaHotspot model, wrapping an mhs_model_t handle.
 
     Usage::
@@ -43,21 +43,11 @@ class Model:
 
     def __init__(self) -> None:
         dll = _get_dll()
-        configure_dll(dll)
-        self._dll = dll
+        super().__init__(dll.mhs_model_destroy, dll)
 
         pp = ctypes.POINTER(MhsModel)()
         check(dll.mhs_model_create(ctypes.byref(pp)), "create")
         self._handle: MhsModel = pp
-        self._owned = True
-
-    def __del__(self) -> None:
-        self.close()
-
-    def close(self) -> None:
-        if self._owned and self._handle is not None:
-            self._dll.mhs_model_destroy(self._handle)
-            self._handle = None
 
     def __enter__(self) -> Model:
         return self
@@ -220,6 +210,19 @@ class Model:
             "add_rect",
         )
 
+    # ---- Face region builder ----
+
+    @staticmethod
+    def _make_face_regions(regions):
+        c_regions = []
+        if regions:
+            for r in regions:
+                axis, coord, a_min, a_max, b_min, b_max = r
+                rect = Rect2D(a_min, a_max, b_min, b_max)
+                c_regions.append(MhsFaceRegion(int(axis), coord, rect))
+        arr = (MhsFaceRegion * len(c_regions))(*c_regions) if c_regions else None
+        return arr, len(c_regions)
+
     # ---- Atomic boundary conditions ----
 
     def add_dirichlet(
@@ -234,16 +237,10 @@ class Model:
         Each region is (axis, coordinate, a_min, a_max, b_min, b_max).
         Pass ``None`` for regions to use an empty list.
         """
-        c_regions = []
-        if regions:
-            for r in regions:
-                axis, coord, a_min, a_max, b_min, b_max = r
-                rect = Rect2D(a_min, a_max, b_min, b_max)
-                c_regions.append(MhsFaceRegion(int(axis), coord, rect))
-        arr = (MhsFaceRegion * len(c_regions))(*c_regions) if c_regions else None
+        arr, n = self._make_face_regions(regions)
         check(
             self._dll.mhs_model_add_dirichlet(
-                self._handle, arr, len(c_regions), temperature.encode("utf-8")
+                self._handle, arr, n, temperature.encode("utf-8")
             ),
             "add_dirichlet",
         )
@@ -256,16 +253,10 @@ class Model:
         ) = None,
     ) -> None:
         """Add a Neumann (heat flux) boundary condition."""
-        c_regions = []
-        if regions:
-            for r in regions:
-                axis, coord, a_min, a_max, b_min, b_max = r
-                rect = Rect2D(a_min, a_max, b_min, b_max)
-                c_regions.append(MhsFaceRegion(int(axis), coord, rect))
-        arr = (MhsFaceRegion * len(c_regions))(*c_regions) if c_regions else None
+        arr, n = self._make_face_regions(regions)
         check(
             self._dll.mhs_model_add_neumann(
-                self._handle, arr, len(c_regions), heat_flux.encode("utf-8")
+                self._handle, arr, n, heat_flux.encode("utf-8")
             ),
             "add_neumann",
         )
@@ -279,18 +270,12 @@ class Model:
         ) = None,
     ) -> None:
         """Add a convection (Robin) boundary condition."""
-        c_regions = []
-        if regions:
-            for r in regions:
-                axis, coord, a_min, a_max, b_min, b_max = r
-                rect = Rect2D(a_min, a_max, b_min, b_max)
-                c_regions.append(MhsFaceRegion(int(axis), coord, rect))
-        arr = (MhsFaceRegion * len(c_regions))(*c_regions) if c_regions else None
+        arr, n = self._make_face_regions(regions)
         check(
             self._dll.mhs_model_add_convection(
                 self._handle,
                 arr,
-                len(c_regions),
+                n,
                 coefficient.encode("utf-8"),
                 ambient_temperature.encode("utf-8"),
             ),

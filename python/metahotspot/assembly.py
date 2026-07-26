@@ -8,25 +8,25 @@ import numpy as np
 from scipy.sparse import csc_matrix
 
 from metahotspot._error import check
+from metahotspot._handle import OwnedHandle
 from metahotspot.enums import Operator
 from metahotspot.types import CscView, MhsAssembly
 
 
-class Assembly:
+class Assembly(OwnedHandle):
     """Assembled operators ``C * dx/dt + K * x = f``.
 
     Do not instantiate directly — use ``Compiled.assemble()``.
     """
 
     def __init__(self) -> None:
-        self._dll = None
-        self._handle: MhsAssembly | None = None
-        self._owned = True
+        super().__init__(None, None)
 
     @classmethod
     def _assemble(cls, dll, compiled_handle, state=None, time=0.0) -> Assembly:
         self = cls()
         self._dll = dll
+        self._destroy_fn = dll.mhs_assembly_destroy
         pp = ctypes.POINTER(MhsAssembly)()
         state_ptr = (
             state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
@@ -41,14 +41,6 @@ class Assembly:
         )
         self._handle = pp
         return self
-
-    def __del__(self) -> None:
-        self.close()
-
-    def close(self) -> None:
-        if self._owned and self._handle is not None:
-            self._dll.mhs_assembly_destroy(self._handle)
-            self._handle = None
 
     def n(self) -> int:
         """Operator dimension (number of global states)."""
