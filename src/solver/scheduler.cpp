@@ -47,6 +47,50 @@ namespace mhs::sim {
 
     } // anonymous namespace
 
+    // -----------------------------------------------------------------------
+    //  take_step — shared kernel for single transient step
+    // -----------------------------------------------------------------------
+    StepResult take_step(Assembler& assembler, LinearSolver& solver, mhs::core::SolutionHistory& history,
+        std::vector<double>& state, double current_time, double dt, const NonLinearConfig& nonlinear_cfg,
+        time_scheme::IntegratorKind integrator)
+    {
+        StepResult result {};
+
+        // Build the linearised system at (state, time + dt)
+        LinearSystemProvider provider = [&](std::vector<double>& iter_state) -> LinearSystem {
+            AssembleContext ctx {iter_state, current_time + dt};
+            auto ops = assembler.assemble(ctx);
+            return time_scheme::build_system(integrator, ops, history, dt);
+        };
+
+        // Non-linear solve (Picard/Anderson)
+        auto nl = nonlinear_solve(provider, state, solver, nonlinear_cfg);
+        result.nonlinear_converged = nl.converged;
+        result.nonlinear_iterations = nl.iterations;
+
+        if (!nl.converged) {
+            result.accepted = false;
+            result.error_ratio = 1.0;
+            result.suggested_dt_factor = 0.5;
+            return result;
+        }
+
+        // Error estimation (LTE check for adaptive stepping)
+        auto est = time_scheme::estimate_error(history, state, dt, {});
+        result.error_ratio = est.error_ratio;
+        result.suggested_dt_factor = est.suggested_factor;
+
+        // Acceptance criterion
+        double min_dt = 1e-12;
+        result.accepted = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
+
+        if (result.accepted) {
+            history.accept(state, current_time + dt);
+        }
+
+        return result;
+    }
+
     mhs::core::Solution solve(const mhs::core::Model& model, const SolveOptions& options)
     {
         auto solver = LinearSolver::create(options.solver);
@@ -90,7 +134,6 @@ namespace mhs::sim {
         step.accepted.initialize(step.state, step.current_time);
         probe_recorder.record(step.current_time, extract_cell_temperature(model, step.state));
 
-        const bool is_manual = (step_ctrl.strategy() == mhs::sim::time_scheme::StepStrategy::Manual);
         double dt_sug = std::clamp(output_dt, min_dt, max_dt);
         double dt = dt_sug;
 
@@ -100,28 +143,13 @@ namespace mhs::sim {
                 break;
             step.dt = dt;
 
-            // Re-assemble state-dependent operators inside each non-linear iteration.
-            LinearSystemProvider provider = [&](std::vector<double>& state) -> LinearSystem {
-                AssembleContext ctx {state, step.current_time + step.dt};
-                return time_scheme::build_system(
-                    time_scheme::IntegratorKind::Bdf1, assembler.assemble(ctx), step.accepted, step.dt);
-            };
-            auto nl = nonlinear_solve(provider, step.state, *solver, options.nonlinear);
-            if (!nl.converged) {
-                MHS_LOG_WARN("Non-linear iteration did not converge at step {}", step.time_step);
-            }
+            // Use shared take_step kernel.
+            auto result
+                = take_step(assembler, *solver, step.accepted, step.state, step.current_time, dt, options.nonlinear);
 
-            bool accepted_step = true;
-            if (!is_manual) {
-                auto est = time_scheme::estimate_error(step.accepted, step.state, dt, /*err_cfg=*/ {});
-                dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
-                accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
-            }
-
-            if (accepted_step) {
+            if (result.accepted) {
                 step.current_time += dt;
                 step.time_step++;
-                step.accepted.accept(step.state, step.current_time);
 
                 MHS_LOG_DEBUG("Time: {} solved (dt={})", step.current_time, dt);
 
@@ -135,6 +163,11 @@ namespace mhs::sim {
                         /* x1 = */ step.state, t_out);
                     probe_recorder.record(t_out, extract_cell_temperature(model, state_at_output));
                 }
+
+                // Manual mode → keep fixed dt; otherwise adapt from error estimate.
+                dt_sug = (step_ctrl.strategy() == time_scheme::StepStrategy::Manual)
+                    ? output_dt
+                    : std::clamp(dt * result.suggested_dt_factor, min_dt, max_dt);
             }
             else {
                 dt_sug = dt * 0.5;

@@ -7,7 +7,7 @@ import ctypes
 import numpy as np
 
 from metahotspot._error import check
-from metahotspot.types import MhsCompiled, SolverOpts
+from metahotspot.types import MhsCompiled, MhsMeshInfo, MhsStepInfo, SolverOpts
 
 
 class Compiled:
@@ -152,3 +152,85 @@ class Compiled:
         from metahotspot.assembly import Assembly
 
         return Assembly._assemble(self._dll, self._handle, state, time)
+
+    # ---- Mesh geometry ----
+
+    def mesh(self) -> tuple[int, int, int, np.ndarray, np.ndarray, np.ndarray]:
+        """Return the structured mesh geometry in SI units.
+
+        Returns
+        -------
+        nx, ny, nz : int
+            Number of cells along each axis.
+        x_verts, y_verts, z_verts : ndarray
+            Length ``(nx+1)``, ``(ny+1)``, ``(nz+1)`` arrays of vertex coordinates
+            (read-only views into the compiled model's internal storage).
+        """
+        info = MhsMeshInfo()
+        check(self._dll.mhs_compiled_mesh(self._handle, ctypes.byref(info)), "mesh")
+        nx = int(info.nx)
+        ny = int(info.ny)
+        nz = int(info.nz)
+        xv = np.ctypeslib.as_array(info.x_verts, shape=(nx + 1,))
+        yv = np.ctypeslib.as_array(info.y_verts, shape=(ny + 1,))
+        zv = np.ctypeslib.as_array(info.z_verts, shape=(nz + 1,))
+        return nx, ny, nz, xv, yv, zv
+
+    # ---- Single transient step ----
+
+    def step(
+        self,
+        state: np.ndarray,
+        time: float,
+        dt: float,
+        opts: SolverOpts | None = None,
+    ) -> tuple[np.ndarray, dict | None]:
+        """Execute a single transient time step (BDF1).
+
+        The compiled model must have ``study = TRANSIENT``.
+
+        Parameters
+        ----------
+        state : ndarray of shape ``(state_count(),)``
+            State at time *t* (T\ :sup:`n`\ ).
+        time : float
+            Current simulation time (t\ :sup:`n`\ ).
+        dt : float
+            Time step size.
+        opts : SolverOpts or None
+            Solver options (underrelaxation, tolerances, …).
+            Pass ``None`` for defaults.
+
+        Returns
+        -------
+        new_state : ndarray
+            State at time ``time + dt`` (T\ :sup:`n+1`\ ).
+        info : dict or None
+            Optional diagnostics (error ratio, step accepted flag, …).
+        """
+        n = self.state_count()
+        assert len(state) == n, f"state length {len(state)} != {n}"
+        out_state = np.empty(n, dtype=np.float64)
+        step_info = MhsStepInfo()
+        opts_ptr = ctypes.byref(opts) if opts is not None else None
+        check(
+            self._dll.mhs_compiled_step(
+                self._handle,
+                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                time,
+                dt,
+                out_state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                ctypes.byref(step_info),
+                opts_ptr,
+            ),
+            "step",
+        )
+        if step_info.error_ratio == 0.0 and step_info.accepted == 0:
+            # Info wasn't filled (shouldn't happen, but be safe)
+            return out_state, None
+        return out_state, {
+            "error_ratio": step_info.error_ratio,
+            "suggested_dt_factor": step_info.suggested_dt_factor,
+            "nonlinear_iterations": step_info.nonlinear_iterations,
+            "accepted": bool(step_info.accepted),
+        }

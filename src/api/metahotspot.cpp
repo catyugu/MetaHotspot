@@ -8,7 +8,8 @@
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
-#include "solver/scheduler.hpp"
+#include "solver/scheduler.hpp" // take_step
+#include "solver/solution_history.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -51,6 +52,13 @@ struct mhs_assembly_t {
 
 struct mhs_compiled_t {
     mhs::core::Model model;
+
+    // Lazy-created state for repeated take_step() calls.
+    // Set on first mhs_compiled_step() call, unused by mhs_compiled_solve().
+    std::unique_ptr<mhs::sim::Assembler> step_assembler;
+    std::unique_ptr<mhs::sim::LinearSolver> step_solver;
+    std::unique_ptr<mhs::core::SolutionHistory> step_history;
+    std::vector<double> step_work_state;
 };
 
 struct mhs_solution_t {
@@ -954,6 +962,92 @@ MHS_API const size_t* mhs_compiled_grid_to_cell(const mhs_compiled_t* c)
     return c->model.cells.grid_to_cell.data();
 }
 
+/* ------------------------------------------------------------------ */
+/*  Mesh geometry query                                                */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_compiled_mesh(const mhs_compiled_t* c, mhs_mesh_info_t* out)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(out);
+    out->nx = c->model.mesh.nx;
+    out->ny = c->model.mesh.ny;
+    out->nz = c->model.mesh.nz;
+    out->x_verts = c->model.mesh.x_verts.data();
+    out->y_verts = c->model.mesh.y_verts.data();
+    out->z_verts = c->model.mesh.z_verts.data();
+    tls_err.clear();
+    return MHS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Single transient step (exposes take_step kernel to C API)         */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
+    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(state);
+    CHECK_NULL(out_state);
+
+    if (c->model.study_type != mhs::core::StudyType::Transient) {
+        SET_ERR("step requires a transient model");
+        return MHS_ERR_INVALID_ARG;
+    }
+
+    try {
+        // Non-const access for lazy init — the 'const' on mhs_compiled_t is a
+        // C-level contract; the step cache is logically internal mutable state.
+        auto& self = const_cast<mhs_compiled_t&>(*c);
+
+        // Lazy-create the step cache.
+        if (!self.step_assembler) {
+            self.step_assembler = std::make_unique<mhs::sim::Assembler>(c->model);
+            self.step_solver = mhs::sim::LinearSolver::create();
+            self.step_history
+                = std::make_unique<mhs::core::SolutionHistory>(static_cast<std::size_t>(c->model.dofs.total_count), 2);
+        }
+
+        // Copy input state into work buffer.
+        const auto n = static_cast<std::size_t>(c->model.dofs.total_count);
+        self.step_work_state.assign(state, state + n);
+
+        // Initialise history for this step (caller's view: single step, no past).
+        self.step_history->initialize(self.step_work_state, time);
+
+        // Solver options.
+        mhs::sim::NonLinearConfig nl_cfg;
+        if (opts) {
+            nl_cfg.underrelaxation = opts->underrelaxation;
+            nl_cfg.max_iterations = opts->nonlinear_max_iterations;
+            nl_cfg.relative_tolerance = opts->nonlinear_relative_tolerance;
+            nl_cfg.absolute_tolerance = opts->nonlinear_absolute_tolerance;
+        }
+
+        // Execute the shared kernel.
+        auto result = mhs::sim::take_step(
+            *self.step_assembler, *self.step_solver, *self.step_history, self.step_work_state, time, dt, nl_cfg);
+
+        // Copy result out.
+        std::copy(self.step_work_state.begin(), self.step_work_state.end(), out_state);
+
+        if (info) {
+            info->accepted = result.accepted ? 1 : 0;
+            info->error_ratio = result.error_ratio;
+            info->suggested_dt_factor = result.suggested_dt_factor;
+            info->nonlinear_iterations = static_cast<int32_t>(result.nonlinear_iterations);
+        }
+
+        tls_err.clear();
+        return MHS_OK;
+    }
+    catch (const std::exception& e) {
+        SET_ERR("step: " << e.what());
+        return MHS_ERR_SOLVE;
+    }
+}
+
 MHS_API size_t mhs_compiled_layer_count(const mhs_compiled_t* c)
 {
     if (!c)
@@ -1081,15 +1175,13 @@ MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t
 /*  Compiled model — pre-solve configuration                           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_set_initial_state(
-    mhs_compiled_t* c, const double* state, size_t count)
+MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
     try {
         if (count != static_cast<size_t>(c->model.dofs.total_count)) {
-            SET_ERR("set_initial_state: expected " << c->model.dofs.total_count
-                                                    << " values, got " << count);
+            SET_ERR("set_initial_state: expected " << c->model.dofs.total_count << " values, got " << count);
             return MHS_ERR_INVALID_ARG;
         }
         c->model.initial_state.assign(state, state + count);
@@ -1177,8 +1269,7 @@ MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mh
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_write_vtu(
-    const mhs_compiled_t* c, const mhs_solution_t* s, const char* path)
+MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path)
 {
     CHECK_NULL(c);
     CHECK_NULL(s);

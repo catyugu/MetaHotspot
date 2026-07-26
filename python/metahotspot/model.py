@@ -51,6 +51,12 @@ class Model:
         self._handle: MhsModel = pp
         self._owned = True
 
+        # Python-side introspection tracking.
+        self._materials: dict[str, int] = {}
+        self._functions: dict[str, int] = {}
+        self._boundaries: list[int] = []
+        self._layers: list[int] = []
+
     def __del__(self) -> None:
         self.close()
 
@@ -171,6 +177,7 @@ class Model:
         if mid == MHS_MATERIAL_ID_INVALID:
             err = self._dll.mhs_last_error()
             raise RuntimeError(f"add_material failed: {err}")
+        self._materials[name] = mid
         return mid
 
     def add_layer(
@@ -186,6 +193,7 @@ class Model:
         if lid == MHS_LAYER_ID_INVALID:
             err = self._dll.mhs_last_error()
             raise RuntimeError(f"add_layer failed: {err}")
+        self._layers.append(lid)
         return lid
 
     def add_block(
@@ -244,6 +252,7 @@ class Model:
         if bid == MHS_BOUNDARY_ID_INVALID:
             err = self._dll.mhs_last_error()
             raise RuntimeError(f"add_boundary failed: {err}")
+        self._boundaries.append(bid)
         return bid
 
     def set_dirichlet(self, boundary: int, temperature: str) -> None:

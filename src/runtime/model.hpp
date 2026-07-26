@@ -27,6 +27,11 @@ namespace mhs::core {
         std::vector<double> cx;
         std::vector<double> cy;
         std::vector<double> cz;
+
+        // Original mesh vertices (SI units) — populated by build_model().
+        std::vector<double> x_verts;
+        std::vector<double> y_verts;
+        std::vector<double> z_verts;
     };
 
     // ── Material properties ──────────────────────────────────────────────

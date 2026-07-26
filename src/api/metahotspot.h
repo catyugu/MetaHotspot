@@ -138,6 +138,24 @@ typedef struct {
     const double* values;
 } mhs_csc_view_t;
 
+/** Structured mesh geometry (SI units). */
+typedef struct {
+    size_t nx; // cells per axis
+    size_t ny;
+    size_t nz;
+    const double* x_verts; // length nx+1 — valid while compiled handle lives
+    const double* y_verts; // length ny+1
+    const double* z_verts; // length nz+1
+} mhs_mesh_info_t;
+
+/** Diagnostics returned by mhs_compiled_step(). */
+typedef struct {
+    double error_ratio;
+    double suggested_dt_factor;
+    int32_t nonlinear_iterations;
+    int32_t accepted; // 1 = step accepted, 0 = rejected (LTE exceeded)
+} mhs_step_info_t;
+
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
@@ -268,6 +286,21 @@ MHS_API size_t mhs_compiled_grid_count(const mhs_compiled_t* c);
  * Pointer valid until the compiled model is destroyed. */
 MHS_API const size_t* mhs_compiled_grid_to_cell(const mhs_compiled_t* c);
 
+/** Structured mesh geometry (SI units).  Pointers in *out* are valid while
+ *  the compiled handle lives. */
+MHS_API mhs_status_t mhs_compiled_mesh(const mhs_compiled_t* c, mhs_mesh_info_t* out);
+
+/** Execute a single transient step (BDF1).
+ *
+ *  Advances *state* (length state_count()) from *time* by *dt* and writes
+ *  the result into *out_state* (pre-allocated, same length).  *info* receives
+ *  diagnostics; pass NULL to skip.
+ *
+ *  The compiled model must have study = TRANSIENT.  Internally reuses the
+ *  same assembly/solver cache across repeated calls for efficiency. */
+MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
+    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts);
+
 /* ------------------------------------------------------------------ */
 /*  Compiled model — pre-solve configuration                           */
 /* ------------------------------------------------------------------ */
@@ -295,8 +328,7 @@ MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 /* ------------------------------------------------------------------ */
 
 /** Write a VTU file from a compiled model + solution (mesh + temperature). */
-MHS_API mhs_status_t mhs_compiled_write_vtu(
-    const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
+MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly (matrix + RHS extraction)                                */

@@ -69,6 +69,26 @@ class CscView(ctypes.Structure):
     ]
 
 
+class MhsMeshInfo(ctypes.Structure):
+    _fields_ = [
+        ("nx", ctypes.c_size_t),
+        ("ny", ctypes.c_size_t),
+        ("nz", ctypes.c_size_t),
+        ("x_verts", ctypes.POINTER(ctypes.c_double)),
+        ("y_verts", ctypes.POINTER(ctypes.c_double)),
+        ("z_verts", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
+class MhsStepInfo(ctypes.Structure):
+    _fields_ = [
+        ("error_ratio", ctypes.c_double),
+        ("suggested_dt_factor", ctypes.c_double),
+        ("nonlinear_iterations", ctypes.c_int32),
+        ("accepted", ctypes.c_int32),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # ID types are uint32_t (UINT32_MAX = invalid)
 # ---------------------------------------------------------------------------

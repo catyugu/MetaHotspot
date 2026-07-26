@@ -207,6 +207,16 @@ namespace mhs::sim {
         compute_cell_spacing(definition.mesh.y_vertices, mesh.dy, mesh.cy, si_scale);
         compute_cell_spacing(definition.mesh.z_vertices, mesh.dz, mesh.cz, si_scale);
 
+        // Copy original mesh vertices (SI) for later query via C API.
+        auto scale_verts = [&](std::span<const double> src, std::vector<double>& dst) {
+            dst.resize(src.size());
+            for (size_t i = 0; i < src.size(); ++i)
+                dst[i] = src[i] * si_scale;
+        };
+        scale_verts(definition.mesh.x_vertices, mesh.x_verts);
+        scale_verts(definition.mesh.y_vertices, mesh.y_verts);
+        scale_verts(definition.mesh.z_vertices, mesh.z_verts);
+
         auto resolved_layers = resolve_geometry(definition.layers, si_scale, symbols);
 
         // Collect unique material names from resolved blocks.

@@ -16,6 +16,8 @@ from metahotspot.types import (
     SolverOpts,
     Rect2D,
     Point2D,
+    MhsMeshInfo,
+    MhsStepInfo,
 )
 
 
@@ -286,6 +288,20 @@ def configure_dll(dll: ctypes.CDLL) -> None:
 
     dll.mhs_compiled_grid_to_cell.restype = ctypes.POINTER(ctypes.c_size_t)
     dll.mhs_compiled_grid_to_cell.argtypes = [ctypes.POINTER(MhsCompiled)]
+
+    dll.mhs_compiled_mesh.restype = ctypes.c_int32
+    dll.mhs_compiled_mesh.argtypes = [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsMeshInfo)]
+
+    dll.mhs_compiled_step.restype = ctypes.c_int32
+    dll.mhs_compiled_step.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(ctypes.c_double),  # state
+        ctypes.c_double,                   # time
+        ctypes.c_double,                   # dt
+        ctypes.POINTER(ctypes.c_double),  # out_state
+        ctypes.POINTER(MhsStepInfo),       # info (nullable)
+        ctypes.POINTER(SolverOpts),        # opts (nullable)
+    ]
 
     # ---- Compiled model — pre-solve configuration ----
     dll.mhs_compiled_set_initial_state.restype = ctypes.c_int32
