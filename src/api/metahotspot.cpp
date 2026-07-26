@@ -3,6 +3,7 @@
 
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
+#include "io/result_io.hpp"
 #include "model/model_builder.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -1077,6 +1078,31 @@ MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t
 }
 
 /* ------------------------------------------------------------------ */
+/*  Compiled model — pre-solve configuration                           */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_compiled_set_initial_state(
+    mhs_compiled_t* c, const double* state, size_t count)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(state);
+    try {
+        if (count != static_cast<size_t>(c->model.dofs.total_count)) {
+            SET_ERR("set_initial_state: expected " << c->model.dofs.total_count
+                                                    << " values, got " << count);
+            return MHS_ERR_INVALID_ARG;
+        }
+        c->model.initial_state.assign(state, state + count);
+        tls_err.clear();
+        return MHS_OK;
+    }
+    catch (const std::exception& e) {
+        SET_ERR("set_initial_state: " << e.what());
+        return MHS_ERR_RUNTIME;
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -1146,6 +1172,31 @@ MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mh
         return MHS_ERR_SOLVE;
     }
 }
+
+/* ------------------------------------------------------------------ */
+/*  VTU export                                                         */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_compiled_write_vtu(
+    const mhs_compiled_t* c, const mhs_solution_t* s, const char* path)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(s);
+    CHECK_NULL(path);
+    try {
+        mhs::io::write_vtu(path, c->model, s->solution.cell_temperature);
+        tls_err.clear();
+        return MHS_OK;
+    }
+    catch (const std::exception& e) {
+        SET_ERR("write_vtu: " << e.what());
+        return MHS_ERR_IO;
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Solution life-cycle                                                */
+/* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s)
 {

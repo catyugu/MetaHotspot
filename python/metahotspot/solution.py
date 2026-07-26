@@ -19,6 +19,7 @@ class Solution:
     def __init__(self) -> None:
         self._dll = None
         self._handle: MhsSolution | None = None
+        self._compiled_handle = None  # optional ref for write_vtu
         self._owned = True
 
     @classmethod
@@ -34,6 +35,7 @@ class Solution:
             dll.mhs_compiled_solve(compiled_handle, opts_ptr, ctypes.byref(pp)), "solve"
         )
         self._handle = pp
+        self._compiled_handle = compiled_handle  # keep for write_vtu
         return self
 
     @classmethod
@@ -113,3 +115,33 @@ class Solution:
         n = self.probe_record_count(probe_index)
         ptr = self._dll.mhs_solution_probe_values(self._handle, probe_index)
         return np.ctypeslib.as_array(ptr, shape=(n,))
+
+    # ---- VTU export ----
+
+    def write_vtu(self, path: str) -> None:
+        """Export the temperature field to a VTU file.
+
+        Writes an unstructured-grid VTU with hexahedral cells matching the
+        active subset of the simulation mesh.  Only active cells (those
+        belonging to a layer/block) are included; inactive grid cells are
+        omitted.
+
+        Parameters
+        ----------
+        path : str or Path
+            Output ``.vtu`` file path.  Parent directories are created
+            automatically.
+        """
+        if self._compiled_handle is None:
+            raise RuntimeError(
+                "write_vtu requires a solution from Compiled.solve(). "
+                "Solutions from Model.solve() do not retain the compiled handle."
+            )
+        check(
+            self._dll.mhs_compiled_write_vtu(
+                self._compiled_handle,
+                self._handle,
+                str(path).encode("utf-8"),
+            ),
+            "write_vtu",
+        )

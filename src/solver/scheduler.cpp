@@ -90,7 +90,8 @@ namespace mhs::sim {
         step.accepted.initialize(step.state, step.current_time);
         probe_recorder.record(step.current_time, extract_cell_temperature(model, step.state));
 
-        double dt_sug = std::clamp(output_dt / 10.0, min_dt, max_dt);
+        const bool is_manual = (step_ctrl.strategy() == mhs::sim::time_scheme::StepStrategy::Manual);
+        double dt_sug = std::clamp(output_dt, min_dt, max_dt);
         double dt = dt_sug;
 
         while (step.current_time < duration - mhs::core::zero_guard) {
@@ -110,9 +111,12 @@ namespace mhs::sim {
                 MHS_LOG_WARN("Non-linear iteration did not converge at step {}", step.time_step);
             }
 
-            auto est = time_scheme::estimate_error(step.accepted, step.state, dt, /*err_cfg=*/ {});
-            dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
-            const bool accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
+            bool accepted_step = true;
+            if (!is_manual) {
+                auto est = time_scheme::estimate_error(step.accepted, step.state, dt, /*err_cfg=*/ {});
+                dt_sug = std::clamp(dt * est.suggested_factor, min_dt, max_dt);
+                accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
+            }
 
             if (accepted_step) {
                 step.current_time += dt;

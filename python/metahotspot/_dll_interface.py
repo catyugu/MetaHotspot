@@ -287,6 +287,14 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_compiled_grid_to_cell.restype = ctypes.POINTER(ctypes.c_size_t)
     dll.mhs_compiled_grid_to_cell.argtypes = [ctypes.POINTER(MhsCompiled)]
 
+    # ---- Compiled model — pre-solve configuration ----
+    dll.mhs_compiled_set_initial_state.restype = ctypes.c_int32
+    dll.mhs_compiled_set_initial_state.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+    ]
+
     # ---- Model introspection ----
     dll.mhs_model_material_name.restype = ctypes.c_char_p
     dll.mhs_model_material_name.argtypes = [
@@ -363,6 +371,14 @@ def configure_dll(dll: ctypes.CDLL) -> None:
     dll.mhs_solution_probe_values.argtypes = [
         ctypes.POINTER(MhsSolution),
         ctypes.c_size_t,
+    ]
+
+    # ---- VTU export ----
+    dll.mhs_compiled_write_vtu.restype = ctypes.c_int32
+    dll.mhs_compiled_write_vtu.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(MhsSolution),
+        ctypes.c_char_p,
     ]
 
     # ---- Assembly ----

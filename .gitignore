@@ -12,7 +12,5 @@ results
 *.msh
 *.log
 *.vtu
-*.steady
-*.ttrace
 __pycache__
 !src/**

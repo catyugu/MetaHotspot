@@ -106,6 +106,25 @@ class Compiled:
         n = self.grid_count()
         return np.ctypeslib.as_array(ptr, shape=(n,))
 
+    # ---- Pre-solve configuration ----
+
+    def set_initial_state(self, state: np.ndarray) -> None:
+        """Override the initial state from a previous solution.
+
+        Useful for chaining steady-state → transient: solve steady, extract
+        ``solution.states()``, then set it here before the transient solve.
+
+        Parameters
+        ----------
+        state : ndarray
+            Full system state, length ``state_count()``.
+        """
+        ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+        check(
+            self._dll.mhs_compiled_set_initial_state(self._handle, ptr, state.size),
+            "set_initial_state",
+        )
+
     # ---- Solve ----
 
     def solve(self, opts: SolverOpts | None = None) -> Solution:

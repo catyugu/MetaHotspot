@@ -269,12 +269,34 @@ MHS_API size_t mhs_compiled_grid_count(const mhs_compiled_t* c);
 MHS_API const size_t* mhs_compiled_grid_to_cell(const mhs_compiled_t* c);
 
 /* ------------------------------------------------------------------ */
+/*  Compiled model — pre-solve configuration                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Override the initial state on a compiled model.
+ *
+ * ``state`` must have length ``mhs_compiled_state_count(c)``.
+ * This is useful for chaining a steady-state solve into a transient solve:
+ * solve steady, extract the state, set it as the initial state of the
+ * transient model, then solve transient.
+ */
+MHS_API mhs_status_t mhs_compiled_set_initial_state(mhs_compiled_t* c, const double* state, size_t count);
+
+/* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_solver_opts_t* opts, mhs_solution_t** out);
 MHS_API mhs_status_t mhs_solve(mhs_model_t* m, const mhs_solver_opts_t* opts, mhs_solution_t** out);
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
+
+/* ------------------------------------------------------------------ */
+/*  VTU export                                                         */
+/* ------------------------------------------------------------------ */
+
+/** Write a VTU file from a compiled model + solution (mesh + temperature). */
+MHS_API mhs_status_t mhs_compiled_write_vtu(
+    const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly (matrix + RHS extraction)                                */
