@@ -61,18 +61,6 @@ namespace mhs::core {
         std::vector<TableIndex> block_id;
     };
 
-    struct DofRange {
-        Index begin = 0;
-        Index count = 0;
-
-        Index end() const noexcept { return begin + count; }
-    };
-
-    struct DofLayout {
-        DofRange cell_states;
-        Index total_count = 0;
-    };
-
     // ── Probe / observation point ────────────────────────────────────────
     struct ProbePoint {
         std::string name;
@@ -85,7 +73,6 @@ namespace mhs::core {
     struct Model {
         MeshGeometry mesh;
         CellFields cells;
-        DofLayout dofs;
 
         // Face-level BC storage: flat array [N_active * 6].
         // face_bcs[c * 6 + dir] gives the BC for cell c's face `dir`.

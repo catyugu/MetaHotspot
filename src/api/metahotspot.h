@@ -83,6 +83,12 @@ enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE = 1, MHS_FLUID_MASS_FLOW = 2, MHS_
 typedef int32_t mhs_operator_t;
 enum { MHS_OPERATOR_STIFFNESS = 0, MHS_OPERATOR_CAPACITY = 1 };
 
+typedef int32_t mhs_integrator_t;
+enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };
+
+typedef int32_t mhs_step_strategy_t;
+enum { MHS_STEP_ADAPTIVE_FREE = 0, MHS_STEP_ADAPTIVE_ALIGNED = 1, MHS_STEP_FIXED = 2 };
+
 typedef int32_t mhs_status_t;
 enum {
     MHS_OK = 0,
@@ -127,6 +133,13 @@ typedef struct {
     int32_t nonlinear_max_iterations;
     double nonlinear_relative_tolerance;
     double nonlinear_absolute_tolerance;
+    int32_t integrator; // mhs_integrator_t
+    int32_t step_strategy; // mhs_step_strategy_t
+    double error_abs_tol;
+    double error_safety;
+    double min_dt;
+    double max_dt;
+    double fixed_dt;
 } mhs_solver_opts_t;
 
 /** Non-owning CSC matrix view.  Pointers remain valid while the source
@@ -170,8 +183,8 @@ typedef struct {
  * Solution bulk data view.
  *
  * All pointer fields are valid until the solution handle is destroyed.
- * cell_temperatures is the cell-centroid field [cell_count].
- * states is the full DOF state vector [state_count].
+ * cell_temperatures and states both point to the same state vector [state_count]
+ * (since thermal DOFs == cell_count).
  */
 typedef struct {
     size_t cell_count;
@@ -181,17 +194,23 @@ typedef struct {
     const double* states; // [state_count]
 } mhs_solution_view_t;
 
-/**
- * Probe metadata — names and record counts.
- *
- * Populated by mhs_solution_probe_metadata().  Must be freed via
- * mhs_solution_probe_metadata_free() to release heap-allocated arrays.
- */
+/** Non-owning assembly view — returns all three operators in one call.
+ *  Pointers remain valid while the source assembly handle remains alive. */
 typedef struct {
-    size_t count;
-    const char* const* names; // [count]
-    const size_t* record_counts; // [count]
-} mhs_probe_metadata_t;
+    mhs_csc_view_t K;
+    mhs_csc_view_t C;
+    const double* rhs; // [n]
+    size_t n;
+} mhs_assembly_view_t;
+
+/** Non-owning probe trace view.  Pointers remain valid while the source
+ *  solution handle remains alive. */
+typedef struct {
+    const char* name;
+    const double* times; // [record_count]
+    const double* values; // [record_count]
+    size_t record_count;
+} mhs_probe_view_t;
 
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
@@ -314,11 +333,9 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out);
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_assembly_t** out);
 MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
-MHS_API size_t mhs_assembly_n(const mhs_assembly_t* a);
-MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out);
-MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a);
+MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
@@ -360,12 +377,7 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 /* ------------------------------------------------------------------ */
 
 MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s);
-MHS_API const char* mhs_solution_probe_name(const mhs_solution_t* s, size_t index);
-MHS_API size_t mhs_solution_probe_record_count(const mhs_solution_t* s, size_t probe_index);
-MHS_API const double* mhs_solution_probe_times(const mhs_solution_t* s, size_t probe_index);
-MHS_API const double* mhs_solution_probe_values(const mhs_solution_t* s, size_t probe_index);
-MHS_API mhs_status_t mhs_solution_probe_metadata(const mhs_solution_t* s, mhs_probe_metadata_t* out);
-MHS_API mhs_status_t mhs_solution_probe_metadata_free(mhs_probe_metadata_t* meta);
+MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Model introspection (before compile)                               */

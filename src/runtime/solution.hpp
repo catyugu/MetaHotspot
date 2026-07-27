@@ -13,9 +13,9 @@ namespace mhs::core {
 
     struct Solution {
         std::vector<double> state;
-        std::vector<double> cell_temperature;
         double time = 0.0;
         std::vector<ProbeTrace> probe_traces;
+        bool converged = true;
     };
 
 } // namespace mhs::core

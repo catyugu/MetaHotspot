@@ -12,6 +12,7 @@ from metahotspot.types import (
     MhsCompiled,
     MhsSolution,
     MhsAssembly,
+    MhsAssemblyView,
     CscView,
     SolverOpts,
     Rect2D,
@@ -19,7 +20,7 @@ from metahotspot.types import (
     MhsFaceRegion,
     CompiledMetadataView,
     SolutionView,
-    ProbeMetadata,
+    ProbeView,
     MhsStepInfo,
 )
 
@@ -302,24 +303,18 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
         [
             ctypes.POINTER(MhsCompiled),
             ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
             ctypes.c_double,
             ctypes.POINTER(ctypes.POINTER(MhsAssembly)),
         ],
     ),
     ("mhs_assembly_destroy", ctypes.c_int32, [ctypes.POINTER(MhsAssembly)]),
-    ("mhs_assembly_n", ctypes.c_size_t, [ctypes.POINTER(MhsAssembly)]),
     (
-        "mhs_assembly_rhs",
-        ctypes.POINTER(ctypes.c_double),
-        [ctypes.POINTER(MhsAssembly)],
-    ),
-    (
-        "mhs_assembly_matrix",
+        "mhs_assembly_view",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsAssembly),
-            ctypes.c_int32,
-            ctypes.POINTER(CscView),
+            ctypes.POINTER(MhsAssemblyView),
         ],
     ),
     # ---- Solve ----
@@ -371,50 +366,12 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Probe accessors ----
     ("mhs_solution_probe_count", ctypes.c_size_t, [ctypes.POINTER(MhsSolution)]),
     (
-        "mhs_solution_probe_name",
-        ctypes.c_char_p,
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-        ],
-    ),
-    (
-        "mhs_solution_probe_record_count",
-        ctypes.c_size_t,
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-        ],
-    ),
-    (
-        "mhs_solution_probe_times",
-        ctypes.POINTER(ctypes.c_double),
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-        ],
-    ),
-    (
-        "mhs_solution_probe_values",
-        ctypes.POINTER(ctypes.c_double),
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-        ],
-    ),
-    (
-        "mhs_solution_probe_metadata",
+        "mhs_solution_probe_view",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsSolution),
-            ctypes.POINTER(ProbeMetadata),
-        ],
-    ),
-    (
-        "mhs_solution_probe_metadata_free",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(ProbeMetadata),
+            ctypes.c_size_t,
+            ctypes.POINTER(ProbeView),
         ],
     ),
 ]

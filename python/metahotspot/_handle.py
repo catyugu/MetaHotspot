@@ -10,7 +10,7 @@ class OwnedHandle:
 
     Handles the common pattern of _dll, _handle, _owned, __del__, close.
     Subclasses call init() in __init__ and/or assign from a factory
-    classmethod.
+    classmethod. Supports context manager protocol.
     """
 
     def __init__(self, destroy_fn, dll=None):
@@ -29,6 +29,12 @@ class OwnedHandle:
         self._owned = True
 
     def __del__(self) -> None:
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args) -> None:
         self.close()
 
     def close(self) -> None:

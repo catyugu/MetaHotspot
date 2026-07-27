@@ -8,7 +8,6 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 | 目标             | 职责                                                                         |
 | ---------------- | ---------------------------------------------------------------------------- |
-| `mhs_runtime`    | header-only 运行期数据契约和网格助手（含 `src/model/` authoring model 类型） |
 | `mhs_runtime`    | header-only 运行期数据契约和网格助手                                         |
 | `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场                                |
 | `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理                                  |
@@ -33,7 +32,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 
-完整数据流以 [data-flow.md](docs/design/data-flow.md) 为唯一事实源；接口签名以 [module-interfaces.md](docs/design/module-interfaces.md) 为唯一事实源。
+完整数据流以 [data-flow.md](docs/design/data-flow.md) 为唯一事实源。
 
 ## 数据约定
 

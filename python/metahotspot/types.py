@@ -64,6 +64,13 @@ class SolverOpts(ctypes.Structure):
         ("nonlinear_max_iterations", ctypes.c_int32),
         ("nonlinear_relative_tolerance", ctypes.c_double),
         ("nonlinear_absolute_tolerance", ctypes.c_double),
+        ("integrator", ctypes.c_int32),
+        ("step_strategy", ctypes.c_int32),
+        ("error_abs_tol", ctypes.c_double),
+        ("error_safety", ctypes.c_double),
+        ("min_dt", ctypes.c_double),
+        ("max_dt", ctypes.c_double),
+        ("fixed_dt", ctypes.c_double),
     ]
 
 
@@ -75,6 +82,15 @@ class CscView(ctypes.Structure):
         ("outer_indices", ctypes.POINTER(ctypes.c_int32)),
         ("inner_indices", ctypes.POINTER(ctypes.c_int32)),
         ("values", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
+class MhsAssemblyView(ctypes.Structure):
+    _fields_ = [
+        ("K", CscView),
+        ("C", CscView),
+        ("rhs", ctypes.POINTER(ctypes.c_double)),
+        ("n", ctypes.c_size_t),
     ]
 
 
@@ -114,11 +130,12 @@ class SolutionView(ctypes.Structure):
     ]
 
 
-class ProbeMetadata(ctypes.Structure):
+class ProbeView(ctypes.Structure):
     _fields_ = [
-        ("count", ctypes.c_size_t),
-        ("names", ctypes.POINTER(ctypes.c_char_p)),
-        ("record_counts", ctypes.POINTER(ctypes.c_size_t)),
+        ("name", ctypes.c_char_p),
+        ("times", ctypes.POINTER(ctypes.c_double)),
+        ("values", ctypes.POINTER(ctypes.c_double)),
+        ("record_count", ctypes.c_size_t),
     ]
 
 

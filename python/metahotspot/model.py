@@ -49,11 +49,14 @@ class Model(OwnedHandle):
         check(dll.mhs_model_create(ctypes.byref(pp)), "create")
         self._handle: MhsModel = pp
 
-    def __enter__(self) -> Model:
-        return self
+    # ---- _checked_id helper ----
 
-    def __exit__(self, *args) -> None:
-        self.close()
+    @staticmethod
+    def _checked_id(value, invalid, context):
+        if value == invalid:
+            err = _get_dll().mhs_last_error()
+            raise RuntimeError(f"{context} failed: {err}")
+        return value
 
     # ---- Model construction helpers ----
 
@@ -142,10 +145,7 @@ class Model(OwnedHandle):
             c.encode("utf-8"),
             dv,
         )
-        if mid == MHS_MATERIAL_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_material failed: {err}")
-        return mid
+        return self._checked_id(mid, MHS_MATERIAL_ID_INVALID, "add_material")
 
     def add_layer(
         self, thickness: str, x_offset: str = "0", y_offset: str = "0"
@@ -157,10 +157,7 @@ class Model(OwnedHandle):
             x_offset.encode("utf-8"),
             y_offset.encode("utf-8"),
         )
-        if lid == MHS_LAYER_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_layer failed: {err}")
-        return lid
+        return self._checked_id(lid, MHS_LAYER_ID_INVALID, "add_layer")
 
     def add_block(
         self,
@@ -182,10 +179,7 @@ class Model(OwnedHandle):
             y_offset.encode("utf-8"),
             th,
         )
-        if bid == MHS_BLOCK_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_block failed: {err}")
-        return bid
+        return self._checked_id(bid, MHS_BLOCK_ID_INVALID, "add_block")
 
     def add_rect(
         self,
@@ -318,10 +312,7 @@ class Model(OwnedHandle):
             name.encode("utf-8"),
             expression.encode("utf-8"),
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_function_expr failed: {err}")
-        return fid
+        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_expr")
 
     def add_function_gauss(
         self, name: str, amplitude: float, tau: float, center: float
@@ -333,10 +324,7 @@ class Model(OwnedHandle):
             tau,
             center,
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_function_gauss failed: {err}")
-        return fid
+        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_gauss")
 
     def add_function_sine(
         self, name: str, amplitude: float, angular_frequency: float, phase: float
@@ -348,10 +336,7 @@ class Model(OwnedHandle):
             angular_frequency,
             phase,
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_function_sine failed: {err}")
-        return fid
+        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_sine")
 
     def add_function_double_exponential(
         self, name: str, amplitude: float, alpha: float, beta: float
@@ -363,10 +348,9 @@ class Model(OwnedHandle):
             alpha,
             beta,
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_function_double_exponential failed: {err}")
-        return fid
+        return self._checked_id(
+            fid, MHS_FUNCTION_ID_INVALID, "add_function_double_exponential"
+        )
 
     def add_function_piecewise(self, name: str, points: np.ndarray) -> int:
         """Register a piecewise-linear function.
@@ -406,12 +390,9 @@ class Model(OwnedHandle):
             n,
             period,
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(
-                f"add_function_periodic_piecewise_constant failed: {err}"
-            )
-        return fid
+        return self._checked_id(
+            fid, MHS_FUNCTION_ID_INVALID, "add_function_periodic_piecewise_constant"
+        )
 
     # ---- Probes & fluid boundaries ----
 
@@ -423,10 +404,7 @@ class Model(OwnedHandle):
             y,
             z,
         )
-        if pid == MHS_PROBE_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_probe failed: {err}")
-        return pid
+        return self._checked_id(pid, MHS_PROBE_ID_INVALID, "add_probe")
 
     def add_fluid_boundary(
         self,

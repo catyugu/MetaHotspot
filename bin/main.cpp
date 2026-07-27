@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = result.cell_temperature;
+        const auto& solution = result.state;
 
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)

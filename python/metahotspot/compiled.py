@@ -101,7 +101,7 @@ class Compiled(OwnedHandle):
         """
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self._dll, self._handle, state, opts)
+        return Solution._solve_compiled(self, state, opts)
 
     # ---- Assembly ----
 
@@ -128,9 +128,10 @@ class Compiled(OwnedHandle):
         dt: float,
         opts: SolverOpts | None = None,
     ) -> tuple[np.ndarray, dict | None]:
-        """Execute a single transient time step (BDF1)."""
+        """Execute a single transient time step."""
         n = self.metadata().state_count
-        assert len(state) == n, f"state length {len(state)} != {n}"
+        if len(state) != n:
+            raise ValueError(f"state length {len(state)} != {n}")
         out_state = np.empty(n, dtype=np.float64)
         step_info = MhsStepInfo()
         opts_ptr = ctypes.byref(opts) if opts is not None else None

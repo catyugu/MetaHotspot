@@ -394,14 +394,12 @@ def main():
     n_probes = sol_transient.probe_count()
     print(f"\n  Probes recorded: {n_probes}")
     for pi in range(min(n_probes, 5)):
-        pname = sol_transient.probe_name(pi)
-        ptimes = sol_transient.probe_times(pi)
-        pvals = sol_transient.probe_values(pi)
-        if ptimes is not None and len(ptimes) > 0:
+        pv = sol_transient.probe_view(pi)
+        if pv.times is not None and len(pv.times) > 0:
             print(
-                f"    {pname:<20s}  t={ptimes[0]:.4f}..{ptimes[-1]:.4f}  "
-                f"T={pvals[0]:.2f}..{pvals[-1]:.2f} K  "
-                f"({len(ptimes)} records)"
+                f"    {pv.name:<20s}  t={pv.times[0]:.4f}..{pv.times[-1]:.4f}  "
+                f"T={pv.values[0]:.2f}..{pv.values[-1]:.2f} K  "
+                f"({pv.record_count} records)"
             )
 
     # Compare with HotSpot reference (gcc.init)

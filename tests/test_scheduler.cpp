@@ -52,14 +52,13 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     auto result = solve(model);
 
-    EXPECT_EQ(result.state.size(), model.dofs.total_count);
-    const auto& solution = result.cell_temperature;
-    EXPECT_EQ(solution.size(), model.dofs.cell_states.count);
-    EXPECT_TRUE(std::equal(solution.begin(), solution.end(), result.state.begin()));
+    EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
+    EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
+    EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
-    for (const auto& t : solution) {
+    for (const auto& t : result.state) {
         max_T = std::max(max_T, t);
     }
     EXPECT_GT(max_T, 300.0) << "Heat source should raise temperature above 300K";

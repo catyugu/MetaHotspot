@@ -9,8 +9,24 @@
 
 namespace mhs::sim {
 
-    struct SolveOptions {
+    struct SolverOpts {
+        // Time integration
+        time_scheme::IntegratorKind integrator = time_scheme::IntegratorKind::Bdf1;
+        time_scheme::StepStrategy step_strategy = time_scheme::StepStrategy::AdaptiveFree;
+
+        // Error control
+        double error_abs_tol = 1e-4;
+        double error_safety = 0.9;
+
+        // Step bounds
+        double min_dt = 1e-12;
+        double max_dt = 1.0;
+        double fixed_dt = 1.0;
+
+        // Linear solver
         SolverSpec solver;
+
+        // Non-linear solver
         NonLinearConfig nonlinear;
     };
 
@@ -24,21 +40,11 @@ namespace mhs::sim {
     };
 
     /// Execute a single transient step from *current_time* with step *dt*.
-    ///
-    /// Reuses the supplied *assembler* and *solver* (avoids re-allocating internal
-    /// data across repeated calls).  The *history* ring buffer must already hold
-    /// the accepted solution at *current_time* before the first call.
-    ///
-    /// On return *history* is updated if the step was accepted.
     StepResult take_step(Assembler& assembler, LinearSolver& solver, mhs::core::SolutionHistory& history,
-        std::vector<double>& state, double current_time, double dt, const NonLinearConfig& nonlinear_cfg = {},
-        time_scheme::IntegratorKind integrator = time_scheme::IntegratorKind::Bdf1);
+        std::vector<double>& state, double current_time, double dt, const SolverOpts& opts);
 
     /// Solve a steady or transient thermal model.
-    ///
-    /// If initial_state is empty, it is initialized from
-    /// model.initial_temperature.
     mhs::core::Solution solve(
-        const mhs::core::Model& model, const SolveOptions& options = {}, std::span<const double> initial_state = {});
+        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {});
 
 } // namespace mhs::sim

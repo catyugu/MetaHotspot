@@ -12,28 +12,26 @@ XML
                       ├─> mhs::sim::resolve_geometry         (几何预求)
                       ├─> material_table           (kx/ky/kz/ρ/c 编译)
                       ├─> mhs::sim::assign_cell_layers       (grid_to_cell [full-grid]; cell_to_grid + fields [compact])
-                      ├─> mhs::core::DofLayout               (cell_states + total_count)
                       ├─> heat_source_table        (按 Block 编译 volumetric_heat_source)
                       ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
                       ├─> mhs::sim::fluid::build_domain
                       │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
                               └─> mhs::sim::solve
-                                    ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
-                                    │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
-                                    │     ├─> mhs::sim::Assembler::assemble(ctx)
-                                    │     │     ├─> assemble_cells parallel_for // no fluid branches
-                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
-                                    │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state
-                                    │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
-                                    │     │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
-                                    │     │     │     ├─> heat_source_table[hs_idx].eval
-                                    │     │     │     └─> thread-local K/C triplets + f
-                                    │     │     ├─> assemble_fluid               // same sparse coordinates
-                                    │     │     └─> merge once → AssemblyResult {K, C, f}
-                                    │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
-                                    │     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
-                                    │     └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
+                                    ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t, duration) → dt_exec
+                                    ├─> mhs::sim::Assembler::assemble(ctx)
+                                    │     ├─> assemble_cells parallel_for // no fluid branches
+                                    │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
+                                    │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state
+                                    │     │     ├─> k_along(dir) 选用该面法向对应的 k
+                                    │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
+                                    │     │     ├─> heat_source_table[hs_idx].eval
+                                    │     │     └─> thread-local K/C triplets + f
+                                    │     ├─> assemble_fluid               // same sparse coordinates
+                                    │     └─> merge once → AssemblyResult {K, C, f}
+                                    ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
+                                    ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
+                                    └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
                                     ├─> StepController::flush_outputs(t + dt) → output times
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
                                     └─> mhs::post::interpolate_cell_to_node           // solve() 结束后一次性展开
@@ -59,7 +57,4 @@ XML
 | 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
 | 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
-运行期字段、SoA、面 BC 和虚拟单元约定见
-[internal-model.md](internal-model.md)；表达式线程模型见
-[expr-api.md](expr-api.md)；各向异性插值契约见
-[module-interfaces.md](module-interfaces.md) 的 postprocessor 小节。
+运行期 SoA 和面 BC 约定见代码注释；表达式线程模型见 [expr-api.md](expr-api.md)。

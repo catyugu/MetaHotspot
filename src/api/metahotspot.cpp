@@ -6,9 +6,10 @@
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
-#include "solver/scheduler.hpp" // take_step
+#include "solver/scheduler.hpp"
 #include "solver/solution_history.hpp"
 
+#include <Eigen/Sparse>
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -31,18 +32,10 @@ struct mhs_model_t {
     std::vector<BlockLocation> block_locations;
 };
 
-struct CscMatrixData {
-    int32_t n = 0;
-    int32_t nnz = 0;
-    std::vector<int32_t> outer_indices;
-    std::vector<int32_t> inner_indices;
-    std::vector<double> values;
-};
-
 struct mhs_assembly_t {
-    CscMatrixData stiffness;
-    CscMatrixData capacity;
-    std::vector<double> rhs;
+    Eigen::SparseMatrix<double> K;
+    Eigen::SparseMatrix<double> C;
+    Eigen::VectorXd rhs;
 };
 
 struct mhs_compiled_t {
@@ -207,6 +200,13 @@ MHS_API void mhs_solver_opts_default(mhs_solver_opts_t* opts)
     opts->nonlinear_max_iterations = 200;
     opts->nonlinear_relative_tolerance = 1e-6;
     opts->nonlinear_absolute_tolerance = 1e-12;
+    opts->integrator = MHS_INTEGRATOR_BDF1;
+    opts->step_strategy = MHS_STEP_ADAPTIVE_FREE;
+    opts->error_abs_tol = 1e-4;
+    opts->error_safety = 0.9;
+    opts->min_dt = 1e-12;
+    opts->max_dt = 1.0;
+    opts->fixed_dt = 1.0;
 }
 
 MHS_API const char* mhs_status_string(mhs_status_t status)
@@ -688,7 +688,7 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model.cells.cell_to_grid.size();
-    out->state_count = c->model.dofs.total_count;
+    out->state_count = c->model.cells.cell_to_grid.size();
     out->node_count = (c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1);
     out->grid_count = c->model.mesh.nx * c->model.mesh.ny * c->model.mesh.nz;
     out->study_type = _from_core_study(c->model.study_type);
@@ -720,11 +720,30 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
     }
 
     MHS_TRY(MHS_ERR_SOLVE, {
-        const auto n = static_cast<std::size_t>(c->model.dofs.total_count);
+        const auto n = static_cast<std::size_t>(c->model.cells.cell_to_grid.size());
 
         // Local state for this step — no mutable cache on the compiled model.
         mhs::sim::Assembler assembler(c->model);
-        auto solver = mhs::sim::LinearSolver::create();
+
+        // Build SolverOpts from C opts.
+        mhs::sim::SolverOpts so;
+        if (opts) {
+            so.solver.type = _to_solver_type(opts->solver_type);
+            so.solver.config.tolerance = opts->linear_tolerance;
+            so.solver.config.max_iterations = opts->linear_max_iterations;
+            so.nonlinear.underrelaxation = opts->underrelaxation;
+            so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
+            so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
+            so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
+            so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
+            so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
+            so.error_abs_tol = opts->error_abs_tol;
+            so.error_safety = opts->error_safety;
+            so.min_dt = opts->min_dt;
+            so.max_dt = opts->max_dt;
+            so.fixed_dt = opts->fixed_dt;
+        }
+        auto solver = mhs::sim::LinearSolver::create(so.solver);
         mhs::core::SolutionHistory history(n, 2);
 
         // Copy input state into work buffer.
@@ -733,17 +752,8 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
         // Initialise history for this step.
         history.initialize(work_state, time);
 
-        // Solver options.
-        mhs::sim::NonLinearConfig nl_cfg;
-        if (opts) {
-            nl_cfg.underrelaxation = opts->underrelaxation;
-            nl_cfg.max_iterations = opts->nonlinear_max_iterations;
-            nl_cfg.relative_tolerance = opts->nonlinear_relative_tolerance;
-            nl_cfg.absolute_tolerance = opts->nonlinear_absolute_tolerance;
-        }
-
         // Execute the shared kernel.
-        auto result = mhs::sim::take_step(assembler, *solver, history, work_state, time, dt, nl_cfg);
+        auto result = mhs::sim::take_step(assembler, *solver, history, work_state, time, dt, so);
 
         // Copy result out.
         std::copy(work_state.begin(), work_state.end(), out_state);
@@ -762,7 +772,7 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* state, double time, mhs_assembly_t** out)
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_assembly_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
@@ -770,25 +780,22 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     MHS_TRY(MHS_ERR_ASSEMBLE, {
         mhs::sim::Assembler assembler(c->model);
 
-        const auto n = c->model.dofs.total_count;
-        std::vector<double> current_state(state, state + n);
+        const auto n = c->model.cells.cell_to_grid.size();
+        if (state_count != 0 && state_count != n) {
+            SET_ERR("state_count mismatch: expected " + std::to_string(n) + " got " + std::to_string(state_count));
+            return MHS_ERR_INVALID_ARG;
+        }
 
-        mhs::sim::AssembleContext ctx {current_state, time};
+        std::span<const double> state_span(state, n);
+        mhs::sim::AssembleContext ctx {state_span, time};
         auto result = assembler.assemble(ctx);
 
         auto h = std::make_unique<mhs_assembly_t>();
-        const auto copy_matrix = [](Eigen::SparseMatrix<double>& source, CscMatrixData& destination) {
-            source.makeCompressed();
-            destination.n = static_cast<int32_t>(source.rows());
-            destination.nnz = static_cast<int32_t>(source.nonZeros());
-            destination.outer_indices.assign(source.outerIndexPtr(), source.outerIndexPtr() + destination.n + 1);
-            destination.inner_indices.assign(source.innerIndexPtr(), source.innerIndexPtr() + destination.nnz);
-            destination.values.assign(source.valuePtr(), source.valuePtr() + destination.nnz);
-        };
-        copy_matrix(result.K, h->stiffness);
-        copy_matrix(result.C, h->capacity);
-        int32_t dim = h->stiffness.n;
-        h->rhs.assign(result.f.data(), result.f.data() + dim);
+        h->K = std::move(result.K);
+        h->C = std::move(result.C);
+        h->rhs = std::move(result.f);
+        h->K.makeCompressed();
+        h->C.makeCompressed();
 
         *out = h.release();
     });
@@ -801,40 +808,21 @@ MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a)
     return MHS_OK;
 }
 
-MHS_API size_t mhs_assembly_n(const mhs_assembly_t* a)
+static mhs_csc_view_t _eigen_to_csc_view(const Eigen::SparseMatrix<double>& mat)
 {
-    if (!a)
-        return 0;
-    return a->stiffness.n;
+    // mat must be compressed — callers ensure this
+    return {static_cast<int32_t>(mat.rows()), static_cast<int32_t>(mat.cols()), static_cast<int32_t>(mat.nonZeros()),
+        mat.outerIndexPtr(), mat.innerIndexPtr(), mat.valuePtr()};
 }
 
-MHS_API const double* mhs_assembly_rhs(const mhs_assembly_t* a)
-{
-    if (!a)
-        return nullptr;
-    return a->rhs.data();
-}
-
-MHS_API mhs_status_t mhs_assembly_matrix(const mhs_assembly_t* a, mhs_operator_t which, mhs_csc_view_t* out)
+MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out)
 {
     CHECK_NULL(a);
     CHECK_NULL(out);
-
-    const CscMatrixData* matrix = nullptr;
-    switch (which) {
-    case MHS_OPERATOR_STIFFNESS:
-        matrix = &a->stiffness;
-        break;
-    case MHS_OPERATOR_CAPACITY:
-        matrix = &a->capacity;
-        break;
-    default:
-        SET_ERR("invalid operator");
-        return MHS_ERR_INVALID_ARG;
-    }
-
-    *out = {matrix->n, matrix->n, matrix->nnz, matrix->outer_indices.data(), matrix->inner_indices.data(),
-        matrix->values.data()};
+    out->K = _eigen_to_csc_view(a->K);
+    out->C = _eigen_to_csc_view(a->C);
+    out->rhs = a->rhs.data();
+    out->n = static_cast<size_t>(a->rhs.size());
     tls_err.clear();
     return MHS_OK;
 }
@@ -853,7 +841,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_SOLVE, {
-        mhs::sim::SolveOptions so;
+        mhs::sim::SolverOpts so;
         if (opts) {
             so.solver.type = _to_solver_type(opts->solver_type);
             so.solver.config.tolerance = opts->linear_tolerance;
@@ -862,6 +850,13 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
             so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
             so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
+            so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
+            so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
+            so.error_abs_tol = opts->error_abs_tol;
+            so.error_safety = opts->error_safety;
+            so.min_dt = opts->min_dt;
+            so.max_dt = opts->max_dt;
+            so.fixed_dt = opts->fixed_dt;
         }
 
         std::span<const double> initial_state;
@@ -890,7 +885,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
     CHECK_NULL(c);
     CHECK_NULL(s);
     CHECK_NULL(path);
-    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.cell_temperature); });
+    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.state); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -912,10 +907,10 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->cell_count = s->solution.cell_temperature.size();
+    out->cell_count = s->solution.state.size();
     out->state_count = s->solution.state.size();
     out->time = s->solution.time;
-    out->cell_temperatures = s->solution.cell_temperature.data();
+    out->cell_temperatures = s->solution.state.data();
     out->states = s->solution.state.data();
     tls_err.clear();
     return MHS_OK;
@@ -932,70 +927,19 @@ MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s)
     return s->solution.probe_traces.size();
 }
 
-MHS_API const char* mhs_solution_probe_name(const mhs_solution_t* s, size_t index)
-{
-    if (!s)
-        return nullptr;
-    if (index >= s->solution.probe_traces.size())
-        return nullptr;
-    return s->solution.probe_traces[index].name.c_str();
-}
-
-MHS_API size_t mhs_solution_probe_record_count(const mhs_solution_t* s, size_t probe_index)
-{
-    if (!s)
-        return 0;
-    if (probe_index >= s->solution.probe_traces.size())
-        return 0;
-    return s->solution.probe_traces[probe_index].values.size();
-}
-
-MHS_API const double* mhs_solution_probe_times(const mhs_solution_t* s, size_t probe_index)
-{
-    if (!s)
-        return nullptr;
-    if (probe_index >= s->solution.probe_traces.size())
-        return nullptr;
-    const auto& tr = s->solution.probe_traces[probe_index];
-    return tr.times.empty() ? nullptr : tr.times.data();
-}
-
-MHS_API const double* mhs_solution_probe_values(const mhs_solution_t* s, size_t probe_index)
-{
-    if (!s)
-        return nullptr;
-    if (probe_index >= s->solution.probe_traces.size())
-        return nullptr;
-    return s->solution.probe_traces[probe_index].values.data();
-}
-
-MHS_API mhs_status_t mhs_solution_probe_metadata(const mhs_solution_t* s, mhs_probe_metadata_t* out)
+MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out)
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->count = s->solution.probe_traces.size();
-    // Build arrays of C string pointers and record counts.
-    // These are heap-allocated and freed by the caller via mhs_solution_probe_metadata_free().
-    auto** names = new const char*[out->count];
-    auto* record_counts = new size_t[out->count];
-    for (size_t i = 0; i < out->count; ++i) {
-        names[i] = s->solution.probe_traces[i].name.c_str();
-        record_counts[i] = s->solution.probe_traces[i].values.size();
+    if (index >= s->solution.probe_traces.size()) {
+        SET_ERR("probe index out of range");
+        return MHS_ERR_INVALID_ARG;
     }
-    out->names = names;
-    out->record_counts = record_counts;
-    tls_err.clear();
-    return MHS_OK;
-}
-
-MHS_API mhs_status_t mhs_solution_probe_metadata_free(mhs_probe_metadata_t* meta)
-{
-    CHECK_NULL(meta);
-    delete[] meta->names;
-    delete[] meta->record_counts;
-    meta->names = nullptr;
-    meta->record_counts = nullptr;
-    meta->count = 0;
+    const auto& tr = s->solution.probe_traces[index];
+    out->name = tr.name.c_str();
+    out->times = tr.times.empty() ? nullptr : tr.times.data();
+    out->values = tr.values.empty() ? nullptr : tr.values.data();
+    out->record_count = tr.times.size();
     tls_err.clear();
     return MHS_OK;
 }

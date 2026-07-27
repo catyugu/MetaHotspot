@@ -34,16 +34,14 @@ namespace mhs::sim {
             const auto& face_bcs = model.face_bcs;
             const auto& materials = model.material_table;
             const auto cell_count = static_cast<mhs::core::Index>(cells.material_id.size());
-            const auto state_offset = model.dofs.cell_states.begin;
 
-            assert(model.dofs.cell_states.count == cell_count);
             assert(cells.cell_to_grid.size() == cells.material_id.size());
 
             auto thread_data = tbb::enumerable_thread_specific<ThreadLocalData>([]() { return ThreadLocalData {}; });
             tbb::parallel_for(tbb::blocked_range<mhs::core::Index>(0, cell_count),
                 [&](const tbb::blocked_range<mhs::core::Index>& range) {
                     for (mhs::core::Index cell = range.begin(); cell < range.end(); ++cell) {
-                        const mhs::core::Index state = state_offset + cell;
+                        const mhs::core::Index state = cell;
                         const Eigen::Index row = static_cast<Eigen::Index>(state);
                         const mhs::core::Index grid = cells.cell_to_grid[cell];
                         auto& local = thread_data.local();
@@ -81,7 +79,7 @@ namespace mhs::sim {
                             if (neighbor_grid != mhs::core::invalidIndex) {
                                 const mhs::core::Index neighbor = cells.grid_to_cell[neighbor_grid];
                                 assert(neighbor != mhs::core::invalidIndex);
-                                const mhs::core::Index neighbor_state = state_offset + neighbor;
+                                const mhs::core::Index neighbor_state = neighbor;
                                 const mhs::core::Index nix = mhs::utils::neighbor_ix(dir, ix);
                                 const mhs::core::Index niy = mhs::utils::neighbor_iy(dir, iy);
                                 const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
@@ -141,7 +139,7 @@ namespace mhs::sim {
         void assemble_fluid(const mhs::core::Model& model, const AssembleContext& ctx, AssemblySink& sink)
         {
             auto increment = mhs::sim::fluid::assemble_increment(model, ctx.state, ctx.current_time);
-            const Eigen::Index offset = static_cast<Eigen::Index>(model.dofs.cell_states.begin);
+            const Eigen::Index offset = 0;
             for (const auto& entry : increment.matrix_entries) {
                 sink.stiffness.emplace_back(entry.row() + offset, entry.col() + offset, entry.value());
             }
@@ -152,7 +150,7 @@ namespace mhs::sim {
 
     AssemblyResult Assembler::assemble(const AssembleContext& ctx) const
     {
-        const auto state_count = model_.dofs.total_count;
+        const auto state_count = model_.cells.cell_to_grid.size();
         assert(ctx.state.size() == state_count);
         assert(state_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_count = static_cast<Eigen::Index>(state_count);

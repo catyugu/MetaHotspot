@@ -10,7 +10,7 @@ using namespace mhs::sim;
 // Helper: build a default-state vector from the model's initial_temperature.
 static std::vector<double> default_state(const mhs::core::Model& model)
 {
-    return std::vector<double>(static_cast<std::size_t>(model.dofs.total_count), model.initial_temperature);
+    return std::vector<double>(static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
 }
 
 // Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
@@ -59,11 +59,9 @@ TEST(AssemblerTest, CompileBuildsCellStateLayout)
     auto model = build_model(make_simple_cube_io());
     const auto cell_count = model.cells.material_id.size();
 
-    EXPECT_EQ(model.dofs.cell_states.begin, 0U);
-    EXPECT_EQ(model.dofs.cell_states.count, cell_count);
-    EXPECT_EQ(model.dofs.total_count, cell_count);
+    EXPECT_EQ(model.cells.cell_to_grid.size(), cell_count);
     auto state = default_state(model);
-    ASSERT_EQ(state.size(), model.dofs.total_count);
+    ASSERT_EQ(state.size(), model.cells.cell_to_grid.size());
     EXPECT_TRUE(
         std::all_of(state.begin(), state.end(), [&](double value) { return value == model.initial_temperature; }));
 }

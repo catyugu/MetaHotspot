@@ -110,7 +110,7 @@ def partition(compiled, nc, macro_layer, macro_block):
     Uses grid_to_cell() topology directly — no need to replicate the
     geometry compiler's mask logic.
     """
-    K = compiled.assemble(compiled.default_state()).stiffness_matrix()
+    K = compiled.assemble(compiled.default_state()).K
     meta = compiled.metadata()
     layer_ids = meta.layer_ids
     block_ids = meta.block_ids
@@ -433,8 +433,9 @@ def main():
 
         m = build_model(h_test)
         c = m.compile()
-        K = c.assemble(c.default_state()).stiffness_matrix()
-        f = c.assemble(c.default_state()).rhs().copy()
+        assembly = c.assemble(c.default_state())
+        K, C, f = assembly.K, assembly.C, assembly.f
+        assembly.close()
         sol = c.solve()
         Tf = sol.view().cell_temperatures.copy()
         sol.close()

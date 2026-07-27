@@ -16,21 +16,6 @@ namespace mhs::sim {
 
     namespace {
 
-        struct StepState {
-            double current_time = 0.0;
-            int time_step = 0;
-            double dt = 0.0;
-            mhs::core::SolutionHistory accepted {0, 1};
-            std::vector<double> state;
-        };
-
-        std::vector<double> extract_cell_temperature(const mhs::core::Model& model, std::span<const double> state)
-        {
-            const auto& cells = model.dofs.cell_states;
-            return {state.begin() + static_cast<std::ptrdiff_t>(cells.begin),
-                state.begin() + static_cast<std::ptrdiff_t>(cells.end())};
-        }
-
         /// Linear interpolation of the state between two snapshots.
         inline std::vector<double> interpolate_state(
             double t0, std::span<const double> x0, double t1, std::span<const double> x1, double t)
@@ -51,8 +36,7 @@ namespace mhs::sim {
     //  take_step — shared kernel for single transient step
     // -----------------------------------------------------------------------
     StepResult take_step(Assembler& assembler, LinearSolver& solver, mhs::core::SolutionHistory& history,
-        std::vector<double>& state, double current_time, double dt, const NonLinearConfig& nonlinear_cfg,
-        time_scheme::IntegratorKind integrator)
+        std::vector<double>& state, double current_time, double dt, const SolverOpts& opts)
     {
         StepResult result {};
 
@@ -60,11 +44,11 @@ namespace mhs::sim {
         LinearSystemProvider provider = [&](std::vector<double>& iter_state) -> LinearSystem {
             AssembleContext ctx {iter_state, current_time + dt};
             auto ops = assembler.assemble(ctx);
-            return time_scheme::build_system(integrator, ops, history, dt);
+            return time_scheme::build_system(opts.integrator, ops, history, dt);
         };
 
         // Non-linear solve (Picard/Anderson)
-        auto nl = nonlinear_solve(provider, state, solver, nonlinear_cfg);
+        auto nl = nonlinear_solve(provider, state, solver, opts.nonlinear);
         result.nonlinear_converged = nl.converged;
         result.nonlinear_iterations = nl.iterations;
 
@@ -75,13 +59,22 @@ namespace mhs::sim {
             return result;
         }
 
+        // Fixed strategy: skip LTE-based rejection entirely
+        if (opts.step_strategy == time_scheme::StepStrategy::Fixed) {
+            history.accept(state, current_time + dt);
+            result.accepted = true;
+            result.error_ratio = 0.0;
+            result.suggested_dt_factor = 1.0;
+            return result;
+        }
+
         // Error estimation (LTE check for adaptive stepping)
-        auto est = time_scheme::estimate_error(history, state, dt, {});
+        auto est = time_scheme::estimate_error(history, state, dt, {opts.error_abs_tol, opts.error_safety});
         result.error_ratio = est.error_ratio;
         result.suggested_dt_factor = est.suggested_factor;
 
         // Acceptance criterion
-        double min_dt = 1e-12;
+        double min_dt = opts.min_dt;
         result.accepted = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
 
         if (result.accepted) {
@@ -92,23 +85,26 @@ namespace mhs::sim {
     }
 
     mhs::core::Solution solve(
-        const mhs::core::Model& model, const SolveOptions& options, std::span<const double> initial_state)
+        const mhs::core::Model& model, const SolverOpts& opts, std::span<const double> initial_state)
     {
-        auto solver = LinearSolver::create(options.solver);
+        auto solver = LinearSolver::create(opts.solver);
         ProbeRecorder probe_recorder;
         probe_recorder.initialize(model);
-        StepState step;
 
-        const mhs::core::Index state_count = model.dofs.total_count;
+        const mhs::core::Index state_count = model.cells.cell_to_grid.size();
+        std::vector<double> state;
         if (!initial_state.empty()) {
-            step.state.assign(initial_state.begin(), initial_state.end());
+            state.assign(initial_state.begin(), initial_state.end());
         }
         else {
-            step.state.assign(static_cast<std::size_t>(state_count), model.initial_temperature);
+            state.assign(static_cast<std::size_t>(state_count), model.initial_temperature);
         }
-        assert(step.state.size() == state_count);
-        step.current_time = 0.0;
-        step.time_step = 0;
+        assert(static_cast<mhs::core::Index>(state.size()) == state_count);
+
+        double current_time = 0.0;
+        double dt = 0.0;
+
+        mhs::core::SolutionHistory accepted {static_cast<std::size_t>(state_count), 2};
 
         Assembler assembler(model);
 
@@ -119,70 +115,78 @@ namespace mhs::sim {
                 auto ops = assembler.assemble(ctx);
                 return {std::move(ops.K), std::move(ops.f)};
             };
-            nonlinear_solve(build_ls, step.state, *solver, options.nonlinear);
-            auto cell_temperature = extract_cell_temperature(model, step.state);
-            probe_recorder.record(0.0, cell_temperature);
-            return {std::move(step.state), std::move(cell_temperature), step.current_time, probe_recorder.traces()};
+            nonlinear_solve(build_ls, state, *solver, opts.nonlinear);
+            probe_recorder.record(0.0, state);
+            return {std::move(state), current_time, probe_recorder.traces()};
         }
 
         // Transient.
         const double duration = model.transient_duration;
         const double output_dt = model.transient_time_step;
 
-        time_scheme::StepController step_ctrl {
-            time_scheme::StepStrategy::Free, /*min_dt=*/1e-12, /*max_dt=*/duration, /*fixed_dt=*/output_dt};
-        const double min_dt = step_ctrl.min_dt();
-        const double max_dt = step_ctrl.max_dt();
+        const double min_dt = opts.min_dt;
+        const double max_dt = std::max(opts.max_dt, duration);
 
-        step.accepted = mhs::core::SolutionHistory(static_cast<std::size_t>(state_count), 2);
-        step_ctrl.rebuild(duration, output_dt);
+        time_scheme::StepController step_ctrl {opts.step_strategy, min_dt, max_dt, duration, output_dt, opts.fixed_dt};
 
-        step.accepted.initialize(step.state, step.current_time);
-        probe_recorder.record(step.current_time, extract_cell_temperature(model, step.state));
+        accepted.initialize(state, current_time);
+        probe_recorder.record(current_time, state);
 
         double dt_sug = std::clamp(output_dt, min_dt, max_dt);
-        double dt = dt_sug;
 
-        while (step.current_time < duration - mhs::core::zero_guard) {
-            dt = step_ctrl.prepare(dt_sug, step.current_time, duration);
+        while (current_time < duration - mhs::core::zero_guard) {
+            dt = step_ctrl.prepare(dt_sug, current_time, duration);
             if (dt <= 0.0)
                 break;
-            step.dt = dt;
 
-            // Use shared take_step kernel.
-            auto result
-                = take_step(assembler, *solver, step.accepted, step.state, step.current_time, dt, options.nonlinear);
+            // Save state before trial so we can restore on rejection
+            auto saved_state = state;
+            auto result = take_step(assembler, *solver, accepted, state, current_time, dt, opts);
 
             if (result.accepted) {
-                step.current_time += dt;
-                step.time_step++;
+                current_time += dt;
+                MHS_LOG_DEBUG("Time: {} solved (dt={})", current_time, dt);
 
-                MHS_LOG_DEBUG("Time: {} solved (dt={})", step.current_time, dt);
-
-                // Free mode: step end may overshoot output time → interpolate.
-                auto out = step_ctrl.flush_outputs(step.current_time);
+                // AdaptiveFree mode: step end may overshoot output time → interpolate.
+                auto out = step_ctrl.flush_outputs(current_time);
                 for (double t_out : out) {
                     auto state_at_output = interpolate_state(
-                        /* t0 = */ step.accepted.time_at(1),
-                        /* x0 = */ step.accepted.at(1),
-                        /* t1 = */ step.current_time,
-                        /* x1 = */ step.state, t_out);
-                    probe_recorder.record(t_out, extract_cell_temperature(model, state_at_output));
+                        /* t0 = */ accepted.time_at(1),
+                        /* x0 = */ accepted.at(1),
+                        /* t1 = */ current_time,
+                        /* x1 = */ state, t_out);
+                    probe_recorder.record(t_out, state_at_output);
                 }
 
-                // Manual mode → keep fixed dt; otherwise adapt from error estimate.
-                dt_sug = (step_ctrl.strategy() == time_scheme::StepStrategy::Manual)
-                    ? output_dt
+                // Fixed mode → keep fixed dt; otherwise adapt from error estimate.
+                dt_sug = (opts.step_strategy == time_scheme::StepStrategy::Fixed)
+                    ? opts.fixed_dt
                     : std::clamp(dt * result.suggested_dt_factor, min_dt, max_dt);
             }
             else {
+                // Restore clean state before retrying
+                state = std::move(saved_state);
                 dt_sug = dt * 0.5;
-                MHS_LOG_DEBUG("Step rejected at t={}, retry dt={}", step.current_time, dt_sug);
+                MHS_LOG_DEBUG("Step rejected at t={}, retry dt={}", current_time, dt_sug);
+
+                // Check for fatal: nonlinear divergence at minimum dt
+                if (!result.nonlinear_converged && dt <= min_dt * 1.0001) {
+                    MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
+                    // Flush any remaining outputs
+                    auto final_out = step_ctrl.flush_outputs(current_time);
+                    for (double t_out : final_out)
+                        probe_recorder.record(t_out, state);
+                    return {std::move(state), current_time, probe_recorder.traces(), false};
+                }
             }
         }
 
-        auto cell_temperature = extract_cell_temperature(model, step.state);
-        return {std::move(step.state), std::move(cell_temperature), step.current_time, probe_recorder.traces()};
+        // Final flush — ensure last output times are recorded
+        auto final_out = step_ctrl.flush_outputs(current_time);
+        for (double t_out : final_out)
+            probe_recorder.record(t_out, state);
+
+        return {std::move(state), current_time, probe_recorder.traces()};
     }
 
 } // namespace mhs::sim

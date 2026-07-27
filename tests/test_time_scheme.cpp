@@ -87,7 +87,7 @@ namespace {
         mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
 
         mhs::core::SolutionHistory hist(2, 2);
-        hist.initialize(std::vector{50.0, 60.0}, 0.0);
+        hist.initialize(std::vector {50.0, 60.0}, 0.0);
 
         auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, 0.5);
 
@@ -109,7 +109,7 @@ namespace {
         Eigen::VectorXd f = Eigen::VectorXd::Zero(2);
         mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
         mhs::core::SolutionHistory history(2, 2);
-        history.initialize(std::vector{10.0, 20.0}, 0.0);
+        history.initialize(std::vector {10.0, 20.0}, 0.0);
 
         auto system
             = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, history, 2.0);
@@ -188,7 +188,7 @@ namespace {
         auto ops = make_known_3dof_ops();
         // Only 1 snapshot — not enough for BDF2.
         mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize(std::vector{100.0, 200.0, 300.0}, 0.0);
+        hist.initialize(std::vector {100.0, 200.0, 300.0}, 0.0);
 
         auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, 1.0);
 
@@ -321,26 +321,26 @@ namespace {
 
     TEST(StepController, FreeStrategyReturnsSuggestedDt)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 1e-6, 10.0);
-        ctrl.rebuild(10.0, 0.5);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 10.0, 0.5);
 
         double dt = ctrl.prepare(0.3, 0.0, 10.0);
         EXPECT_DOUBLE_EQ(dt, 0.3); // Free: returns dt_suggested as-is
     }
 
-    TEST(StepController, ManualReturnsFixedDt)
+    TEST(StepController, FixedReturnsFixedDt)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Manual, 1e-6, 10.0, 0.05);
-        ctrl.rebuild(10.0, 0.5);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 10.0, 0.5, 0.05);
 
         double dt = ctrl.prepare(0.3, 0.0, 10.0);
         EXPECT_DOUBLE_EQ(dt, 0.05); // fixed_dt overrides suggested
     }
 
-    TEST(StepController, ManualRespectsRemainingDuration)
+    TEST(StepController, FixedRespectsRemainingDuration)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Manual, 1e-6, 10.0, 0.5);
-        ctrl.rebuild(1.0, 0.5);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 1.0, 0.5, 0.5);
 
         // At t=0.9, remaining = 0.1 < fixed_dt=0.5 → should clamp to 0.1
         double dt = ctrl.prepare(0.5, 0.9, 1.0);
@@ -349,8 +349,8 @@ namespace {
 
     TEST(StepController, FlushOutputsWithGrid)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 1e-6, 10.0);
-        ctrl.rebuild(5.0, 1.0);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 5.0, 1.0);
 
         auto out = ctrl.flush_outputs(0.0);
         EXPECT_TRUE(out.empty()); // No output at t=0; t=0 is a grid point but is behind last_flushed
@@ -376,8 +376,8 @@ namespace {
 
     TEST(StepController, FlushOutputsWithoutGrid)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 1e-6, 10.0);
-        ctrl.rebuild(5.0, 0.0); // no output grid
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 5.0, 0.0);
 
         auto out = ctrl.flush_outputs(0.3);
         ASSERT_EQ(out.size(), 1u);
@@ -392,36 +392,10 @@ namespace {
         EXPECT_DOUBLE_EQ(out[0], 1.5);
     }
 
-    TEST(StepController, IntermediatePlantsInternalStep)
+    TEST(StepController, AdaptiveAlignedEnsuresExactOutputTimes)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Intermediate, 1e-6, 10.0);
-        ctrl.rebuild(5.0, 1.0);
-
-        // Flush past t=0 so next_idx points at t=1.0, then snap.
-        ctrl.flush_outputs(0.0);
-        double dt = ctrl.prepare(1.2, 0.0, 5.0);
-        EXPECT_DOUBLE_EQ(dt, 0.5);
-    }
-
-    TEST(StepController, RebuildResetsState)
-    {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 1e-6, 10.0);
-        ctrl.rebuild(5.0, 1.0);
-        ctrl.flush_outputs(5.0);
-
-        // Rebuild with new parameters
-        ctrl.rebuild(10.0, 2.0);
-        auto out = ctrl.flush_outputs(2.0);
-        // t=0 is behind last_flushed (=0.0 after rebuild) so not emitted again.
-        // t=2.0 is the first output.
-        ASSERT_EQ(out.size(), 1u);
-        EXPECT_DOUBLE_EQ(out[0], 2.0);
-    }
-
-    TEST(StepController, StrictEnsuresExactOutputTimes)
-    {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Strict, 1e-6, 5.0);
-        ctrl.rebuild(3.0, 1.0);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::AdaptiveAligned, 1e-6, 5.0, 3.0, 1.0);
 
         // Run through a sequence and verify dt always lands exactly on grid.
         double t = 0.0;
@@ -441,8 +415,8 @@ namespace {
 
     TEST(StepController, DtClampedToBounds)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Free, 0.01, 0.5);
-        ctrl.rebuild(10.0, 1.0);
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 0.01, 0.5, 10.0, 1.0);
 
         // Suggested dt above max → clamped to max_dt.
         double dt = ctrl.prepare(100.0, 0.0, 10.0);

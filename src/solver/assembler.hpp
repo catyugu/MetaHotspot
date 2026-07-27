@@ -15,8 +15,8 @@ namespace mhs::sim {
 
     /// Runtime state used to evaluate state-dependent operators.
     ///
-    /// Invariant (caller-enforced):
-    ///   - state.size() == model.dofs.total_count
+    /// Invariant:
+    ///   - state.size() == model.cells.cell_to_grid.size()
     struct AssembleContext {
         std::span<const double> state;
         double current_time = 0.0;

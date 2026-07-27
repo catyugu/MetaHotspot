@@ -27,7 +27,8 @@ namespace {
     /// Build the default (uniform initial_temperature) state vector.
     std::vector<double> default_state(const mhs::core::Model& model)
     {
-        return std::vector<double>(static_cast<std::size_t>(model.dofs.total_count), model.initial_temperature);
+        return std::vector<double>(
+            static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
     }
 
 } // namespace

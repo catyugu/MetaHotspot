@@ -83,17 +83,16 @@ namespace mhs::sim::time_scheme {
         return {error / config.abs_tol, std::clamp(factor, 0.5, 2.0)};
     }
 
-    StepController::StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt)
+    StepController::StepController(
+        StepStrategy strategy, double min_dt, double max_dt, double duration, double output_interval, double fixed_dt)
         : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt)
     {
-    }
-
-    void StepController::rebuild(double duration, double output_dt)
-    {
-        grid_ = output_dt > 0.0 && duration > 0.0 ? OutputTimeGrid {duration, output_dt} : OutputTimeGrid {};
-        next_idx_ = 0;
-        last_flushed_t_ = 0.0;
-        planted_ = false;
+        if (duration > 0.0 && output_interval > 0.0) {
+            const std::size_t n = static_cast<std::size_t>(duration / output_interval);
+            output_times_.reserve(n + 1);
+            for (std::size_t i = 0; i <= n; ++i)
+                output_times_.push_back(static_cast<double>(i) * output_interval);
+        }
     }
 
     double StepController::prepare(double dt_suggested, double current_t, double duration)
@@ -103,27 +102,20 @@ namespace mhs::sim::time_scheme {
             return 0.0;
 
         double dt = dt_suggested;
-        const auto snap_to_next = [&](bool use_planting) {
-            if (next_idx_ >= grid_.size())
-                return;
-            const double next = grid_.times()[next_idx_];
-            const double tolerance = grid_tolerance(next);
-            if (next <= current_t + tolerance || current_t + dt < next - tolerance)
-                return;
-            dt = use_planting && !planted_ ? 0.5 * (next - current_t) : next - current_t;
-            planted_ = true;
-        };
 
         switch (strategy_) {
-        case StepStrategy::Free:
+        case StepStrategy::AdaptiveFree:
             break;
-        case StepStrategy::Strict:
-            snap_to_next(false);
+        case StepStrategy::AdaptiveAligned: {
+            if (next_idx_ < output_times_.size()) {
+                const double next = output_times_[next_idx_];
+                const double tolerance = grid_tolerance(next);
+                if (!(next <= current_t + tolerance || current_t + dt < next - tolerance))
+                    dt = next - current_t;
+            }
             break;
-        case StepStrategy::Intermediate:
-            snap_to_next(true);
-            break;
-        case StepStrategy::Manual:
+        }
+        case StepStrategy::Fixed:
             dt = fixed_dt_;
             break;
         }
@@ -133,7 +125,7 @@ namespace mhs::sim::time_scheme {
 
     std::vector<double> StepController::flush_outputs(double current_t)
     {
-        if (grid_.empty()) {
+        if (output_times_.empty()) {
             if (current_t > last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
                 last_flushed_t_ = current_t;
                 return {current_t};
@@ -142,8 +134,8 @@ namespace mhs::sim::time_scheme {
         }
 
         std::vector<double> crossed;
-        while (next_idx_ < grid_.size()) {
-            const double output = grid_.times()[next_idx_];
+        while (next_idx_ < output_times_.size()) {
+            const double output = output_times_[next_idx_];
             if (output <= last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
                 ++next_idx_;
                 continue;
@@ -154,10 +146,8 @@ namespace mhs::sim::time_scheme {
             ++next_idx_;
         }
 
-        if (!crossed.empty()) {
+        if (!crossed.empty())
             last_flushed_t_ = crossed.back();
-            planted_ = false;
-        }
         return crossed;
     }
 

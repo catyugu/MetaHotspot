@@ -22,6 +22,7 @@ from metahotspot.assembly import Assembly
 from metahotspot import enums, types
 from metahotspot._error import MetaHotspotError
 from metahotspot._lib import get_dll, load_library
+from metahotspot.types import SolverOpts
 
 __all__ = [
     "Model",
@@ -31,4 +32,5 @@ __all__ = [
     "enums",
     "types",
     "MetaHotspotError",
+    "SolverOpts",
 ]

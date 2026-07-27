@@ -59,3 +59,14 @@ class FluidBC(enum.IntEnum):
 class Operator(enum.IntEnum):
     STIFFNESS = 0
     CAPACITY = 1
+
+
+class IntegratorKind(enum.IntEnum):
+    BDF1 = 0
+    BDF2 = 1
+
+
+class StepStrategy(enum.IntEnum):
+    ADAPTIVE_FREE = 0
+    ADAPTIVE_ALIGNED = 1
+    FIXED = 2
