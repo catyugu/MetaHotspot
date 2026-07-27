@@ -6,6 +6,7 @@
 #include "solver/nonlinear_solver.hpp"
 #include "solver/time_integration.hpp"
 
+#include <functional>
 #include <span>
 
 namespace mhs::sim {
@@ -31,23 +32,18 @@ namespace mhs::sim {
         NonLinearConfig nonlinear;
     };
 
-    /// Result of a single transient step.
-    struct StepResult {
-        bool accepted = false;
-        double error_ratio = 0.0;
-        double suggested_dt_factor = 1.0;
-        int nonlinear_iterations = 0;
-        bool nonlinear_converged = true;
-    };
+    /// Output callback invoked at each flush/output time during solve_system.
+    using OutputCallback = std::function<void(double time, std::span<const double> state)>;
 
-    /// Execute a single transient step from *current_time* with step *dt*.
-    StepResult take_step(AssemblyProvider provider, LinearSolver& solver,
-        mhs::core::SolutionHistory& history, std::vector<double>& state, double current_time, double dt,
-        const SolverOpts& opts);
+    /// Solve a generic system described by an Assemble callback.
+    /// The state vector may carry pure-thermal or combined (extra-DoF) variables.
+    mhs::core::SolveResult solve_system(Assemble provider, std::span<const double> initial_state,
+        mhs::core::StudyType study_type, double transient_duration, double transient_time_step,
+        const SolverOpts& opts = {}, OutputCallback on_output = nullptr);
 
-    /// Solve a steady or transient thermal model.
-    mhs::core::Solution solve(
-        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {},
-        AssemblyProvider external_provider = nullptr);
+    /// Thermal convenience wrapper around solve_system.
+    /// Returns temperature field + probe traces.
+    mhs::core::ThermalSolution solve_thermal(
+        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {});
 
 } // namespace mhs::sim

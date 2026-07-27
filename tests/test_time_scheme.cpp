@@ -11,9 +11,9 @@
 
 namespace {
 
-    /// Helper: build a simple 3-DOF AssemblyResult with known values.
+    /// Helper: build a simple 3-DOF Operators with known values.
     /// K = diag(2, 4, 6), f = (10, 20, 30), C = diag(1, 2, 3)
-    mhs::sim::AssemblyResult make_known_3dof_ops()
+    mhs::sim::Operators make_known_3dof_ops()
     {
         const int N = 3;
         Eigen::SparseMatrix<double> K(N, N);
@@ -33,7 +33,8 @@ namespace {
         capacity_triplets.emplace_back(2, 2, 3.0);
         C.setFromTriplets(capacity_triplets.begin(), capacity_triplets.end());
 
-        return {std::move(K), std::move(C), std::move(f)};
+        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
+        return ops;
     }
 
     TEST(TimeSchemeBdf1, Known3Dof)
@@ -84,7 +85,7 @@ namespace {
 
         Eigen::SparseMatrix<double> C(N, N);
 
-        mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
+        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
 
         mhs::core::SolutionHistory hist(2, 2);
         hist.initialize(std::vector {50.0, 60.0}, 0.0);
@@ -107,7 +108,7 @@ namespace {
         C.setFromTriplets(entries.begin(), entries.end());
 
         Eigen::VectorXd f = Eigen::VectorXd::Zero(2);
-        mhs::sim::AssemblyResult ops {std::move(K), std::move(C), std::move(f)};
+        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
         mhs::core::SolutionHistory history(2, 2);
         history.initialize(std::vector {10.0, 20.0}, 0.0);
 

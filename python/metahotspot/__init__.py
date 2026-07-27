@@ -11,14 +11,13 @@ Usage::
     T_cells = solution.temperature
 
     # Access the assembled linear system for custom workflows
-    assembly = compiled.assemble(compiled.default_state())
-    K, C, f = assembly.K, assembly.C, assembly.f
+    K, C, f = compiled.assemble(compiled.default_state())
 """
 
 from metahotspot.model import Model
 from metahotspot.compiled import Compiled
 from metahotspot.solution import Solution
-from metahotspot.assembly import Assembly
+from metahotspot.assembly import Operators
 from metahotspot import enums, types
 from metahotspot._error import MetaHotspotError
 from metahotspot._lib import get_dll, load_library
@@ -28,7 +27,7 @@ __all__ = [
     "Model",
     "Compiled",
     "Solution",
-    "Assembly",
+    "Operators",
     "enums",
     "types",
     "MetaHotspotError",

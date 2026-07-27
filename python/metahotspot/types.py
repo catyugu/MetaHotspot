@@ -103,21 +103,9 @@ class MhsAssemblyView(ctypes.Structure):
     ]
 
 
-class MhsStepInfo(ctypes.Structure):
-    _fields_ = [
-        ("accepted", ctypes.c_int32),
-        ("error_ratio", ctypes.c_double),
-        ("suggested_dt_factor", ctypes.c_double),
-        ("nonlinear_iterations", ctypes.c_int32),
-    ]
-
-
 class CompiledMetadataView(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
-        ("state_count", ctypes.c_size_t),
-        ("node_count", ctypes.c_size_t),
-        ("grid_count", ctypes.c_size_t),
         ("study_type", ctypes.c_int32),
         ("initial_temperature", ctypes.c_double),
         ("layer_ids", ctypes.POINTER(ctypes.c_uint32)),
@@ -132,10 +120,8 @@ class CompiledMetadataView(ctypes.Structure):
 class SolutionView(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
-        ("state_count", ctypes.c_size_t),
         ("time", ctypes.c_double),
-        ("cell_temperatures", ctypes.POINTER(ctypes.c_double)),
-        ("states", ctypes.POINTER(ctypes.c_double)),
+        ("temperature", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

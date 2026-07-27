@@ -141,26 +141,11 @@ typedef struct {
     const double* values;
 } mhs_csc_view_t;
 
-/** Diagnostics returned by mhs_compiled_step(). */
-typedef struct {
-    int32_t accepted; // 0/1
-    double error_ratio;
-    double suggested_dt_factor;
-    int32_t nonlinear_iterations;
-} mhs_step_info_t;
-
 /**
- * Compiled model metadata view — replaces ~12 individual accessor functions.
- *
- * All pointer fields are valid until the compiled model is destroyed.
- * Grid index: linear_idx = ix * (ny * nz) + iy * nz + iz
- * grid_to_cell entry == SIZE_MAX means inactive (hole/void).
+ * Compiled model metadata view
  */
 typedef struct {
     size_t cell_count;
-    size_t state_count;
-    size_t node_count;
-    size_t grid_count; // nx * ny * nz
     mhs_study_t study_type;
     double initial_temperature;
     const uint32_t* layer_ids; // [cell_count] post-processing only
@@ -173,15 +158,11 @@ typedef struct {
  * Solution bulk data view.
  *
  * All pointer fields are valid until the solution handle is destroyed.
- * cell_temperatures and states both point to the same state vector [state_count]
- * (since thermal DOFs == cell_count).
  */
 typedef struct {
     size_t cell_count;
-    size_t state_count;
     double time;
-    const double* cell_temperatures; // [cell_count]
-    const double* states; // [state_count]
+    const double* temperature; // [cell_count]
 } mhs_solution_view_t;
 
 /** Non-owning assembly view — returns all three operators in one call.
@@ -334,20 +315,6 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
     const mhs_solver_opts_t* opts, mhs_solution_t** out);
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
-
-/* ------------------------------------------------------------------ */
-/*  Single transient step (BDF1)                                       */
-/* ------------------------------------------------------------------ */
-
-/** Execute a single transient step (BDF1).
- *
- *  Advances *state* (length state_count()) from *time* by *dt* and writes
- *  the result into *out_state* (pre-allocated, same length).  *info* receives
- *  diagnostics; pass NULL to skip.
- *
- *  The compiled model must have study = TRANSIENT. */
-MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
-    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts);
 
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */

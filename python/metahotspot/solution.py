@@ -20,7 +20,6 @@ class Solution(OwnedHandle):
 
         sol = compiled.solve()
         T = sol.temperature          # ndarray of cell temperatures
-        all_states = sol.state       # ndarray of full state vector
         t = sol.time                 # simulation time
     """
 
@@ -71,16 +70,10 @@ class Solution(OwnedHandle):
         return self._view_cache
 
     @property
-    def state(self) -> np.ndarray:
-        """Full combined state vector [state_count]."""
-        v = self._fetch_view()
-        return np.ctypeslib.as_array(v.states, shape=(v.state_count,))
-
-    @property
     def temperature(self) -> np.ndarray:
-        """Temperature slice of the state vector [cell_count]."""
+        """Temperature field [cell_count]."""
         v = self._fetch_view()
-        return np.ctypeslib.as_array(v.cell_temperatures, shape=(v.cell_count,))
+        return np.ctypeslib.as_array(v.temperature, shape=(v.cell_count,))
 
     @property
     def time(self) -> float:

@@ -26,7 +26,8 @@ namespace mhs::sim {
             std::vector<Eigen::Triplet<double>> capacity;
         };
 
-        void assemble_cells(const mhs::core::Model& model, const AssembleContext& ctx, AssemblySink& sink)
+        void assemble_cells(
+            const mhs::core::Model& model, std::span<const double> temperature, double time, AssemblySink& sink)
         {
             const auto& mesh = model.mesh;
             const auto& cells = model.cells;
@@ -54,8 +55,8 @@ namespace mhs::sim {
                         const double volume = dx * dy * dz;
 
                         const auto& material = materials[cells.material_id[cell]];
-                        const mhs::core::FieldContext cell_context {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz],
-                            ctx.state[static_cast<std::size_t>(state)], ctx.current_time};
+                        const mhs::core::FieldContext cell_context {
+                            mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], temperature[static_cast<std::size_t>(state)], time};
                         const double kx = material.kx.eval(cell_context);
                         const double ky = material.ky.eval(cell_context);
                         const double kz = material.kz.eval(cell_context);
@@ -85,8 +86,7 @@ namespace mhs::sim {
                                 const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                                 const auto& neighbor_material = materials[cells.material_id[neighbor]];
                                 const mhs::core::FieldContext neighbor_context {mesh.cx[nix], mesh.cy[niy],
-                                    mesh.cz[niz], ctx.state[static_cast<std::size_t>(neighbor_state)],
-                                    ctx.current_time};
+                                    mesh.cz[niz], temperature[static_cast<std::size_t>(neighbor_state)], time};
                                 const double neighbor_k
                                     = mhs::utils::k_along(dir, neighbor_material.kx.eval(neighbor_context),
                                         neighbor_material.ky.eval(neighbor_context),
@@ -136,9 +136,10 @@ namespace mhs::sim {
             });
         }
 
-        void assemble_fluid(const mhs::core::Model& model, const AssembleContext& ctx, AssemblySink& sink)
+        void assemble_fluid(
+            const mhs::core::Model& model, std::span<const double> temperature, double time, AssemblySink& sink)
         {
-            auto increment = mhs::sim::fluid::assemble_increment(model, ctx.state, ctx.current_time);
+            auto increment = mhs::sim::fluid::assemble_increment(model, temperature, time);
             const Eigen::Index offset = 0;
             for (const auto& entry : increment.matrix_entries) {
                 sink.stiffness.emplace_back(entry.row() + offset, entry.col() + offset, entry.value());
@@ -148,22 +149,22 @@ namespace mhs::sim {
 
     } // namespace
 
-    AssemblyResult assemble_thermal(
-        const mhs::core::Model& model, const mhs::core::StateLayout& layout, const AssembleContext& ctx)
+    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time)
     {
-        // Extract the temperature subrange from the full combined state.
-        assert(layout.temperature.begin + layout.temperature.count <= static_cast<mhs::core::Index>(ctx.state.size()));
-        auto temp_span = ctx.state.subspan(
-            static_cast<std::size_t>(layout.temperature.begin), static_cast<std::size_t>(layout.temperature.count));
-        AssembleContext thermal_ctx {temp_span, ctx.current_time};
+        const auto cell_count = static_cast<std::size_t>(model.cells.cell_to_grid.size());
+        if (temperature.size() != cell_count) {
+            throw std::invalid_argument(
+                "assemble_thermal: temperature.size() = " + std::to_string(temperature.size())
+                + " != cell_count = " + std::to_string(cell_count));
+        }
 
-        const auto thermal_count = layout.temperature.count;
+        const auto thermal_count = static_cast<mhs::core::Index>(temperature.size());
         assert(thermal_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_count = static_cast<Eigen::Index>(thermal_count);
 
         AssemblySink sink(eigen_count);
-        assemble_cells(model, thermal_ctx, sink);
-        assemble_fluid(model, thermal_ctx, sink);
+        assemble_cells(model, temperature, time, sink);
+        assemble_fluid(model, temperature, time, sink);
 
         Eigen::SparseMatrix<double> stiffness(eigen_count, eigen_count);
         stiffness.setFromTriplets(sink.stiffness.begin(), sink.stiffness.end());

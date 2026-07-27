@@ -7,10 +7,8 @@
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/scheduler.hpp"
-#include "solver/solution_history.hpp"
 
 #include <Eigen/Sparse>
-#include <algorithm>
 #include <memory>
 #include <optional>
 #include <span>
@@ -43,7 +41,7 @@ struct mhs_compiled_t {
 };
 
 struct mhs_solution_t {
-    mhs::core::Solution solution;
+    mhs::core::ThermalSolution solution;
 };
 
 /* ------------------------------------------------------------------ */
@@ -669,9 +667,6 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model.cells.cell_to_grid.size();
-    out->state_count = c->model.layout.state_count;
-    out->node_count = (c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1);
-    out->grid_count = c->model.mesh.nx * c->model.mesh.ny * c->model.mesh.nz;
     out->study_type = _from_core_study(c->model.study_type);
     out->initial_temperature = c->model.initial_temperature;
     out->layer_ids = c->model.cells.layer_id.data();
@@ -685,56 +680,6 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
 }
 
 /* ------------------------------------------------------------------ */
-/*  Single transient step (exposes take_step kernel to C API)         */
-/* ------------------------------------------------------------------ */
-
-MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* state, double time, double dt,
-    double* out_state, mhs_step_info_t* info, const mhs_solver_opts_t* opts)
-{
-    CHECK_NULL(c);
-    CHECK_NULL(state);
-    CHECK_NULL(out_state);
-
-    if (c->model.study_type != mhs::core::StudyType::Transient) {
-        SET_ERR("step requires a transient model");
-        return MHS_ERR_INVALID_ARG;
-    }
-
-    MHS_TRY(MHS_ERR_SOLVE, {
-        const auto n = static_cast<std::size_t>(c->model.layout.state_count);
-
-        // Build SolverOpts from C opts.
-        auto so = to_solver_opts(opts, c->model.transient_duration);
-        auto solver = mhs::sim::LinearSolver::create(so.solver);
-        mhs::core::SolutionHistory history(n, 2);
-
-        // Build default assembly provider.
-        auto provider = [&c](std::span<const double> full_state, double time) {
-            return mhs::sim::assemble_thermal(c->model, c->model.layout, mhs::sim::AssembleContext {full_state, time});
-        };
-
-        // Copy input state into work buffer.
-        std::vector<double> work_state(state, state + n);
-
-        // Initialise history for this step.
-        history.initialize(work_state, time);
-
-        // Execute the shared kernel.
-        auto result = mhs::sim::take_step(provider, *solver, history, work_state, time, dt, so);
-
-        // Copy result out.
-        std::copy(work_state.begin(), work_state.end(), out_state);
-
-        if (info) {
-            info->accepted = result.accepted ? 1 : 0;
-            info->error_ratio = result.error_ratio;
-            info->suggested_dt_factor = result.suggested_dt_factor;
-            info->nonlinear_iterations = static_cast<int32_t>(result.nonlinear_iterations);
-        }
-    });
-}
-
-/* ------------------------------------------------------------------ */
 /*  Assembly (K, C, f in CSC format)                                   */
 /* ------------------------------------------------------------------ */
 
@@ -745,14 +690,14 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(state);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_ASSEMBLE, {
-        const auto n = static_cast<std::size_t>(c->model.layout.state_count);
+        const auto n = c->model.cells.cell_to_grid.size();
         if (state_count != 0 && state_count != n) {
             SET_ERR("state_count mismatch: expected " + std::to_string(n) + " got " + std::to_string(state_count));
             return MHS_ERR_INVALID_ARG;
         }
 
         std::span<const double> state_span(state, n);
-        auto result = mhs::sim::assemble_thermal(c->model, c->model.layout, {state_span, time});
+        auto result = mhs::sim::assemble_thermal(c->model, state_span, time);
 
         auto h = std::make_unique<mhs_assembly_t>();
         h->K = std::move(result.K);
@@ -812,7 +757,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             initial_state = std::span<const double>(state, state_count);
         }
 
-        auto sol = mhs::sim::solve(c->model, so, initial_state);
+        auto sol = mhs::sim::solve_thermal(c->model, so, initial_state);
 
         auto* s = new (std::nothrow) mhs_solution_t {std::move(sol)};
         if (!s) {
@@ -833,7 +778,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
     CHECK_NULL(c);
     CHECK_NULL(s);
     CHECK_NULL(path);
-    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.state); });
+    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.temperature); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -855,12 +800,9 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    const auto& layout = s->solution.layout;
-    out->cell_count = layout.temperature.count;
-    out->state_count = layout.state_count;
+    out->cell_count = s->solution.temperature.size();
     out->time = s->solution.time;
-    out->cell_temperatures = s->solution.state.data() + layout.temperature.begin;
-    out->states = s->solution.state.data();
+    out->temperature = s->solution.temperature.data();
     tls_err.clear();
     return MHS_OK;
 }

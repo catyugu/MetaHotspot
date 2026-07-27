@@ -248,10 +248,6 @@ namespace mhs::sim {
             mhs::sim::fluid::build_domain(model, definition.fluid_boundaries, si_scale, fluid_materials);
         }
 
-        // State layout: thermal-only in the base path.
-        const auto cell_count = static_cast<mhs::core::Index>(model.cells.cell_to_grid.size());
-        model.layout = mhs::core::StateLayout {mhs::core::DofRange {0, cell_count}, cell_count};
-
         return model;
     }
 

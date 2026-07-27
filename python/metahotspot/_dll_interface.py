@@ -21,7 +21,6 @@ from metahotspot.types import (
     CompiledMetadataView,
     SolutionView,
     ProbeView,
-    MhsStepInfo,
 )
 
 # (name, restype, argtypes) table — drives configure_dll().
@@ -320,20 +319,6 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
         ],
     ),
     ("mhs_solution_destroy", ctypes.c_int32, [ctypes.POINTER(MhsSolution)]),
-    # ---- Single step ----
-    (
-        "mhs_compiled_step",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(MhsStepInfo),
-            ctypes.POINTER(SolverOpts),
-        ],
-    ),
     # ---- VTU ----
     (
         "mhs_compiled_write_vtu",

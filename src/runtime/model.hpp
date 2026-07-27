@@ -4,7 +4,6 @@
 
 #include "numerics/expression/expr.hpp"
 #include "runtime/fluid_domain.hpp"
-#include "runtime/solution.hpp"
 #include "runtime/types.hpp"
 
 namespace mhs::core {
@@ -93,9 +92,6 @@ namespace mhs::core {
 
         // Fluid-solid coupled heat-transfer subsystem
         mhs::core::FluidDomain fluid;
-
-        // State vector partitioning (default: thermal-only)
-        StateLayout layout;
     };
 
 } // namespace mhs::core

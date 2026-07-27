@@ -5,7 +5,6 @@
 #include "logging/logger.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/scheduler.hpp"
-#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -70,11 +69,11 @@ int main(int argc, char* argv[])
 
         // Run simulation
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::sim::solve(model);
+        auto result = mhs::sim::solve_thermal(model);
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = result.state;
+        const auto& solution = result.temperature;
 
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)

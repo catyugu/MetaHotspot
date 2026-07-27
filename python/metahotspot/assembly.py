@@ -1,14 +1,19 @@
-"""High-level wrapper for assembled thermal operators."""
+"""Assembled operators — plain data, no lifecycle management.
+
+``Compiled.assemble()`` now returns an ``Operators`` namedtuple
+instead of a managed ``Assembly`` handle.  The C handle is created,
+read, and destroyed inside the call.
+"""
 
 from __future__ import annotations
 
 import ctypes
+from typing import NamedTuple
 
 import numpy as np
 from scipy.sparse import csc_matrix
 
 from metahotspot._error import check
-from metahotspot._handle import OwnedHandle
 from metahotspot.types import CscView, MhsAssembly, MhsAssemblyView
 
 
@@ -31,60 +36,44 @@ def _csc_from_view(view: CscView) -> csc_matrix:
     )
 
 
-class Assembly(OwnedHandle):
-    """Assembled operators ``C * dx/dt + K * x = f``.
+class Operators(NamedTuple):
+    """``C * dx/dt + K * x = f`` — thermal system operators.
 
-    Do not instantiate directly — use ``Compiled.assemble()``.
+    Returned by ``Compiled.assemble()``.  Unpack directly::
 
-    Access matrices via the ``.K``, ``.C``, ``.f`` properties (lazily fetched
-    from the C layer on first access)::
-
-        K, C, f = assembly.K, assembly.C, assembly.f
+        K, C, f = compiled.assemble(state)
     """
 
-    def __init__(self) -> None:
-        super().__init__(None, None)
-        self._view: MhsAssemblyView | None = None
+    K: csc_matrix
+    """Stiffness / conductance matrix."""
 
-    @classmethod
-    def _assemble(
-        cls, dll, compiled_handle, state: np.ndarray, time: float = 0.0
-    ) -> Assembly:
-        self = cls()
-        self._dll = dll
-        self._destroy_fn = dll.mhs_assembly_destroy
-        pp = ctypes.POINTER(MhsAssembly)()
-        state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-        check(
-            dll.mhs_compiled_assemble(
-                compiled_handle, state_ptr, len(state), time, ctypes.byref(pp)
-            ),
-            "assemble",
-        )
-        self._handle = pp
-        return self
+    C: csc_matrix
+    """Capacity (mass) matrix."""
 
-    def _fetch_view(self) -> MhsAssemblyView:
-        if self._view is None:
-            self._view = MhsAssemblyView()
-            check(
-                self._dll.mhs_assembly_view(self._handle, ctypes.byref(self._view)),
-                "assembly_view",
-            )
-        return self._view
+    f: np.ndarray
+    """Right-hand side vector."""
 
-    @property
-    def K(self) -> csc_matrix:
-        """Stiffness / conductance matrix."""
-        return _csc_from_view(self._fetch_view().K)
 
-    @property
-    def C(self) -> csc_matrix:
-        """Capacity (mass) matrix."""
-        return _csc_from_view(self._fetch_view().C)
+def _assemble_operators(
+    dll, compiled_handle, state: np.ndarray, time: float = 0.0
+) -> Operators:
+    """Call the C assembly routine, copy results, destroy handle immediately."""
+    pp = ctypes.POINTER(MhsAssembly)()
+    state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    check(
+        dll.mhs_compiled_assemble(
+            compiled_handle, state_ptr, len(state), time, ctypes.byref(pp)
+        ),
+        "assemble",
+    )
 
-    @property
-    def f(self) -> np.ndarray:
-        """Right-hand side vector (copy)."""
-        v = self._fetch_view()
-        return np.ctypeslib.as_array(v.rhs, shape=(v.n,)).copy()
+    # Read the view while the handle is alive.
+    view = MhsAssemblyView()
+    check(dll.mhs_assembly_view(pp, ctypes.byref(view)), "assembly_view")
+    K = _csc_from_view(view.K)
+    C = _csc_from_view(view.C)
+    f_arr = np.ctypeslib.as_array(view.rhs, shape=(view.n,)).copy()
+
+    # Destroy the C handle immediately.
+    dll.mhs_assembly_destroy(pp)
+    return Operators(K, C, f_arr)

@@ -50,15 +50,15 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     auto model = build_model(io);
 
-    auto result = solve(model);
+    auto result = solve_thermal(model);
 
-    EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
-    EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
-    EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
+    EXPECT_EQ(result.temperature.size(), model.cells.cell_to_grid.size());
+    EXPECT_EQ(result.temperature.size(), model.cells.cell_to_grid.size());
+    EXPECT_TRUE(std::equal(result.temperature.begin(), result.temperature.end(), result.temperature.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
-    for (const auto& t : result.state) {
+    for (const auto& t : result.temperature) {
         max_T = std::max(max_T, t);
     }
     EXPECT_GT(max_T, 300.0) << "Heat source should raise temperature above 300K";
@@ -125,7 +125,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     auto model = build_model(io);
 
-    auto result = solve(model);
+    auto result = solve_thermal(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -209,7 +209,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     auto model = build_model(io);
 
-    auto result = solve(model);
+    auto result = solve_thermal(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

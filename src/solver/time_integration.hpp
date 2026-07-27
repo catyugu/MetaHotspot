@@ -12,7 +12,7 @@ namespace mhs::sim::time_scheme {
     enum class IntegratorKind { Bdf1, Bdf2 };
 
     LinearSystem build_system(
-        IntegratorKind kind, const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt);
+        IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt);
 
     struct ErrorControlConfig {
         double abs_tol = 1e-4;

@@ -11,7 +11,7 @@
 namespace mhs::sim::time_scheme {
     namespace {
 
-        LinearSystem build_bdf1(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf1(const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
             assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -24,7 +24,7 @@ namespace mhs::sim::time_scheme {
             return {std::move(matrix), std::move(rhs)};
         }
 
-        LinearSystem build_bdf2(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf2(const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
             assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -48,7 +48,7 @@ namespace mhs::sim::time_scheme {
     } // namespace
 
     LinearSystem build_system(
-        IntegratorKind kind, const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
     {
         if (kind == IntegratorKind::Bdf2 && history.size() >= 2)
             return build_bdf2(ops, history, dt);

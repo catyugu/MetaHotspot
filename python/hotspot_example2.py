@@ -323,12 +323,10 @@ def main():
     t0 = _time.perf_counter()
     steady_model = build_model(steady_hs)
     c_steady = steady_model.compile()
-    print(
-        f"  Active cells: {c_steady.metadata().cell_count},  "
-        f"Grid cells: {c_steady.metadata().grid_count}"
-    )
+    meta = c_steady.metadata()
+    nx, ny, nz = meta.nx, meta.ny, meta.nz
+    print(f"  Active cells: {meta.cell_count},  " f"Grid cells: {nx * ny * nz}")
     sol_steady = c_steady.solve()
-    steady_state = sol_steady.state.copy()
     steady_temp = sol_steady.temperature.copy()
     t_steady = _time.perf_counter() - t0
     print(
@@ -381,7 +379,7 @@ def main():
 
     # Chain steady-state as initial condition — pass directly to solve()
     c_transient = transient_model.compile()
-    sol_transient = c_transient.solve(state=steady_state)
+    sol_transient = c_transient.solve(state=steady_temp)
     t_transient = _time.perf_counter() - t0
 
     final_temp = sol_transient.temperature.copy()
