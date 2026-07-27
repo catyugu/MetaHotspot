@@ -384,7 +384,7 @@ def main():
         m = build_model(h)
         c = m.compile()
         sol = c.solve()
-        T = sol.view().cell_temperatures.copy()
+        T = sol.temperature.copy()
         sol.close()
         c.close()
         m.close()
@@ -437,7 +437,7 @@ def main():
         K, C, f = assembly.K, assembly.C, assembly.f
         assembly.close()
         sol = c.solve()
-        Tf = sol.view().cell_temperatures.copy()
+        Tf = sol.temperature.copy()
         sol.close()
 
         u_e, u_p, u_i = bci_rom_solve(K, f, e_idx, p_idx, i_idx, U_r)

@@ -2,6 +2,7 @@
 
 #include "runtime/model.hpp"
 #include "runtime/solution.hpp"
+#include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/time_integration.hpp"
 
@@ -40,11 +41,13 @@ namespace mhs::sim {
     };
 
     /// Execute a single transient step from *current_time* with step *dt*.
-    StepResult take_step(Assembler& assembler, LinearSolver& solver, mhs::core::SolutionHistory& history,
-        std::vector<double>& state, double current_time, double dt, const SolverOpts& opts);
+    StepResult take_step(AssemblyProvider provider, LinearSolver& solver,
+        mhs::core::SolutionHistory& history, std::vector<double>& state, double current_time, double dt,
+        const SolverOpts& opts);
 
     /// Solve a steady or transient thermal model.
     mhs::core::Solution solve(
-        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {});
+        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {},
+        AssemblyProvider external_provider = nullptr);
 
 } // namespace mhs::sim

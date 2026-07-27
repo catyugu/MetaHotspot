@@ -19,7 +19,7 @@ XML
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
                               └─> mhs::sim::solve
                                     ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t, duration) → dt_exec
-                                    ├─> mhs::sim::Assembler::assemble(ctx)
+                                    ├─> mhs::sim::assemble_thermal(model, layout, ctx)
                                     │     ├─> assemble_cells parallel_for // no fluid branches
                                     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
                                     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state

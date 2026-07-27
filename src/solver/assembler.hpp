@@ -1,8 +1,10 @@
 #pragma once
 
-#include "Eigen/SparseCore"
 #include "runtime/model.hpp"
+#include "runtime/solution.hpp"
 #include <Eigen/Core>
+#include <Eigen/SparseCore>
+#include <functional>
 #include <span>
 
 namespace mhs::sim {
@@ -16,22 +18,21 @@ namespace mhs::sim {
     /// Runtime state used to evaluate state-dependent operators.
     ///
     /// Invariant:
-    ///   - state.size() == model.cells.cell_to_grid.size()
+    ///   - state.size() == layout.state_count
     struct AssembleContext {
         std::span<const double> state;
         double current_time = 0.0;
     };
 
-    class Assembler {
-    public:
-        explicit Assembler(const mhs::core::Model& model) : model_(model) { }
-        ~Assembler() = default;
+    /// Assemble thermal operators C * dx/dt + K * x = f.
+    /// Extracts the temperature slice from ctx.state via layout.temperature.
+    AssemblyResult assemble_thermal(
+        const mhs::core::Model& model,
+        const mhs::core::StateLayout& layout,
+        const AssembleContext& ctx);
 
-        /// Assemble C * dx/dt + K * x = f over the complete state layout.
-        AssemblyResult assemble(const AssembleContext& ctx) const;
-
-    private:
-        const mhs::core::Model& model_;
-    };
+    /// Pluggable assembly provider for experiments with extra DoFs.
+    /// Signature: (full_state, time) -> AssemblyResult
+    using AssemblyProvider = std::function<AssemblyResult(std::span<const double>, double)>;
 
 } // namespace mhs::sim

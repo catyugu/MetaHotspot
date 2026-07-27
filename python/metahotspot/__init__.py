@@ -8,11 +8,11 @@ Usage::
     model.read_xml("case.xml")
     compiled = model.compile()
     solution = compiled.solve()
-    T_cells = solution.view().cell_temperatures
+    T_cells = solution.temperature
 
     # Access the assembled linear system for custom workflows
     assembly = compiled.assemble(compiled.default_state())
-    K, C, f = assembly.operators()
+    K, C, f = assembly.K, assembly.C, assembly.f
 """
 
 from metahotspot.model import Model

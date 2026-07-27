@@ -93,12 +93,6 @@ namespace mhs::sim {
                 }
                 ++iter_count;
             }
-
-            void reset_history()
-            {
-                G_hist.clear();
-                x_hist.clear();
-            }
         };
 
     } // namespace

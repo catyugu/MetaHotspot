@@ -47,7 +47,8 @@ namespace mhs::sim::time_scheme {
 
     private:
         StepStrategy strategy_ = StepStrategy::AdaptiveFree;
-        std::vector<double> output_times_;
+        double output_interval_ = 0.0;
+        std::size_t total_output_count_ = 0;
         double min_dt_ = 1e-8;
         double max_dt_ = 1.0;
         double fixed_dt_ = 1.0;

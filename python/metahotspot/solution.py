@@ -3,46 +3,30 @@
 from __future__ import annotations
 
 import ctypes
-from typing import NamedTuple
 
 import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.types import MhsSolution, SolutionView, SolverOpts, ProbeView
-
-
-SolutionViewData = NamedTuple(
-    "SolutionViewData",
-    [
-        ("cell_count", int),
-        ("state_count", int),
-        ("time", float),
-        ("cell_temperatures", np.ndarray),
-        ("states", np.ndarray),
-    ],
-)
-
-
-ProbeTraceData = NamedTuple(
-    "ProbeTraceData",
-    [
-        ("name", str),
-        ("times", np.ndarray | None),
-        ("values", np.ndarray | None),
-        ("record_count", int),
-    ],
-)
+from metahotspot.types import MhsSolution, SolutionView, ProbeView
 
 
 class Solution(OwnedHandle):
     """Read-only simulation result.
 
     Do not instantiate directly — use ``Compiled.solve()``.
+
+    Access solution data via properties::
+
+        sol = compiled.solve()
+        T = sol.temperature          # ndarray of cell temperatures
+        all_states = sol.state       # ndarray of full state vector
+        t = sol.time                 # simulation time
     """
 
     def __init__(self) -> None:
         self._compiled = None  # strong reference to Compiled
+        self._view_cache: SolutionView | None = None
         super().__init__(None, None)
 
     @classmethod
@@ -50,7 +34,7 @@ class Solution(OwnedHandle):
         cls,
         compiled,
         state: np.ndarray | None = None,
-        opts: SolverOpts | None = None,
+        opts=None,
     ) -> Solution:
         """Solve a compiled model and wrap the result."""
         self = cls()
@@ -74,31 +58,42 @@ class Solution(OwnedHandle):
         self._compiled = compiled  # strong reference prevents GC
         return self
 
-    # ---- View (single C call replaces ~7 individual accessors) ----
+    # ---- Lazy view caching ----
 
-    def view(self) -> SolutionViewData:
-        """Return all solution bulk data in one call to the C layer."""
-        v = SolutionView()
-        check(
-            self._dll.mhs_solution_view(self._handle, ctypes.byref(v)), "solution_view"
-        )
-        return SolutionViewData(
-            cell_count=v.cell_count,
-            state_count=v.state_count,
-            time=v.time,
-            cell_temperatures=np.ctypeslib.as_array(
-                v.cell_temperatures, shape=(v.cell_count,)
-            ),
-            states=np.ctypeslib.as_array(v.states, shape=(v.state_count,)),
-        )
+    def _fetch_view(self) -> SolutionView:
+        if self._view_cache is None:
+            v = SolutionView()
+            check(
+                self._dll.mhs_solution_view(self._handle, ctypes.byref(v)),
+                "solution_view",
+            )
+            self._view_cache = v
+        return self._view_cache
+
+    @property
+    def state(self) -> np.ndarray:
+        """Full combined state vector [state_count]."""
+        v = self._fetch_view()
+        return np.ctypeslib.as_array(v.states, shape=(v.state_count,))
+
+    @property
+    def temperature(self) -> np.ndarray:
+        """Temperature slice of the state vector [cell_count]."""
+        v = self._fetch_view()
+        return np.ctypeslib.as_array(v.cell_temperatures, shape=(v.cell_count,))
+
+    @property
+    def time(self) -> float:
+        """Simulation end time."""
+        return self._fetch_view().time
 
     # ---- Probes ----
 
     def probe_count(self) -> int:
         return self._dll.mhs_solution_probe_count(self._handle)
 
-    def probe_view(self, index: int) -> ProbeTraceData:
-        """Return name, times, values, record_count for a probe trace."""
+    def probe_view(self, index: int):
+        """Return (name, times, values, record_count) for a probe trace."""
         pv = ProbeView()
         check(
             self._dll.mhs_solution_probe_view(self._handle, index, ctypes.byref(pv)),
@@ -115,7 +110,7 @@ class Solution(OwnedHandle):
             if pv.values
             else None
         )
-        return ProbeTraceData(name, times, values, pv.record_count)
+        return name, times, values, pv.record_count
 
     # ---- VTU export ----
 

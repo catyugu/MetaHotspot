@@ -14,8 +14,7 @@ class Status(enum.IntEnum):
     ERR_SOLVE = -5
     ERR_IO = -6
     ERR_OOM = -7
-    ERR_UNSET = -8
-    ERR_RUNTIME = -9
+    ERR_RUNTIME = -8
 
 
 class Study(enum.IntEnum):
@@ -54,11 +53,6 @@ class FluidBC(enum.IntEnum):
     PRESSURE = 1
     MASS_FLOW = 2
     VELOCITY = 3
-
-
-class Operator(enum.IntEnum):
-    STIFFNESS = 0
-    CAPACITY = 1
 
 
 class IntegratorKind(enum.IntEnum):

@@ -35,20 +35,19 @@ namespace mhs::sim {
     // -----------------------------------------------------------------------
     //  take_step — shared kernel for single transient step
     // -----------------------------------------------------------------------
-    StepResult take_step(Assembler& assembler, LinearSolver& solver, mhs::core::SolutionHistory& history,
+    StepResult take_step(AssemblyProvider provider, LinearSolver& solver, mhs::core::SolutionHistory& history,
         std::vector<double>& state, double current_time, double dt, const SolverOpts& opts)
     {
         StepResult result {};
 
         // Build the linearised system at (state, time + dt)
-        LinearSystemProvider provider = [&](std::vector<double>& iter_state) -> LinearSystem {
-            AssembleContext ctx {iter_state, current_time + dt};
-            auto ops = assembler.assemble(ctx);
+        LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
+            auto ops = provider(iter_state, current_time + dt);
             return time_scheme::build_system(opts.integrator, ops, history, dt);
         };
 
         // Non-linear solve (Picard/Anderson)
-        auto nl = nonlinear_solve(provider, state, solver, opts.nonlinear);
+        auto nl = nonlinear_solve(ls_provider, state, solver, opts.nonlinear);
         result.nonlinear_converged = nl.converged;
         result.nonlinear_iterations = nl.iterations;
 
@@ -84,40 +83,43 @@ namespace mhs::sim {
         return result;
     }
 
-    mhs::core::Solution solve(
-        const mhs::core::Model& model, const SolverOpts& opts, std::span<const double> initial_state)
+    mhs::core::Solution solve(const mhs::core::Model& model, const SolverOpts& opts,
+        std::span<const double> initial_state, AssemblyProvider external_provider)
     {
         auto solver = LinearSolver::create(opts.solver);
         ProbeRecorder probe_recorder;
         probe_recorder.initialize(model);
 
-        const mhs::core::Index state_count = model.cells.cell_to_grid.size();
+        const auto state_count = static_cast<std::size_t>(model.layout.state_count);
         std::vector<double> state;
         if (!initial_state.empty()) {
             state.assign(initial_state.begin(), initial_state.end());
         }
         else {
-            state.assign(static_cast<std::size_t>(state_count), model.initial_temperature);
+            state.assign(state_count, model.initial_temperature);
         }
-        assert(static_cast<mhs::core::Index>(state.size()) == state_count);
+        assert(state.size() == state_count);
 
         double current_time = 0.0;
         double dt = 0.0;
 
-        mhs::core::SolutionHistory accepted {static_cast<std::size_t>(state_count), 2};
+        mhs::core::SolutionHistory accepted {state_count, 2};
 
-        Assembler assembler(model);
+        // Build default assembly provider the wraps the thermal assembler.
+        AssemblyProvider default_provider = [&model](std::span<const double> full_state, double time) {
+            return assemble_thermal(model, model.layout, AssembleContext {full_state, time});
+        };
+        AssemblyProvider provider = external_provider ? external_provider : default_provider;
 
         // Steady: single non-linear solve, then output.
         if (model.study_type == mhs::core::StudyType::Steady) {
-            LinearSystemProvider build_ls = [&](std::vector<double>& state) -> LinearSystem {
-                AssembleContext ctx {state, 0.0};
-                auto ops = assembler.assemble(ctx);
+            LinearSystemProvider build_ls = [&](std::span<const double> s) -> LinearSystem {
+                auto ops = provider(s, 0.0);
                 return {std::move(ops.K), std::move(ops.f)};
             };
             nonlinear_solve(build_ls, state, *solver, opts.nonlinear);
             probe_recorder.record(0.0, state);
-            return {std::move(state), current_time, probe_recorder.traces()};
+            return {std::move(state), model.layout, current_time, probe_recorder.traces()};
         }
 
         // Transient.
@@ -125,7 +127,7 @@ namespace mhs::sim {
         const double output_dt = model.transient_time_step;
 
         const double min_dt = opts.min_dt;
-        const double max_dt = std::max(opts.max_dt, duration);
+        const double max_dt = opts.max_dt;
 
         time_scheme::StepController step_ctrl {opts.step_strategy, min_dt, max_dt, duration, output_dt, opts.fixed_dt};
 
@@ -141,7 +143,7 @@ namespace mhs::sim {
 
             // Save state before trial so we can restore on rejection
             auto saved_state = state;
-            auto result = take_step(assembler, *solver, accepted, state, current_time, dt, opts);
+            auto result = take_step(provider, *solver, accepted, state, current_time, dt, opts);
 
             if (result.accepted) {
                 current_time += dt;
@@ -176,7 +178,7 @@ namespace mhs::sim {
                     auto final_out = step_ctrl.flush_outputs(current_time);
                     for (double t_out : final_out)
                         probe_recorder.record(t_out, state);
-                    return {std::move(state), current_time, probe_recorder.traces(), false};
+                    return {std::move(state), model.layout, current_time, probe_recorder.traces(), false};
                 }
             }
         }
@@ -186,7 +188,7 @@ namespace mhs::sim {
         for (double t_out : final_out)
             probe_recorder.record(t_out, state);
 
-        return {std::move(state), current_time, probe_recorder.traces()};
+        return {std::move(state), model.layout, current_time, probe_recorder.traces()};
     }
 
 } // namespace mhs::sim

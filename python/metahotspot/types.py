@@ -73,6 +73,15 @@ class SolverOpts(ctypes.Structure):
         ("fixed_dt", ctypes.c_double),
     ]
 
+    @staticmethod
+    def default() -> "SolverOpts":
+        """Return a SolverOpts filled with sensible defaults (Pardiso, 1e-8, …)."""
+        opts = SolverOpts()
+        from metahotspot._lib import get_dll
+
+        get_dll().mhs_solver_opts_default(ctypes.byref(opts))
+        return opts
+
 
 class CscView(ctypes.Structure):
     _fields_ = [
@@ -139,10 +148,7 @@ class ProbeView(ctypes.Structure):
     ]
 
 
-# ---- Invalid-ID sentinels ----
+# ---- Invalid-ID sentinels (remaining public API) ----
 
 MHS_LAYER_ID_INVALID: int = 0xFFFFFFFF
 MHS_BLOCK_ID_INVALID: int = 0xFFFFFFFF
-MHS_MATERIAL_ID_INVALID: int = 0xFFFFFFFF
-MHS_FUNCTION_ID_INVALID: int = 0xFFFFFFFF
-MHS_PROBE_ID_INVALID: int = 0xFFFFFFFF

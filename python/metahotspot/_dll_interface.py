@@ -73,7 +73,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Materials / layers / blocks / rects ----
     (
         "mhs_model_add_material",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -181,7 +181,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Functions ----
     (
         "mhs_model_add_function_expr",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -190,7 +190,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     (
         "mhs_model_add_function_gauss",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -201,7 +201,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     (
         "mhs_model_add_function_sine",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -212,7 +212,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     (
         "mhs_model_add_function_double_exponential",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -223,7 +223,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     (
         "mhs_model_add_function_piecewise",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -233,7 +233,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     (
         "mhs_model_add_function_periodic_piecewise_constant",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -245,7 +245,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Probes & fluid boundaries ----
     (
         "mhs_model_add_probe",
-        ctypes.c_uint32,
+        ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_char_p,
@@ -286,16 +286,6 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(CompiledMetadataView),
         ],
     ),
-    # ---- Model introspection ----
-    (
-        "mhs_model_material_name",
-        ctypes.c_char_p,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_size_t,
-        ],
-    ),
-    ("mhs_model_material_count", ctypes.c_size_t, [ctypes.POINTER(MhsModel)]),
     # ---- Assembly ----
     (
         "mhs_compiled_assemble",

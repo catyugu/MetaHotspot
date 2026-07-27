@@ -19,9 +19,6 @@ from metahotspot.types import (
     SolverOpts,
     MHS_LAYER_ID_INVALID,
     MHS_BLOCK_ID_INVALID,
-    MHS_MATERIAL_ID_INVALID,
-    MHS_FUNCTION_ID_INVALID,
-    MHS_PROBE_ID_INVALID,
 )
 
 
@@ -48,15 +45,6 @@ class Model(OwnedHandle):
         pp = ctypes.POINTER(MhsModel)()
         check(dll.mhs_model_create(ctypes.byref(pp)), "create")
         self._handle: MhsModel = pp
-
-    # ---- _checked_id helper ----
-
-    @staticmethod
-    def _checked_id(value, invalid, context):
-        if value == invalid:
-            err = _get_dll().mhs_last_error()
-            raise RuntimeError(f"{context} failed: {err}")
-        return value
 
     # ---- Model construction helpers ----
 
@@ -130,22 +118,24 @@ class Model(OwnedHandle):
         rho: str,
         c: str,
         dynamic_viscosity: str | None = None,
-    ) -> int:
-        """Register a material.  Returns the material ID."""
+    ) -> None:
+        """Register a material."""
         dv = (
             dynamic_viscosity.encode("utf-8") if dynamic_viscosity is not None else None
         )
-        mid = self._dll.mhs_model_add_material(
-            self._handle,
-            name.encode("utf-8"),
-            kx.encode("utf-8"),
-            ky.encode("utf-8"),
-            kz.encode("utf-8"),
-            rho.encode("utf-8"),
-            c.encode("utf-8"),
-            dv,
+        check(
+            self._dll.mhs_model_add_material(
+                self._handle,
+                name.encode("utf-8"),
+                kx.encode("utf-8"),
+                ky.encode("utf-8"),
+                kz.encode("utf-8"),
+                rho.encode("utf-8"),
+                c.encode("utf-8"),
+                dv,
+            ),
+            "add_material",
         )
-        return self._checked_id(mid, MHS_MATERIAL_ID_INVALID, "add_material")
 
     def add_layer(
         self, thickness: str, x_offset: str = "0", y_offset: str = "0"
@@ -157,7 +147,10 @@ class Model(OwnedHandle):
             x_offset.encode("utf-8"),
             y_offset.encode("utf-8"),
         )
-        return self._checked_id(lid, MHS_LAYER_ID_INVALID, "add_layer")
+        if lid == MHS_LAYER_ID_INVALID:
+            err = self._dll.mhs_last_error()
+            raise RuntimeError(f"add_layer failed: {err}")
+        return lid
 
     def add_block(
         self,
@@ -179,7 +172,10 @@ class Model(OwnedHandle):
             y_offset.encode("utf-8"),
             th,
         )
-        return self._checked_id(bid, MHS_BLOCK_ID_INVALID, "add_block")
+        if bid == MHS_BLOCK_ID_INVALID:
+            err = self._dll.mhs_last_error()
+            raise RuntimeError(f"add_block failed: {err}")
+        return bid
 
     def add_rect(
         self,
@@ -306,53 +302,59 @@ class Model(OwnedHandle):
 
     # ---- Functions ----
 
-    def add_function_expr(self, name: str, expression: str) -> int:
-        fid = self._dll.mhs_model_add_function_expr(
-            self._handle,
-            name.encode("utf-8"),
-            expression.encode("utf-8"),
+    def add_function_expr(self, name: str, expression: str) -> None:
+        check(
+            self._dll.mhs_model_add_function_expr(
+                self._handle,
+                name.encode("utf-8"),
+                expression.encode("utf-8"),
+            ),
+            "add_function_expr",
         )
-        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_expr")
 
     def add_function_gauss(
         self, name: str, amplitude: float, tau: float, center: float
-    ) -> int:
-        fid = self._dll.mhs_model_add_function_gauss(
-            self._handle,
-            name.encode("utf-8"),
-            amplitude,
-            tau,
-            center,
+    ) -> None:
+        check(
+            self._dll.mhs_model_add_function_gauss(
+                self._handle,
+                name.encode("utf-8"),
+                amplitude,
+                tau,
+                center,
+            ),
+            "add_function_gauss",
         )
-        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_gauss")
 
     def add_function_sine(
         self, name: str, amplitude: float, angular_frequency: float, phase: float
-    ) -> int:
-        fid = self._dll.mhs_model_add_function_sine(
-            self._handle,
-            name.encode("utf-8"),
-            amplitude,
-            angular_frequency,
-            phase,
+    ) -> None:
+        check(
+            self._dll.mhs_model_add_function_sine(
+                self._handle,
+                name.encode("utf-8"),
+                amplitude,
+                angular_frequency,
+                phase,
+            ),
+            "add_function_sine",
         )
-        return self._checked_id(fid, MHS_FUNCTION_ID_INVALID, "add_function_sine")
 
     def add_function_double_exponential(
         self, name: str, amplitude: float, alpha: float, beta: float
-    ) -> int:
-        fid = self._dll.mhs_model_add_function_double_exponential(
-            self._handle,
-            name.encode("utf-8"),
-            amplitude,
-            alpha,
-            beta,
-        )
-        return self._checked_id(
-            fid, MHS_FUNCTION_ID_INVALID, "add_function_double_exponential"
+    ) -> None:
+        check(
+            self._dll.mhs_model_add_function_double_exponential(
+                self._handle,
+                name.encode("utf-8"),
+                amplitude,
+                alpha,
+                beta,
+            ),
+            "add_function_double_exponential",
         )
 
-    def add_function_piecewise(self, name: str, points: np.ndarray) -> int:
+    def add_function_piecewise(self, name: str, points: np.ndarray) -> None:
         """Register a piecewise-linear function.
 
         Parameters
@@ -364,47 +366,48 @@ class Model(OwnedHandle):
         for i in range(n):
             c_points[i].x = points[i, 0]
             c_points[i].y = points[i, 1]
-        fid = self._dll.mhs_model_add_function_piecewise(
-            self._handle,
-            name.encode("utf-8"),
-            c_points,
-            n,
+        check(
+            self._dll.mhs_model_add_function_piecewise(
+                self._handle,
+                name.encode("utf-8"),
+                c_points,
+                n,
+            ),
+            "add_function_piecewise",
         )
-        if fid == MHS_FUNCTION_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_function_piecewise failed: {err}")
-        return fid
 
     def add_function_periodic_piecewise_constant(
         self, name: str, values: np.ndarray, period: float
-    ) -> int:
+    ) -> None:
         """Register a periodic piecewise-constant function."""
         n = values.shape[0]
         c_values = (ctypes.c_double * n)()
         for i in range(n):
             c_values[i] = values[i]
-        fid = self._dll.mhs_model_add_function_periodic_piecewise_constant(
-            self._handle,
-            name.encode("utf-8"),
-            c_values,
-            n,
-            period,
-        )
-        return self._checked_id(
-            fid, MHS_FUNCTION_ID_INVALID, "add_function_periodic_piecewise_constant"
+        check(
+            self._dll.mhs_model_add_function_periodic_piecewise_constant(
+                self._handle,
+                name.encode("utf-8"),
+                c_values,
+                n,
+                period,
+            ),
+            "add_function_periodic_piecewise_constant",
         )
 
     # ---- Probes & fluid boundaries ----
 
-    def add_probe(self, name: str, x: float, y: float, z: float) -> int:
-        pid = self._dll.mhs_model_add_probe(
-            self._handle,
-            name.encode("utf-8"),
-            x,
-            y,
-            z,
+    def add_probe(self, name: str, x: float, y: float, z: float) -> None:
+        check(
+            self._dll.mhs_model_add_probe(
+                self._handle,
+                name.encode("utf-8"),
+                x,
+                y,
+                z,
+            ),
+            "add_probe",
         )
-        return self._checked_id(pid, MHS_PROBE_ID_INVALID, "add_probe")
 
     def add_fluid_boundary(
         self,
@@ -431,17 +434,6 @@ class Model(OwnedHandle):
             ),
             "add_fluid_boundary",
         )
-
-    # ---- Material introspection ----
-
-    def material_count(self) -> int:
-        return self._dll.mhs_model_material_count(self._handle)
-
-    def material_name(self, index: int) -> str:
-        ptr = self._dll.mhs_model_material_name(self._handle, index)
-        if not ptr:
-            raise IndexError(f"material index {index} out of range")
-        return ptr.decode("utf-8")
 
     # ---- Compile ----
 

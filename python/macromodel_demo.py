@@ -186,7 +186,7 @@ def main():
     print("=" * 60)
 
     solution = compiled.solve()
-    T_ref = solution.view().cell_temperatures.copy()
+    T_ref = solution.temperature.copy()
     print("  T in [{:.4f}, {:.4f}] K".format(T_ref.min(), T_ref.max()))
 
     # ==================================================================

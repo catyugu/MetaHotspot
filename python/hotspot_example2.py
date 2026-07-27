@@ -328,8 +328,8 @@ def main():
         f"Grid cells: {c_steady.metadata().grid_count}"
     )
     sol_steady = c_steady.solve()
-    steady_state = sol_steady.view().states.copy()
-    steady_temp = sol_steady.view().cell_temperatures.copy()
+    steady_state = sol_steady.state.copy()
+    steady_temp = sol_steady.temperature.copy()
     t_steady = _time.perf_counter() - t0
     print(
         f"  Steady T in [{steady_temp.min():.4f}, "
@@ -384,7 +384,7 @@ def main():
     sol_transient = c_transient.solve(state=steady_state)
     t_transient = _time.perf_counter() - t0
 
-    final_temp = sol_transient.view().cell_temperatures.copy()
+    final_temp = sol_transient.temperature.copy()
     print(
         f"  Transient final T in [{final_temp.min():.4f}, "
         f"{final_temp.max():.4f}] K  ({t_transient:.3f}s)"
@@ -394,12 +394,12 @@ def main():
     n_probes = sol_transient.probe_count()
     print(f"\n  Probes recorded: {n_probes}")
     for pi in range(min(n_probes, 5)):
-        pv = sol_transient.probe_view(pi)
-        if pv.times is not None and len(pv.times) > 0:
+        name, times, values, record_count = sol_transient.probe_view(pi)
+        if times is not None and len(times) > 0:
             print(
-                f"    {pv.name:<20s}  t={pv.times[0]:.4f}..{pv.times[-1]:.4f}  "
-                f"T={pv.values[0]:.2f}..{pv.values[-1]:.2f} K  "
-                f"({pv.record_count} records)"
+                f"    {name:<20s}  t={times[0]:.4f}..{times[-1]:.4f}  "
+                f"T={values[0]:.2f}..{values[-1]:.2f} K  "
+                f"({record_count} records)"
             )
 
     # Compare with HotSpot reference (gcc.init)

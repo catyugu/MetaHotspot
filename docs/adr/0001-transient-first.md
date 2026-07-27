@@ -16,7 +16,7 @@ The whole system is designed for transient simulation. Steady state is a single 
     - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once, starting from a uniform `initial_temperature` vector (or an explicitly provided initial state).
     - `Transient` — step from `t = 0` up to `transient_duration`. Each step runs `assemble → build_system → nonlinear_solve → estimate_error`; on accept, `accepted.accept(T, t)` and `current_time += dt`.
 - Time stepping composes three orthogonal pieces:
-    - `mhs::sim::time_scheme::StepController` (strategy: Free / Strict / Intermediate / Manual) drives output-time alignment and step sizing.
+    - `mhs::sim::time_scheme::StepController` (strategy: AdaptiveFree / AdaptiveAligned / Fixed) drives output-time alignment and step sizing.
     - `time_scheme::build_system(kind, …)` is a pure function that injects the BDF1/BDF2 stencil on top of an `AssemblyResult`.
     - `time_scheme::estimate_error(…)` is a pure function that returns an LTE estimate and a PI-style step-size suggestion.
 - Nonlinear iteration lives inside each step. The fixed-point iteration in `nonlinear_solve` uses Anderson acceleration with a divergence guard and warm-up; on guard trip it falls back to a damped Picard step.

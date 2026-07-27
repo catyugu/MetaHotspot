@@ -88,10 +88,8 @@ namespace mhs::sim::time_scheme {
         : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt)
     {
         if (duration > 0.0 && output_interval > 0.0) {
-            const std::size_t n = static_cast<std::size_t>(duration / output_interval);
-            output_times_.reserve(n + 1);
-            for (std::size_t i = 0; i <= n; ++i)
-                output_times_.push_back(static_cast<double>(i) * output_interval);
+            total_output_count_ = static_cast<std::size_t>(duration / output_interval);
+            output_interval_ = output_interval;
         }
     }
 
@@ -107,8 +105,8 @@ namespace mhs::sim::time_scheme {
         case StepStrategy::AdaptiveFree:
             break;
         case StepStrategy::AdaptiveAligned: {
-            if (next_idx_ < output_times_.size()) {
-                const double next = output_times_[next_idx_];
+            if (next_idx_ <= total_output_count_) {
+                const double next = static_cast<double>(next_idx_) * output_interval_;
                 const double tolerance = grid_tolerance(next);
                 if (!(next <= current_t + tolerance || current_t + dt < next - tolerance))
                     dt = next - current_t;
@@ -125,7 +123,7 @@ namespace mhs::sim::time_scheme {
 
     std::vector<double> StepController::flush_outputs(double current_t)
     {
-        if (output_times_.empty()) {
+        if (output_interval_ <= 0.0 || total_output_count_ == 0) {
             if (current_t > last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
                 last_flushed_t_ = current_t;
                 return {current_t};
@@ -134,8 +132,8 @@ namespace mhs::sim::time_scheme {
         }
 
         std::vector<double> crossed;
-        while (next_idx_ < output_times_.size()) {
-            const double output = output_times_[next_idx_];
+        while (next_idx_ <= total_output_count_) {
+            const double output = static_cast<double>(next_idx_) * output_interval_;
             if (output <= last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
                 ++next_idx_;
                 continue;

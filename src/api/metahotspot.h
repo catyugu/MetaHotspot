@@ -49,15 +49,9 @@ typedef struct mhs_assembly_t mhs_assembly_t;
 /* ------------------------------------------------------------------ */
 typedef uint32_t mhs_layer_id_t;
 typedef uint32_t mhs_block_id_t;
-typedef uint32_t mhs_material_id_t;
-typedef uint32_t mhs_function_id_t;
-typedef uint32_t mhs_probe_id_t;
 
 #define MHS_LAYER_ID_INVALID UINT32_MAX
 #define MHS_BLOCK_ID_INVALID UINT32_MAX
-#define MHS_MATERIAL_ID_INVALID UINT32_MAX
-#define MHS_FUNCTION_ID_INVALID UINT32_MAX
-#define MHS_PROBE_ID_INVALID UINT32_MAX
 
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
@@ -80,9 +74,6 @@ enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_EIGEN_SPARSE_LU = 1, MHS_SOLVER_EIGEN_
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE = 1, MHS_FLUID_MASS_FLOW = 2, MHS_FLUID_VELOCITY = 3 };
 
-typedef int32_t mhs_operator_t;
-enum { MHS_OPERATOR_STIFFNESS = 0, MHS_OPERATOR_CAPACITY = 1 };
-
 typedef int32_t mhs_integrator_t;
 enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };
 
@@ -99,8 +90,7 @@ enum {
     MHS_ERR_SOLVE = -5,
     MHS_ERR_IO = -6,
     MHS_ERR_OOM = -7,
-    MHS_ERR_UNSET = -8,
-    MHS_ERR_RUNTIME = -9,
+    MHS_ERR_RUNTIME = -8,
 };
 
 /* ------------------------------------------------------------------ */
@@ -258,7 +248,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /*  Model construction  —  materials, layers, blocks, rects           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
 
 MHS_API mhs_layer_id_t mhs_model_add_layer(
@@ -295,23 +285,23 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression);
-MHS_API mhs_function_id_t mhs_model_add_function_gauss(
+MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression);
+MHS_API mhs_status_t mhs_model_add_function_gauss(
     mhs_model_t* m, const char* name, double amplitude, double tau, double center);
-MHS_API mhs_function_id_t mhs_model_add_function_sine(
+MHS_API mhs_status_t mhs_model_add_function_sine(
     mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase);
-MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
+MHS_API mhs_status_t mhs_model_add_function_double_exponential(
     mhs_model_t* m, const char* name, double amplitude, double alpha, double beta);
-MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
+MHS_API mhs_status_t mhs_model_add_function_piecewise(
     mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count);
-MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
+MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
     mhs_model_t* m, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_probe_id_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
+MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
     mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature);
 
@@ -378,13 +368,6 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 
 MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s);
 MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out);
-
-/* ------------------------------------------------------------------ */
-/*  Model introspection (before compile)                               */
-/* ------------------------------------------------------------------ */
-
-MHS_API const char* mhs_model_material_name(const mhs_model_t* m, size_t index);
-MHS_API size_t mhs_model_material_count(const mhs_model_t* m);
 
 #ifdef __cplusplus
 } /* extern "C" */

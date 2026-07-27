@@ -148,16 +148,22 @@ namespace mhs::sim {
 
     } // namespace
 
-    AssemblyResult Assembler::assemble(const AssembleContext& ctx) const
+    AssemblyResult assemble_thermal(
+        const mhs::core::Model& model, const mhs::core::StateLayout& layout, const AssembleContext& ctx)
     {
-        const auto state_count = model_.cells.cell_to_grid.size();
-        assert(ctx.state.size() == state_count);
-        assert(state_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
-        const auto eigen_count = static_cast<Eigen::Index>(state_count);
+        // Extract the temperature subrange from the full combined state.
+        assert(layout.temperature.begin + layout.temperature.count <= static_cast<mhs::core::Index>(ctx.state.size()));
+        auto temp_span = ctx.state.subspan(
+            static_cast<std::size_t>(layout.temperature.begin), static_cast<std::size_t>(layout.temperature.count));
+        AssembleContext thermal_ctx {temp_span, ctx.current_time};
+
+        const auto thermal_count = layout.temperature.count;
+        assert(thermal_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
+        const auto eigen_count = static_cast<Eigen::Index>(thermal_count);
 
         AssemblySink sink(eigen_count);
-        assemble_cells(model_, ctx, sink);
-        assemble_fluid(model_, ctx, sink);
+        assemble_cells(model, thermal_ctx, sink);
+        assemble_fluid(model, thermal_ctx, sink);
 
         Eigen::SparseMatrix<double> stiffness(eigen_count, eigen_count);
         stiffness.setFromTriplets(sink.stiffness.begin(), sink.stiffness.end());

@@ -186,6 +186,35 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
 }
 
 /* ------------------------------------------------------------------ */
+/*  SolverOpts conversion helper                                       */
+/* ------------------------------------------------------------------ */
+
+static mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double transient_duration = 0.0)
+{
+    mhs::sim::SolverOpts so;
+    if (!opts)
+        return so;
+
+    so.solver.type = _to_solver_type(opts->solver_type);
+    so.solver.config.tolerance = opts->linear_tolerance;
+    so.solver.config.max_iterations = opts->linear_max_iterations;
+    so.nonlinear.underrelaxation = opts->underrelaxation;
+    so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
+    so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
+    so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
+    so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
+    so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
+    so.error_abs_tol = opts->error_abs_tol;
+    so.error_safety = opts->error_safety;
+    so.min_dt = opts->min_dt;
+    // max_dt fix: if user set max_dt <= 0 and duration > 0, clamp to duration.
+    // Otherwise respect the user setting strictly.
+    so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;
+    so.fixed_dt = opts->fixed_dt;
+    return so;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -228,8 +257,6 @@ MHS_API const char* mhs_status_string(mhs_status_t status)
         return "I/O error";
     case MHS_ERR_OOM:
         return "out of memory";
-    case MHS_ERR_UNSET:
-        return "unset required field";
     case MHS_ERR_RUNTIME:
         return "internal runtime error";
     default:
@@ -327,14 +354,12 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /*  Model construction  —  materials, layers, blocks, rects           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity)
 {
-    if (!m || !name) {
-        SET_ERR("NULL pointer");
-        return MHS_MATERIAL_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_MATERIAL_ID_INVALID, {
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
         mhs::model::MaterialSpec spec;
         if (kx)
             spec.conductivity_x = kx;
@@ -350,7 +375,6 @@ MHS_API mhs_material_id_t mhs_model_add_material(mhs_model_t* m, const char* nam
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
 
         m->def.materials.push_back({name, std::move(spec)});
-        return static_cast<mhs_material_id_t>(m->def.materials.size() - 1);
     });
 }
 
@@ -505,98 +529,79 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_function_id_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
+MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
 {
-    if (!m || !name || !expression) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
-        m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
-    });
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(expression);
+    MHS_TRY(
+        MHS_ERR_INVALID_ARG, { m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
 }
 
-MHS_API mhs_function_id_t mhs_model_add_function_gauss(
+MHS_API mhs_status_t mhs_model_add_function_gauss(
     mhs_model_t* m, const char* name, double amplitude, double tau, double center)
 {
-    if (!m || !name) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
-        m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
-    });
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(MHS_ERR_INVALID_ARG,
+        { m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
 }
 
-MHS_API mhs_function_id_t mhs_model_add_function_sine(
+MHS_API mhs_status_t mhs_model_add_function_sine(
     mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase)
 {
-    if (!m || !name) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
-        m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
-    });
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(MHS_ERR_INVALID_ARG,
+        { m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
 }
 
-MHS_API mhs_function_id_t mhs_model_add_function_double_exponential(
+MHS_API mhs_status_t mhs_model_add_function_double_exponential(
     mhs_model_t* m, const char* name, double amplitude, double alpha, double beta)
 {
-    if (!m || !name) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
-        m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
-    });
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(MHS_ERR_INVALID_ARG,
+        { m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
 }
 
-MHS_API mhs_function_id_t mhs_model_add_function_piecewise(
+MHS_API mhs_status_t mhs_model_add_function_piecewise(
     mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count)
 {
-    if (!m || !name || !points) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(points);
     if (count < 2) {
         SET_ERR("piecewise requires count >= 2");
-        return MHS_FUNCTION_ID_INVALID;
+        return MHS_ERR_INVALID_ARG;
     }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
         m->def.functions.push_back({name, std::move(spec)});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
     });
 }
 
-MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
+MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
     mhs_model_t* m, const char* name, const double* values, size_t count, double period)
 {
-    if (!m || !name || !values) {
-        SET_ERR("NULL pointer");
-        return MHS_FUNCTION_ID_INVALID;
-    }
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(values);
     if (count < 1) {
         SET_ERR("periodic_piecewise_constant requires count >= 1");
-        return MHS_FUNCTION_ID_INVALID;
+        return MHS_ERR_INVALID_ARG;
     }
     if (period <= 0.0) {
         SET_ERR("period must be positive");
-        return MHS_FUNCTION_ID_INVALID;
+        return MHS_ERR_INVALID_ARG;
     }
-    MHS_TRY_ID(MHS_FUNCTION_ID_INVALID, {
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
         spec.values.assign(values, values + count);
         m->def.functions.push_back({name, std::move(spec)});
-        return static_cast<mhs_function_id_t>(m->def.functions.size() - 1);
     });
 }
 
@@ -604,16 +609,12 @@ MHS_API mhs_function_id_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_probe_id_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
+MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
 {
-    if (!m || !name) {
-        SET_ERR("NULL pointer");
-        return MHS_PROBE_ID_INVALID;
-    }
-    MHS_TRY_ID(MHS_PROBE_ID_INVALID, {
-        m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)});
-        return static_cast<mhs_probe_id_t>(m->def.observation_points.size() - 1);
-    });
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(MHS_ERR_INVALID_ARG,
+        { m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
@@ -628,26 +629,6 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
         fb.inlet_temperature = inlet_temperature;
         m->def.fluid_boundaries.push_back(std::move(fb));
     });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Model introspection                                                */
-/* ------------------------------------------------------------------ */
-
-MHS_API const char* mhs_model_material_name(const mhs_model_t* m, size_t index)
-{
-    if (!m)
-        return nullptr;
-    if (index >= m->def.materials.size())
-        return nullptr;
-    return m->def.materials[index].name.c_str();
-}
-
-MHS_API size_t mhs_model_material_count(const mhs_model_t* m)
-{
-    if (!m)
-        return 0;
-    return m->def.materials.size();
 }
 
 /* ------------------------------------------------------------------ */
@@ -688,7 +669,7 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model.cells.cell_to_grid.size();
-    out->state_count = c->model.cells.cell_to_grid.size();
+    out->state_count = c->model.layout.state_count;
     out->node_count = (c->model.mesh.nx + 1) * (c->model.mesh.ny + 1) * (c->model.mesh.nz + 1);
     out->grid_count = c->model.mesh.nx * c->model.mesh.ny * c->model.mesh.nz;
     out->study_type = _from_core_study(c->model.study_type);
@@ -720,31 +701,17 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
     }
 
     MHS_TRY(MHS_ERR_SOLVE, {
-        const auto n = static_cast<std::size_t>(c->model.cells.cell_to_grid.size());
-
-        // Local state for this step — no mutable cache on the compiled model.
-        mhs::sim::Assembler assembler(c->model);
+        const auto n = static_cast<std::size_t>(c->model.layout.state_count);
 
         // Build SolverOpts from C opts.
-        mhs::sim::SolverOpts so;
-        if (opts) {
-            so.solver.type = _to_solver_type(opts->solver_type);
-            so.solver.config.tolerance = opts->linear_tolerance;
-            so.solver.config.max_iterations = opts->linear_max_iterations;
-            so.nonlinear.underrelaxation = opts->underrelaxation;
-            so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
-            so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
-            so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
-            so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
-            so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
-            so.error_abs_tol = opts->error_abs_tol;
-            so.error_safety = opts->error_safety;
-            so.min_dt = opts->min_dt;
-            so.max_dt = opts->max_dt;
-            so.fixed_dt = opts->fixed_dt;
-        }
+        auto so = to_solver_opts(opts, c->model.transient_duration);
         auto solver = mhs::sim::LinearSolver::create(so.solver);
         mhs::core::SolutionHistory history(n, 2);
+
+        // Build default assembly provider.
+        auto provider = [&c](std::span<const double> full_state, double time) {
+            return mhs::sim::assemble_thermal(c->model, c->model.layout, mhs::sim::AssembleContext {full_state, time});
+        };
 
         // Copy input state into work buffer.
         std::vector<double> work_state(state, state + n);
@@ -753,7 +720,7 @@ MHS_API mhs_status_t mhs_compiled_step(const mhs_compiled_t* c, const double* st
         history.initialize(work_state, time);
 
         // Execute the shared kernel.
-        auto result = mhs::sim::take_step(assembler, *solver, history, work_state, time, dt, so);
+        auto result = mhs::sim::take_step(provider, *solver, history, work_state, time, dt, so);
 
         // Copy result out.
         std::copy(work_state.begin(), work_state.end(), out_state);
@@ -778,17 +745,14 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(state);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_ASSEMBLE, {
-        mhs::sim::Assembler assembler(c->model);
-
-        const auto n = c->model.cells.cell_to_grid.size();
+        const auto n = static_cast<std::size_t>(c->model.layout.state_count);
         if (state_count != 0 && state_count != n) {
             SET_ERR("state_count mismatch: expected " + std::to_string(n) + " got " + std::to_string(state_count));
             return MHS_ERR_INVALID_ARG;
         }
 
         std::span<const double> state_span(state, n);
-        mhs::sim::AssembleContext ctx {state_span, time};
-        auto result = assembler.assemble(ctx);
+        auto result = mhs::sim::assemble_thermal(c->model, c->model.layout, {state_span, time});
 
         auto h = std::make_unique<mhs_assembly_t>();
         h->K = std::move(result.K);
@@ -841,23 +805,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_SOLVE, {
-        mhs::sim::SolverOpts so;
-        if (opts) {
-            so.solver.type = _to_solver_type(opts->solver_type);
-            so.solver.config.tolerance = opts->linear_tolerance;
-            so.solver.config.max_iterations = opts->linear_max_iterations;
-            so.nonlinear.underrelaxation = opts->underrelaxation;
-            so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
-            so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
-            so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
-            so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
-            so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
-            so.error_abs_tol = opts->error_abs_tol;
-            so.error_safety = opts->error_safety;
-            so.min_dt = opts->min_dt;
-            so.max_dt = opts->max_dt;
-            so.fixed_dt = opts->fixed_dt;
-        }
+        auto so = to_solver_opts(opts, c->model.transient_duration);
 
         std::span<const double> initial_state;
         if (state && state_count > 0) {
@@ -907,10 +855,11 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->cell_count = s->solution.state.size();
-    out->state_count = s->solution.state.size();
+    const auto& layout = s->solution.layout;
+    out->cell_count = layout.temperature.count;
+    out->state_count = layout.state_count;
     out->time = s->solution.time;
-    out->cell_temperatures = s->solution.state.data();
+    out->cell_temperatures = s->solution.state.data() + layout.temperature.begin;
     out->states = s->solution.state.data();
     tls_err.clear();
     return MHS_OK;

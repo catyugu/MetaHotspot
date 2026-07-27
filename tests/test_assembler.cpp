@@ -10,7 +10,7 @@ using namespace mhs::sim;
 // Helper: build a default-state vector from the model's initial_temperature.
 static std::vector<double> default_state(const mhs::core::Model& model)
 {
-    return std::vector<double>(static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
+    return std::vector<double>(static_cast<std::size_t>(model.layout.state_count), model.initial_temperature);
 }
 
 // Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
@@ -60,8 +60,12 @@ TEST(AssemblerTest, CompileBuildsCellStateLayout)
     const auto cell_count = model.cells.material_id.size();
 
     EXPECT_EQ(model.cells.cell_to_grid.size(), cell_count);
+    // Thermal-only layout: temperature slice covers all cells.
+    EXPECT_EQ(model.layout.temperature.count, cell_count);
+    EXPECT_EQ(model.layout.temperature.begin, 0);
+    EXPECT_EQ(model.layout.state_count, cell_count);
     auto state = default_state(model);
-    ASSERT_EQ(state.size(), model.cells.cell_to_grid.size());
+    ASSERT_EQ(state.size(), model.layout.state_count);
     EXPECT_TRUE(
         std::all_of(state.begin(), state.end(), [&](double value) { return value == model.initial_temperature; }));
 }
@@ -73,10 +77,8 @@ TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 
     int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    AssembleContext ctx {T, 0.0};
 
-    Assembler assembler(model);
-    auto ops = assembler.assemble(ctx);
+    auto ops = assemble_thermal(model, model.layout, {T, 0.0});
 
     EXPECT_EQ(ops.C.rows(), N);
     EXPECT_EQ(ops.C.cols(), N);
@@ -127,15 +129,11 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     auto model = build_model(io);
 
     int N = static_cast<int>(model.cells.material_id.size());
-    Assembler assembler(model);
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
     std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
-    AssembleContext s1 {T300, 0.0};
-    auto k1 = assembler.assemble(s1).K;
-
-    AssembleContext s2 {T500, 0.0};
-    auto k2 = assembler.assemble(s2).K;
+    auto k1 = assemble_thermal(model, model.layout, {T300, 0.0}).K;
+    auto k2 = assemble_thermal(model, model.layout, {T500, 0.0}).K;
 
     bool differs = false;
     for (int k = 0; k < k1.outerSize() && !differs; ++k) {
@@ -158,10 +156,8 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 
     int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
-    AssembleContext ctx {T, 0.0};
 
-    Assembler assembler(model);
-    auto ops = assembler.assemble(ctx);
+    auto ops = assemble_thermal(model, model.layout, {T, 0.0});
 
     // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
     for (int i = 0; i < N; ++i) {

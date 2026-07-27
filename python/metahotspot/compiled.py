@@ -44,6 +44,7 @@ class Compiled(OwnedHandle):
 
     def __init__(self) -> None:
         super().__init__(None, None)
+        self._metadata_cache: CompiledMetadata | None = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
@@ -56,16 +57,18 @@ class Compiled(OwnedHandle):
         self._handle = pp
         return self
 
-    # ---- Metadata view (single C call, replaces ~12 individual accessors) ----
+    # ---- Metadata view (cached after first call) ----
 
     def metadata(self) -> CompiledMetadata:
         """Return all compiled-model metadata in one call to the C layer."""
+        if self._metadata_cache is not None:
+            return self._metadata_cache
         view = CompiledMetadataView()
         check(
             self._dll.mhs_compiled_metadata(self._handle, ctypes.byref(view)),
             "compiled_metadata",
         )
-        return CompiledMetadata(
+        result = CompiledMetadata(
             cell_count=view.cell_count,
             state_count=view.state_count,
             node_count=view.node_count,
@@ -81,6 +84,8 @@ class Compiled(OwnedHandle):
             ny=view.ny,
             nz=view.nz,
         )
+        self._metadata_cache = result
+        return result
 
     # ---- Solve ----
 
