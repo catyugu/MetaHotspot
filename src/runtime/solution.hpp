@@ -11,8 +11,7 @@ namespace mhs::core {
         std::vector<double> values;
     };
 
-    /// Full result returned by solve_coupled() — Model FVM DoFs followed by
-    /// retained macro-port DoFs.
+    /// Full state returned by the generic system scheduler.
     struct SolveResult {
         std::vector<double> state;
         double time = 0.0;

@@ -17,8 +17,9 @@ XML
                       ├─> mhs::sim::fluid::build_domain
                       │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
-                              └─> mhs::sim::solve_thermal / solve_coupled
-                                    ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t, duration) → dt_exec
+                              └─> mhs::sim::solve_thermal
+                                    └─> mhs::sim::solve_system(Study, SystemAssembler, state)
+                                    ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t) → dt_exec
                                     ├─> mhs::sim::assemble_thermal(model, fvm_state, time)
                                     │     ├─> assemble_cells parallel_for // no fluid branches
                                     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
@@ -29,15 +30,16 @@ XML
                                     │     │     └─> thread-local K/C triplets + f
                                     │     ├─> assemble_fluid               // same sparse coordinates
                                     │     └─> merge once → Operators {K, C, f}
-                                    ├─> solve_coupled: FVM 块 + macro-port Operators + InterfaceCoupling
-                                    │     ├─> macro-port Operators（仅宏块保留的面片自由度）
-                                    │     ├─> fixed（显式四块接口贡献）
-                                    │     └─> nonlinear(model_state, port_state, time)（可选）
+                                    ├─> 可选 assemble_modal_port_system
+                                    │     ├─> assemble_thermal(model, fvm_state, time)
+                                    │     ├─> 宏端口模态 Operators + 物理端口基底 Phi
+                                    │     ├─> 按当前 FVM 状态重算接口半热导
+                                    │     └─> 物理接口投影到 modal coordinates
                                     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
                                     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
                                     └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
-                                    ├─> StepController::flush_outputs(t + dt) → output times
-                                    ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
+                                    ├─> StepController::output_due(t + dt) → exact solved output state
+                                    ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 输出时刻 O(n_probes) 局部采样
                                     └─> mhs::post::interpolate_cell_to_node           // solve_thermal() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）
                                           ├─> 面中心外推使用该面法向对应的 k
@@ -55,7 +57,9 @@ XML
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
-| 组装              | `Model` + macro port + interface      | `Operators {K,C,f}`        | Model 内部重组；宏块仅保留端口；非线性只更新接口四块     |
+| 组装              | 当前完整状态 + 时间                   | `Operators {K,C,f}`             | `SystemAssembler` 拥有状态划分和全部耦合物理            |
+| 模态端口组合      | FVM + modal macro + physical interface | 全局 `Operators`                | 每轮重算 FVM 半热导并用 `Phi` 投影，不进入 scheduler     |
+| 时间输出          | accepted state + output grid           | observer state                  | Adaptive/Fixed 均截短到网格；禁止插值全局/模态状态       |
 | 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
 | 非线性更新        | 线性解 `G(x)`                         | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
 | 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |

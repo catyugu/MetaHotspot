@@ -28,12 +28,24 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 - 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
-- 宏块在线模型只保存凝聚后的面片端口自由度，不包含详细区自由度。
-  `solve_coupled` 的状态排列为 `[Model FVM DoFs, macro port DoFs]`；宏端口
-  `Operators` 与 `InterfaceCoupling` 分属独立对象，接口以显式四块
-  `model/model_to_port/port_to_model/port` 贡献连接两侧，非线性时只更新这些接口块。
+- `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
+  `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
+  端口或耦合拓扑。
+- 宏块可在 setup 阶段凝聚到物理端口，再用 SVD 基底 `Phi` 降到少量模态；
+  在线状态排列为 `[Model FVM temperatures, macro modal coefficients]`，
+  物理端口温度由 `T_port = Phi * q` 恢复。
+- `assemble_modal_port_system` 拥有 FVM 与外部宏模型之间的组合逻辑。
+  每次非线性线性化都会按当前 FVM 温度重算模型侧半热导，并把物理接口
+  贡献投影到端口模态；scheduler 不参与该过程。
+- 瞬态只保留 `Adaptive` 与 `Fixed` 两种步进。二者都会在输出时刻和终止
+  时刻截短当前步，observer 只接收真实积分状态；禁止对包含模态系数的
+  全局状态做时间插值。
+- 模态瞬态宏模型必须在同一基底下提供完整的 `K_r`、`C_r`、`f_r` 和一致
+  初态。静态端口柔度的 SVD 只验证稳态端口响应，不能单独证明瞬态降阶精度；
+  瞬态 ROM 需要动态模态或时域快照及时间步收敛验证。
 - Model FVM 详细离散始终由求解器内部组装。
-- 初状态由 `solve(state=)` 可选传入，为空时从 `initial_temperature` 构建均匀向量。
+- `solve_system` 要求显式完整初状态；`solve_thermal(state=)` 为空时才从
+  `initial_temperature` 构建均匀温度。
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 

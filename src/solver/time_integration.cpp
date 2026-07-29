@@ -85,68 +85,46 @@ namespace mhs::sim::time_scheme {
 
     StepController::StepController(
         StepStrategy strategy, double min_dt, double max_dt, double duration, double output_interval, double fixed_dt)
-        : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt)
+        : strategy_(strategy), duration_(duration), output_interval_(output_interval), min_dt_(min_dt), max_dt_(max_dt),
+          fixed_dt_(fixed_dt), next_output_(output_interval)
     {
-        if (duration > 0.0 && output_interval > 0.0) {
-            total_output_count_ = static_cast<std::size_t>(duration / output_interval);
-            output_interval_ = output_interval;
-        }
     }
 
-    double StepController::prepare(double dt_suggested, double current_t, double duration)
+    double StepController::prepare(double dt_suggested, double current_t)
     {
-        const double remaining = duration - current_t;
+        const double remaining = duration_ - current_t;
         if (remaining <= 0.0)
             return 0.0;
 
-        double dt = dt_suggested;
+        while (output_interval_ > 0.0
+            && next_output_ <= current_t + grid_tolerance(current_t))
+            next_output_ += output_interval_;
 
-        switch (strategy_) {
-        case StepStrategy::AdaptiveFree:
-            break;
-        case StepStrategy::AdaptiveAligned: {
-            if (next_idx_ <= total_output_count_) {
-                const double next = static_cast<double>(next_idx_) * output_interval_;
-                const double tolerance = grid_tolerance(next);
-                if (!(next <= current_t + tolerance || current_t + dt < next - tolerance))
-                    dt = next - current_t;
-            }
-            break;
-        }
-        case StepStrategy::Fixed:
-            dt = fixed_dt_;
-            break;
-        }
+        const double proposed = strategy_ == StepStrategy::Fixed ? fixed_dt_ : dt_suggested;
+        const double bounded = std::clamp(proposed, min_dt_, max_dt_);
 
-        return std::min(std::clamp(dt, min_dt_, max_dt_), remaining);
+        double next_boundary = duration_;
+        if (output_interval_ > 0.0 && next_output_ < duration_ - grid_tolerance(duration_))
+            next_boundary = next_output_;
+
+        // Output states must be states actually solved by the integrator. A
+        // boundary may therefore shorten one step below min_dt; min_dt remains
+        // the lower bound for unconstrained step-size adaptation.
+        const double to_boundary = next_boundary - current_t;
+        return std::min(bounded, std::min(remaining, to_boundary));
     }
 
-    std::vector<double> StepController::flush_outputs(double current_t)
+    bool StepController::output_due(double current_t)
     {
-        if (output_interval_ <= 0.0 || total_output_count_ == 0) {
-            if (current_t > last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
-                last_flushed_t_ = current_t;
-                return {current_t};
-            }
-            return {};
-        }
+        const bool at_final = current_t >= duration_ - grid_tolerance(duration_);
+        const bool at_grid = output_interval_ > 0.0
+            && current_t >= next_output_ - grid_tolerance(next_output_);
+        if (output_interval_ > 0.0 && !at_grid && !at_final)
+            return false;
 
-        std::vector<double> crossed;
-        while (next_idx_ <= total_output_count_) {
-            const double output = static_cast<double>(next_idx_) * output_interval_;
-            if (output <= last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
-                ++next_idx_;
-                continue;
-            }
-            if (output > current_t + grid_tolerance(current_t))
-                break;
-            crossed.push_back(output);
-            ++next_idx_;
-        }
-
-        if (!crossed.empty())
-            last_flushed_t_ = crossed.back();
-        return crossed;
+        if (at_grid)
+            next_output_ += output_interval_;
+        return true;
     }
 
 } // namespace mhs::sim::time_scheme

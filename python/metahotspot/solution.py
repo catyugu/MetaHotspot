@@ -57,6 +57,36 @@ class Solution(OwnedHandle):
         self._compiled = compiled  # strong reference prevents GC
         return self
 
+    @classmethod
+    def _solve_modal_port(
+        cls,
+        compiled,
+        modal_view,
+        state: np.ndarray,
+        opts=None,
+    ) -> Solution:
+        """Solve a modal-port coupled system and wrap the full state."""
+        self = cls()
+        self._dll = compiled._dll
+        self._destroy_fn = self._dll.mhs_solution_destroy
+        pp = ctypes.POINTER(MhsSolution)()
+        opts_ptr = ctypes.byref(opts) if opts is not None else None
+        state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+        check(
+            self._dll.mhs_compiled_solve_modal_port(
+                compiled._handle,
+                ctypes.byref(modal_view),
+                state_ptr,
+                state.size,
+                opts_ptr,
+                ctypes.byref(pp),
+            ),
+            "solve_modal_port",
+        )
+        self._handle = pp
+        self._compiled = compiled
+        return self
+
     # ---- Lazy view caching ----
 
     def _fetch_view(self) -> SolutionView:
@@ -73,12 +103,21 @@ class Solution(OwnedHandle):
     def temperature(self) -> np.ndarray:
         """Temperature field [cell_count]."""
         v = self._fetch_view()
-        return np.ctypeslib.as_array(v.temperature, shape=(v.cell_count,))
+        return np.ctypeslib.as_array(v.state, shape=(v.fvm_count,))
 
     @property
     def time(self) -> float:
         """Simulation end time."""
         return self._fetch_view().time
+
+    @property
+    def state(self) -> np.ndarray:
+        """Full system state, including any retained external modes."""
+        view = self._fetch_view()
+        return np.ctypeslib.as_array(
+            view.state,
+            shape=(view.state_count,),
+        )
 
     # ---- Probes ----
 

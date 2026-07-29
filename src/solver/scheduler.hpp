@@ -7,7 +7,6 @@
 #include "solver/time_integration.hpp"
 
 #include <functional>
-#include <optional>
 #include <span>
 
 namespace mhs::sim {
@@ -15,7 +14,7 @@ namespace mhs::sim {
     struct SolverOpts {
         // Time integration
         time_scheme::IntegratorKind integrator = time_scheme::IntegratorKind::Bdf1;
-        time_scheme::StepStrategy step_strategy = time_scheme::StepStrategy::AdaptiveFree;
+        time_scheme::StepStrategy step_strategy = time_scheme::StepStrategy::Adaptive;
 
         // Error control
         double error_abs_tol = 1e-4;
@@ -33,39 +32,24 @@ namespace mhs::sim {
         NonLinearConfig nonlinear;
     };
 
-    /// Four matrix positions contributed by a Model-to-port interface.
-    struct CouplingMatrixBlocks {
-        Eigen::SparseMatrix<double> model;
-        Eigen::SparseMatrix<double> model_to_port;
-        Eigen::SparseMatrix<double> port_to_model;
-        Eigen::SparseMatrix<double> port;
+    /// Whole-system linearization evaluated at the current nonlinear iterate.
+    using SystemAssembler = std::function<Operators(std::span<const double> state, double time)>;
+
+    /// Accepted-state observer. Every transient state is an integration result
+    /// at an exactly aligned output time; modal coordinates are never interpolated.
+    using StateObserver = std::function<void(double time, std::span<const double> state)>;
+
+    struct Study {
+        mhs::core::StudyType type = mhs::core::StudyType::Steady;
+        double duration = 0.0;
+        double output_interval = 1.0;
     };
 
-    /// Additive K/C/f contribution from the Model-to-port interface.
-    struct CouplingOperators {
-        CouplingMatrixBlocks K;
-        CouplingMatrixBlocks C;
-        Eigen::VectorXd f_model;
-        Eigen::VectorXd f_port;
-    };
-
-    /// Interface between the Model and an independently owned macro port.
-    struct InterfaceCoupling {
-        std::optional<CouplingOperators> fixed;
-        using NonlinearCoupling = std::function<CouplingOperators(
-            std::span<const double> model_state, std::span<const double> port_state, double time)>;
-        NonlinearCoupling nonlinear;
-    };
-
-    /// Solve the detailed Model coupled to a port-only macro representation.
-    ///
-    /// macro_port acts only on retained macro-port DoFs and has no knowledge
-    /// of the Model. The interface is supplied as a separate object.
-    /// State ordering is [Model FVM DoFs, macro port DoFs]. During nonlinear
-    /// iteration the solver reassembles the Model block and evaluates only the
-    /// optional nonlinear interface contribution.
-    mhs::core::SolveResult solve_coupled(const mhs::core::Model& model, const Operators& macro_port,
-        const InterfaceCoupling& interface, std::span<const double> initial_state, const SolverOpts& opts = {});
+    /// Run nonlinear iteration and time integration over an externally
+    /// assembled system. The scheduler owns when to reassemble; the callback
+    /// owns all state partitioning and coupling physics.
+    mhs::core::SolveResult solve_system(const Study& study, const SystemAssembler& assemble,
+        std::span<const double> initial_state, const SolverOpts& opts = {}, const StateObserver& observe = {});
 
     /// Solve only the Model's detailed FVM region.
     mhs::core::ThermalSolution solve_thermal(

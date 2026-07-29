@@ -4,6 +4,7 @@ mhs_add_library(mhs_solver
     fluid_assembler.cpp
     interpolation.cpp
     nonlinear_solver.cpp
+    port_coupling.cpp
     postprocessor.cpp
     probe_recorder.cpp
     scheduler.cpp

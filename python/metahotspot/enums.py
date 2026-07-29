@@ -37,6 +37,15 @@ class Axis(enum.IntEnum):
     Z = 2
 
 
+class Face(enum.IntEnum):
+    XM = 0
+    XP = 1
+    YM = 2
+    YP = 3
+    ZM = 4
+    ZP = 5
+
+
 class GeometryOp(enum.IntEnum):
     ADD = 0
     SUB = 1
@@ -61,6 +70,5 @@ class IntegratorKind(enum.IntEnum):
 
 
 class StepStrategy(enum.IntEnum):
-    ADAPTIVE_FREE = 0
-    ADAPTIVE_ALIGNED = 1
-    FIXED = 2
+    ADAPTIVE = 0
+    FIXED = 1

@@ -320,13 +320,13 @@ namespace {
 
 namespace {
 
-    TEST(StepController, FreeStrategyReturnsSuggestedDt)
+    TEST(StepController, AdaptiveReturnsSuggestedDtBeforeNextOutput)
     {
         mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 10.0, 0.5);
+            mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 10.0, 10.0, 0.5);
 
-        double dt = ctrl.prepare(0.3, 0.0, 10.0);
-        EXPECT_DOUBLE_EQ(dt, 0.3); // Free: returns dt_suggested as-is
+        double dt = ctrl.prepare(0.3, 0.0);
+        EXPECT_DOUBLE_EQ(dt, 0.3);
     }
 
     TEST(StepController, FixedReturnsFixedDt)
@@ -334,7 +334,7 @@ namespace {
         mhs::sim::time_scheme::StepController ctrl(
             mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 10.0, 0.5, 0.05);
 
-        double dt = ctrl.prepare(0.3, 0.0, 10.0);
+        double dt = ctrl.prepare(0.3, 0.0);
         EXPECT_DOUBLE_EQ(dt, 0.05); // fixed_dt overrides suggested
     }
 
@@ -344,68 +344,46 @@ namespace {
             mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 1.0, 0.5, 0.5);
 
         // At t=0.9, remaining = 0.1 < fixed_dt=0.5 → should clamp to 0.1
-        double dt = ctrl.prepare(0.5, 0.9, 1.0);
+        double dt = ctrl.prepare(0.5, 0.9);
         EXPECT_NEAR(dt, 0.1, 1e-12);
     }
 
-    TEST(StepController, FlushOutputsWithGrid)
+    TEST(StepController, AdaptiveClipsAtOutputBoundaryEvenBelowMinDt)
     {
         mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 5.0, 1.0);
+            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.5, 10.0, 1.0, 0.25);
 
-        auto out = ctrl.flush_outputs(0.0);
-        EXPECT_TRUE(out.empty()); // No output at t=0; t=0 is a grid point but is behind last_flushed
-
-        out = ctrl.flush_outputs(0.3);
-        EXPECT_TRUE(out.empty()); // No output times crossed
-
-        out = ctrl.flush_outputs(1.5);
-        ASSERT_EQ(out.size(), 1u);
-        EXPECT_DOUBLE_EQ(out[0], 1.0);
-
-        out = ctrl.flush_outputs(2.5);
-        ASSERT_EQ(out.size(), 1u);
-        EXPECT_DOUBLE_EQ(out[0], 2.0);
-
-        // Flush remaining up to end.
-        out = ctrl.flush_outputs(5.0);
-        ASSERT_EQ(out.size(), 3u);
-        EXPECT_DOUBLE_EQ(out[0], 3.0);
-        EXPECT_DOUBLE_EQ(out[1], 4.0);
-        EXPECT_DOUBLE_EQ(out[2], 5.0);
+        EXPECT_DOUBLE_EQ(ctrl.prepare(1.0, 0.0), 0.25);
+        EXPECT_TRUE(ctrl.output_due(0.25));
+        EXPECT_FALSE(ctrl.output_due(0.25));
     }
 
-    TEST(StepController, FlushOutputsWithoutGrid)
+    TEST(StepController, FixedUsesNominalDtAndClipsAtOutputBoundary)
     {
         mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 1e-6, 10.0, 5.0, 0.0);
+            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 2.0, 1.0, 0.6);
 
-        auto out = ctrl.flush_outputs(0.3);
-        ASSERT_EQ(out.size(), 1u);
-        EXPECT_DOUBLE_EQ(out[0], 0.3);
-
-        // Same time again → no new output.
-        out = ctrl.flush_outputs(0.3);
-        EXPECT_TRUE(out.empty());
-
-        out = ctrl.flush_outputs(1.5);
-        ASSERT_EQ(out.size(), 1u);
-        EXPECT_DOUBLE_EQ(out[0], 1.5);
+        EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 0.0), 0.6);
+        EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 0.6), 0.4);
+        EXPECT_TRUE(ctrl.output_due(1.0));
+        EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 1.0), 0.6);
+        EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 1.6), 0.4);
+        EXPECT_TRUE(ctrl.output_due(2.0));
     }
 
-    TEST(StepController, AdaptiveAlignedEnsuresExactOutputTimes)
+    TEST(StepController, AdaptiveEnsuresExactOutputTimes)
     {
         mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::AdaptiveAligned, 1e-6, 5.0, 3.0, 1.0);
+            mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 5.0, 3.0, 1.0);
 
         // Run through a sequence and verify dt always lands exactly on grid.
         double t = 0.0;
         std::vector<double> output_times;
         while (t < 3.0 - 1e-12) {
-            double dt = ctrl.prepare(0.3, t, 3.0);
+            double dt = ctrl.prepare(0.3, t);
             t += dt;
-            auto out = ctrl.flush_outputs(t);
-            output_times.insert(output_times.end(), out.begin(), out.end());
+            if (ctrl.output_due(t))
+                output_times.push_back(t);
         }
 
         ASSERT_EQ(output_times.size(), 3u);
@@ -417,15 +395,24 @@ namespace {
     TEST(StepController, DtClampedToBounds)
     {
         mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::AdaptiveFree, 0.01, 0.5, 10.0, 1.0);
+            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 10.0, 1.0);
 
         // Suggested dt above max → clamped to max_dt.
-        double dt = ctrl.prepare(100.0, 0.0, 10.0);
+        double dt = ctrl.prepare(100.0, 0.0);
         EXPECT_DOUBLE_EQ(dt, 0.5);
 
         // Suggested dt below min → clamped to min_dt.
-        dt = ctrl.prepare(1e-10, 0.5, 10.0);
+        dt = ctrl.prepare(1e-10, 0.5);
         EXPECT_DOUBLE_EQ(dt, 0.01);
+    }
+
+    TEST(StepController, WithoutOutputGridEveryAcceptedStateIsOutput)
+    {
+        mhs::sim::time_scheme::StepController ctrl(
+            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 1.0, 0.0);
+
+        EXPECT_TRUE(ctrl.output_due(0.3));
+        EXPECT_TRUE(ctrl.output_due(0.6));
     }
 
 } // namespace

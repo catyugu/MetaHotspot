@@ -65,6 +65,16 @@ enum { MHS_UNIT_METER = 0, MHS_UNIT_MILLIMETER, MHS_UNIT_MICROMETER, MHS_UNIT_NA
 typedef int32_t mhs_axis_t;
 enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
 
+typedef int32_t mhs_face_t;
+enum {
+    MHS_FACE_XM = 0,
+    MHS_FACE_XP = 1,
+    MHS_FACE_YM = 2,
+    MHS_FACE_YP = 3,
+    MHS_FACE_ZM = 4,
+    MHS_FACE_ZP = 5
+};
+
 typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
@@ -78,7 +88,7 @@ typedef int32_t mhs_integrator_t;
 enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };
 
 typedef int32_t mhs_step_strategy_t;
-enum { MHS_STEP_ADAPTIVE_FREE = 0, MHS_STEP_ADAPTIVE_ALIGNED = 1, MHS_STEP_FIXED = 2 };
+enum { MHS_STEP_ADAPTIVE = 0, MHS_STEP_FIXED = 1 };
 
 typedef int32_t mhs_status_t;
 enum {
@@ -160,9 +170,10 @@ typedef struct {
  * All pointer fields are valid until the solution handle is destroyed.
  */
 typedef struct {
-    size_t cell_count;
+    size_t fvm_count;
+    size_t state_count;
     double time;
-    const double* temperature; // [cell_count]
+    const double* state; // [state_count], temperatures first
 } mhs_solution_view_t;
 
 /** Non-owning assembly view — returns all three operators in one call.
@@ -173,6 +184,21 @@ typedef struct {
     const double* rhs; // [n]
     size_t n;
 } mhs_assembly_view_t;
+
+/** Non-owning modal macro and physical-interface input.
+ *
+ * `basis` is a row-major [physical_port_count, mode_count] matrix satisfying
+ * physical port temperature = basis * modal state.
+ */
+typedef struct {
+    mhs_assembly_view_t operators;
+    const double* basis;
+    size_t physical_port_count;
+    size_t mode_count;
+    const size_t* model_cells;
+    mhs_face_t model_face;
+    const double* exterior_half_conductance;
+} mhs_modal_port_view_t;
 
 /** Non-owning probe trace view.  Pointers remain valid while the source
  *  solution handle remains alive. */
@@ -314,6 +340,16 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
 
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
     const mhs_solver_opts_t* opts, mhs_solution_t** out);
+
+/** Solve `[FVM temperatures, retained macro modes]`.
+ *
+ * The FVM-side interface conductance is reevaluated from the current
+ * nonlinear iterate. `state_count` must equal cell_count + mode_count.
+ */
+MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
+    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
+    const mhs_solver_opts_t* opts, mhs_solution_t** out);
+
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 
 /* ------------------------------------------------------------------ */

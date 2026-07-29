@@ -103,6 +103,18 @@ class MhsAssemblyView(ctypes.Structure):
     ]
 
 
+class ModalPortView(ctypes.Structure):
+    _fields_ = [
+        ("operators", MhsAssemblyView),
+        ("basis", ctypes.POINTER(ctypes.c_double)),
+        ("physical_port_count", ctypes.c_size_t),
+        ("mode_count", ctypes.c_size_t),
+        ("model_cells", ctypes.POINTER(ctypes.c_size_t)),
+        ("model_face", ctypes.c_int32),
+        ("exterior_half_conductance", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
 class CompiledMetadataView(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
@@ -119,9 +131,10 @@ class CompiledMetadataView(ctypes.Structure):
 
 class SolutionView(ctypes.Structure):
     _fields_ = [
-        ("cell_count", ctypes.c_size_t),
+        ("fvm_count", ctypes.c_size_t),
+        ("state_count", ctypes.c_size_t),
         ("time", ctypes.c_double),
-        ("temperature", ctypes.POINTER(ctypes.c_double)),
+        ("state", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

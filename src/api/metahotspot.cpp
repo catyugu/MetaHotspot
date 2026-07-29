@@ -6,8 +6,10 @@
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
+#include "solver/port_coupling.hpp"
 #include "solver/scheduler.hpp"
 
+#include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <memory>
 #include <optional>
@@ -41,7 +43,9 @@ struct mhs_compiled_t {
 };
 
 struct mhs_solution_t {
-    mhs::core::ThermalSolution solution;
+    mhs::core::SolveResult result;
+    std::size_t fvm_count = 0;
+    std::vector<mhs::core::ProbeTrace> probe_traces;
 };
 
 /* ------------------------------------------------------------------ */
@@ -103,6 +107,26 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
         return mhs::model::Axis::Z;
     default:
         throw std::invalid_argument("invalid axis value: " + std::to_string(a));
+    }
+}
+
+static mhs::core::FaceDir _to_face(mhs_face_t face)
+{
+    switch (face) {
+    case MHS_FACE_XM:
+        return mhs::core::FaceDir::XM;
+    case MHS_FACE_XP:
+        return mhs::core::FaceDir::XP;
+    case MHS_FACE_YM:
+        return mhs::core::FaceDir::YM;
+    case MHS_FACE_YP:
+        return mhs::core::FaceDir::YP;
+    case MHS_FACE_ZM:
+        return mhs::core::FaceDir::ZM;
+    case MHS_FACE_ZP:
+        return mhs::core::FaceDir::ZP;
+    default:
+        throw std::invalid_argument("invalid face value: " + std::to_string(face));
     }
 }
 
@@ -168,6 +192,28 @@ static mhs::sim::SolverType _to_solver_type(mhs_solver_type_t t)
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
 
+static mhs::sim::time_scheme::IntegratorKind _to_integrator(mhs_integrator_t integrator)
+{
+    switch (integrator) {
+    case MHS_INTEGRATOR_BDF1:
+        return mhs::sim::time_scheme::IntegratorKind::Bdf1;
+    case MHS_INTEGRATOR_BDF2:
+        return mhs::sim::time_scheme::IntegratorKind::Bdf2;
+    }
+    throw std::invalid_argument("invalid integrator: " + std::to_string(integrator));
+}
+
+static mhs::sim::time_scheme::StepStrategy _to_step_strategy(mhs_step_strategy_t strategy)
+{
+    switch (strategy) {
+    case MHS_STEP_ADAPTIVE:
+        return mhs::sim::time_scheme::StepStrategy::Adaptive;
+    case MHS_STEP_FIXED:
+        return mhs::sim::time_scheme::StepStrategy::Fixed;
+    }
+    throw std::invalid_argument("invalid step strategy: " + std::to_string(strategy));
+}
+
 static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
 {
     switch (k) {
@@ -200,8 +246,8 @@ static mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double
     so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
     so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
     so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
-    so.integrator = static_cast<mhs::sim::time_scheme::IntegratorKind>(opts->integrator);
-    so.step_strategy = static_cast<mhs::sim::time_scheme::StepStrategy>(opts->step_strategy);
+    so.integrator = _to_integrator(opts->integrator);
+    so.step_strategy = _to_step_strategy(opts->step_strategy);
     so.error_abs_tol = opts->error_abs_tol;
     so.error_safety = opts->error_safety;
     so.min_dt = opts->min_dt;
@@ -228,7 +274,7 @@ MHS_API void mhs_solver_opts_default(mhs_solver_opts_t* opts)
     opts->nonlinear_relative_tolerance = 1e-6;
     opts->nonlinear_absolute_tolerance = 1e-12;
     opts->integrator = MHS_INTEGRATOR_BDF1;
-    opts->step_strategy = MHS_STEP_ADAPTIVE_FREE;
+    opts->step_strategy = MHS_STEP_ADAPTIVE;
     opts->error_abs_tol = 1e-4;
     opts->error_safety = 0.9;
     opts->min_dt = 1e-12;
@@ -724,6 +770,38 @@ static mhs_csc_view_t _eigen_to_csc_view(const Eigen::SparseMatrix<double>& mat)
         mat.outerIndexPtr(), mat.innerIndexPtr(), mat.valuePtr()};
 }
 
+static Eigen::SparseMatrix<double> _csc_view_to_eigen(const mhs_csc_view_t& view)
+{
+    if (view.rows < 0 || view.columns < 0 || view.nnz < 0 || !view.outer_indices
+        || (view.nnz > 0 && (!view.inner_indices || !view.values))) {
+        throw std::invalid_argument("invalid CSC matrix view");
+    }
+    if (view.outer_indices[0] != 0 || view.outer_indices[view.columns] != view.nnz) {
+        throw std::invalid_argument("invalid CSC outer-index range");
+    }
+
+    std::vector<Eigen::Triplet<double>> entries;
+    entries.reserve(static_cast<std::size_t>(view.nnz));
+    for (int32_t column = 0; column < view.columns; ++column) {
+        const int32_t begin = view.outer_indices[column];
+        const int32_t end = view.outer_indices[column + 1];
+        if (begin < 0 || end < begin || end > view.nnz) {
+            throw std::invalid_argument("invalid CSC column offsets");
+        }
+        for (int32_t entry = begin; entry < end; ++entry) {
+            const int32_t row = view.inner_indices[entry];
+            if (row < 0 || row >= view.rows) {
+                throw std::invalid_argument("invalid CSC row index");
+            }
+            entries.emplace_back(row, column, view.values[entry]);
+        }
+    }
+
+    Eigen::SparseMatrix<double> result(view.rows, view.columns);
+    result.setFromTriplets(entries.begin(), entries.end());
+    return result;
+}
+
 MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out)
 {
     CHECK_NULL(a);
@@ -735,10 +813,6 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
     tls_err.clear();
     return MHS_OK;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Solve                                                              */
-/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
@@ -759,12 +833,85 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
 
         auto sol = mhs::sim::solve_thermal(c->model, so, initial_state);
 
-        auto* s = new (std::nothrow) mhs_solution_t {std::move(sol)};
+        auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {
             *out = nullptr;
             SET_ERR("memory allocation failed");
             return MHS_ERR_OOM;
         }
+        s->result.state = std::move(sol.temperature);
+        s->result.time = sol.time;
+        s->result.converged = sol.converged;
+        s->fvm_count = c->model.cells.cell_to_grid.size();
+        s->probe_traces = std::move(sol.probe_traces);
+        *out = s;
+    });
+}
+
+MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
+    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
+    const mhs_solver_opts_t* opts, mhs_solution_t** out)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(macro);
+    CHECK_NULL(macro->basis);
+    CHECK_NULL(macro->model_cells);
+    CHECK_NULL(macro->exterior_half_conductance);
+    CHECK_NULL(macro->operators.rhs);
+    CHECK_NULL(state);
+    CHECK_NULL(out);
+    MHS_TRY(MHS_ERR_SOLVE, {
+        if (macro->physical_port_count == 0 || macro->mode_count == 0
+            || macro->operators.n != macro->mode_count) {
+            SET_ERR("invalid modal port dimensions");
+            return MHS_ERR_INVALID_ARG;
+        }
+        const auto fvm_count = c->model.cells.cell_to_grid.size();
+        if (state_count != fvm_count + macro->mode_count) {
+            SET_ERR("state_count must equal cell_count + mode_count");
+            return MHS_ERR_INVALID_ARG;
+        }
+
+        mhs::sim::ModalPort modal_port;
+        modal_port.operators.K = _csc_view_to_eigen(macro->operators.K);
+        modal_port.operators.C = _csc_view_to_eigen(macro->operators.C);
+        modal_port.operators.f = Eigen::Map<const Eigen::VectorXd>(
+            macro->operators.rhs, static_cast<Eigen::Index>(macro->mode_count));
+        // Row-major C array → column-major Eigen MatrixXd in one shot.
+        Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis_map(
+            macro->basis, static_cast<Eigen::Index>(macro->physical_port_count),
+            static_cast<Eigen::Index>(macro->mode_count));
+        modal_port.basis = basis_map;
+
+        mhs::sim::ThermalPortInterface interface;
+        interface.model_cells.assign(
+            macro->model_cells, macro->model_cells + macro->physical_port_count);
+        interface.model_face = _to_face(macro->model_face);
+        interface.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
+            macro->exterior_half_conductance,
+            static_cast<Eigen::Index>(macro->physical_port_count));
+
+        mhs::sim::Study study {
+            c->model.study_type,
+            c->model.transient_duration,
+            c->model.transient_time_step,
+        };
+        mhs::sim::SystemAssembler assemble = [&](std::span<const double> current_state, double time) {
+            return mhs::sim::assemble_modal_port_system(
+                c->model, modal_port, interface, current_state, time);
+        };
+        const auto so = to_solver_opts(opts, c->model.transient_duration);
+        auto result = mhs::sim::solve_system(
+            study, assemble, std::span<const double>(state, state_count), so);
+
+        auto* s = new (std::nothrow) mhs_solution_t;
+        if (!s) {
+            *out = nullptr;
+            SET_ERR("memory allocation failed");
+            return MHS_ERR_OOM;
+        }
+        s->result = std::move(result);
+        s->fvm_count = fvm_count;
         *out = s;
     });
 }
@@ -778,7 +925,13 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
     CHECK_NULL(c);
     CHECK_NULL(s);
     CHECK_NULL(path);
-    MHS_TRY(MHS_ERR_IO, { mhs::io::write_vtu(path, c->model, s->solution.temperature); });
+    MHS_TRY(MHS_ERR_IO, {
+        if (s->fvm_count != c->model.cells.cell_to_grid.size()) {
+            throw std::invalid_argument("solution FVM state does not match compiled model");
+        }
+        mhs::io::write_vtu(path, c->model,
+            std::span<const double>(s->result.state.data(), s->fvm_count));
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -800,9 +953,10 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->cell_count = s->solution.temperature.size();
-    out->time = s->solution.time;
-    out->temperature = s->solution.temperature.data();
+    out->fvm_count = s->fvm_count;
+    out->state_count = s->result.state.size();
+    out->time = s->result.time;
+    out->state = s->result.state.data();
     tls_err.clear();
     return MHS_OK;
 }
@@ -815,18 +969,18 @@ MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s)
 {
     if (!s)
         return 0;
-    return s->solution.probe_traces.size();
+    return s->probe_traces.size();
 }
 
 MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out)
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    if (index >= s->solution.probe_traces.size()) {
+    if (index >= s->probe_traces.size()) {
         SET_ERR("probe index out of range");
         return MHS_ERR_INVALID_ARG;
     }
-    const auto& tr = s->solution.probe_traces[index];
+    const auto& tr = s->probe_traces[index];
     out->name = tr.name.c_str();
     out->times = tr.times.empty() ? nullptr : tr.times.data();
     out->values = tr.values.empty() ? nullptr : tr.values.data();
