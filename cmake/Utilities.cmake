@@ -7,7 +7,7 @@
 function(mhs_set_strict_warnings TARGET_NAME)
     if(MSVC)
         target_compile_options(${TARGET_NAME} PRIVATE
-            /W4 /WX /bigobj /permissive- /utf-8
+            /W4 /WX /bigobj /permissive- /utf-8 /wd4244
         )
     else()
         target_compile_options(${TARGET_NAME} PRIVATE

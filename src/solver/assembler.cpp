@@ -104,10 +104,10 @@ namespace mhs::sim {
                             const auto& boundary = cell_face_bcs[face];
                             switch (boundary.type) {
                             case mhs::core::BcType::FirstType: {
-                                const double temperature = bc_params.dirichlet_T[boundary.param_idx].eval(cell_context);
+                                const double exterior_temperature = bc_params.dirichlet_T[boundary.param_idx].eval(cell_context);
                                 const double conductance = face_k * area / half_distance;
                                 local.stiffness.emplace_back(row, row, conductance);
-                                sink.rhs(row) += conductance * temperature;
+                                sink.rhs(row) += conductance * exterior_temperature;
                                 break;
                             }
                             case mhs::core::BcType::SecondType:

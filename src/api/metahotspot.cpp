@@ -691,7 +691,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_ASSEMBLE, {
         const auto n = c->model.cells.cell_to_grid.size();
-        if (state_count != 0 && state_count != n) {
+        if (state_count != n) {
             SET_ERR("state_count mismatch: expected " + std::to_string(n) + " got " + std::to_string(state_count));
             return MHS_ERR_INVALID_ARG;
         }

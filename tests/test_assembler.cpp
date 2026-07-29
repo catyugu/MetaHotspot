@@ -54,7 +54,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     return io;
 }
 
-TEST(AssemblerTest, CompileBuildsCellStateLayout)
+TEST(AssemblerTest, ModelCompilerBuildsCorrectLayout)
 {
     auto model = build_model(make_simple_cube_io());
     const auto cell_count = model.cells.material_id.size();

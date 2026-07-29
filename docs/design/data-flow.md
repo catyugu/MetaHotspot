@@ -17,7 +17,7 @@ XML
                       ├─> mhs::sim::fluid::build_domain
                       │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
-                              └─> mhs::sim::solve
+                              └─> mhs::sim::solve_thermal
                                     ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t, duration) → dt_exec
                                     ├─> mhs::sim::assemble_thermal(model, layout, ctx)
                                     │     ├─> assemble_cells parallel_for // no fluid branches
@@ -28,13 +28,13 @@ XML
                                     │     │     ├─> heat_source_table[hs_idx].eval
                                     │     │     └─> thread-local K/C triplets + f
                                     │     ├─> assemble_fluid               // same sparse coordinates
-                                    │     └─> merge once → AssemblyResult {K, C, f}
+                                    │     └─> merge once → Operators {K, C, f}
                                     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
                                     ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
                                     └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
                                     ├─> StepController::flush_outputs(t + dt) → output times
                                     ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
-                                    └─> mhs::post::interpolate_cell_to_node           // solve() 结束后一次性展开
+                                    └─> mhs::post::interpolate_cell_to_node           // solve_thermal() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）
                                           ├─> 面中心外推使用该面法向对应的 k
                                           └─> mhs::io::write_vtu + mhs::io::write_xml(probeTraces)   (virtual → NaN)
@@ -51,7 +51,7 @@ XML
 | 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
 | 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
 | 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
-| 组装              | `Model` + `AssembleContext`           | `AssemblyResult {K,C,f}`        | TBB 并行；`eval()` 锁无关                                |
+| 组装              | `Model` + `AssembleContext`           | `Operators {K,C,f}`        | TBB 并行；`eval()` 锁无关                                |
 | 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
 | 非线性更新        | 线性解 `G(x)`                         | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
 | 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |

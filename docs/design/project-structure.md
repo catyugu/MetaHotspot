@@ -1,6 +1,6 @@
 # 项目结构
 
-本文只定义源码、构建目标和命名空间的归属。模块接口见 [module-interfaces.md](module-interfaces.md)，运行流程见 [data-flow.md](data-flow.md)。
+本文只定义源码、构建目标和命名空间的归属。模块接口在各目标头文件中自描述，运行流程见 [data-flow.md](data-flow.md)。
 
 ## 构建目标
 

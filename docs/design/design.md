@@ -7,8 +7,6 @@
 | [data-flow.md](data-flow.md)                 | 端到端数据流、阶段输入输出和热循环行为        |
 | [expr-api.md](expr-api.md)                   | 表达式编译、求值上下文和线程模型              |
 | [io-structure.md](io-structure.md)           | `ModelDefinition` authoring model 及 XML 边界 |
-| [internal-model.md](internal-model.md)       | `mhs::core::Model` 的运行期 SoA 布局          |
-| [module-interfaces.md](module-interfaces.md) | 模块公开接口与调用约定                        |
 | [project-structure.md](project-structure.md) | 构建目标、源码归属和命名空间规则              |
 
 ## 决策记录

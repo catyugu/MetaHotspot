@@ -53,7 +53,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     auto result = solve_thermal(model);
 
     EXPECT_EQ(result.temperature.size(), model.cells.cell_to_grid.size());
-    EXPECT_EQ(result.temperature.size(), model.cells.cell_to_grid.size());
     EXPECT_TRUE(std::equal(result.temperature.begin(), result.temperature.end(), result.temperature.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K

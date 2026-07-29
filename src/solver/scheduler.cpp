@@ -39,6 +39,18 @@ namespace mhs::sim {
         mhs::core::StudyType study_type, double transient_duration, double transient_time_step, const SolverOpts& opts,
         OutputCallback on_output)
     {
+        // Validate K/C/f dimension consistency at entry.
+        {
+            const auto n = initial_state.size();
+            auto ops = provider(initial_state, 0.0);
+            if (static_cast<std::size_t>(ops.K.rows()) != n || static_cast<std::size_t>(ops.K.cols()) != n
+                || static_cast<std::size_t>(ops.C.rows()) != n || static_cast<std::size_t>(ops.C.cols()) != n
+                || static_cast<std::size_t>(ops.f.size()) != n) {
+                throw std::invalid_argument(
+                    "solve_system: provider returned mismatched K/C/f dimensions (expected " + std::to_string(n) + ")");
+            }
+        }
+
         auto solver = LinearSolver::create(opts.solver);
 
         const auto state_count = initial_state.size();
