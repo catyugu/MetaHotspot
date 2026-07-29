@@ -5,9 +5,9 @@ Macro-model demo: Guyan static condensation through the metahotspot Python packa
 Workflow:
   1. Load XML → compile → assemble K, f
   2. Full solve → reference (using compiled.solve())
-  3. Select macro region by layer/block ID → partition into ports + internals
-  4. Guyan static condensation on (e+p) block: condense internal(i) → port(p)
-  5. Solve reduced (e+p) system → recover internal DOFs
+  3. Split the reference into detailed block, macro block, and interface
+  4. Condense the standalone macro's internal(i) DoFs to its port(p)
+  5. Couple the detailed block to that port operator, solve, recover internals
   6. Verify ||T_rec - T_ref||
 """
 import sys
@@ -15,20 +15,20 @@ import time as _time
 from pathlib import Path
 
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import bmat, csc_matrix, diags
 from scipy.sparse.linalg import splu
 
 import metahotspot
 
 
-def partition_macro(K, nc, layer_ids, block_ids, macro_layer, macro_block):
-    """Partition mesh into external (e), port (p), and internal (i) sets.
+def partition_regions(K, nc, layer_ids, block_ids, macro_layer, macro_block):
+    """Partition the reference mesh into detailed, macro-port, and macro-internal sets.
 
-    Port = macro cells adjacent to at least one external cell.
-    Internal = macro cells NOT adjacent to any external cell.
-    External = all non-macro cells.
+    Port = macro cells adjacent to at least one detailed cell.
+    Internal = macro cells not adjacent to a detailed cell.
 
-    Returns (e_idx, p_idx, i_idx) — sorted ascending index arrays.
+    These indices are used only to split the monolithic reference. The
+    resulting macro operator has local ``[p, i]`` indices and no detailed DoF.
     """
     is_macro = (layer_ids == macro_layer) & (block_ids == macro_block)
     macro_set = set(np.where(is_macro)[0])
@@ -45,77 +45,82 @@ def partition_macro(K, nc, layer_ids, block_ids, macro_layer, macro_block):
     for p in port_set:
         is_port[p] = True
 
-    e_idx = np.sort(np.where(~is_macro)[0])
+    detailed_idx = np.sort(np.where(~is_macro)[0])
     p_idx = np.sort(np.where(is_port)[0])
     i_idx = np.sort(np.where(is_macro & ~is_port)[0])
-    return e_idx, p_idx, i_idx
+    return detailed_idx, p_idx, i_idx
 
 
-def guyan_reduce(K, f, e_idx, p_idx, i_idx):
-    """Guyan static condensation: condense internal(i) → (e+p) block.
+def split_reference_operators(K, f, detailed_idx, p_idx, i_idx):
+    """Split a monolithic reference into independently owned operators.
 
-    Builds the (e+p)×(e+p) Schur-complement system and factors K_ii.
-    Returns (K_s_lu, K_ii_lu, f_s, K_ip) for forward/recovery.
+    This is reference-fixture preparation, not macro condensation. It removes
+    the four conservative interface contributions from the two diagonal
+    subdomains and returns a standalone macro matrix ordered as ``[p, i]``.
     """
-    ne, np_, ni = len(e_idx), len(p_idx), len(i_idx)
-    N_ep = ne + np_
+    K_dp = K[detailed_idx, :][:, p_idx].tocsc()
+    K_pd = K[p_idx, :][:, detailed_idx].tocsc()
+    D_d = diags(-np.asarray(K_dp.sum(axis=1)).ravel(), format="csc")
+    D_p = diags(-np.asarray(K_pd.sum(axis=1)).ravel(), format="csc")
 
-    K_ee = K[e_idx, :][:, e_idx]
-    K_ep = K[e_idx, :][:, p_idx]
-    K_pe = K[p_idx, :][:, e_idx]
-    K_pp = K[p_idx, :][:, p_idx]
-    K_pi = K[p_idx, :][:, i_idx]
-    K_ip = K[i_idx, :][:, p_idx]
-    K_ii = K[i_idx, :][:, i_idx]
-    f_e = f[e_idx]
-    f_p = f[p_idx]
-    f_i = f[i_idx]
+    K_detailed = K[detailed_idx, :][:, detailed_idx].tocsc() - D_d
+    K_macro = bmat(
+        [
+            [K[p_idx, :][:, p_idx].tocsc() - D_p, K[p_idx, :][:, i_idx]],
+            [K[i_idx, :][:, p_idx], K[i_idx, :][:, i_idx]],
+        ],
+        format="csc",
+    )
+    f_macro = np.concatenate([f[p_idx], f[i_idx]])
+    interface = (D_d, K_dp, K_pd, D_p)
+    return K_detailed, f[detailed_idx], K_macro, f_macro, interface
 
-    print(f"    factoring K_ii ({ni}x{ni})...", end=" ", flush=True)
-    K_ii_lu = splu(K_ii.tocsc())
+
+def condense_macro(K_macro, f_macro, port_count):
+    """Condense a standalone ``[p, i]`` macro to its physical port ``p``."""
+    p = np.arange(port_count)
+    i = np.arange(port_count, K_macro.shape[0])
+    K_pp = K_macro[p, :][:, p]
+    K_pi = K_macro[p, :][:, i]
+    K_ip = K_macro[i, :][:, p]
+    K_ii = K_macro[i, :][:, i].tocsc()
+    f_i = f_macro[i]
+
+    print(f"    factoring K_ii ({len(i)}x{len(i)})...", end=" ", flush=True)
+    K_ii_lu = splu(K_ii)
     print("done", flush=True)
-
-    # Assemble Schur complement for (e+p) block
-    rows, cols, vals = [], [], []
-
-    def _add(M, roff, coff):
-        Mc = M.tocoo()
-        rows.extend((Mc.row + roff).tolist())
-        cols.extend((Mc.col + coff).tolist())
-        vals.extend(Mc.data.tolist())
-
-    _add(K_ee, 0, 0)
-    _add(K_ep, 0, ne)
-    _add(K_pe, ne, 0)
-    _add(K_pp, ne, ne)
 
     K_ip_csc = K_ip.tocsc()
     K_pi_csr = K_pi.tocsr()
+    inverse_Kip = np.column_stack(
+        [
+            K_ii_lu.solve(K_ip_csc[:, column].toarray().ravel())
+            for column in range(K_ip_csc.shape[1])
+        ]
+    )
+    K_port = csc_matrix(K_pp - K_pi_csr @ inverse_Kip)
+    f_port = np.asarray(f_macro[p] - K_pi_csr @ K_ii_lu.solve(f_i)).ravel()
+    return K_port, f_port, K_ii_lu, K_ip_csc, f_i
 
-    print(f"    building K_s ({np_} port columns)...", end=" ", flush=True)
-    for j in range(np_):
-        col = K_ip_csc[:, j].toarray().ravel()
-        x = K_ii_lu.solve(col)
-        delta = K_pi_csr.dot(x)
-        nonz = np.where(np.abs(delta) > 1e-30)[0]
-        for k in nonz:
-            rows.append(ne + k)
-            cols.append(ne + j)
-            vals.append(-delta[k])
 
-    K_s = coo_matrix((vals, (rows, cols)), shape=(N_ep, N_ep)).tocsc()
-    K_s.eliminate_zeros()
-    print(f"done (NNZ={K_s.nnz})", flush=True)
-
-    print(f"    factoring K_s ({N_ep}x{N_ep})...", end=" ", flush=True)
-    K_s_lu = splu(K_s)
-    print("done", flush=True)
-
-    f_s = np.zeros(N_ep, dtype=np.float64)
-    f_s[:ne] = f_e
-    f_s[ne:] = f_p - K_pi @ K_ii_lu.solve(f_i)
-
-    return K_s_lu, K_ii_lu, f_s, K_ip
+def build_coupled_reduced_system(
+    K_detailed,
+    f_detailed,
+    K_port,
+    f_port,
+    interface,
+):
+    """Connect the detailed region to a port-only condensed macro."""
+    D_d, K_dp, K_pd, D_p = interface
+    K_reduced = bmat(
+        [
+            [K_detailed + D_d, K_dp],
+            [K_pd, K_port + D_p],
+        ],
+        format="csc",
+    )
+    f_reduced = np.concatenate([f_detailed, f_port])
+    return K_reduced, f_reduced
 
 
 def main():
@@ -160,11 +165,11 @@ def main():
     print(f"Step 3: Partition  layer={MACRO_LAYER}, block={MACRO_BLOCK}")
     print("=" * 60)
 
-    e_idx, p_idx, i_idx = partition_macro(
+    detailed_idx, p_idx, i_idx = partition_regions(
         K, nc, layer_ids, block_ids, MACRO_LAYER, MACRO_BLOCK
     )
-    ne, np_, ni = len(e_idx), len(p_idx), len(i_idx)
-    print(f"  External: {ne} DOFs,  Ports: {np_} DOFs,  Internal: {ni} DOFs")
+    nd, np_, ni = len(detailed_idx), len(p_idx), len(i_idx)
+    print(f"  Detailed: {nd} DOFs,  Ports: {np_} DOFs,  Internal: {ni} DOFs")
 
     if ni == 0:
         print("  No internal DOFs, nothing to condense.")
@@ -172,23 +177,39 @@ def main():
 
     # ── Step 4: Guyan static condensation ──────────────────────
     print("\n" + "=" * 60)
-    print("Step 4: Guyan static condensation")
+    print("Step 4: Port-only macro condensation")
     print("=" * 60)
 
-    K_s_lu, K_ii_lu, f_s, K_ip = guyan_reduce(K, f, e_idx, p_idx, i_idx)
+    K_detailed, f_detailed, K_macro, f_macro, interface = (
+        split_reference_operators(K, f, detailed_idx, p_idx, i_idx)
+    )
+    K_port, f_port, K_ii_lu, K_ip, f_i = condense_macro(
+        K_macro, f_macro, np_
+    )
+    K_reduced, f_reduced = build_coupled_reduced_system(
+        K_detailed, f_detailed, K_port, f_port, interface
+    )
+    print(
+        f"    factoring coupled detailed+port system "
+        f"({K_reduced.shape[0]}x{K_reduced.shape[1]})...",
+        end=" ",
+        flush=True,
+    )
+    K_reduced_lu = splu(K_reduced)
+    print("done", flush=True)
 
     # ── Step 5: Solve reduced system + recover ─────────────────
     print("\n" + "=" * 60)
-    print("Step 5: Solve reduced (e+p) system → recover internal")
+    print("Step 5: Couple detailed region to macro port → solve + recover")
     print("=" * 60)
 
-    sol_ep = K_s_lu.solve(f_s)
-    u_e = sol_ep[:ne]
-    u_p = sol_ep[ne:]
-    u_i = K_ii_lu.solve(f[i_idx] - K_ip @ u_p)
+    sol_ep = K_reduced_lu.solve(f_reduced)
+    u_d = sol_ep[:nd]
+    u_p = sol_ep[nd:]
+    u_i = K_ii_lu.solve(f_i - K_ip @ u_p)
 
     T_rec = np.zeros(nc, dtype=np.float64)
-    T_rec[e_idx] = u_e
+    T_rec[detailed_idx] = u_d
     T_rec[p_idx] = u_p
     T_rec[i_idx] = u_i
 
@@ -207,16 +228,16 @@ def main():
     K_full_lu = splu(K.tocsc())
     for k in range(N_SWEEP):
         f_k = f.copy()
-        f_k[e_idx] *= 1.0 + 0.1 * np.sin(k)
+        f_k[detailed_idx] *= 1.0 + 0.1 * np.sin(k)
         _ = K_full_lu.solve(f_k)
     t_full_sw = _time.perf_counter() - t0
 
     t0 = _time.perf_counter()
     for k in range(N_SWEEP):
-        f_s_k = f_s.copy()
-        f_s_k[:ne] *= 1.0 + 0.1 * np.sin(k)
-        sol_k = K_s_lu.solve(f_s_k)
-        _ = K_ii_lu.solve(f[i_idx] - K_ip @ sol_k[ne:])
+        f_reduced_k = f_reduced.copy()
+        f_reduced_k[:nd] *= 1.0 + 0.1 * np.sin(k)
+        sol_k = K_reduced_lu.solve(f_reduced_k)
+        _ = K_ii_lu.solve(f_i - K_ip @ sol_k[nd:])
     t_guyan_sw = _time.perf_counter() - t0
 
     print(
@@ -224,7 +245,7 @@ def main():
     )
     print("  " + "-" * 24)
     print(f"  {'Full':<12s}  {t_full_sw:>10.3f}")
-    print(f"  {'Guyan (e+p)':<12s}  {t_guyan_sw:>10.3f}")
+    print(f"  {'Port macro':<12s}  {t_guyan_sw:>10.3f}")
 
     return 0
 

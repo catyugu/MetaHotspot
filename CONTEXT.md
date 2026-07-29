@@ -28,6 +28,11 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 - 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
+- 宏块在线模型只保存凝聚后的面片端口自由度，不包含详细区自由度。
+  `solve_coupled` 的状态排列为 `[Model FVM DoFs, macro port DoFs]`；宏端口
+  `Operators` 与 `InterfaceCoupling` 分属独立对象，接口以显式四块
+  `model/model_to_port/port_to_model/port` 贡献连接两侧，非线性时只更新这些接口块。
+- Model FVM 详细离散始终由求解器内部组装。
 - 初状态由 `solve(state=)` 可选传入，为空时从 `initial_temperature` 构建均匀向量。
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。

@@ -3,7 +3,6 @@
 #include "runtime/model.hpp"
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
-#include <functional>
 #include <span>
 
 namespace mhs::sim {
@@ -17,9 +16,5 @@ namespace mhs::sim {
 
     /// Assemble thermal operators C * dx/dt + K * x = f.
     Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time);
-
-    /// Pluggable assembly callback for experiments with extra DoFs.
-    /// Signature: (full_state, time) -> Operators
-    using Assemble = std::function<Operators(std::span<const double>, double)>;
 
 } // namespace mhs::sim

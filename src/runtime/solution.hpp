@@ -11,9 +11,8 @@ namespace mhs::core {
         std::vector<double> values;
     };
 
-    /// Full result returned by solve_system() — the entire state vector.
-    /// When used with a pure-thermal provider the state equals the temperature
-    /// field; with extra DOFs it may include non-thermal variables.
+    /// Full result returned by solve_coupled() — Model FVM DoFs followed by
+    /// retained macro-port DoFs.
     struct SolveResult {
         std::vector<double> state;
         double time = 0.0;

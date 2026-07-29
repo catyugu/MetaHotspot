@@ -1,10 +1,190 @@
 #include "compiler/model_compiler.hpp"
 #include "model_test_utils.hpp"
 #include "solver/scheduler.hpp"
+#include <Eigen/LU>
+#include <array>
 #include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
+
+namespace {
+
+    mhs::core::Model make_single_cell_model()
+    {
+        mhs::model::ModelDefinition io;
+        io.settings.study_type = mhs::model::StudyType::Steady;
+        io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+        io.settings.initial_temperature = 0.0;
+
+        io.mesh.x_vertices = {0.0, 1.0};
+        io.mesh.y_vertices = {0.0, 1.0};
+        io.mesh.z_vertices = {0.0, 1.0};
+
+        mhs::model::LayerSpec layer;
+        layer.thickness = "1";
+
+        mhs::model::BlockSpec block;
+        block.material = "solid";
+        block.volumetric_heat_source = "0";
+
+        mhs::model::RectOperation rect;
+        rect.operation = mhs::model::GeometryOperation::Add;
+        rect.rect.x = "0";
+        rect.rect.y = "0";
+        rect.rect.width = "1";
+        rect.rect.height = "1";
+        block.geometry.push_back(rect);
+
+        layer.blocks.push_back(block);
+        io.layers.push_back(layer);
+
+        mhs::model::MaterialSpec material;
+        material.conductivity_x = material.conductivity_y = material.conductivity_z = "1";
+        io.materials.push_back({"solid", material});
+        io.default_boundary = mhs::model::NeumannBoundary {};
+        return build_model(io);
+    }
+
+    CouplingOperators make_one_port_coupling(
+        double conductance, double model_capacity = 0.0, double cross_capacity = 0.0, double port_capacity = 0.0)
+    {
+        CouplingOperators coupling;
+
+        coupling.K.model.resize(1, 1);
+        coupling.K.model.insert(0, 0) = conductance;
+        coupling.K.model_to_port.resize(1, 1);
+        coupling.K.model_to_port.insert(0, 0) = -conductance;
+        coupling.K.port_to_model.resize(1, 1);
+        coupling.K.port_to_model.insert(0, 0) = -conductance;
+        coupling.K.port.resize(1, 1);
+        coupling.K.port.insert(0, 0) = conductance;
+
+        coupling.C.model.resize(1, 1);
+        coupling.C.model.insert(0, 0) = model_capacity;
+        coupling.C.model_to_port.resize(1, 1);
+        coupling.C.model_to_port.insert(0, 0) = cross_capacity;
+        coupling.C.port_to_model.resize(1, 1);
+        coupling.C.port_to_model.insert(0, 0) = cross_capacity;
+        coupling.C.port.resize(1, 1);
+        coupling.C.port.insert(0, 0) = port_capacity;
+
+        coupling.f_model = Eigen::VectorXd::Zero(1);
+        coupling.f_port = Eigen::VectorXd::Zero(1);
+        return coupling;
+    }
+
+} // namespace
+
+TEST(SchedulerTest, CoupledSolveAddsPortMacroAndFixedCouplingBlocks)
+{
+    auto model = make_single_cell_model();
+
+    // The Model FVM block is the first row/column and assembles to zero.
+    // The port-only macro contributes K_pp=1 and f_p=1. The fixed interface
+    // contributes D_model=1, K_model_port=-1, K_port_model=-1, D_port=1:
+    //
+    // [ 1 -1 ] [x_fvm]   [0]
+    // [-1  2 ] [x_port] = [1]
+    Operators macro_port;
+    macro_port.K.resize(1, 1);
+    macro_port.K.insert(0, 0) = 1.0;
+    macro_port.C.resize(1, 1);
+    macro_port.f = Eigen::VectorXd::Ones(1);
+    InterfaceCoupling interface;
+    interface.fixed = make_one_port_coupling(1.0);
+
+    const std::array initial_state {0.0, 0.0};
+    auto result = solve_coupled(model, macro_port, interface, initial_state);
+
+    ASSERT_TRUE(result.converged);
+    ASSERT_EQ(result.state.size(), 2u);
+    EXPECT_NEAR(result.state[0], 1.0, 1e-12);
+    EXPECT_NEAR(result.state[1], 1.0, 1e-12);
+}
+
+TEST(SchedulerTest, CoupledSolveRejectsMismatchedCouplingBlockDimensions)
+{
+    auto model = make_single_cell_model();
+
+    Operators macro_port;
+    macro_port.K.resize(1, 1);
+    macro_port.C.resize(1, 1);
+    macro_port.f = Eigen::VectorXd::Zero(1);
+    InterfaceCoupling interface;
+    auto coupling = make_one_port_coupling(1.0);
+    coupling.K.model_to_port.resize(2, 1);
+    interface.fixed = std::move(coupling);
+
+    const std::array initial_state {0.0, 0.0};
+    EXPECT_THROW(solve_coupled(model, macro_port, interface, initial_state), std::invalid_argument);
+}
+
+TEST(SchedulerTest, CoupledTransientUsesFixedCapacityAndCouplingBlocks)
+{
+    auto model = make_single_cell_model();
+    model.study_type = mhs::core::StudyType::Transient;
+    model.transient_duration = 1.0;
+    model.transient_time_step = 1.0;
+
+    Operators macro_port;
+    macro_port.K.resize(1, 1);
+    macro_port.K.insert(0, 0) = 1.0;
+    macro_port.C.resize(1, 1);
+    macro_port.C.insert(0, 0) = 1.0;
+    macro_port.f = Eigen::VectorXd::Ones(1);
+    InterfaceCoupling interface;
+    interface.fixed = make_one_port_coupling(1.0, 1.0, 0.25, 1.0);
+
+    SolverOpts opts;
+    opts.step_strategy = time_scheme::StepStrategy::Fixed;
+    opts.fixed_dt = 1.0;
+
+    const std::array initial_state {0.0, 0.0};
+    auto result = solve_coupled(model, macro_port, interface, initial_state, opts);
+
+    // One BDF1 step from zero solves (K + C) x_1 = f.
+    Eigen::Matrix2d system;
+    system << 2.0, -0.75, -0.75, 4.0;
+    const Eigen::Vector2d expected = system.lu().solve(Eigen::Vector2d(0.0, 1.0));
+    ASSERT_TRUE(result.converged);
+    EXPECT_NEAR(result.time, 1.0, 1e-12);
+    EXPECT_NEAR(result.state[0], expected[0], 1e-12);
+    EXPECT_NEAR(result.state[1], expected[1], 1e-12);
+}
+
+TEST(SchedulerTest, CoupledSolveUpdatesOnlyNonlinearInterfaceBlocks)
+{
+    auto model = make_single_cell_model();
+
+    Operators macro_port;
+    macro_port.K.resize(1, 1);
+    macro_port.K.insert(0, 0) = 1.0;
+    macro_port.C.resize(1, 1);
+    macro_port.f = Eigen::VectorXd::Ones(1);
+    InterfaceCoupling interface;
+
+    std::vector<double> evaluated_conductances;
+    interface.nonlinear = [&](std::span<const double> fvm_state,
+                              std::span<const double> port_state, double) {
+        EXPECT_EQ(fvm_state.size(), 1u);
+        EXPECT_EQ(port_state.size(), 1u);
+
+        const double conductance = 1.0 + fvm_state[0];
+        evaluated_conductances.push_back(conductance);
+        return make_one_port_coupling(conductance);
+    };
+
+    const std::array initial_state {0.0, 0.0};
+    auto result = solve_coupled(model, macro_port, interface, initial_state);
+
+    ASSERT_TRUE(result.converged);
+    ASSERT_GE(evaluated_conductances.size(), 2u);
+    EXPECT_NEAR(evaluated_conductances.front(), 1.0, 1e-12);
+    EXPECT_NEAR(evaluated_conductances.back(), 2.0, 1e-12);
+    EXPECT_NEAR(result.state[0], 1.0, 1e-12);
+    EXPECT_NEAR(result.state[1], 1.0, 1e-12);
+}
 
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {

@@ -12,7 +12,7 @@ Cases include both steady and transient studies. CLAUDE.md mandates treating all
 
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
-- `solve_thermal() / solve_system()` branches on `Model::study_type`:
+- `solve_thermal() / solve_coupled()` branches on `Model::study_type`:
     - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once, starting from a uniform `initial_temperature` vector (or an explicitly provided initial state).
     - `Transient` — step from `t = 0` up to `transient_duration`. Each step runs `assemble → build_system → nonlinear_solve → estimate_error`; on accept, `accepted.accept(T, t)` and `current_time += dt`.
 - Time stepping composes three orthogonal pieces:
@@ -20,6 +20,13 @@ The whole system is designed for transient simulation. Steady state is a single 
     - `time_scheme::build_system(kind, …)` is a pure function that injects the BDF1/BDF2 stencil on top of an `Operators`.
     - `time_scheme::estimate_error(…)` is a pure function that returns an LTE estimate and a PI-style step-size suggestion.
 - Nonlinear iteration lives inside each step. The fixed-point iteration in `nonlinear_solve` uses Anderson acceleration with a divergence guard and warm-up; on guard trip it falls back to a damped Picard step.
+- `solve_coupled()` accepts a port-only macro `Operators` and a separate
+  `InterfaceCoupling`. The macro operator acts only on retained physical port
+  DoFs; it does not contain Model/detailed DoFs or own the interface.
+  Fixed and optional nonlinear interfaces contribute four explicit matrix
+  positions: Model self, Model-to-port, port-to-Model, and port self. Each
+  nonlinear iteration reassembles the Model block and, when required, evaluates
+  only the nonlinear interface contribution.
 
 ## Rationale
 
@@ -31,4 +38,8 @@ The whole system is designed for transient simulation. Steady state is a single 
 
 - **Steady evaluation context.** When `study_type == Steady`, expressions are evaluated with `t = 0`. Steady means equilibrium, not time advancing.
 - **Step history.** The accepted-solution ring buffer (`mhs::core::SolutionHistory`) carries the snapshots needed for the BDF stencil. BDF2 is selected by the integrator kind in `build_system`; the buffer's capacity (currently 2) is sized to its needs.
-- **Time-step loop in `solve_thermal() / solve_system()`.** The transient branch builds a `LinearSystemProvider` lambda per step that calls `assembler.assemble(ctx)` and then `build_system(IntegratorKind::Bdf1, ops, accepted, dt)`. The LTE estimate from `estimate_error` drives the next step's `dt` via `StepController::prepare`.
+- **Time-step loop in `solve_thermal() / solve_coupled()`.** At each nonlinear
+  iteration the solver calls `assemble_thermal(model, fvm_state, time)`, adds
+  the port operator and the fixed/optional nonlinear interface blocks, then
+  passes the combined operators to `build_system`. The LTE estimate from
+  `estimate_error` drives the next step's `dt` via `StepController::prepare`.
