@@ -85,8 +85,13 @@ namespace mhs::sim::time_scheme {
 
     StepController::StepController(
         StepStrategy strategy, double min_dt, double max_dt, double duration, double output_interval, double fixed_dt)
-        : strategy_(strategy), duration_(duration), output_interval_(output_interval), min_dt_(min_dt), max_dt_(max_dt),
-          fixed_dt_(fixed_dt), next_output_(output_interval)
+        : strategy_(strategy)
+        , duration_(duration)
+        , output_interval_(output_interval)
+        , min_dt_(min_dt)
+        , max_dt_(max_dt)
+        , fixed_dt_(fixed_dt)
+        , next_output_(output_interval)
     {
     }
 
@@ -96,8 +101,7 @@ namespace mhs::sim::time_scheme {
         if (remaining <= 0.0)
             return 0.0;
 
-        while (output_interval_ > 0.0
-            && next_output_ <= current_t + grid_tolerance(current_t))
+        while (output_interval_ > 0.0 && next_output_ <= current_t + grid_tolerance(current_t))
             next_output_ += output_interval_;
 
         const double proposed = strategy_ == StepStrategy::Fixed ? fixed_dt_ : dt_suggested;
@@ -117,8 +121,7 @@ namespace mhs::sim::time_scheme {
     bool StepController::output_due(double current_t)
     {
         const bool at_final = current_t >= duration_ - grid_tolerance(duration_);
-        const bool at_grid = output_interval_ > 0.0
-            && current_t >= next_output_ - grid_tolerance(next_output_);
+        const bool at_grid = output_interval_ > 0.0 && current_t >= next_output_ - grid_tolerance(next_output_);
         if (output_interval_ > 0.0 && !at_grid && !at_final)
             return false;
 

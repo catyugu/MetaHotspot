@@ -1,5 +1,5 @@
 #include "compiler/model_functions.hpp"
-#include "numerics/expression/expr.hpp"
+#include "mhs/expression.hpp"
 
 #include <algorithm>
 #include <cmath>

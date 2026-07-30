@@ -1,13 +1,12 @@
 #pragma once
 
-/* Internal opaque handle definitions shared between the core C API and
-   optional extension modules (e.g. macromodel). Not part of the public API. */
+/* Internal opaque handle definitions shared between metahotspot.cpp and
+   metahotspot_macromodel.cpp.  Not part of the public API. */
 
-#include "api/metahotspot.h"       // mhs_solve_options_t etc.
-#include "model/model_definition.hpp"
-#include "runtime/model.hpp"
-#include "runtime/solution.hpp"
-#include "solver/scheduler.hpp"      // mhs::sim::SolveOptions
+#include "api/metahotspot.h" // mhs_solve_options_t etc.
+#include "mhs/model_definition.hpp"
+#include "mhs/solver.hpp" // mhs::sim::SolveOptions
+#include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>
 #include <string>
@@ -17,13 +16,8 @@
 /*  Shared error-buffer helpers                                        */
 /* ------------------------------------------------------------------ */
 
-/** Set the thread-local last-error string (defined in metahotspot.cpp). */
 void mhs_detail_set_last_error(const std::string& msg);
-
-/** Clear the thread-local last-error string. */
 void mhs_detail_clear_last_error();
-
-/** Get the thread-local last-error string. */
 const char* mhs_detail_last_error();
 
 /* ------------------------------------------------------------------ */
@@ -57,25 +51,15 @@ const char* mhs_detail_last_error();
         return err_code;                                                                                               \
     }
 
-#define MHS_TRY_ID(invalid, ...)                                                                                       \
-    try {                                                                                                              \
-        mhs_detail_clear_last_error();                                                                                 \
-        __VA_ARGS__;                                                                                                   \
-    }                                                                                                                  \
-    catch (const std::exception& e) {                                                                                  \
-        SET_ERR(e.what());                                                                                             \
-        return invalid;                                                                                                \
-    }
-
 /* ------------------------------------------------------------------ */
 /*  Shared helper declarations                                         */
 /* ------------------------------------------------------------------ */
 
-/** Convert C-level solver opts to C++ SolveOptions (defined in metahotspot.cpp). */
+/** Convert C-level solver opts to SolveOptions. */
 mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
 
 /* ------------------------------------------------------------------ */
-/*  Opaque handle structs                                              */
+/*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
 /* ------------------------------------------------------------------ */
 
 struct BlockLocation {
@@ -88,14 +72,9 @@ struct mhs_model_t {
     std::vector<BlockLocation> block_locations;
 };
 
-struct mhs_operators_t {
-    Eigen::SparseMatrix<double> K;
-    Eigen::SparseMatrix<double> C;
-    Eigen::VectorXd rhs;
-};
-
 struct mhs_compiled_t {
     mhs::core::Model model;
+    mhs::sim::Operators assemble_scratch; // reused across calls, not thread-safe
 };
 
 struct mhs_solution_t {

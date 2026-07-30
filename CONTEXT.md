@@ -46,7 +46,7 @@ mhs_macromodel → mhs_solver + mhs_runtime（插件，可选）
   初态。静态端口柔度的 SVD 只验证稳态端口响应，不能单独证明瞬态降阶精度；
   瞬态 ROM 需要动态模态或时域快照及时间步收敛验证。
 - Model FVM 详细离散始终由求解器内部组装。
-- `solve_system` 要求显式完整初状态；`solve_thermal(state=)` 为空时才从
+- `solve_system` 要求显式完整初状态；`solve(state=)` 为空时才从
   `initial_temperature` 构建均匀温度。
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。

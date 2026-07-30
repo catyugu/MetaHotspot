@@ -1,117 +1,10 @@
 #include "compiler/model_compiler.hpp"
+#include "mhs/solver.hpp"
 #include "model_test_utils.hpp"
-#include "solver/probe_recorder.hpp"
-#include "solver/scheduler.hpp"
 #include <Eigen/LU>
-#include <array>
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
-
-using namespace mhs::sim;
-
-namespace {
-
-    mhs::core::Model make_single_cell_model(const std::string& conductivity = "1")
-    {
-        mhs::model::ModelDefinition io;
-        io.settings.study_type = mhs::model::StudyType::Steady;
-        io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-        io.settings.initial_temperature = 0.0;
-
-        io.mesh.x_vertices = {0.0, 1.0};
-        io.mesh.y_vertices = {0.0, 1.0};
-        io.mesh.z_vertices = {0.0, 1.0};
-
-        mhs::model::LayerSpec layer;
-        layer.thickness = "1";
-
-        mhs::model::BlockSpec block;
-        block.material = "solid";
-        block.volumetric_heat_source = "0";
-
-        mhs::model::RectOperation rect;
-        rect.operation = mhs::model::GeometryOperation::Add;
-        rect.rect.x = "0";
-        rect.rect.y = "0";
-        rect.rect.width = "1";
-        rect.rect.height = "1";
-        block.geometry.push_back(rect);
-
-        layer.blocks.push_back(block);
-        io.layers.push_back(layer);
-
-        mhs::model::MaterialSpec material;
-        material.conductivity_x = material.conductivity_y = material.conductivity_z = conductivity;
-        material.density = "2";
-        material.specific_heat = "3";
-        io.materials.push_back({"solid", material});
-        io.default_boundary = mhs::model::NeumannBoundary {};
-        return build_model(io);
-    }
-
-    // Helper: run a full thermal solve (replaces the old solve_thermal)
-    mhs::core::Solution solve_thermal_model(
-        const mhs::core::Model& model, const SolveOptions& opts = {},
-        std::span<const double> initial_state = {})
-    {
-        const auto fvm_count = model.cells.cell_to_grid.size();
-        std::vector<double> state;
-        if (initial_state.empty()) {
-            state.assign(fvm_count, model.initial_temperature);
-        } else {
-            state.assign(initial_state.begin(), initial_state.end());
-        }
-
-        Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        SystemAssembler assemble = [&](std::span<const double> s, double t) {
-            return assemble_thermal(model, s, t);
-        };
-        ProbeRecorder probe_recorder;
-        probe_recorder.initialize(model);
-        StateObserver observe = [&](double t, std::span<const double> accepted_state) {
-            probe_recorder.record(t, accepted_state);
-        };
-        auto result = solve_system(study, assemble, state, opts, observe);
-        result.fvm_count = fvm_count;
-        result.probe_traces = probe_recorder.traces();
-        return result;
-    }
-
-} // namespace
-
-TEST(SchedulerTest, SolveSystemReassemblesWholeLinearizationDuringNonlinearIteration)
-{
-    std::vector<double> evaluated_conductances;
-    SystemAssembler assemble = [&](std::span<const double> state, double time) {
-        EXPECT_EQ(state.size(), 2u);
-        EXPECT_DOUBLE_EQ(time, 0.0);
-
-        const double conductance = 1.0 + state[0];
-        evaluated_conductances.push_back(conductance);
-
-        Operators operators;
-        operators.K.resize(2, 2);
-        operators.K.insert(0, 0) = conductance;
-        operators.K.insert(0, 1) = -conductance;
-        operators.K.insert(1, 0) = -conductance;
-        operators.K.insert(1, 1) = conductance + 1.0;
-        operators.C.resize(2, 2);
-        operators.f = Eigen::Vector2d(0.0, 1.0);
-        return operators;
-    };
-
-    const std::array initial_state {0.0, 0.0};
-    Study study;
-    auto result = solve_system(study, assemble, initial_state);
-
-    ASSERT_TRUE(result.converged);
-    ASSERT_GE(evaluated_conductances.size(), 2u);
-    EXPECT_NEAR(evaluated_conductances.front(), 1.0, 1e-12);
-    EXPECT_NEAR(evaluated_conductances.back(), 2.0, 1e-12);
-    EXPECT_NEAR(result.state[0], 1.0, 1e-12);
-    EXPECT_NEAR(result.state[1], 1.0, 1e-12);
-}
 
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
@@ -155,9 +48,9 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = build_model(io);
+    auto model = mhs::sim::build_model(io);
 
-    auto result = solve_thermal_model(model);
+    auto result = mhs::sim::solve(model);
 
     EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
@@ -226,9 +119,9 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = build_model(io);
+    auto model = mhs::sim::build_model(io);
 
-    auto result = solve_thermal_model(model);
+    auto result = mhs::sim::solve(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -302,9 +195,9 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = build_model(io);
+    auto model = mhs::sim::build_model(io);
 
-    auto result = solve_thermal_model(model);
+    auto result = mhs::sim::solve(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

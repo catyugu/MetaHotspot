@@ -13,34 +13,35 @@ from typing import NamedTuple
 import numpy as np
 
 from metahotspot._error import check
-from metahotspot._lib import get_dll
-from metahotspot.assembly import Operators
+from metahotspot._lib import get_ext_dll
 from metahotspot.solution import Solution
 from metahotspot.types import (
     CscView,
     MhsMacroPortModel,
     MhsOperatorsView,
     MhsSolution,
-    SolveOptions,
+    MhsCompiled,
 )
 
 
 # ---- High-level types ----
+
 
 class PortModel(NamedTuple):
     """Macro port model: Operators + optional basis.
 
     Parameters
     ----------
-    operators : Operators
-        Macro K, C, f with dimension macro_state_count × macro_state_count.
+    operators : tuple (K, C, f)
+        Macro K, C, f with dimension macro_state_count.
     basis : ndarray | None
         Row-major [physical_port_count × macro_state_count] matrix.
         None means unit basis (physical_port_count == macro_state_count).
     physical_port_count : int
         Number of physical interface ports.
     """
-    operators: Operators
+
+    operators: tuple
     basis: np.ndarray | None
     physical_port_count: int
 
@@ -58,9 +59,40 @@ class PortCoupling:
     exterior_half_conductance : ndarray
         Macro-side half conductance for each physical port [physical_port_count].
     """
+
     model_cells: np.ndarray
     model_face: int
     exterior_half_conductance: np.ndarray
+
+
+def _get_ext_dll():
+    return get_ext_dll()
+
+
+def _csc_input_view(matrix):
+    """Convert a scipy CSC matrix to a CscView struct."""
+    import scipy.sparse
+
+    normalized = scipy.sparse.csc_matrix(matrix, dtype=np.float64)
+    normalized.sort_indices()
+    if normalized.indices.dtype != np.int32 or normalized.indptr.dtype != np.int32:
+        normalized = scipy.sparse.csc_matrix(
+            (
+                np.ascontiguousarray(normalized.data, dtype=np.float64),
+                np.ascontiguousarray(normalized.indices, dtype=np.int32),
+                np.ascontiguousarray(normalized.indptr, dtype=np.int32),
+            ),
+            shape=normalized.shape,
+        )
+    view = CscView(
+        rows=normalized.shape[0],
+        columns=normalized.shape[1],
+        nnz=normalized.nnz,
+        outer_indices=normalized.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        inner_indices=normalized.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+        values=normalized.data.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+    )
+    return normalized, view
 
 
 def solve(
@@ -68,7 +100,7 @@ def solve(
     port_model: PortModel,
     coupling: PortCoupling,
     state: np.ndarray,
-    opts: SolveOptions | None = None,
+    opts=None,
 ) -> Solution:
     """Solve an FVM model coupled to a macro port model.
 
@@ -92,26 +124,27 @@ def solve(
     """
     # Normalize all arrays
     state = np.ascontiguousarray(state, dtype=np.float64)
-    coupling.model_cells = np.ascontiguousarray(
-        coupling.model_cells, dtype=np.uintp
-    )
+    coupling.model_cells = np.ascontiguousarray(coupling.model_cells, dtype=np.uintp)
     coupling.exterior_half_conductance = np.ascontiguousarray(
         coupling.exterior_half_conductance, dtype=np.float64
     )
 
-    macro_state_count = port_model.operators.f.size
-    meta = compiled.metadata()
+    K, C, f = port_model.operators
+    macro_state_count = f.size
+    cell_count = compiled.cell_count
 
     # Validate dimensions
-    if state.size != meta.cell_count + macro_state_count:
+    if state.size != cell_count + macro_state_count:
         raise ValueError(
-            f"state size ({state.size}) must equal cell_count ({meta.cell_count}) "
+            f"state size ({state.size}) must equal cell_count ({cell_count}) "
             f"+ macro_state_count ({macro_state_count})"
         )
     if coupling.model_cells.size != port_model.physical_port_count:
         raise ValueError("model_cells size must match physical_port_count")
     if coupling.exterior_half_conductance.size != port_model.physical_port_count:
-        raise ValueError("exterior_half_conductance size must match physical_port_count")
+        raise ValueError(
+            "exterior_half_conductance size must match physical_port_count"
+        )
 
     has_basis = port_model.basis is not None
     if has_basis:
@@ -132,40 +165,14 @@ def solve(
         basis = None
 
     # Convert macro Operators to CSC views
-    def _csc_input_view(matrix):
-        import scipy.sparse
-        normalized = scipy.sparse.csc_matrix(matrix, dtype=np.float64)
-        normalized.sort_indices()
-        if normalized.indices.dtype != np.int32 or normalized.indptr.dtype != np.int32:
-            normalized = scipy.sparse.csc_matrix(
-                (
-                    np.ascontiguousarray(normalized.data, dtype=np.float64),
-                    np.ascontiguousarray(normalized.indices, dtype=np.int32),
-                    np.ascontiguousarray(normalized.indptr, dtype=np.int32),
-                ),
-                shape=normalized.shape,
-            )
-        view = CscView(
-            rows=normalized.shape[0],
-            columns=normalized.shape[1],
-            nnz=normalized.nnz,
-            outer_indices=normalized.indptr.ctypes.data_as(
-                ctypes.POINTER(ctypes.c_int32)
-            ),
-            inner_indices=normalized.indices.ctypes.data_as(
-                ctypes.POINTER(ctypes.c_int32)
-            ),
-            values=normalized.data.ctypes.data_as(
-                ctypes.POINTER(ctypes.c_double)
-            ),
-        )
-        return normalized, view
+    rhs = np.ascontiguousarray(f, dtype=np.float64)
 
-    rhs = np.ascontiguousarray(port_model.operators.f, dtype=np.float64)
+    normalized_k, k_view = _csc_input_view(K)
+    normalized_c, c_view = _csc_input_view(C)
 
-    normalized_k, k_view = _csc_input_view(port_model.operators.K)
-    normalized_c, c_view = _csc_input_view(port_model.operators.C)
-
+    # Build macromodel-specific flat-CSC operators
+    # The C struct uses mhs_macro_csc_view_t (identical layout to CscView,
+    # but named differently in the C header). Our ctypes mirrors them identically.
     operators_view = MhsOperatorsView(
         K=k_view,
         C=c_view,
@@ -188,9 +195,15 @@ def solve(
     # Keep owners alive until C call returns
     _ = normalized_k, normalized_c, basis, rhs
 
-    dll = get_dll()
+    dll = _get_ext_dll()
     pp = ctypes.POINTER(MhsSolution)()
-    opts_ptr = ctypes.byref(opts) if opts is not None else None
+
+    # Convert opts if provided
+    opts_ptr = None
+    if opts is not None:
+        c_opts = opts._to_c_struct(dll) if hasattr(opts, "_to_c_struct") else opts
+        opts_ptr = ctypes.byref(c_opts)
+
     state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
     check(
         dll.mhs_macromodel_solve(

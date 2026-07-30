@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
-#include "model/model_definition.hpp"
-#include "runtime/model.hpp"
+#include "mhs/model.hpp"
+#include "mhs/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>

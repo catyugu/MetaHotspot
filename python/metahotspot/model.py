@@ -16,9 +16,6 @@ from metahotspot.types import (
     MhsFaceRegion,
     Rect2D,
     Point2D,
-    SolveOptions,
-    MHS_LAYER_ID_INVALID,
-    MHS_BLOCK_ID_INVALID,
 )
 
 
@@ -141,15 +138,18 @@ class Model(OwnedHandle):
         self, thickness: str, x_offset: str = "0", y_offset: str = "0"
     ) -> int:
         """Add a layer.  Returns the layer ID."""
-        lid = self._dll.mhs_model_add_layer(
-            self._handle,
-            thickness.encode("utf-8"),
-            x_offset.encode("utf-8"),
-            y_offset.encode("utf-8"),
+        lid = ctypes.c_uint32()
+        check(
+            self._dll.mhs_model_add_layer(
+                self._handle,
+                thickness.encode("utf-8"),
+                x_offset.encode("utf-8"),
+                y_offset.encode("utf-8"),
+                ctypes.byref(lid),
+            ),
+            "add_layer",
         )
-        if lid == MHS_LAYER_ID_INVALID:
-            check(-1, "add_layer")  # reads mhs_last_error() for the detailed message
-        return lid
+        return lid.value
 
     def add_block(
         self,
@@ -162,18 +162,21 @@ class Model(OwnedHandle):
     ) -> int:
         """Add a block to a layer.  Returns the block ID."""
         th = thickness.encode("utf-8") if thickness is not None else None
-        bid = self._dll.mhs_model_add_block(
-            self._handle,
-            layer,
-            material_name.encode("utf-8"),
-            heat_source.encode("utf-8"),
-            x_offset.encode("utf-8"),
-            y_offset.encode("utf-8"),
-            th,
+        bid = ctypes.c_uint32()
+        check(
+            self._dll.mhs_model_add_block(
+                self._handle,
+                layer,
+                material_name.encode("utf-8"),
+                heat_source.encode("utf-8"),
+                x_offset.encode("utf-8"),
+                y_offset.encode("utf-8"),
+                th,
+                ctypes.byref(bid),
+            ),
+            "add_block",
         )
-        if bid == MHS_BLOCK_ID_INVALID:
-            check(-1, "add_block")
-        return bid
+        return bid.value
 
     def add_rect(
         self,

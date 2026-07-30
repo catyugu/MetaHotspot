@@ -1,5 +1,5 @@
 // muparser-backed expression implementation
-#include "numerics/expression/expr.hpp"
+#include "mhs/expression.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
 #include <memory>
@@ -45,8 +45,7 @@ namespace mhs::core {
             parser_.DefineVar("T", &current_ctx_.T);
             parser_.DefineVar("t", &current_ctx_.t);
 
-            // muparser exposes pi/e as _pi/_e by default. Re-export under the familiar names
-            // (matching exprtk's behavior) so existing expressions keep working.
+            // Re-export pi/e under familiar names (muparser exposes them as _pi/_e by default).
             parser_.DefineConst("pi", mu::MathImpl<mu::value_type>::CONST_PI);
             parser_.DefineConst("e", mu::MathImpl<mu::value_type>::CONST_E);
 

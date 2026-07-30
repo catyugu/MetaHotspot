@@ -1,19 +1,18 @@
 #pragma once
+
+#include "mhs/expression.hpp"
+#include "mhs/fluid_domain.hpp"
+#include "mhs/types.hpp"
+
 #include <string>
 #include <vector>
-
-#include "numerics/expression/expr.hpp"
-#include "runtime/fluid_domain.hpp"
-#include "runtime/types.hpp"
 
 namespace mhs::core {
 
     // ── A per-face BC record ─────────────────────────────────
-    // Every cell has exactly 6 faces, stored as a flat array
-    // [N_active * 6] in row-major order (dir 0..5 per cell).
     struct FaceBC {
-        BcType type = BcType::None; // None = internal face or adiabatic
-        TableIndex param_idx = 0; // → BCParamTable
+        BcType type = BcType::None;
+        TableIndex param_idx = 0;
     };
 
     // ── Structured mesh geometry ─────────────────────────────────────────
@@ -38,7 +37,7 @@ namespace mhs::core {
         CompiledExpression c;
     };
 
-    // ── BC parameter table (per-BC-type expression vectors) ──────────────
+    // ── BC parameter table ───────────────────────────────────────────────
     struct BCParamTable {
         std::vector<CompiledExpression> dirichlet_T;
         std::vector<CompiledExpression> neumann_q;
@@ -48,15 +47,12 @@ namespace mhs::core {
 
     // ── Cell topology and compact per-active-cell fields ────────────────
     struct CellFields {
-        // Explicit topology between the full structured grid and compact
-        // active-cell storage.
-        std::vector<Index> grid_to_cell; // grid index → active cell / invalidIndex
-        std::vector<Index> cell_to_grid; // active cell → grid index
+        std::vector<Index> grid_to_cell;
+        std::vector<Index> cell_to_grid;
 
-        std::vector<TableIndex> material_id; // index into material_table
-        std::vector<TableIndex> heat_source_idx; // index into heat_source_table
+        std::vector<TableIndex> material_id;
+        std::vector<TableIndex> heat_source_idx;
 
-        // Per-cell layer/block indices (post-processing only — not read by solver).
         std::vector<TableIndex> layer_id;
         std::vector<TableIndex> block_id;
     };
@@ -74,8 +70,6 @@ namespace mhs::core {
         MeshGeometry mesh;
         CellFields cells;
 
-        // Face-level BC storage: flat array [N_active * 6].
-        // face_bcs[c * 6 + dir] gives the BC for cell c's face `dir`.
         std::vector<FaceBC> face_bcs;
         BCParamTable bc_params;
 
@@ -90,7 +84,6 @@ namespace mhs::core {
 
         std::vector<ProbePoint> observation_points;
 
-        // Fluid-solid coupled heat-transfer subsystem
         mhs::core::FluidDomain fluid;
     };
 

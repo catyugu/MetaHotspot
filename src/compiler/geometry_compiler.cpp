@@ -1,5 +1,5 @@
 #include "compiler/geometry_compiler.hpp"
-#include "numerics/expression/expr.hpp"
+#include "mhs/expression.hpp"
 #include "runtime/constants.hpp"
 #include "runtime/mesh.hpp"
 #include <algorithm>

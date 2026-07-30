@@ -350,8 +350,7 @@ namespace {
 
     TEST(StepController, AdaptiveClipsAtOutputBoundaryEvenBelowMinDt)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.5, 10.0, 1.0, 0.25);
+        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.5, 10.0, 1.0, 0.25);
 
         EXPECT_DOUBLE_EQ(ctrl.prepare(1.0, 0.0), 0.25);
         EXPECT_TRUE(ctrl.output_due(0.25));
@@ -373,8 +372,7 @@ namespace {
 
     TEST(StepController, AdaptiveEnsuresExactOutputTimes)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 5.0, 3.0, 1.0);
+        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 5.0, 3.0, 1.0);
 
         // Run through a sequence and verify dt always lands exactly on grid.
         double t = 0.0;
@@ -394,8 +392,7 @@ namespace {
 
     TEST(StepController, DtClampedToBounds)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 10.0, 1.0);
+        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 10.0, 1.0);
 
         // Suggested dt above max → clamped to max_dt.
         double dt = ctrl.prepare(100.0, 0.0);
@@ -408,8 +405,7 @@ namespace {
 
     TEST(StepController, WithoutOutputGridEveryAcceptedStateIsOutput)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 1.0, 0.0);
+        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 1.0, 0.0);
 
         EXPECT_TRUE(ctrl.output_due(0.3));
         EXPECT_TRUE(ctrl.output_due(0.6));

@@ -323,9 +323,7 @@ def main():
     t0 = _time.perf_counter()
     steady_model = build_model(steady_hs)
     c_steady = steady_model.compile()
-    meta = c_steady.metadata()
-    nx, ny, nz = meta.nx, meta.ny, meta.nz
-    print(f"  Active cells: {meta.cell_count},  " f"Grid cells: {nx * ny * nz}")
+    print(f"  Active cells: {c_steady.cell_count}")
     sol_steady = c_steady.solve()
     steady_temp = sol_steady.temperature.copy()
     t_steady = _time.perf_counter() - t0
@@ -389,15 +387,14 @@ def main():
     )
 
     # -- Transient probe traces --
-    n_probes = sol_transient.probe_count()
-    print(f"\n  Probes recorded: {n_probes}")
-    for pi in range(min(n_probes, 5)):
-        name, times, values, record_count = sol_transient.probe_view(pi)
-        if times is not None and len(times) > 0:
+    probes = sol_transient.probes
+    print(f"\n  Probes recorded: {len(probes)}")
+    for pi, probe in enumerate(probes[:5]):
+        if probe.times is not None and len(probe.times) > 0:
             print(
-                f"    {name:<20s}  t={times[0]:.4f}..{times[-1]:.4f}  "
-                f"T={values[0]:.2f}..{values[-1]:.2f} K  "
-                f"({record_count} records)"
+                f"    {probe.name:<20s}  t={probe.times[0]:.4f}..{probe.times[-1]:.4f}  "
+                f"T={probe.values[0]:.2f}..{probe.values[-1]:.2f} K  "
+                f"({len(probe.times)} records)"
             )
 
     # Compare with HotSpot reference (gcc.init)

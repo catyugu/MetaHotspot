@@ -1,12 +1,12 @@
 # expr 模块接口
 
-封装 muparser。`src/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
+封装 muparser。`include/mhs/expression.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
 
 ---
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::core` (`src/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
+**定义**：`mhs::core` (`include/mhs/expression.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
 
 ```cpp
 namespace mhs::core {
@@ -81,7 +81,7 @@ Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void
 ### 使用场景
 
 | 场景         | 示例             | 表达方式 |
-|--------------|------------------|----------|
+| ------------ | ---------------- | -------- |
 | 分片常数     | 空间分区常数热源 | native   |
 | 分片线性     | 非均匀材料层     | native   |
 | 查表函数     | 实验数据表驱动   | native   |
@@ -118,7 +118,7 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ## 线程安全
 
 | 操作                                                     | 同步                           |
-|----------------------------------------------------------|--------------------------------|
+| -------------------------------------------------------- | ------------------------------ |
 | `parse()` / `eval_geometry()` / `register_all_functions` | 主线程，构造本地 `SymbolTable` |
 | `CompiledExpression::eval()`                             | **无锁**（ETS 每线程独立 AST） |
 

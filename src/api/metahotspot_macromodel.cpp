@@ -1,6 +1,6 @@
-#include "api/internal.hpp"
-#include "api/metahotspot.h"
 #include "api/metahotspot_macromodel.h"
+#include "api/internal.h"
+#include "api/metahotspot.h"
 
 #include "macromodel/modal_port.hpp"
 #include <Eigen/Core>
@@ -8,7 +8,7 @@
 #include <span>
 
 /* ------------------------------------------------------------------ */
-/*  Enum conversions                                                  */
+/*  Face conversion                                                   */
 /* ------------------------------------------------------------------ */
 
 static mhs::core::FaceDir _to_face(mhs_face_t face)
@@ -32,10 +32,10 @@ static mhs::core::FaceDir _to_face(mhs_face_t face)
 }
 
 /* ------------------------------------------------------------------ */
-/*  CSC helpers                                                       */
+/*  CSC helpers  (duplicated for the flat struct — no mhs_csc_view_t) */
 /* ------------------------------------------------------------------ */
 
-static Eigen::SparseMatrix<double> _csc_view_to_eigen(const mhs_csc_view_t& view)
+static Eigen::SparseMatrix<double> _csc_to_eigen(const mhs_macro_csc_view_t& view)
 {
     if (view.rows < 0 || view.columns < 0 || view.nnz < 0 || !view.outer_indices
         || (view.nnz > 0 && (!view.inner_indices || !view.values))) {
@@ -71,9 +71,8 @@ static Eigen::SparseMatrix<double> _csc_view_to_eigen(const mhs_csc_view_t& view
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c,
-    const mhs_macro_port_model_t* macro, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out)
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c, const mhs_macro_port_model_t* macro,
+    const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(macro);
@@ -86,28 +85,18 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c,
         const auto fvm_count = c->model.cells.cell_to_grid.size();
         const bool has_basis = (macro->basis != nullptr);
 
-        // Validate dimensions
         if (macro->physical_port_count == 0) {
             SET_ERR("physical_port_count must be > 0");
             return MHS_ERR_INVALID_ARG;
         }
-        if (has_basis) {
-            // Basis present: mode count = operators.n
-            if (macro->operators.n != macro->physical_port_count) {
-                // With basis, operators.n is the macro state (mode) count.
-                // No constraint relating operators.n to physical_port_count
-                // beyond macro_state_count = operators.n.
-            }
-        }
-        else {
-            // Unit basis: macro_state_count == physical_port_count
+
+        const auto macro_state_count = macro->operators.n;
+        if (!has_basis) {
             if (macro->operators.n != macro->physical_port_count) {
                 SET_ERR("unit-basis macro: operators.n must equal physical_port_count");
                 return MHS_ERR_INVALID_ARG;
             }
         }
-
-        const auto macro_state_count = macro->operators.n;
         if (state_count != fvm_count + macro_state_count) {
             SET_ERR("state_count must equal cell_count + macro_state_count");
             return MHS_ERR_INVALID_ARG;
@@ -117,12 +106,12 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c,
             return MHS_ERR_INVALID_ARG;
         }
 
-        // Build PortModel
+        // Build PortModel from flat CSC arrays
         mhs::macro::PortModel port_model;
-        port_model.operators.K = _csc_view_to_eigen(macro->operators.K);
-        port_model.operators.C = _csc_view_to_eigen(macro->operators.C);
-        port_model.operators.f = Eigen::Map<const Eigen::VectorXd>(
-            macro->operators.rhs, static_cast<Eigen::Index>(macro_state_count));
+        port_model.operators.K = _csc_to_eigen(macro->operators.K);
+        port_model.operators.C = _csc_to_eigen(macro->operators.C);
+        port_model.operators.f
+            = Eigen::Map<const Eigen::VectorXd>(macro->operators.rhs, static_cast<Eigen::Index>(macro_state_count));
         port_model.physical_port_count = macro->physical_port_count;
         if (has_basis) {
             Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis_map(
@@ -130,23 +119,19 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c,
                 static_cast<Eigen::Index>(macro_state_count));
             port_model.basis = basis_map;
         }
-        // else: basis stays empty (rows=0, cols=0) → unit basis
 
         // Build PortCoupling
         mhs::macro::PortCoupling coupling;
-        coupling.model_cells.assign(
-            macro->model_cells, macro->model_cells + macro->physical_port_count);
+        coupling.model_cells.assign(macro->model_cells, macro->model_cells + macro->physical_port_count);
         coupling.model_face = _to_face(macro->model_face);
         coupling.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
-            macro->exterior_half_conductance,
-            static_cast<Eigen::Index>(macro->physical_port_count));
+            macro->exterior_half_conductance, static_cast<Eigen::Index>(macro->physical_port_count));
 
         // Reconstruct options and solve
         auto so = to_solve_options(opts, c->model.transient_duration);
 
-        auto result = mhs::macro::solve(
-            c->model, port_model, coupling,
-            std::span<const double>(state, state_count), so);
+        auto result
+            = mhs::macro::solve(c->model, port_model, coupling, std::span<const double>(state, state_count), so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {

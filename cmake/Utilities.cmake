@@ -54,9 +54,11 @@ function(mhs_add_library NAME)
     endif()
 
     target_include_directories(${NAME} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     )
+
+    target_include_directories(${NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
     mhs_set_strict_warnings(${NAME})
 endfunction()

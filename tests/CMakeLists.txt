@@ -20,6 +20,7 @@ target_link_libraries(mhs_tests PRIVATE
 )
 
 target_include_directories(mhs_tests PRIVATE ${CMAKE_BINARY_DIR})
+target_include_directories(mhs_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 mhs_copy_runtime_dlls(mhs_tests)
 gtest_discover_tests(mhs_tests)

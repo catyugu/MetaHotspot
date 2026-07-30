@@ -26,6 +26,7 @@ from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
 
 import metahotspot
+import metahotspot.macromodel
 from metahotspot import enums
 
 
@@ -168,9 +169,9 @@ def build_macro_model() -> metahotspot.Model:
     return model
 
 
-def boundary_cells(metadata, x_cell: int) -> np.ndarray:
+def boundary_cells(compiled, x_cell: int) -> np.ndarray:
     """Return active-cell indices on one X-normal cell patch."""
-    grid = metadata.grid_to_cell.reshape(metadata.nx, metadata.ny, metadata.nz)
+    grid = compiled.grid_to_cell.reshape(compiled.nx, compiled.ny, compiled.nz)
     cells = np.asarray(grid[x_cell, :, :]).ravel().astype(np.int64)
     if np.unique(cells).size != cells.size:
         raise RuntimeError("boundary patch contains invalid or repeated cells")
@@ -232,12 +233,11 @@ class ReductionResult:
 
 def condense_macro(compiled) -> CondensedMacroBlock:
     """Condense a standalone macro from ``p + i`` to ``p`` only."""
-    metadata = compiled.metadata()
-    port = boundary_cells(metadata, 0)
-    all_cells = np.arange(metadata.cell_count, dtype=np.int64)
+    port = boundary_cells(compiled, 0)
+    all_cells = np.arange(compiled.cell_count, dtype=np.int64)
     internal = np.setdiff1d(all_cells, port)
 
-    operators = compiled.assemble(compiled.default_state())
+    operators = compiled.assemble()
     K_pp = take(operators.K, port, port)
     K_pi = take(operators.K, port, internal)
     K_ip = take(operators.K, internal, port)
@@ -300,12 +300,10 @@ def total_interface_conductance(
     """Evaluate the demo's physical series conductance for reporting."""
     k_detail = DETAIL_K0 * (
         1.0
-        + DETAIL_K_SLOPE
-        * (detailed_temperature[detailed_cells] - INITIAL_TEMPERATURE)
+        + DETAIL_K_SLOPE * (detailed_temperature[detailed_cells] - INITIAL_TEMPERATURE)
     )
     conductance = FACE_AREA_M2 / (
-        0.5 * CELL_LENGTH_M / k_detail
-        + 0.5 * CELL_LENGTH_M / MACRO_K
+        0.5 * CELL_LENGTH_M / k_detail + 0.5 * CELL_LENGTH_M / MACRO_K
     )
     return float(conductance.sum())
 
@@ -319,7 +317,7 @@ def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
             options.nonlinear_relative_tolerance = 1.0e-10
             with compiled.solve(opts=options) as solution:
                 temperature = solution.temperature.copy()
-            block_ids = compiled.metadata().block_ids.copy()
+            block_ids = compiled.block_ids.copy()
     elapsed = perf_counter() - started
     detail = np.flatnonzero(block_ids == FULL_DETAIL_BLOCK_ID)
     macro = np.flatnonzero(block_ids == FULL_MACRO_BLOCK_ID)
@@ -392,9 +390,7 @@ def solve_reduced_case(
         retained_energy=float(
             np.sum(singular_energy[:mode_count]) / np.sum(singular_energy)
         ),
-        relative_error=float(
-            np.linalg.norm(difference) / np.linalg.norm(reference)
-        ),
+        relative_error=float(np.linalg.norm(difference) / np.linalg.norm(reference)),
         max_error=float(np.max(np.abs(difference))),
         elapsed_seconds=perf_counter() - started,
         initial_interface_conductance=total_interface_conductance(
@@ -419,8 +415,8 @@ def main() -> int:
     with build_detailed_nonlinear_model() as detailed_model:
         with detailed_model.compile() as detailed:
             detailed_interface = boundary_cells(
-                detailed.metadata(),
-                detailed.metadata().nx - 1,
+                detailed,
+                detailed.nx - 1,
             )
 
             with build_macro_model() as macro_model:

@@ -3,9 +3,8 @@
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "logging/logger.hpp"
+#include "mhs/solver.hpp"
 #include "solver/postprocessor.hpp"
-#include "solver/probe_recorder.hpp"
-#include "solver/scheduler.hpp"
 #include <iostream>
 #include <optional>
 #include <string>
@@ -68,23 +67,9 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Run simulation
+        // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        const auto fvm_count = model.cells.cell_to_grid.size();
-        std::vector<double> state(fvm_count, model.initial_temperature);
-        mhs::sim::Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        mhs::sim::SystemAssembler assemble_fn = [&](std::span<const double> s, double t) {
-            return mhs::sim::assemble_thermal(model, s, t);
-        };
-        mhs::sim::ProbeRecorder probe_recorder;
-        probe_recorder.initialize(model);
-        mhs::sim::StateObserver observe = [&](double t, std::span<const double> accepted_state) {
-            probe_recorder.record(t, accepted_state);
-        };
-        auto result = mhs::sim::solve_system(study, assemble_fn, state,
-            mhs::sim::SolveOptions{}, observe);
-        result.fvm_count = fvm_count;
-        result.probe_traces = probe_recorder.traces();
+        auto result = mhs::sim::solve(model);
 
         MHS_LOG_INFO("Simulation complete.");
 
@@ -95,7 +80,7 @@ int main(int argc, char* argv[])
         mhs::io::write_vtu(output_vtu, model, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
-        // XML: still uses node-centered data (legacy format)
+        // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
         mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces);
         MHS_LOG_INFO("XML written to: {}", output_xml);

@@ -104,7 +104,8 @@ namespace mhs::sim {
                             const auto& boundary = cell_face_bcs[face];
                             switch (boundary.type) {
                             case mhs::core::BcType::FirstType: {
-                                const double exterior_temperature = bc_params.dirichlet_T[boundary.param_idx].eval(cell_context);
+                                const double exterior_temperature
+                                    = bc_params.dirichlet_T[boundary.param_idx].eval(cell_context);
                                 const double conductance = face_k * area / half_distance;
                                 local.stiffness.emplace_back(row, row, conductance);
                                 sink.rhs(row) += conductance * exterior_temperature;
@@ -153,8 +154,7 @@ namespace mhs::sim {
     {
         const auto cell_count = static_cast<std::size_t>(model.cells.cell_to_grid.size());
         if (temperature.size() != cell_count) {
-            throw std::invalid_argument(
-                "assemble_thermal: temperature.size() = " + std::to_string(temperature.size())
+            throw std::invalid_argument("assemble_thermal: temperature.size() = " + std::to_string(temperature.size())
                 + " != cell_count = " + std::to_string(cell_count));
         }
 

@@ -17,7 +17,7 @@ XML
                       ├─> mhs::sim::fluid::build_domain
                       │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
-                              └─> mhs::sim::solve_thermal
+                              └─> mhs::sim::solve
                                     └─> mhs::sim::solve_system(Study, SystemAssembler, state)
                                     ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t) → dt_exec
                                     ├─> mhs::sim::assemble_thermal(model, fvm_state, time)

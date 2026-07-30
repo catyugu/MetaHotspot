@@ -5,10 +5,8 @@
  * MetaHotspot Macromodel Plugin C API — optional extension.
  *
  * This header must be included separately from metahotspot.h.
- * It depends on the core metahotspot.h types (mhs_operators_view_t,
- * mhs_face_t, mhs_compiled_t, mhs_solution_t, mhs_solve_options_t).
- *
- * The plugin is built as a separate shared library (mhs_macromodel_c_api).
+ * It depends on the core metahotspot.h types (mhs_compiled_t,
+ * mhs_solution_t, mhs_solve_options_t).
  */
 
 #include "api/metahotspot.h"
@@ -20,22 +18,42 @@ extern "C" {
 #endif
 
 /* ------------------------------------------------------------------ */
+/*  Face direction enum  (moved from core header)                      */
+/* ------------------------------------------------------------------ */
+typedef int32_t mhs_face_t;
+enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_FACE_ZM = 4, MHS_FACE_ZP = 5 };
+
+/* ------------------------------------------------------------------ */
+/*  Non-owning CSC matrix view (macromodel-only)                       */
+/* ------------------------------------------------------------------ */
+typedef struct {
+    int32_t rows, columns, nnz;
+    const int32_t* outer_indices;
+    const int32_t* inner_indices;
+    const double* values;
+} mhs_macro_csc_view_t;
+
+/* ------------------------------------------------------------------ */
 /*  Macromodel port model view                                        */
 /* ------------------------------------------------------------------ */
 
 /**
- * Non-owning macro port model and physical-interface input.
- *
- * - `operators` : the macro K, C, f with dimension n × n (macro state).
- * - `basis`     : row-major [physical_port_count × n] matrix; NULL = unit basis.
- * - `physical_port_count` : number of physical interface ports.
- * - `model_cells` : FVM cell index for each physical port.
- * - `model_face` : interface face direction.
- * - `exterior_half_conductance` : [physical_port_count] — macro-side half conductance.
+ * Macro K, C, f view — flat CSC arrays for both matrices plus a plain rhs vector.
+ * Pointers remain valid for the duration of the mhs_macromodel_solve call.
  */
 typedef struct {
-    mhs_operators_view_t operators;
-    const double* basis;                    /* NULL = unit basis */
+    mhs_macro_csc_view_t K;
+    mhs_macro_csc_view_t C;
+    const double* rhs; // [n]
+    size_t n; // macro state count
+} mhs_macro_operators_view_t;
+
+/**
+ * Non-owning macro port model and physical-interface input.
+ */
+typedef struct {
+    mhs_macro_operators_view_t operators;
+    const double* basis; /* NULL = unit basis */
     size_t physical_port_count;
     const size_t* model_cells;
     mhs_face_t model_face;
@@ -46,19 +64,8 @@ typedef struct {
 /*  Macromodel solve                                                  */
 /* ------------------------------------------------------------------ */
 
-/**
- * Solve an FVM model coupled to a macro port model.
- *
- * The FVM-side interface conductance is reevaluated from the current
- * nonlinear iterate. When basis is NULL, the macro state dimension
- * must equal physical_port_count (unit basis). When basis is non-NULL,
- * its column count equals operators.n.
- *
- * `state_count` must equal compiled_cell_count + operators.n.
- */
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled,
-    const mhs_macro_port_model_t* macro, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out);
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_model_t* macro,
+    const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 #ifdef __cplusplus
 } /* extern "C" */

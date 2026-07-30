@@ -10,7 +10,7 @@
 // Used by:
 //   - mhs::post::interpolate_cell_to_node  (whole-grid node sampling)
 //   - mhs::sim::ProbeRecorder::sample_one  (per-probe local sampling)
-#include "runtime/model.hpp"
+#include "mhs/model.hpp"
 
 #include <span>
 #include <vector>

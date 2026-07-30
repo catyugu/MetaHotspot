@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import ctypes
+from typing import NamedTuple
 
 import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.types import MhsSolution, SolutionView, ProbeView
+
+
+class ProbeTrace(NamedTuple):
+    """A single probe trace — name plus time series."""
+
+    name: str
+    times: np.ndarray
+    values: np.ndarray
 
 
 class Solution(OwnedHandle):
@@ -40,7 +49,15 @@ class Solution(OwnedHandle):
         self._dll = compiled._dll
         self._destroy_fn = self._dll.mhs_solution_destroy
         pp = ctypes.POINTER(MhsSolution)()
-        opts_ptr = ctypes.byref(opts) if opts is not None else None
+
+        # Convert SolveOptions to ctypes struct
+        opts_ptr = None
+        if opts is not None:
+            c_opts = (
+                opts._to_c_struct(self._dll) if hasattr(opts, "_to_c_struct") else opts
+            )
+            opts_ptr = ctypes.byref(c_opts)
+
         state_ptr = (
             state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
             if state is not None
@@ -107,10 +124,17 @@ class Solution(OwnedHandle):
 
     # ---- Probes ----
 
-    def probe_count(self) -> int:
-        return self._dll.mhs_solution_probe_count(self._handle)
+    @property
+    def probes(self) -> list[ProbeTrace]:
+        """Return all probe traces as high-level named tuples."""
+        count = self._dll.mhs_solution_probe_count(self._handle)
+        result: list[ProbeTrace] = []
+        for i in range(count):
+            name, times, values, _ = self._probe_view(i)
+            result.append(ProbeTrace(name, times, values))
+        return result
 
-    def probe_view(self, index: int):
+    def _probe_view(self, index: int):
         """Return (name, times, values, record_count) for a probe trace."""
         pv = ProbeView()
         check(

@@ -6,7 +6,7 @@ mhs_add_library(mhs_solver
     nonlinear_solver.cpp
     postprocessor.cpp
     probe_recorder.cpp
-    scheduler.cpp
+    solve.cpp
     time_integration.cpp
     PUBLIC_LINKS
     mhs_runtime

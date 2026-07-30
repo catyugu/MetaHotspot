@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "macromodel/modal_port.hpp"
-#include "solver/scheduler.hpp"
+#include "solver/solve.hpp"
 #include <Eigen/LU>
 #include <array>
 #include <gtest/gtest.h>
@@ -170,7 +170,7 @@ TEST(MacroModelTest, NoBasisAndExplicitBasisSteadySolveAgree)
     const std::array initial_state {0.0, 0.0};
 
     mhs::sim::SolveOptions opts;
-    opts.step_strategy = mhs::sim::time_scheme::StepStrategy::Fixed;
+    opts.step_strategy = mhs::sim::SolveOptions::StepStrategy::Fixed;
 
     auto explicit_result = solve(model, explicit_port, coupling, initial_state, opts);
     auto no_basis_result = solve(model, no_basis_port, coupling, initial_state, opts);
@@ -212,17 +212,14 @@ TEST(MacroModelTest, PortSystemAdvancesTheFullCoupledTransientState)
 
     mhs::sim::Study study {mhs::core::StudyType::Transient, dt, dt};
     mhs::sim::SolveOptions options;
-    options.step_strategy = mhs::sim::time_scheme::StepStrategy::Fixed;
+    options.step_strategy = mhs::sim::SolveOptions::StepStrategy::Fixed;
     options.fixed_dt = dt;
     std::vector<double> observed_times;
 
-    mhs::sim::SystemAssembler asm_fn = [&](std::span<const double> state, double time) {
-        return assemble(model, port, coupling, state, time);
-    };
+    mhs::sim::SystemAssembler asm_fn
+        = [&](std::span<const double> state, double time) { return assemble(model, port, coupling, state, time); };
     auto result = mhs::sim::solve_system(study, asm_fn, initial_state, options,
-        [&](double time, std::span<const double>) {
-            observed_times.push_back(time);
-        });
+        [&](double time, std::span<const double>) { observed_times.push_back(time); });
 
     ASSERT_TRUE(result.converged);
     ASSERT_EQ(result.state.size(), 2u);

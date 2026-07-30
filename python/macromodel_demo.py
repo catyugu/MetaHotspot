@@ -19,7 +19,6 @@ from scipy.sparse import bmat, csc_matrix, diags
 from scipy.sparse.linalg import splu
 
 import metahotspot
-from metahotspot.types import SolveOptions
 
 
 def partition_regions(K, nc, layer_ids, block_ids, macro_layer, macro_block):
@@ -144,12 +143,11 @@ def main():
     model = metahotspot.Model()
     model.read_xml(str(case_path))
     compiled = model.compile()
-    meta = compiled.metadata()
-    nc = meta.cell_count
-    layer_ids = meta.layer_ids.copy()
-    block_ids = meta.block_ids.copy()
+    nc = compiled.cell_count
+    layer_ids = compiled.layer_ids.copy()
+    block_ids = compiled.block_ids.copy()
 
-    K, C, f = compiled.assemble(compiled.default_state())
+    K, C, f = compiled.assemble()
     print(f"  Active cells: {nc},  K: {K.shape[0]}x{K.shape[1]}, {K.nnz} NNZ")
 
     # ── Step 2: Full solve → reference ─────────────────────────
@@ -181,12 +179,10 @@ def main():
     print("Step 4: Port-only macro condensation")
     print("=" * 60)
 
-    K_detailed, f_detailed, K_macro, f_macro, interface = (
-        split_reference_operators(K, f, detailed_idx, p_idx, i_idx)
+    K_detailed, f_detailed, K_macro, f_macro, interface = split_reference_operators(
+        K, f, detailed_idx, p_idx, i_idx
     )
-    K_port, f_port, K_ii_lu, K_ip, f_i = condense_macro(
-        K_macro, f_macro, np_
-    )
+    K_port, f_port, K_ii_lu, K_ip, f_i = condense_macro(K_macro, f_macro, np_)
     K_reduced, f_reduced = build_coupled_reduced_system(
         K_detailed, f_detailed, K_port, f_port, interface
     )

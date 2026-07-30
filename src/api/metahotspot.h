@@ -9,9 +9,9 @@
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
  *
- * All mutation functions return mhs_status_t.  Functions returning an ID return
- * MHS_*_ID_INVALID on failure.  Detailed error messages are available via
- * mhs_last_error(), which is thread-local and reset on every API call.
+ * All functions that can fail return mhs_status_t; detailed error messages
+ * are available via mhs_last_error(), which is thread-local and reset on
+ * every API call.  Destroy functions are void and NULL-safe.
  */
 
 #include <stddef.h>
@@ -42,16 +42,6 @@ extern "C" {
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
-typedef struct mhs_operators_t mhs_operators_t;
-
-/* ------------------------------------------------------------------ */
-/*  ID types  (uint32_t, UINT32_MAX = invalid)                         */
-/* ------------------------------------------------------------------ */
-typedef uint32_t mhs_layer_id_t;
-typedef uint32_t mhs_block_id_t;
-
-#define MHS_LAYER_ID_INVALID UINT32_MAX
-#define MHS_BLOCK_ID_INVALID UINT32_MAX
 
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
@@ -64,16 +54,6 @@ enum { MHS_UNIT_METER = 0, MHS_UNIT_MILLIMETER, MHS_UNIT_MICROMETER, MHS_UNIT_NA
 
 typedef int32_t mhs_axis_t;
 enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
-
-typedef int32_t mhs_face_t;
-enum {
-    MHS_FACE_XM = 0,
-    MHS_FACE_XP = 1,
-    MHS_FACE_YM = 2,
-    MHS_FACE_YP = 3,
-    MHS_FACE_ZM = 4,
-    MHS_FACE_ZP = 5
-};
 
 typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
@@ -142,8 +122,23 @@ typedef struct {
     double fixed_dt;
 } mhs_solve_options_t;
 
-/** Non-owning CSC matrix view.  Pointers remain valid while the source
- *  assembly handle remains alive. */
+/** Compiled model metadata — scalar fields + per-cell array views.
+
+    All pointer fields are read-only views valid while the compiled handle lives.
+    For inactive grid cells, grid_to_cell[i] == SIZE_MAX.
+*/
+typedef struct {
+    size_t cell_count;
+    mhs_study_t study_type;
+    double initial_temperature;
+
+    size_t nx, ny, nz;
+    const size_t* grid_to_cell; // [nx*ny*nz], SIZE_MAX for inactive cells
+    const uint32_t* layer_ids; // [cell_count]
+    const uint32_t* block_ids; // [cell_count]
+} mhs_compiled_metadata_t;
+
+/** Non-owning CSC matrix view — valid until the source handle is destroyed. */
 typedef struct {
     int32_t rows, columns, nnz;
     const int32_t* outer_indices;
@@ -151,24 +146,15 @@ typedef struct {
     const double* values;
 } mhs_csc_view_t;
 
-/**
- * Compiled model metadata view
- */
+/** Operators K, C, f of the linearised system: C * dx/dt + K * x = f. */
 typedef struct {
-    size_t cell_count;
-    mhs_study_t study_type;
-    double initial_temperature;
-    const uint32_t* layer_ids; // [cell_count] post-processing only
-    const uint32_t* block_ids; // [cell_count] post-processing only
-    const size_t* grid_to_cell; // [grid_count]
-    size_t nx, ny, nz;
-} mhs_compiled_metadata_t;
+    mhs_csc_view_t K;
+    mhs_csc_view_t C;
+    const double* rhs; // [n]
+    size_t n; // state count
+} mhs_operators_t;
 
-/**
- * Solution bulk data view.
- *
- * All pointer fields are valid until the solution handle is destroyed.
- */
+/** Solution bulk data view — valid until the solution handle is destroyed. */
 typedef struct {
     size_t fvm_count;
     size_t state_count;
@@ -176,17 +162,7 @@ typedef struct {
     const double* state; // [state_count], temperatures first
 } mhs_solution_view_t;
 
-/** Non-owning operators view — returns all three operators in one call.
- *  Pointers remain valid while the source operators handle remains alive. */
-typedef struct {
-    mhs_csc_view_t K;
-    mhs_csc_view_t C;
-    const double* rhs; // [n]
-    size_t n;
-} mhs_operators_view_t;
-
-/** Non-owning probe trace view.  Pointers remain valid while the source
- *  solution handle remains alive. */
+/** Non-owning probe trace view — valid while the solution handle is alive. */
 typedef struct {
     const char* name;
     const double* times; // [record_count]
@@ -201,25 +177,15 @@ typedef struct {
 /** Fill opts with sensible defaults (Pardiso, 1e-8, 1e-6, …). */
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 
-/** Human-readable name for a status code (static, no ownership transfer). */
-MHS_API const char* mhs_status_string(mhs_status_t status);
-
-/** Thread-local last error message from the most recent API call that
- *  returned a non-OK status (or an INVALID ID).  Reset on every API call.
- *  Valid until the next API call. */
+/** Thread-local last error message. Reset on every API call. */
 MHS_API const char* mhs_last_error(void);
 
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */
 /* ------------------------------------------------------------------ */
 
-/** Create an empty model handle.  Must be paired with mhs_model_destroy(). */
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
-
-/** Destroy a model handle.  Passing NULL is a no-op. */
-MHS_API mhs_status_t mhs_model_destroy(mhs_model_t* m);
-
-/** Load a model from a MetaHotspot XML case file. */
+MHS_API void mhs_model_destroy(mhs_model_t* m);
 MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 
 /* ------------------------------------------------------------------ */
@@ -229,8 +195,6 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
     double initial_temperature_K, double duration, double output_interval);
 
-/** Set mesh vertices.  count must be >= 2 for any axis being set; pass 0
- *  for unused axes.  vertices pointers may be NULL when count is 0. */
 MHS_API mhs_status_t mhs_model_set_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
 
@@ -243,28 +207,25 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
 
-MHS_API mhs_layer_id_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset);
+MHS_API mhs_status_t mhs_model_add_layer(
+    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, uint32_t* out_id);
 
-MHS_API mhs_block_id_t mhs_model_add_block(mhs_model_t* m, mhs_layer_id_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness);
+MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const char* material_name,
+    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, uint32_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_block_id_t block, mhs_geometry_op_t op, const char* x,
+MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geometry_op_t op, const char* x,
     const char* y, const char* width, const char* height);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-/** Add a Dirichlet (fixed-temperature) boundary with one or more face regions. */
 MHS_API mhs_status_t mhs_model_add_dirichlet(
     mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature);
 
-/** Add a Neumann (fixed-heat-flux) boundary with one or more face regions. */
 MHS_API mhs_status_t mhs_model_add_neumann(
     mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux);
 
-/** Add a convection (Robin / Cauchy) boundary with one or more face regions. */
 MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
     const char* coefficient, const char* ambient_temperature);
 
@@ -302,22 +263,22 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axi
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** out);
-MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c);
+MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 
 /* ------------------------------------------------------------------ */
-/*  Compiled metadata view (replaces ~12 individual accessors)         */
+/*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out);
 
 /* ------------------------------------------------------------------ */
-/*  Operators (K, C, f in CSC format)                                 */
+/*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Evaluate K, C, f at *temperature* at time *time*.
+    Returns an mhs_operators_t valid until the next assemble call. */
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_operators_t** out);
-MHS_API mhs_status_t mhs_operators_destroy(mhs_operators_t* a);
-MHS_API mhs_status_t mhs_operators_view(const mhs_operators_t* a, mhs_operators_view_t* out);
+    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
@@ -326,17 +287,16 @@ MHS_API mhs_status_t mhs_operators_view(const mhs_operators_t* a, mhs_operators_
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
     const mhs_solve_options_t* opts, mhs_solution_t** out);
 
-MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
+MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Write a VTU file from a compiled model and solution. */
 MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
-/*  Solution view (replaces ~7 individual accessors)                   */
+/*  Solution view                                                      */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out);
