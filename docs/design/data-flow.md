@@ -48,21 +48,21 @@ XML
 
 ## 各阶段
 
-| 阶段              | 输入                                  | 输出                            | 关键                                                     |
-|-------------------|---------------------------------------|---------------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `ModelDefinition`               | tinyxml2                                                 |
-| 预处理-几何       | `mesh.{x,y,z}_vertices`               | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
-| 预处理-单元拓扑   | mesh + 层几何                         | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
-| 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
-| 组装              | 当前完整状态 + 时间                   | `Operators {K,C,f}`             | `SystemAssembler` 拥有状态划分和全部耦合物理            |
+| 阶段              | 输入                                   | 输出                            | 关键                                                     |
+| ----------------- | -------------------------------------- | ------------------------------- | -------------------------------------------------------- |
+| XML 解析          | XML 文件                               | `ModelDefinition`               | tinyxml2                                                 |
+| 预处理-几何       | `mesh.{x,y,z}_vertices`                | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
+| 预处理-层几何     | `ModelDefinition.layers`               | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
+| 预处理-单元拓扑   | mesh + 层几何                          | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
+| 预处理-单元归属   | mesh + 层几何                          | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
+| 预处理-面 BC      | mesh + `BoundaryPatch[]`               | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
+| 预处理-表达式编译 | IO 字符串                              | `CompiledExpression`            | muparser 或 `make_constant`                              |
+| 组装              | 当前完整状态 + 时间                    | `Operators {K,C,f}`             | `SystemAssembler` 拥有状态划分和全部耦合物理             |
 | 模态端口组合      | FVM + modal macro + physical interface | 全局 `Operators`                | 每轮重算 FVM 半热导并用 `Phi` 投影，不进入 scheduler     |
 | 时间输出          | accepted state + output grid           | observer state                  | Adaptive/Fixed 均截短到网格；禁止插值全局/模态状态       |
-| 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
-| 非线性更新        | 线性解 `G(x)`                         | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
-| 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
+| 线性求解          | `A x = b`                              | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
+| 非线性更新        | 线性解 `G(x)`                          | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
+| 后处理            | `Model` + `cell_temperature`           | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
+| 探针记录          | `cell_T` + `model.observation_points`  | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
 运行期 SoA 和面 BC 约定见代码注释；表达式线程模型见 [expr-api.md](expr-api.md)。
