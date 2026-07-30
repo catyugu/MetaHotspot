@@ -11,25 +11,20 @@ import ctypes
 
 # ---- Opaque handle types ----
 
-
 class MhsModel(ctypes.Structure):
     pass
-
 
 class MhsCompiled(ctypes.Structure):
     pass
 
-
 class MhsSolution(ctypes.Structure):
     pass
 
-
-class MhsAssembly(ctypes.Structure):
+class MhsOperators(ctypes.Structure):
     pass
 
 
 # ---- Value types ----
-
 
 class Rect2D(ctypes.Structure):
     _fields_ = [
@@ -39,13 +34,11 @@ class Rect2D(ctypes.Structure):
         ("b_max", ctypes.c_double),
     ]
 
-
 class Point2D(ctypes.Structure):
     _fields_ = [
         ("x", ctypes.c_double),
         ("y", ctypes.c_double),
     ]
-
 
 class MhsFaceRegion(ctypes.Structure):
     _fields_ = [
@@ -54,8 +47,7 @@ class MhsFaceRegion(ctypes.Structure):
         ("rectangle", Rect2D),
     ]
 
-
-class SolverOpts(ctypes.Structure):
+class SolveOptions(ctypes.Structure):
     _fields_ = [
         ("solver_type", ctypes.c_int32),
         ("linear_tolerance", ctypes.c_double),
@@ -74,14 +66,12 @@ class SolverOpts(ctypes.Structure):
     ]
 
     @staticmethod
-    def default() -> "SolverOpts":
-        """Return a SolverOpts filled with sensible defaults (Pardiso, 1e-8, ...)."""
-        opts = SolverOpts()
+    def default() -> "SolveOptions":
+        """Return a SolveOptions filled with sensible defaults (Pardiso, 1e-8, ...)."""
+        opts = SolveOptions()
         from metahotspot._lib import get_dll
-
-        get_dll().mhs_solver_opts_default(ctypes.byref(opts))
+        get_dll().mhs_solve_options_default(ctypes.byref(opts))
         return opts
-
 
 class CscView(ctypes.Structure):
     _fields_ = [
@@ -93,15 +83,13 @@ class CscView(ctypes.Structure):
         ("values", ctypes.POINTER(ctypes.c_double)),
     ]
 
-
-class MhsAssemblyView(ctypes.Structure):
+class MhsOperatorsView(ctypes.Structure):
     _fields_ = [
         ("K", CscView),
         ("C", CscView),
         ("rhs", ctypes.POINTER(ctypes.c_double)),
         ("n", ctypes.c_size_t),
     ]
-
 
 class CompiledMetadataView(ctypes.Structure):
     _fields_ = [
@@ -116,7 +104,6 @@ class CompiledMetadataView(ctypes.Structure):
         ("nz", ctypes.c_size_t),
     ]
 
-
 class SolutionView(ctypes.Structure):
     _fields_ = [
         ("fvm_count", ctypes.c_size_t),
@@ -124,7 +111,6 @@ class SolutionView(ctypes.Structure):
         ("time", ctypes.c_double),
         ("state", ctypes.POINTER(ctypes.c_double)),
     ]
-
 
 class ProbeView(ctypes.Structure):
     _fields_ = [
@@ -134,14 +120,12 @@ class ProbeView(ctypes.Structure):
         ("record_count", ctypes.c_size_t),
     ]
 
-
-class ModalPortView(ctypes.Structure):
-    """C-side ``mhs_modal_port_view_t`` mirror — macro-model extension."""
+class MhsMacroPortModel(ctypes.Structure):
+    """C-side ``mhs_macro_port_model_t`` mirror — macro-model extension."""
     _fields_ = [
-        ("operators", MhsAssemblyView),
+        ("operators", MhsOperatorsView),
         ("basis", ctypes.POINTER(ctypes.c_double)),
         ("physical_port_count", ctypes.c_size_t),
-        ("mode_count", ctypes.c_size_t),
         ("model_cells", ctypes.POINTER(ctypes.c_size_t)),
         ("model_face", ctypes.c_int32),
         ("exterior_half_conductance", ctypes.POINTER(ctypes.c_double)),

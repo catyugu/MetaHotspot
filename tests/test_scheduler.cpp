@@ -1,5 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "model_test_utils.hpp"
+#include "solver/probe_recorder.hpp"
 #include "solver/scheduler.hpp"
 #include <Eigen/LU>
 #include <array>
@@ -47,6 +48,34 @@ namespace {
         io.materials.push_back({"solid", material});
         io.default_boundary = mhs::model::NeumannBoundary {};
         return build_model(io);
+    }
+
+    // Helper: run a full thermal solve (replaces the old solve_thermal)
+    mhs::core::Solution solve_thermal_model(
+        const mhs::core::Model& model, const SolveOptions& opts = {},
+        std::span<const double> initial_state = {})
+    {
+        const auto fvm_count = model.cells.cell_to_grid.size();
+        std::vector<double> state;
+        if (initial_state.empty()) {
+            state.assign(fvm_count, model.initial_temperature);
+        } else {
+            state.assign(initial_state.begin(), initial_state.end());
+        }
+
+        Study study {model.study_type, model.transient_duration, model.transient_time_step};
+        SystemAssembler assemble = [&](std::span<const double> s, double t) {
+            return assemble_thermal(model, s, t);
+        };
+        ProbeRecorder probe_recorder;
+        probe_recorder.initialize(model);
+        StateObserver observe = [&](double t, std::span<const double> accepted_state) {
+            probe_recorder.record(t, accepted_state);
+        };
+        auto result = solve_system(study, assemble, state, opts, observe);
+        result.fvm_count = fvm_count;
+        result.probe_traces = probe_recorder.traces();
+        return result;
     }
 
 } // namespace
@@ -128,14 +157,14 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     auto model = build_model(io);
 
-    auto result = solve_thermal(model);
+    auto result = solve_thermal_model(model);
 
-    EXPECT_EQ(result.temperature.size(), model.cells.cell_to_grid.size());
-    EXPECT_TRUE(std::equal(result.temperature.begin(), result.temperature.end(), result.temperature.begin()));
+    EXPECT_EQ(result.state.size(), model.cells.cell_to_grid.size());
+    EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
     double max_T = 0.0;
-    for (const auto& t : result.temperature) {
+    for (const auto& t : result.state) {
         max_T = std::max(max_T, t);
     }
     EXPECT_GT(max_T, 300.0) << "Heat source should raise temperature above 300K";
@@ -199,7 +228,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     auto model = build_model(io);
 
-    auto result = solve_thermal(model);
+    auto result = solve_thermal_model(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -275,7 +304,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     auto model = build_model(io);
 
-    auto result = solve_thermal(model);
+    auto result = solve_thermal_model(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

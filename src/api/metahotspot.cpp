@@ -7,6 +7,7 @@
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
+#include "solver/probe_recorder.hpp"
 #include "solver/scheduler.hpp"
 
 #include <Eigen/Core>
@@ -24,6 +25,7 @@ static thread_local std::string tls_err;
 
 void mhs_detail_set_last_error(const std::string& msg) { tls_err = msg; }
 void mhs_detail_clear_last_error() { tls_err.clear(); }
+const char* mhs_detail_last_error() { return tls_err.c_str(); }
 
 /* ------------------------------------------------------------------ */
 /*  Enum conversions                                                   */
@@ -142,39 +144,10 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
 }
 
 /* ------------------------------------------------------------------ */
-/*  SolverOpts conversion helper                                       */
-/* ------------------------------------------------------------------ */
-
-mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double transient_duration)
-{
-    mhs::sim::SolverOpts so;
-    if (!opts)
-        return so;
-
-    so.solver.type = _to_solver_type(opts->solver_type);
-    so.solver.config.tolerance = opts->linear_tolerance;
-    so.solver.config.max_iterations = opts->linear_max_iterations;
-    so.nonlinear.underrelaxation = opts->underrelaxation;
-    so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
-    so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
-    so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
-    so.integrator = _to_integrator(opts->integrator);
-    so.step_strategy = _to_step_strategy(opts->step_strategy);
-    so.error_abs_tol = opts->error_abs_tol;
-    so.error_safety = opts->error_safety;
-    so.min_dt = opts->min_dt;
-    // max_dt fix: if user set max_dt <= 0 and duration > 0, clamp to duration.
-    // Otherwise respect the user setting strictly.
-    so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;
-    so.fixed_dt = opts->fixed_dt;
-    return so;
-}
-
-/* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-MHS_API void mhs_solver_opts_default(mhs_solver_opts_t* opts)
+MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 {
     if (!opts)
         return;
@@ -220,7 +193,7 @@ MHS_API const char* mhs_status_string(mhs_status_t status)
     }
 }
 
-MHS_API const char* mhs_last_error(void) { return tls_err.c_str(); }
+MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
 
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */
@@ -231,7 +204,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
     CHECK_NULL(out);
     try {
         *out = new mhs_model_t {};
-        tls_err.clear();
+        mhs_detail_clear_last_error();
         return MHS_OK;
     }
     catch (const std::bad_alloc&) {
@@ -244,7 +217,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 MHS_API mhs_status_t mhs_model_destroy(mhs_model_t* m)
 {
     delete m;
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -612,7 +585,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
 MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c)
 {
     delete c;
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -633,8 +606,35 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     out->nx = c->model.mesh.nx;
     out->ny = c->model.mesh.ny;
     out->nz = c->model.mesh.nz;
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/*  SolveOptions conversion helper                                    */
+/* ------------------------------------------------------------------ */
+
+mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration)
+{
+    mhs::sim::SolveOptions so;
+    if (!opts)
+        return so;
+
+    so.solver.type = _to_solver_type(opts->solver_type);
+    so.solver.config.tolerance = opts->linear_tolerance;
+    so.solver.config.max_iterations = opts->linear_max_iterations;
+    so.nonlinear.underrelaxation = opts->underrelaxation;
+    so.nonlinear.max_iterations = opts->nonlinear_max_iterations;
+    so.nonlinear.relative_tolerance = opts->nonlinear_relative_tolerance;
+    so.nonlinear.absolute_tolerance = opts->nonlinear_absolute_tolerance;
+    so.integrator = _to_integrator(opts->integrator);
+    so.step_strategy = _to_step_strategy(opts->step_strategy);
+    so.error_abs_tol = opts->error_abs_tol;
+    so.error_safety = opts->error_safety;
+    so.min_dt = opts->min_dt;
+    so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;
+    so.fixed_dt = opts->fixed_dt;
+    return so;
 }
 
 /* ------------------------------------------------------------------ */
@@ -642,7 +642,7 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_assembly_t** out)
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_operators_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
@@ -657,7 +657,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
         std::span<const double> state_span(state, n);
         auto result = mhs::sim::assemble_thermal(c->model, state_span, time);
 
-        auto h = std::make_unique<mhs_assembly_t>();
+        auto h = std::make_unique<mhs_operators_t>();
         h->K = std::move(result.K);
         h->C = std::move(result.C);
         h->rhs = std::move(result.f);
@@ -668,10 +668,10 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     });
 }
 
-MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a)
+MHS_API mhs_status_t mhs_operators_destroy(mhs_operators_t* a)
 {
     delete a;
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -682,7 +682,7 @@ static mhs_csc_view_t _eigen_to_csc_view(const Eigen::SparseMatrix<double>& mat)
         mat.outerIndexPtr(), mat.innerIndexPtr(), mat.valuePtr()};
 }
 
-MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out)
+MHS_API mhs_status_t mhs_operators_view(const mhs_operators_t* a, mhs_operators_view_t* out)
 {
     CHECK_NULL(a);
     CHECK_NULL(out);
@@ -690,7 +690,7 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
     out->C = _eigen_to_csc_view(a->C);
     out->rhs = a->rhs.data();
     out->n = static_cast<size_t>(a->rhs.size());
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -699,19 +699,37 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out)
+    const mhs_solve_options_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_SOLVE, {
-        auto so = to_solver_opts(opts, c->model.transient_duration);
+        const auto fvm_count = c->model.cells.cell_to_grid.size();
+        auto so = to_solve_options(opts, c->model.transient_duration);
 
-        std::span<const double> initial_state;
+        // Build initial state — uniform temperature if none provided
+        std::vector<double> init_state;
         if (state && state_count > 0) {
-            initial_state = std::span<const double>(state, state_count);
+            if (state_count != fvm_count) {
+                SET_ERR("state_count must equal fvm_count for standard solve");
+                return MHS_ERR_INVALID_ARG;
+            }
+            init_state.assign(state, state + fvm_count);
+        }
+        else {
+            init_state.assign(fvm_count, c->model.initial_temperature);
         }
 
-        auto sol = mhs::sim::solve_thermal(c->model, so, initial_state);
+        mhs::sim::Study study {c->model.study_type, c->model.transient_duration, c->model.transient_time_step};
+        mhs::sim::SystemAssembler assemble = [&](std::span<const double> s, double t) {
+            return mhs::sim::assemble_thermal(c->model, s, t);
+        };
+        mhs::sim::ProbeRecorder probe_recorder;
+        probe_recorder.initialize(c->model);
+        mhs::sim::StateObserver observe = [&](double t, std::span<const double> accepted_state) {
+            probe_recorder.record(t, accepted_state);
+        };
+        auto sol = mhs::sim::solve_system(study, assemble, init_state, so, observe);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {
@@ -719,11 +737,9 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             SET_ERR("memory allocation failed");
             return MHS_ERR_OOM;
         }
-        s->result.state = std::move(sol.temperature);
-        s->result.time = sol.time;
-        s->result.converged = sol.converged;
-        s->fvm_count = c->model.cells.cell_to_grid.size();
-        s->probe_traces = std::move(sol.probe_traces);
+        s->sol = std::move(sol);
+        s->sol.fvm_count = fvm_count;
+        s->sol.probe_traces = probe_recorder.traces();
         *out = s;
     });
 }
@@ -738,10 +754,10 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
     CHECK_NULL(s);
     CHECK_NULL(path);
     MHS_TRY(MHS_ERR_IO, {
-        if (s->fvm_count != c->model.cells.cell_to_grid.size()) {
+        if (s->sol.fvm_count != c->model.cells.cell_to_grid.size()) {
             throw std::invalid_argument("solution FVM state does not match compiled model");
         }
-        mhs::io::write_vtu(path, c->model, std::span<const double>(s->result.state.data(), s->fvm_count));
+        mhs::io::write_vtu(path, c->model, std::span<const double>(s->sol.state.data(), s->sol.fvm_count));
     });
 }
 
@@ -752,7 +768,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s)
 {
     delete s;
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -764,11 +780,11 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->fvm_count = s->fvm_count;
-    out->state_count = s->result.state.size();
-    out->time = s->result.time;
-    out->state = s->result.state.data();
-    tls_err.clear();
+    out->fvm_count = s->sol.fvm_count;
+    out->state_count = s->sol.state.size();
+    out->time = s->sol.time;
+    out->state = s->sol.state.data();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
@@ -780,22 +796,22 @@ MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s)
 {
     if (!s)
         return 0;
-    return s->probe_traces.size();
+    return s->sol.probe_traces.size();
 }
 
 MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out)
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    if (index >= s->probe_traces.size()) {
+    if (index >= s->sol.probe_traces.size()) {
         SET_ERR("probe index out of range");
         return MHS_ERR_INVALID_ARG;
     }
-    const auto& tr = s->probe_traces[index];
+    const auto& tr = s->sol.probe_traces[index];
     out->name = tr.name.c_str();
     out->times = tr.times.empty() ? nullptr : tr.times.data();
     out->values = tr.values.empty() ? nullptr : tr.values.data();
     out->record_count = tr.times.size();
-    tls_err.clear();
+    mhs_detail_clear_last_error();
     return MHS_OK;
 }

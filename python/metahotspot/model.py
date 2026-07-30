@@ -16,7 +16,7 @@ from metahotspot.types import (
     MhsFaceRegion,
     Rect2D,
     Point2D,
-    SolverOpts,
+    SolveOptions,
     MHS_LAYER_ID_INVALID,
     MHS_BLOCK_ID_INVALID,
 )

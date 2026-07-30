@@ -1,7 +1,7 @@
 include(GoogleTest)
 
 # ==============================================================================
-# 单一测试可执行文件
+# Single test executable
 # ==============================================================================
 
 file(GLOB test_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)

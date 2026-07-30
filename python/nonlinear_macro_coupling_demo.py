@@ -315,7 +315,7 @@ def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     started = perf_counter()
     with build_full_reference_model() as model:
         with model.compile() as compiled:
-            options = metahotspot.SolverOpts.default()
+            options = metahotspot.SolveOptions.default()
             options.nonlinear_relative_tolerance = 1.0e-10
             with compiled.solve(opts=options) as solution:
                 temperature = solution.temperature.copy()
@@ -351,15 +351,22 @@ def solve_reduced_case(
         physical_macro.port_cells.size,
         MACRO_K * FACE_AREA_M2 / (0.5 * CELL_LENGTH_M),
     )
-    options = metahotspot.SolverOpts.default()
+    options = metahotspot.SolveOptions.default()
     options.nonlinear_relative_tolerance = 1.0e-10
-    with metahotspot.macromodel.solve(
-        detailed,
-        macro=macro_operators,
+    port_model = metahotspot.macromodel.PortModel(
+        operators=macro_operators,
         basis=macro.basis,
+        physical_port_count=physical_macro.port_cells.size,
+    )
+    coupling = metahotspot.macromodel.PortCoupling(
         model_cells=detailed_interface,
         model_face=enums.Face.XP,
         exterior_half_conductance=exterior_half_conductance,
+    )
+    with metahotspot.macromodel.solve(
+        detailed,
+        port_model=port_model,
+        coupling=coupling,
         state=initial_state,
         opts=options,
     ) as solution:

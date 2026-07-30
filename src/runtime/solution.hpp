@@ -11,20 +11,14 @@ namespace mhs::core {
         std::vector<double> values;
     };
 
-    /// Full state returned by the generic system scheduler.
-    struct SolveResult {
+    /// Canonical solution returned by any solve path.
+    /// Temperature is state[0:fvm_count] — no duplicate storage.
+    struct Solution {
         std::vector<double> state;
+        std::size_t fvm_count = 0;
         double time = 0.0;
         bool converged = true;
-    };
-
-    /// Thermal-only result returned by solve_thermal() — temperature field
-    /// extracted from the full state plus thermal post-processing.
-    struct ThermalSolution {
-        std::vector<double> temperature;
-        double time = 0.0;
         std::vector<ProbeTrace> probe_traces;
-        bool converged = true;
     };
 
 } // namespace mhs::core

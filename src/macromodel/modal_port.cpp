@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace mhs::sim {
+namespace mhs::macro {
 
     namespace {
 
@@ -24,40 +24,63 @@ namespace mhs::sim {
             }
         }
 
-        void validate_operators(const Operators& operators, Eigen::Index size)
+        void validate_operators(const mhs::sim::Operators& operators, Eigen::Index size)
         {
             if (operators.K.rows() != size || operators.K.cols() != size || operators.C.rows() != size
                 || operators.C.cols() != size || operators.f.size() != size) {
-                throw std::invalid_argument("assemble_modal_port_system: modal K/C/f dimensions do not match");
+                throw std::invalid_argument("assemble: macro K/C/f dimensions do not match");
             }
         }
 
-        void validate_interface(const mhs::core::Model& model, const ModalPort& macro,
-            const ThermalPortInterface& interface, std::span<const double> state)
+        void validate(const mhs::core::Model& model, const PortModel& port,
+            const PortCoupling& coupling, std::span<const double> state)
         {
             const auto model_count = model.cells.cell_to_grid.size();
-            const auto physical_port_count = static_cast<std::size_t>(macro.basis.rows());
-            const auto mode_count = static_cast<std::size_t>(macro.basis.cols());
-            validate_operators(macro.operators, static_cast<Eigen::Index>(mode_count));
+            const auto macro_state_count = static_cast<std::size_t>(port.operators.f.size());
+            const auto physical_port_count = port.physical_port_count;
 
-            if (physical_port_count == 0 || mode_count == 0) {
-                throw std::invalid_argument("assemble_modal_port_system: port basis is empty");
+            if (macro_state_count == 0) {
+                throw std::invalid_argument("assemble: macro has zero states");
             }
-            if (interface.model_cells.size() != physical_port_count
-                || static_cast<std::size_t>(interface.exterior_half_conductance.size()) != physical_port_count) {
-                throw std::invalid_argument(
-                    "assemble_modal_port_system: interface data does not match physical port count");
+            if (physical_port_count == 0) {
+                throw std::invalid_argument("assemble: physical_port_count is zero");
             }
-            if (state.size() != model_count + mode_count) {
+
+            const bool has_basis = (port.basis.rows() > 0 && port.basis.cols() > 0);
+            if (has_basis) {
+                if (static_cast<std::size_t>(port.basis.rows()) != physical_port_count) {
+                    throw std::invalid_argument(
+                        "assemble: basis rows must equal physical_port_count");
+                }
+                if (static_cast<std::size_t>(port.basis.cols()) != macro_state_count) {
+                    throw std::invalid_argument(
+                        "assemble: basis cols must equal macro_state_count");
+                }
+            }
+            else {
+                if (physical_port_count != macro_state_count) {
+                    throw std::invalid_argument(
+                        "assemble: unit-basis requires physical_port_count == macro_state_count");
+                }
+            }
+
+            validate_operators(port.operators, static_cast<Eigen::Index>(macro_state_count));
+
+            if (coupling.model_cells.size() != physical_port_count
+                || static_cast<std::size_t>(coupling.exterior_half_conductance.size()) != physical_port_count) {
                 throw std::invalid_argument(
-                    "assemble_modal_port_system: state must contain FVM temperatures followed by port modes");
+                    "assemble: coupling data does not match physical port count");
+            }
+            if (state.size() != model_count + macro_state_count) {
+                throw std::invalid_argument(
+                    "assemble: state must contain FVM temperatures followed by macro states");
             }
 
             std::unordered_set<mhs::core::Index> unique_cells;
-            for (const auto cell : interface.model_cells) {
+            for (const auto cell : coupling.model_cells) {
                 if (cell >= model_count || !unique_cells.insert(cell).second) {
                     throw std::invalid_argument(
-                        "assemble_modal_port_system: interface cells must be unique valid FVM cells");
+                        "assemble: interface cells must be unique valid FVM cells");
                 }
             }
         }
@@ -75,7 +98,7 @@ namespace mhs::sim {
                 ix, iy, iz, face, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
             if (neighbor_grid != mhs::core::invalidIndex) {
                 throw std::invalid_argument(
-                    "assemble_modal_port_system: an interface face has an active FVM neighbor");
+                    "assemble: an interface face has an active FVM neighbor");
             }
 
             const auto& material = model.material_table[model.cells.material_id[cell]];
@@ -94,66 +117,89 @@ namespace mhs::sim {
                 / (model_half_conductance + exterior_half_conductance);
         }
 
+        /// Identity-projection coefficients: for unit basis, (port, mode) == (port == mode ? 1.0 : 0.0).
+        inline double basis_coeff(const PortModel& port, std::size_t physical_port, Eigen::Index mode)
+        {
+            if (port.basis.rows() > 0 && port.basis.cols() > 0) {
+                return port.basis(static_cast<Eigen::Index>(physical_port), mode);
+            }
+            // Unit basis — identity
+            return (static_cast<Eigen::Index>(physical_port) == mode) ? 1.0 : 0.0;
+        }
+
     } // namespace
 
-    Operators assemble_modal_port_system(const mhs::core::Model& model, const ModalPort& macro,
-        const ThermalPortInterface& interface, std::span<const double> state, double time)
+    mhs::sim::Operators assemble(const mhs::core::Model& model, const PortModel& port,
+        const PortCoupling& coupling, std::span<const double> state, double time)
     {
-        validate_interface(model, macro, interface, state);
+        validate(model, port, coupling, state);
 
         const auto model_count = model.cells.cell_to_grid.size();
-        const auto mode_count = static_cast<std::size_t>(macro.basis.cols());
-        const auto state_count = model_count + mode_count;
+        const auto macro_state_count = static_cast<std::size_t>(port.operators.f.size());
+        const auto state_count = model_count + macro_state_count;
         const auto eigen_model_count = static_cast<Eigen::Index>(model_count);
-        const auto eigen_mode_count = static_cast<Eigen::Index>(mode_count);
+        const auto eigen_macro_count = static_cast<Eigen::Index>(macro_state_count);
         const auto eigen_state_count = static_cast<Eigen::Index>(state_count);
 
         const auto temperature = state.first(model_count);
-        auto model_operators = assemble_thermal(model, temperature, time);
+        auto model_operators = mhs::sim::assemble_thermal(model, temperature, time);
 
         std::vector<Eigen::Triplet<double>> stiffness;
         std::vector<Eigen::Triplet<double>> capacity;
         stiffness.reserve(static_cast<std::size_t>(
-            model_operators.K.nonZeros() + macro.operators.K.nonZeros()
-            + interface.model_cells.size() * (2 * mode_count + mode_count * mode_count + 1)));
+            model_operators.K.nonZeros() + port.operators.K.nonZeros()
+            + coupling.model_cells.size() * (2 * macro_state_count + macro_state_count * macro_state_count + 1)));
         capacity.reserve(
-            static_cast<std::size_t>(model_operators.C.nonZeros() + macro.operators.C.nonZeros()));
+            static_cast<std::size_t>(model_operators.C.nonZeros() + port.operators.C.nonZeros()));
         append_block(stiffness, model_operators.K, 0, 0);
-        append_block(stiffness, macro.operators.K, eigen_model_count, eigen_model_count);
+        append_block(stiffness, port.operators.K, eigen_model_count, eigen_model_count);
         append_block(capacity, model_operators.C, 0, 0);
-        append_block(capacity, macro.operators.C, eigen_model_count, eigen_model_count);
+        append_block(capacity, port.operators.C, eigen_model_count, eigen_model_count);
 
-        for (std::size_t physical_port = 0; physical_port < interface.model_cells.size(); ++physical_port) {
-            const auto cell = interface.model_cells[physical_port];
-            const double conductance = interface_conductance(model, cell, interface.model_face,
-                interface.exterior_half_conductance[static_cast<Eigen::Index>(physical_port)], temperature, time);
+        for (std::size_t physical_port = 0; physical_port < coupling.model_cells.size(); ++physical_port) {
+            const auto cell = coupling.model_cells[physical_port];
+            const double conductance = interface_conductance(model, cell, coupling.model_face,
+                coupling.exterior_half_conductance[static_cast<Eigen::Index>(physical_port)], temperature, time);
             const auto cell_row = static_cast<Eigen::Index>(cell);
             stiffness.emplace_back(cell_row, cell_row, conductance);
 
-            for (Eigen::Index mode = 0; mode < eigen_mode_count; ++mode) {
-                const double projected = conductance * macro.basis(
-                    static_cast<Eigen::Index>(physical_port), mode);
+            for (Eigen::Index mode = 0; mode < eigen_macro_count; ++mode) {
+                const double projected = conductance * basis_coeff(port, physical_port, mode);
                 const auto mode_row = eigen_model_count + mode;
                 stiffness.emplace_back(cell_row, mode_row, -projected);
                 stiffness.emplace_back(mode_row, cell_row, -projected);
 
-                for (Eigen::Index other_mode = 0; other_mode < eigen_mode_count; ++other_mode) {
+                for (Eigen::Index other_mode = 0; other_mode < eigen_macro_count; ++other_mode) {
                     const double modal_conductance = projected
-                        * macro.basis(static_cast<Eigen::Index>(physical_port), other_mode);
+                        * basis_coeff(port, physical_port, other_mode);
                     stiffness.emplace_back(mode_row, eigen_model_count + other_mode, modal_conductance);
                 }
             }
         }
 
-        Operators combined;
+        mhs::sim::Operators combined;
         combined.K.resize(eigen_state_count, eigen_state_count);
         combined.K.setFromTriplets(stiffness.begin(), stiffness.end());
         combined.C.resize(eigen_state_count, eigen_state_count);
         combined.C.setFromTriplets(capacity.begin(), capacity.end());
         combined.f.resize(eigen_state_count);
         combined.f.head(eigen_model_count) = model_operators.f;
-        combined.f.tail(eigen_mode_count) = macro.operators.f;
+        combined.f.tail(eigen_macro_count) = port.operators.f;
         return combined;
     }
 
-} // namespace mhs::sim
+    mhs::core::Solution solve(const mhs::core::Model& model, const PortModel& port,
+        const PortCoupling& coupling, std::span<const double> initial_state,
+        const mhs::sim::SolveOptions& opts)
+    {
+        mhs::sim::Study study {model.study_type, model.transient_duration, model.transient_time_step};
+        mhs::sim::SystemAssembler asm_fn = [&](std::span<const double> state, double time) {
+            return assemble(model, port, coupling, state, time);
+        };
+
+        auto result = mhs::sim::solve_system(study, asm_fn, initial_state, opts);
+        result.fvm_count = model.cells.cell_to_grid.size();
+        return result;
+    }
+
+} // namespace mhs::macro

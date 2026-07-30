@@ -14,18 +14,19 @@ Usage::
     K, C, f = compiled.assemble(compiled.default_state())
 
     # Macro-model coupled solve (optional plugin):
-    from metahotspot.macromodel import solve
-    solution = solve(compiled, macro, basis, ...)
+    from metahotspot.macromodel import solve, PortModel, PortCoupling
+    solution = solve(compiled, port_model, coupling, state)
 """
 
 from metahotspot.model import Model
+from metahotspot.macromodel import MhsMacroPortModel
 from metahotspot.compiled import Compiled
 from metahotspot.solution import Solution
 from metahotspot.assembly import Operators
-from metahotspot import enums, types, macromodel
+from metahotspot import enums, types
 from metahotspot._error import MetaHotspotError
 from metahotspot._lib import get_dll, load_library
-from metahotspot.types import SolverOpts
+from metahotspot.types import SolveOptions
 
 __all__ = [
     "Model",
@@ -34,7 +35,7 @@ __all__ = [
     "Operators",
     "enums",
     "types",
-    "macromodel",
     "MetaHotspotError",
-    "SolverOpts",
+    "SolveOptions",
+    "MhsMacroPortModel"
 ]

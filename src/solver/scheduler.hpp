@@ -1,6 +1,5 @@
 #pragma once
 
-#include "runtime/model.hpp"
 #include "runtime/solution.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
@@ -11,7 +10,7 @@
 
 namespace mhs::sim {
 
-    struct SolverOpts {
+    struct SolveOptions {
         // Time integration
         time_scheme::IntegratorKind integrator = time_scheme::IntegratorKind::Bdf1;
         time_scheme::StepStrategy step_strategy = time_scheme::StepStrategy::Adaptive;
@@ -48,11 +47,7 @@ namespace mhs::sim {
     /// Run nonlinear iteration and time integration over an externally
     /// assembled system. The scheduler owns when to reassemble; the callback
     /// owns all state partitioning and coupling physics.
-    mhs::core::SolveResult solve_system(const Study& study, const SystemAssembler& assemble,
-        std::span<const double> initial_state, const SolverOpts& opts = {}, const StateObserver& observe = {});
-
-    /// Solve only the Model's detailed FVM region.
-    mhs::core::ThermalSolution solve_thermal(
-        const mhs::core::Model& model, const SolverOpts& opts = {}, std::span<const double> initial_state = {});
+    mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
+        std::span<const double> initial_state, const SolveOptions& opts = {}, const StateObserver& observe = {});
 
 } // namespace mhs::sim

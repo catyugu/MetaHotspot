@@ -42,7 +42,7 @@ extern "C" {
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
-typedef struct mhs_assembly_t mhs_assembly_t;
+typedef struct mhs_operators_t mhs_operators_t;
 
 /* ------------------------------------------------------------------ */
 /*  ID types  (uint32_t, UINT32_MAX = invalid)                         */
@@ -124,7 +124,7 @@ typedef struct {
     mhs_rect2d_t rectangle;
 } mhs_face_region_t;
 
-/** Solver options.  Populate with mhs_solver_opts_default(). */
+/** Solver options.  Populate with mhs_solve_options_default(). */
 typedef struct {
     mhs_solver_type_t solver_type;
     double linear_tolerance;
@@ -140,7 +140,7 @@ typedef struct {
     double min_dt;
     double max_dt;
     double fixed_dt;
-} mhs_solver_opts_t;
+} mhs_solve_options_t;
 
 /** Non-owning CSC matrix view.  Pointers remain valid while the source
  *  assembly handle remains alive. */
@@ -176,14 +176,14 @@ typedef struct {
     const double* state; // [state_count], temperatures first
 } mhs_solution_view_t;
 
-/** Non-owning assembly view — returns all three operators in one call.
- *  Pointers remain valid while the source assembly handle remains alive. */
+/** Non-owning operators view — returns all three operators in one call.
+ *  Pointers remain valid while the source operators handle remains alive. */
 typedef struct {
     mhs_csc_view_t K;
     mhs_csc_view_t C;
     const double* rhs; // [n]
     size_t n;
-} mhs_assembly_view_t;
+} mhs_operators_view_t;
 
 /** Non-owning probe trace view.  Pointers remain valid while the source
  *  solution handle remains alive. */
@@ -199,7 +199,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /** Fill opts with sensible defaults (Pardiso, 1e-8, 1e-6, …). */
-MHS_API void mhs_solver_opts_default(mhs_solver_opts_t* opts);
+MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 
 /** Human-readable name for a status code (static, no ownership transfer). */
 MHS_API const char* mhs_status_string(mhs_status_t status);
@@ -311,20 +311,20 @@ MHS_API mhs_status_t mhs_compiled_destroy(mhs_compiled_t* c);
 MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out);
 
 /* ------------------------------------------------------------------ */
-/*  Assembly (matrix + RHS extraction)                                */
+/*  Operators (K, C, f in CSC format)                                 */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_assembly_t** out);
-MHS_API mhs_status_t mhs_assembly_destroy(mhs_assembly_t* a);
-MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out);
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_operators_t** out);
+MHS_API mhs_status_t mhs_operators_destroy(mhs_operators_t* a);
+MHS_API mhs_status_t mhs_operators_view(const mhs_operators_t* a, mhs_operators_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out);
+    const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 
@@ -347,35 +347,6 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 
 MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s);
 MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out);
-
-/* ------------------------------------------------------------------ */
-/*  Macro-model extension                                              */
-/* ------------------------------------------------------------------ */
-
-/**
- * Non-owning modal macro and physical-interface input.
- *
- * `basis` is a row-major [physical_port_count, mode_count] matrix satisfying
- * physical port temperature = basis * modal state.
- */
-typedef struct {
-    mhs_assembly_view_t operators;
-    const double* basis;
-    size_t physical_port_count;
-    size_t mode_count;
-    const size_t* model_cells;
-    mhs_face_t model_face;
-    const double* exterior_half_conductance;
-} mhs_modal_port_view_t;
-
-/** Solve `[FVM temperatures, retained macro modes]`.
- *
- * The FVM-side interface conductance is reevaluated from the current
- * nonlinear iterate. `state_count` must equal cell_count + mode_count.
- */
-MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* compiled,
-    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out);
 
 #ifdef __cplusplus
 } /* extern "C" */

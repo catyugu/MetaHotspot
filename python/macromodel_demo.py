@@ -19,6 +19,7 @@ from scipy.sparse import bmat, csc_matrix, diags
 from scipy.sparse.linalg import splu
 
 import metahotspot
+from metahotspot.types import SolveOptions
 
 
 def partition_regions(K, nc, layer_ids, block_ids, macro_layer, macro_block):

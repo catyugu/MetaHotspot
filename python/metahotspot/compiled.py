@@ -6,7 +6,6 @@ import ctypes
 from typing import NamedTuple
 
 import numpy as np
-from scipy.sparse import csc_matrix
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
@@ -15,8 +14,8 @@ from metahotspot.types import (
     CscView,
     MhsCompiled,
     CompiledMetadataView,
-    MhsAssemblyView,
-    SolverOpts,
+    MhsOperatorsView,
+    SolveOptions,
 )
 
 
@@ -96,7 +95,7 @@ class Compiled(OwnedHandle):
     def solve(
         self,
         state: np.ndarray | None = None,
-        opts: SolverOpts | None = None,
+        opts: SolveOptions | None = None,
     ) -> Solution:
         """Solve the compiled model.
 

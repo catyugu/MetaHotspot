@@ -3,11 +3,11 @@
 /* Internal opaque handle definitions shared between the core C API and
    optional extension modules (e.g. macromodel). Not part of the public API. */
 
-#include "api/metahotspot.h"       // mhs_solver_opts_t etc.
+#include "api/metahotspot.h"       // mhs_solve_options_t etc.
 #include "model/model_definition.hpp"
 #include "runtime/model.hpp"
 #include "runtime/solution.hpp"
-#include "solver/scheduler.hpp"      // mhs::sim::SolverOpts
+#include "solver/scheduler.hpp"      // mhs::sim::SolveOptions
 #include <Eigen/Sparse>
 #include <cstdint>
 #include <string>
@@ -22,6 +22,9 @@ void mhs_detail_set_last_error(const std::string& msg);
 
 /** Clear the thread-local last-error string. */
 void mhs_detail_clear_last_error();
+
+/** Get the thread-local last-error string. */
+const char* mhs_detail_last_error();
 
 /* ------------------------------------------------------------------ */
 /*  Shared error-handling macros                                       */
@@ -68,8 +71,8 @@ void mhs_detail_clear_last_error();
 /*  Shared helper declarations                                         */
 /* ------------------------------------------------------------------ */
 
-/** Convert C-level solver opts to C++ SolverOpts (defined in metahotspot.cpp). */
-mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double transient_duration = 0.0);
+/** Convert C-level solver opts to C++ SolveOptions (defined in metahotspot.cpp). */
+mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
 
 /* ------------------------------------------------------------------ */
 /*  Opaque handle structs                                              */
@@ -85,7 +88,7 @@ struct mhs_model_t {
     std::vector<BlockLocation> block_locations;
 };
 
-struct mhs_assembly_t {
+struct mhs_operators_t {
     Eigen::SparseMatrix<double> K;
     Eigen::SparseMatrix<double> C;
     Eigen::VectorXd rhs;
@@ -96,7 +99,5 @@ struct mhs_compiled_t {
 };
 
 struct mhs_solution_t {
-    mhs::core::SolveResult result;
-    std::size_t fvm_count = 0;
-    std::vector<mhs::core::ProbeTrace> probe_traces;
+    mhs::core::Solution sol;
 };

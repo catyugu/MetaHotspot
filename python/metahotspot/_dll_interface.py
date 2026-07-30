@@ -11,24 +11,24 @@ from metahotspot.types import (
     MhsModel,
     MhsCompiled,
     MhsSolution,
-    MhsAssembly,
-    MhsAssemblyView,
+    MhsOperators,
+    MhsOperatorsView,
     CscView,
-    SolverOpts,
+    SolveOptions,
     Rect2D,
     Point2D,
     MhsFaceRegion,
     CompiledMetadataView,
     SolutionView,
     ProbeView,
-    ModalPortView,
+    MhsMacroPortModel,
 )
 
 # (name, restype, argtypes) table — drives configure_dll().
 # Pass-by-value structs (Rect2D, ...) appear directly in argtypes.
 _FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Global helpers ----
-    ("mhs_solver_opts_default", None, [ctypes.POINTER(SolverOpts)]),
+    ("mhs_solve_options_default", None, [ctypes.POINTER(SolveOptions)]),
     ("mhs_status_string", ctypes.c_char_p, [ctypes.c_int32]),
     ("mhs_last_error", ctypes.c_char_p, []),
     # ---- Model life-cycle ----
@@ -286,7 +286,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(CompiledMetadataView),
         ],
     ),
-    # ---- Assembly ----
+    # ---- Operators ----
     (
         "mhs_compiled_assemble",
         ctypes.c_int32,
@@ -295,16 +295,16 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
             ctypes.c_double,
-            ctypes.POINTER(ctypes.POINTER(MhsAssembly)),
+            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
         ],
     ),
-    ("mhs_assembly_destroy", ctypes.c_int32, [ctypes.POINTER(MhsAssembly)]),
+    ("mhs_operators_destroy", ctypes.c_int32, [ctypes.POINTER(MhsOperators)]),
     (
-        "mhs_assembly_view",
+        "mhs_operators_view",
         ctypes.c_int32,
         [
-            ctypes.POINTER(MhsAssembly),
-            ctypes.POINTER(MhsAssemblyView),
+            ctypes.POINTER(MhsOperators),
+            ctypes.POINTER(MhsOperatorsView),
         ],
     ),
     # ---- Solve ----
@@ -315,7 +315,7 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(MhsCompiled),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
-            ctypes.POINTER(SolverOpts),
+            ctypes.POINTER(SolveOptions),
             ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],
     ),
@@ -350,16 +350,16 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(ProbeView),
         ],
     ),
-    # ---- Macro-model extension ----
+    # ---- Macromodel extension ----
     (
-        "mhs_compiled_solve_modal_port",
+        "mhs_macromodel_solve",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ModalPortView),
+            ctypes.POINTER(MhsMacroPortModel),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
-            ctypes.POINTER(SolverOpts),
+            ctypes.POINTER(SolveOptions),
             ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],
     ),

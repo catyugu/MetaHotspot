@@ -29,8 +29,8 @@ namespace mhs::sim {
 
     } // namespace
 
-    mhs::core::SolveResult solve_system(const Study& study, const SystemAssembler& assemble,
-        std::span<const double> initial_state, const SolverOpts& opts, const StateObserver& observe)
+    mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
+        std::span<const double> initial_state, const SolveOptions& opts, const StateObserver& observe)
     {
         if (!assemble) {
             throw std::invalid_argument("solve_system: assembler is empty");
@@ -55,7 +55,7 @@ namespace mhs::sim {
             auto nl_result = nonlinear_solve(build_ls, state, *solver, opts.nonlinear);
             if (observe)
                 observe(0.0, state);
-            return {std::move(state), current_time, nl_result.converged};
+            return {std::move(state), state_count, current_time, nl_result.converged, {}};
         }
 
         // Transient.
@@ -98,7 +98,7 @@ namespace mhs::sim {
                 // Fatal: nonlinear divergence at minimum dt
                 if (dt <= min_dt * 1.0001) {
                     MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
-                    return {std::move(state), current_time, false};
+                    return {std::move(state), state_count, current_time, false, {}};
                 }
                 continue;
             }
@@ -141,42 +141,7 @@ namespace mhs::sim {
             }
         }
 
-        return {std::move(state), current_time, true};
-    }
-
-    mhs::core::ThermalSolution solve_thermal(
-        const mhs::core::Model& model, const SolverOpts& opts, std::span<const double> initial_state)
-    {
-        const auto fvm_count = model.cells.cell_to_grid.size();
-        std::vector<double> state;
-        if (initial_state.empty()) {
-            state.assign(fvm_count, model.initial_temperature);
-        }
-        else {
-            if (initial_state.size() != fvm_count) {
-                throw std::invalid_argument("solve_thermal: initial_state.size() = "
-                    + std::to_string(initial_state.size()) + " != cell_count = " + std::to_string(fvm_count));
-            }
-            state.assign(initial_state.begin(), initial_state.end());
-        }
-
-        Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        SystemAssembler assemble = [&](std::span<const double> state, double time) {
-            return assemble_thermal(model, state, time);
-        };
-        ProbeRecorder probe_recorder;
-        probe_recorder.initialize(model);
-        StateObserver observe = [&](double time, std::span<const double> accepted_state) {
-            probe_recorder.record(time, accepted_state);
-        };
-        auto run = solve_system(study, assemble, state, opts, observe);
-
-        mhs::core::ThermalSolution result;
-        result.temperature = std::move(run.state);
-        result.time = run.time;
-        result.converged = run.converged;
-        result.probe_traces = probe_recorder.traces();
-        return result;
+        return {std::move(state), state_count, current_time, true, {}};
     }
 
 } // namespace mhs::sim

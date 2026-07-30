@@ -1,9 +1,8 @@
 #include "api/internal.hpp"
 #include "api/metahotspot.h"
+#include "api/metahotspot_macromodel.h"
 
 #include "macromodel/modal_port.hpp"
-#include "solver/scheduler.hpp"
-
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <span>
@@ -72,27 +71,45 @@ static Eigen::SparseMatrix<double> _csc_view_to_eigen(const mhs_csc_view_t& view
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
-    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out)
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c,
+    const mhs_macro_port_model_t* macro, const double* state, size_t state_count,
+    const mhs_solve_options_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(macro);
-    CHECK_NULL(macro->basis);
     CHECK_NULL(macro->model_cells);
     CHECK_NULL(macro->exterior_half_conductance);
     CHECK_NULL(macro->operators.rhs);
     CHECK_NULL(state);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_SOLVE, {
-        if (macro->physical_port_count == 0 || macro->mode_count == 0
-            || macro->operators.n != macro->mode_count) {
-            SET_ERR("invalid modal port dimensions");
+        const auto fvm_count = c->model.cells.cell_to_grid.size();
+        const bool has_basis = (macro->basis != nullptr);
+
+        // Validate dimensions
+        if (macro->physical_port_count == 0) {
+            SET_ERR("physical_port_count must be > 0");
             return MHS_ERR_INVALID_ARG;
         }
-        const auto fvm_count = c->model.cells.cell_to_grid.size();
-        if (state_count != fvm_count + macro->mode_count) {
-            SET_ERR("state_count must equal cell_count + mode_count");
+        if (has_basis) {
+            // Basis present: mode count = operators.n
+            if (macro->operators.n != macro->physical_port_count) {
+                // With basis, operators.n is the macro state (mode) count.
+                // No constraint relating operators.n to physical_port_count
+                // beyond macro_state_count = operators.n.
+            }
+        }
+        else {
+            // Unit basis: macro_state_count == physical_port_count
+            if (macro->operators.n != macro->physical_port_count) {
+                SET_ERR("unit-basis macro: operators.n must equal physical_port_count");
+                return MHS_ERR_INVALID_ARG;
+            }
+        }
+
+        const auto macro_state_count = macro->operators.n;
+        if (state_count != fvm_count + macro_state_count) {
+            SET_ERR("state_count must equal cell_count + macro_state_count");
             return MHS_ERR_INVALID_ARG;
         }
         if (state_count == 0) {
@@ -100,39 +117,36 @@ MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
             return MHS_ERR_INVALID_ARG;
         }
 
-        mhs::sim::ModalPort modal_port;
-        modal_port.operators.K = _csc_view_to_eigen(macro->operators.K);
-        modal_port.operators.C = _csc_view_to_eigen(macro->operators.C);
-        modal_port.operators.f = Eigen::Map<const Eigen::VectorXd>(
-            macro->operators.rhs, static_cast<Eigen::Index>(macro->mode_count));
-        Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis_map(
-            macro->basis, static_cast<Eigen::Index>(macro->physical_port_count),
-            static_cast<Eigen::Index>(macro->mode_count));
-        modal_port.basis = basis_map;
+        // Build PortModel
+        mhs::macro::PortModel port_model;
+        port_model.operators.K = _csc_view_to_eigen(macro->operators.K);
+        port_model.operators.C = _csc_view_to_eigen(macro->operators.C);
+        port_model.operators.f = Eigen::Map<const Eigen::VectorXd>(
+            macro->operators.rhs, static_cast<Eigen::Index>(macro_state_count));
+        port_model.physical_port_count = macro->physical_port_count;
+        if (has_basis) {
+            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis_map(
+                macro->basis, static_cast<Eigen::Index>(macro->physical_port_count),
+                static_cast<Eigen::Index>(macro_state_count));
+            port_model.basis = basis_map;
+        }
+        // else: basis stays empty (rows=0, cols=0) → unit basis
 
-        mhs::sim::ThermalPortInterface interface;
-        interface.model_cells.assign(
+        // Build PortCoupling
+        mhs::macro::PortCoupling coupling;
+        coupling.model_cells.assign(
             macro->model_cells, macro->model_cells + macro->physical_port_count);
-        interface.model_face = _to_face(macro->model_face);
-        interface.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
+        coupling.model_face = _to_face(macro->model_face);
+        coupling.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
             macro->exterior_half_conductance,
             static_cast<Eigen::Index>(macro->physical_port_count));
 
-        mhs::sim::Study study {
-            c->model.study_type,
-            c->model.transient_duration,
-            c->model.transient_time_step,
-        };
+        // Reconstruct options and solve
+        auto so = to_solve_options(opts, c->model.transient_duration);
 
-        // Reconstruct SolverOpts from the C-level opts struct using the shared helper.
-        auto so = to_solver_opts(opts, c->model.transient_duration);
-
-        mhs::sim::SystemAssembler assemble = [&](std::span<const double> current_state, double time) {
-            return mhs::sim::assemble_modal_port_system(
-                c->model, modal_port, interface, current_state, time);
-        };
-        auto result = mhs::sim::solve_system(
-            study, assemble, std::span<const double>(state, state_count), so);
+        auto result = mhs::macro::solve(
+            c->model, port_model, coupling,
+            std::span<const double>(state, state_count), so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {
@@ -140,8 +154,8 @@ MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
             SET_ERR("memory allocation failed");
             return MHS_ERR_OOM;
         }
-        s->result = std::move(result);
-        s->fvm_count = fvm_count;
+        s->sol = std::move(result);
+        s->sol.fvm_count = fvm_count;
         *out = s;
     });
 }

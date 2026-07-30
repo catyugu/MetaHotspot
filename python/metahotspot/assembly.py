@@ -1,7 +1,7 @@
 """Assembled operators — plain data, no lifecycle management.
 
 ``Compiled.assemble()`` now returns an ``Operators`` namedtuple
-instead of a managed ``Assembly`` handle.  The C handle is created,
+instead of a managed handle.  The C handle is created,
 read, and destroyed inside the call.
 """
 
@@ -11,13 +11,18 @@ import ctypes
 from typing import NamedTuple
 
 import numpy as np
-from scipy.sparse import csc_matrix
 
 from metahotspot._error import check
-from metahotspot.types import CscView, MhsAssembly, MhsAssemblyView
+from metahotspot.types import CscView, MhsOperators, MhsOperatorsView
 
 
-def _csc_from_view(view: CscView) -> csc_matrix:
+def _csc_from_view(view: CscView):
+    """Convert CscView to scipy.sparse.csc_matrix.
+
+    SciPy is imported lazily — it's optional for the core package.
+    """
+    import scipy.sparse
+
     outer = np.ctypeslib.as_array(
         view.outer_indices,
         shape=(view.columns + 1,),
@@ -30,7 +35,7 @@ def _csc_from_view(view: CscView) -> csc_matrix:
         view.values,
         shape=(view.nnz,),
     ).copy()
-    return csc_matrix(
+    return scipy.sparse.csc_matrix(
         (values, inner, outer),
         shape=(view.rows, view.columns),
     )
@@ -44,10 +49,10 @@ class Operators(NamedTuple):
         K, C, f = compiled.assemble(state)
     """
 
-    K: csc_matrix
+    K: object  # scipy.sparse.csc_matrix
     """Stiffness / conductance matrix."""
 
-    C: csc_matrix
+    C: object  # scipy.sparse.csc_matrix
     """Capacity (mass) matrix."""
 
     f: np.ndarray
@@ -58,7 +63,7 @@ def _assemble_operators(
     dll, compiled_handle, state: np.ndarray, time: float = 0.0
 ) -> Operators:
     """Call the C assembly routine, copy results, destroy handle immediately."""
-    pp = ctypes.POINTER(MhsAssembly)()
+    pp = ctypes.POINTER(MhsOperators)()
     state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
     check(
         dll.mhs_compiled_assemble(
@@ -68,12 +73,12 @@ def _assemble_operators(
     )
 
     # Read the view while the handle is alive.
-    view = MhsAssemblyView()
-    check(dll.mhs_assembly_view(pp, ctypes.byref(view)), "assembly_view")
+    view = MhsOperatorsView()
+    check(dll.mhs_operators_view(pp, ctypes.byref(view)), "operators_view")
     K = _csc_from_view(view.K)
     C = _csc_from_view(view.C)
     f_arr = np.ctypeslib.as_array(view.rhs, shape=(view.n,)).copy()
 
     # Destroy the C handle immediately.
-    dll.mhs_assembly_destroy(pp)
+    dll.mhs_operators_destroy(pp)
     return Operators(K, C, f_arr)

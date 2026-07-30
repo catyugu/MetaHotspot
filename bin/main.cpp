@@ -4,6 +4,7 @@
 #include "io/result_io.hpp"
 #include "logging/logger.hpp"
 #include "solver/postprocessor.hpp"
+#include "solver/probe_recorder.hpp"
 #include "solver/scheduler.hpp"
 #include <iostream>
 #include <optional>
@@ -69,11 +70,25 @@ int main(int argc, char* argv[])
 
         // Run simulation
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::sim::solve_thermal(model);
+        const auto fvm_count = model.cells.cell_to_grid.size();
+        std::vector<double> state(fvm_count, model.initial_temperature);
+        mhs::sim::Study study {model.study_type, model.transient_duration, model.transient_time_step};
+        mhs::sim::SystemAssembler assemble_fn = [&](std::span<const double> s, double t) {
+            return mhs::sim::assemble_thermal(model, s, t);
+        };
+        mhs::sim::ProbeRecorder probe_recorder;
+        probe_recorder.initialize(model);
+        mhs::sim::StateObserver observe = [&](double t, std::span<const double> accepted_state) {
+            probe_recorder.record(t, accepted_state);
+        };
+        auto result = mhs::sim::solve_system(study, assemble_fn, state,
+            mhs::sim::SolveOptions{}, observe);
+        result.fvm_count = fvm_count;
+        result.probe_traces = probe_recorder.traces();
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = result.temperature;
+        const auto& solution = result.state;
 
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)

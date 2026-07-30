@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "model_test_utils.hpp"
 #include "macromodel/modal_port.hpp"
 #include "solver/scheduler.hpp"
 #include <Eigen/LU>
@@ -7,7 +6,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
-using namespace mhs::sim;
+using namespace mhs::macro;
+using mhs::sim::build_model;
 
 namespace {
 
@@ -49,26 +49,37 @@ namespace {
         return build_model(io);
     }
 
+    PortModel make_single_mode_port()
+    {
+        PortModel port;
+        port.operators.K.resize(1, 1);
+        port.operators.K.insert(0, 0) = 1.0;
+        port.operators.C.resize(1, 1);
+        port.operators.f = Eigen::VectorXd::Ones(1);
+        port.basis = Eigen::MatrixXd::Ones(1, 1);
+        port.physical_port_count = 1;
+        return port;
+    }
+
+    PortCoupling make_single_port_coupling(double exterior_conductance = 0.002)
+    {
+        PortCoupling coupling;
+        coupling.model_cells = {0};
+        coupling.model_face = mhs::core::FaceDir::XP;
+        coupling.exterior_half_conductance = Eigen::VectorXd::Constant(1, exterior_conductance);
+        return coupling;
+    }
+
 } // namespace
 
-TEST(MacroModelTest, ModalPortAssemblerProjectsPhysicalInterface)
+TEST(MacroModelTest, PortAssemblerProjectsPhysicalInterface)
 {
     auto model = make_single_cell_model();
+    auto port = make_single_mode_port();
 
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.K.insert(0, 0) = 1.0;
-    macro.operators.C.resize(1, 1);
-    macro.operators.f = Eigen::VectorXd::Ones(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
-
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
-
+    auto coupling = make_single_port_coupling();
     const std::array state {0.0, 0.0};
-    const auto operators = assemble_modal_port_system(model, macro, interface, state, 0.0);
+    const auto operators = assemble(model, port, coupling, state, 0.0);
 
     // The 1 mm cube has model-side half conductance
     // k*A/(dx/2) = 1*1e-6/(0.5e-3) = 0.002 W/K. Two halves in series
@@ -80,67 +91,135 @@ TEST(MacroModelTest, ModalPortAssemblerProjectsPhysicalInterface)
     EXPECT_NEAR(dense(1, 1), 1.001, 1e-12);
 }
 
-TEST(MacroModelTest, ModalPortAssemblerReevaluatesInterfaceConductanceFromFvmState)
+TEST(MacroModelTest, PortAssemblerReevaluatesInterfaceConductanceFromFvmState)
 {
     auto model = make_single_cell_model("1 + T");
-
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.C.resize(1, 1);
-    macro.operators.f = Eigen::VectorXd::Zero(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
-
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
+    auto port = make_single_mode_port();
+    auto coupling = make_single_port_coupling();
 
     const std::array cold_state {0.0, 0.0};
     const std::array hot_state {1.0, 0.0};
-    const auto cold = assemble_modal_port_system(model, macro, interface, cold_state, 0.0);
-    const auto hot = assemble_modal_port_system(model, macro, interface, hot_state, 0.0);
+    const auto cold = assemble(model, port, coupling, cold_state, 0.0);
+    const auto hot = assemble(model, port, coupling, hot_state, 0.0);
 
     EXPECT_NEAR(cold.K.coeff(0, 0), 0.001, 1e-12);
     EXPECT_NEAR(hot.K.coeff(0, 0), 4.0 / 3000.0, 1e-12);
     EXPECT_GT(hot.K.coeff(0, 0), cold.K.coeff(0, 0));
 }
 
-TEST(MacroModelTest, ModalPortSystemAdvancesTheFullCoupledTransientState)
+TEST(MacroModelTest, NoBasisEqualsExplicitUnitBasis)
 {
     auto model = make_single_cell_model();
 
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.K.insert(0, 0) = 1.0;
-    macro.operators.C.resize(1, 1);
-    macro.operators.C.insert(0, 0) = 0.5;
-    macro.operators.f = Eigen::VectorXd::Ones(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
+    // With explicit unit basis
+    PortModel explicit_port;
+    explicit_port.operators.K.resize(1, 1);
+    explicit_port.operators.K.insert(0, 0) = 1.0;
+    explicit_port.operators.C.resize(1, 1);
+    explicit_port.operators.f = Eigen::VectorXd::Ones(1);
+    explicit_port.basis = Eigen::MatrixXd::Identity(1, 1);
+    explicit_port.physical_port_count = 1;
 
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
+    // Without basis (empty = unit basis)
+    PortModel no_basis_port;
+    no_basis_port.operators.K.resize(1, 1);
+    no_basis_port.operators.K.insert(0, 0) = 1.0;
+    no_basis_port.operators.C.resize(1, 1);
+    no_basis_port.operators.f = Eigen::VectorXd::Ones(1);
+    // basis stays empty
+    no_basis_port.physical_port_count = 1;
+
+    auto coupling = make_single_port_coupling();
+    const std::array state {0.0, 0.0};
+
+    const auto explicit_ops = assemble(model, explicit_port, coupling, state, 0.0);
+    const auto no_basis_ops = assemble(model, no_basis_port, coupling, state, 0.0);
+
+    EXPECT_EQ(explicit_ops.K.nonZeros(), no_basis_ops.K.nonZeros());
+    EXPECT_EQ(explicit_ops.C.nonZeros(), no_basis_ops.C.nonZeros());
+    for (Eigen::Index k = 0; k < explicit_ops.K.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(explicit_ops.K, k); it; ++it) {
+            EXPECT_NEAR(it.value(), no_basis_ops.K.coeff(it.row(), it.col()), 1e-15);
+        }
+    }
+    EXPECT_NEAR((explicit_ops.f - no_basis_ops.f).norm(), 0.0, 1e-15);
+}
+
+TEST(MacroModelTest, NoBasisAndExplicitBasisSteadySolveAgree)
+{
+    auto model = make_single_cell_model();
+
+    // Explicit unit-basis port
+    PortModel explicit_port;
+    explicit_port.operators.K.resize(1, 1);
+    explicit_port.operators.K.insert(0, 0) = 1.0;
+    explicit_port.operators.C.resize(1, 1);
+    explicit_port.operators.f = Eigen::VectorXd::Ones(1);
+    explicit_port.basis = Eigen::MatrixXd::Identity(1, 1);
+    explicit_port.physical_port_count = 1;
+
+    // No-basis port
+    PortModel no_basis_port;
+    no_basis_port.operators.K.resize(1, 1);
+    no_basis_port.operators.K.insert(0, 0) = 1.0;
+    no_basis_port.operators.C.resize(1, 1);
+    no_basis_port.operators.f = Eigen::VectorXd::Ones(1);
+    no_basis_port.physical_port_count = 1;
+
+    auto coupling = make_single_port_coupling();
+    const std::array initial_state {0.0, 0.0};
+
+    mhs::sim::SolveOptions opts;
+    opts.step_strategy = mhs::sim::time_scheme::StepStrategy::Fixed;
+
+    auto explicit_result = solve(model, explicit_port, coupling, initial_state, opts);
+    auto no_basis_result = solve(model, no_basis_port, coupling, initial_state, opts);
+
+    ASSERT_TRUE(explicit_result.converged);
+    ASSERT_TRUE(no_basis_result.converged);
+    ASSERT_EQ(explicit_result.state.size(), no_basis_result.state.size());
+    for (std::size_t i = 0; i < explicit_result.state.size(); ++i) {
+        EXPECT_NEAR(explicit_result.state[i], no_basis_result.state[i], 1e-12);
+    }
+}
+
+TEST(MacroModelTest, PortSystemAdvancesTheFullCoupledTransientState)
+{
+    auto model = make_single_cell_model();
+
+    PortModel port;
+    port.operators.K.resize(1, 1);
+    port.operators.K.insert(0, 0) = 1.0;
+    port.operators.C.resize(1, 1);
+    port.operators.C.insert(0, 0) = 0.5;
+    port.operators.f = Eigen::VectorXd::Ones(1);
+    port.basis = Eigen::MatrixXd::Ones(1, 1);
+    port.physical_port_count = 1;
+
+    PortCoupling coupling;
+    coupling.model_cells = {0};
+    coupling.model_face = mhs::core::FaceDir::XP;
+    coupling.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
 
     const std::array initial_state {300.0, 300.0};
     const double dt = 0.25;
-    const auto initial_operators = assemble_modal_port_system(model, macro, interface, initial_state, dt);
+    const auto initial_operators = assemble(model, port, coupling, initial_state, dt);
     const Eigen::Matrix2d expected_matrix
         = Eigen::MatrixXd(initial_operators.K) + Eigen::MatrixXd(initial_operators.C) / dt;
     const Eigen::Vector2d initial = Eigen::Map<const Eigen::Vector2d>(initial_state.data());
     const Eigen::Vector2d expected_rhs = initial_operators.f + initial_operators.C * initial / dt;
     const Eigen::Vector2d expected = expected_matrix.fullPivLu().solve(expected_rhs);
 
-    Study study {mhs::core::StudyType::Transient, dt, dt};
-    SolverOpts options;
-    options.step_strategy = time_scheme::StepStrategy::Fixed;
+    mhs::sim::Study study {mhs::core::StudyType::Transient, dt, dt};
+    mhs::sim::SolveOptions options;
+    options.step_strategy = mhs::sim::time_scheme::StepStrategy::Fixed;
     options.fixed_dt = dt;
     std::vector<double> observed_times;
-    auto result = solve_system(study,
-        [&](std::span<const double> state, double time) {
-            return assemble_modal_port_system(model, macro, interface, state, time);
-        },
-        initial_state, options,
+
+    mhs::sim::SystemAssembler asm_fn = [&](std::span<const double> state, double time) {
+        return assemble(model, port, coupling, state, time);
+    };
+    auto result = mhs::sim::solve_system(study, asm_fn, initial_state, options,
         [&](double time, std::span<const double>) {
             observed_times.push_back(time);
         });
