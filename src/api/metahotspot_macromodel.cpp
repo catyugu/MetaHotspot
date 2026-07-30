@@ -77,7 +77,6 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c, const mhs_mac
     CHECK_NULL(c);
     CHECK_NULL(macro);
     CHECK_NULL(macro->model_cells);
-    CHECK_NULL(macro->exterior_half_conductance);
     CHECK_NULL(macro->operators.rhs);
     CHECK_NULL(state);
     CHECK_NULL(out);
@@ -124,8 +123,6 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* c, const mhs_mac
         mhs::macro::PortCoupling coupling;
         coupling.model_cells.assign(macro->model_cells, macro->model_cells + macro->physical_port_count);
         coupling.model_face = _to_face(macro->model_face);
-        coupling.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
-            macro->exterior_half_conductance, static_cast<Eigen::Index>(macro->physical_port_count));
 
         // Reconstruct options and solve
         auto so = to_solve_options(opts, c->model.transient_duration);

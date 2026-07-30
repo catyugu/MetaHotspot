@@ -2,6 +2,7 @@
 
 #include "runtime/constants.hpp"
 #include "runtime/mesh.hpp"
+#include "solver/solve.hpp"
 
 #include <Eigen/Sparse>
 #include <cstddef>
@@ -63,10 +64,10 @@ namespace mhs::macro {
 
             validate_operators(port.operators, static_cast<Eigen::Index>(macro_state_count));
 
-            if (coupling.model_cells.size() != physical_port_count
-                || static_cast<std::size_t>(coupling.exterior_half_conductance.size()) != physical_port_count) {
-                throw std::invalid_argument("assemble: coupling data does not match physical port count");
+            if (coupling.model_cells.size() != physical_port_count) {
+                throw std::invalid_argument("assemble: coupling.model_cells size must match physical port count");
             }
+
             if (state.size() != model_count + macro_state_count) {
                 throw std::invalid_argument("assemble: state must contain FVM temperatures followed by macro states");
             }
@@ -79,12 +80,11 @@ namespace mhs::macro {
             }
         }
 
+        /// FVM-side half-conductance k * A / (dx/2) at the interface face.
+        /// The macro side is on the face itself — no series combination needed.
         double interface_conductance(const mhs::core::Model& model, mhs::core::Index cell, mhs::core::FaceDir face,
-            double exterior_half_conductance, std::span<const double> temperature, double time)
+            std::span<const double> temperature, double time)
         {
-            if (exterior_half_conductance <= mhs::core::zero_guard)
-                return 0.0;
-
             const auto grid = model.cells.cell_to_grid[cell];
             mhs::core::Index ix, iy, iz;
             mhs::utils::decode_index(grid, model.mesh.ny, model.mesh.nz, ix, iy, iz);
@@ -95,18 +95,16 @@ namespace mhs::macro {
             }
 
             const auto& material = model.material_table[model.cells.material_id[cell]];
-            const mhs::core::FieldContext context {
+            const mhs::core::FieldContext ctx {
                 model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature[cell], time};
-            const double conductivity = mhs::utils::k_along(
-                face, material.kx.eval(context), material.ky.eval(context), material.kz.eval(context));
+            const double k
+                = mhs::utils::k_along(face, material.kx.eval(ctx), material.ky.eval(ctx), material.kz.eval(ctx));
             const double area = mhs::utils::face_area(face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            const double half_distance
+            const double half_length
                 = mhs::utils::half_length_along(face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            const double model_half_conductance = conductivity * area / half_distance;
-            if (model_half_conductance <= mhs::core::zero_guard)
+            if (k <= mhs::core::zero_guard || half_length <= mhs::core::zero_guard)
                 return 0.0;
-            return model_half_conductance * exterior_half_conductance
-                / (model_half_conductance + exterior_half_conductance);
+            return k * area / half_length;
         }
 
         /// Identity-projection coefficients: for unit basis, (port, mode) == (port == mode ? 1.0 : 0.0).
@@ -148,8 +146,7 @@ namespace mhs::macro {
 
         for (std::size_t physical_port = 0; physical_port < coupling.model_cells.size(); ++physical_port) {
             const auto cell = coupling.model_cells[physical_port];
-            const double conductance = interface_conductance(model, cell, coupling.model_face,
-                coupling.exterior_half_conductance[static_cast<Eigen::Index>(physical_port)], temperature, time);
+            const double conductance = interface_conductance(model, cell, coupling.model_face, temperature, time);
             const auto cell_row = static_cast<Eigen::Index>(cell);
             stiffness.emplace_back(cell_row, cell_row, conductance);
 

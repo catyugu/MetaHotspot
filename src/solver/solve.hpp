@@ -3,8 +3,8 @@
 /* Internal solve driver — NOT part of the public API.
    Shared between the standard solver (solve.cpp) and the macromodel module. */
 
-#include "mhs/solver.hpp"
 #include "mhs/solution.hpp"
+#include "mhs/solver.hpp"
 #include "solver/assembler.hpp"
 
 #include <functional>
@@ -25,7 +25,6 @@ namespace mhs::sim {
     /// Generalized callback-driven solver. Standard solve() and the macromodel
     /// both call this internally.
     mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
-        std::span<const double> initial_state, const SolveOptions& opts = {},
-        const StateObserver& observe = {});
+        std::span<const double> initial_state, const SolveOptions& opts = {}, const StateObserver& observe = {});
 
 } // namespace mhs::sim

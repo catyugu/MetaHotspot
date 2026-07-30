@@ -56,13 +56,10 @@ class PortCoupling:
         FVM cell index for each physical port [physical_port_count].
     model_face : int
         Interface face direction (enums.Face value).
-    exterior_half_conductance : ndarray
-        Macro-side half conductance for each physical port [physical_port_count].
     """
 
     model_cells: np.ndarray
     model_face: int
-    exterior_half_conductance: np.ndarray
 
 
 def _get_ext_dll():
@@ -125,9 +122,6 @@ def solve(
     # Normalize all arrays
     state = np.ascontiguousarray(state, dtype=np.float64)
     coupling.model_cells = np.ascontiguousarray(coupling.model_cells, dtype=np.uintp)
-    coupling.exterior_half_conductance = np.ascontiguousarray(
-        coupling.exterior_half_conductance, dtype=np.float64
-    )
 
     K, C, f = port_model.operators
     macro_state_count = f.size
@@ -141,10 +135,6 @@ def solve(
         )
     if coupling.model_cells.size != port_model.physical_port_count:
         raise ValueError("model_cells size must match physical_port_count")
-    if coupling.exterior_half_conductance.size != port_model.physical_port_count:
-        raise ValueError(
-            "exterior_half_conductance size must match physical_port_count"
-        )
 
     has_basis = port_model.basis is not None
     if has_basis:
@@ -187,13 +177,10 @@ def solve(
             ctypes.POINTER(ctypes.c_size_t)
         ),
         model_face=int(coupling.model_face),
-        exterior_half_conductance=coupling.exterior_half_conductance.ctypes.data_as(
-            ctypes.POINTER(ctypes.c_double)
-        ),
     )
 
     # Keep owners alive until C call returns
-    _ = normalized_k, normalized_c, basis, rhs
+    _ = normalized_k, normalized_c, basis
 
     dll = _get_ext_dll()
     pp = ctypes.POINTER(MhsSolution)()

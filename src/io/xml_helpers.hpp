@@ -25,9 +25,6 @@ namespace mhs::io::detail {
         return text ? trim(text) : "";
     }
 
-    inline double parse_double(const std::string& value)
-    {
-        return value.empty() ? 0.0 : std::stod(value);
-    }
+    inline double parse_double(const std::string& value) { return value.empty() ? 0.0 : std::stod(value); }
 
 } // namespace mhs::io::detail

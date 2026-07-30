@@ -276,6 +276,20 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(MhsOperatorsView),
         ],
     ),
+    # ---- Half-conductance ----
+    (
+        "mhs_compiled_half_conductance",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.c_int32,
+            ctypes.c_double,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+        ],
+    ),
     # ---- Solve ----
     (
         "mhs_compiled_solve",

@@ -14,6 +14,7 @@ from metahotspot.types import (
     MhsCompiled,
     MhsCompiledMetadataView,
 )
+from metahotspot._error import check
 
 
 class Operators(NamedTuple):
@@ -236,6 +237,52 @@ class Compiled(OwnedHandle):
         C = _view_to_csc(c_op.C)
         f = np.ctypeslib.as_array(c_op.rhs, shape=(c_op.n,)).copy()
         return Operators(K, C, f)
+
+    # ---- Half-conductance ----
+
+    def half_conductance(
+        self,
+        cells: np.ndarray,
+        face: int,
+        temperature: float | None = None,
+        time: float = 0.0,
+    ) -> np.ndarray:
+        """Compute k*A/(dx/2) for each cell at the given face.
+
+        Parameters
+        ----------
+        cells : ndarray
+            Cell indices [n].
+        face : int
+            Face direction (enums.Face value).
+        temperature : float | None
+            Evaluation temperature (defaults to initial_temperature).
+        time : float
+            Simulation time (defaults to 0.0).
+
+        Returns
+        -------
+        ndarray
+            Half-conductance per cell [n].
+        """
+        if temperature is None:
+            temperature = self.initial_temperature
+        n = len(cells)
+        cells_in = np.ascontiguousarray(cells, dtype=np.uintp)
+        out = np.empty(n, dtype=np.float64)
+        check(
+            self._dll.mhs_compiled_half_conductance(
+                self._handle,
+                cells_in.ctypes.data_as(ctypes.POINTER(ctypes.c_size_t)),
+                int(face),
+                temperature,
+                time,
+                out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                n,
+            ),
+            "half_conductance",
+        )
+        return out
 
     # ---- Solve ----
 

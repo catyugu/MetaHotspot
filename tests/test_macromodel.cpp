@@ -61,12 +61,12 @@ namespace {
         return port;
     }
 
-    PortCoupling make_single_port_coupling(double exterior_conductance = 0.002)
+    /// Create coupling with model_cells = {0}, model_face = XP.
+    PortCoupling make_single_port_coupling()
     {
         PortCoupling coupling;
         coupling.model_cells = {0};
         coupling.model_face = mhs::core::FaceDir::XP;
-        coupling.exterior_half_conductance = Eigen::VectorXd::Constant(1, exterior_conductance);
         return coupling;
     }
 
@@ -77,18 +77,19 @@ TEST(MacroModelTest, PortAssemblerProjectsPhysicalInterface)
     auto model = make_single_cell_model();
     auto port = make_single_mode_port();
 
+    // Both FVM and macro are the same model; macro coupling just validates topology.
     auto coupling = make_single_port_coupling();
     const std::array state {0.0, 0.0};
     const auto operators = assemble(model, port, coupling, state, 0.0);
 
-    // The 1 mm cube has model-side half conductance
-    // k*A/(dx/2) = 1*1e-6/(0.5e-3) = 0.002 W/K. Two halves in series
-    // yield 0.001 W/K at the physical interface.
+    // The 1 mm cube has FVM-side half conductance
+    // k*A/(dx/2) = 1*1e-6/(0.5e-3) = 0.002 W/K.
+    // The macro side is on the face — no series combination.
     const Eigen::Matrix2d dense = Eigen::MatrixXd(operators.K);
-    EXPECT_NEAR(dense(0, 0), 0.001, 1e-12);
-    EXPECT_NEAR(dense(0, 1), -0.001, 1e-12);
-    EXPECT_NEAR(dense(1, 0), -0.001, 1e-12);
-    EXPECT_NEAR(dense(1, 1), 1.001, 1e-12);
+    EXPECT_NEAR(dense(0, 0), 0.002, 1e-12);
+    EXPECT_NEAR(dense(0, 1), -0.002, 1e-12);
+    EXPECT_NEAR(dense(1, 0), -0.002, 1e-12);
+    EXPECT_NEAR(dense(1, 1), 1.002, 1e-12);
 }
 
 TEST(MacroModelTest, PortAssemblerReevaluatesInterfaceConductanceFromFvmState)
@@ -102,8 +103,10 @@ TEST(MacroModelTest, PortAssemblerReevaluatesInterfaceConductanceFromFvmState)
     const auto cold = assemble(model, port, coupling, cold_state, 0.0);
     const auto hot = assemble(model, port, coupling, hot_state, 0.0);
 
-    EXPECT_NEAR(cold.K.coeff(0, 0), 0.001, 1e-12);
-    EXPECT_NEAR(hot.K.coeff(0, 0), 4.0 / 3000.0, 1e-12);
+    // T=0: k=1, conductance = 1*1e-6/0.5e-3 = 0.002
+    EXPECT_NEAR(cold.K.coeff(0, 0), 0.002, 1e-12);
+    // T=1: k=2, conductance = 2*1e-6/0.5e-3 = 0.004
+    EXPECT_NEAR(hot.K.coeff(0, 0), 0.004, 1e-12);
     EXPECT_GT(hot.K.coeff(0, 0), cold.K.coeff(0, 0));
 }
 
@@ -199,7 +202,6 @@ TEST(MacroModelTest, PortSystemAdvancesTheFullCoupledTransientState)
     PortCoupling coupling;
     coupling.model_cells = {0};
     coupling.model_face = mhs::core::FaceDir::XP;
-    coupling.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
 
     const std::array initial_state {300.0, 300.0};
     const double dt = 0.25;

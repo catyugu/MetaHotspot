@@ -115,7 +115,6 @@ class MhsMacroPortModel(ctypes.Structure):
         ("physical_port_count", ctypes.c_size_t),
         ("model_cells", ctypes.POINTER(ctypes.c_size_t)),
         ("model_face", ctypes.c_int32),
-        ("exterior_half_conductance", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

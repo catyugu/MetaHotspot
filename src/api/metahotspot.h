@@ -70,6 +70,9 @@ enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };
 typedef int32_t mhs_step_strategy_t;
 enum { MHS_STEP_ADAPTIVE = 0, MHS_STEP_FIXED = 1 };
 
+typedef int32_t mhs_face_t;
+enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_FACE_ZM = 4, MHS_FACE_ZP = 5 };
+
 typedef int32_t mhs_status_t;
 enum {
     MHS_OK = 0,
@@ -279,6 +282,15 @@ MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled
     Returns an mhs_operators_t valid until the next assemble call. */
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t* out);
+
+/* ------------------------------------------------------------------ */
+/*  Half-conductance  k*A/(dx/2)                                       */
+/* ------------------------------------------------------------------ */
+
+/** Compute k*A/(dx/2) for each cell at the given face.
+ *  Temperature and time are used to evaluate material properties. */
+MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, const size_t* cells, mhs_face_t face,
+    double temperature, double time, double* out, size_t n);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */

@@ -1,8 +1,9 @@
 #pragma once
 
 #include "mhs/model.hpp"
+#include "mhs/solution.hpp"
+#include "mhs/solver.hpp"
 #include "solver/assembler.hpp"
-#include "solver/solve.hpp"
 
 #include <Eigen/Core>
 #include <span>
@@ -13,7 +14,7 @@ namespace mhs::macro {
     /// Macro port model expressed in retained coordinates.
     struct PortModel {
         mhs::sim::Operators operators;
-        Eigen::MatrixXd basis;             // empty = unit basis
+        Eigen::MatrixXd basis; // empty = unit basis
         std::size_t physical_port_count = 0;
     };
 
@@ -21,16 +22,14 @@ namespace mhs::macro {
     struct PortCoupling {
         std::vector<mhs::core::Index> model_cells;
         mhs::core::FaceDir model_face = mhs::core::FaceDir::XP;
-        Eigen::VectorXd exterior_half_conductance;
     };
 
     /// Assemble `C * dx/dt + K * x = f` for `[FVM temperatures, macro states]`.
-    mhs::sim::Operators assemble(const mhs::core::Model& model, const PortModel& port,
-        const PortCoupling& coupling, std::span<const double> state, double time);
+    mhs::sim::Operators assemble(const mhs::core::Model& model, const PortModel& port, const PortCoupling& coupling,
+        std::span<const double> state, double time);
 
     /// Solve an FVM model coupled to a macro port model.
-    mhs::core::Solution solve(const mhs::core::Model& model, const PortModel& port,
-        const PortCoupling& coupling, std::span<const double> initial_state,
-        const mhs::sim::SolveOptions& opts = {});
+    mhs::core::Solution solve(const mhs::core::Model& model, const PortModel& port, const PortCoupling& coupling,
+        std::span<const double> initial_state, const mhs::sim::SolveOptions& opts = {});
 
 } // namespace mhs::macro

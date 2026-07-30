@@ -18,12 +18,6 @@ extern "C" {
 #endif
 
 /* ------------------------------------------------------------------ */
-/*  Face direction enum  (moved from core header)                      */
-/* ------------------------------------------------------------------ */
-typedef int32_t mhs_face_t;
-enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_FACE_ZM = 4, MHS_FACE_ZP = 5 };
-
-/* ------------------------------------------------------------------ */
 /*  Non-owning CSC matrix view (macromodel-only)                       */
 /* ------------------------------------------------------------------ */
 typedef struct {
@@ -57,7 +51,6 @@ typedef struct {
     size_t physical_port_count;
     const size_t* model_cells;
     mhs_face_t model_face;
-    const double* exterior_half_conductance;
 } mhs_macro_port_model_t;
 
 /* ------------------------------------------------------------------ */
