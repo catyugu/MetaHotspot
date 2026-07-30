@@ -185,21 +185,6 @@ typedef struct {
     size_t n;
 } mhs_assembly_view_t;
 
-/** Non-owning modal macro and physical-interface input.
- *
- * `basis` is a row-major [physical_port_count, mode_count] matrix satisfying
- * physical port temperature = basis * modal state.
- */
-typedef struct {
-    mhs_assembly_view_t operators;
-    const double* basis;
-    size_t physical_port_count;
-    size_t mode_count;
-    const size_t* model_cells;
-    mhs_face_t model_face;
-    const double* exterior_half_conductance;
-} mhs_modal_port_view_t;
-
 /** Non-owning probe trace view.  Pointers remain valid while the source
  *  solution handle remains alive. */
 typedef struct {
@@ -341,15 +326,6 @@ MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_vie
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
     const mhs_solver_opts_t* opts, mhs_solution_t** out);
 
-/** Solve `[FVM temperatures, retained macro modes]`.
- *
- * The FVM-side interface conductance is reevaluated from the current
- * nonlinear iterate. `state_count` must equal cell_count + mode_count.
- */
-MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
-    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out);
-
 MHS_API mhs_status_t mhs_solution_destroy(mhs_solution_t* s);
 
 /* ------------------------------------------------------------------ */
@@ -371,6 +347,35 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
 
 MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s);
 MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out);
+
+/* ------------------------------------------------------------------ */
+/*  Macro-model extension                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Non-owning modal macro and physical-interface input.
+ *
+ * `basis` is a row-major [physical_port_count, mode_count] matrix satisfying
+ * physical port temperature = basis * modal state.
+ */
+typedef struct {
+    mhs_assembly_view_t operators;
+    const double* basis;
+    size_t physical_port_count;
+    size_t mode_count;
+    const size_t* model_cells;
+    mhs_face_t model_face;
+    const double* exterior_half_conductance;
+} mhs_modal_port_view_t;
+
+/** Solve `[FVM temperatures, retained macro modes]`.
+ *
+ * The FVM-side interface conductance is reevaluated from the current
+ * nonlinear iterate. `state_count` must equal cell_count + mode_count.
+ */
+MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* compiled,
+    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
+    const mhs_solver_opts_t* opts, mhs_solution_t** out);
 
 #ifdef __cplusplus
 } /* extern "C" */

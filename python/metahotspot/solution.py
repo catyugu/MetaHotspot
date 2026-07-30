@@ -58,32 +58,18 @@ class Solution(OwnedHandle):
         return self
 
     @classmethod
-    def _solve_modal_port(
+    def _from_handle(
         cls,
-        compiled,
-        modal_view,
-        state: np.ndarray,
-        opts=None,
+        dll,
+        destroy_fn,
+        handle,
+        compiled=None,
     ) -> Solution:
-        """Solve a modal-port coupled system and wrap the full state."""
+        """Wrap an already-obtained ``mhs_solution_t`` pointer."""
         self = cls()
-        self._dll = compiled._dll
-        self._destroy_fn = self._dll.mhs_solution_destroy
-        pp = ctypes.POINTER(MhsSolution)()
-        opts_ptr = ctypes.byref(opts) if opts is not None else None
-        state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-        check(
-            self._dll.mhs_compiled_solve_modal_port(
-                compiled._handle,
-                ctypes.byref(modal_view),
-                state_ptr,
-                state.size,
-                opts_ptr,
-                ctypes.byref(pp),
-            ),
-            "solve_modal_port",
-        )
-        self._handle = pp
+        self._dll = dll
+        self._destroy_fn = destroy_fn
+        self._handle = handle
         self._compiled = compiled
         return self
 

@@ -13,7 +13,6 @@ from metahotspot.types import (
     MhsSolution,
     MhsAssembly,
     MhsAssemblyView,
-    ModalPortView,
     CscView,
     SolverOpts,
     Rect2D,
@@ -22,6 +21,7 @@ from metahotspot.types import (
     CompiledMetadataView,
     SolutionView,
     ProbeView,
+    ModalPortView,
 )
 
 # (name, restype, argtypes) table — drives configure_dll().
@@ -319,18 +319,6 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],
     ),
-    (
-        "mhs_compiled_solve_modal_port",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ModalPortView),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(SolverOpts),
-            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
-        ],
-    ),
     ("mhs_solution_destroy", ctypes.c_int32, [ctypes.POINTER(MhsSolution)]),
     # ---- VTU ----
     (
@@ -360,6 +348,19 @@ _FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(MhsSolution),
             ctypes.c_size_t,
             ctypes.POINTER(ProbeView),
+        ],
+    ),
+    # ---- Macro-model extension ----
+    (
+        "mhs_compiled_solve_modal_port",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ModalPortView),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.POINTER(SolverOpts),
+            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],
     ),
 ]

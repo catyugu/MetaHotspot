@@ -1,12 +1,12 @@
 /* Implementation of the MetaHotspot C API. */
 #include "api/metahotspot.h"
+#include "api/internal.hpp"
 
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
-#include "solver/port_coupling.hpp"
 #include "solver/scheduler.hpp"
 
 #include <Eigen/Core>
@@ -14,84 +14,16 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <string>
 #include <vector>
-
-/* ------------------------------------------------------------------ */
-/*  Internal opaque handle definitions (hidden from the header)        */
-/* ------------------------------------------------------------------ */
-
-struct BlockLocation {
-    uint32_t layer;
-    uint32_t block;
-};
-
-struct mhs_model_t {
-    mhs::model::ModelDefinition def;
-    std::vector<BlockLocation> block_locations;
-};
-
-struct mhs_assembly_t {
-    Eigen::SparseMatrix<double> K;
-    Eigen::SparseMatrix<double> C;
-    Eigen::VectorXd rhs;
-};
-
-struct mhs_compiled_t {
-    mhs::core::Model model;
-};
-
-struct mhs_solution_t {
-    mhs::core::SolveResult result;
-    std::size_t fvm_count = 0;
-    std::vector<mhs::core::ProbeTrace> probe_traces;
-};
 
 /* ------------------------------------------------------------------ */
 /*  Thread-local error buffer                                          */
 /* ------------------------------------------------------------------ */
 static thread_local std::string tls_err;
 
-#define SET_ERR(msg)                                                                                                   \
-    do {                                                                                                               \
-        std::ostringstream _oss;                                                                                       \
-        _oss << msg;                                                                                                   \
-        tls_err = _oss.str();                                                                                          \
-    } while (0)
-
-#define CHECK_NULL(p)                                                                                                  \
-    do {                                                                                                               \
-        if (!(p)) {                                                                                                    \
-            SET_ERR("NULL pointer: " #p);                                                                              \
-            return MHS_ERR_NULL_PTR;                                                                                   \
-        }                                                                                                              \
-    } while (0)
-
-// Unified try/catch wrapper for mhs_status_t-returning functions.
-#define MHS_TRY(err_code, ...)                                                                                         \
-    try {                                                                                                              \
-        tls_err.clear();                                                                                               \
-        __VA_ARGS__;                                                                                                   \
-        tls_err.clear();                                                                                               \
-        return MHS_OK;                                                                                                 \
-    }                                                                                                                  \
-    catch (const std::exception& e) {                                                                                  \
-        SET_ERR(e.what());                                                                                             \
-        return err_code;                                                                                               \
-    }
-
-// Unified try/catch wrapper for uint32_t ID-returning functions.
-// The block must contain a 'return <id_value>;' statement.
-#define MHS_TRY_ID(invalid, ...)                                                                                       \
-    try {                                                                                                              \
-        tls_err.clear();                                                                                               \
-        __VA_ARGS__;                                                                                                   \
-    }                                                                                                                  \
-    catch (const std::exception& e) {                                                                                  \
-        SET_ERR(e.what());                                                                                             \
-        return invalid;                                                                                                \
-    }
+void mhs_detail_set_last_error(const std::string& msg) { tls_err = msg; }
+void mhs_detail_clear_last_error() { tls_err.clear(); }
 
 /* ------------------------------------------------------------------ */
 /*  Enum conversions                                                   */
@@ -107,26 +39,6 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
         return mhs::model::Axis::Z;
     default:
         throw std::invalid_argument("invalid axis value: " + std::to_string(a));
-    }
-}
-
-static mhs::core::FaceDir _to_face(mhs_face_t face)
-{
-    switch (face) {
-    case MHS_FACE_XM:
-        return mhs::core::FaceDir::XM;
-    case MHS_FACE_XP:
-        return mhs::core::FaceDir::XP;
-    case MHS_FACE_YM:
-        return mhs::core::FaceDir::YM;
-    case MHS_FACE_YP:
-        return mhs::core::FaceDir::YP;
-    case MHS_FACE_ZM:
-        return mhs::core::FaceDir::ZM;
-    case MHS_FACE_ZP:
-        return mhs::core::FaceDir::ZP;
-    default:
-        throw std::invalid_argument("invalid face value: " + std::to_string(face));
     }
 }
 
@@ -233,7 +145,7 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
 /*  SolverOpts conversion helper                                       */
 /* ------------------------------------------------------------------ */
 
-static mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double transient_duration = 0.0)
+mhs::sim::SolverOpts to_solver_opts(const mhs_solver_opts_t* opts, double transient_duration)
 {
     mhs::sim::SolverOpts so;
     if (!opts)
@@ -770,38 +682,6 @@ static mhs_csc_view_t _eigen_to_csc_view(const Eigen::SparseMatrix<double>& mat)
         mat.outerIndexPtr(), mat.innerIndexPtr(), mat.valuePtr()};
 }
 
-static Eigen::SparseMatrix<double> _csc_view_to_eigen(const mhs_csc_view_t& view)
-{
-    if (view.rows < 0 || view.columns < 0 || view.nnz < 0 || !view.outer_indices
-        || (view.nnz > 0 && (!view.inner_indices || !view.values))) {
-        throw std::invalid_argument("invalid CSC matrix view");
-    }
-    if (view.outer_indices[0] != 0 || view.outer_indices[view.columns] != view.nnz) {
-        throw std::invalid_argument("invalid CSC outer-index range");
-    }
-
-    std::vector<Eigen::Triplet<double>> entries;
-    entries.reserve(static_cast<std::size_t>(view.nnz));
-    for (int32_t column = 0; column < view.columns; ++column) {
-        const int32_t begin = view.outer_indices[column];
-        const int32_t end = view.outer_indices[column + 1];
-        if (begin < 0 || end < begin || end > view.nnz) {
-            throw std::invalid_argument("invalid CSC column offsets");
-        }
-        for (int32_t entry = begin; entry < end; ++entry) {
-            const int32_t row = view.inner_indices[entry];
-            if (row < 0 || row >= view.rows) {
-                throw std::invalid_argument("invalid CSC row index");
-            }
-            entries.emplace_back(row, column, view.values[entry]);
-        }
-    }
-
-    Eigen::SparseMatrix<double> result(view.rows, view.columns);
-    result.setFromTriplets(entries.begin(), entries.end());
-    return result;
-}
-
 MHS_API mhs_status_t mhs_assembly_view(const mhs_assembly_t* a, mhs_assembly_view_t* out)
 {
     CHECK_NULL(a);
@@ -848,74 +728,6 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     });
 }
 
-MHS_API mhs_status_t mhs_compiled_solve_modal_port(const mhs_compiled_t* c,
-    const mhs_modal_port_view_t* macro, const double* state, size_t state_count,
-    const mhs_solver_opts_t* opts, mhs_solution_t** out)
-{
-    CHECK_NULL(c);
-    CHECK_NULL(macro);
-    CHECK_NULL(macro->basis);
-    CHECK_NULL(macro->model_cells);
-    CHECK_NULL(macro->exterior_half_conductance);
-    CHECK_NULL(macro->operators.rhs);
-    CHECK_NULL(state);
-    CHECK_NULL(out);
-    MHS_TRY(MHS_ERR_SOLVE, {
-        if (macro->physical_port_count == 0 || macro->mode_count == 0
-            || macro->operators.n != macro->mode_count) {
-            SET_ERR("invalid modal port dimensions");
-            return MHS_ERR_INVALID_ARG;
-        }
-        const auto fvm_count = c->model.cells.cell_to_grid.size();
-        if (state_count != fvm_count + macro->mode_count) {
-            SET_ERR("state_count must equal cell_count + mode_count");
-            return MHS_ERR_INVALID_ARG;
-        }
-
-        mhs::sim::ModalPort modal_port;
-        modal_port.operators.K = _csc_view_to_eigen(macro->operators.K);
-        modal_port.operators.C = _csc_view_to_eigen(macro->operators.C);
-        modal_port.operators.f = Eigen::Map<const Eigen::VectorXd>(
-            macro->operators.rhs, static_cast<Eigen::Index>(macro->mode_count));
-        // Row-major C array → column-major Eigen MatrixXd in one shot.
-        Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis_map(
-            macro->basis, static_cast<Eigen::Index>(macro->physical_port_count),
-            static_cast<Eigen::Index>(macro->mode_count));
-        modal_port.basis = basis_map;
-
-        mhs::sim::ThermalPortInterface interface;
-        interface.model_cells.assign(
-            macro->model_cells, macro->model_cells + macro->physical_port_count);
-        interface.model_face = _to_face(macro->model_face);
-        interface.exterior_half_conductance = Eigen::Map<const Eigen::VectorXd>(
-            macro->exterior_half_conductance,
-            static_cast<Eigen::Index>(macro->physical_port_count));
-
-        mhs::sim::Study study {
-            c->model.study_type,
-            c->model.transient_duration,
-            c->model.transient_time_step,
-        };
-        mhs::sim::SystemAssembler assemble = [&](std::span<const double> current_state, double time) {
-            return mhs::sim::assemble_modal_port_system(
-                c->model, modal_port, interface, current_state, time);
-        };
-        const auto so = to_solver_opts(opts, c->model.transient_duration);
-        auto result = mhs::sim::solve_system(
-            study, assemble, std::span<const double>(state, state_count), so);
-
-        auto* s = new (std::nothrow) mhs_solution_t;
-        if (!s) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERR_OOM;
-        }
-        s->result = std::move(result);
-        s->fvm_count = fvm_count;
-        *out = s;
-    });
-}
-
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
@@ -929,8 +741,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
         if (s->fvm_count != c->model.cells.cell_to_grid.size()) {
             throw std::invalid_argument("solution FVM state does not match compiled model");
         }
-        mhs::io::write_vtu(path, c->model,
-            std::span<const double>(s->result.state.data(), s->fvm_count));
+        mhs::io::write_vtu(path, c->model, std::span<const double>(s->result.state.data(), s->fvm_count));
     });
 }
 

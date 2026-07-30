@@ -11,6 +11,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 | `mhs_runtime`    | header-only 运行期数据契约和网格助手          |
 | `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场 |
 | `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
+| `mhs_macromodel` | 宏模型降阶端口耦合插件（可选）                |
 | `mhs_expression` | muparser 与 TBB 表达式封装                    |
 | `mhs_linear`     | Eigen / MKL 线性求解封装                      |
 | `mhs_io`         | XML 输入、XML/VTU 输出及外部格式适配          |
@@ -20,6 +21,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 ```text
 IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
+mhs_macromodel → mhs_solver + mhs_runtime（插件，可选）
 ```
 
 `mhs::core` 不依赖 `mhs::sim`、`mhs::io`、`mhs::post` 或 `mhs::logger`。命名空间规则和目录归属见 [项目结构](docs/design/project-structure.md)。

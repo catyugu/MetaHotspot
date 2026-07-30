@@ -353,7 +353,8 @@ def solve_reduced_case(
     )
     options = metahotspot.SolverOpts.default()
     options.nonlinear_relative_tolerance = 1.0e-10
-    with detailed.solve_modal_port(
+    with metahotspot.macromodel.solve(
+        detailed,
         macro=macro_operators,
         basis=macro.basis,
         model_cells=detailed_interface,

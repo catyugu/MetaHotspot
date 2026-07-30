@@ -21,7 +21,8 @@
 - **`src/model/`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
 - **`mhs_runtime`**：header-only 的运行期数据契约与网格助手，作为 compiler、solver 和结果 IO 的稳定依赖边界。
 - **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
-- **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。
+- **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
+- **`mhs_macromodel`**：可选宏模型降阶端口耦合插件，复用 `mhs_solver` 的调度器和非线性迭代。
 - **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
 - **`mhs_linear`**：Eigen / MKL 线性求解封装；与建模代码的增量编译隔离。
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。

@@ -148,8 +148,7 @@ class Model(OwnedHandle):
             y_offset.encode("utf-8"),
         )
         if lid == MHS_LAYER_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_layer failed: {err}")
+            check(-1, "add_layer")  # reads mhs_last_error() for the detailed message
         return lid
 
     def add_block(
@@ -173,8 +172,7 @@ class Model(OwnedHandle):
             th,
         )
         if bid == MHS_BLOCK_ID_INVALID:
-            err = self._dll.mhs_last_error()
-            raise RuntimeError(f"add_block failed: {err}")
+            check(-1, "add_block")
         return bid
 
     def add_rect(

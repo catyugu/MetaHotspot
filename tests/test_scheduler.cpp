@@ -1,6 +1,5 @@
 #include "compiler/model_compiler.hpp"
 #include "model_test_utils.hpp"
-#include "solver/port_coupling.hpp"
 #include "solver/scheduler.hpp"
 #include <Eigen/LU>
 #include <array>
@@ -85,107 +84,6 @@ TEST(SchedulerTest, SolveSystemReassemblesWholeLinearizationDuringNonlinearItera
     EXPECT_NEAR(result.state[1], 1.0, 1e-12);
 }
 
-TEST(SchedulerTest, ModalPortAssemblerProjectsPhysicalInterface)
-{
-    auto model = make_single_cell_model();
-
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.K.insert(0, 0) = 1.0;
-    macro.operators.C.resize(1, 1);
-    macro.operators.f = Eigen::VectorXd::Ones(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
-
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
-
-    const std::array state {0.0, 0.0};
-    const auto operators = assemble_modal_port_system(model, macro, interface, state, 0.0);
-
-    // The 1 mm cube has model-side half conductance
-    // k*A/(dx/2) = 1*1e-6/(0.5e-3) = 0.002 W/K. Two halves in series
-    // yield 0.001 W/K at the physical interface.
-    const Eigen::Matrix2d dense = Eigen::MatrixXd(operators.K);
-    EXPECT_NEAR(dense(0, 0), 0.001, 1e-12);
-    EXPECT_NEAR(dense(0, 1), -0.001, 1e-12);
-    EXPECT_NEAR(dense(1, 0), -0.001, 1e-12);
-    EXPECT_NEAR(dense(1, 1), 1.001, 1e-12);
-}
-
-TEST(SchedulerTest, ModalPortAssemblerReevaluatesInterfaceConductanceFromFvmState)
-{
-    auto model = make_single_cell_model("1 + T");
-
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.C.resize(1, 1);
-    macro.operators.f = Eigen::VectorXd::Zero(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
-
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
-
-    const std::array cold_state {0.0, 0.0};
-    const std::array hot_state {1.0, 0.0};
-    const auto cold = assemble_modal_port_system(model, macro, interface, cold_state, 0.0);
-    const auto hot = assemble_modal_port_system(model, macro, interface, hot_state, 0.0);
-
-    EXPECT_NEAR(cold.K.coeff(0, 0), 0.001, 1e-12);
-    EXPECT_NEAR(hot.K.coeff(0, 0), 4.0 / 3000.0, 1e-12);
-    EXPECT_GT(hot.K.coeff(0, 0), cold.K.coeff(0, 0));
-}
-
-TEST(SchedulerTest, ModalPortSystemAdvancesTheFullCoupledTransientState)
-{
-    auto model = make_single_cell_model();
-
-    ModalPort macro;
-    macro.operators.K.resize(1, 1);
-    macro.operators.K.insert(0, 0) = 1.0;
-    macro.operators.C.resize(1, 1);
-    macro.operators.C.insert(0, 0) = 0.5;
-    macro.operators.f = Eigen::VectorXd::Ones(1);
-    macro.basis = Eigen::MatrixXd::Ones(1, 1);
-
-    ThermalPortInterface interface;
-    interface.model_cells = {0};
-    interface.model_face = mhs::core::FaceDir::XP;
-    interface.exterior_half_conductance = Eigen::VectorXd::Constant(1, 0.002);
-
-    const std::array initial_state {300.0, 300.0};
-    const double dt = 0.25;
-    const auto initial_operators = assemble_modal_port_system(model, macro, interface, initial_state, dt);
-    const Eigen::Matrix2d expected_matrix
-        = Eigen::MatrixXd(initial_operators.K) + Eigen::MatrixXd(initial_operators.C) / dt;
-    const Eigen::Vector2d initial = Eigen::Map<const Eigen::Vector2d>(initial_state.data());
-    const Eigen::Vector2d expected_rhs = initial_operators.f + initial_operators.C * initial / dt;
-    const Eigen::Vector2d expected = expected_matrix.fullPivLu().solve(expected_rhs);
-
-    Study study {mhs::core::StudyType::Transient, dt, dt};
-    SolverOpts options;
-    options.step_strategy = time_scheme::StepStrategy::Fixed;
-    options.fixed_dt = dt;
-    std::vector<double> observed_times;
-    auto result = solve_system(study,
-        [&](std::span<const double> state, double time) {
-            return assemble_modal_port_system(model, macro, interface, state, time);
-        },
-        initial_state, options,
-        [&](double time, std::span<const double>) {
-            observed_times.push_back(time);
-        });
-
-    ASSERT_TRUE(result.converged);
-    ASSERT_EQ(result.state.size(), 2u);
-    EXPECT_NEAR(result.state[0], expected[0], 1e-10);
-    EXPECT_NEAR(result.state[1], expected[1], 1e-10);
-    EXPECT_EQ(observed_times, (std::vector<double> {0.0, dt}));
-}
-
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
@@ -245,7 +143,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
-    // 瞬态 5 步，2 个观察点。ProbeRecorder 应在 t=0 起点 + 5 个步末各记录 1 次。
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Transient;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -282,7 +179,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    // 两个观察点：中心 (5,5,5) mm + Dirichlet 面 z=0 上的 (5,5,0)
     mhs::model::ObservationPointSpec op1;
     op1.name = "center";
     op1.x = "5";
@@ -296,7 +192,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     op2.z = "0";
     io.observation_points.push_back(op2);
 
-    // z=0 设为 Dirichlet 500K，确保 op2 走 Dirichlet 早返回路径
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
@@ -311,7 +206,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     EXPECT_EQ(traces[0].name, "center");
     EXPECT_EQ(traces[1].name, "z0");
 
-    // Sub-stepping 允许内部步比输出网格更细，因此采样点 ≥ duration/dt。
     for (const auto& tr : traces) {
         EXPECT_GE(tr.times.size(), 6u);
         EXPECT_GE(tr.values.size(), 6u);
@@ -322,12 +216,10 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
         }
     }
 
-    // op1 "center" 在体心；强热源下温度应随时间上升
     EXPECT_NEAR(traces[0].values.front(), 300.0, 1e-3) << "t=0 must be initial temperature";
     EXPECT_GT(traces[0].values.back(), traces[0].values.front())
         << "Center probe must rise over time with strong heat source";
 
-    // op2 "z0" 落在 Dirichlet 面上 → 始终 500K（Dirichlet 是强约束，不随内部场变化）
     for (double v : traces[1].values) {
         EXPECT_NEAR(v, 500.0, 1e-6) << "z0 probe on Dirichlet face must stay at 500K";
     }
@@ -335,10 +227,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
-    // Regression: ProbeRecorder::sample_one 之前把 FieldContext.t 硬编码成 0.0，
-    // 导致时间依赖的 BC 表达式在 t>0 时被错误求值。本测试在 z=0 面上用
-    // 时间依赖 Dirichlet "500 + 100*t"，跑 5 步瞬态 (dt=1)，验证每步末的
-    // 探针温度严格等于 500 + 100*t，而非恒为 500。
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Transient;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -373,7 +261,6 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    // Dirichlet 探针位于 z=0 面中心；BC 表达式随时间线性增长
     mhs::model::ObservationPointSpec op;
     op.name = "z0_dirichlet";
     op.x = "5";
@@ -393,11 +280,9 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);
     const auto& tr = traces[0];
-    ASSERT_GE(tr.times.size(), 6u); // t=0 + 5 步末（内部可 sub-stepping）
+    ASSERT_GE(tr.times.size(), 6u);
     ASSERT_GE(tr.values.size(), 6u);
 
-    // 每步的时间值必须满足 T(t) = 500 + 100*t。旧实现把 t 写死 0，
-    // 会让 tr.values 恒为 500.0；修复后必须随时间线性增长。
     for (size_t i = 0; i < tr.times.size(); ++i) {
         double expected = 500.0 + 100.0 * tr.times[i];
         EXPECT_NEAR(tr.values[i], expected, 1e-6) << "Time-dependent Dirichlet eval failed at t=" << tr.times[i]

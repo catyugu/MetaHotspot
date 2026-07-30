@@ -75,7 +75,7 @@ class SolverOpts(ctypes.Structure):
 
     @staticmethod
     def default() -> "SolverOpts":
-        """Return a SolverOpts filled with sensible defaults (Pardiso, 1e-8, …)."""
+        """Return a SolverOpts filled with sensible defaults (Pardiso, 1e-8, ...)."""
         opts = SolverOpts()
         from metahotspot._lib import get_dll
 
@@ -100,18 +100,6 @@ class MhsAssemblyView(ctypes.Structure):
         ("C", CscView),
         ("rhs", ctypes.POINTER(ctypes.c_double)),
         ("n", ctypes.c_size_t),
-    ]
-
-
-class ModalPortView(ctypes.Structure):
-    _fields_ = [
-        ("operators", MhsAssemblyView),
-        ("basis", ctypes.POINTER(ctypes.c_double)),
-        ("physical_port_count", ctypes.c_size_t),
-        ("mode_count", ctypes.c_size_t),
-        ("model_cells", ctypes.POINTER(ctypes.c_size_t)),
-        ("model_face", ctypes.c_int32),
-        ("exterior_half_conductance", ctypes.POINTER(ctypes.c_double)),
     ]
 
 
@@ -144,6 +132,19 @@ class ProbeView(ctypes.Structure):
         ("times", ctypes.POINTER(ctypes.c_double)),
         ("values", ctypes.POINTER(ctypes.c_double)),
         ("record_count", ctypes.c_size_t),
+    ]
+
+
+class ModalPortView(ctypes.Structure):
+    """C-side ``mhs_modal_port_view_t`` mirror — macro-model extension."""
+    _fields_ = [
+        ("operators", MhsAssemblyView),
+        ("basis", ctypes.POINTER(ctypes.c_double)),
+        ("physical_port_count", ctypes.c_size_t),
+        ("mode_count", ctypes.c_size_t),
+        ("model_cells", ctypes.POINTER(ctypes.c_size_t)),
+        ("model_face", ctypes.c_int32),
+        ("exterior_half_conductance", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

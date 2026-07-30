@@ -1,4 +1,4 @@
-#include "solver/port_coupling.hpp"
+#include "macromodel/modal_port.hpp"
 
 #include "runtime/constants.hpp"
 #include "runtime/mesh.hpp"
