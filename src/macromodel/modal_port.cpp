@@ -20,8 +20,8 @@ namespace mhs::macro {
 
     namespace {
 
-        void append_sparse_block(std::vector<Eigen::Triplet<double>>& entries,
-            const Eigen::SparseMatrix<double>& block, Eigen::Index row_offset, Eigen::Index column_offset)
+        void append_sparse_block(std::vector<Eigen::Triplet<double>>& entries, const Eigen::SparseMatrix<double>& block,
+            Eigen::Index row_offset, Eigen::Index column_offset)
         {
             for (Eigen::Index outer = 0; outer < block.outerSize(); ++outer) {
                 for (Eigen::SparseMatrix<double>::InnerIterator entry(block, outer); entry; ++entry) {
@@ -82,9 +82,8 @@ namespace mhs::macro {
             return Eigen::MatrixXd::Identity(state_count, state_count);
         }
 
-        std::optional<mhs::core::Index> active_neighbor(
-            const mhs::core::Model& model, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
-            mhs::core::FaceDir face)
+        std::optional<mhs::core::Index> active_neighbor(const mhs::core::Model& model, mhs::core::Index ix,
+            mhs::core::Index iy, mhs::core::Index iz, mhs::core::FaceDir face)
         {
             using mhs::core::FaceDir;
             if (face == FaceDir::XM) {
@@ -147,12 +146,10 @@ namespace mhs::macro {
         }
 
         bool inside(double value, double lower, double upper, double tolerance)
-        {
-            return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance;
-        }
+        { return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance; }
 
-        double interface_conductance(const mhs::core::Model& model, const PortFace& port_face,
-            double temperature, double time)
+        double interface_conductance(
+            const mhs::core::Model& model, const PortFace& port_face, double temperature, double time)
         {
             const auto grid = model.cells.cell_to_grid[port_face.cell];
             mhs::core::Index ix, iy, iz;
@@ -163,10 +160,10 @@ namespace mhs::macro {
             const auto& material = model.material_table[model.cells.material_id[port_face.cell]];
             const mhs::core::FieldContext context {
                 model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature, time};
-            const double conductivity = mhs::utils::k_along(port_face.face, material.kx.eval(context),
-                material.ky.eval(context), material.kz.eval(context));
-            const double area = mhs::utils::face_area(
-                port_face.face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
+            const double conductivity = mhs::utils::k_along(
+                port_face.face, material.kx.eval(context), material.ky.eval(context), material.kz.eval(context));
+            const double area
+                = mhs::utils::face_area(port_face.face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
             const double half_length = mhs::utils::half_length_along(
                 port_face.face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
             if (!std::isfinite(conductivity) || conductivity < 0.0 || !std::isfinite(area) || area <= 0.0
@@ -213,8 +210,7 @@ namespace mhs::macro {
                 if (std::abs(face_coordinate(model, ix, iy, iz, patch.face) - patch.coordinate) > tolerance)
                     continue;
                 const auto [a, b] = tangential_center(model, ix, iy, iz, patch.face);
-                if (!inside(a, patch.a_min, patch.a_max, tolerance)
-                    || !inside(b, patch.b_min, patch.b_max, tolerance))
+                if (!inside(a, patch.a_min, patch.a_max, tolerance) || !inside(b, patch.b_min, patch.b_max, tolerance))
                     continue;
 
                 const auto key = cell * mhs::core::FACE_COUNT + static_cast<std::size_t>(patch.face);
@@ -229,8 +225,8 @@ namespace mhs::macro {
         return result;
     }
 
-    mhs::sim::Operators assemble_dtn(const mhs::core::Model& model, const PortMap& ports,
-        std::span<const double> cell_state, double time)
+    mhs::sim::Operators assemble_dtn(
+        const mhs::core::Model& model, const PortMap& ports, std::span<const double> cell_state, double time)
     {
         validate_port_map(model, ports);
         const auto cell_count = model.cells.cell_to_grid.size();
@@ -268,8 +264,8 @@ namespace mhs::macro {
         return result;
     }
 
-    mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn,
-        const PortMap& ports, std::span<const double> state, double time)
+    mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn, const PortMap& ports,
+        std::span<const double> state, double time)
     {
         validate_port_map(model, ports);
         if (dtn.physical_port_count != ports.port_count)

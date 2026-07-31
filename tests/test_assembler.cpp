@@ -1,6 +1,6 @@
-#include "compiler/model_compiler.hpp"
 #include "common/model.hpp"
 #include "common/model_definition.hpp"
+#include "compiler/model_compiler.hpp"
 #include "solver/assembler.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -9,9 +9,7 @@ using namespace mhs::sim;
 
 // Helper: build a default-state vector from the model's initial_temperature.
 static std::vector<double> default_state(const mhs::core::Model& model)
-{
-    return std::vector<double>(static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
-}
+{ return std::vector<double>(static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature); }
 
 // Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
 static mhs::model::ModelDefinition make_simple_cube_io()

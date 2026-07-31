@@ -1,13 +1,12 @@
 #pragma once
 
+#include "common/constants.hpp"
 #include "common/model.hpp"
 #include "common/types.hpp"
-#include "common/constants.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-
 
 namespace mhs::utils {
 

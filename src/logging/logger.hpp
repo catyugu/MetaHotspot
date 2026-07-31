@@ -18,19 +18,13 @@ namespace mhs::logger {
     // ---------------------------------------------------------
 
     template <typename... Args> void debug(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    {
-        spdlog::debug(fmt, std::forward<Args>(args)...);
-    }
+    { spdlog::debug(fmt, std::forward<Args>(args)...); }
 
     template <typename... Args> void info(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    {
-        spdlog::info(fmt, std::forward<Args>(args)...);
-    }
+    { spdlog::info(fmt, std::forward<Args>(args)...); }
 
     template <typename... Args> void warn(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    {
-        spdlog::warn(fmt, std::forward<Args>(args)...);
-    }
+    { spdlog::warn(fmt, std::forward<Args>(args)...); }
 
 } // namespace mhs::logger
 

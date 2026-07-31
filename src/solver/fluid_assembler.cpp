@@ -17,9 +17,7 @@ namespace mhs::sim::fluid {
         };
 
         bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::core::Index cell)
-        {
-            return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::core::invalidIndex;
-        }
+        { return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::core::invalidIndex; }
 
         void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::core::Index fluid_cell,
             mhs::core::Index solid_cell, double correction)

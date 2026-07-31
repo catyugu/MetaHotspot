@@ -1,7 +1,7 @@
+#include "common/mesh.hpp"
 #include "compiler/model_compiler.hpp"
 #include "config.h"
 #include "io/model_io.hpp"
-#include "common/mesh.hpp"
 #include "solver/fluid_assembler.hpp"
 
 #include <algorithm>

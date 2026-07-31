@@ -1,6 +1,6 @@
+#include "common/model_definition.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
-#include "common/model_definition.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>

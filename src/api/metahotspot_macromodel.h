@@ -34,14 +34,13 @@ MHS_API void mhs_macromodel_port_map_destroy(mhs_macro_port_map_t* map);
 MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map);
 
 /** Assemble an isolated component as [physical ports, FVM cell states]. */
-MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled,
-    const mhs_macro_port_map_t* ports, const double* state, size_t state_count, double time,
-    mhs_operators_t* out);
+MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
+    const double* state, size_t state_count, double time, mhs_operators_t* out);
 
 /** Solve an FVM model coupled to a reduced DtN model. */
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled,
-    const mhs_macro_port_map_t* ports, const mhs_macro_dtn_model_t* dtn,
-    const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
+    const mhs_macro_dtn_model_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
+    mhs_solution_t** out);
 
 #ifdef __cplusplus
 } /* extern "C" */

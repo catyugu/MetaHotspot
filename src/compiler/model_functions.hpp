@@ -1,8 +1,7 @@
 #pragma once
 
-#include "numerics/expression/expr.hpp"
 #include "common/model_definition.hpp"
-
+#include "numerics/expression/expr.hpp"
 
 #include <string>
 

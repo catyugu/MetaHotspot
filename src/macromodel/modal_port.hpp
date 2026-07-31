@@ -46,12 +46,12 @@ namespace mhs::macro {
 
     /// Assemble an isolated component as [physical face ports, FVM cell states].
     /// The port rows have zero capacity and expose the component's DtN relation.
-    mhs::sim::Operators assemble_dtn(const mhs::core::Model& model, const PortMap& ports,
-        std::span<const double> cell_state, double time);
+    mhs::sim::Operators assemble_dtn(
+        const mhs::core::Model& model, const PortMap& ports, std::span<const double> cell_state, double time);
 
     /// Assemble C*dx/dt + K*x = f for [FVM temperatures, retained DtN states].
-    mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn,
-        const PortMap& ports, std::span<const double> state, double time);
+    mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn, const PortMap& ports,
+        std::span<const double> state, double time);
 
     /// Solve an FVM model coupled to a reduced DtN model.
     mhs::core::Solution solve(const mhs::core::Model& model, const DtNModel& dtn, const PortMap& ports,

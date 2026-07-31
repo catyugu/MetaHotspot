@@ -104,12 +104,11 @@ MHS_API mhs_status_t mhs_macromodel_port_map_create(const mhs_compiled_t* compil
         cpp_patches.reserve(patch_count);
         for (size_t i = 0; i < patch_count; ++i) {
             const auto& patch = patches[i];
-            cpp_patches.push_back({to_face(patch.face), patch.coordinate,
-                patch.rectangle.a_min, patch.rectangle.a_max,
+            cpp_patches.push_back({to_face(patch.face), patch.coordinate, patch.rectangle.a_min, patch.rectangle.a_max,
                 patch.rectangle.b_min, patch.rectangle.b_max});
         }
-        const auto compiled_map = mhs::macro::compile_port_map(
-            compiled->model, std::span<const mhs::macro::PortPatch>(cpp_patches));
+        const auto compiled_map
+            = mhs::macro::compile_port_map(compiled->model, std::span<const mhs::macro::PortPatch>(cpp_patches));
         auto* result = new (std::nothrow) mhs_macro_port_map_t;
         if (!result)
             throw std::bad_alloc();
@@ -121,14 +120,10 @@ MHS_API mhs_status_t mhs_macromodel_port_map_create(const mhs_compiled_t* compil
 
 MHS_API void mhs_macromodel_port_map_destroy(mhs_macro_port_map_t* map) { delete map; }
 
-MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map)
-{
-    return map ? map->map.port_count : 0;
-}
+MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map) { return map ? map->map.port_count : 0; }
 
-MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled,
-    const mhs_macro_port_map_t* ports, const double* state, size_t state_count, double time,
-    mhs_operators_t* out)
+MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
+    const double* state, size_t state_count, double time, mhs_operators_t* out)
 {
     CHECK_NULL(compiled);
     CHECK_NULL(ports);
@@ -140,15 +135,15 @@ MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled,
         if (state_count != cell_count)
             throw std::invalid_argument("state_count must equal compiled cell count");
         auto& scratch = const_cast<mhs_compiled_t*>(compiled)->assemble_scratch;
-        scratch = mhs::macro::assemble_dtn(
-            compiled->model, ports->map, std::span<const double>(state, state_count), time);
+        scratch
+            = mhs::macro::assemble_dtn(compiled->model, ports->map, std::span<const double>(state, state_count), time);
         operators_to_view(scratch, out);
     });
 }
 
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled,
-    const mhs_macro_port_map_t* ports, const mhs_macro_dtn_model_t* dtn,
-    const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out)
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
+    const mhs_macro_dtn_model_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
+    mhs_solution_t** out)
 {
     CHECK_NULL(compiled);
     CHECK_NULL(ports);
@@ -169,18 +164,16 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled,
         mhs::macro::DtNModel model;
         model.operators.K = csc_to_eigen(dtn->operators.K);
         model.operators.C = csc_to_eigen(dtn->operators.C);
-        model.operators.f = Eigen::Map<const Eigen::VectorXd>(
-            dtn->operators.rhs, static_cast<Eigen::Index>(dtn_state_count));
+        model.operators.f
+            = Eigen::Map<const Eigen::VectorXd>(dtn->operators.rhs, static_cast<Eigen::Index>(dtn_state_count));
         model.physical_port_count = dtn->physical_port_count;
         if (dtn->basis) {
-            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis(
-                dtn->basis, static_cast<Eigen::Index>(dtn->physical_port_count),
-                static_cast<Eigen::Index>(dtn_state_count));
+            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis(dtn->basis,
+                static_cast<Eigen::Index>(dtn->physical_port_count), static_cast<Eigen::Index>(dtn_state_count));
             model.port_basis = basis;
         }
 
-        auto result = mhs::macro::solve(compiled->model, model, ports->map,
-            std::span<const double>(state, state_count),
+        auto result = mhs::macro::solve(compiled->model, model, ports->map, std::span<const double>(state, state_count),
             to_solve_options(opts, compiled->model.transient_duration));
         auto* solution = new (std::nothrow) mhs_solution_t;
         if (!solution)

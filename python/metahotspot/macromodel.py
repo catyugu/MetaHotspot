@@ -63,9 +63,7 @@ def _get_dll():
             ctypes.POINTER(ctypes.POINTER(MhsMacroPortMap)),
         ]
         dll.mhs_macromodel_port_map_destroy.restype = None
-        dll.mhs_macromodel_port_map_destroy.argtypes = [
-            ctypes.POINTER(MhsMacroPortMap)
-        ]
+        dll.mhs_macromodel_port_map_destroy.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
         dll.mhs_macromodel_port_count.restype = ctypes.c_size_t
         dll.mhs_macromodel_port_count.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
         dll.mhs_macromodel_assemble_dtn.restype = ctypes.c_int32
@@ -216,7 +214,9 @@ class PortMap(OwnedHandle):
         )
 
 
-def solve(compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None) -> Solution:
+def solve(
+    compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None
+) -> Solution:
     """Solve a compiled FVM model coupled to a reduced DtN model."""
     if ports._compiled is not compiled:
         raise ValueError("ports were compiled for a different model")
@@ -262,7 +262,9 @@ def solve(compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None)
 
     opts_ptr = None
     if opts is not None:
-        c_opts = opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
+        c_opts = (
+            opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
+        )
         opts_ptr = ctypes.byref(c_opts)
 
     solution = ctypes.POINTER(MhsSolution)()

@@ -61,9 +61,7 @@ class SolveOptions:
         c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
         c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
         c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
-        c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(
-            self.step_strategy, 0
-        )
+        c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
         c_opts.error_abs_tol = self.error_abs_tol
         c_opts.error_safety = self.error_safety
         c_opts.min_dt = self.min_dt
@@ -177,9 +175,7 @@ class Compiled(OwnedHandle):
             inner = np.ctypeslib.as_array(
                 matrix_view.inner_indices, shape=(nnz,)
             ).copy()
-            values = np.ctypeslib.as_array(
-                matrix_view.values, shape=(nnz,)
-            ).copy()
+            values = np.ctypeslib.as_array(matrix_view.values, shape=(nnz,)).copy()
             return scipy.sparse.csc_matrix(
                 (values, inner, outer),
                 shape=(matrix_view.rows, matrix_view.columns),

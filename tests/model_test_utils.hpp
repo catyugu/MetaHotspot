@@ -6,10 +6,8 @@
 
 namespace mhs::test {
 
-    inline mhs::model::FaceRegion face_region(mhs::model::Axis axis, double coordinate,
-        std::initializer_list<mhs::model::RegionRect> rectangles)
-    {
-        return {axis, coordinate, rectangles};
-    }
+    inline mhs::model::FaceRegion face_region(
+        mhs::model::Axis axis, double coordinate, std::initializer_list<mhs::model::RegionRect> rectangles)
+    { return {axis, coordinate, rectangles}; }
 
 } // namespace mhs::test

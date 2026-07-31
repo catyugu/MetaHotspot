@@ -1,9 +1,9 @@
 #include "compiler/fluid_preprocessor.hpp"
 
-#include "compiler/fluid_physics.hpp"
-#include "numerics/linear/linear_solver.hpp"
 #include "common/constants.hpp"
 #include "common/mesh.hpp"
+#include "compiler/fluid_physics.hpp"
+#include "numerics/linear/linear_solver.hpp"
 
 #include <Eigen/Sparse>
 #include <algorithm>
@@ -32,9 +32,7 @@ namespace mhs::sim::fluid {
         };
 
         mhs::core::Index fluid_count(const mhs::core::Model& model)
-        {
-            return static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size());
-        }
+        { return static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size()); }
 
         bool is_fluid_cell(const mhs::core::Model& model, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz)
         {
@@ -99,9 +97,7 @@ namespace mhs::sim::fluid {
         }
 
         int axis_index(mhs::model::Axis axis)
-        {
-            return axis == mhs::model::Axis::X ? 0 : axis == mhs::model::Axis::Y ? 1 : 2;
-        }
+        { return axis == mhs::model::Axis::X ? 0 : axis == mhs::model::Axis::Y ? 1 : 2; }
 
         bool point_in_region(const mhs::model::FaceRegion& region, double a, double b, double si_scale)
         {

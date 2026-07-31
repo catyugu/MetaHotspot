@@ -53,8 +53,7 @@ namespace {
     {
         std::vector<mhs::macro::PortPatch> patches;
         for (std::size_t i = 0; i < count; ++i) {
-            patches.push_back({mhs::core::FaceDir::YP, 1.0e-3,
-                i * 1.0e-3, (i + 1) * 1.0e-3, 0.0, 1.0e-3});
+            patches.push_back({mhs::core::FaceDir::YP, 1.0e-3, i * 1.0e-3, (i + 1) * 1.0e-3, 0.0, 1.0e-3});
         }
         return patches;
     }

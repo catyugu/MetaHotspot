@@ -104,9 +104,7 @@ namespace mhs::sim {
 
         // identifier-char 判定：[A-Za-z0-9_]
         bool is_id_char(char c)
-        {
-            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
-        }
+        { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; }
 
         // identifier-start 判定：[A-Za-z_]（与 is_id_char 的区别在数字）
         bool is_id_start(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; }

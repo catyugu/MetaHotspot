@@ -2,11 +2,11 @@
 #include "api/metahotspot.h"
 #include "api/internal.h"
 
+#include "common/model_definition.hpp"
+#include "common/solver.hpp"
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
-#include "common/model_definition.hpp"
-#include "common/solver.hpp"
 #include "solver/assembler.hpp"
 
 #include "common/mesh.hpp"
@@ -86,9 +86,7 @@ static mhs_study_t _from_core_study(mhs::core::StudyType s)
 }
 
 static mhs::model::FaceRegion _make_face_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
-{
-    return {_to_axis(axis), coord, {{r.a_min, r.a_max, r.b_min, r.b_max}}};
-}
+{ return {_to_axis(axis), coord, {{r.a_min, r.a_max, r.b_min, r.b_max}}}; }
 
 static mhs::sim::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
 {
@@ -729,8 +727,7 @@ MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_vie
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_solution_history_view(
-    const mhs_solution_t* solution, mhs_solution_history_view_t* out)
+MHS_API mhs_status_t mhs_solution_history_view(const mhs_solution_t* solution, mhs_solution_history_view_t* out)
 {
     CHECK_NULL(solution);
     CHECK_NULL(out);

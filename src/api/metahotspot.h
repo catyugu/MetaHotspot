@@ -324,8 +324,7 @@ MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_s
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out);
-MHS_API mhs_status_t mhs_solution_history_view(
-    const mhs_solution_t* solution, mhs_solution_history_view_t* out);
+MHS_API mhs_status_t mhs_solution_history_view(const mhs_solution_t* solution, mhs_solution_history_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */

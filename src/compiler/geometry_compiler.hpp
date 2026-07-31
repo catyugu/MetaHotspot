@@ -3,7 +3,6 @@
 #include "common/model.hpp"
 #include "common/model_definition.hpp"
 
-
 #include <vector>
 
 namespace mhs::sim {

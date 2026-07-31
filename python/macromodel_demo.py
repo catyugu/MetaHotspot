@@ -388,14 +388,14 @@ def build_macro_model(cfg: PackageConfig, convection_h_W_m2K: float | None = Non
         model.add_convection(
             f"{convection_h_W_m2K:.17g}",
             f"{cfg.ambient_K:.17g}",
-            regions=[
-                (Axis.Z, macro_height, 0.0, cfg.width_mm, 0.0, cfg.height_mm)
-            ],
+            regions=[(Axis.Z, macro_height, 0.0, cfg.width_mm, 0.0, cfg.height_mm)],
         )
     return model
 
 
-def _interface_patches(cfg: PackageConfig, face: Face, coordinate_m: float) -> list[PortPatch]:
+def _interface_patches(
+    cfg: PackageConfig, face: Face, coordinate_m: float
+) -> list[PortPatch]:
     dx = cfg.width_mm * 1.0e-3 / cfg.nx
     dy = cfg.height_mm * 1.0e-3 / cfg.ny
     return [
@@ -458,9 +458,7 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     macro_adiabatic, macro_ports, macro_operators = _assemble_macro_dtn(cfg, None)
     _, _, nominal_operators = _assemble_macro_dtn(cfg, exp.nominal_h_W_m2K)
     p = cfg.physical_ports
-    boundary_delta = (
-        nominal_operators.K[p:, p:] - macro_operators.K[p:, p:]
-    ).tocsc()
+    boundary_delta = (nominal_operators.K[p:, p:] - macro_operators.K[p:, p:]).tocsc()
 
     full_detailed_cells = _ordered_cells(full, 0, cfg.detailed_nz)
     full_macro_cells = _ordered_cells(full, cfg.detailed_nz, cfg.total_nz)
@@ -530,21 +528,19 @@ def _complete_dct_basis(nx: int, ny: int) -> np.ndarray:
 
 def build_source_port_spectrum(cfg: PackageConfig) -> PortSpectrum:
     full_dct = _complete_dct_basis(cfg.nx, cfg.ny)
-    x_centres = (np.arange(cfg.nx, dtype=np.float64) + 0.5) * (
-        cfg.width_mm / cfg.nx
-    )
-    y_centres = (np.arange(cfg.ny, dtype=np.float64) + 0.5) * (
-        cfg.height_mm / cfg.ny
-    )
+    x_centres = (np.arange(cfg.nx, dtype=np.float64) + 0.5) * (cfg.width_mm / cfg.nx)
+    y_centres = (np.arange(cfg.ny, dtype=np.float64) + 0.5) * (cfg.height_mm / cfg.ny)
     source_maps = []
     for x0, y0 in _chiplet_positions(cfg):
         source_maps.append(
             np.asarray(
                 [
-                    1.0
-                    if x0 <= x <= x0 + cfg.chiplet_width_mm
-                    and y0 <= y <= y0 + cfg.chiplet_height_mm
-                    else 0.0
+                    (
+                        1.0
+                        if x0 <= x <= x0 + cfg.chiplet_width_mm
+                        and y0 <= y <= y0 + cfg.chiplet_height_mm
+                        else 0.0
+                    )
                     for x in x_centres
                     for y in y_centres
                 ],
@@ -575,9 +571,7 @@ def _orthonormal_range(matrix: np.ndarray, tolerance: float = 1.0e-11) -> np.nda
     diagonal = np.abs(np.diag(r))
     if diagonal.size == 0:
         return np.empty((matrix.shape[0], 0), dtype=np.float64)
-    rank = int(
-        np.count_nonzero(diagonal > tolerance * max(1.0, float(diagonal.max())))
-    )
+    rank = int(np.count_nonzero(diagonal > tolerance * max(1.0, float(diagonal.max()))))
     return np.ascontiguousarray(q[:, :rank], dtype=np.float64)
 
 
@@ -643,7 +637,9 @@ def build_source_aware_bci(
         dynamic_modes = _orthonormal_range(dynamic_modes)
 
     interior_only = np.hstack((boundary_modes, dynamic_modes))
-    zeros = np.zeros((spectrum.basis.shape[0], interior_only.shape[1]), dtype=np.float64)
+    zeros = np.zeros(
+        (spectrum.basis.shape[0], interior_only.shape[1]), dtype=np.float64
+    )
     physical = np.hstack((phi, zeros))
     V = np.vstack((physical, np.hstack((psi, interior_only))))
     return MethodBasis(
@@ -887,7 +883,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _configs_from_args(args: argparse.Namespace) -> tuple[PackageConfig, ExperimentConfig]:
+def _configs_from_args(
+    args: argparse.Namespace,
+) -> tuple[PackageConfig, ExperimentConfig]:
     if args.quick:
         return (
             PackageConfig(nx=16, ny=16, bump_rows=6, bump_columns=6),
