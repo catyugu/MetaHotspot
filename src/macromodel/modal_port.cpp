@@ -290,26 +290,26 @@ namespace mhs::macro {
         append_sparse_block(c_entries, base.C, 0, 0);
         append_sparse_block(c_entries, dtn.operators.C, fvm_count, fvm_count);
 
-        Eigen::MatrixXd macro_interface = Eigen::MatrixXd::Zero(macro_count, macro_count);
         for (const auto& face : ports.faces) {
             const Eigen::Index cell = static_cast<Eigen::Index>(face.cell);
             const Eigen::Index port = static_cast<Eigen::Index>(face.port);
             const double g = interface_conductance(model, face, temperatures[face.cell], time);
             k_entries.emplace_back(cell, cell, g);
-            for (Eigen::Index q = 0; q < macro_count; ++q) {
-                const double value = -g * basis(port, q);
-                if (std::abs(value) > mhs::core::zero_guard) {
-                    k_entries.emplace_back(cell, fvm_count + q, value);
-                    k_entries.emplace_back(fvm_count + q, cell, value);
+            for (Eigen::Index q1 = 0; q1 < macro_count; ++q1) {
+                const double b1 = basis(port, q1);
+                if (std::abs(b1) <= mhs::core::zero_guard)
+                    continue;
+                k_entries.emplace_back(cell, fvm_count + q1, -g * b1);
+                k_entries.emplace_back(fvm_count + q1, cell, -g * b1);
+                for (Eigen::Index q2 = q1; q2 < macro_count; ++q2) {
+                    const double b2 = basis(port, q2);
+                    if (std::abs(b2) <= mhs::core::zero_guard)
+                        continue;
+                    const double value = g * b1 * b2;
+                    k_entries.emplace_back(fvm_count + q1, fvm_count + q2, value);
+                    if (q2 != q1)
+                        k_entries.emplace_back(fvm_count + q2, fvm_count + q1, value);
                 }
-            }
-            macro_interface.noalias() += g * basis.row(port).transpose() * basis.row(port);
-        }
-        for (Eigen::Index row = 0; row < macro_count; ++row) {
-            for (Eigen::Index column = 0; column < macro_count; ++column) {
-                const double value = macro_interface(row, column);
-                if (std::abs(value) > mhs::core::zero_guard)
-                    k_entries.emplace_back(fvm_count + row, fvm_count + column, value);
             }
         }
 
