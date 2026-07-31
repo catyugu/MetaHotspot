@@ -9,6 +9,7 @@
 #include "solver/time_integration.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -80,8 +81,6 @@ namespace mhs::sim {
 
     } // namespace
 
-    // ---- Internal callback-driven solver ----
-
     mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
         std::span<const double> initial_state, const SolveOptions& opts, const StateObserver& observe)
     {
@@ -102,8 +101,30 @@ namespace mhs::sim {
         const auto state_count = state.size();
         double current_time = 0.0;
         mhs::core::SolutionHistory accepted {state_count, 2};
+        std::vector<double> snapshot_times;
+        std::vector<double> snapshot_states;
 
-        // Steady: single non-linear solve, then output.
+        auto emit = [&](double time, std::span<const double> accepted_state) {
+            if (accepted_state.size() != state_count) {
+                throw std::logic_error("solve_system: observer state size changed during solve");
+            }
+            snapshot_times.push_back(time);
+            snapshot_states.insert(snapshot_states.end(), accepted_state.begin(), accepted_state.end());
+            if (observe)
+                observe(time, accepted_state);
+        };
+
+        auto finish = [&](bool converged) {
+            mhs::core::Solution result;
+            result.state = std::move(state);
+            result.fvm_count = state_count;
+            result.time = current_time;
+            result.converged = converged;
+            result.snapshot_times = std::move(snapshot_times);
+            result.snapshot_states = std::move(snapshot_states);
+            return result;
+        };
+
         if (study.type == mhs::core::StudyType::Steady) {
             LinearSystemProvider build_ls = [&](std::span<const double> s) -> LinearSystem {
                 auto ops = assemble(s, 0.0);
@@ -111,12 +132,10 @@ namespace mhs::sim {
                 return {std::move(ops.K), std::move(ops.f)};
             };
             auto nl_result = nonlinear_solve(build_ls, state, *solver, nl_config);
-            if (observe)
-                observe(0.0, state);
-            return {std::move(state), state_count, current_time, nl_result.converged, {}};
+            emit(0.0, state);
+            return finish(nl_result.converged);
         }
 
-        // Transient.
         const double duration = study.duration;
         const double output_dt = study.output_interval;
         const double min_dt = opts.min_dt;
@@ -124,8 +143,7 @@ namespace mhs::sim {
         time_scheme::StepController step_ctrl {step_strategy, min_dt, max_dt, duration, output_dt, opts.fixed_dt};
 
         accepted.initialize(state, current_time);
-        if (observe)
-            observe(current_time, state);
+        emit(current_time, state);
 
         double dt_sug = std::clamp(output_dt, min_dt, max_dt);
 
@@ -134,17 +152,13 @@ namespace mhs::sim {
             if (dt <= 0.0)
                 break;
 
-            // Build the linearised system at (state, time + dt)
             LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
                 auto ops = assemble(iter_state, current_time + dt);
                 validate_operator_dimensions(ops, state_count);
                 return time_scheme::build_system(integrator, ops, accepted, dt);
             };
 
-            // Save state before trial so we can restore on rejection
             auto saved_state = state;
-
-            // Non-linear solve (Picard/Anderson)
             auto nl = nonlinear_solve(ls_provider, state, *solver, nl_config);
 
             if (!nl.converged) {
@@ -154,7 +168,7 @@ namespace mhs::sim {
 
                 if (dt <= min_dt * 1.0001) {
                     MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
-                    return {std::move(state), state_count, current_time, false, {}};
+                    return finish(false);
                 }
                 continue;
             }
@@ -179,8 +193,8 @@ namespace mhs::sim {
                 current_time += dt;
                 MHS_LOG_DEBUG("Time: {} solved (dt={})", current_time, dt);
 
-                if (observe && step_ctrl.output_due(current_time))
-                    observe(current_time, state);
+                if (step_ctrl.output_due(current_time))
+                    emit(current_time, state);
 
                 dt_sug = (step_strategy == time_scheme::StepStrategy::Fixed)
                     ? opts.fixed_dt
@@ -193,10 +207,12 @@ namespace mhs::sim {
             }
         }
 
-        return {std::move(state), state_count, current_time, true, {}};
+        // A duration that is not an exact output interval must still expose its
+        // final accepted state exactly once.
+        if (snapshot_times.empty() || std::abs(snapshot_times.back() - current_time) > mhs::core::zero_guard)
+            emit(current_time, state);
+        return finish(true);
     }
-
-    // ---- Public solve entry point ----
 
     mhs::core::Solution solve(
         const mhs::core::Model& model, std::span<const double> initial_state, const SolveOptions& options)
