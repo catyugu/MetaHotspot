@@ -1,5 +1,5 @@
 #include "compiler/model_compiler.hpp"
-#include "mhs/solver.hpp"
+#include "common/solver.hpp"
 #include "model_test_utils.hpp"
 #include <Eigen/LU>
 #include <algorithm>

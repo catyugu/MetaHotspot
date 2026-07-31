@@ -8,10 +8,6 @@ target_link_libraries(mhs_c_api PRIVATE
     mhs_macromodel
     mhs_io
 )
-target_include_directories(mhs_c_api PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
-)
 target_include_directories(mhs_c_api PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(mhs_c_api PRIVATE
     MHS_API_EXPORT

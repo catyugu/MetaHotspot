@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mhs/model.hpp"
+#include "common/model.hpp"
 #include <span>
 #include <vector>
 

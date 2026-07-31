@@ -1,8 +1,8 @@
 #pragma once
 
-#include "mhs/model.hpp"
-#include "mhs/types.hpp"
-#include "runtime/constants.hpp"
+#include "common/model.hpp"
+#include "common/types.hpp"
+#include "common/constants.hpp"
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

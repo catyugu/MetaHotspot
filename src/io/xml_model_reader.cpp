@@ -8,7 +8,7 @@
 #include "io/face_region_parser.hpp"
 #include "io/model_io.hpp"
 #include "io/xml_helpers.hpp"
-#include "mhs/model_definition.hpp"
+#include "common/model_definition.hpp"
 
 namespace mhs::io {
 

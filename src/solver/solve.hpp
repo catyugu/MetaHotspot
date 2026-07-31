@@ -3,8 +3,8 @@
 /* Internal solve driver — NOT part of the public API.
    Shared between the standard solver (solve.cpp) and the macromodel module. */
 
-#include "mhs/solution.hpp"
-#include "mhs/solver.hpp"
+#include "common/solution.hpp"
+#include "common/solver.hpp"
 #include "solver/assembler.hpp"
 
 #include <functional>

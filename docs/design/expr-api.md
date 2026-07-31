@@ -1,12 +1,12 @@
 # expr 模块接口
 
-封装 muparser。`include/mhs/expression.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
+封装 muparser。`src/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，参数与 `parse()` 共享同一个 `SymbolTable` 但语法更窄（仅依赖 `variables` map）。
 
 ---
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::core` (`include/mhs/expression.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
+**定义**：`mhs::core` (`src/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
 
 ```cpp
 namespace mhs::core {

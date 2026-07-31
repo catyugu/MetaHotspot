@@ -4,8 +4,8 @@
    metahotspot_macromodel.cpp.  Not part of the public API. */
 
 #include "api/metahotspot.h" // mhs_solve_options_t etc.
-#include "mhs/model_definition.hpp"
-#include "mhs/solver.hpp" // mhs::sim::SolveOptions
+#include "common/model_definition.hpp"
+#include "common/solver.hpp" // mhs::sim::SolveOptions
 #include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>

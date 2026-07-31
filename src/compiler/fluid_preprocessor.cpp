@@ -2,8 +2,8 @@
 
 #include "compiler/fluid_physics.hpp"
 #include "numerics/linear/linear_solver.hpp"
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 
 #include <Eigen/Sparse>
 #include <algorithm>

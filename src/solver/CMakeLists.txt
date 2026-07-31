@@ -9,7 +9,7 @@ mhs_add_library(mhs_solver
     solve.cpp
     time_integration.cpp
     PUBLIC_LINKS
-    mhs_runtime
+    mhs_common
     mhs_linear
     PRIVATE_LINKS
     mhs_logging

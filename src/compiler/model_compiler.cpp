@@ -2,7 +2,7 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
-#include "mhs/expression.hpp"
+#include "numerics/expression/expr.hpp"
 
 #include <algorithm>
 #include <cassert>

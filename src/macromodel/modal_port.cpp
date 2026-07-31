@@ -1,7 +1,7 @@
 #include "macromodel/modal_port.hpp"
 
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 #include "solver/solve.hpp"
 
 #include <Eigen/Sparse>

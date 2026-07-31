@@ -1,8 +1,8 @@
 #pragma once
 
-#include "mhs/expression.hpp"
-#include "mhs/fluid_domain.hpp"
-#include "mhs/types.hpp"
+#include "numerics/expression/expr.hpp"
+#include "common/fluid_domain.hpp"
+#include "common/types.hpp"
 
 #include <string>
 #include <vector>

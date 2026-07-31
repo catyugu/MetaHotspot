@@ -3,7 +3,7 @@
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "logging/logger.hpp"
-#include "mhs/solver.hpp"
+#include "common/solver.hpp"
 #include "solver/postprocessor.hpp"
 #include <iostream>
 #include <optional>

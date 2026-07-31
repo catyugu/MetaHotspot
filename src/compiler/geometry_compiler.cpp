@@ -1,7 +1,7 @@
 #include "compiler/geometry_compiler.hpp"
-#include "mhs/expression.hpp"
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
+#include "numerics/expression/expr.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 #include <algorithm>
 #include <cstddef>
 

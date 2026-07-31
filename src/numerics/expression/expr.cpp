@@ -1,5 +1,5 @@
 // muparser-backed expression implementation
-#include "mhs/expression.hpp"
+#include "numerics/expression/expr.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
 #include <memory>

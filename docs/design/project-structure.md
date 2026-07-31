@@ -7,7 +7,7 @@
 | 目录                       | 目标                | 职责                                            |
 | -------------------------- | ------------------- | ----------------------------------------------- |
 | `src/model/`               | header-only         | header-only authoring model types；无第三方依赖 |
-| `src/runtime/`             | `mhs_runtime`       | header-only 运行期契约和网格助手                |
+| `src/common/`              | `mhs_common`        | header-only 运行期契约和网格助手                |
 | `src/compiler/`            | `mhs_compiler`      | 几何解析、SoA 编译和冻结流场构建                |
 | `src/solver/`              | `mhs_solver`        | 组装、迭代、时间推进、探针和后处理              |
 | `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                      |
@@ -41,7 +41,7 @@
 - C++20，禁用编译器扩展。
 - 项目源码启用严格告警并视为错误；第三方库除外。
 - Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
-- `mhs_runtime` 和 `mhs_model` 不得引入 Eigen、tinyxml2、spdlog 或 TBB 实现依赖。
+- `mhs_common` 和 `mhs_model` 不得引入 Eigen、tinyxml2、spdlog 或 TBB 实现依赖。
 - C API 公共头只暴露 C 类型、枚举、POD view 和 opaque handle。
 
 具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。

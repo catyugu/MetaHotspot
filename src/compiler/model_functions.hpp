@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mhs/expression.hpp"
-#include "mhs/model_definition.hpp"
+#include "numerics/expression/expr.hpp"
+#include "common/model_definition.hpp"
 
 
 #include <string>

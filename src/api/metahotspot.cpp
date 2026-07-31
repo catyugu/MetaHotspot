@@ -5,11 +5,11 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
-#include "mhs/model_definition.hpp"
-#include "mhs/solver.hpp"
+#include "common/model_definition.hpp"
+#include "common/solver.hpp"
 #include "solver/assembler.hpp"
 
-#include "runtime/mesh.hpp"
+#include "common/mesh.hpp"
 #include <optional>
 #include <span>
 #include <string>

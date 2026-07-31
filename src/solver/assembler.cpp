@@ -1,6 +1,6 @@
 #include "solver/assembler.hpp"
 
-#include "runtime/mesh.hpp"
+#include "common/mesh.hpp"
 #include "solver/fluid_assembler.hpp"
 
 #include <Eigen/Sparse>

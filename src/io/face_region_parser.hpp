@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mhs/model_definition.hpp"
+#include "common/model_definition.hpp"
 
 #include <string>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mhs/model.hpp"
-#include "mhs/model_definition.hpp"
+#include "common/model.hpp"
+#include "common/model_definition.hpp"
 
 #include <optional>
 #include <vector>

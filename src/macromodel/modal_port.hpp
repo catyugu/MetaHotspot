@@ -1,8 +1,8 @@
 #pragma once
 
-#include "mhs/model.hpp"
-#include "mhs/solution.hpp"
-#include "mhs/solver.hpp"
+#include "common/model.hpp"
+#include "common/solution.hpp"
+#include "common/solver.hpp"
 #include "solver/assembler.hpp"
 
 #include <Eigen/Core>

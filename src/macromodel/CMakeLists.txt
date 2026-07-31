@@ -3,5 +3,5 @@ mhs_add_library(mhs_macromodel
     modal_port.cpp
     PUBLIC_LINKS
     mhs_solver
-    mhs_runtime
+    mhs_common
 )

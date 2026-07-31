@@ -1,7 +1,7 @@
 #include "solver/fluid_assembler.hpp"
 
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 
 #include <cassert>
 #include <cmath>

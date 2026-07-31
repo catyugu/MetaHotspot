@@ -1,6 +1,6 @@
 add_subdirectory(numerics)
 add_subdirectory(logging)
-add_subdirectory(runtime)
+add_subdirectory(common)
 add_subdirectory(compiler)
 add_subdirectory(solver)
 add_subdirectory(macromodel)
