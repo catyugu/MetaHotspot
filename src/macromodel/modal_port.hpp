@@ -37,7 +37,10 @@ namespace mhs::macro {
     /// Reduced Dirichlet-to-Neumann model expressed in retained coordinates.
     struct DtNModel {
         mhs::sim::Operators operators;
-        Eigen::MatrixXd port_basis; // [physical ports x retained states], empty = identity
+        /// [physical ports x retained states]. When empty, the physical port
+        /// temperatures are the leading physical_port_count retained states,
+        /// i.e. the implicit basis is [I, 0].
+        Eigen::MatrixXd port_basis;
         std::size_t physical_port_count = 0;
     };
 
