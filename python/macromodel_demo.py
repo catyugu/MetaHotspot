@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Transient BCI-ROM benchmark using MetaHotspot C++ solves."""
+"""Transient BCI-ROM benchmark using the MetaHotspot C++ solve path."""
+
 from __future__ import annotations
+
 import argparse
 import json
 import math
@@ -9,14 +11,16 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import NamedTuple
+
 import numpy as np
 
 try:
     import scipy.linalg
     import scipy.sparse as sp
     import scipy.sparse.linalg as spla
-except ImportError as exc:
+except ImportError as exc:  # pragma: no cover - dependency diagnosis
     raise SystemExit("SciPy is required for the BCI-ROM benchmark") from exc
+
 import metahotspot
 from metahotspot.compiled import SolveOptions
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
@@ -80,26 +84,24 @@ class PackageConfig:
 
 @dataclass(frozen=True)
 class ExperimentConfig:
-    error_limit_K: float = 0.1
-    port_modes: int = 484
-    fixed_interface_modes: int = 224
-    rational_modes: int = 224
+    error_limit_K: float = 0.2
+    port_energy_target: float = 0.9999
+    port_growth_factor: float = 1.15
+    port_growth_minimum: int = 8
     source_residual_modes: int = 560
-    rational_block: int = 16
-    rational_shifts: int = 6
     duration_s: float = 0.5
     time_step_s: float = 0.025
     nominal_h_W_m2K: float = 2500.0
     boundary_h_values_W_m2K: tuple[float, ...] = (500.0, 2500.0, 8000.0)
     preprocess_budget_s: float = 30.0
     random_seed: int = 20260731
+    report_path: Path = Path("results/bci_rom_final_results.json")
 
 
 @dataclass
-class MethodResult:
-    name: str
-    physical_ports: int
+class AdaptationResult:
     port_modes: int
+    source_energy_fraction: float
     rom_order: int
     preprocess_s: float
     steady_error_K: float
@@ -150,17 +152,19 @@ class MacroCore(NamedTuple):
     Cii: sp.csc_matrix
     fi: np.ndarray
     constraint_map: np.ndarray
-    transfer_vectors: np.ndarray
-    transfer_values: np.ndarray
-    fixed_interface_modes: np.ndarray
     preprocess_s: float
 
 
+class PortSpectrum(NamedTuple):
+    basis: np.ndarray
+    cumulative_energy: np.ndarray
+
+
 class MethodBasis(NamedTuple):
-    name: str
     V: np.ndarray
     physical_basis: np.ndarray
     port_modes: int
+    source_energy_fraction: float
     preprocess_s: float
 
 
@@ -217,7 +221,12 @@ def _add_materials(model) -> None:
 
 def _add_full_rect(model, block: int, cfg: PackageConfig) -> None:
     model.add_rect(
-        block, GeometryOp.ADD, "0", "0", f"{cfg.width_mm:.17g}", f"{cfg.height_mm:.17g}"
+        block,
+        GeometryOp.ADD,
+        "0",
+        "0",
+        f"{cfg.width_mm:.17g}",
+        f"{cfg.height_mm:.17g}",
     )
 
 
@@ -236,7 +245,7 @@ def _chiplet_positions(cfg: PackageConfig) -> tuple[tuple[float, float], ...]:
 
 
 def _chiplet_heat_source(cfg: PackageConfig) -> float:
-    volume_m3 = cfg.chiplet_width_mm * cfg.chiplet_height_mm * cfg.die_mm * 1e-09
+    volume_m3 = cfg.chiplet_width_mm * cfg.chiplet_height_mm * cfg.die_mm * 1.0e-9
     return cfg.chiplet_power_W / volume_m3
 
 
@@ -276,6 +285,7 @@ def build_package_model(
         _layered_z_vertices(cfg, include_macro),
     )
     _add_materials(model)
+
     transient = study == Study.TRANSIENT
     if transient:
         model.add_function_piecewise("power_scale", _power_points(duration_s))
@@ -283,6 +293,8 @@ def build_package_model(
     source_expression = (
         f"{source_value:.17g}*power_scale(x)" if transient else f"{source_value:.17g}"
     )
+
+    # MetaHotspot places the first authoring layer at the highest z interval.
     if include_macro:
         cold_plate_layer = model.add_layer(f"{cfg.cold_plate_mm:.17g}")
         cold_plate = model.add_block(cold_plate_layer, "aluminum")
@@ -293,6 +305,7 @@ def build_package_model(
         tim_layer = model.add_layer(f"{cfg.tim_mm:.17g}")
         tim = model.add_block(tim_layer, "tim")
         _add_full_rect(model, tim, cfg)
+
     die_layer = model.add_layer(f"{cfg.die_mm:.17g}")
     mold = model.add_block(die_layer, "mold")
     _add_full_rect(model, mold, cfg)
@@ -306,6 +319,7 @@ def build_package_model(
             f"{cfg.chiplet_width_mm:.17g}",
             f"{cfg.chiplet_height_mm:.17g}",
         )
+
     bump_layer = model.add_layer(f"{cfg.bump_mm:.17g}")
     underfill = model.add_block(bump_layer, "underfill")
     _add_full_rect(model, underfill, cfg)
@@ -324,9 +338,11 @@ def build_package_model(
                 f"{cfg.bump_width_mm:.17g}",
                 f"{cfg.bump_width_mm:.17g}",
             )
+
     substrate_layer = model.add_layer(f"{cfg.substrate_mm:.17g}")
     substrate = model.add_block(substrate_layer, "organic")
     _add_full_rect(model, substrate, cfg)
+
     model.set_default_neumann("0")
     if include_macro and convection_h_W_m2K is not None:
         model.add_convection(
@@ -375,6 +391,7 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
         duration_s=exp.duration_s,
         output_interval_s=exp.time_step_s,
     )
+
     full = full_model.compile()
     detailed_steady = detailed_steady_model.compile()
     detailed_transient = detailed_transient_model.compile()
@@ -384,11 +401,13 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     C_full = C_full.tocsc()
     K_detailed = K_detailed.tocsc()
     C_detailed = C_detailed.tocsc()
+
     full_detailed_cells = _ordered_cells(full, 0, cfg.detailed_nz)
     full_macro_cells = _ordered_cells(full, cfg.detailed_nz, cfg.total_nz)
     detailed_order = _ordered_cells(detailed_steady, 0, cfg.detailed_nz)
     if not np.array_equal(detailed_order, np.arange(detailed_steady.cell_count)):
         raise RuntimeError("unexpected detailed compact-cell ordering")
+
     detailed_interface_cells = np.asarray(
         [
             _grid_cell(detailed_steady, ix, iy, cfg.detailed_nz - 1)
@@ -421,6 +440,7 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
         ],
         dtype=np.int64,
     )
+
     macro_position = {int(cell): pos for pos, cell in enumerate(full_macro_cells)}
     macro_interface_local = np.asarray(
         [macro_position[int(cell)] for cell in full_macro_interface], dtype=np.int64
@@ -428,6 +448,7 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     macro_top_local = np.asarray(
         [macro_position[int(cell)] for cell in full_top_cells], dtype=np.int64
     )
+
     g_series = np.asarray(
         [
             -float(K_full[detailed_cell, macro_cell])
@@ -444,16 +465,19 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     expected_series = g_detailed * g_macro / (g_detailed + g_macro)
     series_error = float(np.max(np.abs(g_series - expected_series)))
     series_scale = max(1.0, float(np.max(np.abs(expected_series))))
-    if series_error > 1e-09 * series_scale:
+    if series_error > 1.0e-9 * series_scale:
         raise RuntimeError(
-            f"C/C++ interface contract mismatch: monolithic and half-conductance series operators differ by {series_error:.6e}"
+            "C/C++ interface contract mismatch: monolithic and half-conductance "
+            f"series operators differ by {series_error:.6e}"
         )
+
     K_macro = K_full[full_macro_cells, :][:, full_macro_cells].tocsc()
     macro_diag = np.zeros(full_macro_cells.size, dtype=np.float64)
     macro_diag[macro_interface_local] = g_series
     K_macro = K_macro - sp.diags(macro_diag, format="csc")
     C_macro = C_full[full_macro_cells, :][:, full_macro_cells].tocsc()
     f_macro = np.asarray(f_full[full_macro_cells], dtype=np.float64)
+
     K_detail_from_full = K_full[full_detailed_cells, :][:, full_detailed_cells].tocsc()
     detailed_position = {int(cell): pos for pos, cell in enumerate(full_detailed_cells)}
     detailed_diag = np.zeros(full_detailed_cells.size, dtype=np.float64)
@@ -462,13 +486,15 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     K_detail_from_full = K_detail_from_full - sp.diags(detailed_diag, format="csc")
     operator_error = _max_sparse_abs(K_detail_from_full - K_detailed)
     operator_scale = max(1.0, _max_sparse_abs(K_detailed))
-    if operator_error > 1e-09 * operator_scale:
+    if operator_error > 1.0e-9 * operator_scale:
         raise RuntimeError(
-            f"independent detailed compile differs from stripped full operator: {operator_error:.6e}"
+            "independent detailed compile differs from stripped full operator: "
+            f"{operator_error:.6e}"
         )
-    dx_m = cfg.width_mm * 0.001 / cfg.nx
-    dy_m = cfg.height_mm * 0.001 / cfg.ny
-    top_dz_m = cfg.cold_plate_mm * 0.001 / cfg.cold_plate_cells
+
+    dx_m = cfg.width_mm * 1.0e-3 / cfg.nx
+    dy_m = cfg.height_mm * 1.0e-3 / cfg.ny
+    top_dz_m = cfg.cold_plate_mm * 1.0e-3 / cfg.cold_plate_cells
     return PackageData(
         full_adiabatic=full,
         detailed_steady=detailed_steady,
@@ -496,7 +522,7 @@ def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
     )
 
 
-def build_macro_core(data: PackageData, exp: ExperimentConfig) -> MacroCore:
+def build_macro_core(data: PackageData) -> MacroCore:
     start = time.perf_counter()
     n_ports = data.detailed_interface_cells.size
     n_macro = data.full_macro_cells.size
@@ -513,22 +539,6 @@ def build_macro_core(data: PackageData, exp: ExperimentConfig) -> MacroCore:
     Cii = data.C_macro_cells.tocsc()
     factor = spla.splu(Kii)
     constraint_map = -factor.solve(Kip.toarray())
-    steklov = Kpp.toarray() + np.asarray(Kpi @ constraint_map)
-    steklov = 0.5 * (steklov + steklov.T)
-    values, vectors = scipy.linalg.eigh(steklov, check_finite=False, driver="evr")
-    order = np.argsort(values)
-    values = np.asarray(values[order], dtype=np.float64)
-    vectors = np.asarray(vectors[:, order], dtype=np.float64)
-    mode_count = min(exp.fixed_interface_modes, n_macro - 2)
-    if mode_count > 0:
-        fixed_values, fixed_modes = spla.eigsh(
-            Kii, k=mode_count, M=Cii, sigma=0.0, which="LM", tol=1e-08
-        )
-        fixed_modes = np.asarray(
-            fixed_modes[:, np.argsort(fixed_values)], dtype=np.float64
-        )
-    else:
-        fixed_modes = np.empty((n_macro, 0), dtype=np.float64)
     return MacroCore(
         Kpp=Kpp,
         Kpi=Kpi,
@@ -537,18 +547,15 @@ def build_macro_core(data: PackageData, exp: ExperimentConfig) -> MacroCore:
         Cii=Cii,
         fi=data.f_macro_cells,
         constraint_map=constraint_map,
-        transfer_vectors=vectors,
-        transfer_values=values,
-        fixed_interface_modes=fixed_modes,
         preprocess_s=time.perf_counter() - start,
     )
 
 
-def dct_port_basis(nx: int, ny: int, count: int) -> np.ndarray:
+def _complete_dct_basis(nx: int, ny: int) -> np.ndarray:
     modes = sorted(
         ((kx, ky) for kx in range(nx) for ky in range(ny)),
         key=lambda item: (item[0] ** 2 + item[1] ** 2, item[0], item[1]),
-    )[:count]
+    )
     x = np.arange(nx, dtype=np.float64) + 0.5
     y = np.arange(ny, dtype=np.float64) + 0.5
     columns = []
@@ -561,8 +568,8 @@ def dct_port_basis(nx: int, ny: int, count: int) -> np.ndarray:
     return np.ascontiguousarray(np.column_stack(columns), dtype=np.float64)
 
 
-def source_weighted_port_basis(cfg: PackageConfig, count: int) -> np.ndarray:
-    full = dct_port_basis(cfg.nx, cfg.ny, cfg.physical_ports)
+def build_source_port_spectrum(cfg: PackageConfig) -> PortSpectrum:
+    full_dct = _complete_dct_basis(cfg.nx, cfg.ny)
     x_centres = (np.arange(cfg.nx, dtype=np.float64) + 0.5) * (cfg.width_mm / cfg.nx)
     y_centres = (np.arange(cfg.ny, dtype=np.float64) + 0.5) * (cfg.height_mm / cfg.ny)
     source_maps = []
@@ -582,21 +589,22 @@ def source_weighted_port_basis(cfg: PackageConfig, count: int) -> np.ndarray:
                 dtype=np.float64,
             )
         )
-    relevance = np.linalg.norm(np.abs(full.T @ np.column_stack(source_maps)), axis=1)
-    ranked = np.argsort(-relevance, kind="stable")
-    selected = [0]
-    selected_set = {0}
-    for index in ranked:
-        index = int(index)
-        if index not in selected_set:
-            selected.append(index)
-            selected_set.add(index)
-        if len(selected) == count:
-            break
-    return np.ascontiguousarray(full[:, selected], dtype=np.float64)
+    maps = np.column_stack(source_maps)
+    coefficient_energy = np.sum((full_dct.T @ maps) ** 2, axis=1)
+    ranked = np.argsort(-coefficient_energy, kind="stable")
+    ranked = np.asarray([0, *[int(index) for index in ranked if index != 0]])
+    ranked_energy = coefficient_energy[ranked]
+    total_energy = float(np.sum(ranked_energy))
+    if not np.isfinite(total_energy) or total_energy <= 0.0:
+        raise RuntimeError("source port spectrum has zero or invalid energy")
+    cumulative = np.cumsum(ranked_energy) / total_energy
+    return PortSpectrum(
+        np.ascontiguousarray(full_dct[:, ranked], dtype=np.float64),
+        np.asarray(cumulative, dtype=np.float64),
+    )
 
 
-def orthonormal_range(matrix: np.ndarray, tolerance: float = 1e-11) -> np.ndarray:
+def _orthonormal_range(matrix: np.ndarray, tolerance: float = 1.0e-11) -> np.ndarray:
     if matrix.size == 0:
         return np.empty((matrix.shape[0], 0), dtype=np.float64)
     q, r, _ = scipy.linalg.qr(
@@ -609,7 +617,7 @@ def orthonormal_range(matrix: np.ndarray, tolerance: float = 1e-11) -> np.ndarra
     return np.ascontiguousarray(q[:, :rank], dtype=np.float64)
 
 
-def randomized_left_basis(
+def _randomized_left_basis(
     snapshots: np.ndarray, rank: int, seed: int, oversampling: int = 32
 ) -> np.ndarray:
     rank = min(rank, snapshots.shape[0], snapshots.shape[1])
@@ -623,66 +631,38 @@ def randomized_left_basis(
     q = np.linalg.qr(sample, mode="reduced")[0]
     compressed = q.T @ snapshots
     u_hat, _, _ = scipy.linalg.svd(
-        compressed, full_matrices=False, check_finite=False, lapack_driver="gesdd"
+        compressed,
+        full_matrices=False,
+        check_finite=False,
+        lapack_driver="gesdd",
     )
     return np.ascontiguousarray(q @ u_hat[:, :rank], dtype=np.float64)
 
 
-def _guyan(name: str, phi: np.ndarray, core: MacroCore, elapsed: float) -> MethodBasis:
-    psi = core.constraint_map @ phi
-    V = np.vstack((phi, psi))
-    return MethodBasis(name, V, phi, phi.shape[1], elapsed)
-
-
-def _craig_bampton(phi: np.ndarray, core: MacroCore, elapsed: float) -> MethodBasis:
-    psi = core.constraint_map @ phi
-    modes = core.fixed_interface_modes
-    zeros = np.zeros((phi.shape[0], modes.shape[1]), dtype=np.float64)
-    V = np.block([[phi, zeros], [psi, modes]])
-    physical = np.hstack((phi, zeros))
-    return MethodBasis("transfer_craig_bampton", V, physical, phi.shape[1], elapsed)
-
-
-def _rational_krylov(
-    phi: np.ndarray, core: MacroCore, exp: ExperimentConfig, elapsed: float
-) -> MethodBasis:
-    rng = np.random.default_rng(exp.random_seed)
-    block = min(exp.rational_block, phi.shape[1])
-    shifts = np.logspace(
-        math.log10(1.0 / max(exp.duration_s, exp.time_step_s)),
-        math.log10(1.0 / exp.time_step_s),
-        exp.rational_shifts,
-    )
-    forcing = core.Kip @ phi
-    snapshots = []
-    for shift in shifts:
-        directions = rng.standard_normal((phi.shape[1], block))
-        directions = np.linalg.qr(directions, mode="reduced")[0]
-        factor = spla.splu((core.Kii + shift * core.Cii).tocsc())
-        snapshots.append(factor.solve(-(forcing @ directions)))
-    modes = orthonormal_range(np.hstack(snapshots))[:, : exp.rational_modes]
-    psi = core.constraint_map @ phi
-    zeros = np.zeros((phi.shape[0], modes.shape[1]), dtype=np.float64)
-    V = np.block([[phi, zeros], [psi, modes]])
-    physical = np.hstack((phi, zeros))
-    return MethodBasis("transfer_rational_krylov", V, physical, phi.shape[1], elapsed)
-
-
-def _source_aware_bci(
-    cfg: PackageConfig, data: PackageData, core: MacroCore, exp: ExperimentConfig
+def build_source_aware_bci(
+    data: PackageData,
+    core: MacroCore,
+    spectrum: PortSpectrum,
+    port_modes: int,
+    exp: ExperimentConfig,
 ) -> MethodBasis:
     start = time.perf_counter()
-    phi = source_weighted_port_basis(cfg, exp.port_modes)
+    if not 0 < port_modes <= spectrum.basis.shape[1]:
+        raise ValueError("adaptive port mode count is outside the physical port range")
+
+    phi = spectrum.basis[:, :port_modes]
     psi = core.constraint_map @ phi
     top_diagonal = np.zeros(core.Kii.shape[0], dtype=np.float64)
     top_diagonal[data.macro_top_local_cells] = data.top_face_area_m2
     unit_top_operator = sp.diags(top_diagonal, format="csc")
     static_factor = spla.splu(core.Kii)
-    boundary_modes = orthonormal_range(-static_factor.solve(unit_top_operator @ psi))
+    boundary_modes = _orthonormal_range(-static_factor.solve(unit_top_operator @ psi))
+
     forcing = core.Kip @ phi
     shift_scale = 0.025 / exp.time_step_s
     shifts = shift_scale * np.asarray(
-        (1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0), dtype=np.float64
+        (1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0),
+        dtype=np.float64,
     )
     residual_blocks = []
     for shift in shifts:
@@ -691,51 +671,29 @@ def _source_aware_bci(
         if boundary_modes.shape[1] > 0:
             residual -= boundary_modes @ (boundary_modes.T @ residual)
         residual_blocks.append(residual)
+
     snapshots = np.hstack(residual_blocks)
-    dynamic_modes = randomized_left_basis(
+    dynamic_modes = _randomized_left_basis(
         snapshots, exp.source_residual_modes, seed=exp.random_seed
     )
     if boundary_modes.shape[1] > 0:
         dynamic_modes -= boundary_modes @ (boundary_modes.T @ dynamic_modes)
-        dynamic_modes = orthonormal_range(dynamic_modes)
+        dynamic_modes = _orthonormal_range(dynamic_modes)
+
     interior_only = np.hstack((boundary_modes, dynamic_modes))
-    zeros = np.zeros((cfg.physical_ports, interior_only.shape[1]), dtype=np.float64)
+    zeros = np.zeros(
+        (spectrum.basis.shape[0], interior_only.shape[1]), dtype=np.float64
+    )
     physical = np.hstack((phi, zeros))
     interior = np.hstack((psi, interior_only))
     V = np.vstack((physical, interior))
     return MethodBasis(
-        "source_aware_bci_krylov",
         np.ascontiguousarray(V, dtype=np.float64),
         np.ascontiguousarray(physical, dtype=np.float64),
-        phi.shape[1],
+        port_modes,
+        float(spectrum.cumulative_energy[port_modes - 1]),
         core.preprocess_s + time.perf_counter() - start,
     )
-
-
-def build_method_bases(
-    cfg: PackageConfig, data: PackageData, core: MacroCore, exp: ExperimentConfig
-) -> list[MethodBasis]:
-    if not 0 < exp.port_modes < cfg.physical_ports:
-        raise ValueError(f"port_modes must be in [1, {cfg.physical_ports - 1}]")
-    methods: list[MethodBasis] = []
-    start = time.perf_counter()
-    phi_dct = dct_port_basis(cfg.nx, cfg.ny, exp.port_modes)
-    methods.append(
-        _guyan(
-            "dct_guyan", phi_dct, core, core.preprocess_s + time.perf_counter() - start
-        )
-    )
-    phi_transfer = core.transfer_vectors[:, : exp.port_modes]
-    methods.append(_guyan("transfer_guyan", phi_transfer, core, core.preprocess_s))
-    methods.append(_craig_bampton(phi_transfer, core, core.preprocess_s))
-    start = time.perf_counter()
-    methods.append(
-        _rational_krylov(
-            phi_transfer, core, exp, core.preprocess_s + time.perf_counter() - start
-        )
-    )
-    methods.append(_source_aware_bci(cfg, data, core, exp))
-    return methods
 
 
 def _top_convection_conductance(data: PackageData, h_W_m2K: float) -> float:
@@ -761,6 +719,7 @@ def project_macro(
     K += np.asarray(Vi.T @ (core.Kii @ Vi), dtype=np.float64)
     C = np.asarray(Vi.T @ (core.Cii @ Vi), dtype=np.float64)
     rhs = np.asarray(Vi.T @ core.fi, dtype=np.float64)
+
     conductance = _top_convection_conductance(data, h_W_m2K)
     Vtop = Vi[data.macro_top_local_cells, :]
     K += Vtop.T @ (conductance * Vtop)
@@ -781,16 +740,16 @@ def project_macro(
 def _solve_options(exp: ExperimentConfig, transient: bool) -> SolveOptions:
     return SolveOptions(
         linear_solver="EigenSparseLU",
-        linear_tolerance=1e-12,
+        linear_tolerance=1.0e-12,
         linear_max_iterations=5000,
         underrelaxation=1.0,
         nonlinear_max_iterations=30,
-        nonlinear_relative_tolerance=1e-11,
-        nonlinear_absolute_tolerance=1e-11,
+        nonlinear_relative_tolerance=1.0e-11,
+        nonlinear_absolute_tolerance=1.0e-11,
         integrator="Bdf1",
         step_strategy="Fixed",
-        error_abs_tol=1e-09,
-        min_dt=exp.time_step_s if transient else 1e-12,
+        error_abs_tol=1.0e-9,
+        min_dt=exp.time_step_s if transient else 1.0e-12,
         max_dt=exp.time_step_s if transient else 1.0,
         fixed_dt=exp.time_step_s if transient else 1.0,
     )
@@ -799,10 +758,14 @@ def _solve_options(exp: ExperimentConfig, transient: bool) -> SolveOptions:
 def _macro_initial_coordinates(reduced: ReducedMacro, ambient_K: float) -> np.ndarray:
     target = np.full(reduced.V.shape[0], ambient_K, dtype=np.float64)
     coordinates, _, _, _ = scipy.linalg.lstsq(
-        reduced.V, target, cond=1e-12, lapack_driver="gelsy", check_finite=False
+        reduced.V,
+        target,
+        cond=1.0e-12,
+        lapack_driver="gelsy",
+        check_finite=False,
     )
     residual = float(np.max(np.abs(reduced.V @ coordinates - target)))
-    if residual > 1e-08:
+    if residual > 1.0e-8:
         raise RuntimeError(
             f"ROM basis cannot represent uniform initial temperature: {residual:.3e} K"
         )
@@ -886,15 +849,16 @@ def evaluate_method(
 ) -> tuple[float, float, int, ReducedMacro]:
     reduced = project_macro(data, core, method, cfg, h_W_m2K)
     steady_solution = _solve_reduced_cpp(data, reduced, cfg, exp, transient=False)
-    steady_history = np.asarray(steady_solution.state, dtype=np.float64)[None, :]
-    recovered_steady = _recover_history(data, reduced, steady_history, cfg)[0]
+    steady_state = np.asarray(steady_solution.state, dtype=np.float64)[None, :]
+    recovered_steady = _recover_history(data, reduced, steady_state, cfg)[0]
     steady_error = float(
         np.max(np.abs(recovered_steady - reference.steady_temperature))
     )
+
     transient_solution = _solve_reduced_cpp(data, reduced, cfg, exp, transient=True)
     times = np.asarray(transient_solution.history_times, dtype=np.float64)
     if times.shape != reference.transient_times.shape or not np.allclose(
-        times, reference.transient_times, rtol=0.0, atol=1e-12
+        times, reference.transient_times, rtol=0.0, atol=1.0e-12
     ):
         raise RuntimeError(
             "full and reduced C++ solvers returned different output time grids"
@@ -904,105 +868,49 @@ def evaluate_method(
     transient_error = float(
         np.max(np.abs(recovered_transient - reference.transient_temperature))
     )
-    return (steady_error, transient_error, len(times), reduced)
+    return steady_error, transient_error, len(times), reduced
 
 
-def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--quick", action="store_true")
-    parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--nx", type=int)
-    parser.add_argument("--ny", type=int)
-    parser.add_argument("--port-modes", type=int)
-    parser.add_argument("--interior-modes", type=int)
-    parser.add_argument("--source-residual-modes", type=int)
-    parser.add_argument("--duration", type=float)
-    parser.add_argument("--dt", type=float)
-    parser.add_argument(
-        "--output", type=Path, default=Path("results/bci_rom_final_results.json")
+def _initial_port_count(spectrum: PortSpectrum, target: float) -> int:
+    count = int(np.searchsorted(spectrum.cumulative_energy, target, side="left")) + 1
+    return min(max(1, count), spectrum.basis.shape[1])
+
+
+def _next_port_count(current: int, total: int, exp: ExperimentConfig) -> int:
+    if current >= total:
+        return total
+    grown = max(
+        current + exp.port_growth_minimum,
+        int(math.ceil(current * exp.port_growth_factor)),
     )
-    return parser.parse_args(argv)
+    return min(total, grown)
 
 
-def _configs_from_args(
-    args: argparse.Namespace,
-) -> tuple[PackageConfig, ExperimentConfig]:
-    package = PackageConfig()
-    experiment = ExperimentConfig()
-    if args.quick:
-        package = PackageConfig(nx=16, ny=16, bump_rows=6, bump_columns=6)
-        experiment = ExperimentConfig(
-            port_modes=208,
-            fixed_interface_modes=96,
-            rational_modes=96,
-            source_residual_modes=240,
-            duration_s=0.2,
-            time_step_s=0.025,
-        )
-    package_values = asdict(package)
-    experiment_values = asdict(experiment)
-    if args.nx is not None:
-        package_values["nx"] = args.nx
-    if args.ny is not None:
-        package_values["ny"] = args.ny
-    if args.port_modes is not None:
-        experiment_values["port_modes"] = args.port_modes
-    if args.interior_modes is not None:
-        experiment_values["fixed_interface_modes"] = args.interior_modes
-        experiment_values["rational_modes"] = args.interior_modes
-    if args.source_residual_modes is not None:
-        experiment_values["source_residual_modes"] = args.source_residual_modes
-    if args.duration is not None:
-        experiment_values["duration_s"] = args.duration
-    if args.dt is not None:
-        experiment_values["time_step_s"] = args.dt
-    return (PackageConfig(**package_values), ExperimentConfig(**experiment_values))
+def adapt_port_space(
+    data: PackageData,
+    core: MacroCore,
+    spectrum: PortSpectrum,
+    reference: CppReference,
+    cfg: PackageConfig,
+    exp: ExperimentConfig,
+) -> tuple[MethodBasis, AdaptationResult, list[AdaptationResult]]:
+    count = _initial_port_count(spectrum, exp.port_energy_target)
+    attempts: list[AdaptationResult] = []
+    selected_basis: MethodBasis | None = None
 
-
-def _print_method(result: MethodResult) -> None:
-    print(
-        f"  {result.name:<30} order={result.rom_order:4d} port={result.port_modes:4d}/{result.physical_ports:<4d} prep={result.preprocess_s:7.3f}s steady={result.steady_error_K:9.5f}K transient={result.transient_error_K:9.5f}K {('PASS' if result.passed else 'FAIL')}"
-    )
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(sys.argv[1:] if argv is None else argv)
-    cfg, exp = _configs_from_args(args)
-    print("=" * 88)
-    print("Transient BCI-ROM package benchmark — C++ solve path")
-    print("=" * 88)
-    print(
-        f"Grid: {cfg.nx} x {cfg.ny} x {cfg.total_nz} = {cfg.nx * cfg.ny * cfg.total_nz:,} thermal cells"
-    )
-    print(
-        f"Physical interface ports: {cfg.physical_ports}; requested port modes: {exp.port_modes}"
-    )
-    build_start = time.perf_counter()
-    data = assemble_package(cfg, exp)
-    build_s = time.perf_counter() - build_start
-    print(f"Model build + C++ assembly + interface validation: {build_s:.3f}s")
-    core = build_macro_core(data, exp)
-    methods = build_method_bases(cfg, data, core, exp)
-    print(
-        f"Common isolated-macro preprocessing: {core.preprocess_s:.3f}s; Steklov spectrum[0:3]={core.transfer_values[:3]}"
-    )
-    print("Building nominal full-order C++ references...")
-    nominal_reference = build_cpp_reference(cfg, exp, exp.nominal_h_W_m2K)
-    nominal_results: list[MethodResult] = []
-    print("\nNominal-boundary method comparison:")
-    for method in methods:
+    while True:
+        method = build_source_aware_bci(data, core, spectrum, count, exp)
         steady, transient, records, _ = evaluate_method(
-            data, core, method, nominal_reference, cfg, exp, exp.nominal_h_W_m2K
+            data, core, method, reference, cfg, exp, exp.nominal_h_W_m2K
         )
         passed = (
             steady <= exp.error_limit_K
             and transient <= exp.error_limit_K
-            and (method.preprocess_s <= exp.preprocess_budget_s)
+            and method.preprocess_s <= exp.preprocess_budget_s
         )
-        result = MethodResult(
-            name=method.name,
-            physical_ports=cfg.physical_ports,
-            port_modes=method.port_modes,
+        result = AdaptationResult(
+            port_modes=count,
+            source_energy_fraction=method.source_energy_fraction,
             rom_order=method.V.shape[1],
             preprocess_s=method.preprocess_s,
             steady_error_K=steady,
@@ -1010,30 +918,88 @@ def main(argv: list[str] | None = None) -> int:
             transient_records=records,
             passed=passed,
         )
-        nominal_results.append(result)
-        _print_method(result)
-    candidates = [result for result in nominal_results if result.passed]
-    if candidates:
-        winner = min(
-            candidates,
-            key=lambda item: (
-                item.rom_order,
-                max(item.steady_error_K, item.transient_error_K),
-                item.preprocess_s,
+        attempts.append(result)
+        print(
+            f"  port={count:4d}/{cfg.physical_ports:<4d} "
+            f"source-energy={method.source_energy_fraction:.8f} "
+            f"order={method.V.shape[1]:4d} prep={method.preprocess_s:7.3f}s "
+            f"steady={steady:9.5f}K transient={transient:9.5f}K "
+            f"{'PASS' if passed else 'EXPAND'}"
+        )
+        if passed:
+            selected_basis = method
+            break
+        next_count = _next_port_count(count, cfg.physical_ports, exp)
+        if next_count == count:
+            selected_basis = method
+            break
+        count = next_count
+
+    assert selected_basis is not None
+    return selected_basis, attempts[-1], attempts
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--quick", action="store_true", help="run the reduced smoke case")
+    mode.add_argument("--strict", action="store_true", help="run the full release case")
+    return parser.parse_args(argv)
+
+
+def _configs_from_args(
+    args: argparse.Namespace,
+) -> tuple[PackageConfig, ExperimentConfig]:
+    if args.quick:
+        return (
+            PackageConfig(nx=16, ny=16, bump_rows=6, bump_columns=6),
+            ExperimentConfig(
+                source_residual_modes=240,
+                duration_s=0.2,
+                time_step_s=0.025,
             ),
         )
-    else:
-        winner = min(
-            nominal_results,
-            key=lambda item: max(item.steady_error_K, item.transient_error_K),
-        )
-        print(
-            f"\nERROR: no method met {exp.error_limit_K:.3f} K and {exp.preprocess_budget_s:.1f}s preprocessing limits",
-            file=sys.stderr,
-        )
-    print(f"\nSelected method: {winner.name}")
-    method_by_name = {method.name: method for method in methods}
-    winning_method = method_by_name[winner.name]
+    return PackageConfig(), ExperimentConfig()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    cfg, exp = _configs_from_args(args)
+
+    print("=" * 88)
+    print("Transient BCI-ROM package benchmark — adaptive source-aware C++ path")
+    print("=" * 88)
+    print(
+        f"Grid: {cfg.nx} x {cfg.ny} x {cfg.total_nz} = "
+        f"{cfg.nx * cfg.ny * cfg.total_nz:,} thermal cells"
+    )
+    print(f"Physical interface ports: {cfg.physical_ports}; port rank: adaptive")
+
+    build_start = time.perf_counter()
+    data = assemble_package(cfg, exp)
+    build_s = time.perf_counter() - build_start
+    print(f"Model build + C++ assembly + interface validation: {build_s:.3f}s")
+
+    core = build_macro_core(data)
+    spectrum = build_source_port_spectrum(cfg)
+    initial_count = _initial_port_count(spectrum, exp.port_energy_target)
+    print(
+        f"Common isolated-macro preprocessing: {core.preprocess_s:.3f}s; "
+        f"source-spectrum initial rank={initial_count} at "
+        f"{exp.port_energy_target:.5f} cumulative energy"
+    )
+    print("Building nominal full-order C++ references...")
+    nominal_reference = build_cpp_reference(cfg, exp, exp.nominal_h_W_m2K)
+
+    print("\nAdaptive source_aware_bci_krylov search:")
+    winning_method, winner, attempts = adapt_port_space(
+        data, core, spectrum, nominal_reference, cfg, exp
+    )
+    print(
+        f"\nSelected source_aware_bci_krylov: port={winner.port_modes}/"
+        f"{cfg.physical_ports}, order={winner.rom_order}"
+    )
+
     boundary_results: list[BoundaryResult] = []
     print("\nBoundary-independence reuse sweep (basis is not re-extracted):")
     reference_cache = {exp.nominal_h_W_m2K: nominal_reference}
@@ -1048,34 +1014,37 @@ def main(argv: list[str] | None = None) -> int:
         passed = steady <= exp.error_limit_K and transient <= exp.error_limit_K
         boundary_results.append(BoundaryResult(h_value, steady, transient, passed))
         print(
-            f"  h={h_value:8.1f} W/(m2 K): steady={steady:9.5f} K, transient={transient:9.5f} K {('PASS' if passed else 'FAIL')}"
+            f"  h={h_value:8.1f} W/(m2 K): steady={steady:9.5f} K, "
+            f"transient={transient:9.5f} K {'PASS' if passed else 'FAIL'}"
         )
+
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "mode": "quick" if args.quick else "strict",
         "solver_backend": "MetaHotspot C++ for full and reduced solves",
+        "reduction_method": "source_aware_bci_krylov",
         "package": asdict(cfg),
-        "experiment": asdict(exp),
+        "experiment": {
+            **asdict(exp),
+            "report_path": str(exp.report_path),
+        },
         "thermal_cell_count": int(data.K_full.shape[0]),
         "physical_port_count": cfg.physical_ports,
-        "selected_method": winner.name,
-        "selected_rom_order": winner.rom_order,
         "selected_port_modes": winner.port_modes,
-        "nominal_methods": [asdict(result) for result in nominal_results],
-        "boundary_reuse": [asdict(result) for result in boundary_results],
+        "selected_source_energy_fraction": winner.source_energy_fraction,
+        "selected_rom_order": winner.rom_order,
+        "adaptation_attempts": [asdict(item) for item in attempts],
+        "boundary_reuse": [asdict(item) for item in boundary_results],
         "model_build_and_validation_s": build_s,
         "common_preprocess_s": core.preprocess_s,
-        "passed": bool(
-            winner.passed and all((item.passed for item in boundary_results))
-        ),
+        "passed": bool(winner.passed and all(item.passed for item in boundary_results)),
     }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
+    exp.report_path.parent.mkdir(parents=True, exist_ok=True)
+    exp.report_path.write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(f"\nReport: {args.output}")
-    if args.strict and (not report["passed"]):
-        return 3
-    return 0
+    print(f"\nReport: {exp.report_path}")
+    return 0 if report["passed"] else 3
 
 
 if __name__ == "__main__":

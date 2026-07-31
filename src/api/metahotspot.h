@@ -165,6 +165,18 @@ typedef struct {
     const double* state; // [state_count], temperatures first
 } mhs_solution_view_t;
 
+/** Read-only row-major output history owned by mhs_solution_t.
+
+    states[record * state_count + state] is the state value at times[record].
+    The view remains valid until the solution handle is destroyed.
+*/
+typedef struct {
+    const double* times;
+    const double* states;
+    size_t record_count;
+    size_t state_count;
+} mhs_solution_history_view_t;
+
 /** Non-owning probe trace view — valid while the solution handle is alive. */
 typedef struct {
     const char* name;
@@ -308,10 +320,12 @@ MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
-/*  Solution view                                                      */
+/*  Solution views                                                     */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out);
+MHS_API mhs_status_t mhs_solution_history_view(
+    const mhs_solution_t* solution, mhs_solution_history_view_t* out);
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */

@@ -1,7 +1,6 @@
 add_library(mhs_c_api SHARED
     metahotspot.cpp
     metahotspot_macromodel.cpp
-    metahotspot_solution_history.cpp
 )
 target_link_libraries(mhs_c_api PRIVATE
     mhs_compiler
