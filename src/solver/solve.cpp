@@ -42,6 +42,8 @@ namespace mhs::sim {
             case SolveOptions::LinearSolverType::EigenBiCGSTAB:
                 type = SolverType::EigenBiCGSTAB;
                 break;
+            default:
+                throw std::invalid_argument("build_solver_spec: unknown linear_solver");
             }
             return {type, {opts.linear_tolerance, opts.linear_max_iterations}};
         }
@@ -59,6 +61,8 @@ namespace mhs::sim {
                 return time_scheme::IntegratorKind::Bdf1;
             case SolveOptions::Integrator::Bdf2:
                 return time_scheme::IntegratorKind::Bdf2;
+            default:
+                throw std::invalid_argument("build_integrator: unknown integrator");
             }
         }
 
@@ -69,6 +73,8 @@ namespace mhs::sim {
                 return time_scheme::StepStrategy::Adaptive;
             case SolveOptions::StepStrategy::Fixed:
                 return time_scheme::StepStrategy::Fixed;
+            default:
+                throw std::invalid_argument("build_strategy: unknown step_strategy");
             }
         }
 
