@@ -1,63 +1,46 @@
 #ifndef METAHOTSPOT_MACROMODEL_H
 #define METAHOTSPOT_MACROMODEL_H
 
-/*
- * MetaHotspot Macromodel Plugin C API — optional extension.
- *
- * This header must be included separately from metahotspot.h.
- * It depends on the core metahotspot.h types (mhs_compiled_t,
- * mhs_solution_t, mhs_solve_options_t).
- */
-
+/* MetaHotspot DtN macromodel extension. */
 #include "api/metahotspot.h"
-
-#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ------------------------------------------------------------------ */
-/*  Non-owning CSC matrix view (macromodel-only)                       */
-/* ------------------------------------------------------------------ */
-typedef struct {
-    int32_t rows, columns, nnz;
-    const int32_t* outer_indices;
-    const int32_t* inner_indices;
-    const double* values;
-} mhs_macro_csc_view_t;
+typedef struct mhs_macro_port_map_t mhs_macro_port_map_t;
 
-/* ------------------------------------------------------------------ */
-/*  Macromodel port model view                                        */
-/* ------------------------------------------------------------------ */
-
-/**
- * Macro K, C, f view — flat CSC arrays for both matrices plus a plain rhs vector.
- * Pointers remain valid for the duration of the mhs_macromodel_solve call.
+/** One geometric boundary patch and therefore one physical DtN port.
+ *  coordinate and rectangle coordinates use the compiled model's SI units.
+ *  For X faces rectangle=(y,z), for Y faces=(x,z), for Z faces=(x,y).
  */
 typedef struct {
-    mhs_macro_csc_view_t K;
-    mhs_macro_csc_view_t C;
-    const double* rhs; // [n]
-    size_t n; // macro state count
-} mhs_macro_operators_view_t;
+    mhs_face_t face;
+    double coordinate;
+    mhs_rect2d_t rectangle;
+} mhs_macro_port_patch_t;
 
-/**
- * Non-owning macro port model and physical-interface input.
- */
+/** Reduced DtN model. basis is row-major [physical_port_count x operators.n]. */
 typedef struct {
-    mhs_macro_operators_view_t operators;
-    const double* basis; /* NULL = unit basis */
+    mhs_operators_t operators;
+    const double* basis; /* NULL = identity */
     size_t physical_port_count;
-    const size_t* model_cells;
-    mhs_face_t model_face;
-} mhs_macro_port_model_t;
+} mhs_macro_dtn_model_t;
 
-/* ------------------------------------------------------------------ */
-/*  Macromodel solve                                                  */
-/* ------------------------------------------------------------------ */
+/** Compile geometric patches against a compiled model. */
+MHS_API mhs_status_t mhs_macromodel_port_map_create(const mhs_compiled_t* compiled,
+    const mhs_macro_port_patch_t* patches, size_t patch_count, mhs_macro_port_map_t** out);
+MHS_API void mhs_macromodel_port_map_destroy(mhs_macro_port_map_t* map);
+MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map);
 
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_model_t* macro,
+/** Assemble an isolated component as [physical ports, FVM cell states]. */
+MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled,
+    const mhs_macro_port_map_t* ports, const double* state, size_t state_count, double time,
+    mhs_operators_t* out);
+
+/** Solve an FVM model coupled to a reduced DtN model. */
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled,
+    const mhs_macro_port_map_t* ports, const mhs_macro_dtn_model_t* dtn,
     const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 #ifdef __cplusplus

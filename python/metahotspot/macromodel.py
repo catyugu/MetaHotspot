@@ -1,73 +1,128 @@
-"""Macromodel plugin — modal-port coupled solve for MetaHotspot.
+"""Dirichlet-to-Neumann macromodel coupling for MetaHotspot.
 
-This module is loaded on demand, not when ``import metahotspot`` is executed.
-SciPy is imported lazily — it's only needed if you construct operators.
+Python supplies only geometric port patches and a reduced DtN mapping. Patch
+resolution, half-conductance evaluation, coupled assembly, and solve scheduling
+are owned by the C++ extension.
 """
 
 from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 
 import numpy as np
 
 from metahotspot._error import check
+from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_ext_dll
+from metahotspot.compiled import Operators
 from metahotspot.solution import Solution
 from metahotspot.types import (
     CscView,
-    MhsMacroPortModel,
+    MhsCompiled,
     MhsOperatorsView,
     MhsSolution,
-    MhsCompiled,
+    Rect2D,
+    _SolveOptionsCStruct,
 )
 
 
-# ---- High-level types ----
+class MhsMacroPortMap(ctypes.Structure):
+    pass
 
 
-class PortModel(NamedTuple):
-    """Macro port model: Operators + optional basis.
+class MhsMacroPortPatch(ctypes.Structure):
+    _fields_ = [
+        ("face", ctypes.c_int32),
+        ("coordinate", ctypes.c_double),
+        ("rectangle", Rect2D),
+    ]
 
-    Parameters
-    ----------
-    operators : tuple (K, C, f)
-        Macro K, C, f with dimension macro_state_count.
-    basis : ndarray | None
-        Row-major [physical_port_count × macro_state_count] matrix.
-        None means unit basis (physical_port_count == macro_state_count).
-    physical_port_count : int
-        Number of physical interface ports.
+
+class MhsMacroDtNModel(ctypes.Structure):
+    _fields_ = [
+        ("operators", MhsOperatorsView),
+        ("basis", ctypes.POINTER(ctypes.c_double)),
+        ("physical_port_count", ctypes.c_size_t),
+    ]
+
+
+_configured_dll_ids: set[int] = set()
+
+
+def _get_dll():
+    dll = get_ext_dll()
+    key = id(dll)
+    if key not in _configured_dll_ids:
+        dll.mhs_macromodel_port_map_create.restype = ctypes.c_int32
+        dll.mhs_macromodel_port_map_create.argtypes = [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(MhsMacroPortPatch),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.POINTER(MhsMacroPortMap)),
+        ]
+        dll.mhs_macromodel_port_map_destroy.restype = None
+        dll.mhs_macromodel_port_map_destroy.argtypes = [
+            ctypes.POINTER(MhsMacroPortMap)
+        ]
+        dll.mhs_macromodel_port_count.restype = ctypes.c_size_t
+        dll.mhs_macromodel_port_count.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
+        dll.mhs_macromodel_assemble_dtn.restype = ctypes.c_int32
+        dll.mhs_macromodel_assemble_dtn.argtypes = [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(MhsMacroPortMap),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.c_double,
+            ctypes.POINTER(MhsOperatorsView),
+        ]
+        dll.mhs_macromodel_solve.restype = ctypes.c_int32
+        dll.mhs_macromodel_solve.argtypes = [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(MhsMacroPortMap),
+            ctypes.POINTER(MhsMacroDtNModel),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.POINTER(_SolveOptionsCStruct),
+            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
+        ]
+        _configured_dll_ids.add(key)
+    return dll
+
+
+@dataclass(frozen=True)
+class PortPatch:
+    """One geometric boundary patch and therefore one physical DtN port.
+
+    Coordinates use SI units after model compilation. The rectangle coordinates
+    are (y, z) for X faces, (x, z) for Y faces, and (x, y) for Z faces.
     """
+
+    face: int
+    coordinate: float
+    rectangle: tuple[float, float, float, float]
+
+    def _to_c(self) -> MhsMacroPortPatch:
+        a_min, a_max, b_min, b_max = self.rectangle
+        return MhsMacroPortPatch(
+            int(self.face),
+            float(self.coordinate),
+            Rect2D(float(a_min), float(a_max), float(b_min), float(b_max)),
+        )
+
+
+class DtNModel(NamedTuple):
+    """Reduced DtN operators and the physical-port temperature map."""
 
     operators: tuple
-    basis: np.ndarray | None
-    physical_port_count: int
+    port_basis: np.ndarray | None = None
 
 
-@dataclass
-class PortCoupling:
-    """Coupling between FVM interface cells and macro physical ports.
-
-    Parameters
-    ----------
-    model_cells : ndarray
-        FVM cell index for each physical port [physical_port_count].
-    model_face : int
-        Interface face direction (enums.Face value).
-    """
-
-    model_cells: np.ndarray
-    model_face: int
-
-
-def _get_ext_dll():
-    return get_ext_dll()
+PortModel = DtNModel
 
 
 def _csc_input_view(matrix):
-    """Convert a scipy CSC matrix to a CscView struct."""
     import scipy.sparse
 
     normalized = scipy.sparse.csc_matrix(matrix, dtype=np.float64)
@@ -92,115 +147,138 @@ def _csc_input_view(matrix):
     return normalized, view
 
 
-def solve(
-    compiled,
-    port_model: PortModel,
-    coupling: PortCoupling,
-    state: np.ndarray,
-    opts=None,
-) -> Solution:
-    """Solve an FVM model coupled to a macro port model.
+def _csc_output(view: CscView):
+    import scipy.sparse
 
-    Parameters
-    ----------
-    compiled : Compiled
-        The compiled FVM model.
-    port_model : PortModel
-        Macro operators with optional basis.
-    coupling : PortCoupling
-        Interface geometry and conductances.
-    state : ndarray
-        Initial state [FVM temps, macro states].
-    opts : SolveOptions | None
-        Solver options (defaults used if None).
+    rows = int(view.rows)
+    columns = int(view.columns)
+    nnz = int(view.nnz)
+    outer = np.ctypeslib.as_array(view.outer_indices, shape=(columns + 1,)).copy()
+    inner = np.ctypeslib.as_array(view.inner_indices, shape=(nnz,)).copy()
+    values = np.ctypeslib.as_array(view.values, shape=(nnz,)).copy()
+    return scipy.sparse.csc_matrix((values, inner, outer), shape=(rows, columns))
 
-    Returns
-    -------
-    Solution
-        Solution with .state = [FVM temps, macro states].
-    """
-    # Normalize all arrays
-    state = np.ascontiguousarray(state, dtype=np.float64)
-    coupling.model_cells = np.ascontiguousarray(coupling.model_cells, dtype=np.uintp)
 
-    K, C, f = port_model.operators
-    macro_state_count = f.size
-    cell_count = compiled.cell_count
+class PortMap(OwnedHandle):
+    """C++-compiled mapping from geometric patches to exposed FVM faces."""
 
-    # Validate dimensions
-    if state.size != cell_count + macro_state_count:
-        raise ValueError(
-            f"state size ({state.size}) must equal cell_count ({cell_count}) "
-            f"+ macro_state_count ({macro_state_count})"
+    def __init__(self, compiled, patches: Sequence[PortPatch]):
+        dll = _get_dll()
+        super().__init__(dll.mhs_macromodel_port_map_destroy, dll)
+        if not patches:
+            raise ValueError("at least one port patch is required")
+        c_patches = (MhsMacroPortPatch * len(patches))(
+            *(patch._to_c() for patch in patches)
         )
-    if coupling.model_cells.size != port_model.physical_port_count:
-        raise ValueError("model_cells size must match physical_port_count")
+        handle = ctypes.POINTER(MhsMacroPortMap)()
+        check(
+            dll.mhs_macromodel_port_map_create(
+                compiled._handle, c_patches, len(patches), ctypes.byref(handle)
+            ),
+            "macromodel_port_map_create",
+        )
+        self._handle = handle
+        self._compiled = compiled
+        self._patches = tuple(patches)
 
-    has_basis = port_model.basis is not None
-    if has_basis:
-        basis = np.ascontiguousarray(port_model.basis, dtype=np.float64)
-        if basis.ndim != 2:
-            raise ValueError("basis must be a 2-D matrix")
-        if basis.shape[0] != port_model.physical_port_count:
-            raise ValueError("basis rows must equal physical_port_count")
-        if basis.shape[1] != macro_state_count:
-            raise ValueError("basis cols must equal macro_state_count")
-        basis_ptr = basis.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    else:
-        if port_model.physical_port_count != macro_state_count:
-            raise ValueError(
-                "unit-basis requires physical_port_count == macro_state_count"
-            )
-        basis_ptr = None
-        basis = None
+    @property
+    def port_count(self) -> int:
+        return int(self._dll.mhs_macromodel_port_count(self._handle))
 
-    # Convert macro Operators to CSC views
+    @property
+    def patches(self) -> tuple[PortPatch, ...]:
+        return self._patches
+
+    def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
+        """Assemble the isolated component as [port temperatures, FVM states]."""
+        compiled = self._compiled
+        if state is None:
+            state = compiled.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
+        if state.size != compiled.cell_count:
+            raise ValueError("state size must equal compiled cell_count")
+        view = MhsOperatorsView()
+        check(
+            self._dll.mhs_macromodel_assemble_dtn(
+                compiled._handle,
+                self._handle,
+                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                state.size,
+                float(time),
+                ctypes.byref(view),
+            ),
+            "macromodel_assemble_dtn",
+        )
+        return Operators(
+            _csc_output(view.K),
+            _csc_output(view.C),
+            np.ctypeslib.as_array(view.rhs, shape=(view.n,)).copy(),
+        )
+
+
+def solve(compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None) -> Solution:
+    """Solve a compiled FVM model coupled to a reduced DtN model."""
+    if ports._compiled is not compiled:
+        raise ValueError("ports were compiled for a different model")
+
+    K, C, f = dtn.operators
     rhs = np.ascontiguousarray(f, dtype=np.float64)
+    state = np.ascontiguousarray(state, dtype=np.float64)
+    dtn_state_count = rhs.size
+    if state.size != compiled.cell_count + dtn_state_count:
+        raise ValueError("state size must equal cell_count + DtN state count")
 
     normalized_k, k_view = _csc_input_view(K)
     normalized_c, c_view = _csc_input_view(C)
+    if normalized_k.shape != (dtn_state_count, dtn_state_count):
+        raise ValueError("DtN K dimension must match f")
+    if normalized_c.shape != (dtn_state_count, dtn_state_count):
+        raise ValueError("DtN C dimension must match f")
 
-    # Build macromodel-specific flat-CSC operators
-    # The C struct uses mhs_macro_csc_view_t (identical layout to CscView,
-    # but named differently in the C header). Our ctypes mirrors them identically.
-    operators_view = MhsOperatorsView(
+    basis = None
+    if dtn.port_basis is None:
+        physical_port_count = dtn_state_count
+        basis_ptr = None
+    else:
+        basis = np.ascontiguousarray(dtn.port_basis, dtype=np.float64)
+        if basis.ndim != 2 or basis.shape[1] != dtn_state_count:
+            raise ValueError("port_basis must have shape [physical ports, DtN states]")
+        physical_port_count = basis.shape[0]
+        basis_ptr = basis.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    if physical_port_count != ports.port_count:
+        raise ValueError("port_basis rows must equal the compiled port count")
+
+    operators = MhsOperatorsView(
         K=k_view,
         C=c_view,
         rhs=rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-        n=macro_state_count,
+        n=dtn_state_count,
     )
-    macro_view = MhsMacroPortModel(
-        operators=operators_view,
+    model = MhsMacroDtNModel(
+        operators=operators,
         basis=basis_ptr,
-        physical_port_count=port_model.physical_port_count,
-        model_cells=coupling.model_cells.ctypes.data_as(
-            ctypes.POINTER(ctypes.c_size_t)
-        ),
-        model_face=int(coupling.model_face),
+        physical_port_count=physical_port_count,
     )
 
-    # Keep owners alive until C call returns
-    _ = normalized_k, normalized_c, basis
-
-    dll = _get_ext_dll()
-    pp = ctypes.POINTER(MhsSolution)()
-
-    # Convert opts if provided
     opts_ptr = None
     if opts is not None:
-        c_opts = opts._to_c_struct(dll) if hasattr(opts, "_to_c_struct") else opts
+        c_opts = opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
         opts_ptr = ctypes.byref(c_opts)
 
-    state_ptr = state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+    solution = ctypes.POINTER(MhsSolution)()
     check(
-        dll.mhs_macromodel_solve(
+        ports._dll.mhs_macromodel_solve(
             compiled._handle,
-            ctypes.byref(macro_view),
-            state_ptr,
+            ports._handle,
+            ctypes.byref(model),
+            state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             state.size,
             opts_ptr,
-            ctypes.byref(pp),
+            ctypes.byref(solution),
         ),
         "macromodel_solve",
     )
-    return Solution._from_handle(dll, dll.mhs_solution_destroy, pp, compiled)
+    _ = normalized_k, normalized_c, basis
+    return Solution._from_handle(
+        ports._dll, ports._dll.mhs_solution_destroy, solution, compiled
+    )

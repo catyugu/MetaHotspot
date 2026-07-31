@@ -24,7 +24,12 @@ except ImportError as exc:  # pragma: no cover - dependency diagnosis
 import metahotspot
 from metahotspot.compiled import SolveOptions
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel import PortCoupling, PortModel, solve as solve_macromodel
+from metahotspot.macromodel import (
+    DtNModel,
+    PortMap,
+    PortPatch,
+    solve as solve_macromodel,
+)
 
 
 @dataclass(frozen=True)
@@ -122,26 +127,14 @@ class PackageData(NamedTuple):
     full_adiabatic: object
     detailed_steady: object
     detailed_transient: object
-    K_full: sp.csc_matrix
-    C_full: sp.csc_matrix
-    f_full: np.ndarray
-    K_detailed: sp.csc_matrix
-    C_detailed: sp.csc_matrix
-    f_detailed: np.ndarray
+    detailed_ports_steady: PortMap
+    detailed_ports_transient: PortMap
+    macro_adiabatic: object
+    macro_ports: PortMap
+    macro_operators: tuple
+    boundary_delta_Kii: sp.csc_matrix
     full_detailed_cells: np.ndarray
     full_macro_cells: np.ndarray
-    detailed_interface_cells: np.ndarray
-    full_top_cells: np.ndarray
-    macro_interface_local_cells: np.ndarray
-    macro_top_local_cells: np.ndarray
-    detailed_half_conductance: np.ndarray
-    macro_half_conductance: np.ndarray
-    K_macro_cells: sp.csc_matrix
-    C_macro_cells: sp.csc_matrix
-    f_macro_cells: np.ndarray
-    top_face_area_m2: float
-    top_half_length_m: float
-    top_conductivity_W_mK: float
 
 
 class MacroCore(NamedTuple):
@@ -294,7 +287,6 @@ def build_package_model(
         f"{source_value:.17g}*power_scale(x)" if transient else f"{source_value:.17g}"
     )
 
-    # MetaHotspot places the first authoring layer at the highest z interval.
     if include_macro:
         cold_plate_layer = model.add_layer(f"{cfg.cold_plate_mm:.17g}")
         cold_plate = model.add_block(cold_plate_layer, "aluminum")
@@ -342,7 +334,6 @@ def build_package_model(
     substrate_layer = model.add_layer(f"{cfg.substrate_mm:.17g}")
     substrate = model.add_block(substrate_layer, "organic")
     _add_full_rect(model, substrate, cfg)
-
     model.set_default_neumann("0")
     if include_macro and convection_h_W_m2K is not None:
         model.add_convection(
@@ -353,6 +344,77 @@ def build_package_model(
             ],
         )
     return model
+
+
+def _macro_z_vertices(cfg: PackageConfig) -> np.ndarray:
+    vertices = [0.0]
+    cursor = 0.0
+    for thickness, cells in (
+        (cfg.tim_mm, cfg.tim_cells),
+        (cfg.spreader_mm, cfg.spreader_cells),
+        (cfg.cold_plate_mm, cfg.cold_plate_cells),
+    ):
+        for _ in range(cells):
+            cursor += thickness / cells
+            vertices.append(cursor)
+    return np.asarray(vertices, dtype=np.float64)
+
+
+def build_macro_model(cfg: PackageConfig, convection_h_W_m2K: float | None = None):
+    model = metahotspot.Model()
+    model.set_settings(
+        study=Study.STEADY,
+        length_unit=LengthUnit.MILLIMETER,
+        initial_temperature_K=cfg.ambient_K,
+    )
+    model.set_mesh(
+        _axis_vertices(cfg.width_mm, cfg.nx),
+        _axis_vertices(cfg.height_mm, cfg.ny),
+        _macro_z_vertices(cfg),
+    )
+    _add_materials(model)
+    cold_plate_layer = model.add_layer(f"{cfg.cold_plate_mm:.17g}")
+    cold_plate = model.add_block(cold_plate_layer, "aluminum")
+    _add_full_rect(model, cold_plate, cfg)
+    spreader_layer = model.add_layer(f"{cfg.spreader_mm:.17g}")
+    spreader = model.add_block(spreader_layer, "copper")
+    _add_full_rect(model, spreader, cfg)
+    tim_layer = model.add_layer(f"{cfg.tim_mm:.17g}")
+    tim = model.add_block(tim_layer, "tim")
+    _add_full_rect(model, tim, cfg)
+    model.set_default_neumann("0")
+    if convection_h_W_m2K is not None:
+        macro_height = cfg.tim_mm + cfg.spreader_mm + cfg.cold_plate_mm
+        model.add_convection(
+            f"{convection_h_W_m2K:.17g}",
+            f"{cfg.ambient_K:.17g}",
+            regions=[
+                (Axis.Z, macro_height, 0.0, cfg.width_mm, 0.0, cfg.height_mm)
+            ],
+        )
+    return model
+
+
+def _interface_patches(cfg: PackageConfig, face: Face, coordinate_m: float) -> list[PortPatch]:
+    dx = cfg.width_mm * 1.0e-3 / cfg.nx
+    dy = cfg.height_mm * 1.0e-3 / cfg.ny
+    return [
+        PortPatch(
+            face=int(face),
+            coordinate=coordinate_m,
+            rectangle=(ix * dx, (ix + 1) * dx, iy * dy, (iy + 1) * dy),
+        )
+        for ix in range(cfg.nx)
+        for iy in range(cfg.ny)
+    ]
+
+
+def _assemble_macro_dtn(
+    cfg: PackageConfig, h_W_m2K: float | None
+) -> tuple[object, PortMap, tuple]:
+    compiled = build_macro_model(cfg, h_W_m2K).compile()
+    ports = PortMap(compiled, _interface_patches(cfg, Face.ZM, 0.0))
+    return compiled, ports, ports.assemble()
 
 
 def _grid_cell(compiled, ix: int, iy: int, iz: int) -> int:
@@ -375,177 +437,75 @@ def _ordered_cells(compiled, z_begin: int, z_end: int) -> np.ndarray:
     )
 
 
-def _max_sparse_abs(matrix: sp.spmatrix) -> float:
-    return 0.0 if matrix.nnz == 0 else float(np.max(np.abs(matrix.data)))
-
-
 def assemble_package(cfg: PackageConfig, exp: ExperimentConfig) -> PackageData:
-    full_model = build_package_model(cfg, include_macro=True, study=Study.STEADY)
-    detailed_steady_model = build_package_model(
+    full = build_package_model(cfg, include_macro=True, study=Study.STEADY).compile()
+    detailed_steady = build_package_model(
         cfg, include_macro=False, study=Study.STEADY
-    )
-    detailed_transient_model = build_package_model(
+    ).compile()
+    detailed_transient = build_package_model(
         cfg,
         include_macro=False,
         study=Study.TRANSIENT,
         duration_s=exp.duration_s,
         output_interval_s=exp.time_step_s,
-    )
+    ).compile()
 
-    full = full_model.compile()
-    detailed_steady = detailed_steady_model.compile()
-    detailed_transient = detailed_transient_model.compile()
-    K_full, C_full, f_full = full.assemble()
-    K_detailed, C_detailed, f_detailed = detailed_steady.assemble()
-    K_full = K_full.tocsc()
-    C_full = C_full.tocsc()
-    K_detailed = K_detailed.tocsc()
-    C_detailed = C_detailed.tocsc()
+    detail_coordinate = (cfg.substrate_mm + cfg.bump_mm + cfg.die_mm) * 1.0e-3
+    detailed_patches = _interface_patches(cfg, Face.ZP, detail_coordinate)
+    detailed_ports_steady = PortMap(detailed_steady, detailed_patches)
+    detailed_ports_transient = PortMap(detailed_transient, detailed_patches)
+
+    macro_adiabatic, macro_ports, macro_operators = _assemble_macro_dtn(cfg, None)
+    _, _, nominal_operators = _assemble_macro_dtn(cfg, exp.nominal_h_W_m2K)
+    p = cfg.physical_ports
+    boundary_delta = (
+        nominal_operators.K[p:, p:] - macro_operators.K[p:, p:]
+    ).tocsc()
 
     full_detailed_cells = _ordered_cells(full, 0, cfg.detailed_nz)
     full_macro_cells = _ordered_cells(full, cfg.detailed_nz, cfg.total_nz)
-    detailed_order = _ordered_cells(detailed_steady, 0, cfg.detailed_nz)
-    if not np.array_equal(detailed_order, np.arange(detailed_steady.cell_count)):
-        raise RuntimeError("unexpected detailed compact-cell ordering")
+    if detailed_ports_steady.port_count != cfg.physical_ports:
+        raise RuntimeError("detailed port-map size does not match physical port count")
+    if macro_ports.port_count != cfg.physical_ports:
+        raise RuntimeError("macro port-map size does not match physical port count")
+    if macro_operators.K.shape[0] != cfg.physical_ports + macro_adiabatic.cell_count:
+        raise RuntimeError("C++ DtN operator has an unexpected state dimension")
 
-    detailed_interface_cells = np.asarray(
-        [
-            _grid_cell(detailed_steady, ix, iy, cfg.detailed_nz - 1)
-            for ix in range(cfg.nx)
-            for iy in range(cfg.ny)
-        ],
-        dtype=np.int64,
-    )
-    full_detailed_interface = np.asarray(
-        [
-            _grid_cell(full, ix, iy, cfg.detailed_nz - 1)
-            for ix in range(cfg.nx)
-            for iy in range(cfg.ny)
-        ],
-        dtype=np.int64,
-    )
-    full_macro_interface = np.asarray(
-        [
-            _grid_cell(full, ix, iy, cfg.detailed_nz)
-            for ix in range(cfg.nx)
-            for iy in range(cfg.ny)
-        ],
-        dtype=np.int64,
-    )
-    full_top_cells = np.asarray(
-        [
-            _grid_cell(full, ix, iy, cfg.total_nz - 1)
-            for ix in range(cfg.nx)
-            for iy in range(cfg.ny)
-        ],
-        dtype=np.int64,
-    )
-
-    macro_position = {int(cell): pos for pos, cell in enumerate(full_macro_cells)}
-    macro_interface_local = np.asarray(
-        [macro_position[int(cell)] for cell in full_macro_interface], dtype=np.int64
-    )
-    macro_top_local = np.asarray(
-        [macro_position[int(cell)] for cell in full_top_cells], dtype=np.int64
-    )
-
-    g_series = np.asarray(
-        [
-            -float(K_full[detailed_cell, macro_cell])
-            for detailed_cell, macro_cell in zip(
-                full_detailed_interface, full_macro_interface, strict=True
-            )
-        ],
-        dtype=np.float64,
-    )
-    g_detailed = detailed_steady.half_conductance(
-        detailed_interface_cells, Face.ZP, cfg.ambient_K, 0.0
-    )
-    g_macro = full.half_conductance(full_macro_interface, Face.ZM, cfg.ambient_K, 0.0)
-    expected_series = g_detailed * g_macro / (g_detailed + g_macro)
-    series_error = float(np.max(np.abs(g_series - expected_series)))
-    series_scale = max(1.0, float(np.max(np.abs(expected_series))))
-    if series_error > 1.0e-9 * series_scale:
-        raise RuntimeError(
-            "C/C++ interface contract mismatch: monolithic and half-conductance "
-            f"series operators differ by {series_error:.6e}"
-        )
-
-    K_macro = K_full[full_macro_cells, :][:, full_macro_cells].tocsc()
-    macro_diag = np.zeros(full_macro_cells.size, dtype=np.float64)
-    macro_diag[macro_interface_local] = g_series
-    K_macro = K_macro - sp.diags(macro_diag, format="csc")
-    C_macro = C_full[full_macro_cells, :][:, full_macro_cells].tocsc()
-    f_macro = np.asarray(f_full[full_macro_cells], dtype=np.float64)
-
-    K_detail_from_full = K_full[full_detailed_cells, :][:, full_detailed_cells].tocsc()
-    detailed_position = {int(cell): pos for pos, cell in enumerate(full_detailed_cells)}
-    detailed_diag = np.zeros(full_detailed_cells.size, dtype=np.float64)
-    for cell, conductance in zip(full_detailed_interface, g_series, strict=True):
-        detailed_diag[detailed_position[int(cell)]] = conductance
-    K_detail_from_full = K_detail_from_full - sp.diags(detailed_diag, format="csc")
-    operator_error = _max_sparse_abs(K_detail_from_full - K_detailed)
-    operator_scale = max(1.0, _max_sparse_abs(K_detailed))
-    if operator_error > 1.0e-9 * operator_scale:
-        raise RuntimeError(
-            "independent detailed compile differs from stripped full operator: "
-            f"{operator_error:.6e}"
-        )
-
-    dx_m = cfg.width_mm * 1.0e-3 / cfg.nx
-    dy_m = cfg.height_mm * 1.0e-3 / cfg.ny
-    top_dz_m = cfg.cold_plate_mm * 1.0e-3 / cfg.cold_plate_cells
     return PackageData(
         full_adiabatic=full,
         detailed_steady=detailed_steady,
         detailed_transient=detailed_transient,
-        K_full=K_full,
-        C_full=C_full,
-        f_full=np.asarray(f_full, dtype=np.float64),
-        K_detailed=K_detailed,
-        C_detailed=C_detailed,
-        f_detailed=np.asarray(f_detailed, dtype=np.float64),
+        detailed_ports_steady=detailed_ports_steady,
+        detailed_ports_transient=detailed_ports_transient,
+        macro_adiabatic=macro_adiabatic,
+        macro_ports=macro_ports,
+        macro_operators=macro_operators,
+        boundary_delta_Kii=boundary_delta,
         full_detailed_cells=full_detailed_cells,
         full_macro_cells=full_macro_cells,
-        detailed_interface_cells=detailed_interface_cells,
-        full_top_cells=full_top_cells,
-        macro_interface_local_cells=macro_interface_local,
-        macro_top_local_cells=macro_top_local,
-        detailed_half_conductance=np.asarray(g_detailed, dtype=np.float64),
-        macro_half_conductance=np.asarray(g_macro, dtype=np.float64),
-        K_macro_cells=K_macro,
-        C_macro_cells=C_macro,
-        f_macro_cells=f_macro,
-        top_face_area_m2=dx_m * dy_m,
-        top_half_length_m=0.5 * top_dz_m,
-        top_conductivity_W_mK=180.0,
     )
 
 
 def build_macro_core(data: PackageData) -> MacroCore:
     start = time.perf_counter()
-    n_ports = data.detailed_interface_cells.size
-    n_macro = data.full_macro_cells.size
-    rows = data.macro_interface_local_cells
-    columns = np.arange(n_ports, dtype=np.int64)
-    Kpp = sp.diags(data.macro_half_conductance, format="csc")
-    Kip = sp.coo_matrix(
-        (-data.macro_half_conductance, (rows, columns)), shape=(n_macro, n_ports)
-    ).tocsc()
-    Kpi = Kip.T.tocsc()
-    diagonal = np.zeros(n_macro, dtype=np.float64)
-    diagonal[rows] = data.macro_half_conductance
-    Kii = data.K_macro_cells + sp.diags(diagonal, format="csc")
-    Cii = data.C_macro_cells.tocsc()
-    factor = spla.splu(Kii)
-    constraint_map = -factor.solve(Kip.toarray())
+    K, C, f = data.macro_operators
+    p = data.macro_ports.port_count
+    K = K.tocsc()
+    C = C.tocsc()
+    Kpp = K[:p, :p].tocsc()
+    Kpi = K[:p, p:].tocsc()
+    Kip = K[p:, :p].tocsc()
+    Kii = K[p:, p:].tocsc()
+    Cii = C[p:, p:].tocsc()
+    fi = np.asarray(f[p:], dtype=np.float64)
+    constraint_map = -spla.splu(Kii).solve(Kip.toarray())
     return MacroCore(
         Kpp=Kpp,
         Kpi=Kpi,
         Kip=Kip,
         Kii=Kii,
         Cii=Cii,
-        fi=data.f_macro_cells,
+        fi=fi,
         constraint_map=constraint_map,
         preprocess_s=time.perf_counter() - start,
     )
@@ -570,19 +530,21 @@ def _complete_dct_basis(nx: int, ny: int) -> np.ndarray:
 
 def build_source_port_spectrum(cfg: PackageConfig) -> PortSpectrum:
     full_dct = _complete_dct_basis(cfg.nx, cfg.ny)
-    x_centres = (np.arange(cfg.nx, dtype=np.float64) + 0.5) * (cfg.width_mm / cfg.nx)
-    y_centres = (np.arange(cfg.ny, dtype=np.float64) + 0.5) * (cfg.height_mm / cfg.ny)
+    x_centres = (np.arange(cfg.nx, dtype=np.float64) + 0.5) * (
+        cfg.width_mm / cfg.nx
+    )
+    y_centres = (np.arange(cfg.ny, dtype=np.float64) + 0.5) * (
+        cfg.height_mm / cfg.ny
+    )
     source_maps = []
     for x0, y0 in _chiplet_positions(cfg):
         source_maps.append(
             np.asarray(
                 [
-                    (
-                        1.0
-                        if x0 <= x <= x0 + cfg.chiplet_width_mm
-                        and y0 <= y <= y0 + cfg.chiplet_height_mm
-                        else 0.0
-                    )
+                    1.0
+                    if x0 <= x <= x0 + cfg.chiplet_width_mm
+                    and y0 <= y <= y0 + cfg.chiplet_height_mm
+                    else 0.0
                     for x in x_centres
                     for y in y_centres
                 ],
@@ -613,7 +575,9 @@ def _orthonormal_range(matrix: np.ndarray, tolerance: float = 1.0e-11) -> np.nda
     diagonal = np.abs(np.diag(r))
     if diagonal.size == 0:
         return np.empty((matrix.shape[0], 0), dtype=np.float64)
-    rank = int(np.count_nonzero(diagonal > tolerance * max(1.0, float(diagonal.max()))))
+    rank = int(
+        np.count_nonzero(diagonal > tolerance * max(1.0, float(diagonal.max())))
+    )
     return np.ascontiguousarray(q[:, :rank], dtype=np.float64)
 
 
@@ -652,11 +616,10 @@ def build_source_aware_bci(
 
     phi = spectrum.basis[:, :port_modes]
     psi = core.constraint_map @ phi
-    top_diagonal = np.zeros(core.Kii.shape[0], dtype=np.float64)
-    top_diagonal[data.macro_top_local_cells] = data.top_face_area_m2
-    unit_top_operator = sp.diags(top_diagonal, format="csc")
     static_factor = spla.splu(core.Kii)
-    boundary_modes = _orthonormal_range(-static_factor.solve(unit_top_operator @ psi))
+    boundary_modes = _orthonormal_range(
+        -static_factor.solve(data.boundary_delta_Kii @ psi)
+    )
 
     forcing = core.Kip @ phi
     shift_scale = 0.025 / exp.time_step_s
@@ -672,21 +635,17 @@ def build_source_aware_bci(
             residual -= boundary_modes @ (boundary_modes.T @ residual)
         residual_blocks.append(residual)
 
-    snapshots = np.hstack(residual_blocks)
     dynamic_modes = _randomized_left_basis(
-        snapshots, exp.source_residual_modes, seed=exp.random_seed
+        np.hstack(residual_blocks), exp.source_residual_modes, seed=exp.random_seed
     )
     if boundary_modes.shape[1] > 0:
         dynamic_modes -= boundary_modes @ (boundary_modes.T @ dynamic_modes)
         dynamic_modes = _orthonormal_range(dynamic_modes)
 
     interior_only = np.hstack((boundary_modes, dynamic_modes))
-    zeros = np.zeros(
-        (spectrum.basis.shape[0], interior_only.shape[1]), dtype=np.float64
-    )
+    zeros = np.zeros((spectrum.basis.shape[0], interior_only.shape[1]), dtype=np.float64)
     physical = np.hstack((phi, zeros))
-    interior = np.hstack((psi, interior_only))
-    V = np.vstack((physical, interior))
+    V = np.vstack((physical, np.hstack((psi, interior_only))))
     return MethodBasis(
         np.ascontiguousarray(V, dtype=np.float64),
         np.ascontiguousarray(physical, dtype=np.float64),
@@ -696,12 +655,6 @@ def build_source_aware_bci(
     )
 
 
-def _top_convection_conductance(data: PackageData, h_W_m2K: float) -> float:
-    k = data.top_conductivity_W_mK
-    half = data.top_half_length_m
-    return k * h_W_m2K * data.top_face_area_m2 / (k + h_W_m2K * half)
-
-
 def project_macro(
     data: PackageData,
     core: MacroCore,
@@ -709,29 +662,19 @@ def project_macro(
     cfg: PackageConfig,
     h_W_m2K: float,
 ) -> ReducedMacro:
+    del data, core
+    _, _, operators = _assemble_macro_dtn(cfg, h_W_m2K)
+    K, C, f = operators
     V = method.V
-    n_ports = cfg.physical_ports
-    Vp = V[:n_ports, :]
-    Vi = V[n_ports:, :]
-    K = np.asarray(Vp.T @ (core.Kpp @ Vp), dtype=np.float64)
-    K += np.asarray(Vp.T @ (core.Kpi @ Vi), dtype=np.float64)
-    K += np.asarray(Vi.T @ (core.Kip @ Vp), dtype=np.float64)
-    K += np.asarray(Vi.T @ (core.Kii @ Vi), dtype=np.float64)
-    C = np.asarray(Vi.T @ (core.Cii @ Vi), dtype=np.float64)
-    rhs = np.asarray(Vi.T @ core.fi, dtype=np.float64)
-
-    conductance = _top_convection_conductance(data, h_W_m2K)
-    Vtop = Vi[data.macro_top_local_cells, :]
-    K += Vtop.T @ (conductance * Vtop)
-    rhs += Vtop.T @ np.full(
-        Vtop.shape[0], conductance * cfg.ambient_K, dtype=np.float64
-    )
-    K = 0.5 * (K + K.T)
-    C = 0.5 * (C + C.T)
+    reduced_K = np.asarray(V.T @ (K @ V), dtype=np.float64)
+    reduced_C = np.asarray(V.T @ (C @ V), dtype=np.float64)
+    reduced_f = np.asarray(V.T @ f, dtype=np.float64)
+    reduced_K = 0.5 * (reduced_K + reduced_K.T)
+    reduced_C = 0.5 * (reduced_C + reduced_C.T)
     return ReducedMacro(
-        sp.csc_matrix(K),
-        sp.csc_matrix(C),
-        np.asarray(rhs, dtype=np.float64),
+        sp.csc_matrix(reduced_K),
+        sp.csc_matrix(reduced_C),
+        reduced_f,
         V,
         method.physical_basis,
     )
@@ -803,22 +746,19 @@ def _solve_reduced_cpp(
     transient: bool,
 ):
     compiled = data.detailed_transient if transient else data.detailed_steady
+    ports = data.detailed_ports_transient if transient else data.detailed_ports_steady
     initial = np.concatenate(
         (
             np.full(compiled.cell_count, cfg.ambient_K, dtype=np.float64),
             _macro_initial_coordinates(reduced, cfg.ambient_K),
         )
     )
-    model = PortModel(
+    model = DtNModel(
         operators=(reduced.K, reduced.C, reduced.f),
-        basis=reduced.physical_basis,
-        physical_port_count=cfg.physical_ports,
-    )
-    coupling = PortCoupling(
-        model_cells=data.detailed_interface_cells.copy(), model_face=int(Face.ZP)
+        port_basis=reduced.physical_basis,
     )
     return solve_macromodel(
-        compiled, model, coupling, initial, _solve_options(exp, transient=transient)
+        compiled, model, ports, initial, _solve_options(exp, transient=transient)
     )
 
 
@@ -830,7 +770,7 @@ def _recover_history(
 ) -> np.ndarray:
     detailed_count = data.detailed_steady.cell_count
     recovered = np.empty(
-        (reduced_history.shape[0], data.K_full.shape[0]), dtype=np.float64
+        (reduced_history.shape[0], data.full_adiabatic.cell_count), dtype=np.float64
     )
     recovered[:, data.full_detailed_cells] = reduced_history[:, :detailed_count]
     augmented_macro = reduced_history[:, detailed_count:] @ reduced.V.T
@@ -947,9 +887,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _configs_from_args(
-    args: argparse.Namespace,
-) -> tuple[PackageConfig, ExperimentConfig]:
+def _configs_from_args(args: argparse.Namespace) -> tuple[PackageConfig, ExperimentConfig]:
     if args.quick:
         return (
             PackageConfig(nx=16, ny=16, bump_rows=6, bump_columns=6),
@@ -1028,7 +966,7 @@ def main(argv: list[str] | None = None) -> int:
             **asdict(exp),
             "report_path": str(exp.report_path),
         },
-        "thermal_cell_count": int(data.K_full.shape[0]),
+        "thermal_cell_count": int(data.full_adiabatic.cell_count),
         "physical_port_count": cfg.physical_ports,
         "selected_port_modes": winner.port_modes,
         "selected_source_energy_fraction": winner.source_energy_fraction,

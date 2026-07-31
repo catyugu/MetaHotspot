@@ -9,9 +9,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace mhs::macro {
@@ -28,25 +30,12 @@ namespace mhs::macro {
             }
         }
 
-        void append_dense_block(std::vector<Eigen::Triplet<double>>& entries, const Eigen::MatrixXd& block,
-            Eigen::Index row_offset, Eigen::Index column_offset)
-        {
-            for (Eigen::Index row = 0; row < block.rows(); ++row) {
-                for (Eigen::Index column = 0; column < block.cols(); ++column) {
-                    const double value = block(row, column);
-                    if (std::abs(value) > mhs::core::zero_guard) {
-                        entries.emplace_back(row + row_offset, column + column_offset, value);
-                    }
-                }
-            }
-        }
-
         void validate_sparse_finite(const Eigen::SparseMatrix<double>& matrix, const char* name)
         {
             for (Eigen::Index outer = 0; outer < matrix.outerSize(); ++outer) {
                 for (Eigen::SparseMatrix<double>::InnerIterator entry(matrix, outer); entry; ++entry) {
                     if (!std::isfinite(entry.value())) {
-                        throw std::invalid_argument(std::string("assemble: non-finite value in macro ") + name);
+                        throw std::invalid_argument(std::string("non-finite value in DtN ") + name);
                     }
                 }
             }
@@ -56,201 +45,297 @@ namespace mhs::macro {
         {
             if (operators.K.rows() != size || operators.K.cols() != size || operators.C.rows() != size
                 || operators.C.cols() != size || operators.f.size() != size) {
-                throw std::invalid_argument("assemble: macro K/C/f dimensions do not match");
+                throw std::invalid_argument("DtN K/C/f dimensions do not match");
             }
             validate_sparse_finite(operators.K, "K");
             validate_sparse_finite(operators.C, "C");
             if (!operators.f.allFinite()) {
-                throw std::invalid_argument("assemble: non-finite value in macro f");
+                throw std::invalid_argument("non-finite value in DtN f");
             }
         }
 
-        bool has_explicit_basis(const PortModel& port)
+        bool has_explicit_basis(const DtNModel& dtn)
         {
-            const bool has_rows = port.basis.rows() > 0;
-            const bool has_columns = port.basis.cols() > 0;
+            const bool has_rows = dtn.port_basis.rows() > 0;
+            const bool has_columns = dtn.port_basis.cols() > 0;
             if (has_rows != has_columns) {
-                throw std::invalid_argument("assemble: basis must be either empty or a non-empty matrix");
+                throw std::invalid_argument("port basis must be empty or a non-empty matrix");
             }
             return has_rows;
         }
 
-        Eigen::MatrixXd materialize_basis(const PortModel& port, Eigen::Index macro_state_count)
+        Eigen::MatrixXd materialize_basis(const DtNModel& dtn, Eigen::Index state_count)
         {
-            if (has_explicit_basis(port)) {
-                return port.basis;
+            if (has_explicit_basis(dtn)) {
+                if (dtn.port_basis.rows() != static_cast<Eigen::Index>(dtn.physical_port_count)
+                    || dtn.port_basis.cols() != state_count) {
+                    throw std::invalid_argument("port basis dimensions do not match DtN model");
+                }
+                if (!dtn.port_basis.allFinite()) {
+                    throw std::invalid_argument("port basis contains non-finite values");
+                }
+                return dtn.port_basis;
             }
-            return Eigen::MatrixXd::Identity(
-                static_cast<Eigen::Index>(port.physical_port_count), macro_state_count);
+            if (dtn.physical_port_count != static_cast<std::size_t>(state_count)) {
+                throw std::invalid_argument("identity port basis requires port count == DtN state count");
+            }
+            return Eigen::MatrixXd::Identity(state_count, state_count);
         }
 
-        void validate(const mhs::core::Model& model, const PortModel& port, const PortCoupling& coupling,
-            std::span<const double> state)
+        std::optional<mhs::core::Index> active_neighbor(
+            const mhs::core::Model& model, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
+            mhs::core::FaceDir face)
         {
-            const auto model_count = model.cells.cell_to_grid.size();
-            const auto macro_state_count = static_cast<std::size_t>(port.operators.f.size());
-            const auto physical_port_count = port.physical_port_count;
-
-            if (macro_state_count == 0) {
-                throw std::invalid_argument("assemble: macro has zero states");
+            using mhs::core::FaceDir;
+            if (face == FaceDir::XM) {
+                if (ix == 0)
+                    return std::nullopt;
+                --ix;
             }
-            if (physical_port_count == 0) {
-                throw std::invalid_argument("assemble: physical_port_count is zero");
+            else if (face == FaceDir::XP) {
+                if (ix + 1 >= model.mesh.nx)
+                    return std::nullopt;
+                ++ix;
             }
-
-            const bool has_basis = has_explicit_basis(port);
-            if (has_basis) {
-                if (static_cast<std::size_t>(port.basis.rows()) != physical_port_count) {
-                    throw std::invalid_argument("assemble: basis rows must equal physical_port_count");
-                }
-                if (static_cast<std::size_t>(port.basis.cols()) != macro_state_count) {
-                    throw std::invalid_argument("assemble: basis cols must equal macro_state_count");
-                }
-                if (!port.basis.allFinite()) {
-                    throw std::invalid_argument("assemble: basis contains non-finite values");
-                }
+            else if (face == FaceDir::YM) {
+                if (iy == 0)
+                    return std::nullopt;
+                --iy;
             }
-            else if (physical_port_count != macro_state_count) {
-                throw std::invalid_argument("assemble: unit-basis requires physical_port_count == macro_state_count");
+            else if (face == FaceDir::YP) {
+                if (iy + 1 >= model.mesh.ny)
+                    return std::nullopt;
+                ++iy;
             }
-
-            validate_operators(port.operators, static_cast<Eigen::Index>(macro_state_count));
-
-            if (coupling.model_cells.size() != physical_port_count) {
-                throw std::invalid_argument("assemble: coupling.model_cells size must match physical port count");
+            else if (face == FaceDir::ZM) {
+                if (iz == 0)
+                    return std::nullopt;
+                --iz;
             }
-
-            if (state.size() != model_count + macro_state_count) {
-                throw std::invalid_argument("assemble: state must contain FVM temperatures followed by macro states");
+            else {
+                if (iz + 1 >= model.mesh.nz)
+                    return std::nullopt;
+                ++iz;
             }
-            if (!std::all_of(state.begin(), state.end(), [](double value) { return std::isfinite(value); })) {
-                throw std::invalid_argument("assemble: state contains non-finite values");
-            }
-
-            std::unordered_set<mhs::core::Index> unique_cells;
-            for (const auto cell : coupling.model_cells) {
-                if (cell >= model_count || !unique_cells.insert(cell).second) {
-                    throw std::invalid_argument("assemble: interface cells must be unique valid FVM cells");
-                }
-            }
+            const auto grid = (ix * model.mesh.ny + iy) * model.mesh.nz + iz;
+            const auto cell = model.cells.grid_to_cell[grid];
+            if (cell == mhs::core::invalidIndex)
+                return std::nullopt;
+            return cell;
         }
 
-        /// FVM-side half-conductance k * A / (dx/2) at the interface face.
-        /// The macro side is represented at the interface face, so no series
-        /// combination is performed in this assembly layer.
-        double interface_conductance(const mhs::core::Model& model, mhs::core::Index cell, mhs::core::FaceDir face,
-            std::span<const double> temperature, double time)
+        double face_coordinate(const mhs::core::Model& model, mhs::core::Index ix, mhs::core::Index iy,
+            mhs::core::Index iz, mhs::core::FaceDir face)
         {
-            const auto grid = model.cells.cell_to_grid[cell];
+            using mhs::core::FaceDir;
+            if (face == FaceDir::XM || face == FaceDir::XP)
+                return model.mesh.cx[ix] + (face == FaceDir::XP ? 0.5 : -0.5) * model.mesh.dx[ix];
+            if (face == FaceDir::YM || face == FaceDir::YP)
+                return model.mesh.cy[iy] + (face == FaceDir::YP ? 0.5 : -0.5) * model.mesh.dy[iy];
+            return model.mesh.cz[iz] + (face == FaceDir::ZP ? 0.5 : -0.5) * model.mesh.dz[iz];
+        }
+
+        std::pair<double, double> tangential_center(const mhs::core::Model& model, mhs::core::Index ix,
+            mhs::core::Index iy, mhs::core::Index iz, mhs::core::FaceDir face)
+        {
+            using mhs::core::FaceDir;
+            if (face == FaceDir::XM || face == FaceDir::XP)
+                return {model.mesh.cy[iy], model.mesh.cz[iz]};
+            if (face == FaceDir::YM || face == FaceDir::YP)
+                return {model.mesh.cx[ix], model.mesh.cz[iz]};
+            return {model.mesh.cx[ix], model.mesh.cy[iy]};
+        }
+
+        bool inside(double value, double lower, double upper, double tolerance)
+        {
+            return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance;
+        }
+
+        double interface_conductance(const mhs::core::Model& model, const PortFace& port_face,
+            double temperature, double time)
+        {
+            const auto grid = model.cells.cell_to_grid[port_face.cell];
             mhs::core::Index ix, iy, iz;
             mhs::utils::decode_index(grid, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-            const auto neighbor_grid = mhs::utils::neighbor_grid_index(
-                ix, iy, iz, face, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-            if (neighbor_grid != mhs::core::invalidIndex) {
-                throw std::invalid_argument("assemble: an interface face has an active FVM neighbor");
+            if (active_neighbor(model, ix, iy, iz, port_face.face).has_value()) {
+                throw std::invalid_argument("port patch selected a face with an active FVM neighbor");
             }
+            const auto& material = model.material_table[model.cells.material_id[port_face.cell]];
+            const mhs::core::FieldContext context {
+                model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature, time};
+            const double conductivity = mhs::utils::k_along(port_face.face, material.kx.eval(context),
+                material.ky.eval(context), material.kz.eval(context));
+            const double area = mhs::utils::face_area(
+                port_face.face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
+            const double half_length = mhs::utils::half_length_along(
+                port_face.face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
+            if (!std::isfinite(conductivity) || conductivity < 0.0 || !std::isfinite(area) || area <= 0.0
+                || !std::isfinite(half_length) || half_length <= 0.0) {
+                throw std::invalid_argument("invalid material or geometry while evaluating port conductance");
+            }
+            return conductivity * area / half_length;
+        }
 
-            const auto& material = model.material_table[model.cells.material_id[cell]];
-            const mhs::core::FieldContext ctx {
-                model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature[cell], time};
-            const double k
-                = mhs::utils::k_along(face, material.kx.eval(ctx), material.ky.eval(ctx), material.kz.eval(ctx));
-            const double area = mhs::utils::face_area(face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            const double half_length
-                = mhs::utils::half_length_along(face, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            if (k <= mhs::core::zero_guard || half_length <= mhs::core::zero_guard)
-                return 0.0;
-            return k * area / half_length;
+        void validate_port_map(const mhs::core::Model& model, const PortMap& ports)
+        {
+            if (ports.port_count == 0 || ports.faces.empty())
+                throw std::invalid_argument("port map must contain at least one patch and one exposed face");
+            std::vector<bool> seen(ports.port_count, false);
+            for (const auto& face : ports.faces) {
+                if (face.cell >= model.cells.cell_to_grid.size() || face.port >= ports.port_count)
+                    throw std::invalid_argument("port map contains an out-of-range entry");
+                seen[face.port] = true;
+            }
+            if (std::find(seen.begin(), seen.end(), false) != seen.end())
+                throw std::invalid_argument("every physical port patch must select at least one face");
         }
 
     } // namespace
 
-    mhs::sim::Operators assemble(const mhs::core::Model& model, const PortModel& port, const PortCoupling& coupling,
-        std::span<const double> state, double time)
+    PortMap compile_port_map(const mhs::core::Model& model, std::span<const PortPatch> patches)
     {
-        validate(model, port, coupling, state);
+        if (patches.empty())
+            throw std::invalid_argument("compile_port_map: patches must not be empty");
+        PortMap result;
+        result.port_count = patches.size();
+        std::unordered_set<std::size_t> claimed;
+        const double tolerance = 1.0e-10;
 
-        const auto model_count = model.cells.cell_to_grid.size();
-        const auto macro_state_count = static_cast<std::size_t>(port.operators.f.size());
-        const auto state_count = model_count + macro_state_count;
-        const auto eigen_model_count = static_cast<Eigen::Index>(model_count);
-        const auto eigen_macro_count = static_cast<Eigen::Index>(macro_state_count);
-        const auto eigen_state_count = static_cast<Eigen::Index>(state_count);
-        const auto physical_port_count = static_cast<Eigen::Index>(coupling.model_cells.size());
-
-        const auto temperature = state.first(model_count);
-        auto model_operators = mhs::sim::assemble_thermal(model, temperature, time);
-        const Eigen::MatrixXd basis = materialize_basis(port, eigen_macro_count);
-
-        Eigen::VectorXd conductance(physical_port_count);
-        for (Eigen::Index physical_port = 0; physical_port < physical_port_count; ++physical_port) {
-            const auto cell = coupling.model_cells[static_cast<std::size_t>(physical_port)];
-            conductance[physical_port]
-                = interface_conductance(model, cell, coupling.model_face, temperature, time);
-        }
-
-        // Assemble B^T G B once.  The old implementation inserted a full
-        // r-by-r block for every physical port and relied on duplicate-triplet
-        // summation, creating O(n_port * r^2) triplets.  This formulation keeps
-        // the same arithmetic but stores only O(r^2 + n_port * r) entries.
-        const Eigen::MatrixXd weighted_basis = conductance.asDiagonal() * basis;
-        const Eigen::MatrixXd modal_interface = basis.transpose() * weighted_basis;
-
-        std::vector<Eigen::Triplet<double>> stiffness;
-        std::vector<Eigen::Triplet<double>> capacity;
-        const auto cross_entry_bound = static_cast<std::size_t>(physical_port_count * eigen_macro_count * 2);
-        const auto modal_entry_bound = static_cast<std::size_t>(eigen_macro_count * eigen_macro_count);
-        stiffness.reserve(static_cast<std::size_t>(model_operators.K.nonZeros() + port.operators.K.nonZeros())
-            + coupling.model_cells.size() + cross_entry_bound + modal_entry_bound);
-        capacity.reserve(static_cast<std::size_t>(model_operators.C.nonZeros() + port.operators.C.nonZeros()));
-        append_sparse_block(stiffness, model_operators.K, 0, 0);
-        append_sparse_block(stiffness, port.operators.K, eigen_model_count, eigen_model_count);
-        append_sparse_block(capacity, model_operators.C, 0, 0);
-        append_sparse_block(capacity, port.operators.C, eigen_model_count, eigen_model_count);
-
-        for (Eigen::Index physical_port = 0; physical_port < physical_port_count; ++physical_port) {
-            const auto cell = coupling.model_cells[static_cast<std::size_t>(physical_port)];
-            const auto cell_row = static_cast<Eigen::Index>(cell);
-            const double g = conductance[physical_port];
-            if (std::abs(g) > mhs::core::zero_guard) {
-                stiffness.emplace_back(cell_row, cell_row, g);
-            }
-
-            for (Eigen::Index mode = 0; mode < eigen_macro_count; ++mode) {
-                const double projected = -g * basis(physical_port, mode);
-                if (std::abs(projected) <= mhs::core::zero_guard) {
+        for (std::size_t port = 0; port < patches.size(); ++port) {
+            const auto& patch = patches[port];
+            std::size_t matches = 0;
+            for (mhs::core::Index cell = 0; cell < model.cells.cell_to_grid.size(); ++cell) {
+                const auto grid = model.cells.cell_to_grid[cell];
+                mhs::core::Index ix, iy, iz;
+                mhs::utils::decode_index(grid, model.mesh.ny, model.mesh.nz, ix, iy, iz);
+                if (active_neighbor(model, ix, iy, iz, patch.face).has_value())
                     continue;
-                }
-                const auto mode_row = eigen_model_count + mode;
-                stiffness.emplace_back(cell_row, mode_row, projected);
-                stiffness.emplace_back(mode_row, cell_row, projected);
-            }
-        }
-        append_dense_block(stiffness, modal_interface, eigen_model_count, eigen_model_count);
+                if (std::abs(face_coordinate(model, ix, iy, iz, patch.face) - patch.coordinate) > tolerance)
+                    continue;
+                const auto [a, b] = tangential_center(model, ix, iy, iz, patch.face);
+                if (!inside(a, patch.a_min, patch.a_max, tolerance)
+                    || !inside(b, patch.b_min, patch.b_max, tolerance))
+                    continue;
 
-        mhs::sim::Operators combined;
-        combined.K.resize(eigen_state_count, eigen_state_count);
-        combined.K.setFromTriplets(stiffness.begin(), stiffness.end());
-        combined.K.makeCompressed();
-        combined.C.resize(eigen_state_count, eigen_state_count);
-        combined.C.setFromTriplets(capacity.begin(), capacity.end());
-        combined.C.makeCompressed();
-        combined.f.resize(eigen_state_count);
-        combined.f.head(eigen_model_count) = model_operators.f;
-        combined.f.tail(eigen_macro_count) = port.operators.f;
-        return combined;
+                const auto key = cell * mhs::core::FACE_COUNT + static_cast<std::size_t>(patch.face);
+                if (!claimed.insert(key).second)
+                    throw std::invalid_argument("port patches overlap on the same exposed face");
+                result.faces.push_back({cell, port, patch.face});
+                ++matches;
+            }
+            if (matches == 0)
+                throw std::invalid_argument("port patch does not select any exposed FVM face");
+        }
+        return result;
     }
 
-    mhs::core::Solution solve(const mhs::core::Model& model, const PortModel& port, const PortCoupling& coupling,
+    mhs::sim::Operators assemble_dtn(const mhs::core::Model& model, const PortMap& ports,
+        std::span<const double> cell_state, double time)
+    {
+        validate_port_map(model, ports);
+        const auto cell_count = model.cells.cell_to_grid.size();
+        if (cell_state.size() != cell_count)
+            throw std::invalid_argument("assemble_dtn: state size must equal model cell count");
+
+        const auto base = mhs::sim::assemble_thermal(model, cell_state, time);
+        const Eigen::Index port_count = static_cast<Eigen::Index>(ports.port_count);
+        const Eigen::Index fvm_count = static_cast<Eigen::Index>(cell_count);
+        const Eigen::Index total = port_count + fvm_count;
+        std::vector<Eigen::Triplet<double>> k_entries;
+        std::vector<Eigen::Triplet<double>> c_entries;
+        k_entries.reserve(static_cast<std::size_t>(base.K.nonZeros()) + 4 * ports.faces.size());
+        c_entries.reserve(static_cast<std::size_t>(base.C.nonZeros()));
+        append_sparse_block(k_entries, base.K, port_count, port_count);
+        append_sparse_block(c_entries, base.C, port_count, port_count);
+
+        for (const auto& face : ports.faces) {
+            const auto p = static_cast<Eigen::Index>(face.port);
+            const auto c = port_count + static_cast<Eigen::Index>(face.cell);
+            const double g = interface_conductance(model, face, cell_state[face.cell], time);
+            k_entries.emplace_back(p, p, g);
+            k_entries.emplace_back(p, c, -g);
+            k_entries.emplace_back(c, p, -g);
+            k_entries.emplace_back(c, c, g);
+        }
+
+        mhs::sim::Operators result;
+        result.K.resize(total, total);
+        result.C.resize(total, total);
+        result.K.setFromTriplets(k_entries.begin(), k_entries.end());
+        result.C.setFromTriplets(c_entries.begin(), c_entries.end());
+        result.f = Eigen::VectorXd::Zero(total);
+        result.f.tail(fvm_count) = base.f;
+        return result;
+    }
+
+    mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn,
+        const PortMap& ports, std::span<const double> state, double time)
+    {
+        validate_port_map(model, ports);
+        if (dtn.physical_port_count != ports.port_count)
+            throw std::invalid_argument("DtN physical port count does not match compiled port map");
+        const Eigen::Index macro_count = dtn.operators.f.size();
+        validate_operators(dtn.operators, macro_count);
+        const Eigen::MatrixXd basis = materialize_basis(dtn, macro_count);
+        const Eigen::Index fvm_count = static_cast<Eigen::Index>(model.cells.cell_to_grid.size());
+        if (state.size() != static_cast<std::size_t>(fvm_count + macro_count))
+            throw std::invalid_argument("coupled state size must equal FVM cells + DtN states");
+
+        const auto temperatures = state.first(static_cast<std::size_t>(fvm_count));
+        const auto base = mhs::sim::assemble_thermal(model, temperatures, time);
+        const Eigen::Index total = fvm_count + macro_count;
+        std::vector<Eigen::Triplet<double>> k_entries;
+        std::vector<Eigen::Triplet<double>> c_entries;
+        k_entries.reserve(static_cast<std::size_t>(base.K.nonZeros() + dtn.operators.K.nonZeros())
+            + ports.faces.size() * (2 + 2 * static_cast<std::size_t>(macro_count)));
+        c_entries.reserve(static_cast<std::size_t>(base.C.nonZeros() + dtn.operators.C.nonZeros()));
+        append_sparse_block(k_entries, base.K, 0, 0);
+        append_sparse_block(k_entries, dtn.operators.K, fvm_count, fvm_count);
+        append_sparse_block(c_entries, base.C, 0, 0);
+        append_sparse_block(c_entries, dtn.operators.C, fvm_count, fvm_count);
+
+        Eigen::MatrixXd macro_interface = Eigen::MatrixXd::Zero(macro_count, macro_count);
+        for (const auto& face : ports.faces) {
+            const Eigen::Index cell = static_cast<Eigen::Index>(face.cell);
+            const Eigen::Index port = static_cast<Eigen::Index>(face.port);
+            const double g = interface_conductance(model, face, temperatures[face.cell], time);
+            k_entries.emplace_back(cell, cell, g);
+            for (Eigen::Index q = 0; q < macro_count; ++q) {
+                const double value = -g * basis(port, q);
+                if (std::abs(value) > mhs::core::zero_guard) {
+                    k_entries.emplace_back(cell, fvm_count + q, value);
+                    k_entries.emplace_back(fvm_count + q, cell, value);
+                }
+            }
+            macro_interface.noalias() += g * basis.row(port).transpose() * basis.row(port);
+        }
+        for (Eigen::Index row = 0; row < macro_count; ++row) {
+            for (Eigen::Index column = 0; column < macro_count; ++column) {
+                const double value = macro_interface(row, column);
+                if (std::abs(value) > mhs::core::zero_guard)
+                    k_entries.emplace_back(fvm_count + row, fvm_count + column, value);
+            }
+        }
+
+        mhs::sim::Operators result;
+        result.K.resize(total, total);
+        result.C.resize(total, total);
+        result.K.setFromTriplets(k_entries.begin(), k_entries.end());
+        result.C.setFromTriplets(c_entries.begin(), c_entries.end());
+        result.f.resize(total);
+        result.f.head(fvm_count) = base.f;
+        result.f.tail(macro_count) = dtn.operators.f;
+        return result;
+    }
+
+    mhs::core::Solution solve(const mhs::core::Model& model, const DtNModel& dtn, const PortMap& ports,
         std::span<const double> initial_state, const mhs::sim::SolveOptions& opts)
     {
         mhs::sim::Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        mhs::sim::SystemAssembler asm_fn
-            = [&](std::span<const double> state, double time) { return assemble(model, port, coupling, state, time); };
-
-        auto result = mhs::sim::solve_system(study, asm_fn, initial_state, opts);
-        result.fvm_count = model.cells.cell_to_grid.size();
-        return result;
+        mhs::sim::SystemAssembler assembler = [&model, &dtn, &ports](std::span<const double> state, double time) {
+            return assemble_coupled(model, dtn, ports, state, time);
+        };
+        return mhs::sim::solve_system(study, assembler, initial_state, opts);
     }
 
 } // namespace mhs::macro
