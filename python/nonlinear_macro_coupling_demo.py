@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
-"""
-Nonlinear detailed FVM block coupled to an SVD-reduced macro port.
+"""Nonlinear detailed FVM block coupled to an SVD-reduced DtN macro.
 
-This experiment deliberately keeps the three responsibilities separate:
-
-1. ``DetailedNonlinearBlock`` is a standalone MetaHotspot model.
-2. ``CondensedMacroBlock`` is another standalone model. Eliminating its
-   internal cells produces a physical port Dirichlet-to-Neumann operator.
-   An SVD of the port compliance retains only a few online port modes.
-3. The C++ modal-port assembler connects detailed boundary cells to the macro
-   physical port. It updates the FVM-side half conductance and projects the
-   interface to retained modal coordinates on every nonlinear linearization.
-
-The full two-block MetaHotspot model is used only as a reference solution.
-The macro reduction never sees or includes the detailed-region DoFs.
+The detailed and macro blocks are compiled independently. C++ resolves the
+geometric port patches, evaluates temperature-dependent half conductances,
+assembles the coupled system, and runs the nonlinear solve. Python only
+condenses the isolated macro DtN operator and constructs its reduced port map.
 """
 
 from __future__ import annotations
@@ -22,20 +13,15 @@ from dataclasses import dataclass
 from time import perf_counter
 
 import numpy as np
-from scipy.sparse import csc_matrix, diags
+from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
 
 import metahotspot
-import metahotspot.macromodel
 from metahotspot import enums
+from metahotspot.macromodel import DtNModel, PortMap, PortPatch
 
 
 INITIAL_TEMPERATURE = 300.0
-DETAIL_K0 = 15.0
-DETAIL_K_SLOPE = 0.015
-MACRO_K = 120.0
-CELL_LENGTH_M = 1.0e-3
-FACE_AREA_M2 = 1.0e-6
 DETAIL_LENGTH_MM = 8.0
 MACRO_LENGTH_MM = 24.0
 DOMAIN_HEIGHT_MM = 24.0
@@ -51,6 +37,8 @@ HEAT_SOURCE = (
 FULL_DETAIL_BLOCK_ID = 0
 FULL_MACRO_BLOCK_ID = 1
 PORT_MODE_COUNTS = (1, 2, 4, 8, 12)
+Y_VERTICES_MM = np.arange(0.0, DOMAIN_HEIGHT_MM + 1.0)
+Z_VERTICES_MM = np.arange(0.0, DOMAIN_THICKNESS_MM + 1.0)
 
 
 def add_materials(model: metahotspot.Model) -> None:
@@ -78,11 +66,7 @@ def set_common_settings(model: metahotspot.Model, x_vertices: np.ndarray) -> Non
         length_unit=enums.LengthUnit.MILLIMETER,
         initial_temperature_K=INITIAL_TEMPERATURE,
     )
-    model.set_mesh(
-        x=x_vertices,
-        y=np.arange(0.0, DOMAIN_HEIGHT_MM + 1.0),
-        z=np.arange(0.0, DOMAIN_THICKNESS_MM + 1.0),
-    )
+    model.set_mesh(x=x_vertices, y=Y_VERTICES_MM, z=Z_VERTICES_MM)
     model.set_default_neumann("0")
 
 
@@ -96,6 +80,20 @@ def x_face(coordinate: float):
             0.0,
             DOMAIN_THICKNESS_MM,
         )
+    ]
+
+
+def x_port_patches(face: enums.Face, coordinate_mm: float) -> list[PortPatch]:
+    """Create one physical port per exposed Y-Z cell face."""
+    scale = 1.0e-3
+    return [
+        PortPatch(
+            face=int(face),
+            coordinate=coordinate_mm * scale,
+            rectangle=(y0 * scale, y1 * scale, z0 * scale, z1 * scale),
+        )
+        for y0, y1 in zip(Y_VERTICES_MM[:-1], Y_VERTICES_MM[1:], strict=True)
+        for z0, z1 in zip(Z_VERTICES_MM[:-1], Z_VERTICES_MM[1:], strict=True)
     ]
 
 
@@ -129,7 +127,7 @@ def build_full_reference_model() -> metahotspot.Model:
 
 
 def build_detailed_nonlinear_model() -> metahotspot.Model:
-    """Detailed block with an adiabatic placeholder at its X+ interface."""
+    """Detailed block with an exposed X+ DtN coupling boundary."""
     model = metahotspot.Model()
     set_common_settings(model, np.arange(0.0, DETAIL_LENGTH_MM + 1.0))
     add_materials(model)
@@ -148,7 +146,7 @@ def build_detailed_nonlinear_model() -> metahotspot.Model:
 
 
 def build_macro_model() -> metahotspot.Model:
-    """Macro block alone; its X- port is left adiabatic before coupling."""
+    """Macro block with an exposed X- DtN port and fixed far boundary."""
     model = metahotspot.Model()
     set_common_settings(
         model,
@@ -169,73 +167,44 @@ def build_macro_model() -> metahotspot.Model:
     return model
 
 
-def boundary_cells(compiled, x_cell: int) -> np.ndarray:
-    """Return active-cell indices on one X-normal cell patch."""
-    grid = compiled.grid_to_cell.reshape(compiled.nx, compiled.ny, compiled.nz)
-    cells = np.asarray(grid[x_cell, :, :]).ravel().astype(np.int64)
-    if np.unique(cells).size != cells.size:
-        raise RuntimeError("boundary patch contains invalid or repeated cells")
-    return cells
-
-
-def take(A: csc_matrix, rows: np.ndarray, cols: np.ndarray) -> csc_matrix:
-    return A[rows, :][:, cols].tocsc()
-
-
 @dataclass
 class CondensedMacroBlock:
-    """Port-only macro operator with face-DOF condensation.
+    """Physical face DtN operator with recoverable macro cell temperatures."""
 
-    Internal body DOFs are eliminated via Guyan reduction, then the port
-    body DOFs are further condensed to face DOFs via half-conductance g.
-    The resulting ``K_face`` and ``f_face`` operate on interface-face DOFs.
-    """
+    face_count: int
+    cell_count: int
+    K_face: csc_matrix
+    f_face: np.ndarray
+    K_cell_face: csc_matrix
+    K_cell_cell_lu: object
+    f_cell: np.ndarray
 
-    port_cells: np.ndarray
-    internal_cells: np.ndarray
-    face_cells: np.ndarray  # same as port_cells (one face per port cell)
-    K_face: csc_matrix  # [face_count x face_count] on face DOFs
-    f_face: np.ndarray  # [face_count] on face DOFs
-    K_ip: csc_matrix  # internal→port-body coupling (for recovery)
-    K_ii_lu: object  # LU of K_ii (for recovery)
-    f_i: np.ndarray  # internal rhs (for recovery)
-    S_lu: object  # LU of (K_port + G) (for face_to_body)
-    G: csc_matrix  # diagonal half-conductance [face_count]
-    f_port_eff: np.ndarray  # port rhs after internal condensation
-
-    def face_to_body(self, T_face: np.ndarray) -> np.ndarray:
-        """Recover port body temperature from face temperature."""
-        return self.S_lu.solve(self.G @ T_face + self.f_port_eff)
-
-    def recover(self, T_face: np.ndarray) -> np.ndarray:
-        """Full field recovery: face → port body → all internal."""
-        T_body = self.face_to_body(T_face)
-        T_internal = self.K_ii_lu.solve(self.f_i - self.K_ip @ T_body)
-        return T_body, T_internal
+    def recover(self, face_temperature: np.ndarray) -> np.ndarray:
+        """Recover every macro FVM cell from physical face temperatures."""
+        return self.K_cell_cell_lu.solve(
+            self.f_cell - self.K_cell_face @ face_temperature
+        )
 
 
 @dataclass
 class ModalMacroBlock:
-    """Few-mode representation of the condensed macro port (face DOFs)."""
+    """Reduced representation of the physical face DtN operator."""
 
     physical: CondensedMacroBlock
-    basis: np.ndarray  # [face_count x mode_count]
-    singular_values: np.ndarray
-    K: csc_matrix  # modal K (mode_count x mode_count)
-    f: np.ndarray  # modal f (mode_count)
+    basis: np.ndarray
+    retained_energy: float
+    K: csc_matrix
+    f: np.ndarray
 
     @property
     def mode_count(self) -> int:
         return self.basis.shape[1]
 
     def port_temperature(self, modal_state: np.ndarray) -> np.ndarray:
-        """Modal coefficients → face temperature."""
         return self.basis @ modal_state
 
     def recover(self, modal_state: np.ndarray) -> np.ndarray:
-        """Full field recovery from modal coefficients."""
-        T_face = self.port_temperature(modal_state)
-        return self.physical.recover(T_face)
+        return self.physical.recover(self.port_temperature(modal_state))
 
 
 @dataclass
@@ -246,67 +215,51 @@ class ReductionResult:
     relative_error: float
     max_error: float
     elapsed_seconds: float
-    initial_interface_conductance: float
-    final_interface_conductance: float
+    port_temperature_min: float
+    port_temperature_max: float
 
 
-def condense_macro(compiled) -> CondensedMacroBlock:
-    """Condense a standalone macro from ``body`` to ``face`` DOFs.
+def condense_macro(compiled, ports: PortMap) -> CondensedMacroBlock:
+    """Condense the C++-assembled isolated macro DtN system to its face ports."""
+    operators = ports.assemble()
+    face_count = ports.port_count
+    expected = face_count + compiled.cell_count
+    if operators.K.shape != (expected, expected):
+        raise RuntimeError("unexpected C++ DtN operator dimension")
 
-    1. Standard Guyan: internal body → port body.
-    2. Attach face DOFs via half-conductance g = k*A/(dx/2).
-    3. Schur complement: port body → face DOFs.
-    """
-    port = boundary_cells(compiled, 0)
-    all_cells = np.arange(compiled.cell_count, dtype=np.int64)
-    internal = np.setdiff1d(all_cells, port)
+    K = operators.K.tocsc()
+    K_face_face = K[:face_count, :face_count].tocsc()
+    K_face_cell = K[:face_count, face_count:].tocsc()
+    K_cell_face = K[face_count:, :face_count].tocsc()
+    K_cell_cell = K[face_count:, face_count:].tocsc()
+    f_face = np.asarray(operators.f[:face_count], dtype=np.float64)
+    f_cell = np.asarray(operators.f[face_count:], dtype=np.float64)
 
-    operators = compiled.assemble()
-    K_pp = take(operators.K, port, port)
-    K_pi = take(operators.K, port, internal)
-    K_ip = take(operators.K, internal, port)
-    K_ii = take(operators.K, internal, internal)
-    K_ii_lu = splu(K_ii)
-
-    # Guyan: body → port body
-    inverse_Kip = np.column_stack(
-        [
-            K_ii_lu.solve(K_ip[:, column].toarray().ravel())
-            for column in range(K_ip.shape[1])
-        ]
+    cell_lu = splu(K_cell_cell)
+    cell_response = cell_lu.solve(K_cell_face.toarray())
+    condensed_K = np.asarray(
+        K_face_face.toarray() - K_face_cell @ cell_response,
+        dtype=np.float64,
     )
-    K_port = csc_matrix(K_pp - K_pi @ inverse_Kip)  # [port x port] body DOF
-    f_i = operators.f[internal]
-    f_port_eff = operators.f[port] - K_pi @ K_ii_lu.solve(f_i)
+    condensed_K = 0.5 * (condensed_K + condensed_K.T)
+    condensed_f = np.asarray(
+        f_face - K_face_cell @ cell_lu.solve(f_cell),
+        dtype=np.float64,
+    ).ravel()
 
-    # Attach face DOFs via half-conductance g = k*A/(dx/2)
-    # The macro port cells are at the X- face boundary.
-    g_values = compiled.half_conductance(
-        port, enums.Face.XM, temperature=INITIAL_TEMPERATURE
-    )
-    G = diags(g_values, 0, format="csc")  # [port x port]
-
-    # Schur: port body + face → face DOFs
-    S = K_port.tocsc() + G
-    S_lu = splu(S)
-    n_port = len(port)
-    eye = np.eye(n_port)
-    invS = S_lu.solve(eye)
-    K_face = csc_matrix(G - G @ invS @ G)
-    f_face = np.asarray(G @ S_lu.solve(f_port_eff)).ravel()
+    eigenvalues = np.linalg.eigvalsh(condensed_K)
+    scale = max(1.0, float(np.max(np.abs(eigenvalues))))
+    if float(eigenvalues[0]) <= 1.0e-12 * scale:
+        raise RuntimeError("condensed macro DtN operator is not positive definite")
 
     return CondensedMacroBlock(
-        port_cells=port,
-        internal_cells=internal,
-        face_cells=port,
-        K_face=K_face,
-        f_face=f_face,
-        K_ip=K_ip,
-        K_ii_lu=K_ii_lu,
-        f_i=f_i,
-        S_lu=S_lu,
-        G=G,
-        f_port_eff=np.asarray(f_port_eff).ravel(),
+        face_count=face_count,
+        cell_count=compiled.cell_count,
+        K_face=csc_matrix(condensed_K),
+        f_face=condensed_f,
+        K_cell_face=K_cell_face,
+        K_cell_cell_lu=cell_lu,
+        f_cell=f_cell,
     )
 
 
@@ -314,38 +267,34 @@ def reduce_port_modes(
     macro: CondensedMacroBlock,
     mode_count: int,
 ) -> ModalMacroBlock:
-    """Retain dominant SVD modes of the face-DOF port compliance."""
-    face_count = macro.face_cells.size
-    if mode_count < 1 or mode_count > face_count:
-        raise ValueError("mode_count must be between 1 and the face port count")
+    """Build a stable port basis with the uniform-temperature mode retained."""
+    if mode_count < 1 or mode_count > macro.face_count:
+        raise ValueError("mode_count must be between 1 and the physical port count")
 
-    port_lu = splu(macro.K_face.tocsc())
-    compliance = port_lu.solve(np.eye(face_count))
-    basis, singular_values, _ = np.linalg.svd(compliance, full_matrices=False)
-    basis = basis[:, :mode_count]
+    compliance = splu(macro.K_face).solve(np.eye(macro.face_count))
+    compliance = 0.5 * (compliance + compliance.T)
+    left_vectors, _, _ = np.linalg.svd(compliance, full_matrices=False)
 
-    K_modal = csc_matrix(basis.T @ macro.K_face @ basis)
-    f_modal = np.asarray(basis.T @ macro.f_face).ravel()
+    uniform = np.ones((macro.face_count, 1), dtype=np.float64)
+    uniform /= np.linalg.norm(uniform)
+    candidates = np.hstack((uniform, left_vectors))
+    basis, _ = np.linalg.qr(candidates, mode="reduced")
+    basis = np.ascontiguousarray(basis[:, :mode_count], dtype=np.float64)
+
+    projected = basis @ (basis.T @ compliance)
+    denominator = float(np.linalg.norm(compliance, ord="fro") ** 2)
+    retained_energy = float(np.linalg.norm(projected, ord="fro") ** 2 / denominator)
+
+    modal_K = np.asarray(basis.T @ (macro.K_face @ basis), dtype=np.float64)
+    modal_K = 0.5 * (modal_K + modal_K.T)
+    modal_f = np.asarray(basis.T @ macro.f_face, dtype=np.float64).ravel()
     return ModalMacroBlock(
         physical=macro,
         basis=basis,
-        singular_values=singular_values,
-        K=K_modal,
-        f=f_modal,
+        retained_energy=retained_energy,
+        K=csc_matrix(modal_K),
+        f=modal_f,
     )
-
-
-def total_interface_conductance(
-    detailed_temperature: np.ndarray,
-    detailed_cells: np.ndarray,
-) -> float:
-    """FVM-side half-conductance at the interface (no series)."""
-    k_detail = DETAIL_K0 * (
-        1.0
-        + DETAIL_K_SLOPE * (detailed_temperature[detailed_cells] - INITIAL_TEMPERATURE)
-    )
-    conductance = k_detail * FACE_AREA_M2 / (0.5 * CELL_LENGTH_M)
-    return float(conductance.sum())
 
 
 def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
@@ -366,7 +315,7 @@ def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
 
 def solve_reduced_case(
     detailed,
-    detailed_interface: np.ndarray,
+    detailed_ports: PortMap,
     physical_macro: CondensedMacroBlock,
     reference: np.ndarray,
     full_detail_cells: np.ndarray,
@@ -376,63 +325,48 @@ def solve_reduced_case(
     started = perf_counter()
     macro = reduce_port_modes(physical_macro, mode_count=mode_count)
     initial_modes = macro.basis.T @ np.full(
-        physical_macro.port_cells.size,
+        physical_macro.face_count,
         INITIAL_TEMPERATURE,
     )
-    initial_state = np.concatenate([detailed.default_state(), initial_modes])
-    macro_operators = metahotspot.Operators(
+    initial_state = np.concatenate((detailed.default_state(), initial_modes))
+    operators = metahotspot.Operators(
         K=macro.K,
         C=csc_matrix((macro.mode_count, macro.mode_count)),
         f=macro.f,
     )
+    dtn = DtNModel(operators=operators, port_basis=macro.basis)
+
     options = metahotspot.SolveOptions.default()
     options.nonlinear_relative_tolerance = 1.0e-10
-    port_model = metahotspot.macromodel.PortModel(
-        operators=macro_operators,
-        basis=macro.basis,
-        physical_port_count=physical_macro.port_cells.size,
-    )
-    coupling = metahotspot.macromodel.PortCoupling(
-        model_cells=detailed_interface,
-        model_face=enums.Face.XP,
-    )
     with metahotspot.macromodel.solve(
         detailed,
-        port_model=port_model,
-        coupling=coupling,
+        dtn=dtn,
+        ports=detailed_ports,
         state=initial_state,
         opts=options,
     ) as solution:
         reduced = solution.state.copy()
 
     detail_count = full_detail_cells.size
-    T_body, T_internal = macro.recover(reduced[detail_count:])
-    macro_temperature = np.empty(full_macro_cells.size)
-    macro_temperature[physical_macro.face_cells] = T_body
-    macro_temperature[physical_macro.internal_cells] = T_internal
+    modal_state = reduced[detail_count:]
+    macro_temperature = macro.recover(modal_state)
+    if macro_temperature.size != full_macro_cells.size:
+        raise RuntimeError("recovered macro size differs from the reference mapping")
 
     recovered = np.empty_like(reference)
     recovered[full_detail_cells] = reduced[:detail_count]
     recovered[full_macro_cells] = macro_temperature
     difference = recovered - reference
-    singular_energy = macro.singular_values**2
+    port_temperature = macro.port_temperature(modal_state)
     return ReductionResult(
         mode_count=mode_count,
         online_dofs=detail_count + mode_count,
-        retained_energy=float(
-            np.sum(singular_energy[:mode_count]) / np.sum(singular_energy)
-        ),
+        retained_energy=macro.retained_energy,
         relative_error=float(np.linalg.norm(difference) / np.linalg.norm(reference)),
         max_error=float(np.max(np.abs(difference))),
         elapsed_seconds=perf_counter() - started,
-        initial_interface_conductance=total_interface_conductance(
-            initial_state[:detail_count],
-            detailed_interface,
-        ),
-        final_interface_conductance=total_interface_conductance(
-            reduced[:detail_count],
-            detailed_interface,
-        ),
+        port_temperature_min=float(np.min(port_temperature)),
+        port_temperature_max=float(np.max(port_temperature)),
     )
 
 
@@ -446,63 +380,72 @@ def main() -> int:
 
     with build_detailed_nonlinear_model() as detailed_model:
         with detailed_model.compile() as detailed:
-            detailed_interface = boundary_cells(
+            with PortMap(
                 detailed,
-                detailed.nx - 1,
-            )
-
-            with build_macro_model() as macro_model:
-                with macro_model.compile() as macro_compiled:
-                    physical_macro = condense_macro(macro_compiled)
-            results = [
-                solve_reduced_case(
-                    detailed,
-                    detailed_interface,
-                    physical_macro,
-                    reference,
-                    full_detail_cells,
-                    full_macro_cells,
-                    mode_count,
-                )
-                for mode_count in PORT_MODE_COUNTS
-            ]
+                x_port_patches(enums.Face.XP, DETAIL_LENGTH_MM),
+            ) as detailed_ports:
+                with build_macro_model() as macro_model:
+                    with macro_model.compile() as macro_compiled:
+                        with PortMap(
+                            macro_compiled,
+                            x_port_patches(enums.Face.XM, DETAIL_LENGTH_MM),
+                        ) as macro_ports:
+                            physical_macro = condense_macro(
+                                macro_compiled,
+                                macro_ports,
+                            )
+                if physical_macro.cell_count != full_macro_cells.size:
+                    raise RuntimeError(
+                        "standalone macro cell ordering differs from the reference"
+                    )
+                results = [
+                    solve_reduced_case(
+                        detailed,
+                        detailed_ports,
+                        physical_macro,
+                        reference,
+                        full_detail_cells,
+                        full_macro_cells,
+                        mode_count,
+                    )
+                    for mode_count in PORT_MODE_COUNTS
+                ]
 
     detail_count = full_detail_cells.size
-    print("=" * 86)
-    print("Standalone nonlinear FVM + SVD port-modal macro experiment")
-    print("=" * 86)
+    print("=" * 90)
+    print("Standalone nonlinear FVM + SVD-reduced C++ DtN macro experiment")
+    print("=" * 90)
     print(
         f"Full problem: {reference.size} DoFs; detailed={detail_count}; "
         f"macro={full_macro_cells.size}"
     )
     print(
-        f"Physical port={physical_macro.port_cells.size}; "
-        f"macro internal={physical_macro.internal_cells.size}; "
+        f"Physical ports={physical_macro.face_count}; "
+        f"macro cells={physical_macro.cell_count}; "
         f"monolithic solve={reference_seconds:.3f}s"
     )
-    print(
-        "Total interface conductance: "
-        f"{results[-1].initial_interface_conductance:.6e} -> "
-        f"{results[-1].final_interface_conductance:.6e} W/K"
-    )
     print()
-    print(" modes | online/full | SVD energy | relative L2 | max error [K] | solve [s]")
-    print("-" * 86)
+    print(
+        " modes | online/full | captured compliance | relative L2 | "
+        "max error [K] | port range [K] | solve [s]"
+    )
+    print("-" * 100)
     for result in results:
         print(
             f"{result.mode_count:6d} | "
             f"{result.online_dofs:4d}/{reference.size:<4d} | "
-            f"{result.retained_energy:10.5%} | "
+            f"{result.retained_energy:18.5%} | "
             f"{result.relative_error:11.3e} | "
             f"{result.max_error:13.3e} | "
+            f"{result.port_temperature_min:7.2f}..{result.port_temperature_max:7.2f} | "
             f"{result.elapsed_seconds:8.3f}"
         )
     print()
     print("Macro contract:")
-    print("  state : retained modal coefficients q")
-    print("  port  : physical temperature T_p = Phi @ q")
-    print("  output: projected heat flow Phi.T @ (K_hat_p @ T_p - f_hat_p)")
-    print("  solve : nonlinear iteration and FVM/interface reassembly run in C++")
+    print("  offline: C++ assembles [physical face ports, macro FVM cells]")
+    print("  reduce : Python condenses macro cells and projects the DtN map")
+    print("  online : physical port temperature T_p = Phi @ q")
+    print("  solve  : C++ updates nonlinear conductance, assembly, and scheduling")
 
     best = results[-1]
     if best.relative_error > 1.0e-3 or best.max_error > 1.0:
