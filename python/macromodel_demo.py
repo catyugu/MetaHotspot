@@ -1,251 +1,129 @@
 #!/usr/bin/env python3
+"""Entry point for the transient BCI-ROM benchmark.
+
+The implementation is kept in ``_macromodel_demo_impl``.  This entry module
+corrects the authoring-layer insertion order to match MetaHotspot's top-first
+layer compiler contract, then delegates to the research driver.
 """
-Macro-model demo: Guyan static condensation through the metahotspot Python package.
 
-Workflow:
-  1. Load XML → compile → assemble K, f
-  2. Full solve → reference (using compiled.solve())
-  3. Split the reference into detailed block, macro block, and interface
-  4. Condense the standalone macro's internal(i) DoFs to its port(p)
-  5. Couple the detailed block to that port operator, solve, recover internals
-  6. Verify ||T_rec - T_ref||
-"""
-import sys
-import time as _time
-from pathlib import Path
+from __future__ import annotations
 
-import numpy as np
-from scipy.sparse import bmat, csc_matrix, diags
-from scipy.sparse.linalg import splu
+import _macromodel_demo_impl as impl
 
-import metahotspot
+metahotspot = impl.metahotspot
+GeometryOp = impl.GeometryOp
+LengthUnit = impl.LengthUnit
+Study = impl.Study
+_axis_vertices = impl._axis_vertices
+_layered_z_vertices = impl._layered_z_vertices
+_add_materials = impl._add_materials
+_add_full_rect = impl._add_full_rect
+_chiplet_heat_source = impl._chiplet_heat_source
 
 
-def partition_regions(K, nc, layer_ids, block_ids, macro_layer, macro_block):
-    """Partition the reference mesh into detailed, macro-port, and macro-internal sets.
-
-    Port = macro cells adjacent to at least one detailed cell.
-    Internal = macro cells not adjacent to a detailed cell.
-
-    These indices are used only to split the monolithic reference. The
-    resulting macro operator has local ``[p, i]`` indices and no detailed DoF.
-    """
-    is_macro = (layer_ids == macro_layer) & (block_ids == macro_block)
-    macro_set = set(np.where(is_macro)[0])
-
-    port_set = set()
-    for i in macro_set:
-        rs, re = K.indptr[i], K.indptr[i + 1]
-        for j in K.indices[rs:re]:
-            if j not in macro_set:
-                port_set.add(i)
-                break
-
-    is_port = np.zeros(nc, dtype=bool)
-    for p in port_set:
-        is_port[p] = True
-
-    detailed_idx = np.sort(np.where(~is_macro)[0])
-    p_idx = np.sort(np.where(is_port)[0])
-    i_idx = np.sort(np.where(is_macro & ~is_port)[0])
-    return detailed_idx, p_idx, i_idx
-
-
-def split_reference_operators(K, f, detailed_idx, p_idx, i_idx):
-    """Split a monolithic reference into independently owned operators.
-
-    This is reference-fixture preparation, not macro condensation. It removes
-    the four conservative interface contributions from the two diagonal
-    subdomains and returns a standalone macro matrix ordered as ``[p, i]``.
-    """
-    K_dp = K[detailed_idx, :][:, p_idx].tocsc()
-    K_pd = K[p_idx, :][:, detailed_idx].tocsc()
-    D_d = diags(-np.asarray(K_dp.sum(axis=1)).ravel(), format="csc")
-    D_p = diags(-np.asarray(K_pd.sum(axis=1)).ravel(), format="csc")
-
-    K_detailed = K[detailed_idx, :][:, detailed_idx].tocsc() - D_d
-    K_macro = bmat(
-        [
-            [K[p_idx, :][:, p_idx].tocsc() - D_p, K[p_idx, :][:, i_idx]],
-            [K[i_idx, :][:, p_idx], K[i_idx, :][:, i_idx]],
-        ],
-        format="csc",
-    )
-    f_macro = np.concatenate([f[p_idx], f[i_idx]])
-    interface = (D_d, K_dp, K_pd, D_p)
-    return K_detailed, f[detailed_idx], K_macro, f_macro, interface
-
-
-def condense_macro(K_macro, f_macro, port_count):
-    """Condense a standalone ``[p, i]`` macro to its physical port ``p``."""
-    p = np.arange(port_count)
-    i = np.arange(port_count, K_macro.shape[0])
-    K_pp = K_macro[p, :][:, p]
-    K_pi = K_macro[p, :][:, i]
-    K_ip = K_macro[i, :][:, p]
-    K_ii = K_macro[i, :][:, i].tocsc()
-    f_i = f_macro[i]
-
-    print(f"    factoring K_ii ({len(i)}x{len(i)})...", end=" ", flush=True)
-    K_ii_lu = splu(K_ii)
-    print("done", flush=True)
-
-    K_ip_csc = K_ip.tocsc()
-    K_pi_csr = K_pi.tocsr()
-    inverse_Kip = np.column_stack(
-        [
-            K_ii_lu.solve(K_ip_csc[:, column].toarray().ravel())
-            for column in range(K_ip_csc.shape[1])
-        ]
-    )
-    K_port = csc_matrix(K_pp - K_pi_csr @ inverse_Kip)
-    f_port = np.asarray(f_macro[p] - K_pi_csr @ K_ii_lu.solve(f_i)).ravel()
-    return K_port, f_port, K_ii_lu, K_ip_csc, f_i
-
-
-def build_coupled_reduced_system(
-    K_detailed,
-    f_detailed,
-    K_port,
-    f_port,
-    interface,
+def build_package_model(
+    cfg: PackageConfig,
+    *,
+    include_macro: bool,
+    study: Study = Study.STEADY,
+    duration_s: float = 0.0,
+    output_interval_s: float = 0.0,
 ):
-    """Connect the detailed region to a port-only condensed macro."""
-    D_d, K_dp, K_pd, D_p = interface
-    K_reduced = bmat(
-        [
-            [K_detailed + D_d, K_dp],
-            [K_pd, K_port + D_p],
-        ],
-        format="csc",
-    )
-    f_reduced = np.concatenate([f_detailed, f_port])
-    return K_reduced, f_reduced
-
-
-def main():
-    case_path = (
-        Path(__file__).resolve().parent.parent
-        / "cases/simple_steady_cases/simple_steady_case2.xml"
-    )
-    if not case_path.exists():
-        print(f"ERROR: case not found: {case_path}", file=sys.stderr)
-        return 1
-
-    MACRO_LAYER = 0
-    MACRO_BLOCK = 0
-
-    # ── Step 1: Load → compile → assemble ──────────────────────
-    print("=" * 60)
-    print("Step 1: Load XML → compile → assemble K, f")
-    print("=" * 60)
-
+    """Build a heterogeneous package using only the public scripting API."""
     model = metahotspot.Model()
-    model.read_xml(str(case_path))
-    compiled = model.compile()
-    nc = compiled.cell_count
-    layer_ids = compiled.layer_ids.copy()
-    block_ids = compiled.block_ids.copy()
-
-    K, C, f = compiled.assemble()
-    print(f"  Active cells: {nc},  K: {K.shape[0]}x{K.shape[1]}, {K.nnz} NNZ")
-
-    # ── Step 2: Full solve → reference ─────────────────────────
-    print("\n" + "=" * 60)
-    print("Step 2: Full solve → reference (compiled.solve())")
-    print("=" * 60)
-
-    solution = compiled.solve()
-    T_ref = solution.temperature.copy()
-    print(f"  T in [{T_ref.min():.4f}, {T_ref.max():.4f}] K")
-
-    # ── Step 3: Partition ──────────────────────────────────────
-    print("\n" + "=" * 60)
-    print(f"Step 3: Partition  layer={MACRO_LAYER}, block={MACRO_BLOCK}")
-    print("=" * 60)
-
-    detailed_idx, p_idx, i_idx = partition_regions(
-        K, nc, layer_ids, block_ids, MACRO_LAYER, MACRO_BLOCK
+    model.set_settings(
+        study=study,
+        length_unit=LengthUnit.MILLIMETER,
+        initial_temperature_K=cfg.ambient_K,
+        duration=duration_s,
+        output_interval=output_interval_s,
     )
-    nd, np_, ni = len(detailed_idx), len(p_idx), len(i_idx)
-    print(f"  Detailed: {nd} DOFs,  Ports: {np_} DOFs,  Internal: {ni} DOFs")
-
-    if ni == 0:
-        print("  No internal DOFs, nothing to condense.")
-        return 0
-
-    # ── Step 4: Guyan static condensation ──────────────────────
-    print("\n" + "=" * 60)
-    print("Step 4: Port-only macro condensation")
-    print("=" * 60)
-
-    K_detailed, f_detailed, K_macro, f_macro, interface = split_reference_operators(
-        K, f, detailed_idx, p_idx, i_idx
+    model.set_mesh(
+        _axis_vertices(cfg.width_mm, cfg.nx),
+        _axis_vertices(cfg.height_mm, cfg.ny),
+        _layered_z_vertices(cfg, include_macro),
     )
-    K_port, f_port, K_ii_lu, K_ip, f_i = condense_macro(K_macro, f_macro, np_)
-    K_reduced, f_reduced = build_coupled_reduced_system(
-        K_detailed, f_detailed, K_port, f_port, interface
+    _add_materials(model)
+
+    # IMPORTANT: the compiler stacks authoring layers in reverse insertion
+    # order: the first added layer occupies the highest z interval.  Register
+    # the physical package from top to bottom so the mesh remains ordered from
+    # substrate (z=0) to cold plate (z=max).
+    if include_macro:
+        cold_plate_layer = model.add_layer(f"{cfg.cold_plate_mm:.17g}")
+        cold_plate = model.add_block(cold_plate_layer, "aluminum")
+        _add_full_rect(model, cold_plate, cfg)
+
+        spreader_layer = model.add_layer(f"{cfg.spreader_mm:.17g}")
+        spreader = model.add_block(spreader_layer, "copper")
+        _add_full_rect(model, spreader, cfg)
+
+        tim_layer = model.add_layer(f"{cfg.tim_mm:.17g}")
+        tim = model.add_block(tim_layer, "tim")
+        _add_full_rect(model, tim, cfg)
+
+    # Mold background with four active silicon chiplets.  This is the top
+    # layer of the independently compiled detailed component.
+    die_layer = model.add_layer(f"{cfg.die_mm:.17g}")
+    mold = model.add_block(die_layer, "mold")
+    _add_full_rect(model, mold, cfg)
+    q_chiplet = _chiplet_heat_source(cfg)
+    margin_x = 5.0
+    margin_y = 5.0
+    positions = (
+        (margin_x, margin_y),
+        (cfg.width_mm - margin_x - cfg.chiplet_width_mm, margin_y),
+        (margin_x, cfg.height_mm - margin_y - cfg.chiplet_height_mm),
+        (
+            cfg.width_mm - margin_x - cfg.chiplet_width_mm,
+            cfg.height_mm - margin_y - cfg.chiplet_height_mm,
+        ),
     )
-    print(
-        f"    factoring coupled detailed+port system "
-        f"({K_reduced.shape[0]}x{K_reduced.shape[1]})...",
-        end=" ",
-        flush=True,
-    )
-    K_reduced_lu = splu(K_reduced)
-    print("done", flush=True)
+    for x, y in positions:
+        chiplet = model.add_block(die_layer, "silicon", heat_source=q_chiplet)
+        model.add_rect(
+            chiplet,
+            GeometryOp.ADD,
+            f"{x:.17g}",
+            f"{y:.17g}",
+            f"{cfg.chiplet_width_mm:.17g}",
+            f"{cfg.chiplet_height_mm:.17g}",
+        )
 
-    # ── Step 5: Solve reduced system + recover ─────────────────
-    print("\n" + "=" * 60)
-    print("Step 5: Couple detailed region to macro port → solve + recover")
-    print("=" * 60)
+    # Underfill with an 8x8 copper bump array.  Later blocks within the same
+    # layer override the underfill background in cells covered by a bump.
+    bump_layer = model.add_layer(f"{cfg.bump_mm:.17g}")
+    underfill = model.add_block(bump_layer, "underfill")
+    _add_full_rect(model, underfill, cfg)
+    pitch_x = cfg.width_mm / cfg.bump_columns
+    pitch_y = cfg.height_mm / cfg.bump_rows
+    for iy in range(cfg.bump_rows):
+        for ix in range(cfg.bump_columns):
+            x = (ix + 0.5) * pitch_x - 0.5 * cfg.bump_width_mm
+            y = (iy + 0.5) * pitch_y - 0.5 * cfg.bump_width_mm
+            bump = model.add_block(bump_layer, "copper")
+            model.add_rect(
+                bump,
+                GeometryOp.ADD,
+                f"{x:.17g}",
+                f"{y:.17g}",
+                f"{cfg.bump_width_mm:.17g}",
+                f"{cfg.bump_width_mm:.17g}",
+            )
 
-    sol_ep = K_reduced_lu.solve(f_reduced)
-    u_d = sol_ep[:nd]
-    u_p = sol_ep[nd:]
-    u_i = K_ii_lu.solve(f_i - K_ip @ u_p)
+    # Organic substrate is inserted last and therefore occupies the lowest z.
+    substrate_layer = model.add_layer(f"{cfg.substrate_mm:.17g}")
+    substrate = model.add_block(substrate_layer, "organic")
+    _add_full_rect(model, substrate, cfg)
 
-    T_rec = np.zeros(nc, dtype=np.float64)
-    T_rec[detailed_idx] = u_d
-    T_rec[p_idx] = u_p
-    T_rec[i_idx] = u_i
+    # Adiabatic isolation is essential: external boundary operators are added
+    # after extraction and may be changed without recomputing the basis.
+    model.set_default_neumann("0")
+    return model
 
-    diff = T_rec - T_ref
-    rel_err = np.linalg.norm(diff) / np.linalg.norm(T_ref)
-    print(f"  ||T_rec - T_ref|| / ||T_ref|| = {rel_err:.2e}")
-    print(f"  max|diff| = {np.max(np.abs(diff)):.6e}")
 
-    # ── Step 6: RHS sweep benchmark ───────────────────────────
-    print("\n" + "=" * 60)
-    print("Step 6: RHS sweep benchmark (50 sweeps)")
-    print("=" * 60)
-    N_SWEEP = 50
-
-    t0 = _time.perf_counter()
-    K_full_lu = splu(K.tocsc())
-    for k in range(N_SWEEP):
-        f_k = f.copy()
-        f_k[detailed_idx] *= 1.0 + 0.1 * np.sin(k)
-        _ = K_full_lu.solve(f_k)
-    t_full_sw = _time.perf_counter() - t0
-
-    t0 = _time.perf_counter()
-    for k in range(N_SWEEP):
-        f_reduced_k = f_reduced.copy()
-        f_reduced_k[:nd] *= 1.0 + 0.1 * np.sin(k)
-        sol_k = K_reduced_lu.solve(f_reduced_k)
-        _ = K_ii_lu.solve(f_i - K_ip @ sol_k[nd:])
-    t_guyan_sw = _time.perf_counter() - t0
-
-    print(
-        f"  {'Method':<12s}  {'Sweep(s)':>10s}",
-    )
-    print("  " + "-" * 24)
-    print(f"  {'Full':<12s}  {t_full_sw:>10.3f}")
-    print(f"  {'Port macro':<12s}  {t_guyan_sw:>10.3f}")
-
-    return 0
+impl.build_package_model = build_package_model
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(impl.main())
