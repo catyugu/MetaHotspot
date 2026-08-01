@@ -5,7 +5,6 @@
 #include "common/solver.hpp"
 #include "solver/assembler.hpp"
 
-#include <Eigen/Core>
 #include <span>
 #include <vector>
 
@@ -34,14 +33,11 @@ namespace mhs::macro {
         std::vector<PortFace> faces;
     };
 
-    /// Reduced Dirichlet-to-Neumann model expressed in retained coordinates.
+    /// Reduced Dirichlet-to-Neumann model expressed in exact-port coordinates.
+    /// The leading PortMap::port_count states are physical port temperatures;
+    /// optional reduced internal coordinates follow them.
     struct DtNModel {
         mhs::sim::Operators operators;
-        /// [physical ports x retained states]. When empty, the physical port
-        /// temperatures are the leading physical_port_count retained states,
-        /// i.e. the implicit basis is [I, 0].
-        Eigen::MatrixXd port_basis;
-        std::size_t physical_port_count = 0;
     };
 
     /// Resolve geometric patches once against a compiled model.
@@ -52,7 +48,7 @@ namespace mhs::macro {
     mhs::sim::Operators assemble_dtn(
         const mhs::core::Model& model, const PortMap& ports, std::span<const double> cell_state, double time);
 
-    /// Assemble C*dx/dt + K*x = f for [FVM temperatures, retained DtN states].
+    /// Assemble C*dx/dt + K*x = f for [FVM temperatures, exact ports, reduced internals].
     mhs::sim::Operators assemble_coupled(const mhs::core::Model& model, const DtNModel& dtn, const PortMap& ports,
         std::span<const double> state, double time);
 
