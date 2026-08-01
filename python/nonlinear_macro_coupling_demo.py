@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Nonlinear detailed FVM block coupled to an exact-port condensed DtN macro.
-
-This example intentionally keeps every physical interface face as a DtN state.
-The macro cells are statically condensed, while C++ resolves the geometric
-patches, evaluates temperature-dependent half conductances, assembles the sparse
-coupled system, and runs the nonlinear solve.
-"""
+"""Couple a nonlinear detailed FVM block to a condensed exact-port DtN macro."""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ from scipy.sparse.linalg import splu
 
 import metahotspot
 from metahotspot import enums
-from metahotspot.macromodel import DtNModel, PortMap, PortPatch
+from metahotspot.macromodel import PortMap, PortPatch
 
 
 INITIAL_TEMPERATURE = 300.0
@@ -50,12 +44,7 @@ def add_materials(model: metahotspot.Model) -> None:
         c="0",
     )
     model.add_material(
-        "macro",
-        kx="120",
-        ky="120",
-        kz="120",
-        rho="0",
-        c="0",
+        "macro", kx="120", ky="120", kz="120", rho="0", c="0"
     )
 
 
@@ -83,16 +72,39 @@ def x_face(coordinate: float):
 
 
 def x_port_patches(face: enums.Face, coordinate_mm: float) -> list[PortPatch]:
-    scale = 1.0e-3
+    scale = 1e-3
     return [
         PortPatch(
-            face=int(face),
-            coordinate=coordinate_mm * scale,
-            rectangle=(y0 * scale, y1 * scale, z0 * scale, z1 * scale),
+            int(face),
+            coordinate_mm * scale,
+            (y0 * scale, y1 * scale, z0 * scale, z1 * scale),
         )
         for y0, y1 in zip(Y_VERTICES_MM[:-1], Y_VERTICES_MM[1:], strict=True)
         for z0, z1 in zip(Z_VERTICES_MM[:-1], Z_VERTICES_MM[1:], strict=True)
     ]
+
+
+def add_domain_block(
+    model: metahotspot.Model,
+    material: str,
+    x: float,
+    width: float,
+    heat_source: str | None = None,
+) -> int:
+    layer = model.add_layer(thickness=str(DOMAIN_THICKNESS_MM))
+    block = (
+        model.add_block(layer, material, heat_source=heat_source)
+        if heat_source is not None
+        else model.add_block(layer, material)
+    )
+    model.add_rect(
+        block,
+        x=str(x),
+        y="0",
+        width=str(width),
+        height=str(DOMAIN_HEIGHT_MM),
+    )
+    return block
 
 
 def build_full_reference_model() -> metahotspot.Model:
@@ -127,32 +139,18 @@ def build_detailed_nonlinear_model() -> metahotspot.Model:
     model = metahotspot.Model()
     set_common_settings(model, np.arange(0.0, DETAIL_LENGTH_MM + 1.0))
     add_materials(model)
-    layer = model.add_layer(thickness=str(DOMAIN_THICKNESS_MM))
-    detail = model.add_block(layer, "nonlinear", heat_source=HEAT_SOURCE)
-    model.add_rect(
-        detail,
-        x="0",
-        y="0",
-        width=str(DETAIL_LENGTH_MM),
-        height=str(DOMAIN_HEIGHT_MM),
-    )
+    add_domain_block(model, "nonlinear", 0.0, DETAIL_LENGTH_MM, HEAT_SOURCE)
     model.add_dirichlet("300", x_face(0.0))
     return model
 
 
 def build_macro_model() -> metahotspot.Model:
     model = metahotspot.Model()
-    set_common_settings(model, np.arange(DETAIL_LENGTH_MM, FULL_LENGTH_MM + 1.0))
-    add_materials(model)
-    layer = model.add_layer(thickness=str(DOMAIN_THICKNESS_MM))
-    macro = model.add_block(layer, "macro")
-    model.add_rect(
-        macro,
-        x=str(DETAIL_LENGTH_MM),
-        y="0",
-        width=str(MACRO_LENGTH_MM),
-        height=str(DOMAIN_HEIGHT_MM),
+    set_common_settings(
+        model, np.arange(DETAIL_LENGTH_MM, FULL_LENGTH_MM + 1.0)
     )
+    add_materials(model)
+    add_domain_block(model, "macro", DETAIL_LENGTH_MM, MACRO_LENGTH_MM)
     model.add_dirichlet("300", x_face(FULL_LENGTH_MM))
     return model
 
@@ -160,7 +158,6 @@ def build_macro_model() -> metahotspot.Model:
 @dataclass
 class CondensedMacroBlock:
     face_count: int
-    cell_count: int
     K_face: csc_matrix
     f_face: np.ndarray
     K_cell_face: csc_matrix
@@ -194,29 +191,23 @@ def condense_macro(compiled, ports: PortMap) -> CondensedMacroBlock:
     K_face_face = K[:face_count, :face_count].tocsc()
     K_face_cell = K[:face_count, face_count:].tocsc()
     K_cell_face = K[face_count:, :face_count].tocsc()
-    K_cell_cell = K[face_count:, face_count:].tocsc()
+    K_cell_cell_lu = splu(K[face_count:, face_count:].tocsc())
     f_face = np.asarray(operators.f[:face_count], dtype=np.float64)
     f_cell = np.asarray(operators.f[face_count:], dtype=np.float64)
 
-    cell_lu = splu(K_cell_cell)
-    cell_response = cell_lu.solve(K_cell_face.toarray())
-    condensed_K = np.asarray(
-        K_face_face.toarray() - K_face_cell @ cell_response,
-        dtype=np.float64,
-    )
+    response = K_cell_cell_lu.solve(K_cell_face.toarray())
+    condensed_K = np.asarray(K_face_face.toarray() - K_face_cell @ response)
     condensed_K = 0.5 * (condensed_K + condensed_K.T)
     condensed_f = np.asarray(
-        f_face - K_face_cell @ cell_lu.solve(f_cell),
-        dtype=np.float64,
+        f_face - K_face_cell @ K_cell_cell_lu.solve(f_cell), dtype=np.float64
     ).ravel()
     return CondensedMacroBlock(
-        face_count=face_count,
-        cell_count=compiled.cell_count,
-        K_face=csc_matrix(condensed_K),
-        f_face=condensed_f,
-        K_cell_face=K_cell_face,
-        K_cell_cell_lu=cell_lu,
-        f_cell=f_cell,
+        face_count,
+        csc_matrix(condensed_K),
+        condensed_f,
+        K_cell_face,
+        K_cell_cell_lu,
+        f_cell,
     )
 
 
@@ -225,14 +216,13 @@ def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     with build_full_reference_model() as model:
         with model.compile() as compiled:
             options = metahotspot.SolveOptions.default()
-            options.nonlinear_relative_tolerance = 1.0e-10
+            options.nonlinear_relative_tolerance = 1e-10
             with compiled.solve(opts=options) as solution:
                 temperature = solution.temperature.copy()
             block_ids = compiled.block_ids.copy()
-    elapsed = perf_counter() - started
     detail = np.flatnonzero(block_ids == FULL_DETAIL_BLOCK_ID)
     macro = np.flatnonzero(block_ids == FULL_MACRO_BLOCK_ID)
-    return temperature, detail, macro, elapsed
+    return temperature, detail, macro, perf_counter() - started
 
 
 def solve_condensed_case(
@@ -248,18 +238,16 @@ def solve_condensed_case(
         detailed.default_state(),
         np.full(macro.face_count, INITIAL_TEMPERATURE),
     ]
-    dtn = DtNModel(
-        operators=metahotspot.Operators(
-            K=macro.K_face,
-            C=csc_matrix((macro.face_count, macro.face_count)),
-            f=macro.f_face,
-        )
+    operators = metahotspot.Operators(
+        K=macro.K_face,
+        C=csc_matrix((macro.face_count, macro.face_count)),
+        f=macro.f_face,
     )
     options = metahotspot.SolveOptions.default()
-    options.nonlinear_relative_tolerance = 1.0e-10
+    options.nonlinear_relative_tolerance = 1e-10
     with metahotspot.macromodel.solve(
         detailed,
-        dtn=dtn,
+        operators=operators,
         ports=detailed_ports,
         state=initial_state,
         opts=options,
@@ -268,18 +256,17 @@ def solve_condensed_case(
 
     detail_count = full_detail_cells.size
     port_temperature = reduced[detail_count:]
-    macro_temperature = macro.recover(port_temperature)
     recovered = np.empty_like(reference)
     recovered[full_detail_cells] = reduced[:detail_count]
-    recovered[full_macro_cells] = macro_temperature
+    recovered[full_macro_cells] = macro.recover(port_temperature)
     difference = recovered - reference
     return CouplingResult(
-        online_dofs=detail_count + macro.face_count,
-        relative_error=float(np.linalg.norm(difference) / np.linalg.norm(reference)),
-        max_error=float(np.max(np.abs(difference))),
-        elapsed_seconds=perf_counter() - started,
-        port_temperature_min=float(np.min(port_temperature)),
-        port_temperature_max=float(np.max(port_temperature)),
+        detail_count + macro.face_count,
+        float(np.linalg.norm(difference) / np.linalg.norm(reference)),
+        float(np.max(np.abs(difference))),
+        perf_counter() - started,
+        float(np.min(port_temperature)),
+        float(np.max(port_temperature)),
     )
 
 
@@ -319,7 +306,8 @@ def main() -> int:
     )
     print(
         f"Relative L2={result.relative_error:.3e}; max error={result.max_error:.6f} K; "
-        f"port range=[{result.port_temperature_min:.3f}, {result.port_temperature_max:.3f}] K"
+        f"port range=[{result.port_temperature_min:.3f}, "
+        f"{result.port_temperature_max:.3f}] K"
     )
     return 0
 
