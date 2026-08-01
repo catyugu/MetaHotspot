@@ -43,9 +43,7 @@ def add_materials(model: metahotspot.Model) -> None:
         rho="0",
         c="0",
     )
-    model.add_material(
-        "macro", kx="120", ky="120", kz="120", rho="0", c="0"
-    )
+    model.add_material("macro", kx="120", ky="120", kz="120", rho="0", c="0")
 
 
 def set_common_settings(model: metahotspot.Model, x_vertices: np.ndarray) -> None:
@@ -146,9 +144,7 @@ def build_detailed_nonlinear_model() -> metahotspot.Model:
 
 def build_macro_model() -> metahotspot.Model:
     model = metahotspot.Model()
-    set_common_settings(
-        model, np.arange(DETAIL_LENGTH_MM, FULL_LENGTH_MM + 1.0)
-    )
+    set_common_settings(model, np.arange(DETAIL_LENGTH_MM, FULL_LENGTH_MM + 1.0))
     add_materials(model)
     add_domain_block(model, "macro", DETAIL_LENGTH_MM, MACRO_LENGTH_MM)
     model.add_dirichlet("300", x_face(FULL_LENGTH_MM))

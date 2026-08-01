@@ -227,7 +227,9 @@ def solve(
     )
     opts_ptr = None
     if opts is not None:
-        c_opts = opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
+        c_opts = (
+            opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
+        )
         opts_ptr = ctypes.byref(c_opts)
 
     solution = ctypes.POINTER(MhsSolution)()

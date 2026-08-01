@@ -115,9 +115,7 @@ namespace mhs::macro {
         }
 
         bool inside(double value, double lower, double upper, double tolerance)
-        {
-            return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance;
-        }
+        { return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance; }
 
         double interface_conductance(
             const mhs::core::Model& model, const PortFace& port_face, double temperature, double time)
@@ -251,8 +249,8 @@ namespace mhs::macro {
         const Eigen::Index total = fvm_count + macro_count;
         std::vector<Eigen::Triplet<double>> k_entries;
         std::vector<Eigen::Triplet<double>> c_entries;
-        k_entries.reserve(static_cast<std::size_t>(base.K.nonZeros() + dtn.operators.K.nonZeros())
-            + 4 * ports.faces.size());
+        k_entries.reserve(
+            static_cast<std::size_t>(base.K.nonZeros() + dtn.operators.K.nonZeros()) + 4 * ports.faces.size());
         c_entries.reserve(static_cast<std::size_t>(base.C.nonZeros() + dtn.operators.C.nonZeros()));
         append_sparse_block(k_entries, base.K, 0, 0);
         append_sparse_block(k_entries, dtn.operators.K, fvm_count, fvm_count);
