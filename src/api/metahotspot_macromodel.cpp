@@ -107,20 +107,17 @@ MHS_API mhs_status_t mhs_macromodel_port_map_create(const mhs_compiled_t* compil
             cpp_patches.push_back({to_face(patch.face), patch.coordinate, patch.rectangle.a_min, patch.rectangle.a_max,
                 patch.rectangle.b_min, patch.rectangle.b_max});
         }
-        const auto compiled_map
-            = mhs::macro::compile_port_map(compiled->model, std::span<const mhs::macro::PortPatch>(cpp_patches));
         auto* result = new (std::nothrow) mhs_macro_port_map_t;
         if (!result)
             throw std::bad_alloc();
         result->owner = compiled;
-        result->map = compiled_map;
+        result->map
+            = mhs::macro::compile_port_map(compiled->model, std::span<const mhs::macro::PortPatch>(cpp_patches));
         *out = result;
     });
 }
 
 MHS_API void mhs_macromodel_port_map_destroy(mhs_macro_port_map_t* map) { delete map; }
-
-MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map) { return map ? map->map.port_count : 0; }
 
 MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
     const double* state, size_t state_count, double time, mhs_operators_t* out)
@@ -142,30 +139,29 @@ MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled,
 }
 
 MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
-    const mhs_macro_dtn_model_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
+    const mhs_operators_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
     mhs_solution_t** out)
 {
     CHECK_NULL(compiled);
     CHECK_NULL(ports);
     CHECK_NULL(dtn);
-    CHECK_NULL(dtn->operators.rhs);
+    CHECK_NULL(dtn->rhs);
     CHECK_NULL(state);
     CHECK_NULL(out);
     *out = nullptr;
     MHS_TRY(MHS_ERR_SOLVE, {
         validate_owner(compiled, ports);
         const auto fvm_count = compiled->model.cells.cell_to_grid.size();
-        const auto dtn_state_count = dtn->operators.n;
+        const auto dtn_state_count = dtn->n;
         if (dtn_state_count < ports->map.port_count)
             throw std::invalid_argument("DtN states must begin with one state per physical port");
         if (state_count != fvm_count + dtn_state_count)
             throw std::invalid_argument("state_count must equal cell_count + DtN state count");
 
         mhs::macro::DtNModel model;
-        model.operators.K = csc_to_eigen(dtn->operators.K);
-        model.operators.C = csc_to_eigen(dtn->operators.C);
-        model.operators.f
-            = Eigen::Map<const Eigen::VectorXd>(dtn->operators.rhs, static_cast<Eigen::Index>(dtn_state_count));
+        model.operators.K = csc_to_eigen(dtn->K);
+        model.operators.C = csc_to_eigen(dtn->C);
+        model.operators.f = Eigen::Map<const Eigen::VectorXd>(dtn->rhs, static_cast<Eigen::Index>(dtn_state_count));
 
         auto result = mhs::macro::solve(compiled->model, model, ports->map, std::span<const double>(state, state_count),
             to_solve_options(opts, compiled->model.transient_duration));
