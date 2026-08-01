@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/model_definition.hpp"
+#include "common/model_definition.hpp"
 
 #include <string>
 

@@ -1,13 +1,13 @@
 #include "solver/nonlinear_solver.hpp"
 
+#include "common/types.hpp"
 #include "logging/logger.hpp"
-#include "runtime/types.hpp"
 #include <Eigen/QR>
 
 #include <algorithm>
 #include <cassert>
+#include <deque>
 #include <optional>
-#include <vector>
 
 namespace mhs::sim {
 
@@ -19,12 +19,11 @@ namespace mhs::sim {
             double max_growth = 1.5; // divergence guard (infinity-norm ratio)
             int reset_on_growth = 1; // reset history when guard trips
 
-            // Ring buffers of size `depth`. Index 0 is most recent. When the
-            // history is not yet full, hist_len < depth and we use fewer
-            // columns in F.
-            std::vector<Eigen::VectorXd> G_hist;
-            std::vector<Eigen::VectorXd> x_hist;
-            int hist_len = 0;
+            // History of size `depth`. Index 0 is most recent, stored as a
+            // deque so that push_front is O(1) — insert(begin()) on vector
+            // would be O(N) and we call push() every nonlinear iteration.
+            std::deque<Eigen::VectorXd> G_hist;
+            std::deque<Eigen::VectorXd> x_hist;
             int iter_count = 0;
 
             // Returns the next iterate proposal, or std::nullopt to fall back
@@ -33,12 +32,12 @@ namespace mhs::sim {
             std::optional<Eigen::VectorXd> step(const Eigen::VectorXd& x_k, const Eigen::VectorXd& G_k)
             {
                 // Disabled, in warm-up, or no history -> plain Picard path.
-                if (depth == 0 || iter_count < warmup_iters || hist_len == 0) {
+                if (depth == 0 || iter_count < warmup_iters || G_hist.empty()) {
                     return std::nullopt;
                 }
 
                 const Eigen::VectorXd f_k = G_k - x_k;
-                const int m_k = std::min(hist_len, depth);
+                const int m_k = std::min(static_cast<int>(G_hist.size()), depth);
 
                 // AA solve: F * alpha = f_k  (LS, m_k columns).
                 // Build the m_k x m_k normal-equation system FᵀF · α = Fᵀ·f_k
@@ -73,7 +72,6 @@ namespace mhs::sim {
                         if (reset_on_growth) {
                             G_hist.clear();
                             x_hist.clear();
-                            hist_len = 0;
                         }
                         return std::nullopt;
                     }
@@ -87,42 +85,34 @@ namespace mhs::sim {
                 if (depth == 0) {
                     return;
                 }
-                G_hist.insert(G_hist.begin(), G_k);
-                x_hist.insert(x_hist.begin(), x_k);
+                G_hist.push_front(G_k);
+                x_hist.push_front(x_k);
                 if (static_cast<int>(G_hist.size()) > depth) {
                     G_hist.pop_back();
                     x_hist.pop_back();
                 }
-                hist_len = static_cast<int>(G_hist.size());
                 ++iter_count;
-            }
-
-            void reset_history()
-            {
-                G_hist.clear();
-                x_hist.clear();
-                hist_len = 0;
             }
         };
 
     } // namespace
 
     NonLinearResult nonlinear_solve(
-        LinearSystemProvider ls_provider, std::vector<double>& T, LinearSolver& solver, const NonLinearConfig& cfg)
+        LinearSystemProvider ls_provider, std::vector<double>& state, LinearSolver& solver, const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
         const double abs_tol = cfg.absolute_tolerance;
-        const mhs::core::Index N = static_cast<mhs::core::Index>(T.size());
+        const mhs::core::Index N = static_cast<mhs::core::Index>(state.size());
         assert(N <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_N = static_cast<Eigen::Index>(N);
-        Eigen::Map<Eigen::VectorXd> T_map(T.data(), eigen_N);
+        Eigen::Map<Eigen::VectorXd> state_map(state.data(), eigen_N);
 
         AndersonMixer mixer;
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
-            LinearSystem linear_system = ls_provider(T);
-            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * T_map;
+            LinearSystem linear_system = ls_provider(state);
+            const Eigen::VectorXd residual_vec = linear_system.b - linear_system.A * state_map;
 
             const double max_residual = residual_vec.cwiseAbs().maxCoeff();
             const double max_b = linear_system.b.cwiseAbs().maxCoeff();
@@ -137,9 +127,9 @@ namespace mhs::sim {
             solver.compute(linear_system.A);
             const Eigen::VectorXd G_k = solver.solve(linear_system.b);
             if (!solver.success()) {
-                MHS_LOG_WARN("Linear solver failed at Non-Linear iteration {}", iter);
+                throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
             }
-            const Eigen::VectorXd x_k = T_map; // capture pre-update state
+            const Eigen::VectorXd x_k = state_map; // capture pre-update state
 
             std::optional<Eigen::VectorXd> x_prop = mixer.step(x_k, G_k);
 
@@ -153,10 +143,10 @@ namespace mhs::sim {
             }
 
             const double max_update = (next - x_k).cwiseAbs().maxCoeff();
-            const double max_T = next.cwiseAbs().maxCoeff();
-            T_map = next;
+            const double max_state = next.cwiseAbs().maxCoeff();
+            state_map = next;
 
-            const double update_threshold = rel_tol * max_T + abs_tol;
+            const double update_threshold = rel_tol * max_state + abs_tol;
 
             MHS_LOG_DEBUG("\t->Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e} ({}AA)", iter,
                 max_update, max_residual, use_aa ? "" : "no ");

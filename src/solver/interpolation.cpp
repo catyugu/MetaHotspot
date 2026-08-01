@@ -1,5 +1,5 @@
-#include "runtime/mesh.hpp"
 #include "solver/interpolation.hpp"
+#include "common/mesh.hpp"
 
 #include <cassert>
 #include <cstddef>
@@ -35,7 +35,7 @@ namespace mhs::utils {
             double z;
         };
 
-        Conductivity evaluate_conductivity(const mhs::core::Model& model, const std::vector<double>& temperature,
+        Conductivity evaluate_conductivity(const mhs::core::Model& model, std::span<const double> temperature,
             mhs::core::Index compact, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz, double time)
         {
             const auto& material = model.material_table[model.cells.material_id[compact]];
@@ -49,7 +49,7 @@ namespace mhs::utils {
             return conductivity;
         }
 
-        double internal_face_temperature(const mhs::core::Model& model, const std::vector<double>& temperature,
+        double internal_face_temperature(const mhs::core::Model& model, std::span<const double> temperature,
             double time, mhs::core::Index compact, mhs::core::Index neighbor, mhs::core::Index ix, mhs::core::Index iy,
             mhs::core::Index iz, mhs::core::Index nix, mhs::core::Index niy, mhs::core::Index niz,
             mhs::core::FaceDir dir, const Conductivity& conductivity)
@@ -72,7 +72,7 @@ namespace mhs::utils {
                 / resistance_sum;
         }
 
-        double boundary_face_temperature(const mhs::core::Model& model, const std::vector<double>& temperature,
+        double boundary_face_temperature(const mhs::core::Model& model, std::span<const double> temperature,
             double time, mhs::core::Index compact, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz,
             mhs::core::FaceDir dir, const Conductivity& conductivity)
         {
@@ -95,7 +95,7 @@ namespace mhs::utils {
     } // namespace
 
     TemperatureGradient reconstruct_cell_gradient(const mhs::core::Model& model,
-        const std::vector<double>& cell_temperature, double time, mhs::core::Index ix, mhs::core::Index iy,
+        std::span<const double> cell_temperature, double time, mhs::core::Index ix, mhs::core::Index iy,
         mhs::core::Index iz)
     {
         const auto& mesh = model.mesh;

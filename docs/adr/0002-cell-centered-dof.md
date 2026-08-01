@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Combines the original ADR-0002 (cell-centered DOF, no face DOF, BCs as boundary integrals) and the original ADR-0005 (per-cell `CellBC` storage), which previously cross-superseded each other and are merged into a single decision here.
+Accepted.
 
 ## Context
 

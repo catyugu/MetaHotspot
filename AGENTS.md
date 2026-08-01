@@ -1,27 +1,8 @@
 # Repository Guidelines
 
-## Agent skills
-
-### Issue tracker
-
-Local markdown issues live in `.scratch/`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Uses canonical strings (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context — one `CONTEXT.md` at repo root + `docs/adr/`. See `docs/agents/domain.md`.
-
-## Activity Tracking (Required)
-
-- Summaries should include what changed, files touched, and any notable decisions.
-- Use the scratchpad tool for follow-ups or TODOs discovered during work.
-
 ## Build, Test, and Development Commands
 
-- **Build Config**: C++17, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
+- **Build Config**: C++20, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
 
 ```bash
 # Build
@@ -42,7 +23,6 @@ python run_cases.py
 
 ## Testing Guidelines
 
-- **Enforce TDD for every behavior change**: follow `red -> green -> refactor`.
 - **Start with verifiable baseline**: run the relevant existing tests before edits, and record the exact command + outcome in the PR/commit notes.
 - **Test updates goes first**: Add or update a failing test first that reproduces the bug or captures the new requirement; implement code only after the test fails for the expected reason.
 - **Keep tests green**:  Never commit if there are failing tests.

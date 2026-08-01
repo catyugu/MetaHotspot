@@ -1,11 +1,12 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 namespace mhs::core {
 
-    /// Ring-buffer of accepted (temperature, time) snapshots for BDF-k multi-step schemes.
+    /// Ring-buffer of accepted (state, time) snapshots for BDF-k multi-step schemes.
     ///
     /// Indexing convention (valid for i < size()):
     ///   at(0) == current()  — most recently accepted solution
@@ -16,26 +17,26 @@ namespace mhs::core {
     /// initialize() is called.
     class SolutionHistory {
     public:
-        explicit SolutionHistory(std::size_t cell_count, std::size_t capacity)
-            : slots_(capacity, std::vector<double>(cell_count)), times_(capacity, 0.0), cap_(capacity)
+        explicit SolutionHistory(std::size_t state_count, std::size_t capacity)
+            : slots_(capacity, std::vector<double>(state_count)), times_(capacity, 0.0), cap_(capacity)
         {
         }
 
         /// Initialize with the first (t=0) solution snapshot.
-        /// Post-condition: size() == 1, current() == T_init, time_at(0) == t0.
-        inline void initialize(const std::vector<double>& T_init, double t0 = 0.0)
+        /// Post-condition: size() == 1, current() == initial_state, time_at(0) == t0.
+        inline void initialize(std::span<const double> initial_state, double t0 = 0.0)
         {
             head_ = 1;
             stored_ = 1;
-            slots_[0] = T_init;
+            slots_[0].assign(initial_state.begin(), initial_state.end());
             times_[0] = t0;
         }
 
         /// Record a newly accepted solution snapshot.
         /// The buffer wraps around once full so the k most recent steps are kept.
-        inline void accept(const std::vector<double>& T_new, double time)
+        inline void accept(std::span<const double> state, double time)
         {
-            slots_[head_] = T_new;
+            slots_[head_].assign(state.begin(), state.end());
             times_[head_] = time;
             if (stored_ < cap_)
                 ++stored_;
@@ -47,7 +48,7 @@ namespace mhs::core {
         /// Most recently accepted solution vector.
         /// UB if no snapshot has ever been stored (returns a reference to an
         /// empty vector for the default-constructed case).
-        inline const std::vector<double>& current() const noexcept
+        inline std::span<const double> current() const noexcept
         {
             if (stored_ == 0)
                 return slots_[0];
@@ -56,7 +57,7 @@ namespace mhs::core {
 
         /// Solution vector i steps before current (i=0 → current).
         /// Pre-condition: i < size().
-        inline const std::vector<double>& at(std::size_t i) const noexcept { return slots_[ring_index(i)]; }
+        inline std::span<const double> at(std::size_t i) const noexcept { return slots_[ring_index(i)]; }
 
         /// Timestamp of the snapshot i steps before current.
         inline double time_at(std::size_t i) const noexcept { return times_[ring_index(i)]; }

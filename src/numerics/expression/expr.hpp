@@ -28,9 +28,6 @@ namespace mhs::core {
     struct MuCompiledTLS;
 
     // Precompiled expression (Copyable, thread-safe eval via TLS)
-    // Each thread accessing this expression will instantiate its own muparser instance on-demand.
-    // All symbols the formula needs are captured from the SymbolTable passed to parse();
-    // after construction, eval() does not touch any global state.
     class CompiledExpression {
     public:
         CompiledExpression();
@@ -57,8 +54,6 @@ namespace mhs::core {
     };
 
     // Parse a field expression string against the supplied SymbolTable.
-    // The SymbolTable's natives are bound into the compiled AST; variables are
-    // only resolved through eval_geometry, not parse.
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
 
     // Evaluate a geometry expression against the supplied SymbolTable's variables.

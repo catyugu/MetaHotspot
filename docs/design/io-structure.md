@@ -1,10 +1,8 @@
 # Authoring Model
 
-`src/model/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，由独立的轻量 `mhs_model` 拥有。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
+`include/common/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 
-`mhs_model` 本身不链接第三方目标。XML 适配、表达式编译和线性求解分别留在 `mhs_io`、`mhs_expression` 与 `mhs_linear`；因此修改 builder 或模型契约时，不会重新编译这些较慢的第三方依赖及其封装目标。
-
-XML reader 和外部代码都通过 `ModelBuilder` 的追加操作生成同一个 `ModelDefinition`，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
+XML reader 和外部代码都直接填充 `ModelDefinition` 结构，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 
 ## 顶层结构
 
@@ -81,8 +79,7 @@ BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 
 
 旧 XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
 
-## ModelBuilder
+## 附录：ModelDefinition 构造
 
-`ModelBuilder` 是未来 C opaque-pointer API 的内部落点。C ABI 将公开 `typedef void *mhs_model_handle` 这类纯指针句柄，内部再转换为私有的 `ModelBuilder`；不会在公共头中声明或暴露 opaque struct tag。
-
-当前 `ModelBuilder` 只提供 append-only 建模：`add_layer(LayerParams)` 与 `add_block(LayerId, BlockParams)` 的参数不含子节点，Block 和 Rect 只能通过各自的追加操作进入模型；最后由 `finish() &&` 移出 `ModelDefinition`。当前阶段不承担校验、删除、插入或重排序，也不保留旧 C++ 建模结构的兼容别名。
+`ModelDefinition` 目前由 C API 的直接 Handle 函数（如 `mhs_model_add_material`、`mhs_model_add_block`）和 XML reader (`mhs::io::read_xml`) 共同填充。两者操作同一套数据结构，不经过中间 Builder。
+`BlockSpec`、`LayerSpec`、`BoundaryPatch` 等类型定义见前文。C API 的 `mhs_model_t` 是唯一的外部构造入口。

@@ -1,6 +1,6 @@
 #include "solver/time_integration.hpp"
 
-#include "runtime/constants.hpp"
+#include "common/constants.hpp"
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -11,21 +11,20 @@
 namespace mhs::sim::time_scheme {
     namespace {
 
-        LinearSystem build_bdf1(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf1(const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
             assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
             const auto eigen_count = static_cast<Eigen::Index>(count);
             Eigen::Map<const Eigen::VectorXd> previous(history.current().data(), eigen_count);
-            const Eigen::VectorXd mass_over_dt = ops.M_diag / dt;
 
             Eigen::SparseMatrix<double> matrix = ops.K;
-            matrix.diagonal() += mass_over_dt;
-            Eigen::VectorXd rhs = ops.f + mass_over_dt.cwiseProduct(previous);
+            matrix += (1.0 / dt) * ops.C;
+            Eigen::VectorXd rhs = ops.f + (ops.C * previous) / dt;
             return {std::move(matrix), std::move(rhs)};
         }
 
-        LinearSystem build_bdf2(const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        LinearSystem build_bdf2(const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
         {
             const mhs::core::Index count = static_cast<mhs::core::Index>(ops.f.size());
             assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -39,8 +38,8 @@ namespace mhs::sim::time_scheme {
             Eigen::Map<const Eigen::VectorXd> previous(history.at(1).data(), eigen_count);
 
             Eigen::SparseMatrix<double> matrix = ops.K;
-            matrix.diagonal() += alpha0 * ops.M_diag;
-            Eigen::VectorXd rhs = ops.f - ops.M_diag.cwiseProduct(alpha1 * current + alpha2 * previous);
+            matrix += alpha0 * ops.C;
+            Eigen::VectorXd rhs = ops.f - ops.C * (alpha1 * current + alpha2 * previous);
             return {std::move(matrix), std::move(rhs)};
         }
 
@@ -49,23 +48,23 @@ namespace mhs::sim::time_scheme {
     } // namespace
 
     LinearSystem build_system(
-        IntegratorKind kind, const AssemblyResult& ops, const mhs::core::SolutionHistory& history, double dt)
+        IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt)
     {
         if (kind == IntegratorKind::Bdf2 && history.size() >= 2)
             return build_bdf2(ops, history, dt);
         return build_bdf1(ops, history, dt);
     }
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, const std::vector<double>& trial_T,
+    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config)
     {
-        const mhs::core::Index count = static_cast<mhs::core::Index>(trial_T.size());
+        const mhs::core::Index count = static_cast<mhs::core::Index>(trial_state.size());
         if (count == 0)
             return {0.0, 1.0};
         assert(count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
         const auto eigen_count = static_cast<Eigen::Index>(count);
 
-        Eigen::Map<const Eigen::VectorXd> trial(trial_T.data(), eigen_count);
+        Eigen::Map<const Eigen::VectorXd> trial(trial_state.data(), eigen_count);
         Eigen::Map<const Eigen::VectorXd> current(accepted.current().data(), eigen_count);
 
         Eigen::VectorXd error_vector;
@@ -84,82 +83,51 @@ namespace mhs::sim::time_scheme {
         return {error / config.abs_tol, std::clamp(factor, 0.5, 2.0)};
     }
 
-    StepController::StepController(StepStrategy strategy, double min_dt, double max_dt, double fixed_dt)
-        : strategy_(strategy), min_dt_(min_dt), max_dt_(max_dt), fixed_dt_(fixed_dt)
+    StepController::StepController(
+        StepStrategy strategy, double min_dt, double max_dt, double duration, double output_interval, double fixed_dt)
+        : strategy_(strategy)
+        , duration_(duration)
+        , output_interval_(output_interval)
+        , min_dt_(min_dt)
+        , max_dt_(max_dt)
+        , fixed_dt_(fixed_dt)
+        , next_output_(output_interval)
     {
     }
 
-    void StepController::rebuild(double duration, double output_dt)
+    double StepController::prepare(double dt_suggested, double current_t)
     {
-        grid_ = output_dt > 0.0 && duration > 0.0 ? OutputTimeGrid {duration, output_dt} : OutputTimeGrid {};
-        next_idx_ = 0;
-        last_flushed_t_ = 0.0;
-        planted_ = false;
-    }
-
-    double StepController::prepare(double dt_suggested, double current_t, double duration)
-    {
-        const double remaining = duration - current_t;
+        const double remaining = duration_ - current_t;
         if (remaining <= 0.0)
             return 0.0;
 
-        double dt = dt_suggested;
-        const auto snap_to_next = [&](bool use_planting) {
-            if (next_idx_ >= grid_.size())
-                return;
-            const double next = grid_.times()[next_idx_];
-            const double tolerance = grid_tolerance(next);
-            if (next <= current_t + tolerance || current_t + dt < next - tolerance)
-                return;
-            dt = use_planting && !planted_ ? 0.5 * (next - current_t) : next - current_t;
-            planted_ = true;
-        };
+        while (output_interval_ > 0.0 && next_output_ <= current_t + grid_tolerance(current_t))
+            next_output_ += output_interval_;
 
-        switch (strategy_) {
-        case StepStrategy::Free:
-            break;
-        case StepStrategy::Strict:
-            snap_to_next(false);
-            break;
-        case StepStrategy::Intermediate:
-            snap_to_next(true);
-            break;
-        case StepStrategy::Manual:
-            dt = fixed_dt_;
-            break;
-        }
+        const double proposed = strategy_ == StepStrategy::Fixed ? fixed_dt_ : dt_suggested;
+        const double bounded = std::clamp(proposed, min_dt_, max_dt_);
 
-        return std::min(std::clamp(dt, min_dt_, max_dt_), remaining);
+        double next_boundary = duration_;
+        if (output_interval_ > 0.0 && next_output_ < duration_ - grid_tolerance(duration_))
+            next_boundary = next_output_;
+
+        // Output states must be states actually solved by the integrator. A
+        // boundary may therefore shorten one step below min_dt; min_dt remains
+        // the lower bound for unconstrained step-size adaptation.
+        const double to_boundary = next_boundary - current_t;
+        return std::min(bounded, std::min(remaining, to_boundary));
     }
 
-    std::vector<double> StepController::flush_outputs(double current_t)
+    bool StepController::output_due(double current_t)
     {
-        if (grid_.empty()) {
-            if (current_t > last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
-                last_flushed_t_ = current_t;
-                return {current_t};
-            }
-            return {};
-        }
+        const bool at_final = current_t >= duration_ - grid_tolerance(duration_);
+        const bool at_grid = output_interval_ > 0.0 && current_t >= next_output_ - grid_tolerance(next_output_);
+        if (output_interval_ > 0.0 && !at_grid && !at_final)
+            return false;
 
-        std::vector<double> crossed;
-        while (next_idx_ < grid_.size()) {
-            const double output = grid_.times()[next_idx_];
-            if (output <= last_flushed_t_ + grid_tolerance(last_flushed_t_)) {
-                ++next_idx_;
-                continue;
-            }
-            if (output > current_t + grid_tolerance(current_t))
-                break;
-            crossed.push_back(output);
-            ++next_idx_;
-        }
-
-        if (!crossed.empty()) {
-            last_flushed_t_ = crossed.back();
-            planted_ = false;
-        }
-        return crossed;
+        if (at_grid)
+            next_output_ += output_interval_;
+        return true;
     }
 
 } // namespace mhs::sim::time_scheme

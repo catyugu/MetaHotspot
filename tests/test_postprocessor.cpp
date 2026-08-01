@@ -1,7 +1,7 @@
+#include "common/model.hpp"
+#include "common/model_definition.hpp"
 #include "compiler/model_compiler.hpp"
-#include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "runtime/model.hpp"
 #include "solver/postprocessor.hpp"
 #include <gtest/gtest.h>
 

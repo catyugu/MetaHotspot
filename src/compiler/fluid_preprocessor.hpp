@@ -1,7 +1,7 @@
 #pragma once
 
-#include "runtime/model.hpp"
-#include "model/model_definition.hpp"
+#include "common/model.hpp"
+#include "common/model_definition.hpp"
 
 #include <optional>
 #include <vector>
@@ -15,7 +15,6 @@ namespace mhs::sim::fluid {
     // Build the assembly-ready frozen flow domain. Geometry, pressure-system,
     // and boundary-parameter scratch data remain private to the implementation.
     void build_domain(mhs::core::Model& model, const std::vector<mhs::model::FluidBoundarySpec>& boundaries,
-        double si_scale,
-        const FluidMaterialData& materials);
+        double si_scale, const FluidMaterialData& materials);
 
 } // namespace mhs::sim::fluid

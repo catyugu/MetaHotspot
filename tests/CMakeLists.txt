@@ -1,7 +1,7 @@
 include(GoogleTest)
 
 # ==============================================================================
-# 单一测试可执行文件
+# Single test executable
 # ==============================================================================
 
 file(GLOB test_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
@@ -13,12 +13,14 @@ add_executable(mhs_tests
 target_link_libraries(mhs_tests PRIVATE
     mhs_compiler
     mhs_solver
+    mhs_macromodel
     mhs_io
     mhs_logging
     gtest_main
 )
 
 target_include_directories(mhs_tests PRIVATE ${CMAKE_BINARY_DIR})
+target_include_directories(mhs_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 mhs_copy_runtime_dlls(mhs_tests)
 gtest_discover_tests(mhs_tests)

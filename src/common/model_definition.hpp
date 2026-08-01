@@ -141,8 +141,13 @@ namespace mhs::model {
         std::vector<Point> points;
     };
 
+    struct PeriodicPiecewiseConstantFunctionSpec {
+        double period = 0.0;
+        std::vector<double> values;
+    };
+
     using FunctionSpec = std::variant<ExpressionFunctionSpec, DoubleExponentialFunctionSpec, GaussFunctionSpec,
-        SineFunctionSpec, PiecewiseFunctionSpec>;
+        SineFunctionSpec, PiecewiseFunctionSpec, PeriodicPiecewiseConstantFunctionSpec>;
 
     struct NamedFunction {
         std::string name;

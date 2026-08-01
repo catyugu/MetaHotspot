@@ -14,8 +14,7 @@ class Status(enum.IntEnum):
     ERR_SOLVE = -5
     ERR_IO = -6
     ERR_OOM = -7
-    ERR_UNSET = -8
-    ERR_RUNTIME = -9
+    ERR_RUNTIME = -8
 
 
 class Study(enum.IntEnum):
@@ -38,6 +37,15 @@ class Axis(enum.IntEnum):
     Z = 2
 
 
+class Face(enum.IntEnum):
+    XM = 0
+    XP = 1
+    YM = 2
+    YP = 3
+    ZM = 4
+    ZP = 5
+
+
 class GeometryOp(enum.IntEnum):
     ADD = 0
     SUB = 1
@@ -54,3 +62,13 @@ class FluidBC(enum.IntEnum):
     PRESSURE = 1
     MASS_FLOW = 2
     VELOCITY = 3
+
+
+class IntegratorKind(enum.IntEnum):
+    BDF1 = 0
+    BDF2 = 1
+
+
+class StepStrategy(enum.IntEnum):
+    ADAPTIVE = 0
+    FIXED = 1

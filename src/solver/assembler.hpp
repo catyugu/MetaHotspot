@@ -1,38 +1,20 @@
 #pragma once
 
-#include "Eigen/SparseCore"
-#include "runtime/model.hpp"
+#include "common/model.hpp"
 #include <Eigen/Core>
-#include <vector>
+#include <Eigen/SparseCore>
+#include <span>
 
 namespace mhs::sim {
 
-    struct AssemblyResult {
+    /// Operators K, C, f of the linearised system: C * dx/dt + K * x = f.
+    struct Operators {
         Eigen::SparseMatrix<double> K;
+        Eigen::SparseMatrix<double> C;
         Eigen::VectorXd f;
-        Eigen::VectorXd M_diag;
-    };
-    /// Minimum data needed by Assembler::assemble to evaluate one cell sweep.
-    ///
-    /// Invariant (caller-enforced):
-    ///   - T.size() == N_active
-    struct AssembleContext {
-        std::vector<double>& T;
-        double current_time = 0.0;
     };
 
-    class Assembler {
-    public:
-        explicit Assembler(const mhs::core::Model& model) : model_(model) { }
-        ~Assembler() = default;
-
-        /// Build K, f, M_diag in a single sweep over the active grid.
-        /// Diffusion coefficients, BC terms, heat sources, and mass coefficients
-        /// are all evaluated at ctx.T / ctx.current_time.
-        AssemblyResult assemble(const AssembleContext& ctx) const;
-
-    private:
-        const mhs::core::Model& model_;
-    };
+    /// Assemble thermal operators C * dx/dt + K * x = f.
+    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time);
 
 } // namespace mhs::sim

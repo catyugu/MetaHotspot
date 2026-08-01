@@ -3,108 +3,195 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 
 from metahotspot._error import check
-from metahotspot.types import MhsCompiled, SolverOpts
+from metahotspot._handle import OwnedHandle
+from metahotspot.types import MhsCompiled, MhsCompiledMetadataView
 
 
-class Compiled:
-    """Read-only compiled runtime model.
+class Operators(NamedTuple):
+    """K, C, f of the linearised system: C * dx/dt + K * x = f."""
 
-    Do not instantiate directly — use ``Model.compile()``.
-    """
+    K: object
+    C: object
+    f: np.ndarray
+
+
+@dataclass
+class SolveOptions:
+    """Solver configuration options."""
+
+    linear_solver: str = "Pardiso"
+    linear_tolerance: float = 1e-8
+    linear_max_iterations: int = 1000
+    underrelaxation: float = 1.0
+    nonlinear_max_iterations: int = 200
+    nonlinear_relative_tolerance: float = 1e-6
+    nonlinear_absolute_tolerance: float = 1e-12
+    integrator: str = "Bdf1"
+    step_strategy: str = "Adaptive"
+    error_abs_tol: float = 1e-4
+    error_safety: float = 0.9
+    min_dt: float = 1e-12
+    max_dt: float = 1.0
+    fixed_dt: float = 1.0
+
+    @staticmethod
+    def default() -> SolveOptions:
+        return SolveOptions()
+
+    def _to_c_struct(self, dll):
+        from metahotspot.types import _SolveOptionsCStruct
+
+        c_opts = _SolveOptionsCStruct()
+        dll.mhs_solve_options_default(ctypes.byref(c_opts))
+        c_opts.solver_type = {
+            "Pardiso": 0,
+            "EigenSparseLU": 1,
+            "EigenBiCGSTAB": 2,
+        }.get(self.linear_solver, 0)
+        c_opts.linear_tolerance = self.linear_tolerance
+        c_opts.linear_max_iterations = self.linear_max_iterations
+        c_opts.underrelaxation = self.underrelaxation
+        c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
+        c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
+        c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
+        c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
+        c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
+        c_opts.error_abs_tol = self.error_abs_tol
+        c_opts.error_safety = self.error_safety
+        c_opts.min_dt = self.min_dt
+        c_opts.max_dt = self.max_dt
+        c_opts.fixed_dt = self.fixed_dt
+        return c_opts
+
+
+class Compiled(OwnedHandle):
+    """Read-only compiled runtime model. Use ``Model.compile()``."""
 
     def __init__(self) -> None:
-        # Internal constructor; use _from_model() instead.
-        self._dll = None
-        self._handle: MhsCompiled | None = None
-        self._owned = True
+        super().__init__(None, None)
+        self._metadata_cache = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
-        """Compile *model_handle* and return a new Compiled instance."""
         self = cls()
         self._dll = dll
-        pp = ctypes.POINTER(MhsCompiled)()
-        check(dll.mhs_model_compile(model_handle, ctypes.byref(pp)), "compile")
-        self._handle = pp
-        return self
-
-    @classmethod
-    def _from_ptr(cls, dll, handle) -> Compiled:
-        """Wrap an existing compiled handle (not owned by this session)."""
-        self = cls()
-        self._dll = dll
+        self._destroy_fn = dll.mhs_compiled_destroy
+        handle = ctypes.POINTER(MhsCompiled)()
+        check(dll.mhs_model_compile(model_handle, ctypes.byref(handle)), "compile")
         self._handle = handle
-        self._owned = True
         return self
 
-    def __del__(self) -> None:
-        self.close()
+    def _fetch_metadata(self) -> MhsCompiledMetadataView:
+        if self._metadata_cache is None:
+            view = MhsCompiledMetadataView()
+            check(
+                self._dll.mhs_compiled_metadata(self._handle, ctypes.byref(view)),
+                "compiled_metadata",
+            )
+            self._metadata_cache = view
+        return self._metadata_cache
 
-    def close(self) -> None:
-        if self._owned and self._handle is not None:
-            self._dll.mhs_compiled_destroy(self._handle)
-            self._handle = None
-
-    # ---- Introspection ----
-
+    @property
     def cell_count(self) -> int:
-        return self._dll.mhs_compiled_cell_count(self._handle)
+        return self._fetch_metadata().cell_count
 
-    def node_count(self) -> int:
-        return self._dll.mhs_compiled_node_count(self._handle)
-
-    def initial_temperature(self) -> float:
-        return self._dll.mhs_compiled_initial_temperature(self._handle)
-
+    @property
     def study_type(self) -> int:
-        return self._dll.mhs_compiled_study_type(self._handle)
+        return self._fetch_metadata().study_type
 
-    def layer_count(self) -> int:
-        return self._dll.mhs_compiled_layer_count(self._handle)
+    @property
+    def initial_temperature(self) -> float:
+        return self._fetch_metadata().initial_temperature
 
-    def block_count(self, layer: int) -> int:
-        return self._dll.mhs_compiled_block_count(self._handle, layer)
+    @property
+    def nx(self) -> int:
+        return self._fetch_metadata().nx
 
+    @property
+    def ny(self) -> int:
+        return self._fetch_metadata().ny
+
+    @property
+    def nz(self) -> int:
+        return self._fetch_metadata().nz
+
+    @property
+    def grid_to_cell(self) -> np.ndarray:
+        metadata = self._fetch_metadata()
+        return np.ctypeslib.as_array(
+            metadata.grid_to_cell, shape=(metadata.nx * metadata.ny * metadata.nz,)
+        )
+
+    @property
     def layer_ids(self) -> np.ndarray:
-        """Per-cell layer IDs as a read-only numpy array."""
-        ptr = self._dll.mhs_compiled_layer_ids(self._handle)
-        n = self.cell_count()
-        return np.ctypeslib.as_array(ptr, shape=(n,))
+        metadata = self._fetch_metadata()
+        return np.ctypeslib.as_array(metadata.layer_ids, shape=(metadata.cell_count,))
 
+    @property
     def block_ids(self) -> np.ndarray:
-        """Per-cell block IDs as a read-only numpy array."""
-        ptr = self._dll.mhs_compiled_block_ids(self._handle)
-        n = self.cell_count()
-        return np.ctypeslib.as_array(ptr, shape=(n,))
+        metadata = self._fetch_metadata()
+        return np.ctypeslib.as_array(metadata.block_ids, shape=(metadata.cell_count,))
 
-    # ---- Solve ----
+    def default_state(self) -> np.ndarray:
+        return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
 
-    def solve(self, opts: SolverOpts | None = None) -> Solution:
-        """Solve the compiled model."""
+    def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
+        """Assemble K, C, f at a state and time."""
+        from metahotspot.types import MhsOperatorsView
+        import scipy.sparse
+
+        if state is None:
+            state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
+        if state.size != self.cell_count:
+            raise ValueError(
+                f"state size ({state.size}) != cell_count ({self.cell_count})"
+            )
+
+        view = MhsOperatorsView()
+        check(
+            self._dll.mhs_compiled_assemble(
+                self._handle,
+                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                state.size,
+                time,
+                ctypes.byref(view),
+            ),
+            "assemble",
+        )
+
+        def to_csc(matrix_view):
+            columns = matrix_view.columns
+            nnz = matrix_view.nnz
+            outer = np.ctypeslib.as_array(
+                matrix_view.outer_indices, shape=(columns + 1,)
+            ).copy()
+            inner = np.ctypeslib.as_array(
+                matrix_view.inner_indices, shape=(nnz,)
+            ).copy()
+            values = np.ctypeslib.as_array(matrix_view.values, shape=(nnz,)).copy()
+            return scipy.sparse.csc_matrix(
+                (values, inner, outer),
+                shape=(matrix_view.rows, matrix_view.columns),
+            )
+
+        return Operators(
+            to_csc(view.K),
+            to_csc(view.C),
+            np.ctypeslib.as_array(view.rhs, shape=(view.n,)).copy(),
+        )
+
+    def solve(
+        self,
+        state: np.ndarray | None = None,
+        opts: SolveOptions | None = None,
+    ):
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self._dll, self._handle, opts)
-
-    # ---- Assembly ----
-
-    def assemble(
-        self,
-        T: np.ndarray | None = None,
-        time: float = 0.0,
-    ) -> Assembly:
-        """Assemble K, f at a given temperature field and time.
-
-        Parameters
-        ----------
-        T : ndarray or None
-            Per-cell temperatures.  None = use initial temperature.
-        time : float
-            Current simulation time.
-        """
-        from metahotspot.assembly import Assembly
-
-        return Assembly._assemble(self._dll, self._handle, T, time)
+        return Solution._solve_compiled(self, state, opts)

@@ -52,8 +52,8 @@ namespace {
         SymbolTable sym;
         sym.variables["defined"] = 1.0;
 
-        // undefined variable should return 0.0
-        EXPECT_EQ(mhs::core::eval_geometry("undefined", sym), 0.0);
+        // undefined variable should throw
+        EXPECT_THROW(mhs::core::eval_geometry("undefined", sym), std::runtime_error);
     }
 
 } // namespace

@@ -1,10 +1,9 @@
 #include "compiler/geometry_compiler.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 #include "numerics/expression/expr.hpp"
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
-#include <Eigen/Dense>
 #include <algorithm>
-#include <unordered_map>
+#include <cstddef>
 
 namespace mhs::sim {
 
@@ -58,8 +57,6 @@ namespace mhs::sim {
             const double a_val = centers[ta];
             const double b_val = centers[tb];
 
-            // Boundary definitions are ordered overlays: the last matching
-            // definition wins, just like later blocks in a layer.
             for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
                 const auto& boundary = *it;
                 if (boundary.axis == face_axis
@@ -118,8 +115,6 @@ namespace mhs::sim {
                 ResolvedBlock rb;
                 double block_x_off_si = mhs::core::eval_geometry(block.x_offset, symbols) * si_scale;
                 double block_y_off_si = mhs::core::eval_geometry(block.y_offset, symbols) * si_scale;
-                rb.material = block.material;
-                rb.volumetric_heat_source = block.volumetric_heat_source;
 
                 if (l == 0 && block.thickness.has_value()) {
                     double b_thick = mhs::core::eval_geometry(*block.thickness, symbols) * si_scale;
@@ -159,9 +154,8 @@ namespace mhs::sim {
         return resolved;
     }
 
-    mhs::core::CellFields assign_cell_layers(const std::vector<ResolvedLayerGeometry>& resolved_layers,
-        const mhs::core::MeshGeometry& mesh, const std::unordered_map<std::string, size_t>& name_to_idx,
-        const std::vector<std::vector<mhs::core::TableIndex>>& block_hs_map)
+    mhs::core::CellFields assign_cell_layers(
+        const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh)
     {
         const mhs::core::Index num_layers = static_cast<mhs::core::Index>(resolved_layers.size());
         const mhs::core::Index total = mesh.nx * mesh.ny * mesh.nz;
@@ -200,8 +194,8 @@ namespace mhs::sim {
                         const mhs::core::Index c_idx = static_cast<mhs::core::Index>(cells.material_id.size());
                         cells.grid_to_cell[old_idx] = c_idx;
                         cells.cell_to_grid.push_back(old_idx);
-                        cells.material_id.push_back(static_cast<mhs::core::TableIndex>(name_to_idx.at(block.material)));
-                        cells.heat_source_idx.push_back(block_hs_map[layer_idx][block_idx]);
+                        cells.material_id.push_back(block.material_id);
+                        cells.heat_source_idx.push_back(block.heat_source_idx);
                         cells.layer_id.push_back(static_cast<mhs::core::TableIndex>(layer_idx));
                         cells.block_id.push_back(static_cast<mhs::core::TableIndex>(block_idx));
                     }

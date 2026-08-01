@@ -1,8 +1,9 @@
 #pragma once
 
-#include "runtime/model.hpp"
-#include "runtime/solution.hpp"
+#include "common/model.hpp"
+#include "common/solution.hpp"
 
+#include <span>
 #include <vector>
 
 namespace mhs::sim {
@@ -11,10 +12,9 @@ namespace mhs::sim {
     //
     // 设计要点：
     // - **局部采样**：每个时间步只对 (n_probes × 1) 个 cell 做 O(1) 邻域寻址与
-    //   局部 LSQ，不再展开到全网格 node_T。
-    // - **算法精度对齐 mhs::utils::sampling**：以"邻接 cell 的均值"得到 T_c，
-    //   再以各向异性距离权重对 cell 周围 8 cell 中心 + 该 cell 的 Neumann/Cauchy
-    //   面中心外推做 LSQ 拟合。Dirichlet 面早返回。
+    //   基于梯度的插值，不再展开到全网格 node_T。
+    // - **算法精度**：通过 cell locate 定位包含探针的单元，然后使用 Green-Gauss
+    //   重构梯度从单元中心外推到探针位置。Dirichlet 面早返回（直接使用 BC 值）。
     // - 依赖：仅 mhs::core（Model、FieldContext）。
     class ProbeRecorder {
     public:
@@ -25,7 +25,7 @@ namespace mhs::sim {
         void initialize(const mhs::core::Model& model);
 
         // 记录一个时间点。稳态/瞬态通用：稳态求解场景下调用一次即可。
-        void record(double time, const std::vector<double>& cell_T);
+        void record(double time, std::span<const double> cell_T);
 
         // 对外只读访问。
         const std::vector<mhs::core::ProbeTrace>& traces() const { return traces_; }
@@ -47,7 +47,7 @@ namespace mhs::sim {
         // 在 cell 邻域内做局部 LSQ 拟合，返回探针点温度；越界或邻域无有效 cell
         // 返回 NaN。`time` 注入 FieldContext.t，让时间依赖的 BC/材料表达式
         // 在正确的时刻被求值。
-        double sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T, double time) const;
+        double sample_one(const ProbeSlot& slot, std::span<const double> cell_T, double time) const;
     };
 
 } // namespace mhs::sim

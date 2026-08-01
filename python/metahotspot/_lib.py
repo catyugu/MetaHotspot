@@ -2,8 +2,13 @@
 
 Module-level singleton::
 
-    from metahotspot._lib import get_dll, load_library
+    from metahotspot._lib import get_dll
     dll = get_dll()  # first call loads & configures; subsequent calls cached
+
+For macromodel extension::
+
+    from metahotspot._lib import get_ext_dll
+    dll = get_ext_dll()
 """
 
 from __future__ import annotations
@@ -17,23 +22,30 @@ from pathlib import Path
 #  Cache for the loaded CDLL
 # ---------------------------------------------------------------------------
 _dll: ctypes.CDLL | None = None
+_ext_dll: ctypes.CDLL | None = None
 
 
 def get_dll() -> ctypes.CDLL:
-    """Return the loaded (and configured) CDLL — cached singleton."""
+    """Return the loaded (and configured) core CDLL — cached singleton."""
     global _dll
     if _dll is None:
         _dll = load_library()
-        # Lazy-import here to avoid circular imports during package init.
         from metahotspot._dll_interface import configure_dll
 
         configure_dll(_dll)
     return _dll
 
 
-# ---------------------------------------------------------------------------
-#  Library location probing
-# ---------------------------------------------------------------------------
+def get_ext_dll() -> ctypes.CDLL:
+    """Return the loaded (and configured) macromodel extension CDLL."""
+    global _ext_dll
+    if _ext_dll is None:
+        _ext_dll = load_library()
+        from metahotspot._dll_interface import configure_dll, configure_ext_dll
+
+        configure_dll(_ext_dll)
+        configure_ext_dll(_ext_dll)
+    return _ext_dll
 
 
 def load_library() -> ctypes.CDLL:
@@ -68,18 +80,17 @@ def _probe_lib_paths() -> list[Path]:
     """Return a list of candidate paths, most-preferred first."""
     candidates: list[Path] = []
 
-    # -- env var override --
     env = Path.cwd() / "build" / "src" / "api"
 
     env_var = _env_path()
     if env_var is not None:
         candidates.append(env_var)
 
-    # -- wheel sibling layout --
+    # wheel sibling layout
     this_dir = Path(__file__).resolve().parent
     candidates.append(this_dir / _lib_name())
 
-    # -- build tree (editable install / in-tree usage) --
+    # build tree (editable install / in-tree usage)
     repo_root = this_dir.parent.parent
     for build_dir in [repo_root / "build"]:
         api_dir = build_dir / "src" / "api"

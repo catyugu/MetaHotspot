@@ -1,7 +1,7 @@
+#include "common/mesh.hpp"
 #include "compiler/model_compiler.hpp"
 #include "config.h"
 #include "io/model_io.hpp"
-#include "runtime/mesh.hpp"
 #include "solver/fluid_assembler.hpp"
 
 #include <algorithm>
@@ -20,8 +20,15 @@ namespace {
         EXPECT_TRUE(std::filesystem::exists(overlay));
 
         auto definition = mhs::io::read_xml(input);
-        EXPECT_TRUE(mhs::io::merge_fluid_xml(overlay, definition));
+        EXPECT_NO_THROW(mhs::io::merge_fluid_xml(overlay, definition));
         return mhs::sim::build_model(definition);
+    }
+
+    /// Build the default (uniform initial_temperature) state vector.
+    std::vector<double> default_state(const mhs::core::Model& model)
+    {
+        return std::vector<double>(
+            static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
     }
 
 } // namespace
@@ -88,9 +95,7 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
 {
     auto model = load_microfluid_case();
-    const auto n = model.cells.material_id.size();
-    std::vector<double> temperature(n, 300.0);
-    const auto increment = mhs::sim::fluid::assemble_increment(model, temperature, 0.0);
+    const auto increment = mhs::sim::fluid::assemble_increment(model, default_state(model), 0.0);
 
     for (const auto& entry : increment.matrix_entries) {
         const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row());

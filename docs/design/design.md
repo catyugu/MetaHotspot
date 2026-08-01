@@ -1,31 +1,19 @@
-# 接口设计索引
+# 设计文档索引
 
-本文档是模块接口的入口。各小节给出**当前代码**对应的接口契约（不含历史）。
+`CONTEXT.md` 保存跨模块稳定约束；本目录保存当前实现契约；`docs/adr/` 只记录重要决策及其理由。接口、数据流和布局分别只有一个事实源，其他文档应链接引用而不复制。
 
-| 文件                                             | 内容                                                                                                     |
-|--------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
-| **[data-flow.md](data-flow.md)**                 | 数据流与流程（总览、各阶段表、关键设计原则）                                                             |
-| **[expr-api.md](expr-api.md)**                   | expr 模块接口                                                                                            |
-| **[io-structure.md](io-structure.md)**           | IO 模型结构（直接映射 XML schema）                                                                       |
-| **[internal-model.md](internal-model.md)**       | 内部模型结构（SoA 布局，扁平化）                                                                         |
-| **[module-interfaces.md](module-interfaces.md)** | 模块接口（io、preprocessor、assembler、time_scheme、linear_solver、scheduler、nonlinear、postprocessor） |
-| **[project-structure.md](project-structure.md)** | 项目结构、CMake、Logger                                                                                  |
+| 文件                                         | 唯一负责的内容                                |
+| -------------------------------------------- | --------------------------------------------- |
+| [data-flow.md](data-flow.md)                 | 端到端数据流、阶段输入输出和热循环行为        |
+| [expr-api.md](expr-api.md)                   | 表达式编译、求值上下文和线程模型              |
+| [io-structure.md](io-structure.md)           | `ModelDefinition` authoring model 及 XML 边界 |
+| [project-structure.md](project-structure.md) | 构建目标、源码归属和命名空间规则              |
 
-## 决策摘要（详见 `docs/adr/`）
+## 决策记录
 
-| ADR  | 决策                                                                |
-|------|:--------------------------------------------------------------------|
-| 0001 | 全系统按瞬态设计；稳态 = t=0 时的单次非线性迭代                     |
-| 0002 | Cell-centered DOF；BC 走面积分，不存面 DOF；`face_bcs` 扁平数组存储 |
-| 0003 | 内部模型全部 SoA                                                    |
-| 0004 | 几何 vs 场/BC 表达式分离；TBB ETS 锁无关求值；热源索引表            |
-
-## 关键原则
-
-1. 内部模型不含原始字符串 — 所有表达式预编译为 `CompiledExpression`
-2. 热源索引表 — `Model::heat_source_table` + 每单元 `TableIndex` 索引
-3. POD 优先；纯函数优先（`Assembler::assemble` 在 `(model, ctx)` 下无状态）
-4. SoA 贯穿内部模型
-5. expr 预编译，`eval()` 锁无关
-6. 复杂形式用 native function — `mhs::sim::register_all_functions(symbols, ...)` 将有序的 `ModelDefinition::functions` 写入本地 `mhs::core::SymbolTable::natives`，由 `parse(formula, symbols)` 在编译时绑定
-7. **不支持 2D** — `ModelDefinition` 只描述当前实现支持的 3D 网格，不保留未生效的维度枚举。
+| ADR                                      | 决策                                                     |
+| ---------------------------------------- | -------------------------------------------------------- |
+| [0001](../adr/0001-transient-first.md)   | 瞬态优先；稳态为 `t = 0` 的单次非线性求解                |
+| [0002](../adr/0002-cell-centered-dof.md) | Cell-centered DOF；边界走面积分；每单元六面存储已解析 BC |
+| [0003](../adr/0003-soa-layout.md)        | 运行期内部模型采用 SoA                                   |
+| [0004](../adr/0004-expr-split.md)        | 几何表达式与场表达式分离；场表达式锁无关求值             |

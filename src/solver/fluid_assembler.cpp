@@ -1,7 +1,7 @@
 #include "solver/fluid_assembler.hpp"
 
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -17,9 +17,7 @@ namespace mhs::sim::fluid {
         };
 
         bool is_fluid(const mhs::core::FluidDomain& fluid, mhs::core::Index cell)
-        {
-            return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::core::invalidIndex;
-        }
+        { return cell < fluid.global_to_fluid.size() && fluid.global_to_fluid[cell] != mhs::core::invalidIndex; }
 
         void add_interface_correction(std::vector<Eigen::Triplet<double>>& entries, mhs::core::Index fluid_cell,
             mhs::core::Index solid_cell, double correction)
@@ -35,7 +33,7 @@ namespace mhs::sim::fluid {
     } // namespace
 
     FluidAssemblyIncrement assemble_increment(
-        const mhs::core::Model& model, std::vector<double>& temperature, double current_time)
+        const mhs::core::Model& model, std::span<const double> state, double current_time)
     {
         const mhs::core::Index active_count = static_cast<mhs::core::Index>(model.cells.material_id.size());
         assert(active_count <= static_cast<mhs::core::Index>(std::numeric_limits<Eigen::Index>::max()));
@@ -61,8 +59,8 @@ namespace mhs::sim::fluid {
                     const double dz = model.mesh.dz[iz];
 
                     const auto& material = model.material_table[model.cells.material_id[cell]];
-                    const mhs::core::FieldContext cell_context {model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz],
-                        temperature[static_cast<std::size_t>(cell)], current_time};
+                    const mhs::core::FieldContext cell_context {
+                        model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], state[cell], current_time};
                     const double kx = material.kx.eval(cell_context);
                     const double ky = material.ky.eval(cell_context);
                     const double kz = material.kz.eval(cell_context);
@@ -83,8 +81,8 @@ namespace mhs::sim::fluid {
                         const mhs::core::Index niy = mhs::utils::neighbor_iy(dir, iy);
                         const mhs::core::Index niz = mhs::utils::neighbor_iz(dir, iz);
                         const auto& neighbor_material = model.material_table[model.cells.material_id[neighbor]];
-                        const mhs::core::FieldContext neighbor_context {model.mesh.cx[nix], model.mesh.cy[niy],
-                            model.mesh.cz[niz], temperature[static_cast<std::size_t>(neighbor)], current_time};
+                        const mhs::core::FieldContext neighbor_context {
+                            model.mesh.cx[nix], model.mesh.cy[niy], model.mesh.cz[niz], state[neighbor], current_time};
 
                         if (is_fluid(model.fluid, neighbor)) {
                             const double volume_flux = model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face];

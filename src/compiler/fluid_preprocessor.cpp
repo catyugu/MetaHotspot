@@ -1,10 +1,9 @@
 #include "compiler/fluid_preprocessor.hpp"
 
+#include "common/constants.hpp"
+#include "common/mesh.hpp"
 #include "compiler/fluid_physics.hpp"
-#include "logging/logger.hpp"
 #include "numerics/linear/linear_solver.hpp"
-#include "runtime/constants.hpp"
-#include "runtime/mesh.hpp"
 
 #include <Eigen/Sparse>
 #include <algorithm>
@@ -33,9 +32,7 @@ namespace mhs::sim::fluid {
         };
 
         mhs::core::Index fluid_count(const mhs::core::Model& model)
-        {
-            return static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size());
-        }
+        { return static_cast<mhs::core::Index>(model.fluid.fluid_to_global.size()); }
 
         bool is_fluid_cell(const mhs::core::Model& model, mhs::core::Index ix, mhs::core::Index iy, mhs::core::Index iz)
         {
@@ -100,9 +97,7 @@ namespace mhs::sim::fluid {
         }
 
         int axis_index(mhs::model::Axis axis)
-        {
-            return axis == mhs::model::Axis::X ? 0 : axis == mhs::model::Axis::Y ? 1 : 2;
-        }
+        { return axis == mhs::model::Axis::X ? 0 : axis == mhs::model::Axis::Y ? 1 : 2; }
 
         bool point_in_region(const mhs::model::FaceRegion& region, double a, double b, double si_scale)
         {
@@ -263,8 +258,7 @@ namespace mhs::sim::fluid {
             solver->compute(matrix);
             Eigen::VectorXd pressure = solver->solve(rhs);
             if (!solver->success()) {
-                MHS_LOG_WARN("Fluid pressure solve failed (nf={}, nz={})", count, static_cast<int>(matrix.nonZeros()));
-                return false;
+                throw std::runtime_error("fluid pressure solve failed");
             }
             workspace.pressure.assign(pressure.data(), pressure.data() + pressure.size());
             return true;
@@ -340,8 +334,8 @@ namespace mhs::sim::fluid {
         apply_boundaries(model, workspace, boundaries, si_scale);
         compute_channel_dimensions(model, workspace);
         initialize_hydraulic_conductance(model, workspace);
-        if (solve_pressure(model, workspace))
-            compute_face_volume_flux(model, workspace);
+        solve_pressure(model, workspace);
+        compute_face_volume_flux(model, workspace);
     }
 
 } // namespace mhs::sim::fluid

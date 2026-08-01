@@ -1,8 +1,8 @@
-#include "runtime/mesh.hpp"
-#include "solver/interpolation.hpp"
 #include "solver/probe_recorder.hpp"
+#include "common/mesh.hpp"
+#include "solver/interpolation.hpp"
 
-#include <limits>
+#include <span>
 
 namespace mhs::sim {
 
@@ -67,7 +67,7 @@ namespace mhs::sim {
         }
     }
 
-    void ProbeRecorder::record(double time, const std::vector<double>& cell_T)
+    void ProbeRecorder::record(double time, std::span<const double> cell_T)
     {
         if (slots_.empty())
             return;
@@ -80,7 +80,7 @@ namespace mhs::sim {
         }
     }
 
-    double ProbeRecorder::sample_one(const ProbeSlot& slot, const std::vector<double>& cell_T, double time) const
+    double ProbeRecorder::sample_one(const ProbeSlot& slot, std::span<const double> cell_T, double time) const
     {
         const auto& mesh = model_->mesh;
         const auto& cells = model_->cells;

@@ -1,99 +1,47 @@
 # 项目结构
 
-## 目录
+本文只定义源码、构建目标和命名空间的归属。模块接口在各目标头文件中自描述，运行流程见 [data-flow.md](data-flow.md)。
 
-```bash
-MetaHotspot/
-├── CMakeLists.txt
-├── cmake/
-│   ├── CPM.cmake                # CPM package manager
-│   ├── Dependencies.cmake       # CPM: Eigen, spdlog, muparser, tinyxml2, oneTBB
-│   ├── Utilities.cmake          # library helper、严格告警、运行库复制
-│   ├── config.h.in
-│   └── Deps/                    # 第三方依赖配置
-│       ├── mkl.cmake
-│       ├── muparser.cmake
-│       ├── other.cmake
-│       └── tbb.cmake
-├── src/
-│   ├── model/                   # mhs_model       纯建模契约与 ModelBuilder（无第三方依赖）
-│   ├── runtime/                 # mhs_runtime     header-only 运行期契约与网格助手
-│   ├── compiler/                # mhs_compiler    ModelDefinition → 运行期 SoA、冻结流场
-│   ├── solver/                  # mhs_solver      组装、迭代、时间推进、探针与后处理
-│   ├── numerics/
-│   │   ├── expression/          # mhs_expression  muparser + TBB 表达式封装
-│   │   └── linear/              # mhs_linear      Eigen / MKL 线性求解封装
-│   ├── io/                      # mhs_io          tinyxml2 适配、XML / VTU 写出
-│   └── logging/                 # mhs_logging     spdlog 封装
-├── tests/                       # GTest, 每模块一个套件
-└── bin/                         # 主程序入口
-```
+## 构建目标
 
-## CMake 顶层
+| 目录                       | 目标                | 职责                                            |
+| -------------------------- | ------------------- | ----------------------------------------------- |
+| `src/model/`               | header-only         | header-only authoring model types；无第三方依赖 |
+| `src/common/`              | `mhs_common`        | header-only 运行期契约和网格助手                |
+| `src/compiler/`            | `mhs_compiler`      | 几何解析、SoA 编译和冻结流场构建                |
+| `src/solver/`              | `mhs_solver`        | 组装、迭代、时间推进、探针和后处理              |
+| `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                      |
+| `src/numerics/linear/`     | `mhs_linear`        | Eigen / MKL 线性求解封装                        |
+| `src/io/`                  | `mhs_io`            | tinyxml2 适配及 XML/VTU 输出                    |
+| `src/logging/`             | `mhs_logging`       | spdlog 封装                                     |
+| `src/api/`                 | `metahotspot` C API | opaque handle 与 C ABI 适配                     |
+| `bin/`                     | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理              |
+| `tests/`                   | `mhs_tests`         | 单元测试和模块行为验证                          |
 
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(MetaHotspot VERSION 1.0.0 LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-option(VERBOSE "Enable DEBUG level logging" OFF)
-option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" ON)
-
-configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.h)
-
-include(cmake/Dependencies.cmake)
-include(cmake/Utilities.cmake)
-
-add_subdirectory(src)
-enable_testing()
-add_subdirectory(tests)
-add_subdirectory(bin)
-```
-
-## Logger
-
-`mhs::logger` 自由函数（封装 spdlog）：
-
-```cpp
-namespace mhs::logger {
-    void init(std::string_view log_file = {}, bool console_output = true);
-    void flush();
-    [[noreturn]] void panic();   // log + flush + std::exit(1)，不抛
-
-    template <typename... Args>
-    void debug / info / warn / error(spdlog::format_string_t<Args...> fmt, Args&&... args);
-}
-```
-
-宏：
-
-| 宏              | 含义                                            |
-| --------------- | ----------------------------------------------- |
-| `MHS_LOG_DEBUG` | 记录 debug；`VERBOSE=ON` 时 logger 级别允许输出 |
-| `MHS_LOG_INFO`  | 始终启用                                        |
-| `MHS_LOG_WARN`  | 记录警告 + 报告回退值                           |
-
-`spdlog::flush_on(spdlog::level::warn)` — 警告及以上自动 flush，保证 panic 前不丢日志。
-
-## 2D 支持
-
-**不支持。** `ModelDefinition` 只描述当前实现支持的 3D 网格，不再保留未生效的 `Dimension` 字段。
+模块内按职责拆分 `.cpp`，但 assembler、scheduler、fluid 等实现细节不单独建库。第三方依赖或编译成本边界才构成独立目标。
 
 ## 命名空间
 
-| 命名空间          | 源目录                                          | 角色                                     |
-| ----------------- | ----------------------------------------------- | ---------------------------------------- |
-| `mhs`             | —                                               | 库品牌前缀（壳，不含类型定义）           |
-| `mhs::model`      | `model/`                                        | 建模契约与顺序式 ModelBuilder            |
-| `mhs::core`       | `runtime/` + `solver/` + `numerics/expression/` | 求解模型、表达式、POD 枚举、共享基础设施 |
-| `mhs::utils`      | `runtime/` + `compiler/` + `solver/`            | 网格、采样和物理助手                     |
-| `mhs::sim`        | `compiler/` + `solver/` + `numerics/linear/`    | 模型编译、组装、线性/非线性求解与调度    |
-| `mhs::sim::fluid` | `compiler/` + `solver/`                         | 冻结流场构建与不改变稀疏模式的热装配增量 |
-| `mhs::io`         | `io/`                                           | XML I/O、VTU 输出                        |
-| `mhs::post`       | `solver/`                                       | 单元→节点插值、温度范围                  |
-| `mhs::logger`     | `logging/`                                      | 独立日志服务                             |
+| 命名空间          | 角色                                 |
+| ----------------- | ------------------------------------ |
+| `mhs`             | 品牌前缀；不定义或重导出类型         |
+| `mhs::model`      | authoring model 与 builder           |
+| `mhs::core`       | 运行期数据契约、表达式句柄和共享枚举 |
+| `mhs::utils`      | 网格、采样和物理辅助函数             |
+| `mhs::sim`        | 编译、组装、数值求解和调度           |
+| `mhs::sim::fluid` | 冻结流场构建及流热装配               |
+| `mhs::io`         | 输入输出适配                         |
+| `mhs::post`       | 结果插值和派生量                     |
+| `mhs::logger`     | 日志服务                             |
 
-公共 API 最多两层 `mhs::领域`；第三层 `mhs::领域::detail` 仅隐藏跨文件实现。命名空间与目录解耦。
+命名空间表达领域边界，不要求与目录一一对应。公共 API 最多两层；`detail` 只用于跨文件私有实现，匿名命名空间用于单文件私有实现。
+
+## 构建规则
+
+- C++20，禁用编译器扩展。
+- 项目源码启用严格告警并视为错误；第三方库除外。
+- Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
+- `mhs_common` 和 `mhs_model` 不得引入 Eigen、tinyxml2、spdlog 或 TBB 实现依赖。
+- C API 公共头只暴露 C 类型、枚举、POD view 和 opaque handle。
+
+具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。

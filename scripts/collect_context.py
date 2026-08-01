@@ -19,7 +19,6 @@ IGNORE_DIR_PATTERNS = [
     r"^env$",
     r"^dist$",
     r"^build",
-    r"^legacy$",
     r"^vcpkg_installed$",
     r"^cases$",
     r"^results$",

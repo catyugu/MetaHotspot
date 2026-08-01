@@ -1,4 +1,4 @@
-"""MetaHotspot — Python bindings for the MetaHotspot C API thermal simulation library.
+"""Python bindings for the MetaHotspot C API thermal simulation library.
 
 Usage::
 
@@ -8,27 +8,26 @@ Usage::
     model.read_xml("case.xml")
     compiled = model.compile()
     solution = compiled.solve()
-    T_cells = solution.cell_temperatures()
+    temperatures = solution.temperature
 
-    # Access the assembled linear system for custom workflows
-    assembly = compiled.assemble()
-    K, f = assembly.as_csc()
+Macromodel coupling uses ``metahotspot.Operators`` directly::
+
+    from metahotspot.macromodel import PortMap, solve
+    solution = solve(compiled, operators, ports, state)
 """
 
-from metahotspot.model import Model
-from metahotspot.compiled import Compiled
-from metahotspot.solution import Solution
-from metahotspot.assembly import Assembly
-from metahotspot import enums, types
+from metahotspot import enums
 from metahotspot._error import MetaHotspotError
-from metahotspot._lib import get_dll, load_library
+from metahotspot.compiled import Compiled, Operators, SolveOptions
+from metahotspot.model import Model
+from metahotspot.solution import Solution
 
 __all__ = [
     "Model",
     "Compiled",
     "Solution",
-    "Assembly",
+    "SolveOptions",
+    "Operators",
     "enums",
-    "types",
     "MetaHotspotError",
 ]

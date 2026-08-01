@@ -18,24 +18,29 @@ XML
                       │     └─> pressure scratch → frozen face flux + interface factor
                       └─> mhs::core::Model (含 face_bcs, FluidDomain)
                               └─> mhs::sim::solve
-                                    ├─> mhs::sim::time_scheme::StepController::rebuild(duration, output_dt)
-                                    │     ├─> StepController::prepare(dt_sug, t, duration) → dt_exec
-                                    │     ├─> mhs::sim::Assembler::assemble(ctx)
-                                    │     │     ├─> base thermal parallel_for    // no fluid branches
-                                    │     │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ ctx.T
-                                    │     │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ ctx.T
-                                    │     │     │     ├─> k_along(dir) 选用该面法向对应的 k
-                                    │     │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
-                                    │     │     │     ├─> heat_source_table[hs_idx].eval
-                                    │     │     │     └─> thread-local triplets + b + mass
-                                    │     │     ├─> fluid::assemble_increment    // same sparse coordinates
-                                    │     │     └─> merge once → AssemblyResult {K, f, M_diag}
-                                    │     ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
-                                    │     ├─> mhs::sim::nonlinear_solve(ls_provider, T, solver) [Anderson 加速定点迭代]
-                                    │     └─> mhs::sim::time_scheme::estimate_error(hist, T, dt, cfg) → ErrorEstimate
-                                    ├─> StepController::flush_outputs(t + dt) → output times
-                                    ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 每步 O(n_probes) 局部采样
-                                    └─> mhs::post::interpolate_cell_to_node           // solve() 结束后一次性展开
+                                    └─> mhs::sim::solve_system(Study, SystemAssembler, state)
+                                    ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t) → dt_exec
+                                    ├─> mhs::sim::assemble_thermal(model, fvm_state, time)
+                                    │     ├─> assemble_cells parallel_for // no fluid branches
+                                    │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
+                                    │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state
+                                    │     │     ├─> k_along(dir) 选用该面法向对应的 k
+                                    │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
+                                    │     │     ├─> heat_source_table[hs_idx].eval
+                                    │     │     └─> thread-local K/C triplets + f
+                                    │     ├─> assemble_fluid               // same sparse coordinates
+                                    │     └─> merge once → Operators {K, C, f}
+                                    ├─> 可选 assemble_modal_port_system
+                                    │     ├─> assemble_thermal(model, fvm_state, time)
+                                    │     ├─> 宏端口模态 Operators + 物理端口基底 Phi
+                                    │     ├─> 按当前 FVM 状态重算接口半热导
+                                    │     └─> 物理接口投影到 modal coordinates
+                                    ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
+                                    ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
+                                    └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
+                                    ├─> StepController::output_due(t + dt) → exact solved output state
+                                    ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 输出时刻 O(n_probes) 局部采样
+                                    └─> mhs::post::interpolate_cell_to_node           // solve_thermal() 结束后一次性展开
                                           ├─> cell 内 k 退化为三轴算术平均（软权重）
                                           ├─> 面中心外推使用该面法向对应的 k
                                           └─> mhs::io::write_vtu + mhs::io::write_xml(probeTraces)   (virtual → NaN)
@@ -43,55 +48,21 @@ XML
 
 ## 各阶段
 
-| 阶段              | 输入                                  | 输出                            | 关键                                                     |
-|-------------------|---------------------------------------|---------------------------------|----------------------------------------------------------|
-| XML 解析          | XML 文件                              | `ModelDefinition`               | tinyxml2                                                 |
-| 预处理-几何       | `mesh.{x,y,z}_vertices`               | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
-| 预处理-单元拓扑   | mesh + 层几何                         | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
-| 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
-| 预处理-表达式编译 | IO 字符串                             | `CompiledExpression`            | muparser 或 `make_constant`                              |
-| 组装              | `Model` + `AssembleContext`           | `AssemblyResult`                | TBB 并行；`eval()` 锁无关                                |
-| 线性求解          | `A x = b`                             | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
-| 非线性更新        | 线性解 `G(T)`                         | 下一温度迭代值                  | Anderson 加速或欠松弛                                    |
-| 后处理            | `Model` + `T`                         | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
+| 阶段              | 输入                                   | 输出                            | 关键                                                     |
+| ----------------- | -------------------------------------- | ------------------------------- | -------------------------------------------------------- |
+| XML 解析          | XML 文件                               | `ModelDefinition`               | tinyxml2                                                 |
+| 预处理-几何       | `mesh.{x,y,z}_vertices`                | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
+| 预处理-层几何     | `ModelDefinition.layers`               | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
+| 预处理-单元拓扑   | mesh + 层几何                          | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
+| 预处理-单元归属   | mesh + 层几何                          | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
+| 预处理-面 BC      | mesh + `BoundaryPatch[]`               | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
+| 预处理-表达式编译 | IO 字符串                              | `CompiledExpression`            | muparser 或 `make_constant`                              |
+| 组装              | 当前完整状态 + 时间                    | `Operators {K,C,f}`             | `SystemAssembler` 拥有状态划分和全部耦合物理             |
+| 模态端口组合      | FVM + modal macro + physical interface | 全局 `Operators`                | 每轮重算 FVM 半热导并用 `Phi` 投影，不进入 scheduler     |
+| 时间输出          | accepted state + output grid           | observer state                  | Adaptive/Fixed 均截短到网格；禁止插值全局/模态状态       |
+| 线性求解          | `A x = b`                              | `x`                             | EigenSparseLU / EigenBiCGSTAB                            |
+| 非线性更新        | 线性解 `G(x)`                          | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
+| 后处理            | `Model` + `cell_temperature`           | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
+| 探针记录          | `cell_T` + `model.observation_points`  | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
 
-## 关键设计原则
-
-### 1. 内部模型不含原始字符串
-
-所有表达式预编译为 `mhs::core::CompiledExpression`。
-
-### 2. 热源索引表
-
-`heat_source_table` 按 Block 编译为 `vector<CompiledExpression>`；每个活跃单元只保存一个 `TableIndex` 索引。
-
-### 3. 面级别 BC
-
-`Model::face_bcs[N_active * 6]` 扁平数组。`face_bcs[c * 6 + dir]` 直接索引。
-
-### 4. 虚拟单元
-
-`grid_to_cell` 标记虚拟网格，`cell_to_grid` 让 Assembler 只遍历活跃单元；Postprocessor 用前者展开并在虚拟位置写 NaN。
-
-### 5. SoA 贯穿内部模型
-
-所有热循环数组按字段连续存储。
-
-### 6. 无共享可变状态
-
-模块间通过 const 引用和返回值通信。`expr` 模块**没有**任何全局注册表或互斥锁：所有 setup 阶段的符号（几何变量 + native 闭包）通过显式 `mhs::core::SymbolTable` 按值传递，`CompiledExpression` 在构造时捕获其副本，运行时 `eval()` 零同步。多个 `build_model()` 调用互不共享构建状态。
-
-### 7. 各向异性热导率 — 面法向匹配与后处理距离权重
-
-`MaterialProps` 按三轴拆分 `kx / ky / kz`。装配器通过 `k_along(dir)` 根据面法向选取对应的分量：X 面用 `kx`，Y 面用 `ky`，Z 面用 `kz`。后处理器在节点插值和面中心外推权重中使用各向异性逆距离
-
-```text
-w = 1 / (dx²/kx + dy²/ky + dz²/kz)
-```
-
-以使 k 大的方向传播得快的影响更显著，与扩散方程的各向异性一致。
-
-`k_along` / `half_length_along` / `face_area` / `neighbor_grid_index` 等面法向助手统一定义在 `src/runtime/mesh.hpp`（`mhs::utils` 命名空间）。
+运行期 SoA 和面 BC 约定见代码注释；表达式线程模型见 [expr-api.md](expr-api.md)。

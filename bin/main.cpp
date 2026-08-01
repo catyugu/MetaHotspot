@@ -2,10 +2,9 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
-#include "solver/postprocessor.hpp"
-#include "solver/scheduler.hpp"
 #include "logging/logger.hpp"
-#include <filesystem>
+#include "common/solver.hpp"
+#include "solver/postprocessor.hpp"
 #include <iostream>
 #include <optional>
 #include <string>
@@ -51,15 +50,8 @@ int main(int argc, char* argv[])
 
         // Fluid overlay: 加载与否由 CLI 决定；只有显式传入 --fluid-overlay 时才执行流体相关逻辑。
         if (fluidOverlayPath.has_value()) {
-            std::error_code ec;
-            if (std::filesystem::exists(*fluidOverlayPath, ec)) {
-                if (mhs::io::merge_fluid_xml(*fluidOverlayPath, definition)) {
-                    MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
-                }
-                else {
-                    MHS_LOG_WARN("Fluid data file '{}' contained no FluidOverlay element; skipping", *fluidOverlayPath);
-                }
-            }
+            mhs::io::merge_fluid_xml(*fluidOverlayPath, definition);
+            MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());
         }
 
         auto model = mhs::sim::build_model(definition);
@@ -75,20 +67,20 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Run simulation
+        // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
         auto result = mhs::sim::solve(model);
 
         MHS_LOG_INFO("Simulation complete.");
 
-        const auto& solution = result.temperature;
+        const auto& solution = result.state;
 
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
         mhs::io::write_vtu(output_vtu, model, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
-        // XML: still uses node-centered data (legacy format)
+        // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
         mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces);
         MHS_LOG_INFO("XML written to: {}", output_xml);
