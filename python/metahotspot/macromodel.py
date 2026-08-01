@@ -1,8 +1,9 @@
 """Dirichlet-to-Neumann macromodel coupling for MetaHotspot.
 
-Python supplies only geometric port patches and a reduced DtN mapping. Patch
-resolution, half-conductance evaluation, coupled assembly, and solve scheduling
-are owned by the C++ extension.
+Physical port temperatures are always the leading states of a DtN model. This
+keeps the coupling graph sparse and removes the former dense physical-port basis
+from both the Python and C APIs. Any reduced internal coordinates follow the
+exact physical port states.
 """
 
 from __future__ import annotations
@@ -41,11 +42,7 @@ class MhsMacroPortPatch(ctypes.Structure):
 
 
 class MhsMacroDtNModel(ctypes.Structure):
-    _fields_ = [
-        ("operators", MhsOperatorsView),
-        ("basis", ctypes.POINTER(ctypes.c_double)),
-        ("physical_port_count", ctypes.c_size_t),
-    ]
+    _fields_ = [("operators", MhsOperatorsView)]
 
 
 _configured_dll_ids: set[int] = set()
@@ -111,10 +108,9 @@ class PortPatch:
 
 
 class DtNModel(NamedTuple):
-    """Reduced DtN operators and the physical-port temperature map."""
+    """DtN operators whose leading states are exact physical ports."""
 
     operators: tuple
-    port_basis: np.ndarray | None = None
 
 
 PortModel = DtNModel
@@ -194,7 +190,7 @@ class PortMap(OwnedHandle):
             state = compiled.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
         if state.size != compiled.cell_count:
-            raise ValueError("state size must equal compiled cell_count")
+            raise ValueError("state size must equal compiled.cell_count")
         view = MhsOperatorsView()
         check(
             self._dll.mhs_macromodel_assemble_dtn(
@@ -217,7 +213,7 @@ class PortMap(OwnedHandle):
 def solve(
     compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None
 ) -> Solution:
-    """Solve a compiled FVM model coupled to a reduced DtN model."""
+    """Solve an FVM model coupled to a sparse, exact-port DtN model."""
     if ports._compiled is not compiled:
         raise ValueError("ports were compiled for a different model")
 
@@ -225,6 +221,8 @@ def solve(
     rhs = np.ascontiguousarray(f, dtype=np.float64)
     state = np.ascontiguousarray(state, dtype=np.float64)
     dtn_state_count = rhs.size
+    if dtn_state_count < ports.port_count:
+        raise ValueError("DtN states must begin with one state per physical port")
     if state.size != compiled.cell_count + dtn_state_count:
         raise ValueError("state size must equal cell_count + DtN state count")
 
@@ -235,30 +233,13 @@ def solve(
     if normalized_c.shape != (dtn_state_count, dtn_state_count):
         raise ValueError("DtN C dimension must match f")
 
-    basis = None
-    if dtn.port_basis is None:
-        physical_port_count = dtn_state_count
-        basis_ptr = None
-    else:
-        basis = np.ascontiguousarray(dtn.port_basis, dtype=np.float64)
-        if basis.ndim != 2 or basis.shape[1] != dtn_state_count:
-            raise ValueError("port_basis must have shape [physical ports, DtN states]")
-        physical_port_count = basis.shape[0]
-        basis_ptr = basis.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    if physical_port_count != ports.port_count:
-        raise ValueError("port_basis rows must equal the compiled port count")
-
     operators = MhsOperatorsView(
         K=k_view,
         C=c_view,
         rhs=rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         n=dtn_state_count,
     )
-    model = MhsMacroDtNModel(
-        operators=operators,
-        basis=basis_ptr,
-        physical_port_count=physical_port_count,
-    )
+    model = MhsMacroDtNModel(operators=operators)
 
     opts_ptr = None
     if opts is not None:
@@ -280,7 +261,7 @@ def solve(
         ),
         "macromodel_solve",
     )
-    _ = normalized_k, normalized_c, basis
+    _ = normalized_k, normalized_c
     return Solution._from_handle(
         ports._dll, ports._dll.mhs_solution_destroy, solution, compiled
     )

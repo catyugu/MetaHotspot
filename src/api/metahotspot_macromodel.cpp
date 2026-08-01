@@ -156,8 +156,8 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const 
         validate_owner(compiled, ports);
         const auto fvm_count = compiled->model.cells.cell_to_grid.size();
         const auto dtn_state_count = dtn->operators.n;
-        if (dtn->physical_port_count == 0 || dtn->physical_port_count != ports->map.port_count)
-            throw std::invalid_argument("DtN port count must match the compiled port map");
+        if (dtn_state_count < ports->map.port_count)
+            throw std::invalid_argument("DtN states must begin with one state per physical port");
         if (state_count != fvm_count + dtn_state_count)
             throw std::invalid_argument("state_count must equal cell_count + DtN state count");
 
@@ -166,12 +166,6 @@ MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const 
         model.operators.C = csc_to_eigen(dtn->operators.C);
         model.operators.f
             = Eigen::Map<const Eigen::VectorXd>(dtn->operators.rhs, static_cast<Eigen::Index>(dtn_state_count));
-        model.physical_port_count = dtn->physical_port_count;
-        if (dtn->basis) {
-            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> basis(dtn->basis,
-                static_cast<Eigen::Index>(dtn->physical_port_count), static_cast<Eigen::Index>(dtn_state_count));
-            model.port_basis = basis;
-        }
 
         auto result = mhs::macro::solve(compiled->model, model, ports->map, std::span<const double>(state, state_count),
             to_solve_options(opts, compiled->model.transient_duration));

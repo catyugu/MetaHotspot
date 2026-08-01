@@ -20,11 +20,14 @@ typedef struct {
     mhs_rect2d_t rectangle;
 } mhs_macro_port_patch_t;
 
-/** Reduced DtN model. basis is row-major [physical_port_count x operators.n]. */
+/**
+ * DtN model with exact physical ports.
+ *
+ * The leading port-map count states in operators are physical port
+ * temperatures. Optional reduced internal coordinates follow those states.
+ */
 typedef struct {
     mhs_operators_t operators;
-    const double* basis; /* NULL = identity */
-    size_t physical_port_count;
 } mhs_macro_dtn_model_t;
 
 /** Compile geometric patches against a compiled model. */
@@ -37,7 +40,7 @@ MHS_API size_t mhs_macromodel_port_count(const mhs_macro_port_map_t* map);
 MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
     const double* state, size_t state_count, double time, mhs_operators_t* out);
 
-/** Solve an FVM model coupled to a reduced DtN model. */
+/** Solve an FVM model coupled to a sparse exact-port DtN model. */
 MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
     const mhs_macro_dtn_model_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
     mhs_solution_t** out);

@@ -1,6 +1,5 @@
 #include "macromodel/modal_port.hpp"
 
-#include "common/constants.hpp"
 #include "common/mesh.hpp"
 #include "solver/solve.hpp"
 
@@ -34,9 +33,8 @@ namespace mhs::macro {
         {
             for (Eigen::Index outer = 0; outer < matrix.outerSize(); ++outer) {
                 for (Eigen::SparseMatrix<double>::InnerIterator entry(matrix, outer); entry; ++entry) {
-                    if (!std::isfinite(entry.value())) {
+                    if (!std::isfinite(entry.value()))
                         throw std::invalid_argument(std::string("non-finite value in DtN ") + name);
-                    }
                 }
             }
         }
@@ -49,37 +47,8 @@ namespace mhs::macro {
             }
             validate_sparse_finite(operators.K, "K");
             validate_sparse_finite(operators.C, "C");
-            if (!operators.f.allFinite()) {
+            if (!operators.f.allFinite())
                 throw std::invalid_argument("non-finite value in DtN f");
-            }
-        }
-
-        bool has_explicit_basis(const DtNModel& dtn)
-        {
-            const bool has_rows = dtn.port_basis.rows() > 0;
-            const bool has_columns = dtn.port_basis.cols() > 0;
-            if (has_rows != has_columns) {
-                throw std::invalid_argument("port basis must be empty or a non-empty matrix");
-            }
-            return has_rows;
-        }
-
-        Eigen::MatrixXd materialize_basis(const DtNModel& dtn, Eigen::Index state_count)
-        {
-            if (has_explicit_basis(dtn)) {
-                if (dtn.port_basis.rows() != static_cast<Eigen::Index>(dtn.physical_port_count)
-                    || dtn.port_basis.cols() != state_count) {
-                    throw std::invalid_argument("port basis dimensions do not match DtN model");
-                }
-                if (!dtn.port_basis.allFinite()) {
-                    throw std::invalid_argument("port basis contains non-finite values");
-                }
-                return dtn.port_basis;
-            }
-            if (dtn.physical_port_count != static_cast<std::size_t>(state_count)) {
-                throw std::invalid_argument("identity port basis requires port count == DtN state count");
-            }
-            return Eigen::MatrixXd::Identity(state_count, state_count);
         }
 
         std::optional<mhs::core::Index> active_neighbor(const mhs::core::Model& model, mhs::core::Index ix,
@@ -146,7 +115,9 @@ namespace mhs::macro {
         }
 
         bool inside(double value, double lower, double upper, double tolerance)
-        { return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance; }
+        {
+            return value >= std::min(lower, upper) - tolerance && value <= std::max(lower, upper) + tolerance;
+        }
 
         double interface_conductance(
             const mhs::core::Model& model, const PortFace& port_face, double temperature, double time)
@@ -154,9 +125,8 @@ namespace mhs::macro {
             const auto grid = model.cells.cell_to_grid[port_face.cell];
             mhs::core::Index ix, iy, iz;
             mhs::utils::decode_index(grid, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-            if (active_neighbor(model, ix, iy, iz, port_face.face).has_value()) {
+            if (active_neighbor(model, ix, iy, iz, port_face.face).has_value())
                 throw std::invalid_argument("port patch selected a face with an active FVM neighbor");
-            }
             const auto& material = model.material_table[model.cells.material_id[port_face.cell]];
             const mhs::core::FieldContext context {
                 model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature, time};
@@ -245,13 +215,13 @@ namespace mhs::macro {
         append_sparse_block(c_entries, base.C, port_count, port_count);
 
         for (const auto& face : ports.faces) {
-            const auto p = static_cast<Eigen::Index>(face.port);
-            const auto c = port_count + static_cast<Eigen::Index>(face.cell);
+            const auto port = static_cast<Eigen::Index>(face.port);
+            const auto cell = port_count + static_cast<Eigen::Index>(face.cell);
             const double g = interface_conductance(model, face, cell_state[face.cell], time);
-            k_entries.emplace_back(p, p, g);
-            k_entries.emplace_back(p, c, -g);
-            k_entries.emplace_back(c, p, -g);
-            k_entries.emplace_back(c, c, g);
+            k_entries.emplace_back(port, port, g);
+            k_entries.emplace_back(port, cell, -g);
+            k_entries.emplace_back(cell, port, -g);
+            k_entries.emplace_back(cell, cell, g);
         }
 
         mhs::sim::Operators result;
@@ -268,11 +238,10 @@ namespace mhs::macro {
         std::span<const double> state, double time)
     {
         validate_port_map(model, ports);
-        if (dtn.physical_port_count != ports.port_count)
-            throw std::invalid_argument("DtN physical port count does not match compiled port map");
         const Eigen::Index macro_count = dtn.operators.f.size();
         validate_operators(dtn.operators, macro_count);
-        const Eigen::MatrixXd basis = materialize_basis(dtn, macro_count);
+        if (macro_count < static_cast<Eigen::Index>(ports.port_count))
+            throw std::invalid_argument("DtN states must begin with one state per physical port");
         const Eigen::Index fvm_count = static_cast<Eigen::Index>(model.cells.cell_to_grid.size());
         if (state.size() != static_cast<std::size_t>(fvm_count + macro_count))
             throw std::invalid_argument("coupled state size must equal FVM cells + DtN states");
@@ -283,7 +252,7 @@ namespace mhs::macro {
         std::vector<Eigen::Triplet<double>> k_entries;
         std::vector<Eigen::Triplet<double>> c_entries;
         k_entries.reserve(static_cast<std::size_t>(base.K.nonZeros() + dtn.operators.K.nonZeros())
-            + ports.faces.size() * (2 + 2 * static_cast<std::size_t>(macro_count)));
+            + 4 * ports.faces.size());
         c_entries.reserve(static_cast<std::size_t>(base.C.nonZeros() + dtn.operators.C.nonZeros()));
         append_sparse_block(k_entries, base.K, 0, 0);
         append_sparse_block(k_entries, dtn.operators.K, fvm_count, fvm_count);
@@ -292,25 +261,12 @@ namespace mhs::macro {
 
         for (const auto& face : ports.faces) {
             const Eigen::Index cell = static_cast<Eigen::Index>(face.cell);
-            const Eigen::Index port = static_cast<Eigen::Index>(face.port);
+            const Eigen::Index port_state = fvm_count + static_cast<Eigen::Index>(face.port);
             const double g = interface_conductance(model, face, temperatures[face.cell], time);
             k_entries.emplace_back(cell, cell, g);
-            for (Eigen::Index q1 = 0; q1 < macro_count; ++q1) {
-                const double b1 = basis(port, q1);
-                if (std::abs(b1) <= mhs::core::zero_guard)
-                    continue;
-                k_entries.emplace_back(cell, fvm_count + q1, -g * b1);
-                k_entries.emplace_back(fvm_count + q1, cell, -g * b1);
-                for (Eigen::Index q2 = q1; q2 < macro_count; ++q2) {
-                    const double b2 = basis(port, q2);
-                    if (std::abs(b2) <= mhs::core::zero_guard)
-                        continue;
-                    const double value = g * b1 * b2;
-                    k_entries.emplace_back(fvm_count + q1, fvm_count + q2, value);
-                    if (q2 != q1)
-                        k_entries.emplace_back(fvm_count + q2, fvm_count + q1, value);
-                }
-            }
+            k_entries.emplace_back(cell, port_state, -g);
+            k_entries.emplace_back(port_state, cell, -g);
+            k_entries.emplace_back(port_state, port_state, g);
         }
 
         mhs::sim::Operators result;
