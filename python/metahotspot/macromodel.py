@@ -1,16 +1,14 @@
 """Dirichlet-to-Neumann macromodel coupling for MetaHotspot.
 
-Physical port temperatures are always the leading states of a DtN model. This
-keeps the coupling graph sparse and removes the former dense physical-port basis
-from both the Python and C APIs. Any reduced internal coordinates follow the
-exact physical port states.
+Physical port temperatures are the leading states of every DtN operator. Any
+reduced internal coordinates follow those exact physical port states.
 """
 
 from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
-from typing import NamedTuple, Sequence
+from typing import Sequence
 
 import numpy as np
 
@@ -41,48 +39,44 @@ class MhsMacroPortPatch(ctypes.Structure):
     ]
 
 
-class MhsMacroDtNModel(ctypes.Structure):
-    _fields_ = [("operators", MhsOperatorsView)]
-
-
 _configured_dll_ids: set[int] = set()
 
 
 def _get_dll():
     dll = get_ext_dll()
     key = id(dll)
-    if key not in _configured_dll_ids:
-        dll.mhs_macromodel_port_map_create.restype = ctypes.c_int32
-        dll.mhs_macromodel_port_map_create.argtypes = [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(MhsMacroPortPatch),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.POINTER(MhsMacroPortMap)),
-        ]
-        dll.mhs_macromodel_port_map_destroy.restype = None
-        dll.mhs_macromodel_port_map_destroy.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
-        dll.mhs_macromodel_port_count.restype = ctypes.c_size_t
-        dll.mhs_macromodel_port_count.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
-        dll.mhs_macromodel_assemble_dtn.restype = ctypes.c_int32
-        dll.mhs_macromodel_assemble_dtn.argtypes = [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(MhsMacroPortMap),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.c_double,
-            ctypes.POINTER(MhsOperatorsView),
-        ]
-        dll.mhs_macromodel_solve.restype = ctypes.c_int32
-        dll.mhs_macromodel_solve.argtypes = [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(MhsMacroPortMap),
-            ctypes.POINTER(MhsMacroDtNModel),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(_SolveOptionsCStruct),
-            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
-        ]
-        _configured_dll_ids.add(key)
+    if key in _configured_dll_ids:
+        return dll
+
+    dll.mhs_macromodel_port_map_create.restype = ctypes.c_int32
+    dll.mhs_macromodel_port_map_create.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(MhsMacroPortPatch),
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.POINTER(MhsMacroPortMap)),
+    ]
+    dll.mhs_macromodel_port_map_destroy.restype = None
+    dll.mhs_macromodel_port_map_destroy.argtypes = [ctypes.POINTER(MhsMacroPortMap)]
+    dll.mhs_macromodel_assemble_dtn.restype = ctypes.c_int32
+    dll.mhs_macromodel_assemble_dtn.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(MhsMacroPortMap),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+        ctypes.c_double,
+        ctypes.POINTER(MhsOperatorsView),
+    ]
+    dll.mhs_macromodel_solve.restype = ctypes.c_int32
+    dll.mhs_macromodel_solve.argtypes = [
+        ctypes.POINTER(MhsCompiled),
+        ctypes.POINTER(MhsMacroPortMap),
+        ctypes.POINTER(MhsOperatorsView),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.c_size_t,
+        ctypes.POINTER(_SolveOptionsCStruct),
+        ctypes.POINTER(ctypes.POINTER(MhsSolution)),
+    ]
+    _configured_dll_ids.add(key)
     return dll
 
 
@@ -90,8 +84,8 @@ def _get_dll():
 class PortPatch:
     """One geometric boundary patch and therefore one physical DtN port.
 
-    Coordinates use SI units after model compilation. The rectangle coordinates
-    are (y, z) for X faces, (x, z) for Y faces, and (x, y) for Z faces.
+    Coordinates use SI units after model compilation. Rectangle coordinates are
+    (y, z) for X faces, (x, z) for Y faces, and (x, y) for Z faces.
     """
 
     face: int
@@ -105,15 +99,6 @@ class PortPatch:
             float(self.coordinate),
             Rect2D(float(a_min), float(a_max), float(b_min), float(b_max)),
         )
-
-
-class DtNModel(NamedTuple):
-    """DtN operators whose leading states are exact physical ports."""
-
-    operators: tuple
-
-
-PortModel = DtNModel
 
 
 def _csc_input_view(matrix):
@@ -173,15 +158,11 @@ class PortMap(OwnedHandle):
         )
         self._handle = handle
         self._compiled = compiled
-        self._patches = tuple(patches)
+        self._port_count = len(patches)
 
     @property
     def port_count(self) -> int:
-        return int(self._dll.mhs_macromodel_port_count(self._handle))
-
-    @property
-    def patches(self) -> tuple[PortPatch, ...]:
-        return self._patches
+        return self._port_count
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble the isolated component as [port temperatures, FVM states]."""
@@ -211,13 +192,17 @@ class PortMap(OwnedHandle):
 
 
 def solve(
-    compiled, dtn: DtNModel, ports: PortMap, state: np.ndarray, opts=None
+    compiled,
+    operators: Operators,
+    ports: PortMap,
+    state: np.ndarray,
+    opts=None,
 ) -> Solution:
-    """Solve an FVM model coupled to a sparse, exact-port DtN model."""
+    """Solve an FVM model coupled to sparse, exact-port DtN operators."""
     if ports._compiled is not compiled:
         raise ValueError("ports were compiled for a different model")
 
-    K, C, f = dtn.operators
+    K, C, f = operators
     rhs = np.ascontiguousarray(f, dtype=np.float64)
     state = np.ascontiguousarray(state, dtype=np.float64)
     dtn_state_count = rhs.size
@@ -228,24 +213,21 @@ def solve(
 
     normalized_k, k_view = _csc_input_view(K)
     normalized_c, c_view = _csc_input_view(C)
-    if normalized_k.shape != (dtn_state_count, dtn_state_count):
+    expected_shape = (dtn_state_count, dtn_state_count)
+    if normalized_k.shape != expected_shape:
         raise ValueError("DtN K dimension must match f")
-    if normalized_c.shape != (dtn_state_count, dtn_state_count):
+    if normalized_c.shape != expected_shape:
         raise ValueError("DtN C dimension must match f")
 
-    operators = MhsOperatorsView(
+    operator_view = MhsOperatorsView(
         K=k_view,
         C=c_view,
         rhs=rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         n=dtn_state_count,
     )
-    model = MhsMacroDtNModel(operators=operators)
-
     opts_ptr = None
     if opts is not None:
-        c_opts = (
-            opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
-        )
+        c_opts = opts._to_c_struct(ports._dll) if hasattr(opts, "_to_c_struct") else opts
         opts_ptr = ctypes.byref(c_opts)
 
     solution = ctypes.POINTER(MhsSolution)()
@@ -253,7 +235,7 @@ def solve(
         ports._dll.mhs_macromodel_solve(
             compiled._handle,
             ports._handle,
-            ctypes.byref(model),
+            ctypes.byref(operator_view),
             state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             state.size,
             opts_ptr,
