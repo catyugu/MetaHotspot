@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -58,23 +59,12 @@ namespace {
         return patches;
     }
 
-    void expect_dense_near(const Eigen::MatrixXd& actual, const Eigen::MatrixXd& expected, double tolerance)
-    {
-        ASSERT_EQ(actual.rows(), expected.rows());
-        ASSERT_EQ(actual.cols(), expected.cols());
-        for (Eigen::Index row = 0; row < actual.rows(); ++row)
-            for (Eigen::Index column = 0; column < actual.cols(); ++column)
-                EXPECT_NEAR(actual(row, column), expected(row, column), tolerance)
-                    << "at (" << row << ", " << column << ")";
-    }
-
 } // namespace
 
 TEST(MacroModelPortReductionTest, CompiledPatchesAssembleAnIsolatedDtNOperator)
 {
     auto model = make_line_model(2, mhs::model::StudyType::Steady);
-    const auto patches = top_patches(2);
-    const auto ports = mhs::macro::compile_port_map(model, patches);
+    const auto ports = mhs::macro::compile_port_map(model, top_patches(2));
     const std::array state {300.0, 300.0};
     const auto dtn = mhs::macro::assemble_dtn(model, ports, state, 0.0);
 
@@ -88,7 +78,7 @@ TEST(MacroModelPortReductionTest, CompiledPatchesAssembleAnIsolatedDtNOperator)
     EXPECT_NEAR(dense(2, 0), -g, 1.0e-13);
 }
 
-TEST(MacroModelPortReductionTest, ReducedDtNProjectionMatchesDenseBtGBFormula)
+TEST(MacroModelPortReductionTest, ExactLeadingPortsPreserveSparseCoupling)
 {
     auto model = make_line_model(3, mhs::model::StudyType::Steady);
     const auto ports = mhs::macro::compile_port_map(model, top_patches(3));
@@ -96,27 +86,47 @@ TEST(MacroModelPortReductionTest, ReducedDtNProjectionMatchesDenseBtGBFormula)
     const auto base = mhs::sim::assemble_thermal(model, temperature, 0.0);
 
     mhs::macro::DtNModel dtn;
-    dtn.operators.K.resize(2, 2);
+    dtn.operators.K.resize(5, 5);
     dtn.operators.K.insert(0, 0) = 0.3;
     dtn.operators.K.insert(1, 1) = 0.4;
-    dtn.operators.C.resize(2, 2);
-    dtn.operators.f = Eigen::Vector2d::Zero();
-    dtn.port_basis.resize(3, 2);
-    dtn.port_basis << 1.0, 0.0, 0.5, 0.5, 0.0, 1.0;
-    dtn.physical_port_count = 3;
+    dtn.operators.K.insert(2, 2) = 0.5;
+    dtn.operators.K.insert(3, 3) = 0.6;
+    dtn.operators.K.insert(4, 4) = 0.7;
+    dtn.operators.K.insert(2, 3) = -0.1;
+    dtn.operators.K.insert(3, 2) = -0.1;
+    dtn.operators.C.resize(5, 5);
+    dtn.operators.f = Eigen::VectorXd::Zero(5);
 
-    const std::array state {300.0, 300.0, 300.0, 0.0, 0.0};
+    const std::array state {300.0, 300.0, 300.0, 300.0, 300.0, 300.0, 0.0, 0.0};
     const auto assembled = mhs::macro::assemble_coupled(model, dtn, ports, state, 0.0);
-
-    Eigen::MatrixXd expected = Eigen::MatrixXd::Zero(5, 5);
-    expected.topLeftCorner(3, 3) = Eigen::MatrixXd(base.K);
-    expected.bottomRightCorner(2, 2) = Eigen::MatrixXd(dtn.operators.K);
+    const Eigen::MatrixXd dense = Eigen::MatrixXd(assembled.K);
+    const Eigen::Index fvm_count = 3;
     constexpr double conductance = 0.002;
-    expected.topLeftCorner(3, 3).diagonal().array() += conductance;
-    expected.topRightCorner(3, 2) -= conductance * dtn.port_basis;
-    expected.bottomLeftCorner(2, 3) -= conductance * dtn.port_basis.transpose();
-    expected.bottomRightCorner(2, 2) += conductance * dtn.port_basis.transpose() * dtn.port_basis;
-    expect_dense_near(Eigen::MatrixXd(assembled.K), expected, 1.0e-13);
+
+    for (Eigen::Index port = 0; port < 3; ++port) {
+        EXPECT_NEAR(dense(port, port), Eigen::MatrixXd(base.K)(port, port) + conductance, 1.0e-13);
+        EXPECT_NEAR(dense(port, fvm_count + port), -conductance, 1.0e-13);
+        EXPECT_NEAR(dense(fvm_count + port, port), -conductance, 1.0e-13);
+        EXPECT_NEAR(dense(fvm_count + port, fvm_count + port),
+            Eigen::MatrixXd(dtn.operators.K)(port, port) + conductance, 1.0e-13);
+    }
+    for (Eigen::Index cell = 0; cell < fvm_count; ++cell) {
+        EXPECT_DOUBLE_EQ(dense(cell, fvm_count + 3), 0.0);
+        EXPECT_DOUBLE_EQ(dense(cell, fvm_count + 4), 0.0);
+    }
+    EXPECT_LE(assembled.K.nonZeros(), base.K.nonZeros() + dtn.operators.K.nonZeros() + 4 * ports.faces.size());
+}
+
+TEST(MacroModelPortReductionTest, RejectsFewerStatesThanPhysicalPorts)
+{
+    auto model = make_line_model(2, mhs::model::StudyType::Steady);
+    const auto ports = mhs::macro::compile_port_map(model, top_patches(2));
+    mhs::macro::DtNModel dtn;
+    dtn.operators.K.resize(1, 1);
+    dtn.operators.C.resize(1, 1);
+    dtn.operators.f = Eigen::VectorXd::Zero(1);
+    const std::array state {300.0, 300.0, 300.0};
+    EXPECT_THROW(mhs::macro::assemble_coupled(model, dtn, ports, state, 0.0), std::invalid_argument);
 }
 
 TEST(MacroModelPortReductionTest, TransientCapacityRegularizesSingularDtNOperator)
@@ -128,8 +138,6 @@ TEST(MacroModelPortReductionTest, TransientCapacityRegularizesSingularDtNOperato
     dtn.operators.C.resize(1, 1);
     dtn.operators.C.insert(0, 0) = 0.5;
     dtn.operators.f = Eigen::VectorXd::Zero(1);
-    dtn.port_basis = Eigen::MatrixXd::Ones(1, 1);
-    dtn.physical_port_count = 1;
 
     const std::array initial_state {300.0, 310.0};
     mhs::sim::SolveOptions options;
