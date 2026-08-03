@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Transient BCI-ROM benchmark for an unequal-footprint package.
+"""Transient boundary-condition-independent ROM benchmark for a package.
 
 The detailed substrate/bump/die domain is coupled to a reusable TIM/spreader/
-cold-plate macro model. Four convection quadrants are affine parameters. A
-column-local Galerkin basis preserves exact interface ports and sparse nearest-
-neighbor coupling while reducing the macro model independently of the boundary.
+cold-plate macro model. The cold-plate top uses one uniform convection
+coefficient. A column-local Galerkin basis preserves exact interface ports and
+sparse nearest-neighbor coupling while remaining independent of that coefficient.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ ACTIVITY_TRACES = (
 @dataclass(frozen=True)
 class BoundaryCase:
     name: str
-    h_W_m2K: tuple[float, float, float, float]
+    h_W_m2K: float
 
 
 @dataclass(frozen=True)
@@ -214,7 +214,7 @@ class Run:
     bdf1_shifts: tuple[float, ...] = (1.0, 2.0)
     speedup_target: float = 1.5
     compression_target: float = 2.5
-    report: Path = Path("results/bci_rom_sparse_column_results.json")
+    report: Path = Path("results/bci_rom_uniform_convection_results.json")
 
     @property
     def modal_cutoff_per_s(self) -> float:
@@ -226,12 +226,12 @@ class MacroAffine(NamedTuple):
     ports: PortMap
     anchor_h: float
     base: Operators
-    components: tuple[Operators, ...]
+    convection: Operators
     seconds: float
 
-    def at(self, h_values: Sequence[float]) -> Operators:
-        return affine_operators(
-            self.base, self.components, np.asarray(h_values) / self.anchor_h
+    def at(self, h_W_m2K: float) -> Operators:
+        return interpolate_operators(
+            self.base, self.convection, float(h_W_m2K) / self.anchor_h
         )
 
 
@@ -261,13 +261,13 @@ class Basis(NamedTuple):
 class ReducedAffine(NamedTuple):
     anchor_h: float
     base: Operators
-    components: tuple[Operators, ...]
+    convection: Operators
     seconds: float
 
-    def at(self, h_values: Sequence[float]) -> tuple[Operators, float]:
+    def at(self, h_W_m2K: float) -> tuple[Operators, float]:
         started = time.perf_counter()
-        operators = affine_operators(
-            self.base, self.components, np.asarray(h_values) / self.anchor_h
+        operators = interpolate_operators(
+            self.base, self.convection, float(h_W_m2K) / self.anchor_h
         )
         return operators, time.perf_counter() - started
 
@@ -401,22 +401,17 @@ def add_detail(model, cfg: Package, study: Study, run: Run) -> None:
     add_rect(model, model.add_block(substrate, "organic"), cfg.substrate_size_mm)
 
 
-def add_convection(model, cfg: Package, z: float, h_values) -> None:
-    if h_values is None:
+def add_convection(model, cfg: Package, z: float, h_W_m2K: float | None) -> None:
+    if h_W_m2K is None:
+        return
+    h = float(h_W_m2K)
+    if h < 0.0:
+        raise ValueError("convection coefficient must be non-negative")
+    if h == 0.0:
         return
     half = cfg.cold_plate_size_mm / 2.0
-    regions = (
-        (Axis.Z, z, -half, 0.0, -half, 0.0),
-        (Axis.Z, z, 0.0, half, -half, 0.0),
-        (Axis.Z, z, -half, 0.0, 0.0, half),
-        (Axis.Z, z, 0.0, half, 0.0, half),
-    )
-    values = tuple(float(value) for value in h_values)
-    if len(values) != 4 or min(values) < 0.0:
-        raise ValueError("four non-negative convection coefficients are required")
-    for value, region in zip(values, regions):
-        if value:
-            model.add_convection(str(value), str(cfg.ambient_K), [region])
+    region = (Axis.Z, z, -half, half, -half, half)
+    model.add_convection(str(h), str(cfg.ambient_K), [region])
 
 
 def build_model(
@@ -426,7 +421,7 @@ def build_model(
     run: Run | None = None,
     detail: bool,
     macro: bool,
-    h_values=None,
+    h_W_m2K: float | None = None,
 ):
     if detail and run is None:
         raise ValueError("detail models require a Run configuration")
@@ -444,7 +439,7 @@ def build_model(
     model.set_default_neumann("0")
     if macro:
         z = cfg.total_height_mm if detail else cfg.macro_height_mm
-        add_convection(model, cfg, z, h_values)
+        add_convection(model, cfg, z, h_W_m2K)
     return model
 
 
@@ -472,18 +467,20 @@ def operator_delta(a: Operators, b: Operators) -> Operators:
     return clean_operators(Operators(a.K - b.K, a.C - b.C, np.asarray(a.f) - b.f))
 
 
-def affine_operators(base: Operators, components, coordinates) -> Operators:
-    theta = np.asarray(coordinates, dtype=np.float64)
-    if theta.shape != (len(components),):
-        raise ValueError("affine coordinate count does not match component count")
-    K, C = base.K.copy(), base.C.copy()
-    f = np.asarray(base.f, dtype=np.float64).copy()
-    for value, component in zip(theta, components):
-        if value:
-            K = K + value * component.K
-            C = C + value * component.C
-            f += value * component.f
-    return clean_operators(Operators(K, C, f))
+def interpolate_operators(
+    base: Operators, convection: Operators, coordinate: float
+) -> Operators:
+    if not np.isfinite(coordinate) or coordinate < 0.0:
+        raise ValueError("normalized convection coordinate must be non-negative")
+    if coordinate == 0.0:
+        return clean_operators(base)
+    return clean_operators(
+        Operators(
+            base.K + coordinate * convection.K,
+            base.C + coordinate * convection.C,
+            np.asarray(base.f) + coordinate * convection.f,
+        )
+    )
 
 
 def extract_affine_macro(cfg: Package, anchor_h: float) -> MacroAffine:
@@ -493,49 +490,46 @@ def extract_affine_macro(cfg: Package, anchor_h: float) -> MacroAffine:
     patches = port_patches(cfg, Face.ZM, 0.0)
     compiled = build_model(cfg, Study.STEADY, detail=False, macro=True).compile()
     ports = PortMap(compiled, patches)
+    anchor_compiled = anchor_ports = None
     try:
         base = clean_operators(ports.assemble())
-        components = []
-        for quadrant in range(4):
-            h = [0.0] * 4
-            h[quadrant] = anchor_h
-            anchor_compiled = build_model(
-                cfg, Study.STEADY, detail=False, macro=True, h_values=h
-            ).compile()
-            anchor_ports = None
-            try:
-                anchor_ports = PortMap(anchor_compiled, patches)
-                anchor = clean_operators(anchor_ports.assemble())
-                if anchor.K.shape != base.K.shape:
-                    raise RuntimeError("convection changed macro state ordering")
-                component = operator_delta(anchor, base)
-            finally:
-                if anchor_ports is not None:
-                    anchor_ports.close()
-                anchor_compiled.close()
+        anchor_compiled = build_model(
+            cfg,
+            Study.STEADY,
+            detail=False,
+            macro=True,
+            h_W_m2K=anchor_h,
+        ).compile()
+        anchor_ports = PortMap(anchor_compiled, patches)
+        anchor = clean_operators(anchor_ports.assemble())
+        if anchor.K.shape != base.K.shape:
+            raise RuntimeError("convection changed macro state ordering")
+        convection = operator_delta(anchor, base)
 
-            ambient = np.full(base.K.shape[0], cfg.ambient_K)
-            defect = component.K @ ambient - component.f
-            scale = max(np.linalg.norm(component.f), np.finfo(float).tiny)
-            if spla.norm(component.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
-                raise RuntimeError("convection unexpectedly changed macro capacitance")
-            if np.linalg.norm(defect) > 1.0e-10 * scale:
-                raise RuntimeError(
-                    "affine convection component violates ambient balance"
-                )
-            components.append(component)
+        ambient = np.full(base.K.shape[0], cfg.ambient_K)
+        defect = convection.K @ ambient - convection.f
+        scale = max(np.linalg.norm(convection.f), np.finfo(float).tiny)
+        if spla.norm(convection.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
+            raise RuntimeError("convection unexpectedly changed macro capacitance")
+        if np.linalg.norm(defect) > 1.0e-10 * scale:
+            raise RuntimeError("affine convection component violates ambient balance")
         return MacroAffine(
             compiled,
             ports,
             anchor_h,
             base,
-            tuple(components),
+            convection,
             time.perf_counter() - started,
         )
     except Exception:
         ports.close()
         compiled.close()
         raise
+    finally:
+        if anchor_ports is not None:
+            anchor_ports.close()
+        if anchor_compiled is not None:
+            anchor_compiled.close()
 
 
 def cell_grid(compiled) -> np.ndarray:
@@ -663,9 +657,7 @@ def build_basis(macro: MacroAffine, cfg: Package, run: Run) -> Basis:
     started = time.perf_counter()
     ports = macro.ports.port_count
     Kip0, Kii0, Cip0, Cii0 = internal_blocks(macro.base, ports)
-    component_blocks = [
-        internal_blocks(component, ports) for component in macro.components
-    ]
+    Kip1, Kii1, _, _ = internal_blocks(macro.convection, ports)
     columns = macro_columns(macro.compiled, cfg)
     rows, cols, values, orders = [], [], [], []
     offset = 0
@@ -693,21 +685,18 @@ def build_basis(macro: MacroAffine, cfg: Package, run: Run) -> Basis:
             static = scipy.linalg.solve(k0, -b0, assume_a="sym", check_finite=False)
             candidates.append(static)
 
-            sensitivity_rhs = []
-            for Kip1, Kii1, _, _ in component_blocks:
-                rhs = (
-                    Kii1[cells][:, cells] @ static + Kip1[cells, port].toarray().ravel()
+            sensitivity_rhs = (
+                Kii1[cells][:, cells] @ static + Kip1[cells, port].toarray().ravel()
+            )
+            if np.linalg.norm(sensitivity_rhs) > 1.0e-14 * max(np.linalg.norm(b0), 1.0):
+                candidates.append(
+                    scipy.linalg.solve(
+                        k0,
+                        -sensitivity_rhs,
+                        assume_a="sym",
+                        check_finite=False,
+                    )
                 )
-                if np.linalg.norm(rhs) > 1.0e-14 * max(np.linalg.norm(b0), 1.0):
-                    sensitivity_rhs.append(rhs)
-            if sensitivity_rhs:
-                sensitivities = scipy.linalg.solve(
-                    k0,
-                    -np.column_stack(sensitivity_rhs),
-                    assume_a="sym",
-                    check_finite=False,
-                )
-                candidates.extend(sensitivities.T)
 
             for multiplier in run.bdf1_shifts:
                 shift = multiplier / run.dt_s
@@ -764,7 +753,7 @@ def project_affine(macro: MacroAffine, basis: Basis) -> ReducedAffine:
     return ReducedAffine(
         macro.anchor_h,
         project(macro.base, ports, basis.W),
-        tuple(project(component, ports, basis.W) for component in macro.components),
+        project(macro.convection, ports, basis.W),
         time.perf_counter() - started,
     )
 
@@ -797,7 +786,7 @@ def reference(cfg: Package, run: Run, boundary: BoundaryCase) -> Reference:
             run=run,
             detail=True,
             macro=True,
-            h_values=boundary.h_W_m2K,
+            h_W_m2K=boundary.h_W_m2K,
         ).compile()
         transient = build_model(
             cfg,
@@ -805,7 +794,7 @@ def reference(cfg: Package, run: Run, boundary: BoundaryCase) -> Reference:
             run=run,
             detail=True,
             macro=True,
-            h_values=boundary.h_W_m2K,
+            h_W_m2K=boundary.h_W_m2K,
         ).compile()
         compile_s = time.perf_counter() - started
         started = time.perf_counter()
@@ -886,7 +875,7 @@ def evaluate(
     transient_error = float(np.max(np.abs(recover(transient_states) - ref.transient)))
     return {
         "name": boundary.name,
-        "h_quadrants_W_m2K": list(boundary.h_W_m2K),
+        "h_W_m2K": boundary.h_W_m2K,
         "steady_error_K": steady_error,
         "transient_error_K": transient_error,
         "online_reduced_assembly_s": assembly_s,
@@ -935,21 +924,21 @@ def configs(quick: bool):
             speedup_target=1.0,
             compression_target=2.0,
         )
-        cases = (
-            BoundaryCase("uniform-low", (500.0,) * 4),
-            BoundaryCase("uniform-high", (8000.0,) * 4),
-            BoundaryCase("diagonal-skew", (8000.0, 700.0, 1200.0, 6000.0)),
+        return (
+            cfg,
+            run,
+            (
+                BoundaryCase("uniform-low", 500.0),
+                BoundaryCase("uniform-high", 8000.0),
+            ),
         )
-        return cfg, run, cases
     return (
         Package(),
         Run(),
         (
-            BoundaryCase("uniform-low", (500.0,) * 4),
-            BoundaryCase("uniform-medium", (2500.0,) * 4),
-            BoundaryCase("uniform-high", (8000.0,) * 4),
-            BoundaryCase("x-gradient", (500.0, 8000.0, 500.0, 8000.0)),
-            BoundaryCase("diagonal-skew", (8000.0, 700.0, 1200.0, 6000.0)),
+            BoundaryCase("uniform-low", 500.0),
+            BoundaryCase("uniform-medium", 2500.0),
+            BoundaryCase("uniform-high", 8000.0),
         ),
     )
 
@@ -963,11 +952,12 @@ def main(argv=None) -> int:
     cfg, run, boundaries = configs(args.quick)
 
     print("=" * 100)
-    print("Transient BCI-ROM - sparse irregular-column local thermal basis")
+    print("Transient BCI-ROM - uniform cold-plate convection")
     print("=" * 100)
     print(
         "Footprints cold plate/spreader/substrate/bump/die/TIM="
-        f"{cfg.cold_plate_size_mm:g}/{cfg.spreader_size_mm:g}/{cfg.substrate_size_mm:g}/"
+        f"{cfg.cold_plate_size_mm:g}/{cfg.spreader_size_mm:g}/"
+        f"{cfg.substrate_size_mm:g}/"
         f"{cfg.bump_region_size_mm:g}/{cfg.die_size_mm:g}/{cfg.tim_size_mm:g} mm"
     )
     print(
@@ -986,7 +976,8 @@ def main(argv=None) -> int:
         compression = full_macro_order / reduced_macro_order
         print(
             f"Grid {cfg.nx}x{cfg.ny}x{cfg.nz}; exact ports={cfg.ports}; "
-            f"macro states {full_macro_order:,}->{reduced_macro_order:,} ({compression:.2f}x)"
+            f"macro states {full_macro_order:,}->{reduced_macro_order:,} "
+            f"({compression:.2f}x)"
         )
 
         results = []
@@ -1006,9 +997,10 @@ def main(argv=None) -> int:
             result["passed"] = result["accuracy_passed"] and result["speedup_passed"]
             results.append(result)
             print(
-                f"{boundary.name:>16s}: error steady/transient="
-                f"{result['steady_error_K']:.5f}/{result['transient_error_K']:.5f} K; "
-                f"full/ROM={result['full_transient_solve_s']:.3f}/"
+                f"{boundary.name:>16s}: h={boundary.h_W_m2K:g} W/(m^2 K), "
+                f"error steady/transient={result['steady_error_K']:.5f}/"
+                f"{result['transient_error_K']:.5f} K; full/ROM="
+                f"{result['full_transient_solve_s']:.3f}/"
                 f"{result['reduced_transient_solve_s']:.3f}s, "
                 f"speedup={result['transient_speedup']:.2f}x "
                 f"{'PASS' if result['passed'] else 'FAIL'}"
@@ -1016,9 +1008,12 @@ def main(argv=None) -> int:
 
         compression_passed = compression >= run.compression_target
         report = {
-            "schema_version": 16,
+            "schema_version": 17,
             "mode": "quick" if args.quick else "strict",
-            "method": "sparse column-local static/affine/BDF1 Galerkin ROM",
+            "method": (
+                "uniform-convection column-local static/sensitivity/BDF1 "
+                "Galerkin ROM"
+            ),
             "package": {
                 **asdict(cfg),
                 "nx": cfg.nx,
@@ -1031,10 +1026,10 @@ def main(argv=None) -> int:
             },
             "experiment": {**asdict(run), "report": str(run.report)},
             "affine_boundary": {
-                "family": "A(h)=A0+sum_q(h_q/anchor)*DeltaA_q",
-                "regions": ["southwest", "southeast", "northwest", "northeast"],
+                "family": "A(h)=A0+(h/anchor_h)*DeltaA_h",
+                "region": "entire cold-plate top surface",
                 "anchor_h_W_m2K": run.affine_anchor_h,
-                "full_order_offline_assemblies": 5,
+                "full_order_offline_assemblies": 2,
                 "full_order_online_assemblies_per_case": 0,
                 "extraction_s": data.macro.seconds,
                 "projection_s": reduced.seconds,
@@ -1066,7 +1061,6 @@ def main(argv=None) -> int:
         run.report.write_text(
             json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
         )
-        print("Passivity: preserved structurally by symmetric Galerkin congruence")
         print(f"Report: {run.report}")
         return 0 if report["passed"] else 3
     finally:
