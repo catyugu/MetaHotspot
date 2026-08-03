@@ -595,10 +595,6 @@ def main(argv=None) -> int:
         f"{cfg.substrate_size_mm:g}/{cfg.bump_region_size_mm:g}/"
         f"{cfg.die_size_mm:g}/{cfg.tim_size_mm:g} mm"
     )
-    print(
-        f"Nominal die power={cfg.nominal_power_W:.2f} W; "
-        f"tile peak/mean density={POWER_MAP.max():.2f}x"
-    )
 
     report = run_experiment(cfg, BOUNDARIES, args.strict)
     report["mode"] = "quick" if args.quick else "strict"

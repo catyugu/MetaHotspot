@@ -481,7 +481,7 @@ def solve_options(cfg: BaseConfig, transient: bool) -> SolveOptions:
         nonlinear_absolute_tolerance=1.0e-11,
         integrator="Bdf1",
         step_strategy="Fixed",
-        error_abs_tol=1.0e-9,
+        error_rel_tol=1.0e-3,
         min_dt=dt,
         max_dt=dt,
         fixed_dt=dt,

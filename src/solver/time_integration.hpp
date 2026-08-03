@@ -12,7 +12,7 @@ namespace mhs::sim::time_scheme {
         IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt);
 
     struct ErrorControlConfig {
-        double abs_tol = 1e-4;
+        double rel_tol = 1e-4;
         double safety = 0.9;
     };
 

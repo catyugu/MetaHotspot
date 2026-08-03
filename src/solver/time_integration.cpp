@@ -78,9 +78,11 @@ namespace mhs::sim::time_scheme {
             error_vector = (trial - current).cwiseAbs();
         }
 
-        const double error = error_vector.cwiseQuotient(trial.cwiseAbs().cwiseMax(1.0)).maxCoeff();
-        const double factor = config.safety * std::pow(config.abs_tol / std::max(error, mhs::core::zero_guard), 0.5);
-        return {error / config.abs_tol, std::clamp(factor, 0.5, 2.0)};
+        const double relative_error
+            = error_vector.cwiseQuotient(trial.cwiseAbs().cwiseMax(mhs::core::zero_guard)).maxCoeff();
+        const double factor
+            = config.safety * std::pow(config.rel_tol / std::max(relative_error, mhs::core::zero_guard), 0.5);
+        return {relative_error / config.rel_tol, std::clamp(factor, 0.5, 2.0)};
     }
 
     StepController::StepController(

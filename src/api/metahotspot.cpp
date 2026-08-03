@@ -155,7 +155,7 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
     opts->nonlinear_absolute_tolerance = 1e-12;
     opts->integrator = MHS_INTEGRATOR_BDF1;
     opts->step_strategy = MHS_STEP_ADAPTIVE;
-    opts->error_abs_tol = 1e-4;
+    opts->error_rel_tol = 1e-4;
     opts->error_safety = 0.9;
     opts->min_dt = 1e-12;
     opts->max_dt = 1.0;
@@ -651,7 +651,7 @@ mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double 
     so.nonlinear_absolute_tolerance = opts->nonlinear_absolute_tolerance;
     so.integrator = _to_integrator(opts->integrator);
     so.step_strategy = _to_step_strategy(opts->step_strategy);
-    so.error_abs_tol = opts->error_abs_tol;
+    so.error_rel_tol = opts->error_rel_tol;
     so.error_safety = opts->error_safety;
     so.min_dt = opts->min_dt;
     so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;

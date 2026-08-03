@@ -3,6 +3,7 @@
 #include <Eigen/Sparse>
 #include <array>
 #include <gtest/gtest.h>
+#include <vector>
 
 TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 {
