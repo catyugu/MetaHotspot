@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Transient boundary-condition-independent ROM benchmark for a package.
+"""Extract and validate a transient boundary-condition-independent thermal ROM.
 
-The detailed substrate/bump/die domain is coupled to a reusable TIM/spreader/
-cold-plate macro model. The cold-plate top uses one uniform convection
-coefficient. A column-local Galerkin basis preserves exact interface ports and
-sparse nearest-neighbor coupling while remaining independent of that coefficient.
+The detailed substrate/bump/die model is coupled to a reusable
+TIM/spreader/cold-plate macro model. The ROM keeps every interface temperature
+as an exact physical port and reduces only the macro internal cells. Uniform
+cold-plate convection is represented by an affine operator, so the basis is
+extracted once and reused for every tested convection coefficient.
 """
 
 from __future__ import annotations
@@ -12,12 +13,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import sys
 import time
-from dataclasses import asdict, dataclass
+from contextlib import ExitStack
+from dataclasses import asdict, dataclass, replace
 from functools import cached_property
 from pathlib import Path
-from typing import NamedTuple, Sequence
 
 import numpy as np
 import scipy.linalg
@@ -83,16 +83,15 @@ ACTIVITY_TRACES = (
         (1.00, 0.70),
     ),
 )
+BOUNDARIES = (
+    ("uniform-low", 500.0),
+    ("uniform-medium", 2500.0),
+    ("uniform-high", 8000.0),
+)
 
 
 @dataclass(frozen=True)
-class BoundaryCase:
-    name: str
-    h_W_m2K: float
-
-
-@dataclass(frozen=True)
-class Package:
+class Config:
     ambient_K: float = 300.0
     cold_plate_size_mm: float = 60.0
     spreader_size_mm: float = 50.0
@@ -118,6 +117,15 @@ class Package:
     bump_width_mm: float = 0.60
     chiplet_size_mm: float = 12.0
     chiplet_power_W: float = 25.0
+    error_K: float = 0.25
+    duration_s: float = 0.5
+    dt_s: float = 0.025
+    affine_anchor_h: float = 2500.0
+    local_dynamic_modes: int = 2
+    bdf1_shifts: tuple[float, ...] = (1.0, 2.0)
+    speedup_target: float = 1.5
+    compression_target: float = 2.5
+    report: Path = Path("results/bci_rom_uniform_convection_results.json")
 
     @property
     def detail_layers(self):
@@ -174,22 +182,26 @@ class Package:
         tile = self.chiplet_size_mm / 4.0
         for origin, _ in self.chiplet_origins_mm:
             points.extend(origin + tile * np.arange(5, dtype=np.float64))
-        return refined_breakpoints(points, self.max_xy_cell_mm)
+
+        unique = np.unique(np.asarray(points, dtype=np.float64))
+        vertices = [float(unique[0])]
+        for left, right in zip(unique[:-1], unique[1:]):
+            pieces = max(1, math.ceil((right - left) / self.max_xy_cell_mm))
+            vertices.extend(np.linspace(left, right, pieces + 1)[1:])
+        return np.asarray(vertices)
 
     @cached_property
     def port_indices(self) -> np.ndarray:
-        return footprint_cell_indices(self.axis_vertices_mm, self.tim_size_mm)
+        vertices = self.axis_vertices_mm
+        half = self.tim_size_mm / 2.0
+        tolerance = 1.0e-10 * max(1.0, self.tim_size_mm)
+        return np.flatnonzero(
+            (vertices[:-1] >= -half - tolerance) & (vertices[1:] <= half + tolerance)
+        ).astype(np.int64)
 
     @property
     def nx(self) -> int:
         return self.axis_vertices_mm.size - 1
-
-    ny = nx
-
-    @property
-    def port_shape(self) -> tuple[int, int]:
-        count = self.port_indices.size
-        return count, count
 
     @property
     def ports(self) -> int:
@@ -199,256 +211,175 @@ class Package:
     def nominal_power_W(self) -> float:
         return self.chiplet_power_W * float(sum(CHIPLET_POWER_SCALE))
 
-    @property
-    def peak_to_mean_tile_density(self) -> float:
-        return float(POWER_MAP.max())
 
-
-@dataclass(frozen=True)
-class Run:
-    error_K: float = 0.25
-    duration_s: float = 0.5
-    dt_s: float = 0.025
-    affine_anchor_h: float = 2500.0
-    local_dynamic_modes: int = 2
-    bdf1_shifts: tuple[float, ...] = (1.0, 2.0)
-    speedup_target: float = 1.5
-    compression_target: float = 2.5
-    report: Path = Path("results/bci_rom_uniform_convection_results.json")
-
-    @property
-    def modal_cutoff_per_s(self) -> float:
-        return math.pi / self.dt_s
-
-
-class MacroAffine(NamedTuple):
-    compiled: object
-    ports: PortMap
-    anchor_h: float
-    base: Operators
-    convection: Operators
-    seconds: float
-
-    def at(self, h_W_m2K: float) -> Operators:
-        return interpolate_operators(
-            self.base, self.convection, float(h_W_m2K) / self.anchor_h
-        )
-
-
-class Data(NamedTuple):
-    full_layout: object
-    detail_steady: object
-    detail_transient: object
-    detail_ports_steady: PortMap
-    detail_ports_transient: PortMap
-    macro: MacroAffine
-    detail_to_full: np.ndarray
-    macro_to_full: np.ndarray
-
-
-class Column(NamedTuple):
-    cells: np.ndarray
-    port: int | None
-
-
-class Basis(NamedTuple):
-    W: sp.csc_matrix
-    orders: np.ndarray
-    initial_internal: np.ndarray
-    seconds: float
-
-
-class ReducedAffine(NamedTuple):
-    anchor_h: float
-    base: Operators
-    convection: Operators
-    seconds: float
-
-    def at(self, h_W_m2K: float) -> tuple[Operators, float]:
-        started = time.perf_counter()
-        operators = interpolate_operators(
-            self.base, self.convection, float(h_W_m2K) / self.anchor_h
-        )
-        return operators, time.perf_counter() - started
-
-
-class Reference(NamedTuple):
-    steady: np.ndarray
-    times: np.ndarray
-    transient: np.ndarray
-    compile_s: float
-    steady_solve_s: float
-    transient_solve_s: float
-    order: int
-
-
-def refined_breakpoints(points: Sequence[float], max_step: float) -> np.ndarray:
-    unique = np.unique(np.asarray(points, dtype=np.float64))
-    output = [float(unique[0])]
-    for left, right in zip(unique[:-1], unique[1:]):
-        pieces = max(1, math.ceil((right - left) / max_step))
-        output.extend(np.linspace(left, right, pieces + 1)[1:])
-    return np.asarray(output)
-
-
-def footprint_cell_indices(vertices: np.ndarray, size: float) -> np.ndarray:
-    half = size / 2.0
-    tolerance = 1.0e-10 * max(1.0, size)
-    return np.flatnonzero(
-        (vertices[:-1] >= -half - tolerance) & (vertices[1:] <= half + tolerance)
-    ).astype(np.int64)
+QUICK_OVERRIDES = dict(
+    substrate_cells=3,
+    bump_cells=1,
+    die_cells=2,
+    tim_cells=1,
+    spreader_cells=3,
+    cold_plate_cells=4,
+    max_xy_cell_mm=6.0,
+    bump_rows=8,
+    bump_columns=8,
+    error_K=0.35,
+    duration_s=0.20,
+    local_dynamic_modes=1,
+    bdf1_shifts=(1.0,),
+    speedup_target=1.0,
+    compression_target=2.0,
+)
 
 
 def z_vertices(layers) -> np.ndarray:
-    output = [0.0]
+    vertices = [0.0]
     z = 0.0
     for thickness, cells in layers:
         for _ in range(cells):
             z += thickness / cells
-            output.append(z)
-    return np.asarray(output)
+            vertices.append(z)
+    return np.asarray(vertices)
 
 
-def add_rect(model, block: int, size: float) -> None:
-    half = size / 2.0
+def add_square(model, block: int, size_mm: float) -> None:
+    half = size_mm / 2.0
     model.add_rect(
         block,
         GeometryOp.ADD,
         f"{-half:.17g}",
         f"{-half:.17g}",
-        f"{size:.17g}",
-        f"{size:.17g}",
+        f"{size_mm:.17g}",
+        f"{size_mm:.17g}",
     )
-
-
-def configure(model, cfg: Package, layers, study: Study, run: Run | None) -> None:
-    transient = study == Study.TRANSIENT
-    model.set_settings(
-        study=study,
-        length_unit=LengthUnit.MILLIMETER,
-        initial_temperature_K=cfg.ambient_K,
-        duration=run.duration_s if transient else 0.0,
-        output_interval=run.dt_s if transient else 0.0,
-    )
-    model.set_mesh(cfg.axis_vertices_mm, cfg.axis_vertices_mm, z_vertices(layers))
-    for material in MATERIALS:
-        model.add_material(*material)
-
-
-def add_macro(model, cfg: Package) -> None:
-    for thickness, material, size in (
-        (cfg.cold_plate_mm, "aluminum", cfg.cold_plate_size_mm),
-        (cfg.spreader_mm, "copper", cfg.spreader_size_mm),
-        (cfg.tim_mm, "tim", cfg.tim_size_mm),
-    ):
-        layer = model.add_layer(str(thickness))
-        add_rect(model, model.add_block(layer, material), size)
-
-
-def add_detail(model, cfg: Package, study: Study, run: Run) -> None:
-    die = model.add_layer(str(cfg.die_mm))
-    add_rect(model, model.add_block(die, "silicon"), cfg.die_size_mm)
-    if study == Study.TRANSIENT:
-        for index, trace in enumerate(ACTIVITY_TRACES):
-            model.add_function_piecewise(
-                f"activity_{index}",
-                np.asarray(
-                    [(fraction * run.duration_s, value) for fraction, value in trace]
-                ),
-            )
-
-    tile = cfg.chiplet_size_mm / 4.0
-    tile_volume = tile * tile * cfg.die_mm * 1.0e-9
-    for chiplet, ((x0, y0), scale) in enumerate(
-        zip(cfg.chiplet_origins_mm, CHIPLET_POWER_SCALE)
-    ):
-        for iy in range(4):
-            for ix in range(4):
-                source = cfg.chiplet_power_W * scale * POWER_MAP[iy, ix]
-                expression = f"{source / POWER_MAP.size / tile_volume:.17g}"
-                if study == Study.TRANSIENT:
-                    expression += f"*activity_{(chiplet + 2 * ix + iy) % 4}(x)"
-                block = model.add_block(die, "silicon", heat_source=expression)
-                model.add_rect(
-                    block,
-                    GeometryOp.ADD,
-                    f"{x0 + ix * tile:.17g}",
-                    f"{y0 + iy * tile:.17g}",
-                    f"{tile:.17g}",
-                    f"{tile:.17g}",
-                )
-
-    bump = model.add_layer(str(cfg.bump_mm))
-    add_rect(model, model.add_block(bump, "underfill"), cfg.bump_region_size_mm)
-    pitch_x = cfg.die_size_mm / cfg.bump_columns
-    pitch_y = cfg.die_size_mm / cfg.bump_rows
-    origin = -cfg.die_size_mm / 2.0
-    for iy in range(cfg.bump_rows):
-        for ix in range(cfg.bump_columns):
-            x = origin + (ix + 0.5) * pitch_x - cfg.bump_width_mm / 2.0
-            y = origin + (iy + 0.5) * pitch_y - cfg.bump_width_mm / 2.0
-            block = model.add_block(bump, "copper")
-            model.add_rect(
-                block,
-                GeometryOp.ADD,
-                f"{x:.17g}",
-                f"{y:.17g}",
-                f"{cfg.bump_width_mm:.17g}",
-                f"{cfg.bump_width_mm:.17g}",
-            )
-
-    substrate = model.add_layer(str(cfg.substrate_mm))
-    add_rect(model, model.add_block(substrate, "organic"), cfg.substrate_size_mm)
-
-
-def add_convection(model, cfg: Package, z: float, h_W_m2K: float | None) -> None:
-    if h_W_m2K is None:
-        return
-    h = float(h_W_m2K)
-    if h < 0.0:
-        raise ValueError("convection coefficient must be non-negative")
-    if h == 0.0:
-        return
-    half = cfg.cold_plate_size_mm / 2.0
-    region = (Axis.Z, z, -half, half, -half, half)
-    model.add_convection(str(h), str(cfg.ambient_K), [region])
 
 
 def build_model(
-    cfg: Package,
+    cfg: Config,
     study: Study,
     *,
-    run: Run | None = None,
     detail: bool,
     macro: bool,
-    h_W_m2K: float | None = None,
+    convection_h: float | None = None,
 ):
-    if detail and run is None:
-        raise ValueError("detail models require a Run configuration")
+    """Build a full, detail-only, or macro-only model on the shared mesh."""
+    if not detail and not macro:
+        raise ValueError("at least one domain must be enabled")
+    if convection_h is not None and convection_h < 0.0:
+        raise ValueError("convection coefficient must be non-negative")
+
     model = metahotspot.Model()
     layers = (
         (*cfg.detail_layers, *cfg.macro_layers)
         if detail and macro
         else (cfg.detail_layers if detail else cfg.macro_layers)
     )
-    configure(model, cfg, layers, study, run)
+    transient = study == Study.TRANSIENT
+    model.set_settings(
+        study=study,
+        length_unit=LengthUnit.MILLIMETER,
+        initial_temperature_K=cfg.ambient_K,
+        duration=cfg.duration_s if transient else 0.0,
+        output_interval=cfg.dt_s if transient else 0.0,
+    )
+    model.set_mesh(cfg.axis_vertices_mm, cfg.axis_vertices_mm, z_vertices(layers))
+    for material in MATERIALS:
+        model.add_material(*material)
+
     if macro:
-        add_macro(model, cfg)
+        for thickness, material, size in (
+            (cfg.cold_plate_mm, "aluminum", cfg.cold_plate_size_mm),
+            (cfg.spreader_mm, "copper", cfg.spreader_size_mm),
+            (cfg.tim_mm, "tim", cfg.tim_size_mm),
+        ):
+            layer = model.add_layer(str(thickness))
+            add_square(model, model.add_block(layer, material), size)
+
     if detail:
-        add_detail(model, cfg, study, run)
+        die = model.add_layer(str(cfg.die_mm))
+        add_square(model, model.add_block(die, "silicon"), cfg.die_size_mm)
+        if transient:
+            for index, trace in enumerate(ACTIVITY_TRACES):
+                model.add_function_piecewise(
+                    f"activity_{index}",
+                    np.asarray(
+                        [
+                            (fraction * cfg.duration_s, value)
+                            for fraction, value in trace
+                        ]
+                    ),
+                )
+
+        tile = cfg.chiplet_size_mm / 4.0
+        tile_volume_m3 = tile * tile * cfg.die_mm * 1.0e-9
+        for chiplet, ((x0, y0), scale) in enumerate(
+            zip(cfg.chiplet_origins_mm, CHIPLET_POWER_SCALE)
+        ):
+            for iy in range(4):
+                for ix in range(4):
+                    tile_power = (
+                        cfg.chiplet_power_W * scale * POWER_MAP[iy, ix] / POWER_MAP.size
+                    )
+                    source = f"{tile_power / tile_volume_m3:.17g}"
+                    if transient:
+                        source += f"*activity_{(chiplet + 2 * ix + iy) % 4}(x)"
+                    block = model.add_block(die, "silicon", heat_source=source)
+                    model.add_rect(
+                        block,
+                        GeometryOp.ADD,
+                        f"{x0 + ix * tile:.17g}",
+                        f"{y0 + iy * tile:.17g}",
+                        f"{tile:.17g}",
+                        f"{tile:.17g}",
+                    )
+
+        bump = model.add_layer(str(cfg.bump_mm))
+        add_square(
+            model,
+            model.add_block(bump, "underfill"),
+            cfg.bump_region_size_mm,
+        )
+        pitch_x = cfg.die_size_mm / cfg.bump_columns
+        pitch_y = cfg.die_size_mm / cfg.bump_rows
+        origin = -cfg.die_size_mm / 2.0
+        for iy in range(cfg.bump_rows):
+            for ix in range(cfg.bump_columns):
+                x = origin + (ix + 0.5) * pitch_x - cfg.bump_width_mm / 2.0
+                y = origin + (iy + 0.5) * pitch_y - cfg.bump_width_mm / 2.0
+                block = model.add_block(bump, "copper")
+                model.add_rect(
+                    block,
+                    GeometryOp.ADD,
+                    f"{x:.17g}",
+                    f"{y:.17g}",
+                    f"{cfg.bump_width_mm:.17g}",
+                    f"{cfg.bump_width_mm:.17g}",
+                )
+
+        substrate = model.add_layer(str(cfg.substrate_mm))
+        add_square(
+            model,
+            model.add_block(substrate, "organic"),
+            cfg.substrate_size_mm,
+        )
+
     model.set_default_neumann("0")
-    if macro:
-        z = cfg.total_height_mm if detail else cfg.macro_height_mm
-        add_convection(model, cfg, z, h_W_m2K)
+    if macro and convection_h:
+        half = cfg.cold_plate_size_mm / 2.0
+        top_z = cfg.total_height_mm if detail else cfg.macro_height_mm
+        model.add_convection(
+            str(float(convection_h)),
+            str(cfg.ambient_K),
+            [(Axis.Z, top_z, -half, half, -half, half)],
+        )
     return model
 
 
-def port_patches(cfg: Package, face: Face, z: float) -> list[PortPatch]:
+def port_patches(cfg: Config, face: Face, z_m: float) -> list[PortPatch]:
     vertices = cfg.axis_vertices_mm * 1.0e-3
     return [
         PortPatch(
             int(face),
-            z,
+            z_m,
             (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
         )
         for ix in cfg.port_indices
@@ -456,97 +387,41 @@ def port_patches(cfg: Package, face: Face, z: float) -> list[PortPatch]:
     ]
 
 
-def clean_operators(operators: Operators) -> Operators:
-    K, C = sp.csc_matrix(operators.K), sp.csc_matrix(operators.C)
+def normalized_operators(K, C, f) -> Operators:
+    K = sp.csc_matrix(K)
+    C = sp.csc_matrix(C)
     K.eliminate_zeros()
     C.eliminate_zeros()
-    return Operators(K, C, np.asarray(operators.f, dtype=np.float64).copy())
+    return Operators(K, C, np.asarray(f, dtype=np.float64).copy())
 
 
-def operator_delta(a: Operators, b: Operators) -> Operators:
-    return clean_operators(Operators(a.K - b.K, a.C - b.C, np.asarray(a.f) - b.f))
-
-
-def interpolate_operators(
-    base: Operators, convection: Operators, coordinate: float
-) -> Operators:
-    if not np.isfinite(coordinate) or coordinate < 0.0:
+def affine_operators(base: Operators, delta: Operators, alpha: float) -> Operators:
+    if not np.isfinite(alpha) or alpha < 0.0:
         raise ValueError("normalized convection coordinate must be non-negative")
-    if coordinate == 0.0:
-        return clean_operators(base)
-    return clean_operators(
-        Operators(
-            base.K + coordinate * convection.K,
-            base.C + coordinate * convection.C,
-            np.asarray(base.f) + coordinate * convection.f,
-        )
+    return normalized_operators(
+        base.K + alpha * delta.K,
+        base.C + alpha * delta.C,
+        np.asarray(base.f) + alpha * delta.f,
     )
 
 
-def extract_affine_macro(cfg: Package, anchor_h: float) -> MacroAffine:
-    if anchor_h <= 0.0:
-        raise ValueError("affine_anchor_h must be positive")
-    started = time.perf_counter()
-    patches = port_patches(cfg, Face.ZM, 0.0)
-    compiled = build_model(cfg, Study.STEADY, detail=False, macro=True).compile()
-    ports = PortMap(compiled, patches)
-    anchor_compiled = anchor_ports = None
-    try:
-        base = clean_operators(ports.assemble())
-        anchor_compiled = build_model(
-            cfg,
-            Study.STEADY,
-            detail=False,
-            macro=True,
-            h_W_m2K=anchor_h,
-        ).compile()
-        anchor_ports = PortMap(anchor_compiled, patches)
-        anchor = clean_operators(anchor_ports.assemble())
-        if anchor.K.shape != base.K.shape:
-            raise RuntimeError("convection changed macro state ordering")
-        convection = operator_delta(anchor, base)
-
-        ambient = np.full(base.K.shape[0], cfg.ambient_K)
-        defect = convection.K @ ambient - convection.f
-        scale = max(np.linalg.norm(convection.f), np.finfo(float).tiny)
-        if spla.norm(convection.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
-            raise RuntimeError("convection unexpectedly changed macro capacitance")
-        if np.linalg.norm(defect) > 1.0e-10 * scale:
-            raise RuntimeError("affine convection component violates ambient balance")
-        return MacroAffine(
-            compiled,
-            ports,
-            anchor_h,
-            base,
-            convection,
-            time.perf_counter() - started,
-        )
-    except Exception:
-        ports.close()
-        compiled.close()
-        raise
-    finally:
-        if anchor_ports is not None:
-            anchor_ports.close()
-        if anchor_compiled is not None:
-            anchor_compiled.close()
-
-
-def cell_grid(compiled) -> np.ndarray:
+def grid_cells(compiled) -> np.ndarray:
     return compiled.grid_to_cell.reshape(compiled.nx, compiled.ny, compiled.nz)
 
 
-def coordinate_cell_map(source, target, z_offset: int, label: str) -> np.ndarray:
+def coordinate_map(source, target, z_offset: int, label: str) -> np.ndarray:
     if source.nx != target.nx or source.ny != target.ny:
         raise RuntimeError(f"{label}: lateral meshes differ")
-    source_grid = cell_grid(source)
-    target_grid = cell_grid(target)[:, :, z_offset : z_offset + source.nz]
+    source_grid = grid_cells(source)
+    target_grid = grid_cells(target)[:, :, z_offset : z_offset + source.nz]
     if target_grid.shape != source_grid.shape:
         raise RuntimeError(f"{label}: z range differs")
     valid = source_grid >= 0
     if not np.array_equal(valid, target_grid >= 0):
         raise RuntimeError(f"{label}: geometry occupancy differs")
-    source_ids, target_ids = source_grid[valid], target_grid[valid]
+
+    source_ids = source_grid[valid]
+    target_ids = target_grid[valid]
     if (
         source_ids.size != source.cell_count
         or np.unique(source_ids).size != source.cell_count
@@ -559,207 +434,158 @@ def coordinate_cell_map(source, target, z_offset: int, label: str) -> np.ndarray
     return mapping
 
 
-def assemble(cfg: Package, run: Run) -> Data:
-    full = steady = transient = None
-    steady_ports = transient_ports = None
-    macro = None
-    try:
-        full = build_model(
-            cfg, Study.STEADY, run=run, detail=True, macro=True
-        ).compile()
-        steady = build_model(
-            cfg, Study.STEADY, run=run, detail=True, macro=False
-        ).compile()
-        transient = build_model(
-            cfg, Study.TRANSIENT, run=run, detail=True, macro=False
-        ).compile()
-        patches = port_patches(cfg, Face.ZP, cfg.detail_height_mm * 1.0e-3)
-        steady_ports = PortMap(steady, patches)
-        transient_ports = PortMap(transient, patches)
-        macro = extract_affine_macro(cfg, run.affine_anchor_h)
-        if macro.ports.port_count != cfg.ports:
-            raise RuntimeError("configured interface port count is inconsistent")
-        detail_map = coordinate_cell_map(steady, full, 0, "detail/full")
-        transient_map = coordinate_cell_map(transient, full, 0, "transient/full")
-        if not np.array_equal(detail_map, transient_map):
-            raise RuntimeError("steady and transient detail orderings differ")
-        macro_map = coordinate_cell_map(
-            macro.compiled, full, cfg.detail_nz, "macro/full"
+def column_basis(
+    compiled,
+    cfg: Config,
+    base: Operators,
+    delta: Operators,
+    port_count: int,
+):
+    """Build a block-local basis without source or boundary-response snapshots."""
+    started = time.perf_counter()
+    K_ip = base.K[port_count:, :port_count].tocsc()
+    K_ii = base.K[port_count:, port_count:].tocsc()
+    C_ip = base.C[port_count:, :port_count].tocsc()
+    C_ii = base.C[port_count:, port_count:].tocsc()
+    dK_ip = delta.K[port_count:, :port_count].tocsc()
+    dK_ii = delta.K[port_count:, port_count:].tocsc()
+
+    port_lookup = {
+        (int(ix), int(iy)): port
+        for port, (ix, iy) in enumerate(
+            (ix, iy) for ix in cfg.port_indices for iy in cfg.port_indices
         )
-        combined = np.r_[detail_map, macro_map]
-        if (
-            combined.size != full.cell_count
-            or np.unique(combined).size != full.cell_count
-        ):
-            raise RuntimeError("detail and macro maps do not partition the full model")
-        return Data(
-            full,
-            steady,
-            transient,
-            steady_ports,
-            transient_ports,
-            macro,
-            detail_map,
-            macro_map,
-        )
-    except Exception:
-        if steady_ports is not None:
-            steady_ports.close()
-        if transient_ports is not None:
-            transient_ports.close()
-        if macro is not None:
-            macro.ports.close()
-            macro.compiled.close()
-        for compiled in (steady, transient, full):
-            if compiled is not None:
-                compiled.close()
-        raise
+    }
+    grid = grid_cells(compiled)
+    seen_ports = 0
+    rows: list[int] = []
+    cols: list[int] = []
+    values: list[float] = []
+    orders: list[int] = []
+    offset = 0
 
-
-def internal_blocks(operators: Operators, ports: int):
-    return (
-        operators.K[ports:, :ports].tocsc(),
-        operators.K[ports:, ports:].tocsc(),
-        operators.C[ports:, :ports].tocsc(),
-        operators.C[ports:, ports:].tocsc(),
-    )
-
-
-def macro_columns(compiled, cfg: Package) -> tuple[Column, ...]:
-    pairs = ((int(ix), int(iy)) for ix in cfg.port_indices for iy in cfg.port_indices)
-    port_lookup = {pair: index for index, pair in enumerate(pairs)}
-    grid = cell_grid(compiled)
-    output = []
     for ix in range(compiled.nx):
         for iy in range(compiled.ny):
             cells = grid[ix, iy]
-            cells = cells[cells >= 0]
-            if cells.size:
-                output.append(Column(cells.astype(np.int64), port_lookup.get((ix, iy))))
-    if sum(column.port is not None for column in output) != cfg.ports:
-        raise RuntimeError("interface-port/column mapping is inconsistent")
-    return tuple(output)
+            cells = cells[cells >= 0].astype(np.int64)
+            if not cells.size:
+                continue
 
+            k = K_ii[cells][:, cells].toarray()
+            c = C_ii[cells][:, cells].toarray()
+            candidates = [np.ones(cells.size)]
 
-def range_basis(candidates: Sequence[np.ndarray]) -> np.ndarray:
-    matrix = np.column_stack(candidates)
-    q, r, _ = scipy.linalg.qr(
-        matrix, mode="economic", pivoting=True, check_finite=False
-    )
-    diagonal = np.abs(np.diag(r))
-    if not diagonal.size or diagonal[0] == 0.0:
-        return np.empty((matrix.shape[0], 0))
-    keep = diagonal > np.finfo(float).eps * max(matrix.shape) * diagonal[0]
-    return np.ascontiguousarray(q[:, keep])
+            mode_count = min(cfg.local_dynamic_modes, cells.size)
+            if mode_count:
+                eigenvalues, modes = scipy.linalg.eigh(
+                    k,
+                    c,
+                    subset_by_index=(0, mode_count - 1),
+                    check_finite=False,
+                )
+                cutoff = math.pi / cfg.dt_s
+                candidates.extend(modes[:, eigenvalues <= cutoff].T)
 
+            port = port_lookup.get((ix, iy))
+            if port is not None:
+                seen_ports += 1
+                b = K_ip[cells, port].toarray().ravel()
+                cp = C_ip[cells, port].toarray().ravel()
+                static = scipy.linalg.solve(k, -b, assume_a="sym", check_finite=False)
+                candidates.append(static)
 
-def build_basis(macro: MacroAffine, cfg: Package, run: Run) -> Basis:
-    started = time.perf_counter()
-    ports = macro.ports.port_count
-    Kip0, Kii0, Cip0, Cii0 = internal_blocks(macro.base, ports)
-    Kip1, Kii1, _, _ = internal_blocks(macro.convection, ports)
-    columns = macro_columns(macro.compiled, cfg)
-    rows, cols, values, orders = [], [], [], []
-    offset = 0
+                sensitivity_rhs = (
+                    dK_ii[cells][:, cells] @ static
+                    + dK_ip[cells, port].toarray().ravel()
+                )
+                if np.linalg.norm(sensitivity_rhs) > 1.0e-14 * max(
+                    np.linalg.norm(b), 1.0
+                ):
+                    candidates.append(
+                        scipy.linalg.solve(
+                            k,
+                            -sensitivity_rhs,
+                            assume_a="sym",
+                            check_finite=False,
+                        )
+                    )
 
-    for column in columns:
-        cells = column.cells
-        k0 = Kii0[cells][:, cells].toarray()
-        c0 = Cii0[cells][:, cells].toarray()
-        candidates = [np.ones(cells.size)]
-
-        mode_count = min(run.local_dynamic_modes, cells.size)
-        if mode_count:
-            eigenvalues, modes = scipy.linalg.eigh(
-                k0,
-                c0,
-                subset_by_index=(0, mode_count - 1),
-                check_finite=False,
-            )
-            candidates.extend(modes[:, eigenvalues <= run.modal_cutoff_per_s].T)
-
-        if column.port is not None:
-            port = column.port
-            b0 = Kip0[cells, port].toarray().ravel()
-            cp0 = Cip0[cells, port].toarray().ravel()
-            static = scipy.linalg.solve(k0, -b0, assume_a="sym", check_finite=False)
-            candidates.append(static)
-
-            sensitivity_rhs = (
-                Kii1[cells][:, cells] @ static + Kip1[cells, port].toarray().ravel()
-            )
-            if np.linalg.norm(sensitivity_rhs) > 1.0e-14 * max(np.linalg.norm(b0), 1.0):
-                candidates.append(
-                    scipy.linalg.solve(
-                        k0,
-                        -sensitivity_rhs,
+                for multiplier in cfg.bdf1_shifts:
+                    shift = multiplier / cfg.dt_s
+                    response = scipy.linalg.solve(
+                        k + shift * c,
+                        -(b + shift * cp),
                         assume_a="sym",
                         check_finite=False,
                     )
+                    candidates.append(response - static)
+
+            matrix = np.column_stack(candidates)
+            q, r, _ = scipy.linalg.qr(
+                matrix, mode="economic", pivoting=True, check_finite=False
+            )
+            diagonal = np.abs(np.diag(r))
+            if not diagonal.size or diagonal[0] == 0.0:
+                local = np.empty((cells.size, 0))
+            else:
+                keep = diagonal > (
+                    np.finfo(float).eps * max(matrix.shape) * diagonal[0]
                 )
+                local = np.ascontiguousarray(q[:, keep])
 
-            for multiplier in run.bdf1_shifts:
-                shift = multiplier / run.dt_s
-                response = scipy.linalg.solve(
-                    k0 + shift * c0,
-                    -(b0 + shift * cp0),
-                    assume_a="sym",
-                    check_finite=False,
-                )
-                candidates.append(response - static)
+            orders.append(local.shape[1])
+            for local_row, cell in enumerate(cells):
+                nonzero = np.flatnonzero(np.abs(local[local_row]) > 1.0e-14)
+                rows.extend([int(cell)] * nonzero.size)
+                cols.extend((offset + nonzero).tolist())
+                values.extend(local[local_row, nonzero].tolist())
+            offset += local.shape[1]
 
-        local = range_basis(candidates)
-        orders.append(local.shape[1])
-        for local_row, cell in enumerate(cells):
-            nonzero = np.flatnonzero(np.abs(local[local_row]) > 1.0e-14)
-            rows.extend([int(cell)] * nonzero.size)
-            cols.extend((offset + nonzero).tolist())
-            values.extend(local[local_row, nonzero].tolist())
-        offset += local.shape[1]
+    if seen_ports != port_count:
+        raise RuntimeError("interface-port/column mapping is inconsistent")
 
-    W = sp.csc_matrix((values, (rows, cols)), shape=(Kii0.shape[0], offset))
+    W = sp.csc_matrix((values, (rows, cols)), shape=(K_ii.shape[0], offset))
     ones = np.ones(W.shape[0])
     if np.linalg.norm(W @ (W.T @ ones) - ones) > 1.0e-10 * math.sqrt(ones.size):
         raise RuntimeError("macro basis does not preserve uniform temperature")
-    gram_error = spla.norm(W.T @ W - sp.eye(W.shape[1], format="csc"))
-    if gram_error > 1.0e-10:
+    if spla.norm(W.T @ W - sp.eye(W.shape[1], format="csc")) > 1.0e-10:
         raise RuntimeError("macro basis lost orthogonality")
+
     initial = np.asarray(W.T @ np.full(W.shape[0], cfg.ambient_K)).ravel()
-    return Basis(W, np.asarray(orders), initial, time.perf_counter() - started)
+    return W, np.asarray(orders), initial, time.perf_counter() - started
 
 
-def project_matrix(matrix, ports: int, W: sp.csc_matrix) -> sp.csc_matrix:
-    port = matrix[:ports, :ports].tocsc()
-    upper = (matrix[:ports, ports:] @ W).tocsc()
-    lower = (W.T @ matrix[ports:, :ports]).tocsc()
-    internal = (W.T @ matrix[ports:, ports:] @ W).tocsc()
-    reduced = sp.bmat(((port, upper), (lower, internal)), format="csc")
-    reduced = (0.5 * (reduced + reduced.T)).tocsc()
-    reduced.eliminate_zeros()
-    return reduced
+def project_operators(operators: Operators, ports: int, W: sp.csc_matrix) -> Operators:
+    def project_matrix(matrix):
+        reduced = sp.bmat(
+            (
+                (
+                    matrix[:ports, :ports],
+                    matrix[:ports, ports:] @ W,
+                ),
+                (
+                    W.T @ matrix[ports:, :ports],
+                    W.T @ matrix[ports:, ports:] @ W,
+                ),
+            ),
+            format="csc",
+        )
+        reduced = (0.5 * (reduced + reduced.T)).tocsc()
+        reduced.eliminate_zeros()
+        return reduced
 
-
-def project(operators: Operators, ports: int, W: sp.csc_matrix) -> Operators:
     return Operators(
-        project_matrix(operators.K, ports, W),
-        project_matrix(operators.C, ports, W),
-        np.r_[operators.f[:ports], np.asarray(W.T @ operators.f[ports:]).ravel()],
+        project_matrix(operators.K),
+        project_matrix(operators.C),
+        np.r_[
+            operators.f[:ports],
+            np.asarray(W.T @ operators.f[ports:]).ravel(),
+        ],
     )
 
 
-def project_affine(macro: MacroAffine, basis: Basis) -> ReducedAffine:
-    started = time.perf_counter()
-    ports = macro.ports.port_count
-    return ReducedAffine(
-        macro.anchor_h,
-        project(macro.base, ports, basis.W),
-        project(macro.convection, ports, basis.W),
-        time.perf_counter() - started,
-    )
-
-
-def solve_options(run: Run, transient: bool) -> SolveOptions:
-    dt = run.dt_s if transient else 1.0
+def solve_options(cfg: Config, transient: bool) -> SolveOptions:
+    dt = cfg.dt_s if transient else 1.0
     return SolveOptions(
         linear_solver="EigenSparseLU",
         linear_tolerance=1.0e-12,
@@ -776,37 +602,39 @@ def solve_options(run: Run, transient: bool) -> SolveOptions:
     )
 
 
-def reference(cfg: Package, run: Run, boundary: BoundaryCase) -> Reference:
+def full_reference(cfg: Config, convection_h: float):
     started = time.perf_counter()
-    steady = transient = None
-    try:
+    with ExitStack() as stack:
         steady = build_model(
             cfg,
             Study.STEADY,
-            run=run,
             detail=True,
             macro=True,
-            h_W_m2K=boundary.h_W_m2K,
+            convection_h=convection_h,
         ).compile()
+        stack.callback(steady.close)
         transient = build_model(
             cfg,
             Study.TRANSIENT,
-            run=run,
             detail=True,
             macro=True,
-            h_W_m2K=boundary.h_W_m2K,
+            convection_h=convection_h,
         ).compile()
+        stack.callback(transient.close)
         compile_s = time.perf_counter() - started
+
         started = time.perf_counter()
-        with steady.solve(opts=solve_options(run, False)) as solution:
+        with steady.solve(opts=solve_options(cfg, False)) as solution:
             steady_temperature = np.asarray(solution.temperature).copy()
         steady_s = time.perf_counter() - started
+
         started = time.perf_counter()
-        with transient.solve(opts=solve_options(run, True)) as solution:
+        with transient.solve(opts=solve_options(cfg, True)) as solution:
             times = np.asarray(solution.history_times).copy()
             history = np.asarray(solution.temperature_history).copy()
         transient_s = time.perf_counter() - started
-        return Reference(
+
+        return (
             steady_temperature,
             times,
             history,
@@ -815,256 +643,286 @@ def reference(cfg: Package, run: Run, boundary: BoundaryCase) -> Reference:
             transient_s,
             transient.cell_count,
         )
-    finally:
-        if steady is not None:
-            steady.close()
-        if transient is not None:
-            transient.close()
 
 
-def evaluate(
-    data: Data,
-    cfg: Package,
-    run: Run,
-    basis: Basis,
-    reduced: ReducedAffine,
-    boundary: BoundaryCase,
-    ref: Reference,
-):
-    operators, assembly_s = reduced.at(boundary.h_W_m2K)
+def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
+    offline_started = time.perf_counter()
+    with ExitStack() as stack:
+        full_layout = build_model(cfg, Study.STEADY, detail=True, macro=True).compile()
+        stack.callback(full_layout.close)
+        detail_steady = build_model(
+            cfg, Study.STEADY, detail=True, macro=False
+        ).compile()
+        stack.callback(detail_steady.close)
+        detail_transient = build_model(
+            cfg, Study.TRANSIENT, detail=True, macro=False
+        ).compile()
+        stack.callback(detail_transient.close)
 
-    def run_reduced(transient: bool):
-        compiled = data.detail_transient if transient else data.detail_steady
-        ports = data.detail_ports_transient if transient else data.detail_ports_steady
-        state = np.r_[
-            np.full(compiled.cell_count + cfg.ports, cfg.ambient_K),
-            basis.initial_internal,
-        ]
-        started = time.perf_counter()
-        with solve_macro(
-            compiled, operators, ports, state, solve_options(run, transient)
-        ) as solution:
-            elapsed = time.perf_counter() - started
-            if transient:
-                return (
-                    np.asarray(solution.history_times).copy(),
-                    np.asarray(solution.state_history).copy(),
-                    elapsed,
-                )
-            return np.asarray(solution.state).copy(), elapsed
+        detail_patches = port_patches(cfg, Face.ZP, cfg.detail_height_mm * 1.0e-3)
+        detail_ports_steady = PortMap(detail_steady, detail_patches)
+        stack.callback(detail_ports_steady.close)
+        detail_ports_transient = PortMap(detail_transient, detail_patches)
+        stack.callback(detail_ports_transient.close)
 
-    steady_state, reduced_steady_s = run_reduced(False)
-    times, transient_states, reduced_transient_s = run_reduced(True)
-    if times.shape != ref.times.shape or not np.allclose(
-        times, ref.times, atol=1.0e-12, rtol=0.0
-    ):
-        raise RuntimeError("full and reduced output times differ")
+        macro_started = time.perf_counter()
+        macro_compiled = build_model(
+            cfg, Study.STEADY, detail=False, macro=True
+        ).compile()
+        stack.callback(macro_compiled.close)
+        macro_ports = PortMap(macro_compiled, port_patches(cfg, Face.ZM, 0.0))
+        stack.callback(macro_ports.close)
+        base = normalized_operators(*macro_ports.assemble())
 
-    detail_n = data.detail_steady.cell_count
-
-    def recover(states):
-        states = np.atleast_2d(states)
-        output = np.empty((states.shape[0], data.full_layout.cell_count))
-        output[:, data.detail_to_full] = states[:, :detail_n]
-        output[:, data.macro_to_full] = (
-            basis.W @ states[:, detail_n + cfg.ports :].T
-        ).T
-        return output
-
-    steady_error = float(np.max(np.abs(recover(steady_state)[0] - ref.steady)))
-    transient_error = float(np.max(np.abs(recover(transient_states) - ref.transient)))
-    return {
-        "name": boundary.name,
-        "h_W_m2K": boundary.h_W_m2K,
-        "steady_error_K": steady_error,
-        "transient_error_K": transient_error,
-        "online_reduced_assembly_s": assembly_s,
-        "full_compile_s": ref.compile_s,
-        "full_steady_solve_s": ref.steady_solve_s,
-        "reduced_steady_solve_s": reduced_steady_s,
-        "full_transient_solve_s": ref.transient_solve_s,
-        "reduced_transient_solve_s": reduced_transient_s,
-        "transient_speedup": ref.transient_solve_s
-        / max(reduced_transient_s, np.finfo(float).tiny),
-        "full_order": ref.order,
-        "reduced_online_order": detail_n + operators.K.shape[0],
-        "reduced_macro_k_nnz": operators.K.nnz,
-        "reduced_macro_c_nnz": operators.C.nnz,
-    }
-
-
-def close_data(data: Data) -> None:
-    data.detail_ports_steady.close()
-    data.detail_ports_transient.close()
-    data.macro.ports.close()
-    data.detail_steady.close()
-    data.detail_transient.close()
-    data.macro.compiled.close()
-    data.full_layout.close()
-
-
-def configs(quick: bool):
-    if quick:
-        cfg = Package(
-            substrate_cells=3,
-            bump_cells=1,
-            die_cells=2,
-            tim_cells=1,
-            spreader_cells=3,
-            cold_plate_cells=4,
-            max_xy_cell_mm=6.0,
-            bump_rows=8,
-            bump_columns=8,
-        )
-        run = Run(
-            error_K=0.35,
-            duration_s=0.20,
-            local_dynamic_modes=1,
-            bdf1_shifts=(1.0,),
-            speedup_target=1.0,
-            compression_target=2.0,
-        )
-        return (
+        anchor_compiled = build_model(
             cfg,
-            run,
-            (
-                BoundaryCase("uniform-low", 500.0),
-                BoundaryCase("uniform-high", 8000.0),
-            ),
+            Study.STEADY,
+            detail=False,
+            macro=True,
+            convection_h=cfg.affine_anchor_h,
+        ).compile()
+        stack.callback(anchor_compiled.close)
+        anchor_ports = PortMap(anchor_compiled, port_patches(cfg, Face.ZM, 0.0))
+        stack.callback(anchor_ports.close)
+        anchor = normalized_operators(*anchor_ports.assemble())
+        if anchor.K.shape != base.K.shape:
+            raise RuntimeError("convection changed macro state ordering")
+        delta = normalized_operators(
+            anchor.K - base.K,
+            anchor.C - base.C,
+            np.asarray(anchor.f) - base.f,
         )
-    return (
-        Package(),
-        Run(),
-        (
-            BoundaryCase("uniform-low", 500.0),
-            BoundaryCase("uniform-medium", 2500.0),
-            BoundaryCase("uniform-high", 8000.0),
-        ),
-    )
+        macro_extraction_s = time.perf_counter() - macro_started
 
+        ambient = np.full(base.K.shape[0], cfg.ambient_K)
+        balance_error = np.linalg.norm(delta.K @ ambient - delta.f)
+        balance_scale = max(np.linalg.norm(delta.f), np.finfo(float).tiny)
+        if spla.norm(delta.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
+            raise RuntimeError("convection unexpectedly changed macro capacitance")
+        if balance_error > 1.0e-10 * balance_scale:
+            raise RuntimeError("affine convection component violates ambient balance")
 
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--quick", action="store_true")
-    mode.add_argument("--strict", action="store_true")
-    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
-    cfg, run, boundaries = configs(args.quick)
+        port_count = macro_ports.port_count
+        if port_count != cfg.ports:
+            raise RuntimeError("configured interface port count is inconsistent")
 
-    print("=" * 100)
-    print("Transient BCI-ROM - uniform cold-plate convection")
-    print("=" * 100)
-    print(
-        "Footprints cold plate/spreader/substrate/bump/die/TIM="
-        f"{cfg.cold_plate_size_mm:g}/{cfg.spreader_size_mm:g}/"
-        f"{cfg.substrate_size_mm:g}/"
-        f"{cfg.bump_region_size_mm:g}/{cfg.die_size_mm:g}/{cfg.tim_size_mm:g} mm"
-    )
-    print(
-        f"Nominal die power={cfg.nominal_power_W:.2f} W; "
-        f"tile peak/mean density={cfg.peak_to_mean_tile_density:.2f}x"
-    )
+        detail_to_full = coordinate_map(detail_steady, full_layout, 0, "detail/full")
+        transient_to_full = coordinate_map(
+            detail_transient, full_layout, 0, "transient/full"
+        )
+        if not np.array_equal(detail_to_full, transient_to_full):
+            raise RuntimeError("steady and transient detail orderings differ")
+        macro_to_full = coordinate_map(
+            macro_compiled, full_layout, cfg.detail_nz, "macro/full"
+        )
+        combined = np.r_[detail_to_full, macro_to_full]
+        if (
+            combined.size != full_layout.cell_count
+            or np.unique(combined).size != combined.size
+        ):
+            raise RuntimeError("detail and macro maps do not partition the full model")
 
-    started = time.perf_counter()
-    data = assemble(cfg, run)
-    assembly_s = time.perf_counter() - started
-    try:
-        basis = build_basis(data.macro, cfg, run)
-        reduced = project_affine(data.macro, basis)
-        full_macro_order = cfg.ports + basis.W.shape[0]
-        reduced_macro_order = cfg.ports + basis.W.shape[1]
+        W, orders, initial_internal, basis_s = column_basis(
+            macro_compiled, cfg, base, delta, port_count
+        )
+        projection_started = time.perf_counter()
+        reduced_base = project_operators(base, port_count, W)
+        reduced_delta = project_operators(delta, port_count, W)
+        projection_s = time.perf_counter() - projection_started
+        offline_s = time.perf_counter() - offline_started
+
+        full_macro_order = port_count + W.shape[0]
+        reduced_macro_order = port_count + W.shape[1]
         compression = full_macro_order / reduced_macro_order
         print(
-            f"Grid {cfg.nx}x{cfg.ny}x{cfg.nz}; exact ports={cfg.ports}; "
+            f"Grid {cfg.nx}x{cfg.nx}x{cfg.nz}; exact ports={port_count}; "
             f"macro states {full_macro_order:,}->{reduced_macro_order:,} "
             f"({compression:.2f}x)"
         )
 
         results = []
-        for boundary in boundaries:
-            result = evaluate(
-                data, cfg, run, basis, reduced, boundary, reference(cfg, run, boundary)
+        detail_n = detail_steady.cell_count
+        for name, convection_h in boundaries:
+            reference = full_reference(cfg, convection_h)
+            (
+                reference_steady,
+                reference_times,
+                reference_history,
+                full_compile_s,
+                full_steady_s,
+                full_transient_s,
+                full_order,
+            ) = reference
+
+            assembly_started = time.perf_counter()
+            reduced = affine_operators(
+                reduced_base,
+                reduced_delta,
+                convection_h / cfg.affine_anchor_h,
             )
-            result["accuracy_passed"] = (
-                max(result["steady_error_K"], result["transient_error_K"])
-                <= run.error_K
+            online_assembly_s = time.perf_counter() - assembly_started
+
+            def solve_reduced(transient: bool):
+                compiled = detail_transient if transient else detail_steady
+                ports = detail_ports_transient if transient else detail_ports_steady
+                state = np.r_[
+                    np.full(compiled.cell_count + port_count, cfg.ambient_K),
+                    initial_internal,
+                ]
+                started = time.perf_counter()
+                with solve_macro(
+                    compiled,
+                    reduced,
+                    ports,
+                    state,
+                    solve_options(cfg, transient),
+                ) as solution:
+                    elapsed = time.perf_counter() - started
+                    if transient:
+                        return (
+                            np.asarray(solution.history_times).copy(),
+                            np.asarray(solution.state_history).copy(),
+                            elapsed,
+                        )
+                    return np.asarray(solution.state).copy(), elapsed
+
+            steady_state, reduced_steady_s = solve_reduced(False)
+            times, transient_states, reduced_transient_s = solve_reduced(True)
+            if times.shape != reference_times.shape or not np.allclose(
+                times, reference_times, atol=1.0e-12, rtol=0.0
+            ):
+                raise RuntimeError("full and reduced output times differ")
+
+            def recover(states):
+                states = np.atleast_2d(states)
+                temperature = np.empty((states.shape[0], full_layout.cell_count))
+                temperature[:, detail_to_full] = states[:, :detail_n]
+                temperature[:, macro_to_full] = (
+                    W @ states[:, detail_n + port_count :].T
+                ).T
+                return temperature
+
+            steady_error = float(
+                np.max(np.abs(recover(steady_state)[0] - reference_steady))
             )
-            result["speedup_passed"] = (
-                result["transient_speedup"] >= run.speedup_target
-                if args.strict
-                else True
+            transient_error = float(
+                np.max(np.abs(recover(transient_states) - reference_history))
             )
-            result["passed"] = result["accuracy_passed"] and result["speedup_passed"]
+            speedup = full_transient_s / max(reduced_transient_s, np.finfo(float).tiny)
+            accuracy_passed = max(steady_error, transient_error) <= cfg.error_K
+            speedup_passed = speedup >= cfg.speedup_target if strict else True
+            result = {
+                "name": name,
+                "h_W_m2K": convection_h,
+                "steady_error_K": steady_error,
+                "transient_error_K": transient_error,
+                "online_reduced_assembly_s": online_assembly_s,
+                "full_compile_s": full_compile_s,
+                "full_steady_solve_s": full_steady_s,
+                "reduced_steady_solve_s": reduced_steady_s,
+                "full_transient_solve_s": full_transient_s,
+                "reduced_transient_solve_s": reduced_transient_s,
+                "transient_speedup": speedup,
+                "full_order": full_order,
+                "reduced_online_order": detail_n + reduced.K.shape[0],
+                "reduced_macro_k_nnz": reduced.K.nnz,
+                "reduced_macro_c_nnz": reduced.C.nnz,
+                "accuracy_passed": accuracy_passed,
+                "speedup_passed": speedup_passed,
+                "passed": accuracy_passed and speedup_passed,
+            }
             results.append(result)
             print(
-                f"{boundary.name:>16s}: h={boundary.h_W_m2K:g} W/(m^2 K), "
-                f"error steady/transient={result['steady_error_K']:.5f}/"
-                f"{result['transient_error_K']:.5f} K; full/ROM="
-                f"{result['full_transient_solve_s']:.3f}/"
-                f"{result['reduced_transient_solve_s']:.3f}s, "
-                f"speedup={result['transient_speedup']:.2f}x "
+                f"{name:>16s}: h={convection_h:g} W/(m^2 K), "
+                f"error steady/transient={steady_error:.5f}/{transient_error:.5f} K; "
+                f"full/ROM={full_transient_s:.3f}/{reduced_transient_s:.3f}s, "
+                f"speedup={speedup:.2f}x "
                 f"{'PASS' if result['passed'] else 'FAIL'}"
             )
 
-        compression_passed = compression >= run.compression_target
-        report = {
-            "schema_version": 17,
-            "mode": "quick" if args.quick else "strict",
-            "method": (
-                "uniform-convection column-local static/sensitivity/BDF1 "
-                "Galerkin ROM"
-            ),
-            "package": {
+        compression_passed = compression >= cfg.compression_target
+        return {
+            "schema_version": 18,
+            "method": "exact-port affine-convection column-local Galerkin BCI-ROM",
+            "configuration": {
                 **asdict(cfg),
+                "report": str(cfg.report),
                 "nx": cfg.nx,
-                "ny": cfg.ny,
+                "ny": cfg.nx,
+                "nz": cfg.nz,
                 "ports": cfg.ports,
-                "port_shape": list(cfg.port_shape),
+                "port_shape": [cfg.port_indices.size, cfg.port_indices.size],
                 "nominal_power_W": cfg.nominal_power_W,
                 "power_map_normalized": POWER_MAP.tolist(),
                 "chiplet_power_scale": list(CHIPLET_POWER_SCALE),
             },
-            "experiment": {**asdict(run), "report": str(run.report)},
             "affine_boundary": {
                 "family": "A(h)=A0+(h/anchor_h)*DeltaA_h",
                 "region": "entire cold-plate top surface",
-                "anchor_h_W_m2K": run.affine_anchor_h,
+                "anchor_h_W_m2K": cfg.affine_anchor_h,
                 "full_order_offline_assemblies": 2,
                 "full_order_online_assemblies_per_case": 0,
-                "extraction_s": data.macro.seconds,
-                "projection_s": reduced.seconds,
+                "extraction_s": macro_extraction_s,
+                "projection_s": projection_s,
             },
             "reduction": {
                 "full_macro_order": full_macro_order,
                 "reduced_macro_order": reduced_macro_order,
                 "compression_ratio": compression,
-                "compression_target": run.compression_target,
+                "compression_target": cfg.compression_target,
                 "compression_passed": compression_passed,
-                "column_count": basis.orders.size,
-                "port_columns": cfg.ports,
-                "local_order_min": int(basis.orders.min()),
-                "local_order_mean": float(basis.orders.mean()),
-                "local_order_max": int(basis.orders.max()),
-                "basis_nnz": basis.W.nnz,
+                "column_count": int(orders.size),
+                "port_columns": port_count,
+                "local_order_min": int(orders.min()),
+                "local_order_mean": float(orders.mean()),
+                "local_order_max": int(orders.max()),
+                "basis_nnz": W.nnz,
+                "basis_extraction_s": basis_s,
             },
             "passivity": {
                 "preserved_structurally": True,
-                "reason": "symmetric Galerkin congruence",
+                "reason": "symmetric Galerkin congruence with exact ports",
             },
-            "offline_s": assembly_s + basis.seconds + reduced.seconds,
+            "offline_s": offline_s,
             "boundary_reuse": results,
             "passed": bool(
-                all(item["passed"] for item in results) and compression_passed
+                all(result["passed"] for result in results) and compression_passed
             ),
         }
-        run.report.parent.mkdir(parents=True, exist_ok=True)
-        run.report.write_text(
-            json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
-        )
-        print(f"Report: {run.report}")
-        return 0 if report["passed"] else 3
-    finally:
-        close_data(data)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--quick", action="store_true", help="small smoke experiment")
+    mode.add_argument("--strict", action="store_true", help="full benchmark gates")
+    args = parser.parse_args(argv)
+
+    cfg = replace(Config(), **QUICK_OVERRIDES) if args.quick else Config()
+    boundaries = (BOUNDARIES[0], BOUNDARIES[-1]) if args.quick else BOUNDARIES
+
+    print("=" * 96)
+    print("Transient BCI-ROM extraction - uniform cold-plate convection")
+    print("=" * 96)
+    print(
+        "Footprints cold plate/spreader/substrate/bump/die/TIM="
+        f"{cfg.cold_plate_size_mm:g}/{cfg.spreader_size_mm:g}/"
+        f"{cfg.substrate_size_mm:g}/{cfg.bump_region_size_mm:g}/"
+        f"{cfg.die_size_mm:g}/{cfg.tim_size_mm:g} mm"
+    )
+    print(
+        f"Nominal die power={cfg.nominal_power_W:.2f} W; "
+        f"tile peak/mean density={POWER_MAP.max():.2f}x"
+    )
+
+    report = run_experiment(cfg, boundaries, args.strict)
+    report["mode"] = "quick" if args.quick else "strict"
+    cfg.report.parent.mkdir(parents=True, exist_ok=True)
+    cfg.report.write_text(
+        json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
+    )
+    print(f"Report: {cfg.report}")
+    return 0 if report["passed"] else 3
 
 
 if __name__ == "__main__":
