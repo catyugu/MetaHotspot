@@ -124,9 +124,13 @@ class Compiled(OwnedHandle):
     @property
     def grid_to_cell(self) -> np.ndarray:
         metadata = self._fetch_metadata()
-        return np.ctypeslib.as_array(
+        indices = np.ctypeslib.as_array(
             metadata.grid_to_cell, shape=(metadata.nx * metadata.ny * metadata.nz,)
         )
+        # C++ stores cell indices as size_t and uses SIZE_MAX for invalid cells.
+        # Reinterpret the pointer-sized unsigned view as signed so the sentinel is
+        # exposed consistently as -1 on Windows and Unix without copying.
+        return indices.view(np.intp)
 
     @property
     def layer_ids(self) -> np.ndarray:
