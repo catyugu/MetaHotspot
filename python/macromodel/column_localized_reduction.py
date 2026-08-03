@@ -28,7 +28,6 @@ QUICK_OVERRIDES = dict(
     max_xy_cell_mm=6.0,
     bump_rows=8,
     bump_columns=8,
-    duration_s=0.20,
     local_dynamic_modes=1,
     bdf1_shifts=(1.0,),
     speedup_target=1.0,
@@ -436,8 +435,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     cfg = replace(Config(), **QUICK_OVERRIDES) if args.quick else Config()
-    boundaries = (BOUNDARIES[0], BOUNDARIES[-1]) if args.quick else BOUNDARIES
-
     print("=" * 96)
     print("Transient BCI-ROM extraction - uniform cold-plate convection")
     print("=" * 96)
@@ -452,7 +449,7 @@ def main(argv=None) -> int:
         f"tile peak/mean density={POWER_MAP.max():.2f}x"
     )
 
-    report = run_experiment(cfg, boundaries, args.strict)
+    report = run_experiment(cfg, BOUNDARIES, args.strict)
     report["mode"] = "quick" if args.quick else "strict"
     cfg.report.parent.mkdir(parents=True, exist_ok=True)
     cfg.report.write_text(

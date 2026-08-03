@@ -130,9 +130,7 @@ def accuracy_summary(
         "transient_final_max_absolute_rise_error_K": transient[
             "max_absolute_rise_error_K"
         ],
-        "transient_final_max_relative_rise_error": transient[
-            "max_relative_rise_error"
-        ],
+        "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
         "accuracy_passed": steady["passed"] and transient["passed"],
     }
 
@@ -178,8 +176,8 @@ class BaseConfig:
     bump_width_mm: float = 0.60
     chiplet_size_mm: float = 12.0
     chiplet_power_W: float = 25.0
-    duration_s: float = 0.5
-    dt_s: float = 0.025
+    duration_s: float = 100.0
+    dt_s: float = 10.0
     affine_anchor_h: float = 2500.0
     speedup_target: float = 1.5
     compression_target: float = 2.5
