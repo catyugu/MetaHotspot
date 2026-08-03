@@ -353,10 +353,38 @@ def add_macro(model, cfg: Package) -> None:
 def add_activity_functions(model, run: Run) -> None:
     duration = run.duration_s
     traces = (
-        ((0.00, 0.20), (0.10, 1.00), (0.35, 0.65), (0.58, 1.30), (0.82, 0.40), (1.00, 0.90)),
-        ((0.00, 0.75), (0.18, 1.20), (0.40, 0.30), (0.64, 1.05), (0.88, 0.55), (1.00, 0.80)),
-        ((0.00, 0.10), (0.08, 1.45), (0.28, 0.50), (0.52, 1.15), (0.76, 0.25), (1.00, 1.00)),
-        ((0.00, 0.55), (0.22, 0.35), (0.44, 1.25), (0.70, 0.60), (0.90, 1.10), (1.00, 0.70)),
+        (
+            (0.00, 0.20),
+            (0.10, 1.00),
+            (0.35, 0.65),
+            (0.58, 1.30),
+            (0.82, 0.40),
+            (1.00, 0.90),
+        ),
+        (
+            (0.00, 0.75),
+            (0.18, 1.20),
+            (0.40, 0.30),
+            (0.64, 1.05),
+            (0.88, 0.55),
+            (1.00, 0.80),
+        ),
+        (
+            (0.00, 0.10),
+            (0.08, 1.45),
+            (0.28, 0.50),
+            (0.52, 1.15),
+            (0.76, 0.25),
+            (1.00, 1.00),
+        ),
+        (
+            (0.00, 0.55),
+            (0.22, 0.35),
+            (0.44, 1.25),
+            (0.70, 0.60),
+            (0.90, 1.10),
+            (1.00, 0.70),
+        ),
     )
     for index, trace in enumerate(traces):
         model.add_function_piecewise(
@@ -399,7 +427,9 @@ def add_detail(model, cfg: Package, study: Study, run: Run) -> None:
                 )
 
     bump = model.add_layer(str(cfg.bump_mm))
-    add_centered_rect(model, model.add_block(bump, "underfill"), cfg.bump_region_size_mm)
+    add_centered_rect(
+        model, model.add_block(bump, "underfill"), cfg.bump_region_size_mm
+    )
     pitch_x = cfg.die_size_mm / cfg.bump_columns
     pitch_y = cfg.die_size_mm / cfg.bump_rows
     origin = -0.5 * cfg.die_size_mm
@@ -462,9 +492,7 @@ def build_package(
 ):
     model = metahotspot.Model()
     layers = (
-        (*cfg.detail_layers, *cfg.macro_layers)
-        if include_macro
-        else cfg.detail_layers
+        (*cfg.detail_layers, *cfg.macro_layers) if include_macro else cfg.detail_layers
     )
     configure(model, cfg, layers, study, run)
     if include_macro:
@@ -679,9 +707,7 @@ def operator_blocks(operators: Operators, ports: int):
 
 def macro_columns(compiled, cfg: Package) -> tuple[Column, ...]:
     port_pairs = [
-        (int(ix), int(iy))
-        for ix in cfg.port_x_indices
-        for iy in cfg.port_y_indices
+        (int(ix), int(iy)) for ix in cfg.port_x_indices for iy in cfg.port_y_indices
     ]
     port_lookup = {pair: index for index, pair in enumerate(port_pairs)}
     output = []
@@ -722,7 +748,9 @@ def build_basis(macro: MacroAffine, cfg: Package, run: Run) -> Basis:
     started = time.perf_counter()
     ports = macro.ports.port_count
     Kip0, Kii0, Cip0, Cii0 = operator_blocks(macro.base, ports)
-    component_blocks = [operator_blocks(component, ports) for component in macro.components]
+    component_blocks = [
+        operator_blocks(component, ports) for component in macro.components
+    ]
     columns = macro_columns(macro.compiled, cfg)
 
     rows = []
@@ -798,9 +826,7 @@ def build_basis(macro: MacroAffine, cfg: Package, run: Run) -> Basis:
     ambient_error = float(
         np.linalg.norm(W @ (W.T @ ones) - ones) / math.sqrt(ones.size)
     )
-    orthogonality = float(
-        spla.norm(W.T @ W - sp.eye(W.shape[1], format="csc"))
-    )
+    orthogonality = float(spla.norm(W.T @ W - sp.eye(W.shape[1], format="csc")))
     if ambient_error > 1.0e-10:
         raise RuntimeError("macro basis does not preserve a uniform temperature field")
     if orthogonality > 1.0e-10:
@@ -920,9 +946,7 @@ def evaluate(
     ref: Reference,
 ):
     operators, online_assembly_s = reduced.at(boundary.h_W_m2K)
-    internal0 = np.asarray(
-        basis.W.T @ np.full(basis.W.shape[0], cfg.ambient_K)
-    ).ravel()
+    internal0 = np.asarray(basis.W.T @ np.full(basis.W.shape[0], cfg.ambient_K)).ravel()
 
     def run_solve(transient: bool):
         compiled = data.detail_transient if transient else data.detail_steady
@@ -978,12 +1002,8 @@ def evaluate(
         "transient_error_K": float(transient_diff.max()),
         "detail_steady_error_K": float(steady_diff[maps.detail_to_full].max()),
         "macro_steady_error_K": float(steady_diff[maps.macro_to_full].max()),
-        "detail_transient_error_K": float(
-            transient_diff[:, maps.detail_to_full].max()
-        ),
-        "macro_transient_error_K": float(
-            transient_diff[:, maps.macro_to_full].max()
-        ),
+        "detail_transient_error_K": float(transient_diff[:, maps.detail_to_full].max()),
+        "macro_transient_error_K": float(transient_diff[:, maps.macro_to_full].max()),
         "online_reduced_assembly_s": online_assembly_s,
         "full_compile_s": ref.compile_s,
         "full_steady_solve_s": ref.steady_solve_s,
@@ -1132,8 +1152,7 @@ def main(argv=None) -> int:
             "schema_version": 15,
             "mode": "quick" if args.quick else "strict",
             "method": (
-                "sparse irregular-column static/affine/BDF1/local-mode "
-                "Galerkin ROM"
+                "sparse irregular-column static/affine/BDF1/local-mode " "Galerkin ROM"
             ),
             "package": {
                 **asdict(cfg),
