@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Extract and validate a transient boundary-condition-independent thermal ROM.
+"""Extract and validate an adaptive transient BCI thermal macromodel.
 
-The detailed substrate/bump/die model is coupled to a reusable
-TIM/spreader/cold-plate macro model. The ROM keeps every interface temperature
-as an exact physical port and reduces only the macro internal cells. Uniform
-cold-plate convection is represented by an affine operator, so the basis is
-extracted once and reused for every tested convection coefficient.
+The substrate/bump/die domain remains full order.  The TIM/spreader/cold-plate
+component is reduced while every interface temperature remains an exact physical
+port.  Uniform cold-plate convection is represented affinely, and one global
+basis is selected by a residual-greedy parametric tangential rational Krylov
+procedure over the requested convection and time-scale ranges.
 """
 
 from __future__ import annotations
@@ -121,11 +121,13 @@ class Config:
     duration_s: float = 0.5
     dt_s: float = 0.025
     affine_anchor_h: float = 2500.0
-    local_dynamic_modes: int = 2
-    bdf1_shifts: tuple[float, ...] = (1.0, 2.0)
+    krylov_parameter_samples: int = 3
+    krylov_frequency_samples: int = 6
+    krylov_residual_tolerance: float = 1.0e-2
+    krylov_max_order: int = 192
     speedup_target: float = 1.5
     compression_target: float = 2.5
-    report: Path = Path("results/bci_rom_uniform_convection_results.json")
+    report: Path = Path("results/bci_rom_parametric_krylov_results.json")
 
     @property
     def detail_layers(self):
@@ -196,7 +198,8 @@ class Config:
         half = self.tim_size_mm / 2.0
         tolerance = 1.0e-10 * max(1.0, self.tim_size_mm)
         return np.flatnonzero(
-            (vertices[:-1] >= -half - tolerance) & (vertices[1:] <= half + tolerance)
+            (vertices[:-1] >= -half - tolerance)
+            & (vertices[1:] <= half + tolerance)
         ).astype(np.int64)
 
     @property
@@ -224,8 +227,9 @@ QUICK_OVERRIDES = dict(
     bump_columns=8,
     error_K=0.35,
     duration_s=0.20,
-    local_dynamic_modes=1,
-    bdf1_shifts=(1.0,),
+    krylov_frequency_samples=4,
+    krylov_residual_tolerance=5.0e-2,
+    krylov_max_order=64,
     speedup_target=1.0,
     compression_target=2.0,
 )
@@ -261,7 +265,7 @@ def build_model(
     macro: bool,
     convection_h: float | None = None,
 ):
-    """Build a full, detail-only, or macro-only model on the shared mesh."""
+    """Build a full, detail-only, or macro-only model on one shared mesh."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     if convection_h is not None and convection_h < 0.0:
@@ -317,7 +321,10 @@ def build_model(
             for iy in range(4):
                 for ix in range(4):
                     tile_power = (
-                        cfg.chiplet_power_W * scale * POWER_MAP[iy, ix] / POWER_MAP.size
+                        cfg.chiplet_power_W
+                        * scale
+                        * POWER_MAP[iy, ix]
+                        / POWER_MAP.size
                     )
                     source = f"{tile_power / tile_volume_m3:.17g}"
                     if transient:
@@ -434,138 +441,202 @@ def coordinate_map(source, target, z_offset: int, label: str) -> np.ndarray:
     return mapping
 
 
-def column_basis(
-    compiled,
+def symmetric_dense(matrix) -> np.ndarray:
+    matrix = np.asarray(matrix, dtype=np.float64)
+    return 0.5 * (matrix + matrix.T)
+
+
+def dominant_eigenpair(matrix) -> tuple[float, np.ndarray]:
+    matrix = symmetric_dense(matrix)
+    index = matrix.shape[0] - 1
+    values, vectors = scipy.linalg.eigh(
+        matrix,
+        subset_by_index=(index, index),
+        check_finite=False,
+    )
+    return max(float(values[0]), 0.0), vectors[:, 0]
+
+
+def training_points(cfg: Config, boundaries):
+    h_min = min(float(h) for _, h in boundaries)
+    h_max = max(float(h) for _, h in boundaries)
+    h_values = np.geomspace(h_min, h_max, cfg.krylov_parameter_samples)
+    h_values = np.unique(np.r_[h_values, cfg.affine_anchor_h])
+
+    shift_count = max(1, cfg.krylov_frequency_samples - 1)
+    positive_shifts = np.geomspace(
+        1.0 / cfg.duration_s,
+        2.0 / cfg.dt_s,
+        shift_count,
+    )
+    shifts = np.unique(np.r_[0.0, positive_shifts])
+    return h_values, shifts
+
+
+def internal_blocks(operators: Operators, ports: int):
+    return (
+        operators.K[ports:, ports:].tocsc(),
+        operators.C[ports:, ports:].tocsc(),
+        operators.K[ports:, :ports].tocsc(),
+        operators.C[ports:, :ports].tocsc(),
+    )
+
+
+def build_krylov_basis(
     cfg: Config,
+    boundaries,
     base: Operators,
     delta: Operators,
-    port_count: int,
+    ports: int,
 ):
-    """Build a block-local basis without source or boundary-response snapshots."""
+    """Build one global basis from adaptive full-port rational responses.
+
+    For each training pair (s, h), the exact internal response block is
+
+        X(s, h) = -(K_ii(h) + s C_ii(h))^-1
+                    (K_ip(h) + s C_ip(h)).
+
+    The greedy loop selects the parameter, frequency, and tangential port
+    direction with the largest remaining response error in the A-energy norm.
+    """
     started = time.perf_counter()
-    K_ip = base.K[port_count:, :port_count].tocsc()
-    K_ii = base.K[port_count:, port_count:].tocsc()
-    C_ip = base.C[port_count:, :port_count].tocsc()
-    C_ii = base.C[port_count:, port_count:].tocsc()
-    dK_ip = delta.K[port_count:, :port_count].tocsc()
-    dK_ii = delta.K[port_count:, port_count:].tocsc()
+    K0, C0, B0, D0 = internal_blocks(base, ports)
+    K1, C1, B1, D1 = internal_blocks(delta, ports)
+    h_values, shifts = training_points(cfg, boundaries)
+    candidates = []
 
-    port_lookup = {
-        (int(ix), int(iy)): port
-        for port, (ix, iy) in enumerate(
-            (ix, iy) for ix in cfg.port_indices for iy in cfg.port_indices
+    for h_value in h_values:
+        mu = float(h_value / cfg.affine_anchor_h)
+        for shift in shifts:
+            A = (K0 + mu * K1 + shift * (C0 + mu * C1)).tocsc()
+            A = (0.5 * (A + A.T)).tocsc()
+            B = (B0 + mu * B1 + shift * (D0 + mu * D1)).tocsc()
+            factor = spla.splu(A)
+            response = np.asarray(factor.solve(-B.toarray()))
+            gram = symmetric_dense(response.T @ (A @ response))
+            reference_eigenvalue, _ = dominant_eigenpair(gram)
+            candidates.append(
+                {
+                    "h_W_m2K": float(h_value),
+                    "shift_per_s": float(shift),
+                    "A": A,
+                    "B": B,
+                    "response": response,
+                    "gram": gram,
+                    "reference_eigenvalue": reference_eigenvalue,
+                }
+            )
+
+    global_response_norm = math.sqrt(
+        max(
+            max(item["reference_eigenvalue"] for item in candidates),
+            np.finfo(float).tiny,
         )
-    }
-    grid = grid_cells(compiled)
-    seen_ports = 0
-    rows: list[int] = []
-    cols: list[int] = []
-    values: list[float] = []
-    orders: list[int] = []
-    offset = 0
+    )
+    internal_order = K0.shape[0]
+    max_order = min(cfg.krylov_max_order, internal_order)
+    basis = np.empty((internal_order, 0), dtype=np.float64)
+    history = []
+    converged = False
 
-    for ix in range(compiled.nx):
-        for iy in range(compiled.ny):
-            cells = grid[ix, iy]
-            cells = cells[cells >= 0].astype(np.int64)
-            if not cells.size:
-                continue
-
-            k = K_ii[cells][:, cells].toarray()
-            c = C_ii[cells][:, cells].toarray()
-            candidates = [np.ones(cells.size)]
-
-            mode_count = min(cfg.local_dynamic_modes, cells.size)
-            if mode_count:
-                eigenvalues, modes = scipy.linalg.eigh(
-                    k,
-                    c,
-                    subset_by_index=(0, mode_count - 1),
+    for order in range(max_order + 1):
+        best = None
+        for candidate in candidates:
+            if basis.shape[1]:
+                AV = candidate["A"] @ basis
+                reduced_A = symmetric_dense(basis.T @ AV)
+                reduced_B = basis.T @ candidate["B"]
+                reduced_response = scipy.linalg.solve(
+                    reduced_A,
+                    -reduced_B,
+                    assume_a="sym",
                     check_finite=False,
                 )
-                cutoff = math.pi / cfg.dt_s
-                candidates.extend(modes[:, eigenvalues <= cutoff].T)
-
-            port = port_lookup.get((ix, iy))
-            if port is not None:
-                seen_ports += 1
-                b = K_ip[cells, port].toarray().ravel()
-                cp = C_ip[cells, port].toarray().ravel()
-                static = scipy.linalg.solve(k, -b, assume_a="sym", check_finite=False)
-                candidates.append(static)
-
-                sensitivity_rhs = (
-                    dK_ii[cells][:, cells] @ static
-                    + dK_ip[cells, port].toarray().ravel()
+                captured = symmetric_dense(
+                    reduced_response.T @ reduced_A @ reduced_response
                 )
-                if np.linalg.norm(sensitivity_rhs) > 1.0e-14 * max(
-                    np.linalg.norm(b), 1.0
-                ):
-                    candidates.append(
-                        scipy.linalg.solve(
-                            k,
-                            -sensitivity_rhs,
-                            assume_a="sym",
-                            check_finite=False,
-                        )
-                    )
-
-                for multiplier in cfg.bdf1_shifts:
-                    shift = multiplier / cfg.dt_s
-                    response = scipy.linalg.solve(
-                        k + shift * c,
-                        -(b + shift * cp),
-                        assume_a="sym",
-                        check_finite=False,
-                    )
-                    candidates.append(response - static)
-
-            matrix = np.column_stack(candidates)
-            q, r, _ = scipy.linalg.qr(
-                matrix, mode="economic", pivoting=True, check_finite=False
-            )
-            diagonal = np.abs(np.diag(r))
-            if not diagonal.size or diagonal[0] == 0.0:
-                local = np.empty((cells.size, 0))
+                error_gram = candidate["gram"] - captured
             else:
-                keep = diagonal > (
-                    np.finfo(float).eps * max(matrix.shape) * diagonal[0]
-                )
-                local = np.ascontiguousarray(q[:, keep])
+                error_gram = candidate["gram"]
 
-            orders.append(local.shape[1])
-            for local_row, cell in enumerate(cells):
-                nonzero = np.flatnonzero(np.abs(local[local_row]) > 1.0e-14)
-                rows.extend([int(cell)] * nonzero.size)
-                cols.extend((offset + nonzero).tolist())
-                values.extend(local[local_row, nonzero].tolist())
-            offset += local.shape[1]
+            error_eigenvalue, tangent = dominant_eigenpair(error_gram)
+            score = math.sqrt(error_eigenvalue) / global_response_norm
+            if best is None or score > best["score"]:
+                best = {
+                    "score": score,
+                    "candidate": candidate,
+                    "tangent": tangent,
+                }
 
-    if seen_ports != port_count:
-        raise RuntimeError("interface-port/column mapping is inconsistent")
+        history.append(
+            {
+                "order": order,
+                "relative_response_error": float(best["score"]),
+                "h_W_m2K": best["candidate"]["h_W_m2K"],
+                "shift_per_s": best["candidate"]["shift_per_s"],
+            }
+        )
+        if best["score"] <= cfg.krylov_residual_tolerance:
+            converged = True
+            break
+        if order == max_order:
+            break
 
-    W = sp.csc_matrix((values, (rows, cols)), shape=(K_ii.shape[0], offset))
-    ones = np.ones(W.shape[0])
-    if np.linalg.norm(W @ (W.T @ ones) - ones) > 1.0e-10 * math.sqrt(ones.size):
-        raise RuntimeError("macro basis does not preserve uniform temperature")
-    if spla.norm(W.T @ W - sp.eye(W.shape[1], format="csc")) > 1.0e-10:
-        raise RuntimeError("macro basis lost orthogonality")
+        vector = best["candidate"]["response"] @ best["tangent"]
+        original_norm = np.linalg.norm(vector)
+        for _ in range(2):
+            if basis.shape[1]:
+                vector -= basis @ (basis.T @ vector)
+        norm = np.linalg.norm(vector)
+        if norm <= 1.0e-11 * max(original_norm, 1.0):
+            raise RuntimeError("rational Krylov basis enrichment stalled")
+        basis = np.column_stack((basis, vector / norm))
 
-    initial = np.asarray(W.T @ np.full(W.shape[0], cfg.ambient_K)).ravel()
-    return W, np.asarray(orders), initial, time.perf_counter() - started
+    orthogonality_error = np.linalg.norm(
+        basis.T @ basis - np.eye(basis.shape[1]), ord=2
+    )
+    if orthogonality_error > 1.0e-10:
+        raise RuntimeError("rational Krylov basis lost orthogonality")
+
+    summary = {
+        "parameter_samples_W_m2K": h_values.tolist(),
+        "frequency_shifts_per_s": shifts.tolist(),
+        "candidate_count": len(candidates),
+        "full_port_tangential_search": True,
+        "global_response_norm": global_response_norm,
+        "basis_order": basis.shape[1],
+        "orthogonality_error": orthogonality_error,
+        "relative_response_error": history[-1]["relative_response_error"],
+        "residual_tolerance": cfg.krylov_residual_tolerance,
+        "converged": converged,
+        "history": history,
+        "seconds": time.perf_counter() - started,
+    }
+    return basis, summary
 
 
-def project_operators(operators: Operators, ports: int, W: sp.csc_matrix) -> Operators:
+def project_operators(
+    operators: Operators,
+    ports: int,
+    basis: np.ndarray,
+    ambient_K: float,
+) -> Operators:
+    """Project internal temperature rise while retaining absolute port states."""
+    internal_offset = np.full(operators.K.shape[0] - ports, ambient_K)
+    shifted_f = np.asarray(
+        operators.f - operators.K[:, ports:] @ internal_offset
+    ).ravel()
+
     def project_matrix(matrix):
         reduced = sp.bmat(
             (
                 (
-                    matrix[:ports, :ports],
-                    matrix[:ports, ports:] @ W,
+                    matrix[:ports, :ports].tocsc(),
+                    sp.csc_matrix(matrix[:ports, ports:] @ basis),
                 ),
                 (
-                    W.T @ matrix[ports:, :ports],
-                    W.T @ matrix[ports:, ports:] @ W,
+                    sp.csc_matrix(basis.T @ matrix[ports:, :ports]),
+                    sp.csc_matrix(basis.T @ matrix[ports:, ports:] @ basis),
                 ),
             ),
             format="csc",
@@ -577,11 +648,26 @@ def project_operators(operators: Operators, ports: int, W: sp.csc_matrix) -> Ope
     return Operators(
         project_matrix(operators.K),
         project_matrix(operators.C),
-        np.r_[
-            operators.f[:ports],
-            np.asarray(W.T @ operators.f[ports:]).ravel(),
-        ],
+        np.r_[shifted_f[:ports], basis.T @ shifted_f[ports:]],
     )
+
+
+def verify_ambient_balance(
+    operators: Operators,
+    ports: int,
+    reduced_order: int,
+    ambient_K: float,
+    label: str,
+) -> None:
+    state = np.r_[np.full(ports, ambient_K), np.zeros(reduced_order)]
+    defect = np.asarray(operators.K @ state - operators.f).ravel()
+    scale = max(
+        np.linalg.norm(operators.K @ state),
+        np.linalg.norm(operators.f),
+        1.0,
+    )
+    if np.linalg.norm(defect) > 1.0e-10 * scale:
+        raise RuntimeError(f"{label} reduced operator violates ambient balance")
 
 
 def solve_options(cfg: Config, transient: bool) -> SolveOptions:
@@ -648,7 +734,9 @@ def full_reference(cfg: Config, convection_h: float):
 def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
     offline_started = time.perf_counter()
     with ExitStack() as stack:
-        full_layout = build_model(cfg, Study.STEADY, detail=True, macro=True).compile()
+        full_layout = build_model(
+            cfg, Study.STEADY, detail=True, macro=True
+        ).compile()
         stack.callback(full_layout.close)
         detail_steady = build_model(
             cfg, Study.STEADY, detail=True, macro=False
@@ -659,7 +747,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
         ).compile()
         stack.callback(detail_transient.close)
 
-        detail_patches = port_patches(cfg, Face.ZP, cfg.detail_height_mm * 1.0e-3)
+        detail_patches = port_patches(
+            cfg, Face.ZP, cfg.detail_height_mm * 1.0e-3
+        )
         detail_ports_steady = PortMap(detail_steady, detail_patches)
         stack.callback(detail_ports_steady.close)
         detail_ports_transient = PortMap(detail_transient, detail_patches)
@@ -670,7 +760,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             cfg, Study.STEADY, detail=False, macro=True
         ).compile()
         stack.callback(macro_compiled.close)
-        macro_ports = PortMap(macro_compiled, port_patches(cfg, Face.ZM, 0.0))
+        macro_ports = PortMap(
+            macro_compiled, port_patches(cfg, Face.ZM, 0.0)
+        )
         stack.callback(macro_ports.close)
         base = normalized_operators(*macro_ports.assemble())
 
@@ -682,7 +774,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             convection_h=cfg.affine_anchor_h,
         ).compile()
         stack.callback(anchor_compiled.close)
-        anchor_ports = PortMap(anchor_compiled, port_patches(cfg, Face.ZM, 0.0))
+        anchor_ports = PortMap(
+            anchor_compiled, port_patches(cfg, Face.ZM, 0.0)
+        )
         stack.callback(anchor_ports.close)
         anchor = normalized_operators(*anchor_ports.assemble())
         if anchor.K.shape != base.K.shape:
@@ -706,7 +800,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
         if port_count != cfg.ports:
             raise RuntimeError("configured interface port count is inconsistent")
 
-        detail_to_full = coordinate_map(detail_steady, full_layout, 0, "detail/full")
+        detail_to_full = coordinate_map(
+            detail_steady, full_layout, 0, "detail/full"
+        )
         transient_to_full = coordinate_map(
             detail_transient, full_layout, 0, "transient/full"
         )
@@ -722,22 +818,41 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
         ):
             raise RuntimeError("detail and macro maps do not partition the full model")
 
-        W, orders, initial_internal, basis_s = column_basis(
-            macro_compiled, cfg, base, delta, port_count
+        basis, basis_summary = build_krylov_basis(
+            cfg, boundaries, base, delta, port_count
         )
         projection_started = time.perf_counter()
-        reduced_base = project_operators(base, port_count, W)
-        reduced_delta = project_operators(delta, port_count, W)
+        reduced_base = project_operators(
+            base, port_count, basis, cfg.ambient_K
+        )
+        reduced_delta = project_operators(
+            delta, port_count, basis, cfg.ambient_K
+        )
         projection_s = time.perf_counter() - projection_started
+        verify_ambient_balance(
+            reduced_base,
+            port_count,
+            basis.shape[1],
+            cfg.ambient_K,
+            "base",
+        )
+        verify_ambient_balance(
+            reduced_delta,
+            port_count,
+            basis.shape[1],
+            cfg.ambient_K,
+            "convection increment",
+        )
         offline_s = time.perf_counter() - offline_started
 
-        full_macro_order = port_count + W.shape[0]
-        reduced_macro_order = port_count + W.shape[1]
+        full_macro_order = port_count + basis.shape[0]
+        reduced_macro_order = port_count + basis.shape[1]
         compression = full_macro_order / reduced_macro_order
         print(
             f"Grid {cfg.nx}x{cfg.nx}x{cfg.nz}; exact ports={port_count}; "
             f"macro states {full_macro_order:,}->{reduced_macro_order:,} "
-            f"({compression:.2f}x)"
+            f"({compression:.2f}x); Krylov residual="
+            f"{basis_summary['relative_response_error']:.3e}"
         )
 
         results = []
@@ -764,10 +879,12 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
 
             def solve_reduced(transient: bool):
                 compiled = detail_transient if transient else detail_steady
-                ports = detail_ports_transient if transient else detail_ports_steady
+                ports = (
+                    detail_ports_transient if transient else detail_ports_steady
+                )
                 state = np.r_[
                     np.full(compiled.cell_count + port_count, cfg.ambient_K),
-                    initial_internal,
+                    np.zeros(basis.shape[1]),
                 ]
                 started = time.perf_counter()
                 with solve_macro(
@@ -797,9 +914,10 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
                 states = np.atleast_2d(states)
                 temperature = np.empty((states.shape[0], full_layout.cell_count))
                 temperature[:, detail_to_full] = states[:, :detail_n]
+                reduced_internal = states[:, detail_n + port_count :]
                 temperature[:, macro_to_full] = (
-                    W @ states[:, detail_n + port_count :].T
-                ).T
+                    cfg.ambient_K + (basis @ reduced_internal.T).T
+                )
                 return temperature
 
             steady_error = float(
@@ -808,7 +926,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             transient_error = float(
                 np.max(np.abs(recover(transient_states) - reference_history))
             )
-            speedup = full_transient_s / max(reduced_transient_s, np.finfo(float).tiny)
+            speedup = full_transient_s / max(
+                reduced_transient_s, np.finfo(float).tiny
+            )
             accuracy_passed = max(steady_error, transient_error) <= cfg.error_K
             speedup_passed = speedup >= cfg.speedup_target if strict else True
             result = {
@@ -834,16 +954,21 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             results.append(result)
             print(
                 f"{name:>16s}: h={convection_h:g} W/(m^2 K), "
-                f"error steady/transient={steady_error:.5f}/{transient_error:.5f} K; "
-                f"full/ROM={full_transient_s:.3f}/{reduced_transient_s:.3f}s, "
+                f"error steady/transient={steady_error:.5f}/"
+                f"{transient_error:.5f} K; full/ROM="
+                f"{full_transient_s:.3f}/{reduced_transient_s:.3f}s, "
                 f"speedup={speedup:.2f}x "
                 f"{'PASS' if result['passed'] else 'FAIL'}"
             )
 
         compression_passed = compression >= cfg.compression_target
+        basis_passed = basis_summary["converged"] if strict else True
         return {
-            "schema_version": 18,
-            "method": "exact-port affine-convection column-local Galerkin BCI-ROM",
+            "schema_version": 19,
+            "method": (
+                "exact-port affine-parametric adaptive tangential rational "
+                "Krylov BCI-ROM"
+            ),
             "configuration": {
                 **asdict(cfg),
                 "report": str(cfg.report),
@@ -851,7 +976,10 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
                 "ny": cfg.nx,
                 "nz": cfg.nz,
                 "ports": cfg.ports,
-                "port_shape": [cfg.port_indices.size, cfg.port_indices.size],
+                "port_shape": [
+                    cfg.port_indices.size,
+                    cfg.port_indices.size,
+                ],
                 "nominal_power_W": cfg.nominal_power_W,
                 "power_map_normalized": POWER_MAP.tolist(),
                 "chiplet_power_scale": list(CHIPLET_POWER_SCALE),
@@ -868,16 +996,18 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             "reduction": {
                 "full_macro_order": full_macro_order,
                 "reduced_macro_order": reduced_macro_order,
+                "internal_full_order": basis.shape[0],
+                "internal_reduced_order": basis.shape[1],
                 "compression_ratio": compression,
                 "compression_target": cfg.compression_target,
                 "compression_passed": compression_passed,
-                "column_count": int(orders.size),
-                "port_columns": port_count,
-                "local_order_min": int(orders.min()),
-                "local_order_mean": float(orders.mean()),
-                "local_order_max": int(orders.max()),
-                "basis_nnz": W.nnz,
-                "basis_extraction_s": basis_s,
+                "basis_dense": True,
+                "temperature_coordinates": (
+                    "absolute physical port temperatures and internal "
+                    "temperature rise above ambient"
+                ),
+                "krylov": basis_summary,
+                "basis_passed": basis_passed,
             },
             "passivity": {
                 "preserved_structurally": True,
@@ -886,7 +1016,9 @@ def run_experiment(cfg: Config, boundaries, strict: bool) -> dict:
             "offline_s": offline_s,
             "boundary_reuse": results,
             "passed": bool(
-                all(result["passed"] for result in results) and compression_passed
+                all(result["passed"] for result in results)
+                and compression_passed
+                and basis_passed
             ),
         }
 
@@ -902,7 +1034,7 @@ def main(argv=None) -> int:
     boundaries = (BOUNDARIES[0], BOUNDARIES[-1]) if args.quick else BOUNDARIES
 
     print("=" * 96)
-    print("Transient BCI-ROM extraction - uniform cold-plate convection")
+    print("Transient BCI-ROM extraction - adaptive parametric rational Krylov")
     print("=" * 96)
     print(
         "Footprints cold plate/spreader/substrate/bump/die/TIM="
@@ -919,7 +1051,8 @@ def main(argv=None) -> int:
     report["mode"] = "quick" if args.quick else "strict"
     cfg.report.parent.mkdir(parents=True, exist_ok=True)
     cfg.report.write_text(
-        json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
+        json.dumps(report, indent=2, default=str) + "\n",
+        encoding="utf-8",
     )
     print(f"Report: {cfg.report}")
     return 0 if report["passed"] else 3
