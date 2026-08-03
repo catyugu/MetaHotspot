@@ -170,7 +170,7 @@ class BaseConfig:
     tim_cells: int = 2
     spreader_cells: int = 6
     cold_plate_cells: int = 8
-    max_xy_cell_mm: float = 4.0
+    max_xy_cell_mm: float = 2.0
     bump_rows: int = 12
     bump_columns: int = 12
     bump_width_mm: float = 0.60
