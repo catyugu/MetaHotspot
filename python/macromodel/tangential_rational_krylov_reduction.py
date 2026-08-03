@@ -62,15 +62,14 @@ def training_points(cfg: Config, boundaries):
     h_values = np.unique(np.r_[h_values, cfg.affine_anchor_h])
 
     low = 1.0 / cfg.duration_s
-    bdf1 = 1.0 / cfg.dt_s
     high = 2.0 / cfg.dt_s
-    interior_count = max(0, cfg.krylov_frequency_samples - 4)
+    interior_count = max(0, cfg.krylov_frequency_samples - 2)
     interior = (
         np.geomspace(low, high, interior_count + 2)[1:-1]
         if interior_count
         else np.empty(0)
     )
-    shifts = np.unique(np.r_[0.0, low, interior, bdf1, high])
+    shifts = np.unique(np.r_[0.0, low, interior, high])
     return h_values, shifts
 
 
