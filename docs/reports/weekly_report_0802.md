@@ -1,6 +1,157 @@
 # weekly\_report\_0802
 
-## 一、局部化降阶
+## 切向有理 Krylov 降阶
+
+### 概述
+
+离散后的宏模型满足
+
+$$C\dot T+K(h)T=f(h),$$
+
+“有理”的意义在于，它不像经典的 Krylov 方法一样考虑矩阵级数，而是考虑把方程在 Laplace 域写成：
+
+$$A(s,h)T=(K(h)+sC(h))T=f.$$
+
+把矩阵按照端口和内部状态分块：
+
+$$K+sC=  
+\begin{bmatrix}  
+A_{pp}&A_{pi}\\  
+A_{ip}&A_{ii}  
+\end{bmatrix}.$$
+
+若将接口温度视为给定输入，则内部温度响应满足
+
+$$A_{ii}(s,h)T_i+  
+A_{ip}(s,h)T_p=0.$$
+
+因此
+
+$$T_i  
+=  
+-A_{ii}(s,h)^{-1}A_{ip}(s,h)T_p.$$
+
+将这个完整端口响应矩阵记为
+
+$$X(s,h)  
+=  
+-\left(K_{ii}(h)+sC_{ii}(h)\right)^{-1}  
+\left(K_{ip}(h)+sC_{ip}(h)\right).$$
+
+### 参数—时间尺度训练域
+
+脚本在两个维度上建立训练点。
+
+#### 对流参数点
+
+在实验边界的最小值和最大值之间按几何级数采样：
+
+$$h_j\in[h_{\min},h_{\max}],$$
+
+同时并加入仿射中心锚点 $h_a$。
+
+#### 热时间尺度点
+
+脚本使用实数正移位，而不是复频率 $j\omega$。训练点在：
+
+$$s_0 = 0, s_{min}=\frac{1}{duration}, s_{max}=\frac{2}{\Delta t},$$
+中间按几何尺度插采样点。
+
+### 每个训练点计算完整端口响应
+
+对于每个 $(s,h)$，构造
+
+$$A=K_{ii}(h)+sC_{ii}(h),$$
+$$B=K_{ip}(h)+sC_{ip}(h).$$
+
+做一次稀疏 LU 分解，针对全部接口端口求解：
+
+$$X(s, h)=-A^{-1}B.$$
+
+它的每一列表示一个接口端口施加单位温度时，宏模型内部的响应。这一步与单端口逐次求解相比更高效，因为同一训练点上的所有右端项共享一次稀疏分解。
+
+*注意：如果忽略 h 只看 s，这里实际上的操作高度类似于 FANTASTIC 里用的零阶 MPMM（可匹配零阶和一阶导数）。需要更高阶频域精度的手段也呼之欲出：再考虑高阶展开$AX_0=-B, AX_1  =  -\left(C_{ii}X_0+C_{ip}\right), A X_k = -C_{ii}X_{k-1}, k\ge2.$，则是一种高阶 MPMM 的变体实现了。*
+
+### 单点的训练
+
+设当前宏模型内部已有的降阶基为 $V$
+
+在某个训练点上，降阶响应坐标满足
+
+$$V^\mathsf TAVZ  
+=  
+-V^\mathsf TB.$$
+
+因此
+
+$$Z  
+=  
+-\left(V^\mathsf TAV\right)^{-1}V^\mathsf TB,$$
+
+恢复到全阶内部空间的近似响应为：
+
+$$X_r=VZ.$$
+
+由这个训练点实际的 $X(s, h)$ 可以推算响应误差向量：
+
+$$E=X-X_r.$$
+
+构造误差 Gram 矩阵：
+
+$$G_e=E^\mathsf TAE.$$对于任意单位端口方向 $r$：
+
+$$r^\mathsf TG_er  
+=  
+(Er)^\mathsf TA(Er)  
+=  
+\|Er\|_A^2.$$
+
+因此 $G_e$ 的最大特征值对应的主特征向量 $r_1$ 就是当前关于 $A$ 误差最大的接口温度空间方向。所谓“切向”的意义就在于，看到一个新的训练点 $(s, h)$ 时，我们只把 $v_1​=Er_1​$（或者较大的若干特征值对应的方向）加入投影基底矩阵 $V$ 中，而不是全部往里并，从而降低了降阶子空间的维度。
+
+停止指标考虑设定为：
+
+$$\eta(s,h) = \sqrt{\frac{\lambda_{\max}(E^\mathsf TAE)}{\lambda_{\max}(X^\mathsf TAX)}}.$$
+这个量在所有训练点上足够小时（例如，小于 0.005），则说明降阶误差基本合格。
+
+### 训练循环
+
+1. 预先建立整个训练集；
+2. 在当前基底下评估所有训练点；
+3. 选择相对误差最大的训练点；
+4. 在该点选择最大误差切向方向；
+5. 增广基底；
+6. 重新扫描全部训练点，回到 1。
+
+### 实验结果
+
+```bash
+# 小网格
+Grid 20x20x14; exact ports=144; macro states 2,860->324 (8.83x); Krylov residual=9.109e-03
+h=500 W/(m^2 K): reference range steady=340.899..412.738 K, transient final=304.171..393.886 K; rise error abs/rel steady=0.23706 K/0.210%, transient final=0.17551 K/0.187%; full/ROM=0.324/0.195s, speedup=1.66x PASS
+h=2500 W/(m^2 K): reference range steady=304.620..371.933 K, transient final=301.247..362.942 K; rise error abs/rel steady=0.02959 K/0.041%, transient final=0.02443 K/0.039%; full/ROM=0.311/0.217s, speedup=1.43x PASS
+h=8000 W/(m^2 K): reference range steady=300.488..363.092 K, transient final=300.397..355.791 K; rise error abs/rel steady=0.05896 K/0.093%, transient final=0.04752 K/0.085%; full/ROM=0.321/0.201s, speedup=1.60x PASS
+# 大网格
+Grid 36x36x28; exact ports=400; macro states 16,968->869 (19.53x); Krylov residual=1.961e-03
+h=500 W/(m^2 K): reference range steady=341.046..401.752 K, transient final=304.033..383.980 K; rise error abs/rel steady=0.06786 K/0.067%, transient final=0.05067 K/0.060%; full/ROM=16.764/3.571s, speedup=4.69x PASS
+h=2500 W/(m^2 K): reference range steady=304.668..361.038 K, transient final=301.208..353.106 K; rise error abs/rel steady=0.01511 K/0.025%, transient final=0.01477 K/0.028%; full/ROM=15.675/3.643s, speedup=4.30x PASS
+h=8000 W/(m^2 K): reference range steady=300.489..352.292 K, transient final=300.397..346.028 K; rise error abs/rel steady=0.03208 K/0.061%, transient final=0.02517 K/0.055%; full/ROM=15.227/3.437s, speedup=4.43x PASS
+```
+
+### 优缺点
+
+优点：
+
+- 一定范围内误差可控且稳定
+- 压缩比相当可观，压缩后的矩阵尺寸很小
+- 可通过调节训练点、投影模式数来平衡精度/误差
+- 有比较完善的理论基础
+
+缺点：
+
+- 预处理时间相当长。往往显著超过通常情况下完整瞬态求解的时间，只有外接多工况反复跑才能见到收益。
+- 压缩后的矩阵稠密，虽然看起来尺寸小，实际上加速比也没有那么好看。
+
+## 局部化降阶
 
 ### 模型陈述
 
@@ -188,145 +339,10 @@ h=8000 W/(m^2 K): reference range steady=300.489..352.292 K, transient final=300
 
 - 预处理极快，同时精度保留较好。
 - 对 Z 轴上传播特征压缩效果良好。
-- 得到的投影矩阵是分块对角的稀疏矩阵，投影后可以保证稀疏性。
+- 得到的投影矩阵是分块对角的稀疏矩阵，投影后可以保证稀疏性，利于求解。
 - 可以通过添加每柱的模态数量来调节精度/效率平衡。
 
 缺点：
 
 - 无法高效压缩 XY 平面的传输特征，因此压缩率有限。
-- 缺乏理论上的误差界控制论证。
-
-## 二、切向有理 Krylov 降阶
-
-### 概述
-
-离散后的宏模型满足
-
-$$C\dot T+K(h)T=f(h),$$
-
-“有理”的意义在于，它不像经典的 Krylov 方法一样考虑矩阵级数，而是考虑把方程在 Laplace 域写成：
-
-$$A(s,h)T=(K(h)+sC(h))T=f.$$
-
-把矩阵按照端口和内部状态分块：
-
-$$K+sC=  
-\begin{bmatrix}  
-A_{pp}&A_{pi}\\  
-A_{ip}&A_{ii}  
-\end{bmatrix}.$$
-
-若将接口温度视为给定输入，则内部温度响应满足
-
-$$A_{ii}(s,h)T_i+  
-A_{ip}(s,h)T_p=0.$$
-
-因此
-
-$$T_i  
-=  
--A_{ii}(s,h)^{-1}A_{ip}(s,h)T_p.$$
-
-将这个完整端口响应矩阵记为
-
-$$X(s,h)  
-=  
--\left(K_{ii}(h)+sC_{ii}(h)\right)^{-1}  
-\left(K_{ip}(h)+sC_{ip}(h)\right).$$
-
-这就是我们想要逼近的东西。
-
-### 参数—时间尺度训练域
-
-脚本在两个维度上建立训练点。
-
-#### 对流参数点
-
-在实验边界的最小值和最大值之间按几何级数采样：
-
-$$h_j\in[h_{\min},h_{\max}],$$
-
-同时并加入仿射中心锚点 $h_a$。
-
-#### 热时间尺度点
-
-脚本使用实数正移位，而不是复频率 $j\omega$。训练点明确包含：
-
-$$s_{min}=0,s_{max}=\frac{1}{\Delta t},$$
-并在中间按几何尺度增加采样点。
-
-### 每个训练点计算完整端口响应
-
-对于每个 $(s,h)$，构造
-
-$$A=K_{ii}(h)+sC_{ii}(h),$$
-$$B=K_{ip}(h)+sC_{ip}(h).$$
-
-然后一次稀疏 LU 分解，针对全部接口端口求解：
-
-$$X(s, h)=-A^{-1}B.$$
-
-它的每一列表示一个接口端口施加单位温度时，宏模型内部的响应。这一步与单端口逐次求解相比更高效，因为同一训练点上的所有右端项共享一次稀疏分解。
-
-### 训练步骤
-
-设当前宏模型内部已有的降阶基为
-
-$$V\in\mathbb R^{n_i\times r},  
-\qquad  
-V^\mathsf TV=I.$$
-
-在某个训练点上，降阶响应坐标满足
-
-$$V^\mathsf TAVZ  
-=  
--V^\mathsf TB.$$
-
-因此
-
-$$Z  
-=  
--\left(V^\mathsf TAV\right)^{-1}V^\mathsf TB,$$
-
-恢复到全阶内部空间的近似响应为
-
-$$X_r=VZ.$$
-
-响应误差为
-
-$$E=X-X_r.$$
-
-构造误差 Gram 矩阵：
-
-$$G_e=E^\mathsf TAE.$$
-
-则 $G_e$ 的最大特征值表示对应的主特征向量 $r_1$ 就是当前误差最大的接口温度空间方向。所谓“切向”的意义就在于，看到一个新的训练点 $(s, h)$ 时，我们只把 $v_1​=Er_1​$（或者较大的若干特征值对应的方向）加入投影基底矩阵 $V$ 中，而不是全部往里并，从而降低了降阶子空间的维度。
-
-### 实验结果
-
-```bash
-# 小网格
-Grid 20x20x14; exact ports=144; macro states 2,860->324 (8.83x); Krylov residual=9.109e-03
-h=500 W/(m^2 K): reference range steady=340.899..412.738 K, transient final=304.171..393.886 K; rise error abs/rel steady=0.23706 K/0.210%, transient final=0.17551 K/0.187%; full/ROM=0.291/0.193s, speedup=1.51x PASS
-h=2500 W/(m^2 K): reference range steady=304.620..371.933 K, transient final=301.247..362.942 K; rise error abs/rel steady=0.02959 K/0.041%, transient final=0.02443 K/0.039%; full/ROM=0.285/0.188s, speedup=1.52x PASS
-h=8000 W/(m^2 K): reference range steady=300.488..363.092 K, transient final=300.397..355.791 K; rise error abs/rel steady=0.05896 K/0.093%, transient final=0.04752 K/0.085%; full/ROM=0.290/0.183s, speedup=1.59x PASS
-# 大网格
-Grid 36x36x28; exact ports=400; macro states 16,968->869 (19.53x); Krylov residual=1.961e-03
-h=500 W/(m^2 K): reference range steady=341.046..401.752 K, transient final=304.033..383.980 K; rise error abs/rel steady=0.06786 K/0.067%, transient final=0.05067 K/0.060%; full/ROM=15.896/3.560s, speedup=4.47x PASS
-h=2500 W/(m^2 K): reference range steady=304.668..361.038 K, transient final=301.208..353.106 K; rise error abs/rel steady=0.01511 K/0.025%, transient final=0.01477 K/0.028%; full/ROM=15.197/3.417s, speedup=4.45x PASS
-h=8000 W/(m^2 K): reference range steady=300.489..352.292 K, transient final=300.397..346.028 K; rise error abs/rel steady=0.03208 K/0.061%, transient final=0.02517 K/0.055%; full/ROM=15.073/3.391s, speedup=4.45x PASS
-```
-
-### 优缺点
-
-优点：
-
-- 一定范围内误差可控且稳定
-- 压缩比相当可观，压缩后的矩阵尺寸很小
-- 可通过调节训练点、投影模式数来平衡精度/误差
-- 有比较完善的理论基础
-
-缺点：
-
-- 预处理时间相当长。往往超过通常情况下完整瞬态求解的时间，只有多工况反复跑才能见到收益。
-- 压缩后的矩阵稠密，虽然看起来尺寸小，实际上加速比也没有那么好看。
+- 缺乏理论上的误差界控制论证，准确性保障有限。
