@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
-"""Extract and validate an adaptive transient BCI thermal macromodel.
-
-The substrate/bump/die domain remains full order.  The TIM/spreader/cold-plate
-component is reduced while every interface temperature remains an exact physical
-port.  Uniform cold-plate convection is represented affinely, and one global
-basis is selected by a residual-greedy parametric tangential rational Krylov
-procedure over the requested convection and time-scale ranges.
-"""
+"""Shared model construction and numerical helpers for macromodel experiments."""
 
 from __future__ import annotations
 
-import argparse
-import json
 import math
 import time
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from functools import cached_property
-from pathlib import Path
 
 import numpy as np
-import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
@@ -50,103 +39,13 @@ MATERIALS = (
     ("aluminum", "180", "180", "180", "2700", "900"),
 )
 ACTIVITY_TRACES = (
-    (
-        (0.00, 0.20),
-        (0.10, 1.00),
-        (0.35, 0.65),
-        (0.58, 1.30),
-        (0.82, 0.40),
-        (1.00, 0.90),
-    ),
-    (
-        (0.00, 0.75),
-        (0.18, 1.20),
-        (0.40, 0.30),
-        (0.64, 1.05),
-        (0.88, 0.55),
-        (1.00, 0.80),
-    ),
-    (
-        (0.00, 0.10),
-        (0.08, 1.45),
-        (0.28, 0.50),
-        (0.52, 1.15),
-        (0.76, 0.25),
-        (1.00, 1.00),
-    ),
-    (
-        (0.00, 0.55),
-        (0.22, 0.35),
-        (0.44, 1.25),
-        (0.70, 0.60),
-        (0.90, 1.10),
-        (1.00, 0.70),
-    ),
+    ((0.00, 0.20), (0.10, 1.00), (0.35, 0.65), (0.58, 1.30), (0.82, 0.40), (1.00, 0.90)),
+    ((0.00, 0.75), (0.18, 1.20), (0.40, 0.30), (0.64, 1.05), (0.88, 0.55), (1.00, 0.80)),
+    ((0.00, 0.10), (0.08, 1.45), (0.28, 0.50), (0.52, 1.15), (0.76, 0.25), (1.00, 1.00)),
+    ((0.00, 0.55), (0.22, 0.35), (0.44, 1.25), (0.70, 0.60), (0.90, 1.10), (1.00, 0.70)),
 )
 BOUNDARIES = (500.0, 2500.0, 8000.0)
 MAX_RELATIVE_RISE_ERROR = 0.01
-
-
-def temperature_error_metrics(reference, approximation, ambient_K: float) -> dict:
-    """Compare temperature rise, normalized by the largest reference rise."""
-    reference = np.asarray(reference)
-    approximation = np.asarray(approximation)
-    absolute_error = float(np.max(np.abs(approximation - reference)))
-    reference_rise = float(np.max(np.abs(reference - ambient_K)))
-    relative_error = (
-        absolute_error / reference_rise
-        if reference_rise
-        else (0.0 if absolute_error == 0.0 else math.inf)
-    )
-    return {
-        "reference_temperature_range_K": [
-            float(np.min(reference)),
-            float(np.max(reference)),
-        ],
-        "max_absolute_rise_error_K": absolute_error,
-        "max_relative_rise_error": relative_error,
-        "passed": relative_error < MAX_RELATIVE_RISE_ERROR,
-    }
-
-
-def accuracy_summary(
-    reference_steady,
-    reduced_steady,
-    reference_history,
-    reduced_history,
-    ambient_K: float,
-) -> dict:
-    steady = temperature_error_metrics(reference_steady, reduced_steady, ambient_K)
-    transient = temperature_error_metrics(
-        reference_history[-1], reduced_history[-1], ambient_K
-    )
-    return {
-        "steady_reference_temperature_range_K": steady["reference_temperature_range_K"],
-        "transient_final_reference_temperature_range_K": transient[
-            "reference_temperature_range_K"
-        ],
-        "steady_max_absolute_rise_error_K": steady["max_absolute_rise_error_K"],
-        "steady_max_relative_rise_error": steady["max_relative_rise_error"],
-        "transient_final_max_absolute_rise_error_K": transient[
-            "max_absolute_rise_error_K"
-        ],
-        "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
-        "accuracy_passed": steady["passed"] and transient["passed"],
-    }
-
-
-def format_accuracy(summary: dict) -> str:
-    steady_range = summary["steady_reference_temperature_range_K"]
-    transient_range = summary["transient_final_reference_temperature_range_K"]
-    return (
-        f"reference range steady={steady_range[0]:.3f}..{steady_range[1]:.3f} K, "
-        f"transient final={transient_range[0]:.3f}..{transient_range[1]:.3f} K; "
-        "rise error abs/rel steady="
-        f"{summary['steady_max_absolute_rise_error_K']:.5f} K/"
-        f"{summary['steady_max_relative_rise_error']:.3%}, transient final="
-        f"{summary['transient_final_max_absolute_rise_error_K']:.5f} K/"
-        f"{summary['transient_final_max_relative_rise_error']:.3%}"
-    )
 
 
 @dataclass(frozen=True)
@@ -164,13 +63,17 @@ class BaseConfig:
     tim_mm: float = 0.18
     spreader_mm: float = 1.2
     cold_plate_mm: float = 1.5
-    substrate_cells: int = 6
-    bump_cells: int = 2
-    die_cells: int = 4
-    tim_cells: int = 2
-    spreader_cells: int = 6
-    cold_plate_cells: int = 8
-    max_xy_cell_mm: float = 2.0
+
+    # About 0.18-0.30 mm per vertical cell. Thin layers no longer receive
+    # artificial over-resolution; lateral resolution is increased instead.
+    substrate_cells: int = 4
+    bump_cells: int = 1
+    die_cells: int = 2
+    tim_cells: int = 1
+    spreader_cells: int = 4
+    cold_plate_cells: int = 5
+    max_xy_cell_mm: float = 1.75
+
     bump_rows: int = 12
     bump_columns: int = 12
     bump_width_mm: float = 0.60
@@ -238,9 +141,9 @@ class BaseConfig:
         for origin, _ in self.chiplet_origins_mm:
             points.extend(origin + tile * np.arange(5, dtype=np.float64))
 
-        unique = np.unique(np.asarray(points, dtype=np.float64))
-        vertices = [float(unique[0])]
-        for left, right in zip(unique[:-1], unique[1:]):
+        fixed = np.unique(np.asarray(points, dtype=np.float64))
+        vertices = [float(fixed[0])]
+        for left, right in zip(fixed[:-1], fixed[1:]):
             pieces = max(1, math.ceil((right - left) / self.max_xy_cell_mm))
             vertices.extend(np.linspace(left, right, pieces + 1)[1:])
         return np.asarray(vertices)
@@ -251,7 +154,8 @@ class BaseConfig:
         half = self.tim_size_mm / 2.0
         tolerance = 1.0e-10 * max(1.0, self.tim_size_mm)
         return np.flatnonzero(
-            (vertices[:-1] >= -half - tolerance) & (vertices[1:] <= half + tolerance)
+            (vertices[:-1] >= -half - tolerance)
+            & (vertices[1:] <= half + tolerance)
         ).astype(np.int64)
 
     @property
@@ -266,49 +170,79 @@ class BaseConfig:
     def nominal_power_W(self) -> float:
         return self.chiplet_power_W * float(sum(CHIPLET_POWER_SCALE))
 
+    def report_dict(self) -> dict:
+        return {
+            **asdict(self),
+            "nx": self.nx,
+            "ny": self.nx,
+            "nz": self.nz,
+            "ports": self.ports,
+            "port_shape": [self.port_indices.size, self.port_indices.size],
+            "nominal_power_W": self.nominal_power_W,
+        }
+
+
+def temperature_error_metrics(reference, approximation, ambient_K: float) -> dict:
+    reference = np.asarray(reference)
+    approximation = np.asarray(approximation)
+    absolute_error = float(np.max(np.abs(approximation - reference)))
+    reference_rise = float(np.max(np.abs(reference - ambient_K)))
+    relative_error = absolute_error / reference_rise if reference_rise else float(absolute_error != 0.0)
+    return {
+        "reference_temperature_range_K": [float(reference.min()), float(reference.max())],
+        "max_absolute_rise_error_K": absolute_error,
+        "max_relative_rise_error": relative_error,
+        "passed": relative_error < MAX_RELATIVE_RISE_ERROR,
+    }
+
+
+def accuracy_summary(reference_steady, reduced_steady, reference_history, reduced_history, ambient_K: float) -> dict:
+    steady = temperature_error_metrics(reference_steady, reduced_steady, ambient_K)
+    transient = temperature_error_metrics(reference_history[-1], reduced_history[-1], ambient_K)
+    return {
+        "steady_reference_temperature_range_K": steady["reference_temperature_range_K"],
+        "transient_final_reference_temperature_range_K": transient["reference_temperature_range_K"],
+        "steady_max_absolute_rise_error_K": steady["max_absolute_rise_error_K"],
+        "steady_max_relative_rise_error": steady["max_relative_rise_error"],
+        "transient_final_max_absolute_rise_error_K": transient["max_absolute_rise_error_K"],
+        "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
+        "accuracy_passed": steady["passed"] and transient["passed"],
+    }
+
+
+def format_accuracy(summary: dict) -> str:
+    steady_range = summary["steady_reference_temperature_range_K"]
+    transient_range = summary["transient_final_reference_temperature_range_K"]
+    return (
+        f"reference range steady={steady_range[0]:.3f}..{steady_range[1]:.3f} K, "
+        f"transient final={transient_range[0]:.3f}..{transient_range[1]:.3f} K; "
+        f"rise error steady={summary['steady_max_absolute_rise_error_K']:.5f} K/"
+        f"{summary['steady_max_relative_rise_error']:.3%}, transient final="
+        f"{summary['transient_final_max_absolute_rise_error_K']:.5f} K/"
+        f"{summary['transient_final_max_relative_rise_error']:.3%}"
+    )
+
 
 def z_vertices(layers) -> np.ndarray:
     vertices = [0.0]
-    z = 0.0
     for thickness, cells in layers:
-        for _ in range(cells):
-            z += thickness / cells
-            vertices.append(z)
+        vertices.extend(vertices[-1] + thickness * np.arange(1, cells + 1) / cells)
     return np.asarray(vertices)
 
 
 def add_square(model, block: int, size_mm: float) -> None:
     half = size_mm / 2.0
-    model.add_rect(
-        block,
-        GeometryOp.ADD,
-        f"{-half:.17g}",
-        f"{-half:.17g}",
-        f"{size_mm:.17g}",
-        f"{size_mm:.17g}",
-    )
+    model.add_rect(block, GeometryOp.ADD, f"{-half:.17g}", f"{-half:.17g}", f"{size_mm:.17g}", f"{size_mm:.17g}")
 
 
-def build_model(
-    cfg: BaseConfig,
-    study: Study,
-    *,
-    detail: bool,
-    macro: bool,
-    convection_h: float | None = None,
-):
-    """Build a full, detail-only, or macro-only model on one shared mesh."""
+def build_model(cfg: BaseConfig, study: Study, *, detail: bool, macro: bool, convection_h: float | None = None):
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     if convection_h is not None and convection_h < 0.0:
         raise ValueError("convection coefficient must be non-negative")
 
     model = metahotspot.Model()
-    layers = (
-        (*cfg.detail_layers, *cfg.macro_layers)
-        if detail and macro
-        else (cfg.detail_layers if detail else cfg.macro_layers)
-    )
+    layers = (*cfg.detail_layers, *cfg.macro_layers) if detail and macro else (cfg.detail_layers if detail else cfg.macro_layers)
     transient = study == Study.TRANSIENT
     model.set_settings(
         study=study,
@@ -337,43 +271,23 @@ def build_model(
             for index, trace in enumerate(ACTIVITY_TRACES):
                 model.add_function_piecewise(
                     f"activity_{index}",
-                    np.asarray(
-                        [
-                            (fraction * cfg.duration_s, value)
-                            for fraction, value in trace
-                        ]
-                    ),
+                    np.asarray([(fraction * cfg.duration_s, value) for fraction, value in trace]),
                 )
 
         tile = cfg.chiplet_size_mm / 4.0
         tile_volume_m3 = tile * tile * cfg.die_mm * 1.0e-9
-        for chiplet, ((x0, y0), scale) in enumerate(
-            zip(cfg.chiplet_origins_mm, CHIPLET_POWER_SCALE)
-        ):
+        for chiplet, ((x0, y0), scale) in enumerate(zip(cfg.chiplet_origins_mm, CHIPLET_POWER_SCALE)):
             for iy in range(4):
                 for ix in range(4):
-                    tile_power = (
-                        cfg.chiplet_power_W * scale * POWER_MAP[iy, ix] / POWER_MAP.size
-                    )
+                    tile_power = cfg.chiplet_power_W * scale * POWER_MAP[iy, ix] / POWER_MAP.size
                     source = f"{tile_power / tile_volume_m3:.17g}"
                     if transient:
                         source += f"*activity_{(chiplet + 2 * ix + iy) % 4}(x)"
                     block = model.add_block(die, "silicon", heat_source=source)
-                    model.add_rect(
-                        block,
-                        GeometryOp.ADD,
-                        f"{x0 + ix * tile:.17g}",
-                        f"{y0 + iy * tile:.17g}",
-                        f"{tile:.17g}",
-                        f"{tile:.17g}",
-                    )
+                    model.add_rect(block, GeometryOp.ADD, f"{x0 + ix * tile:.17g}", f"{y0 + iy * tile:.17g}", f"{tile:.17g}", f"{tile:.17g}")
 
         bump = model.add_layer(str(cfg.bump_mm))
-        add_square(
-            model,
-            model.add_block(bump, "underfill"),
-            cfg.bump_region_size_mm,
-        )
+        add_square(model, model.add_block(bump, "underfill"), cfg.bump_region_size_mm)
         pitch_x = cfg.die_size_mm / cfg.bump_columns
         pitch_y = cfg.die_size_mm / cfg.bump_rows
         origin = -cfg.die_size_mm / 2.0
@@ -382,42 +296,23 @@ def build_model(
                 x = origin + (ix + 0.5) * pitch_x - cfg.bump_width_mm / 2.0
                 y = origin + (iy + 0.5) * pitch_y - cfg.bump_width_mm / 2.0
                 block = model.add_block(bump, "copper")
-                model.add_rect(
-                    block,
-                    GeometryOp.ADD,
-                    f"{x:.17g}",
-                    f"{y:.17g}",
-                    f"{cfg.bump_width_mm:.17g}",
-                    f"{cfg.bump_width_mm:.17g}",
-                )
+                model.add_rect(block, GeometryOp.ADD, f"{x:.17g}", f"{y:.17g}", f"{cfg.bump_width_mm:.17g}", f"{cfg.bump_width_mm:.17g}")
 
         substrate = model.add_layer(str(cfg.substrate_mm))
-        add_square(
-            model,
-            model.add_block(substrate, "organic"),
-            cfg.substrate_size_mm,
-        )
+        add_square(model, model.add_block(substrate, "organic"), cfg.substrate_size_mm)
 
     model.set_default_neumann("0")
     if macro and convection_h:
         half = cfg.cold_plate_size_mm / 2.0
         top_z = cfg.total_height_mm if detail else cfg.macro_height_mm
-        model.add_convection(
-            str(float(convection_h)),
-            str(cfg.ambient_K),
-            [(Axis.Z, top_z, -half, half, -half, half)],
-        )
+        model.add_convection(str(float(convection_h)), str(cfg.ambient_K), [(Axis.Z, top_z, -half, half, -half, half)])
     return model
 
 
 def port_patches(cfg: BaseConfig, face: Face, z_m: float) -> list[PortPatch]:
     vertices = cfg.axis_vertices_mm * 1.0e-3
     return [
-        PortPatch(
-            int(face),
-            z_m,
-            (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
-        )
+        PortPatch(int(face), z_m, (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]))
         for ix in cfg.port_indices
         for iy in cfg.port_indices
     ]
@@ -434,11 +329,42 @@ def normalized_operators(K, C, f) -> Operators:
 def affine_operators(base: Operators, delta: Operators, alpha: float) -> Operators:
     if not np.isfinite(alpha) or alpha < 0.0:
         raise ValueError("normalized convection coordinate must be non-negative")
-    return normalized_operators(
-        base.K + alpha * delta.K,
-        base.C + alpha * delta.C,
-        np.asarray(base.f) + alpha * delta.f,
+    return normalized_operators(base.K + alpha * delta.K, base.C + alpha * delta.C, np.asarray(base.f) + alpha * delta.f)
+
+
+def project_exact_ports(operators: Operators, ports: int, basis, ambient_K: float | None = None) -> Operators:
+    source = np.asarray(operators.f, dtype=np.float64)
+    if ambient_K is not None:
+        offset = np.full(operators.K.shape[0] - ports, ambient_K)
+        source = np.asarray(source - operators.K[:, ports:] @ offset).ravel()
+
+    def project(matrix):
+        reduced = sp.bmat(
+            (
+                (sp.csc_matrix(matrix[:ports, :ports]), sp.csc_matrix(matrix[:ports, ports:] @ basis)),
+                (sp.csc_matrix(basis.T @ matrix[ports:, :ports]), sp.csc_matrix(basis.T @ matrix[ports:, ports:] @ basis)),
+            ),
+            format="csc",
+        )
+        reduced = (0.5 * (reduced + reduced.T)).tocsc()
+        reduced.eliminate_zeros()
+        return reduced
+
+    return Operators(
+        project(operators.K),
+        project(operators.C),
+        np.r_[source[:ports], np.asarray(basis.T @ source[ports:]).ravel()],
     )
+
+
+def validate_affine_macro(base: Operators, delta: Operators, ambient_K: float) -> None:
+    ambient = np.full(base.K.shape[0], ambient_K)
+    balance_error = np.linalg.norm(delta.K @ ambient - delta.f)
+    balance_scale = max(np.linalg.norm(delta.f), np.finfo(float).tiny)
+    if spla.norm(delta.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
+        raise RuntimeError("convection unexpectedly changed macro capacitance")
+    if balance_error > 1.0e-10 * balance_scale:
+        raise RuntimeError("affine convection component violates ambient balance")
 
 
 def grid_cells(compiled) -> np.ndarray:
@@ -458,10 +384,7 @@ def coordinate_map(source, target, z_offset: int, label: str) -> np.ndarray:
 
     source_ids = source_grid[valid]
     target_ids = target_grid[valid]
-    if (
-        source_ids.size != source.cell_count
-        or np.unique(source_ids).size != source.cell_count
-    ):
+    if source_ids.size != source.cell_count or np.unique(source_ids).size != source.cell_count:
         raise RuntimeError(f"{label}: source cell IDs are incomplete")
     mapping = np.empty(source.cell_count, dtype=np.int64)
     mapping[source_ids] = target_ids
@@ -488,24 +411,30 @@ def solve_options(cfg: BaseConfig, transient: bool) -> SolveOptions:
     )
 
 
+def solve_reduced(compiled, ports: PortMap, operators: Operators, state: np.ndarray, cfg: BaseConfig, transient: bool):
+    started = time.perf_counter()
+    with solve_macro(compiled, operators, ports, state, solve_options(cfg, transient)) as solution:
+        elapsed = time.perf_counter() - started
+        if transient:
+            return np.asarray(solution.history_times).copy(), np.asarray(solution.state_history).copy(), elapsed
+        return np.asarray(solution.state).copy(), elapsed
+
+
+def recover_temperature(states, *, full_count: int, detail_map, macro_map, detail_count: int, ports: int, basis, ambient_K: float | None):
+    states = np.atleast_2d(states)
+    temperature = np.empty((states.shape[0], full_count))
+    temperature[:, detail_map] = states[:, :detail_count]
+    internal = (basis @ states[:, detail_count + ports :].T).T
+    temperature[:, macro_map] = internal if ambient_K is None else ambient_K + internal
+    return temperature
+
+
 def full_reference(cfg: BaseConfig, convection_h: float):
     started = time.perf_counter()
     with ExitStack() as stack:
-        steady = build_model(
-            cfg,
-            Study.STEADY,
-            detail=True,
-            macro=True,
-            convection_h=convection_h,
-        ).compile()
+        steady = build_model(cfg, Study.STEADY, detail=True, macro=True, convection_h=convection_h).compile()
         stack.callback(steady.close)
-        transient = build_model(
-            cfg,
-            Study.TRANSIENT,
-            detail=True,
-            macro=True,
-            convection_h=convection_h,
-        ).compile()
+        transient = build_model(cfg, Study.TRANSIENT, detail=True, macro=True, convection_h=convection_h).compile()
         stack.callback(transient.close)
         compile_s = time.perf_counter() - started
 
@@ -520,12 +449,4 @@ def full_reference(cfg: BaseConfig, convection_h: float):
             history = np.asarray(solution.temperature_history).copy()
         transient_s = time.perf_counter() - started
 
-        return (
-            steady_temperature,
-            times,
-            history,
-            compile_s,
-            steady_s,
-            transient_s,
-            transient.cell_count,
-        )
+        return steady_temperature, times, history, compile_s, steady_s, transient_s, transient.cell_count
