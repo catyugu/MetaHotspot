@@ -25,16 +25,15 @@ MHS_API mhs_status_t mhs_macromodel_port_map_create(const mhs_compiled_t* compil
 MHS_API void mhs_macromodel_port_map_destroy(mhs_macro_port_map_t* map);
 
 /** Assemble an isolated component as [physical ports, FVM cell states]. */
-MHS_API mhs_status_t mhs_macromodel_assemble_dtn(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
-    const double* state, size_t state_count, double time, mhs_operators_t* out);
+MHS_API mhs_status_t mhs_macromodel_assemble_dtn(
+    const mhs_macro_port_map_t* ports, const double* state, size_t state_count, double time, mhs_operators_t** out);
 
 /** Solve an FVM model coupled to sparse exact-port DtN operators.
  *  The leading port-map count states are physical port temperatures. Optional
  *  reduced internal coordinates follow those states.
  */
-MHS_API mhs_status_t mhs_macromodel_solve(const mhs_compiled_t* compiled, const mhs_macro_port_map_t* ports,
-    const mhs_operators_t* dtn, const double* state, size_t state_count, const mhs_solve_options_t* opts,
-    mhs_solution_t** out);
+MHS_API mhs_status_t mhs_macromodel_solve(const mhs_macro_port_map_t* ports, const mhs_operators_t* dtn,
+    const double* state, size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 #ifdef __cplusplus
 } /* extern "C" */

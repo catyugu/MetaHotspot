@@ -1,7 +1,8 @@
 """Configure ctypes function signatures on a loaded CDLL object.
 
 This module is internal — call ``configure_dll(dll)`` once after loading.
-Extension DLL functions are configured separately via ``configure_ext_dll(dll)``.
+The macromodel extension DLL is configured separately by
+:mod:`metahotspot.macromodel` (its signatures are hand-registered there).
 """
 
 from __future__ import annotations
@@ -13,15 +14,12 @@ from metahotspot.types import (
     MhsCompiled,
     MhsSolution,
     MhsOperators,
-    MhsOperatorsView,
-    CscView,
     Rect2D,
     Point2D,
     MhsFaceRegion,
-    MhsCompiledMetadataView,
-    SolutionView,
-    ProbeView,
-    MhsMacroPortModel,
+    MhsCompiledInfo,
+    MhsOperatorsInfo,
+    MhsSolutionInfo,
     _SolveOptionsCStruct,
 )
 
@@ -260,9 +258,24 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ("mhs_compiled_destroy", None, [ctypes.POINTER(MhsCompiled)]),
     # ---- Compiled metadata ----
     (
-        "mhs_compiled_metadata",
+        "mhs_compiled_get_info",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCompiledMetadataView)],
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCompiledInfo)],
+    ),
+    (
+        "mhs_compiled_copy_grid_to_cell",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t],
+    ),
+    (
+        "mhs_compiled_copy_layer_ids",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
+    ),
+    (
+        "mhs_compiled_copy_block_ids",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
     ),
     # ---- Assembly ----
     (
@@ -273,7 +286,65 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
             ctypes.c_double,
-            ctypes.POINTER(MhsOperatorsView),
+            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
+        ],
+    ),
+    ("mhs_operators_destroy", None, [ctypes.POINTER(MhsOperators)]),
+    (
+        "mhs_operators_get_info",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsOperators), ctypes.POINTER(MhsOperatorsInfo)],
+    ),
+    (
+        "mhs_operators_copy_k",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsOperators),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+        ],
+    ),
+    (
+        "mhs_operators_copy_c",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsOperators),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+        ],
+    ),
+    (
+        "mhs_operators_copy_rhs",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsOperators),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+        ],
+    ),
+    (
+        "mhs_operators_create",
+        ctypes.c_int32,
+        [
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_int32),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
         ],
     ),
     # ---- Half-conductance ----
@@ -305,37 +376,52 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ("mhs_solution_destroy", None, [ctypes.POINTER(MhsSolution)]),
     # ---- VTU ----
     (
-        "mhs_compiled_write_vtu",
+        "mhs_solution_write_vtu",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsSolution), ctypes.c_char_p],
+        [ctypes.POINTER(MhsSolution), ctypes.c_char_p],
     ),
-    # ---- Solution view ----
+    # ---- Solution copy-out accessors ----
     (
-        "mhs_solution_view",
+        "mhs_solution_get_info",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.POINTER(SolutionView)],
+        [ctypes.POINTER(MhsSolution), ctypes.POINTER(MhsSolutionInfo)],
     ),
-    # ---- Probe accessors ----
-    ("mhs_solution_probe_count", ctypes.c_size_t, [ctypes.POINTER(MhsSolution)]),
     (
-        "mhs_solution_probe_view",
+        "mhs_solution_copy_state",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.c_size_t, ctypes.POINTER(ProbeView)],
+        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
     ),
-]
-
-# ---- Macromodel extension function signatures ----
-_EXT_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     (
-        "mhs_macromodel_solve",
+        "mhs_solution_copy_history_times",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
+    ),
+    (
+        "mhs_solution_copy_history_states",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
+    ),
+    (
+        "mhs_solution_probe_get_info",
         ctypes.c_int32,
         [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(MhsMacroPortModel),
+            ctypes.POINTER(MhsSolution),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_size_t),
+        ],
+    ),
+    (
+        "mhs_solution_copy_probe",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsSolution),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
-            ctypes.POINTER(_SolveOptionsCStruct),
-            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
         ],
     ),
 ]
@@ -349,9 +435,27 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         fn.argtypes = argtypes
 
 
-def configure_ext_dll(dll: ctypes.CDLL) -> None:
-    """Set *argtypes* and *restype* on macromodel extension functions in *dll*."""
-    for name, restype, argtypes in _EXT_FUNC_SIGS:
-        fn = getattr(dll, name)
-        fn.restype = restype
-        fn.argtypes = argtypes
+def copy_array(fn, handle, array, c_type, label) -> None:
+    """Copy a native array out of *handle* into the caller-owned NumPy *array*.
+
+    Wraps the simple ``mhs_*_copy_*`` C calls, which take
+    ``(handle, buffer, count)`` and fill the pre-allocated buffer.
+    """
+    from metahotspot._error import check
+
+    check(
+        fn(handle, array.ctypes.data_as(ctypes.POINTER(c_type)), array.size),
+        label,
+    )
+
+
+def _opts_ptr(opts, dll):
+    """Return a ctypes pointer to the C struct form of *opts* (or None).
+
+    *opts* is a :class:`SolveOptions`; anything already C-struct shaped is
+    passed through unchanged.
+    """
+    if opts is None:
+        return None
+    c_opts = opts._to_c_struct(dll) if hasattr(opts, "_to_c_struct") else opts
+    return ctypes.byref(c_opts)

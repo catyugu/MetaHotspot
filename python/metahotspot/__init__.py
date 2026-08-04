@@ -13,7 +13,7 @@ Usage::
 Macromodel coupling uses ``metahotspot.Operators`` directly::
 
     from metahotspot.macromodel import PortMap, solve
-    solution = solve(compiled, operators, ports, state)
+    solution = solve(operators, ports, state)
 """
 
 from metahotspot import enums

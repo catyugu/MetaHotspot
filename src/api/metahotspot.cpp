@@ -10,7 +10,10 @@
 #include "solver/assembler.hpp"
 
 #include "common/mesh.hpp"
-#include <optional>
+#include <algorithm>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -530,7 +533,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
             SET_ERR("memory allocation failed");
             return MHS_ERR_OOM;
         }
-        c->model = std::move(core_model);
+        c->model = std::make_shared<const mhs::core::Model>(std::move(core_model));
         *out = c;
     });
 }
@@ -541,37 +544,111 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c) { delete c; }
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out)
+MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    out->cell_count = c->model.cells.cell_to_grid.size();
-    out->study_type = _from_core_study(c->model.study_type);
-    out->initial_temperature = c->model.initial_temperature;
+    out->cell_count = c->model->cells.cell_to_grid.size();
+    out->grid_count = c->model->cells.grid_to_cell.size();
+    out->study_type = _from_core_study(c->model->study_type);
+    out->initial_temperature = c->model->initial_temperature;
 
-    out->nx = c->model.mesh.nx;
-    out->ny = c->model.mesh.ny;
-    out->nz = c->model.mesh.nz;
-    out->grid_to_cell = c->model.cells.grid_to_cell.data();
-    out->layer_ids = c->model.cells.layer_id.data();
-    out->block_ids = c->model.cells.block_id.data();
+    out->nx = c->model->mesh.nx;
+    out->ny = c->model->mesh.ny;
+    out->nz = c->model->mesh.nz;
     mhs_detail_clear_last_error();
     return MHS_OK;
+}
+
+namespace {
+    template <typename T>
+    mhs_status_t copy_vector(const std::vector<T>& source, T* out, size_t count, const char* label)
+    {
+        if (count != source.size()) {
+            SET_ERR(label << " count must equal " << source.size());
+            return MHS_ERR_INVALID_ARG;
+        }
+        if (count > 0 && !out) {
+            SET_ERR("NULL pointer: out");
+            return MHS_ERR_NULL_PTR;
+        }
+        std::copy(source.begin(), source.end(), out);
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
+
+    Eigen::SparseMatrix<double> copy_csc(
+        size_t n, const int32_t* outer, const int32_t* inner, const double* values, size_t nnz, const char* label)
+    {
+        if (!outer || (nnz > 0 && (!inner || !values)))
+            throw std::invalid_argument(std::string("NULL pointer in ") + label);
+        if (n > static_cast<size_t>(std::numeric_limits<int32_t>::max())
+            || nnz > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+            throw std::invalid_argument(std::string(label) + " dimensions exceed int32 range");
+        if (outer[0] != 0 || outer[n] != static_cast<int32_t>(nnz))
+            throw std::invalid_argument(std::string("invalid ") + label + " outer-index range");
+        std::vector<Eigen::Triplet<double>> entries;
+        entries.reserve(nnz);
+        for (size_t column = 0; column < n; ++column) {
+            const auto begin = outer[column];
+            const auto end = outer[column + 1];
+            if (begin < 0 || end < begin || static_cast<size_t>(end) > nnz)
+                throw std::invalid_argument(std::string("invalid ") + label + " column offsets");
+            for (int32_t entry = begin; entry < end; ++entry) {
+                const auto row = inner[entry];
+                if (row < 0 || static_cast<size_t>(row) >= n)
+                    throw std::invalid_argument(std::string("invalid ") + label + " row index");
+                entries.emplace_back(row, static_cast<int32_t>(column), values[entry]);
+            }
+        }
+        Eigen::SparseMatrix<double> matrix(static_cast<int32_t>(n), static_cast<int32_t>(n));
+        matrix.setFromTriplets(entries.begin(), entries.end());
+        matrix.makeCompressed();
+        return matrix;
+    }
+
+    mhs_status_t copy_csc_matrix(const Eigen::SparseMatrix<double>& matrix, int32_t* outer, size_t outer_count,
+        int32_t* inner, size_t inner_count, double* values, size_t value_count)
+    {
+        const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
+        const auto expected_nnz = static_cast<size_t>(matrix.nonZeros());
+        if (outer_count != expected_outer || inner_count != expected_nnz || value_count != expected_nnz) {
+            SET_ERR("CSC buffer sizes do not match operator dimensions");
+            return MHS_ERR_INVALID_ARG;
+        }
+        if (!outer || (expected_nnz > 0 && (!inner || !values))) {
+            SET_ERR("NULL CSC output buffer");
+            return MHS_ERR_NULL_PTR;
+        }
+        std::copy_n(matrix.outerIndexPtr(), expected_outer, outer);
+        std::copy_n(matrix.innerIndexPtr(), expected_nnz, inner);
+        std::copy_n(matrix.valuePtr(), expected_nnz, values);
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
+}
+
+MHS_API mhs_status_t mhs_compiled_copy_grid_to_cell(const mhs_compiled_t* c, size_t* out, size_t count)
+{
+    CHECK_NULL(c);
+    return copy_vector(c->model->cells.grid_to_cell, out, count, "grid_to_cell");
+}
+
+MHS_API mhs_status_t mhs_compiled_copy_layer_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
+{
+    CHECK_NULL(c);
+    return copy_vector(c->model->cells.layer_id, out, count, "layer_ids");
+}
+
+MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
+{
+    CHECK_NULL(c);
+    return copy_vector(c->model->cells.block_id, out, count, "block_ids");
 }
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
-
-static void _eigen_to_csc_view(const Eigen::SparseMatrix<double>& mat, mhs_csc_view_t* out)
-{
-    out->rows = static_cast<int32_t>(mat.rows());
-    out->columns = static_cast<int32_t>(mat.cols());
-    out->nnz = static_cast<int32_t>(mat.nonZeros());
-    out->outer_indices = mat.outerIndexPtr();
-    out->inner_indices = mat.innerIndexPtr();
-    out->values = mat.valuePtr();
-}
 
 MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, const size_t* cells, mhs_face_t face,
     double temperature, double time, double* out, size_t n)
@@ -583,7 +660,7 @@ MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, cons
         if (static_cast<int>(face) < 0 || static_cast<int>(face) >= 6) {
             throw std::invalid_argument("invalid face direction");
         }
-        const auto& model = c->model;
+        const auto& model = *c->model;
         const auto face_dir = static_cast<mhs::core::FaceDir>(static_cast<int>(face));
         const auto cell_count = model.cells.cell_to_grid.size();
         for (size_t i = 0; i < n; ++i) {
@@ -610,27 +687,74 @@ MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, cons
 }
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t* out)
+    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out)
 {
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_ASSEMBLE, {
-        const auto cell_count = c->model.cells.cell_to_grid.size();
+        const auto cell_count = c->model->cells.cell_to_grid.size();
         if (temperature_count != cell_count) {
             SET_ERR("temperature_count must equal cell_count");
             return MHS_ERR_INVALID_ARG;
         }
 
-        // Reuse scratch buffer for the assembly result
-        auto& ops = const_cast<mhs_compiled_t*>(c)->assemble_scratch;
-        ops = mhs::sim::assemble_thermal(c->model, std::span<const double>(temperature, temperature_count), time);
-
-        _eigen_to_csc_view(ops.K, &out->K);
-        _eigen_to_csc_view(ops.C, &out->C);
-        out->rhs = ops.f.data();
-        out->n = static_cast<size_t>(ops.f.size());
+        *out = nullptr;
+        auto result = std::make_unique<mhs_operators_t>();
+        result->operators
+            = mhs::sim::assemble_thermal(*c->model, std::span<const double>(temperature, temperature_count), time);
+        *out = result.release();
     });
+}
+
+MHS_API mhs_status_t mhs_operators_create(size_t state_count, const int32_t* k_outer, const int32_t* k_inner,
+    const double* k_values, size_t k_nnz, const int32_t* c_outer, const int32_t* c_inner, const double* c_values,
+    size_t c_nnz, const double* rhs, mhs_operators_t** out)
+{
+    CHECK_NULL(out);
+    CHECK_NULL(rhs);
+    *out = nullptr;
+    MHS_TRY(MHS_ERR_INVALID_ARG, {
+        auto result = std::make_unique<mhs_operators_t>();
+        result->operators.K = copy_csc(state_count, k_outer, k_inner, k_values, k_nnz, "K");
+        result->operators.C = copy_csc(state_count, c_outer, c_inner, c_values, c_nnz, "C");
+        result->operators.f = Eigen::Map<const Eigen::VectorXd>(rhs, static_cast<Eigen::Index>(state_count));
+        *out = result.release();
+    });
+}
+
+MHS_API void mhs_operators_destroy(mhs_operators_t* operators) { delete operators; }
+
+MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out)
+{
+    CHECK_NULL(operators);
+    CHECK_NULL(out);
+    out->state_count = static_cast<size_t>(operators->operators.f.size());
+    out->k_nnz = static_cast<size_t>(operators->operators.K.nonZeros());
+    out->c_nnz = static_cast<size_t>(operators->operators.C.nonZeros());
+    mhs_detail_clear_last_error();
+    return MHS_OK;
+}
+
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+{
+    CHECK_NULL(operators);
+    return copy_csc_matrix(operators->operators.K, outer, outer_count, inner, inner_count, values, value_count);
+}
+
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+{
+    CHECK_NULL(operators);
+    return copy_csc_matrix(operators->operators.C, outer, outer_count, inner, inner_count, values, value_count);
+}
+
+MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
+{
+    CHECK_NULL(operators);
+    return copy_vector(
+        std::vector<double>(operators->operators.f.data(), operators->operators.f.data() + count), out, count, "rhs");
 }
 
 /* ------------------------------------------------------------------ */
@@ -669,7 +793,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY(MHS_ERR_SOLVE, {
-        auto so = to_solve_options(opts, c->model.transient_duration);
+        auto so = to_solve_options(opts, c->model->transient_duration);
 
         // Build initial state span
         std::span<const double> init_span;
@@ -679,7 +803,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             init_span = owned;
         }
 
-        auto sol = mhs::sim::solve(c->model, init_span, so);
+        auto sol = mhs::sim::solve(*c->model, init_span, so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {
@@ -688,6 +812,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             return MHS_ERR_OOM;
         }
         s->sol = std::move(sol);
+        s->model = c->model;
         *out = s;
     });
 }
@@ -698,79 +823,100 @@ MHS_API void mhs_solution_destroy(mhs_solution_t* s) { delete s; }
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path)
+MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path)
 {
-    CHECK_NULL(c);
     CHECK_NULL(s);
     CHECK_NULL(path);
     MHS_TRY(MHS_ERR_IO, {
-        if (s->sol.fvm_count != c->model.cells.cell_to_grid.size()) {
-            throw std::invalid_argument("solution FVM state does not match compiled model");
-        }
-        mhs::io::write_vtu(path, c->model, std::span<const double>(s->sol.state.data(), s->sol.fvm_count));
+        if (!s->model)
+            throw std::invalid_argument("solution does not own a compiled runtime model");
+        if (s->sol.fvm_count != s->model->cells.cell_to_grid.size())
+            throw std::invalid_argument("solution FVM state does not match its runtime model");
+        mhs::io::write_vtu(path, *s->model, std::span<const double>(s->sol.state.data(), s->sol.fvm_count));
     });
 }
 
 /* ------------------------------------------------------------------ */
-/*  Solution views                                                     */
+/*  Solution copy-out accessors                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out)
+MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution_info_t* out)
 {
     CHECK_NULL(s);
     CHECK_NULL(out);
     out->fvm_count = s->sol.fvm_count;
     out->state_count = s->sol.state.size();
+    out->record_count = s->sol.snapshot_times.size();
+    out->probe_count = s->sol.probe_traces.size();
     out->time = s->sol.time;
-    out->state = s->sol.state.data();
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_solution_history_view(const mhs_solution_t* solution, mhs_solution_history_view_t* out)
+MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* out, size_t count)
 {
-    CHECK_NULL(solution);
-    CHECK_NULL(out);
+    CHECK_NULL(s);
+    return copy_vector(s->sol.state, out, count, "state");
+}
 
-    const auto state_count = solution->sol.state.size();
-    const auto record_count = solution->sol.snapshot_times.size();
-    if (record_count > 0 && solution->sol.snapshot_states.size() != record_count * state_count) {
-        SET_ERR("solution history storage is inconsistent");
-        return MHS_ERR_RUNTIME;
-    }
+MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count)
+{
+    CHECK_NULL(s);
+    return copy_vector(s->sol.snapshot_times, out, count, "history times");
+}
 
-    out->times = record_count > 0 ? solution->sol.snapshot_times.data() : nullptr;
-    out->states = record_count > 0 ? solution->sol.snapshot_states.data() : nullptr;
-    out->record_count = record_count;
-    out->state_count = state_count;
-    mhs_detail_clear_last_error();
-    return MHS_OK;
+MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, double* out, size_t count)
+{
+    CHECK_NULL(s);
+    return copy_vector(s->sol.snapshot_states, out, count, "history states");
 }
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s)
-{
-    if (!s)
-        return 0;
-    return s->sol.probe_traces.size();
-}
-
-MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out)
+MHS_API mhs_status_t mhs_solution_probe_get_info(
+    const mhs_solution_t* s, size_t index, size_t* name_size, size_t* record_count)
 {
     CHECK_NULL(s);
-    CHECK_NULL(out);
+    CHECK_NULL(name_size);
+    CHECK_NULL(record_count);
     if (index >= s->sol.probe_traces.size()) {
         SET_ERR("probe index out of range");
         return MHS_ERR_INVALID_ARG;
     }
     const auto& tr = s->sol.probe_traces[index];
-    out->name = tr.name.c_str();
-    out->times = tr.times.empty() ? nullptr : tr.times.data();
-    out->values = tr.values.empty() ? nullptr : tr.values.data();
-    out->record_count = tr.times.size();
+    if (tr.times.size() != tr.values.size()) {
+        SET_ERR("probe storage is inconsistent");
+        return MHS_ERR_RUNTIME;
+    }
+    *name_size = tr.name.size() + 1;
+    *record_count = tr.times.size();
+    mhs_detail_clear_last_error();
+    return MHS_OK;
+}
+
+MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
+    double* times, double* values, size_t record_count)
+{
+    CHECK_NULL(s);
+    CHECK_NULL(name);
+    if (index >= s->sol.probe_traces.size()) {
+        SET_ERR("probe index out of range");
+        return MHS_ERR_INVALID_ARG;
+    }
+    const auto& tr = s->sol.probe_traces[index];
+    if (name_size != tr.name.size() + 1 || record_count != tr.times.size() || tr.times.size() != tr.values.size()) {
+        SET_ERR("probe buffer sizes do not match probe data");
+        return MHS_ERR_INVALID_ARG;
+    }
+    if (record_count > 0 && (!times || !values)) {
+        SET_ERR("NULL probe output buffer");
+        return MHS_ERR_NULL_PTR;
+    }
+    std::memcpy(name, tr.name.c_str(), name_size);
+    std::copy(tr.times.begin(), tr.times.end(), times);
+    std::copy(tr.values.begin(), tr.values.end(), values);
     mhs_detail_clear_last_error();
     return MHS_OK;
 }

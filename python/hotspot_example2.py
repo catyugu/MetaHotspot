@@ -325,7 +325,7 @@ def main():
     c_steady = steady_model.compile()
     print(f"  Active cells: {c_steady.cell_count}")
     sol_steady = c_steady.solve()
-    steady_temp = sol_steady.temperature.copy()
+    steady_temp = sol_steady.temperature
     t_steady = _time.perf_counter() - t0
     print(
         f"  Steady T in [{steady_temp.min():.4f}, "
@@ -380,7 +380,7 @@ def main():
     sol_transient = c_transient.solve(state=steady_temp)
     t_transient = _time.perf_counter() - t0
 
-    final_temp = sol_transient.temperature.copy()
+    final_temp = sol_transient.temperature
     print(
         f"  Transient final T in [{final_temp.min():.4f}, "
         f"{final_temp.max():.4f}] K  ({t_transient:.3f}s)"

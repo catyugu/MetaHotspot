@@ -42,6 +42,6 @@
 - 项目源码启用严格告警并视为错误；第三方库除外。
 - Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
 - `mhs_common` 和 `mhs_model` 不得引入 Eigen、tinyxml2、spdlog 或 TBB 实现依赖。
-- C API 公共头只暴露 C 类型、枚举、POD view 和 opaque handle。
+- C API 公共头只暴露 C 类型、枚举和 opaque handle；批量结果通过 copy-out API 写入调用方缓冲区。
 
 具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。

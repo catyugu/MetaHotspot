@@ -8,7 +8,7 @@ import ctypes
 class OwnedHandle:
     """Thin base for C API handle wrappers with automatic cleanup.
 
-    Handles the common pattern of _dll, _handle, _owned, __del__, close.
+    Handles the common pattern of _dll, _handle, __del__, close.
     Subclasses call init() in __init__ and/or assign from a factory
     classmethod. Supports context manager protocol.
     """
@@ -26,7 +26,6 @@ class OwnedHandle:
         self._dll = dll
         self._handle: ctypes.Structure | None = None
         self._destroy_fn = destroy_fn
-        self._owned = True
 
     def __del__(self) -> None:
         self.close()
@@ -38,6 +37,6 @@ class OwnedHandle:
         self.close()
 
     def close(self) -> None:
-        if self._owned and self._handle is not None:
+        if self._handle is not None:
             self._destroy_fn(self._handle)
             self._handle = None
