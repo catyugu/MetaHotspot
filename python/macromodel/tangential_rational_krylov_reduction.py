@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 import scipy.linalg
-import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,7 +22,6 @@ from macromodel.experiment_setup import (  # noqa: E402
     BOUNDARIES,
     BaseConfig,
     Face,
-    Operators,
     PortMap,
     Study,
     accuracy_summary,
@@ -44,10 +42,7 @@ REPORT = Path("results/bci_rom_parametric_krylov_results.json")
 PARAMETER_SAMPLES = 3
 FREQUENCY_SAMPLES = 5
 RESIDUAL_TOLERANCE = 5.0e-3
-SEED_DIRECTIONS = 1
-BLOCK_SIZE = 16
 MAX_ORDER = 1024
-MAX_REFINEMENTS = 32
 QUICK_OVERRIDES = {
     "substrate_cells": 2,
     "bump_cells": 1,
@@ -75,17 +70,27 @@ def eigenpairs_descending(matrix):
 
 
 def training_points(cfg, boundaries, parameter_samples, frequency_samples):
-    h_values = np.geomspace(min(boundaries), max(boundaries), parameter_samples)
-    h_values = np.unique(np.r_[h_values, cfg.affine_anchor_h])
-    low = 1.0 / cfg.duration_s
-    high = 2.0 / cfg.dt_s
-    interior_count = max(0, frequency_samples - 2)
-    interior = (
-        np.geomspace(low, high, interior_count + 2)[1:-1]
-        if interior_count
-        else np.empty(0)
+    """Return parameter samples and the real shifts used by fixed-step BDF1."""
+    h_values = np.unique(
+        np.r_[np.asarray(boundaries, dtype=np.float64), cfg.affine_anchor_h]
     )
-    shifts = np.unique(np.r_[0.0, low, interior, high])
+    if h_values.size < parameter_samples:
+        extra = np.geomspace(min(boundaries), max(boundaries), parameter_samples)
+        h_values = np.unique(np.r_[h_values, extra])
+
+    positive_count = max(1, frequency_samples - 1)
+    positive_shifts = np.geomspace(
+        1.0 / cfg.duration_s,
+        2.0 / cfg.dt_s,
+        positive_count,
+    )
+    shifts = np.unique(np.r_[0.0, positive_shifts])
+
+    anchor = cfg.affine_anchor_h
+    h_values = np.asarray(
+        sorted(h_values, key=lambda value: (abs(math.log(value / anchor)), value)),
+        dtype=np.float64,
+    )
     return h_values, shifts
 
 
@@ -100,10 +105,19 @@ def internal_blocks(operators, ports):
 
 def orthonormalize_block(basis, vectors):
     block = np.asarray(vectors, dtype=np.float64).copy()
+    if not block.size:
+        return np.empty((block.shape[0], 0), dtype=np.float64)
+
     for _ in range(2):
         if basis.shape[1]:
             block -= basis @ (basis.T @ block)
-    q, r, _ = scipy.linalg.qr(block, mode="economic", pivoting=True, check_finite=False)
+
+    q, r, _ = scipy.linalg.qr(
+        block,
+        mode="economic",
+        pivoting=True,
+        check_finite=False,
+    )
     diagonal = np.abs(np.diag(r))
     if not diagonal.size or diagonal[0] == 0.0:
         return np.empty((block.shape[0], 0), dtype=np.float64)
@@ -111,28 +125,30 @@ def orthonormalize_block(basis, vectors):
     return np.ascontiguousarray(q[:, keep])
 
 
-def training_response(K0, C0, B0, D0, K1, C1, B1, D1, mu, h_value, shift):
-    """Factor a training operator once and retain only its port-space Gramian."""
-    A = (K0 + mu * K1 + shift * (C0 + mu * C1)).tocsc()
-    A = (0.5 * (A + A.T)).tocsc()
-    B = (B0 + mu * B1 + shift * (D0 + mu * D1)).tocsc()
-    response = np.asarray(spla.splu(A).solve(-B.toarray()))
-    gram = symmetric_dense(response.T @ (A @ response))
-    values, tangents = eigenpairs_descending(gram)
-    return (
-        {
-            "mu": mu,
-            "h_W_m2K": h_value,
-            "shift_per_s": shift,
-            "A": A,
-            "B": B,
-            "gram": gram,
-            "reference": max(float(values[0]), np.finfo(float).tiny),
-        },
-        response,
-        values,
-        tangents,
+def reduced_response(basis, A, B_dense):
+    if not basis.shape[1]:
+        return np.empty((0, B_dense.shape[1]), dtype=np.float64)
+    reduced_A = symmetric_dense(basis.T @ (A @ basis))
+    factor = scipy.linalg.cho_factor(
+        reduced_A,
+        lower=True,
+        overwrite_a=False,
+        check_finite=False,
     )
+    return scipy.linalg.cho_solve(
+        factor,
+        -(basis.T @ B_dense),
+        overwrite_b=False,
+        check_finite=False,
+    )
+
+
+def response_error(response, basis, reduced, A, reference):
+    error_response = response - basis @ reduced if basis.shape[1] else response
+    error_gram = symmetric_dense(error_response.T @ (A @ error_response))
+    values, tangents = eigenpairs_descending(error_gram)
+    score = math.sqrt(float(values[0]) / reference)
+    return error_response, values, tangents, score
 
 
 def build_krylov_basis(
@@ -145,17 +161,22 @@ def build_krylov_basis(
     parameter_samples,
     frequency_samples,
     residual_tolerance,
-    seed_directions,
-    block_size,
     max_order,
-    max_refinements,
 ):
-    """Build a memory-bounded tangential basis by streaming training points."""
+    """Build a certified basis with one streamed residual solve per candidate.
+
+    Each training response is factored and solved once. All tangential residual
+    directions above the tolerance are inserted immediately, so a candidate
+    never needs to be rescanned and no full-state response is retained.
+    """
     started = time.perf_counter()
     K0, C0, B0, D0 = internal_blocks(base, ports)
     K1, C1, B1, D1 = internal_blocks(delta, ports)
     h_values, shifts = training_points(
-        cfg, boundaries, parameter_samples, frequency_samples
+        cfg,
+        boundaries,
+        parameter_samples,
+        frequency_samples,
     )
     raw_points = [
         (float(h / cfg.affine_anchor_h), float(h), float(shift))
@@ -167,130 +188,118 @@ def build_krylov_basis(
     order_limit = min(max_order, internal_order)
     basis = np.empty((internal_order, 0), dtype=np.float64)
     history = []
-    points = []
+    worst_score = 0.0
+    converged = True
 
-    # Stream the large full-state response through seeding. Only the small
-    # port-space Gramian remains resident for later greedy scans.
     for mu, h_value, shift in raw_points:
-        point, response, values, tangents = training_response(
-            K0,
-            C0,
-            B0,
-            D0,
-            K1,
-            C1,
-            B1,
-            D1,
-            mu,
-            h_value,
-            shift,
+        A = (K0 + mu * K1 + shift * (C0 + mu * C1)).tocsc()
+        A = (0.5 * (A + A.T)).tocsc()
+        B = (B0 + mu * B1 + shift * (D0 + mu * D1)).tocsc()
+        B_dense = B.toarray()
+
+        response = np.asarray(spla.splu(A).solve(-B_dense))
+        response_gram = symmetric_dense(-response.T @ B_dense)
+        response_values, _ = eigenpairs_descending(response_gram)
+        reference = max(float(response_values[0]), np.finfo(float).tiny)
+
+        order_before = basis.shape[1]
+        reduced = reduced_response(basis, A, B_dense)
+        error_response, error_values, tangents, score_before = response_error(
+            response,
+            basis,
+            reduced,
+            A,
+            reference,
         )
-        points.append(point)
-        count = min(
-            seed_directions,
-            np.count_nonzero(values > 0.0),
-            max(0, order_limit - basis.shape[1]),
+        requested = int(
+            np.count_nonzero(error_values > residual_tolerance**2 * reference)
         )
+        available = order_limit - basis.shape[1]
+        count = min(requested, available)
+
+        added = 0
         if count:
-            block = orthonormalize_block(basis, response @ tangents[:, :count])
-            basis = np.column_stack((basis, block[:, : order_limit - basis.shape[1]]))
+            block = orthonormalize_block(
+                basis,
+                error_response @ tangents[:, :count],
+            )
+            if not block.shape[1]:
+                raise RuntimeError("rational Krylov enrichment stalled")
+            basis = np.column_stack((basis, block))
+            added = block.shape[1]
 
-    converged = False
-    worst_score = math.inf
-    for refinement in range(max_refinements + 1):
-        worst = None
-        for point in points:
-            A = point["A"]
-            B = point["B"]
-            reference = point["reference"]
+        if count == requested and added == count:
+            score_after = (
+                math.sqrt(float(error_values[count]) / reference)
+                if count < error_values.size
+                else 0.0
+            )
+        else:
+            # This path is only expected for numerical rank loss or an order cap.
+            reduced = reduced_response(basis, A, B_dense)
+            _, _, _, score_after = response_error(
+                response,
+                basis,
+                reduced,
+                A,
+                reference,
+            )
 
-            if basis.shape[1]:
-                reduced_A = symmetric_dense(basis.T @ (A @ basis))
-                reduced_B = basis.T @ B
-                reduced_response = scipy.linalg.solve(
-                    reduced_A,
-                    -reduced_B,
-                    assume_a="sym",
-                    check_finite=False,
-                )
-                error_gram = point["gram"] - symmetric_dense(
-                    reduced_response.T @ (reduced_A @ reduced_response)
-                )
-            else:
-                reduced_response = np.empty((0, B.shape[1]), dtype=np.float64)
-                error_gram = point["gram"]
-
-            error_values, tangents = eigenpairs_descending(error_gram)
-            score = math.sqrt(float(error_values[0]) / reference)
-            if worst is None or score > worst["score"]:
-                worst = {
-                    "score": score,
-                    "point": point,
-                    "reference": reference,
-                    "reduced_response": reduced_response,
-                    "error_values": error_values,
-                    "tangents": tangents,
-                }
-
-        worst_score = float(worst["score"])
-        entry = {
-            "order": int(basis.shape[1]),
-            "relative_response_error": worst_score,
-            "h_W_m2K": worst["point"]["h_W_m2K"],
-            "shift_per_s": worst["point"]["shift_per_s"],
-            "added_directions": 0,
-        }
-        history.append(entry)
-        if worst_score <= residual_tolerance:
-            converged = True
-            break
-        if refinement == max_refinements or basis.shape[1] >= order_limit:
-            break
-
-        relative_directions = np.sqrt(worst["error_values"] / worst["reference"])
-        requested = max(
-            1, int(np.count_nonzero(relative_directions > residual_tolerance))
+        worst_score = max(worst_score, score_after)
+        history.append(
+            {
+                "order_before": int(order_before),
+                "order_after": int(basis.shape[1]),
+                "relative_response_error_before": float(score_before),
+                "relative_response_error_after": float(score_after),
+                "h_W_m2K": h_value,
+                "shift_per_s": shift,
+                "requested_directions": requested,
+                "added_directions": int(added),
+            }
         )
-        count = min(requested, block_size, order_limit - basis.shape[1])
-        tangents = worst["tangents"][:, :count]
-        point = worst["point"]
-        response = np.asarray(spla.splu(point["A"]).solve(-(point["B"] @ tangents)))
-        error_response = response - basis @ (worst["reduced_response"] @ tangents)
-        block = orthonormalize_block(basis, error_response)
-        if not block.shape[1]:
-            raise RuntimeError("rational Krylov enrichment stalled")
-        block = block[:, : order_limit - basis.shape[1]]
-        basis = np.column_stack((basis, block))
-        entry["added_directions"] = int(block.shape[1])
 
-    orthogonality_error = np.linalg.norm(
-        basis.T @ basis - np.eye(basis.shape[1]), ord=2
-    )
+        if requested > available or score_after > residual_tolerance:
+            converged = False
+            break
+
+    if basis.shape[1]:
+        orthogonality = basis.T @ basis
+        orthogonality -= np.eye(basis.shape[1])
+        orthogonality_error = float(np.max(np.abs(orthogonality)))
+    else:
+        orthogonality_error = 0.0
     if orthogonality_error > 1.0e-10:
         raise RuntimeError("rational Krylov basis lost orthogonality")
 
     return basis, {
         "parameter_samples_W_m2K": h_values.tolist(),
         "frequency_shifts_per_s": shifts.tolist(),
-        "candidate_count": len(points),
-        "seed_directions_per_candidate": seed_directions,
-        "block_size": block_size,
+        "candidate_count": len(raw_points),
+        "processed_candidate_count": len(history),
         "basis_order": int(basis.shape[1]),
         "maximum_order": int(order_limit),
-        "orthogonality_error": float(orthogonality_error),
-        "relative_response_error": worst_score,
+        "orthogonality_error": orthogonality_error,
+        "relative_response_error": float(worst_score),
         "residual_tolerance": residual_tolerance,
-        "converged": converged,
+        "converged": bool(converged and len(history) == len(raw_points)),
         "history": history,
         "seconds": time.perf_counter() - started,
-        "memory_strategy": "cache port Gramians; solve full-state responses only once per candidate",
+        "memory_strategy": (
+            "stream one full response per candidate; form the residual Gramian "
+            "directly; never cache candidates or repeat global scans"
+        ),
     }
 
 
 def verify_ambient_balance(operators, ports, reduced_order, ambient_K, label):
     state = np.r_[np.full(ports, ambient_K), np.zeros(reduced_order)]
     defect = np.asarray(operators.K @ state - operators.f).ravel()
-    scale = max(np.linalg.norm(operators.K @ state), np.linalg.norm(operators.f), 1.0)
+    scale = max(
+        np.linalg.norm(operators.K @ state),
+        np.linalg.norm(operators.f),
+        1.0,
+    )
     if np.linalg.norm(defect) > 1.0e-10 * scale:
         raise RuntimeError(f"{label} reduced operator violates ambient balance")
 
@@ -301,11 +310,17 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         full_layout = build_model(cfg, Study.STEADY, detail=True, macro=True).compile()
         stack.callback(full_layout.close)
         detail_steady = build_model(
-            cfg, Study.STEADY, detail=True, macro=False
+            cfg,
+            Study.STEADY,
+            detail=True,
+            macro=False,
         ).compile()
         stack.callback(detail_steady.close)
         detail_transient = build_model(
-            cfg, Study.TRANSIENT, detail=True, macro=False
+            cfg,
+            Study.TRANSIENT,
+            detail=True,
+            macro=False,
         ).compile()
         stack.callback(detail_transient.close)
 
@@ -373,7 +388,8 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
             raise RuntimeError(
                 "Krylov extraction did not converge: "
                 f"order={basis_summary['basis_order']}, "
-                f"worst relative response error={basis_summary['relative_response_error']:.3e}, "
+                f"worst relative response error="
+                f"{basis_summary['relative_response_error']:.3e}, "
                 f"target={basis_summary['residual_tolerance']:.3e}"
             )
 
@@ -382,10 +398,18 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         reduced_delta = project_exact_ports(delta, ports, basis, cfg.ambient_K)
         projection_s = time.perf_counter() - projection_started
         verify_ambient_balance(
-            reduced_base, ports, basis.shape[1], cfg.ambient_K, "base"
+            reduced_base,
+            ports,
+            basis.shape[1],
+            cfg.ambient_K,
+            "base",
         )
         verify_ambient_balance(
-            reduced_delta, ports, basis.shape[1], cfg.ambient_K, "convection increment"
+            reduced_delta,
+            ports,
+            basis.shape[1],
+            cfg.ambient_K,
+            "convection increment",
         )
         offline_s = time.perf_counter() - offline_started
 
@@ -394,14 +418,16 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         compression = full_macro_order / reduced_macro_order
         print(
             f"Grid {cfg.nx}x{cfg.nx}x{cfg.nz}; exact ports={ports}; "
-            f"macro states {full_macro_order:,}->{reduced_macro_order:,} ({compression:.2f}x); "
+            f"macro states {full_macro_order:,}->{reduced_macro_order:,} "
+            f"({compression:.2f}x); "
             f"Krylov residual={basis_summary['relative_response_error']:.3e}"
         )
 
         results = []
         detail_count = detail_steady.cell_count
         initial = np.r_[
-            np.full(detail_count + ports, cfg.ambient_K), np.zeros(basis.shape[1])
+            np.full(detail_count + ports, cfg.ambient_K),
+            np.zeros(basis.shape[1]),
         ]
         for convection_h in boundaries:
             (
@@ -416,7 +442,9 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
 
             started = time.perf_counter()
             reduced = affine_operators(
-                reduced_base, reduced_delta, convection_h / cfg.affine_anchor_h
+                reduced_base,
+                reduced_delta,
+                convection_h / cfg.affine_anchor_h,
             )
             assembly_s = time.perf_counter() - started
             steady_state, reduced_steady_s = solve_reduced(
@@ -436,7 +464,10 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
                 True,
             )
             if times.shape != reference_times.shape or not np.allclose(
-                times, reference_times, atol=1.0e-12, rtol=0.0
+                times,
+                reference_times,
+                atol=1.0e-12,
+                rtol=0.0,
             ):
                 raise RuntimeError("full and reduced output times differ")
 
@@ -467,7 +498,10 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
                 recovered_history,
                 cfg.ambient_K,
             )
-            speedup = full_transient_s / max(reduced_transient_s, np.finfo(float).tiny)
+            speedup = full_transient_s / max(
+                reduced_transient_s,
+                np.finfo(float).tiny,
+            )
             speedup_passed = not strict or speedup >= cfg.speedup_target
             result = {
                 "h_W_m2K": convection_h,
@@ -488,13 +522,17 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
             print(
                 f"h={convection_h:g} W/(m^2 K): {format_accuracy(accuracy)}; "
                 f"full/ROM={full_transient_s:.3f}/{reduced_transient_s:.3f}s, "
-                f"speedup={speedup:.2f}x {'PASS' if result['passed'] else 'FAIL'}"
+                f"speedup={speedup:.2f}x "
+                f"{'PASS' if result['passed'] else 'FAIL'}"
             )
 
         compression_passed = compression >= cfg.compression_target
         return {
-            "schema_version": 22,
-            "method": "exact-port affine-parametric tangential rational Krylov BCI-ROM",
+            "schema_version": 23,
+            "method": (
+                "exact-port affine-parametric streamed tangential rational "
+                "Krylov BCI-ROM"
+            ),
             "configuration": cfg.report_dict(),
             "reduction": {
                 "full_macro_order": full_macro_order,
@@ -504,7 +542,9 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
                 "compression_ratio": compression,
                 "compression_target": cfg.compression_target,
                 "compression_passed": compression_passed,
-                "temperature_coordinates": "absolute port temperature and internal rise above ambient",
+                "temperature_coordinates": (
+                    "absolute port temperature and internal rise above ambient"
+                ),
                 "krylov": basis_summary,
             },
             "timing": {
@@ -528,27 +568,26 @@ def main(argv=None) -> int:
 
     cfg = replace(BaseConfig(), **QUICK_OVERRIDES) if args.quick else BaseConfig()
     krylov_options = {
-        "parameter_samples": 2 if args.quick else PARAMETER_SAMPLES,
-        "frequency_samples": 4 if args.quick else FREQUENCY_SAMPLES,
-        "residual_tolerance": 1.0e-2 if args.quick else RESIDUAL_TOLERANCE,
-        "seed_directions": SEED_DIRECTIONS,
-        "block_size": 24 if args.quick else BLOCK_SIZE,
-        "max_order": 384 if args.quick else MAX_ORDER,
-        "max_refinements": 16 if args.quick else MAX_REFINEMENTS,
+        "parameter_samples": PARAMETER_SAMPLES,
+        "frequency_samples": FREQUENCY_SAMPLES,
+        "residual_tolerance": RESIDUAL_TOLERANCE,
+        "max_order": MAX_ORDER,
     }
 
     print("=" * 96)
     print("Transient BCI-ROM extraction - tangential rational Krylov")
     print("=" * 96)
     print(
-        f"Grid target: max XY cell={cfg.max_xy_cell_mm:g} mm, vertical cells={cfg.nz}"
+        f"Grid target: max XY cell={cfg.max_xy_cell_mm:g} mm, "
+        f"vertical cells={cfg.nz}"
     )
 
     report = run_experiment(cfg, BOUNDARIES, args.strict, krylov_options)
     report["mode"] = "quick" if args.quick else "strict"
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(
-        json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8"
+        json.dumps(report, indent=2, default=str) + "\n",
+        encoding="utf-8",
     )
     print(f"Report: {REPORT}")
     return 0 if report["passed"] else 3

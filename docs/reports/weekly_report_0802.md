@@ -4,6 +4,10 @@
 
 ### 概述
 
+主要方法论来自：
+
+> P. Li et al., “Modeling Interconnect Variability Using Efficient Parametric Model Order Reduction,” DATE 2005, pp. 958–963.
+
 离散后的宏模型满足
 
 $$C\dot T+K(h)T=f(h),$$
@@ -31,7 +35,7 @@ $$T_i
 =  
 -A_{ii}(s,h)^{-1}A_{ip}(s,h)T_p.$$
 
-将这个完整端口响应矩阵记为
+我们试图用一个低阶的算子来逼近：
 
 $$X(s,h)  
 =  
@@ -40,7 +44,7 @@ $$X(s,h)
 
 ### 参数—时间尺度训练域
 
-脚本在两个维度上建立训练点。
+在两个维度上建立训练点。
 
 #### 对流参数点
 
@@ -52,7 +56,7 @@ $$h_j\in[h_{\min},h_{\max}],$$
 
 #### 热时间尺度点
 
-脚本使用实数正移位，而不是复频率 $j\omega$。训练点在：
+脚本使用实数正移位，训练点在：
 
 $$s_0 = 0, s_{min}=\frac{1}{duration}, s_{max}=\frac{2}{\Delta t},$$
 中间按几何尺度插采样点。
@@ -70,7 +74,7 @@ $$X(s, h)=-A^{-1}B.$$
 
 它的每一列表示一个接口端口施加单位温度时，宏模型内部的响应。这一步与单端口逐次求解相比更高效，因为同一训练点上的所有右端项共享一次稀疏分解。
 
-*注意：如果忽略 h 只看 s，这里实际上的操作高度类似于 FANTASTIC 里用的零阶 MPMM（可匹配零阶和一阶导数）。需要更高阶频域精度的手段也呼之欲出：再考虑高阶展开$AX_0=-B, AX_1  =  -\left(C_{ii}X_0+C_{ip}\right), A X_k = -C_{ii}X_{k-1}, k\ge2.$，则是一种高阶 MPMM 的变体实现了。*
+*注意：如果忽略 h 只看 s，这里实际上的操作高度类似于 FANTASTIC 里用的零阶 MPMM（可匹配零阶和一阶导数）。需要更高阶频域精度的手段也呼之欲出：再考虑高阶展开$AX_0=-B, AX_1  =  -\left(C_{ii}X_0+C_{ip}\right), A X_k = -C_{ii}X_{k-1}, k\ge2.$，则是一种高阶 MPMM 的变体实现了。但是工程上，通常增加零阶点的收益高于添加高阶匹配。*
 
 ### 单点的训练
 
@@ -117,24 +121,24 @@ $$\eta(s,h) = \sqrt{\frac{\lambda_{\max}(E^\mathsf TAE)}{\lambda_{\max}(X^\maths
 
 1. 预先建立整个训练集；
 2. 在当前基底下评估所有训练点；
-3. 选择相对误差最大的训练点；
-4. 在该点选择最大误差切向方向；
+3. 贪婪：选择相对误差最大的训练点；
+4. 在该点选择切向方向；
 5. 增广基底；
-6. 重新扫描全部训练点，回到 1。
+6. 重新扫描全部训练点，回到 2，直到所有训练点上降阶误差合格。
 
 ### 实验结果
 
 ```bash
 # 小网格
-Grid 20x20x14; exact ports=144; macro states 2,860->324 (8.83x); Krylov residual=9.109e-03
-h=500 W/(m^2 K): reference range steady=340.899..412.738 K, transient final=304.171..393.886 K; rise error abs/rel steady=0.23706 K/0.210%, transient final=0.17551 K/0.187%; full/ROM=0.324/0.195s, speedup=1.66x PASS
-h=2500 W/(m^2 K): reference range steady=304.620..371.933 K, transient final=301.247..362.942 K; rise error abs/rel steady=0.02959 K/0.041%, transient final=0.02443 K/0.039%; full/ROM=0.311/0.217s, speedup=1.43x PASS
-h=8000 W/(m^2 K): reference range steady=300.488..363.092 K, transient final=300.397..355.791 K; rise error abs/rel steady=0.05896 K/0.093%, transient final=0.04752 K/0.085%; full/ROM=0.321/0.201s, speedup=1.60x PASS
+Grid 22x22x9; exact ports=144; macro states 1,904->345 (5.52x); Krylov residual=4.956e-03
+h=500 W/(m^2 K): reference range steady=340.919..412.429 K, transient final=304.144..393.627 K; rise error steady=0.25851 K/0.230%, transient final=0.20039 K/0.214%; full/ROM=0.150/0.200s, speedup=0.75x PASS
+h=2500 W/(m^2 K): reference range steady=304.614..371.659 K, transient final=301.238..362.706 K; rise error steady=0.00000 K/0.000%, transient final=0.00142 K/0.002%; full/ROM=0.145/0.195s, speedup=0.74x PASS
+h=8000 W/(m^2 K): reference range steady=300.478..362.848 K, transient final=300.389..355.578 K; rise error steady=0.07023 K/0.112%, transient final=0.05992 K/0.108%; full/ROM=0.141/0.197s, speedup=0.72x PASS
 # 大网格
-Grid 36x36x28; exact ports=400; macro states 16,968->869 (19.53x); Krylov residual=1.961e-03
-h=500 W/(m^2 K): reference range steady=341.046..401.752 K, transient final=304.033..383.980 K; rise error abs/rel steady=0.06786 K/0.067%, transient final=0.05067 K/0.060%; full/ROM=16.764/3.571s, speedup=4.69x PASS
-h=2500 W/(m^2 K): reference range steady=304.668..361.038 K, transient final=301.208..353.106 K; rise error abs/rel steady=0.01511 K/0.025%, transient final=0.01477 K/0.028%; full/ROM=15.675/3.643s, speedup=4.30x PASS
-h=8000 W/(m^2 K): reference range steady=300.489..352.292 K, transient final=300.397..346.028 K; rise error abs/rel steady=0.03208 K/0.061%, transient final=0.02517 K/0.055%; full/ROM=15.227/3.437s, speedup=4.43x PASS
+Grid 42x42x17; exact ports=576; macro states 15,156->1,208 (12.55x); Krylov residual=4.983e-03
+h=500 W/(m^2 K): reference range steady=341.052..401.625 K, transient final=304.484..383.862 K; rise error steady=0.13628 K/0.134%, transient final=0.11002 K/0.131%; full/ROM=14.281/6.041s, speedup=2.36x PASS
+h=2500 W/(m^2 K): reference range steady=304.672..360.910 K, transient final=301.328..352.996 K; rise error steady=0.00000 K/0.000%, transient final=0.00100 K/0.002%; full/ROM=13.007/5.692s, speedup=2.28x PASS
+h=8000 W/(m^2 K): reference range steady=300.490..352.165 K, transient final=300.398..345.921 K; rise error steady=0.02833 K/0.054%, transient final=0.02438 K/0.053%; full/ROM=14.208/5.804s, speedup=2.45x PASS
 ```
 
 ### 优缺点
@@ -322,22 +326,22 @@ $$K_{r,0}=W ^\mathsf TK_0 W,
 ```bash
 # 预处理极快，几乎不用什么时间。
 # 较小网格
-Grid 20x20x14; exact ports=144; macro states 2,860->976 (2.93x)
-h=500 W/(m^2 K): reference range steady=340.899..412.738 K, transient final=304.171..393.886 K; rise error abs/rel steady=0.23230 K/0.206%, transient final=0.18219 K/0.194%; full/ROM=0.308/0.127s, speedup=2.43x PASS
-h=2500 W/(m^2 K): reference range steady=304.620..371.933 K, transient final=301.247..362.942 K; rise error abs/rel steady=0.20157 K/0.280%, transient final=0.16341 K/0.260%; full/ROM=0.296/0.125s, speedup=2.37x PASS
-h=8000 W/(m^2 K): reference range steady=300.488..363.092 K, transient final=300.397..355.791 K; rise error abs/rel steady=0.20638 K/0.327%, transient final=0.17263 K/0.309%; full/ROM=0.296/0.123s, speedup=2.41x PASS
+Grid 22x22x9; exact ports=144; macro states 1,904->1,204 (1.58x)
+h=500 W/(m^2 K): reference range steady=340.919..412.429 K, transient final=304.144..393.627 K; rise error steady=0.32329 K/0.288%, transient final=0.24827 K/0.265%; full/ROM=0.148/0.109s, speedup=1.36x PASS
+h=2500 W/(m^2 K): reference range steady=304.614..371.659 K, transient final=301.238..362.706 K; rise error steady=0.18850 K/0.263%, transient final=0.15324 K/0.244%; full/ROM=0.134/0.108s, speedup=1.25x PASS
+h=8000 W/(m^2 K): reference range steady=300.478..362.848 K, transient final=300.389..355.578 K; rise error steady=0.21182 K/0.337%, transient final=0.17715 K/0.319%; full/ROM=0.135/0.106s, speedup=1.28x PASS
 # 较大网格
-Grid 36x36x28; exact ports=400; macro states 16,968->3,296 (5.15x)
-h=500 W/(m^2 K): reference range steady=341.046..401.752 K, transient final=304.033..383.980 K; rise error abs/rel steady=0.27426 K/0.270%, transient final=0.21512 K/0.256%; full/ROM=15.295/2.755s, speedup=5.55x PASS
-h=2500 W/(m^2 K): reference range steady=304.668..361.038 K, transient final=301.208..353.106 K; rise error abs/rel steady=0.26725 K/0.438%, transient final=0.21730 K/0.409%; full/ROM=15.525/3.083s, speedup=5.04x PASS
-h=8000 W/(m^2 K): reference range steady=300.489..352.292 K, transient final=300.397..346.028 K; rise error abs/rel steady=0.22505 K/0.430%, transient final=0.18770 K/0.408%; full/ROM=16.378/2.867s, speedup=5.71x PASS
+Grid 42x42x17; exact ports=576; macro states 15,156->4,644 (3.26x)
+h=500 W/(m^2 K): reference range steady=341.052..401.625 K, transient final=304.484..383.862 K; rise error steady=0.28095 K/0.276%, transient final=0.22301 K/0.266%; full/ROM=12.741/2.162s, speedup=5.89x PASS
+h=2500 W/(m^2 K): reference range steady=304.672..360.910 K, transient final=301.328..352.996 K; rise error steady=0.26106 K/0.429%, transient final=0.21236 K/0.401%; full/ROM=12.933/2.277s, speedup=5.68x PASS
+h=8000 W/(m^2 K): reference range steady=300.490..352.165 K, transient final=300.398..345.921 K; rise error steady=0.23312 K/0.447%, transient final=0.19483 K/0.424%; full/ROM=13.023/2.275s, speedup=5.72x PASS
 ```
 
 ### 优劣
 
 优点：
 
-- 预处理极快，同时精度保留较好。
+- 预处理极快，对瞬态问题，单轮运行就有性能收益。
 - 对 Z 轴上传播特征压缩效果良好。
 - 得到的投影矩阵是分块对角的稀疏矩阵，投影后可以保证稀疏性，利于求解。
 - 可以通过添加每柱的模态数量来调节精度/效率平衡。
