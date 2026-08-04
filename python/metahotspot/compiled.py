@@ -34,7 +34,7 @@ class SolveOptions:
     nonlinear_absolute_tolerance: float = 1e-12
     integrator: str = "Bdf1"
     step_strategy: str = "Adaptive"
-    error_abs_tol: float = 1e-4
+    error_rel_tol: float = 1e-4
     error_safety: float = 0.9
     min_dt: float = 1e-12
     max_dt: float = 1.0
@@ -62,7 +62,7 @@ class SolveOptions:
         c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
         c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
         c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
-        c_opts.error_abs_tol = self.error_abs_tol
+        c_opts.error_rel_tol = self.error_rel_tol
         c_opts.error_safety = self.error_safety
         c_opts.min_dt = self.min_dt
         c_opts.max_dt = self.max_dt

@@ -118,7 +118,7 @@ typedef struct {
     double nonlinear_absolute_tolerance;
     int32_t integrator; // mhs_integrator_t
     int32_t step_strategy; // mhs_step_strategy_t
-    double error_abs_tol;
+    double error_rel_tol;
     double error_safety;
     double min_dt;
     double max_dt;

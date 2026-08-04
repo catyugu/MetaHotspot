@@ -28,7 +28,7 @@ namespace mhs::sim {
         enum class StepStrategy : int { Adaptive, Fixed };
         StepStrategy step_strategy = StepStrategy::Adaptive;
 
-        double error_abs_tol = 1e-4;
+        double error_rel_tol = 1e-4;
         double error_safety = 0.9;
         double min_dt = 1e-12;
         double max_dt = 1.0;

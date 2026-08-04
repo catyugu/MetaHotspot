@@ -132,7 +132,7 @@ class _SolveOptionsCStruct(ctypes.Structure):
         ("nonlinear_absolute_tolerance", ctypes.c_double),
         ("integrator", ctypes.c_int32),
         ("step_strategy", ctypes.c_int32),
-        ("error_abs_tol", ctypes.c_double),
+        ("error_rel_tol", ctypes.c_double),
         ("error_safety", ctypes.c_double),
         ("min_dt", ctypes.c_double),
         ("max_dt", ctypes.c_double),
