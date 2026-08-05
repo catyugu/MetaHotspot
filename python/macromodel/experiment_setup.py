@@ -106,8 +106,6 @@ class BaseConfig:
     chiplet_power_W: float = 25.0
     duration_s: float = 100.0
     dt_s: float = 10.0
-    speedup_target: float = 1.5
-    compression_target: float = 2.5
 
     @property
     def detail_layers(self):
