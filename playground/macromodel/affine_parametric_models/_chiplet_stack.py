@@ -1,9 +1,9 @@
 """Concrete affine parametric model: the chiplet+spreader+cold-plate stack.
 
 This module is *private* — it is reachable only through the factory under the
-registered name ``"chiplet_stack"``.  It adapts the geometry/material/source
-construction previously living in ``experiment_setup.py`` to the
-:class:`AffineParametricModel` interface.
+registered name ``"chiplet_stack"``.  It supplies the geometry hooks consumed by
+the shared :class:`AffineParametricModel` base (which carries the DtN/PortMap
+plumbing).
 
 Layout (z from 0 up): substrate (organic) / bump (underfill+Cu pillars) / die
 (silicon, chiplet heat sources) at the bottom (the *detail* domain), then TIM /
@@ -15,29 +15,16 @@ single parametric boundary group (uniform heat-exchange coefficient ``h``).
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import asdict, dataclass
 from functools import cached_property
 
 import numpy as np
-import scipy.sparse as sp
 
 import metahotspot
-from metahotspot.compiled import Operators, SolveOptions
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel import PortMap, PortPatch, solve as solve_macro
+from metahotspot.macromodel import PortPatch
 
-from affine_parametric_models._interfaces import (
-    AffineParametricModel,
-    AffineSolveResult,
-    BoundaryGroup,
-    StateLayout,
-)
-from utils import (
-    extract_boundary_groups,
-    normalized_operators,
-)
-
+from affine_parametric_models._interfaces import AffineParametricModel
 
 POWER_MAP = np.asarray(
     (
@@ -245,11 +232,7 @@ def add_square(model, block: int, size_mm: float) -> None:
 
 
 def _boundary_regions(cfg: ChipletStackConfig) -> dict[str, tuple]:
-    """Face regions (macro frame, z=0 at macro base) for the top boundary group.
-
-    The single chiplet-stack group covers the macro top face over the full
-    cold-plate lateral extent.
-    """
+    """Face regions (macro frame, z=0 at macro base) for the top boundary group."""
     half = cfg.cold_plate_size_mm / 2.0
     return {
         "top": ((Axis.Z, cfg.macro_height_mm, -half, half, -half, half),),
@@ -266,12 +249,8 @@ def build_geometry(
 ):
     """Assemble the chiplet stack (no boundary conditions unless requested).
 
-    Returns a model with its default Neumann BC set.  ``boundary_h`` (if given)
-    maps boundary-group name -> coefficient and applies the group's convection
-    via :func:`apply_boundary_convection` — the group region table
-    (:attr:`_chiplet_stack._boundary_regions`) is the model's parameterization,
-    so nothing here hard-codes a specific face.  Used only for the native full
-    reference.
+    ``boundary_h`` (if given) maps boundary-group name -> coefficient and
+    applies the group's convection via :func:`apply_boundary_convection`.
     """
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
@@ -380,35 +359,24 @@ def build_geometry(
     return model
 
 
-def port_patches(cfg: ChipletStackConfig, face: Face, z_m: float) -> list[PortPatch]:
+def _patches(
+    cfg: ChipletStackConfig, face: Face, z_m: float, indices=None
+) -> list[PortPatch]:
     vertices = cfg.axis_vertices_mm * 1.0e-3
+    if indices is None:
+        indices = range(vertices.size - 1)
     return [
         PortPatch(
             int(face),
             z_m,
             (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
         )
-        for ix in cfg.port_indices
-        for iy in cfg.port_indices
+        for ix in indices
+        for iy in indices
     ]
 
 
-def full_face_patches(cfg: ChipletStackConfig, face: Face, z_m: float) -> list[PortPatch]:
-    """One PortPatch per exposed FVM cell over the full lateral extent."""
-    vertices = cfg.axis_vertices_mm * 1.0e-3
-    return [
-        PortPatch(
-            int(face),
-            z_m,
-            (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
-        )
-        for ix in range(vertices.size - 1)
-        for iy in range(vertices.size - 1)
-    ]
-
-
-def patch_areas(cfg: ChipletStackConfig, patches: list[PortPatch]) -> np.ndarray:
-    """SI face area (m^2) of each patch, in patch order."""
+def _patch_areas(cfg: ChipletStackConfig, patches: list[PortPatch]) -> np.ndarray:
     areas = np.empty(len(patches), dtype=np.float64)
     for index, patch in enumerate(patches):
         a_min, a_max, b_min, b_max = patch.rectangle
@@ -420,268 +388,61 @@ class _ChipletStack(AffineParametricModel):
     """Private concrete implementation registered as ``"chiplet_stack"``."""
 
     def __init__(self, cfg: ChipletStackConfig):
-        self._cfg = cfg
-
-    # ------------------------------------------------------------- identity
+        self.config = cfg
 
     @property
     def name(self) -> str:
         return "chiplet_stack"
 
-    @property
-    def ambient_K(self) -> float:
-        return self._cfg.ambient_K
+    # ------------------------------------------------- geometry hooks
 
-    # --------------------------------------------------- DtN core extraction
-
-    @property
-    def port_count(self) -> int:
-        return self._cfg.ports
-
-    @cached_property
-    def _core(self) -> Operators:
-        macro = build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-        interface = port_patches(self._cfg, Face.ZM, 0.0)
-        pm_core = PortMap(macro, interface)
-        return normalized_operators(*pm_core.assemble())
-
-    def core_operators(self) -> Operators:
-        return self._core
-
-    def merged_operators(self, group_sizes) -> Operators:
-        macro = build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-        interface = port_patches(self._cfg, Face.ZM, 0.0)
-        boundary = full_face_patches(
-            self._cfg, Face.ZP, self._cfg.macro_height_mm * 1.0e-3
-        )
-        pm_merged = PortMap(macro, interface + boundary)
-        return normalized_operators(*pm_merged.assemble())
-
-    @cached_property
-    def _boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        interface = port_patches(self._cfg, Face.ZM, 0.0)
-        boundary = full_face_patches(
-            self._cfg, Face.ZP, self._cfg.macro_height_mm * 1.0e-3
-        )
-        merged = self.merged_operators([len(boundary)])
-        (cells, g), = extract_boundary_groups(
-            merged, len(interface), [len(boundary)]
-        )
-        areas = patch_areas(self._cfg, boundary)
-        return (
-            BoundaryGroup(
-                name="top",
-                cells=cells,
-                g=g,
-                areas=areas,
-                h_default=self._cfg.top_h,
-            ),
+    def build_geometry(self, study, *, detail, macro, boundary_h=None):
+        return build_geometry(
+            self.config, study, detail=detail, macro=macro, boundary_h=boundary_h
         )
 
-    def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        return self._boundary_groups
+    def interface_patches(self) -> list[PortPatch]:
+        return _patches(self.config, Face.ZM, 0.0, self.config.port_indices)
 
-    @property
-    def macro_cell_count(self) -> int:
-        return self._core.K.shape[0] - self.port_count
+    def boundary_patch_groups(self):
+        boundary = _patches(self.config, Face.ZP, self.config.macro_height_mm * 1.0e-3)
+        return [boundary], [_patch_areas(self.config, boundary)]
 
-    @property
-    def macro_nx(self) -> int:
-        return self._cfg.nx
+    def boundary_h(self, h_vec) -> dict[str, float]:
+        if len(h_vec) != 1:
+            raise ValueError("chiplet_stack has exactly one boundary group")
+        return {"top": float(h_vec[0])}
 
-    @property
-    def macro_ny(self) -> int:
-        return self._cfg.nx
+    def group_h_ranges(self):
+        return ((1.0, 1.0e5),)
 
-    @cached_property
-    def macro_grid(self) -> np.ndarray:
-        return self._macro.grid_to_cell.reshape(
-            self._macro.nx, self._macro.ny, self._macro.nz
+    def detail_interface_patches(self) -> list[PortPatch]:
+        return _patches(
+            self.config,
+            Face.ZP,
+            self.config.detail_height_mm * 1.0e-3,
+            self.config.port_indices,
         )
 
     @property
-    def dt(self) -> float:
-        return self._cfg.dt_s
+    def detail_nz(self) -> int:
+        return self.config.detail_nz
+
+    def monitor_cells(self) -> np.ndarray:
+        # Chiplet stack has no dedicated monitor semantic; the experiments
+        # score full-field accuracy, not per-monitor curves.
+        return np.arange(self.detail_cell_count, dtype=np.int64)
 
     @cached_property
     def port_lookup(self) -> dict[tuple[int, int], int]:
         return {
             (int(ix), int(iy)): port
             for port, (ix, iy) in enumerate(
-                (ix, iy) for ix in self._cfg.port_indices for iy in self._cfg.port_indices
+                (ix, iy)
+                for ix in self.config.port_indices
+                for iy in self.config.port_indices
             )
         }
-
-    # --------------------------------------- native reference + recovery
-
-    @cached_property
-    def _full_layout(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=True, macro=True
-        ).compile()
-
-    @cached_property
-    def _detail_steady(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=True, macro=False
-        ).compile()
-
-    @cached_property
-    def _detail_transient(self):
-        return build_geometry(
-            self._cfg, Study.TRANSIENT, detail=True, macro=False
-        ).compile()
-
-    @cached_property
-    def _macro(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-
-    def full_reference(self, h_vec) -> AffineSolveResult:
-        if len(h_vec) != 1:
-            raise ValueError("chiplet_stack has exactly one boundary group")
-        convection_h = float(h_vec[0])
-        started = time.perf_counter()
-        steady = build_geometry(
-            self._cfg,
-            Study.STEADY,
-            detail=True,
-            macro=True,
-            boundary_h={"top": convection_h},
-        ).compile()
-        transient = build_geometry(
-            self._cfg,
-            Study.TRANSIENT,
-            detail=True,
-            macro=True,
-            boundary_h={"top": convection_h},
-        ).compile()
-        compile_s = time.perf_counter() - started
-
-        from affine_parametric_models._interfaces import native_solve_timing
-
-        return native_solve_timing(steady, transient, self.solver_options, compile_s)
-
-    def state_layout(self, internal_count: int) -> StateLayout:
-        return StateLayout(
-            detail_count=self.detail_cell_count,
-            port_count=self.port_count,
-            internal_count=internal_count,
-        )
-
-    @cached_property
-    def _detail_ports(self) -> tuple[PortMap, PortMap]:
-        detail_patches = port_patches(
-            self._cfg, Face.ZP, self._cfg.detail_height_mm * 1.0e-3
-        )
-        return (
-            PortMap(self._detail_steady, detail_patches),
-            PortMap(self._detail_transient, detail_patches),
-        )
-
-    def solve_reduced(self, operators: Operators, state, transient: bool):
-        detail_ports_steady, detail_ports_transient = self._detail_ports
-        if transient:
-            started = time.perf_counter()
-            with solve_macro(
-                operators,
-                detail_ports_transient,
-                state,
-                self.solver_options(True),
-            ) as solution:
-                elapsed = time.perf_counter() - started
-                return solution.history_times, solution.state_history, elapsed
-        started = time.perf_counter()
-        with solve_macro(
-            operators,
-            detail_ports_steady,
-            state,
-            self.solver_options(False),
-        ) as solution:
-            elapsed = time.perf_counter() - started
-            return solution.state, elapsed
-
-    @cached_property
-    def _detail_to_full(self) -> np.ndarray:
-        from utils import coordinate_map, grid_cells
-
-        mapping = coordinate_map(
-            self._detail_steady, self._full_layout, 0, "detail/full"
-        )
-        if not np.array_equal(
-            mapping,
-            coordinate_map(self._detail_transient, self._full_layout, 0, "transient/full"),
-        ):
-            raise RuntimeError("steady and transient detail orderings differ")
-        return mapping
-
-    @cached_property
-    def _macro_to_full(self) -> np.ndarray:
-        from utils import coordinate_map
-
-        return coordinate_map(
-            self._macro, self._full_layout, self._cfg.detail_nz, "macro/full"
-        )
-
-    def detail_to_full(self) -> np.ndarray:
-        return self._detail_to_full
-
-    def macro_to_full(self) -> np.ndarray:
-        return self._macro_to_full
-
-    @property
-    def full_cell_count(self) -> int:
-        return self._full_layout.cell_count
-
-    @property
-    def detail_cell_count(self) -> int:
-        return self._detail_steady.cell_count
-
-    def recover_temperature(
-        self, states, *, basis, ports: int, ambient_K: float | None
-    ) -> np.ndarray:
-        states = np.atleast_2d(states)
-        temperature = np.empty((states.shape[0], self.full_cell_count))
-        temperature[:, self.detail_to_full()] = states[:, : self.detail_cell_count]
-        internal = (basis @ states[:, self.detail_cell_count + ports :].T).T
-        temperature[:, self.macro_to_full()] = (
-            internal if ambient_K is None else ambient_K + internal
-        )
-        return temperature
-
-    def monitor_cells(self) -> np.ndarray:
-        # Chiplet stack has no dedicated monitor semantic; default to the
-        # detail model's full cell range (the experiments that use this model
-        # score full-field accuracy, not per-monitor curves).
-        return np.arange(self.detail_cell_count, dtype=np.int64)
-
-    def monitor_full(self, detail_cells: np.ndarray) -> np.ndarray:
-        return self.detail_to_full()[np.asarray(detail_cells, dtype=np.int64)]
-
-    def report_dict(self) -> dict:
-        return self._cfg.report_dict()
-
-    def solver_options(self, transient: bool) -> SolveOptions:
-        dt = self._cfg.dt_s if transient else 1.0
-        return SolveOptions(
-            linear_solver="EigenSparseLU",
-            linear_tolerance=1.0e-12,
-            linear_max_iterations=5000,
-            nonlinear_max_iterations=30,
-            nonlinear_relative_tolerance=1.0e-11,
-            nonlinear_absolute_tolerance=1.0e-11,
-            integrator="Bdf1",
-            step_strategy="Fixed",
-            error_rel_tol=1.0e-3,
-            min_dt=dt,
-            max_dt=dt,
-            fixed_dt=dt,
-        )
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

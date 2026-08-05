@@ -1,9 +1,8 @@
 """Concrete affine parametric model: Flotherm-flavoured package (die + substrate + cap).
 
 This module is *private* — reachable only through the factory under the
-registered name ``"bci_pkg"``.  It adapts the geometry previously inlined in
-``bci_fantastic_reproduction.py`` to the :class:`AffineParametricModel`
-interface.
+registered name ``"bci_pkg"``.  It supplies the geometry hooks consumed by the
+shared :class:`AffineParametricModel` base.
 
 Layout (z from 0 up): die (silicon, detail, two heat zones) at the bottom,
 then substrate (organic) + cap (silicon) on top (the *macro* domain).  The
@@ -16,29 +15,16 @@ into groups, one scalar ``p_k`` per group).
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import dataclass
 from functools import cached_property
 
 import numpy as np
-import scipy.sparse as sp
 
 import metahotspot
-from metahotspot.compiled import Operators, SolveOptions
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel import PortMap, PortPatch, solve as solve_macro
+from metahotspot.macromodel import PortPatch
 
-from affine_parametric_models._interfaces import (
-    AffineParametricModel,
-    AffineSolveResult,
-    BoundaryGroup,
-    StateLayout,
-)
-from utils import (
-    extract_boundary_groups,
-    normalized_operators,
-)
-
+from affine_parametric_models._interfaces import AffineParametricModel
 
 MATERIALS = (
     ("organic", ".65", ".65", ".55", "1900", "1100"),
@@ -138,6 +124,25 @@ def add_square(model, block: int, size_mm: float) -> None:
     )
 
 
+def _boundary_regions(cfg: BciPkgConfig) -> dict[str, tuple]:
+    """Face regions (macro frame, z=0 at macro base) for the {top, side} groups."""
+    half = cfg.size_mm / 2.0
+    macro_h = cfg.macro_height_mm
+    side = [
+        (axis, coord, -half, half, 0.0, macro_h)
+        for axis, coord in (
+            (Axis.X, -half),
+            (Axis.X, half),
+            (Axis.Y, -half),
+            (Axis.Y, half),
+        )
+    ]
+    return {
+        "top": ((Axis.Z, macro_h, -half, half, -half, half),),
+        "side": tuple(side),
+    }
+
+
 def build_geometry(
     cfg: BciPkgConfig,
     study: Study,
@@ -149,10 +154,7 @@ def build_geometry(
     """Assemble geometry.  Layers bottom-up: die (detail), then substrate+cap (macro).
 
     ``boundary_h`` (if given) maps boundary-group name -> coefficient and
-    applies the group's convection via :func:`apply_boundary_convection` — the
-    group region table (:func:`_boundary_regions`) is the model's
-    parameterization, so nothing here special-cases a face.  Used only for the
-    native full reference.
+    applies the group's convection via :func:`apply_boundary_convection`.
     """
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
@@ -223,47 +225,17 @@ def build_geometry(
     return model
 
 
-def _boundary_regions(cfg: BciPkgConfig) -> dict[str, tuple]:
-    """Face regions (macro frame, z=0 at macro base) for the {top, side} groups.
-
-    Top = cap top face (macro z = macro_height_mm) over the full extent.
-    Side = the four side walls over the full macro height.
-    """
-    half = cfg.size_mm / 2.0
-    macro_h = cfg.macro_height_mm
-    z0, z1 = 0.0, macro_h
-    side = []
-    for axis, coord in (
-        (Axis.X, -half),
-        (Axis.X, half),
-        (Axis.Y, -half),
-        (Axis.Y, half),
-    ):
-        side.append((axis, coord, -half, half, z0, z1))
-    return {
-        "top": ((Axis.Z, macro_h, -half, half, -half, half),),
-        "side": tuple(side),
-    }
-
-
-def macro_interface_patches(cfg: BciPkgConfig) -> list[PortPatch]:
-    """Interface ports on the macro block bottom (= die top, macro z=0)."""
+def _full_face_patches(cfg: BciPkgConfig, face: Face, z_m: float) -> list[PortPatch]:
     verts = cfg.axis_vertices_mm * 1.0e-3
     return [
-        PortPatch(
-            int(Face.ZM), 0.0, (verts[ix], verts[ix + 1], verts[iy], verts[iy + 1])
-        )
+        PortPatch(int(face), z_m, (verts[ix], verts[ix + 1], verts[iy], verts[iy + 1]))
         for ix in range(verts.size - 1)
         for iy in range(verts.size - 1)
     ]
 
 
-def macro_boundary_groups(cfg: BciPkgConfig):
-    """Boundary port groups [top, side] with per-group patch areas.
-
-    Top = cap top face (macro z = macro_h), one patch per exposed cell.
-    Side = the four side walls over the full macro height, one patch per cell.
-    """
+def _boundary_patch_groups(cfg: BciPkgConfig):
+    """Boundary port groups [top, side] with per-group patch areas."""
     verts = cfg.axis_vertices_mm * 1.0e-3
     zv = z_vertices(cfg.macro_layers) * 1.0e-3
     top_z = zv[-1]
@@ -298,7 +270,7 @@ def macro_boundary_groups(cfg: BciPkgConfig):
     return [top, side], [top_areas, np.asarray(side_areas)]
 
 
-def detail_monitor_cells(cfg: BciPkgConfig, detail_compiled) -> np.ndarray:
+def _detail_monitor_cells(cfg: BciPkgConfig, detail_compiled) -> np.ndarray:
     """Die-top cell indices (in the detail model) above each heat zone centre."""
     grid = detail_compiled.grid_to_cell.reshape(
         detail_compiled.nx, detail_compiled.ny, detail_compiled.nz
@@ -319,282 +291,53 @@ class _BciPkg(AffineParametricModel):
     """Private concrete implementation registered as ``"bci_pkg"``."""
 
     def __init__(self, cfg: BciPkgConfig):
-        self._cfg = cfg
-
-    # ------------------------------------------------------------- identity
+        self.config = cfg
 
     @property
     def name(self) -> str:
         return "bci_pkg"
 
-    @property
-    def ambient_K(self) -> float:
-        return self._cfg.ambient_K
+    # ------------------------------------------------- geometry hooks
 
-    # --------------------------------------------------- DtN core extraction
-
-    @property
-    def port_count(self) -> int:
-        interface = macro_interface_patches(self._cfg)
-        return len(interface)
-
-    @cached_property
-    def _core(self) -> Operators:
-        macro = build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-        interface = macro_interface_patches(self._cfg)
-        pm_core = PortMap(macro, interface)
-        return normalized_operators(*pm_core.assemble())
-
-    def core_operators(self) -> Operators:
-        return self._core
-
-    def merged_operators(self, group_sizes) -> Operators:
-        macro = build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-        interface = macro_interface_patches(self._cfg)
-        groups, _areas = macro_boundary_groups(self._cfg)
-        all_boundary = [p for g in groups for p in g]
-        pm_merged = PortMap(macro, interface + all_boundary)
-        return normalized_operators(*pm_merged.assemble())
-
-    @cached_property
-    def _boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        interface = macro_interface_patches(self._cfg)
-        groups, group_areas = macro_boundary_groups(self._cfg)
-        group_sizes = [len(g) for g in groups]
-        merged = self.merged_operators(group_sizes)
-        extracted = extract_boundary_groups(merged, len(interface), group_sizes)
-        return (
-            BoundaryGroup(
-                name="top",
-                cells=extracted[0][0],
-                g=extracted[0][1],
-                areas=group_areas[0],
-                h_default=self._cfg.top_h,
-                h_range=self._cfg.h_ranges[0],
-            ),
-            BoundaryGroup(
-                name="side",
-                cells=extracted[1][0],
-                g=extracted[1][1],
-                areas=group_areas[1],
-                h_default=self._cfg.side_h,
-                h_range=self._cfg.h_ranges[1],
-            ),
+    def build_geometry(self, study, *, detail, macro, boundary_h=None):
+        return build_geometry(
+            self.config, study, detail=detail, macro=macro, boundary_h=boundary_h
         )
 
-    def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        return self._boundary_groups
+    def interface_patches(self) -> list[PortPatch]:
+        # Macro block bottom (= die top, macro z=0): full lateral extent.
+        return _full_face_patches(self.config, Face.ZM, 0.0)
+
+    def boundary_patch_groups(self):
+        return _boundary_patch_groups(self.config)
+
+    def boundary_h(self, h_vec) -> dict[str, float]:
+        if len(h_vec) != 2:
+            raise ValueError("bci_pkg has exactly two boundary groups")
+        return {"top": float(h_vec[0]), "side": float(h_vec[1])}
+
+    def group_h_ranges(self):
+        return self.config.h_ranges
+
+    def detail_interface_patches(self) -> list[PortPatch]:
+        # Interface on the detail model = die top, same lateral extent.
+        return _full_face_patches(self.config, Face.ZP, self.config.die_h_mm * 1e-3)
 
     @property
-    def macro_cell_count(self) -> int:
-        return self._core.K.shape[0] - self.port_count
+    def detail_nz(self) -> int:
+        return self.config.detail_nz
 
-    @property
-    def macro_nx(self) -> int:
-        return self._cfg.nx
-
-    @property
-    def macro_ny(self) -> int:
-        return self._cfg.nx
-
-    @cached_property
-    def macro_grid(self) -> np.ndarray:
-        return self._macro.grid_to_cell.reshape(
-            self._macro.nx, self._macro.ny, self._macro.nz
-        )
-
-    @property
-    def dt(self) -> float:
-        return self._cfg.dt_s
+    def monitor_cells(self) -> np.ndarray:
+        return _detail_monitor_cells(self.config, self._detail_steady)
 
     @cached_property
     def port_lookup(self) -> dict[tuple[int, int], int]:
         return {
             (int(ix), int(iy)): port
             for port, (ix, iy) in enumerate(
-                (ix, iy) for ix in range(self._cfg.nx) for iy in range(self._cfg.nx)
+                (ix, iy) for ix in range(self.config.nx) for iy in range(self.config.nx)
             )
         }
-
-    # --------------------------------------- native reference + recovery
-
-    @cached_property
-    def _full_layout(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=True, macro=True
-        ).compile()
-
-    @cached_property
-    def _detail_steady(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=True, macro=False
-        ).compile()
-
-    @cached_property
-    def _detail_transient(self):
-        return build_geometry(
-            self._cfg, Study.TRANSIENT, detail=True, macro=False
-        ).compile()
-
-    @cached_property
-    def _macro(self):
-        return build_geometry(
-            self._cfg, Study.STEADY, detail=False, macro=True
-        ).compile()
-
-    def full_reference(self, h_vec) -> AffineSolveResult:
-        if len(h_vec) != 2:
-            raise ValueError("bci_pkg has exactly two boundary groups")
-        h_top, h_side = float(h_vec[0]), float(h_vec[1])
-        boundary_h = {"top": h_top, "side": h_side}
-        started = time.perf_counter()
-        steady = build_geometry(
-            self._cfg,
-            Study.STEADY,
-            detail=True,
-            macro=True,
-            boundary_h=boundary_h,
-        ).compile()
-        transient = build_geometry(
-            self._cfg,
-            Study.TRANSIENT,
-            detail=True,
-            macro=True,
-            boundary_h=boundary_h,
-        ).compile()
-        compile_s = time.perf_counter() - started
-
-        from affine_parametric_models._interfaces import native_solve_timing
-
-        return native_solve_timing(steady, transient, self.solver_options, compile_s)
-
-    def state_layout(self, internal_count: int) -> StateLayout:
-        return StateLayout(
-            detail_count=self.detail_cell_count,
-            port_count=self.port_count,
-            internal_count=internal_count,
-        )
-
-    @cached_property
-    def _detail_ports(self) -> tuple[PortMap, PortMap]:
-        detail_interface = [
-            PortPatch(int(Face.ZP), self._cfg.die_h_mm * 1e-3, p.rectangle)
-            for p in macro_interface_patches(self._cfg)
-        ]
-        return (
-            PortMap(self._detail_steady, detail_interface),
-            PortMap(self._detail_transient, detail_interface),
-        )
-
-    def solve_reduced(self, operators: Operators, state, transient: bool):
-        detail_ports_steady, detail_ports_transient = self._detail_ports
-        if transient:
-            started = time.perf_counter()
-            with solve_macro(
-                operators,
-                detail_ports_transient,
-                state,
-                self.solver_options(True),
-            ) as solution:
-                elapsed = time.perf_counter() - started
-                return solution.history_times, solution.state_history, elapsed
-        started = time.perf_counter()
-        with solve_macro(
-            operators,
-            detail_ports_steady,
-            state,
-            self.solver_options(False),
-        ) as solution:
-            elapsed = time.perf_counter() - started
-            return solution.state, elapsed
-
-    @cached_property
-    def _detail_to_full(self) -> np.ndarray:
-        dg = self._detail_steady.grid_to_cell.reshape(
-            self._detail_steady.nx, self._detail_steady.ny, self._detail_steady.nz
-        )
-        fg = self._full_layout.grid_to_cell.reshape(
-            self._full_layout.nx, self._full_layout.ny, self._full_layout.nz
-        )
-        dz = self._cfg.detail_nz
-        valid = dg >= 0
-        assert np.array_equal(valid, fg[:, :, :dz] >= 0)
-        mapping = np.empty(self._detail_steady.cell_count, dtype=np.int64)
-        mapping[dg[valid]] = fg[:, :, :dz][valid]
-        assert np.unique(mapping).size == mapping.size
-        return mapping
-
-    @cached_property
-    def _macro_to_full(self) -> np.ndarray:
-        mg = self._macro.grid_to_cell.reshape(
-            self._macro.nx, self._macro.ny, self._macro.nz
-        )
-        fg = self._full_layout.grid_to_cell.reshape(
-            self._full_layout.nx, self._full_layout.ny, self._full_layout.nz
-        )
-        dz = self._cfg.detail_nz
-        valid = mg >= 0
-        assert np.array_equal(valid, fg[:, :, dz:] >= 0)
-        mapping = np.empty(self._macro.cell_count, dtype=np.int64)
-        mapping[mg[valid]] = fg[:, :, dz:][valid]
-        assert np.unique(mapping).size == mapping.size
-        return mapping
-
-    def detail_to_full(self) -> np.ndarray:
-        return self._detail_to_full
-
-    def macro_to_full(self) -> np.ndarray:
-        return self._macro_to_full
-
-    @property
-    def full_cell_count(self) -> int:
-        return self._full_layout.cell_count
-
-    @property
-    def detail_cell_count(self) -> int:
-        return self._detail_steady.cell_count
-
-    def recover_temperature(
-        self, states, *, basis, ports: int, ambient_K: float | None
-    ) -> np.ndarray:
-        states = np.atleast_2d(states)
-        temperature = np.empty((states.shape[0], self.full_cell_count))
-        temperature[:, self.detail_to_full()] = states[:, : self.detail_cell_count]
-        internal = (basis @ states[:, self.detail_cell_count + ports :].T).T
-        temperature[:, self.macro_to_full()] = (
-            internal if ambient_K is None else ambient_K + internal
-        )
-        return temperature
-
-    def monitor_cells(self) -> np.ndarray:
-        return detail_monitor_cells(self._cfg, self._detail_steady)
-
-    def monitor_full(self, detail_cells: np.ndarray) -> np.ndarray:
-        return self.detail_to_full()[np.asarray(detail_cells, dtype=np.int64)]
-
-    def report_dict(self) -> dict:
-        return self._cfg.report_dict()
-
-    def solver_options(self, transient: bool) -> SolveOptions:
-        dt = self._cfg.dt_s if transient else 1.0
-        return SolveOptions(
-            linear_solver="EigenSparseLU",
-            linear_tolerance=1.0e-12,
-            linear_max_iterations=5000,
-            nonlinear_max_iterations=30,
-            nonlinear_relative_tolerance=1.0e-11,
-            nonlinear_absolute_tolerance=1.0e-11,
-            integrator="Bdf1",
-            step_strategy="Fixed",
-            error_rel_tol=1.0e-3,
-            min_dt=dt,
-            max_dt=dt,
-            fixed_dt=dt,
-        )
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

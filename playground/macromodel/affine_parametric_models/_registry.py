@@ -4,7 +4,7 @@ The registry is the *only* way experiment code obtains a concrete
 :class:`AffineParametricModel`.  Concrete implementations are private modules
 inside this package; the factory returns instances typed as the abstract base,
 so no concrete class name leaks into experiment code.  This is the decoupling
-guarantee: an experiment asks ``create("chiplet_stack")`` (or ``"toy_1d"``) and
+guarantee: an experiment asks ``create("chiplet_stack")`` and
 works identically against any registered implementation.
 """
 

@@ -58,7 +58,6 @@ from affine_parametric_models import create  # noqa: E402
 from utils import (  # noqa: E402
     closure_diagonal_multi,
     eigenpairs_descending,
-    extract_boundary_groups,
     mpmm_elliptic_shift_count,
     mpmm_elliptic_shifts,
     orthonormalize_block,
@@ -246,10 +245,6 @@ def build_bci_basis(
 # -------------------------------------------------------------- validation ----
 
 
-def solve_rom(model, reduced, initial, transient):
-    return model.solve_reduced(reduced, initial, transient)
-
-
 # ------------------------------------------------------------- plots ----
 
 
@@ -331,7 +326,7 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
 # ------------------------------------------------------------- main ----
 
 
-def run(model, plot_dir: Path, strict: bool):
+def run(model, plot_dir: Path):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     ambient_K = model.ambient_K
 
@@ -385,11 +380,7 @@ def run(model, plot_dir: Path, strict: bool):
     mon_full = model.monitor_full(mon_detail)
 
     detail_count = model.detail_cell_count
-    layout = model.state_layout(n_modes)
-    initial = np.r_[
-        np.full(layout.detail_count + layout.port_count, ambient_K),
-        np.zeros(layout.internal_count),
-    ]
+    initial = model.initial_state(n_modes)
 
     # -- validation with independent holdout ----------------------------
     # Log-uniform grid over (h_top, h_side) in the admissible range: a dense
@@ -408,8 +399,8 @@ def run(model, plot_dir: Path, strict: bool):
         ref_curves = ref.history[:, mon_full]
 
         reduced = online_operators(h_vec)
-        rom_ss, _ = solve_rom(model, reduced, initial, False)
-        times, rom_states, _ = solve_rom(model, reduced, initial, True)
+        rom_ss, _ = model.solve_reduced(reduced, initial, False)
+        times, rom_states, _ = model.solve_reduced(reduced, initial, True)
         assert np.allclose(times, ref.times, atol=1e-9, rtol=0.0)
 
         rom_curves = rom_states[:, mon_detail]
@@ -445,7 +436,6 @@ def run(model, plot_dir: Path, strict: bool):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true")
-    parser.add_argument("--strict", action="store_true")
     parser.add_argument(
         "--model",
         default="bci_pkg",
@@ -460,7 +450,7 @@ def main(argv=None) -> int:
     )
     model = create(args.model, overrides=overrides)
     t0 = time.perf_counter()
-    run(model, OUT_DIR, strict=args.strict)
+    run(model, OUT_DIR)
     print(f"total {time.perf_counter() - t0:.1f}s")
     return 0
 

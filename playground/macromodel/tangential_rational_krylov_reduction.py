@@ -11,7 +11,7 @@ This script is *model-agnostic*: it obtains its model from the
 :mod:`affine_parametric_models` factory (``create``) and drives it through the
 abstract :class:`AffineParametricModel` contract.  It never names a concrete
 model or a config field, so it runs unchanged against any registered
-implementation — ``--model chiplet_stack`` (default) or ``--model toy_1d``.
+implementation — ``--model chiplet_stack`` (default).
 """
 
 from __future__ import annotations
@@ -279,7 +279,7 @@ def verify_ambient_balance(operators, ports, reduced_order, ambient_K, label):
         raise RuntimeError(f"{label} reduced operator violates ambient balance")
 
 
-def run_experiment(model, boundaries, strict, krylov_options):
+def run_experiment(model, boundaries):
     ambient_K = model.ambient_K
     offline_started = time.perf_counter()
 
@@ -290,7 +290,6 @@ def run_experiment(model, boundaries, strict, krylov_options):
     boundary_areas = groups[0].areas
 
     detail_count = model.detail_cell_count
-    extraction_s = 0.0
 
     basis, basis_summary = build_krylov_basis(
         core,
@@ -325,9 +324,9 @@ def run_experiment(model, boundaries, strict, krylov_options):
     full_macro_order = core.K.shape[0]
     reduced_macro_order = ports + basis.shape[1]
     compression = full_macro_order / reduced_macro_order
+    cfg = model.report_dict()
     print(
-        f"Grid {model.report_dict()['nx']}x{model.report_dict()['nx']}"
-        f"x{model.report_dict()['nz']}; exact ports={ports}; "
+        f"Grid {cfg['nx']}x{cfg['nx']}x{cfg['nz']}; exact ports={ports}; "
         f"macro states {full_macro_order:,}->{reduced_macro_order:,} "
         f"({compression:.2f}x); "
         f"Krylov residual={basis_summary['relative_response_error']:.3e}"
@@ -356,11 +355,7 @@ def run_experiment(model, boundaries, strict, krylov_options):
         )
 
     results = []
-    layout = model.state_layout(basis.shape[1])
-    initial = np.r_[
-        np.full(layout.detail_count + layout.port_count, ambient_K),
-        np.zeros(layout.internal_count),
-    ]
+    initial = model.initial_state(basis.shape[1])
     for convection_h in boundaries:
         reference = model.full_reference((convection_h,))
 
@@ -442,7 +437,6 @@ def run_experiment(model, boundaries, strict, krylov_options):
             "krylov": basis_summary,
         },
         "timing": {
-            "macro_extraction_s": extraction_s,
             "offline_s": offline_s,
         },
         "boundary_reuse": results,
@@ -464,7 +458,7 @@ def main(argv=None) -> int:
 
     model = create(args.model, overrides=QUICK_OVERRIDES if args.quick else None)
 
-    report = run_experiment(model, BOUNDARIES, args.strict, {})
+    report = run_experiment(model, BOUNDARIES)
     report["mode"] = "quick" if args.quick else "strict"
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(
