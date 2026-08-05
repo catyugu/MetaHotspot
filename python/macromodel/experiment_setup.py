@@ -412,6 +412,35 @@ def port_patches(cfg: BaseConfig, face: Face, z_m: float) -> list[PortPatch]:
     ]
 
 
+def full_face_patches(cfg: BaseConfig, face: Face, z_m: float) -> list[PortPatch]:
+    """One PortPatch per exposed FVM cell over the full lateral extent.
+
+    Unlike :func:`port_patches`, which restricts to the TIM/interface region,
+    this spans every cell of the compiled face so that a boundary-port closure
+    (``h*A`` added at each boundary port) reproduces the native convection
+    discretization of the same face exactly.
+    """
+    vertices = cfg.axis_vertices_mm * 1.0e-3
+    return [
+        PortPatch(
+            int(face),
+            z_m,
+            (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
+        )
+        for ix in range(vertices.size - 1)
+        for iy in range(vertices.size - 1)
+    ]
+
+
+def patch_areas(cfg: BaseConfig, patches: list[PortPatch]) -> np.ndarray:
+    """SI face area (m^2) of each patch, in patch order."""
+    areas = np.empty(len(patches), dtype=np.float64)
+    for index, patch in enumerate(patches):
+        a_min, a_max, b_min, b_max = patch.rectangle
+        areas[index] = (a_max - a_min) * (b_max - b_min)
+    return areas
+
+
 def normalized_operators(K, C, f) -> Operators:
     K = sp.csc_matrix(K)
     C = sp.csc_matrix(C)
