@@ -17,6 +17,13 @@ Contents
 * boundary-port machinery:  extract_boundary_groups, closure_diagonal,
                             closure_diagonal_multi, project_closure_group
 * Galerkin projection:      project_exact_ports
+* accuracy metrics:         temperature_error_metrics, accuracy_summary, format_accuracy
+* mesh helpers:             grid_cells, coordinate_map
+
+The accuracy metrics and mesh helpers were folded in from the former
+``experiment_setup.py`` when that module was absorbed here; everything remains
+model-agnostic (works on ``Compiled`` objects / plain arrays, never on a
+concrete model config).
 """
 
 from __future__ import annotations
@@ -285,3 +292,99 @@ def project_exact_ports(
         project(operators.C),
         np.r_[source[:ports], np.asarray(basis.T @ source[ports:]).ravel()],
     )
+
+
+# ---------------------------------------------------------------------------
+# accuracy metrics and mesh helpers  (folded in from experiment_setup.py)
+# ---------------------------------------------------------------------------
+
+MAX_RELATIVE_RISE_ERROR = 0.01
+
+
+def temperature_error_metrics(reference, approximation, ambient_K: float) -> dict:
+    reference = np.asarray(reference)
+    approximation = np.asarray(approximation)
+    absolute_error = float(np.max(np.abs(approximation - reference)))
+    reference_rise = float(np.max(np.abs(reference - ambient_K)))
+    relative_error = (
+        absolute_error / reference_rise
+        if reference_rise
+        else float(absolute_error != 0.0)
+    )
+    return {
+        "reference_temperature_range_K": [
+            float(reference.min()),
+            float(reference.max()),
+        ],
+        "max_absolute_rise_error_K": absolute_error,
+        "max_relative_rise_error": relative_error,
+        "passed": relative_error < MAX_RELATIVE_RISE_ERROR,
+    }
+
+
+def accuracy_summary(
+    reference_steady,
+    reduced_steady,
+    reference_history,
+    reduced_history,
+    ambient_K: float,
+) -> dict:
+    steady = temperature_error_metrics(reference_steady, reduced_steady, ambient_K)
+    transient = temperature_error_metrics(
+        reference_history[-1], reduced_history[-1], ambient_K
+    )
+    return {
+        "steady_reference_temperature_range_K": steady["reference_temperature_range_K"],
+        "transient_final_reference_temperature_range_K": transient[
+            "reference_temperature_range_K"
+        ],
+        "steady_max_absolute_rise_error_K": steady["max_absolute_rise_error_K"],
+        "steady_max_relative_rise_error": steady["max_relative_rise_error"],
+        "transient_final_max_absolute_rise_error_K": transient[
+            "max_absolute_rise_error_K"
+        ],
+        "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
+        "accuracy_passed": steady["passed"] and transient["passed"],
+    }
+
+
+def format_accuracy(summary: dict) -> str:
+    steady_range = summary["steady_reference_temperature_range_K"]
+    transient_range = summary["transient_final_reference_temperature_range_K"]
+    return (
+        f"reference range steady={steady_range[0]:.3f}..{steady_range[1]:.3f} K, "
+        f"transient final={transient_range[0]:.3f}..{transient_range[1]:.3f} K; "
+        f"rise error steady={summary['steady_max_absolute_rise_error_K']:.5f} K/"
+        f"{summary['steady_max_relative_rise_error']:.3%}, transient final="
+        f"{summary['transient_final_max_absolute_rise_error_K']:.5f} K/"
+        f"{summary['transient_final_max_relative_rise_error']:.3%}"
+    )
+
+
+def grid_cells(compiled) -> np.ndarray:
+    return compiled.grid_to_cell.reshape(compiled.nx, compiled.ny, compiled.nz)
+
+
+def coordinate_map(source, target, z_offset: int, label: str) -> np.ndarray:
+    if source.nx != target.nx or source.ny != target.ny:
+        raise RuntimeError(f"{label}: lateral meshes differ")
+    source_grid = grid_cells(source)
+    target_grid = grid_cells(target)[:, :, z_offset : z_offset + source.nz]
+    if target_grid.shape != source_grid.shape:
+        raise RuntimeError(f"{label}: z range differs")
+    valid = source_grid >= 0
+    if not np.array_equal(valid, target_grid >= 0):
+        raise RuntimeError(f"{label}: geometry occupancy differs")
+
+    source_ids = source_grid[valid]
+    target_ids = target_grid[valid]
+    if (
+        source_ids.size != source.cell_count
+        or np.unique(source_ids).size != source.cell_count
+    ):
+        raise RuntimeError(f"{label}: source cell IDs are incomplete")
+    mapping = np.empty(source.cell_count, dtype=np.int64)
+    mapping[source_ids] = target_ids
+    if np.unique(mapping).size != mapping.size:
+        raise RuntimeError(f"{label}: target mapping is not one-to-one")
+    return mapping

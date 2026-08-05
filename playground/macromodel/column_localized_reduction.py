@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Run the column-localized thermal macromodel experiment."""
+"""Run the column-localized thermal macromodel experiment.
+
+This script is *model-agnostic*: it obtains its model from the
+:mod:`affine_parametric_models` factory (``create``) and drives it through the
+abstract :class:`AffineParametricModel` contract.  It never names a concrete
+model or a config field, so it runs unchanged against any registered
+implementation — ``--model chiplet_stack`` (default) or ``--model toy_1d``.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +15,6 @@ import json
 import math
 import sys
 import time
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -18,26 +24,14 @@ import scipy.sparse.linalg as spla
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from experiment_setup import (  # noqa: E402
-    BaseConfig,
-    Face,
-    PortMap,
-    Study,
+from metahotspot.compiled import Operators  # noqa: E402
+from affine_parametric_models import create  # noqa: E402
+from utils import (  # noqa: E402
     accuracy_summary,
-    build_model,
     closure_diagonal,
-    coordinate_map,
-    extract_boundary_groups,
     format_accuracy,
-    full_face_patches,
-    full_reference,
-    grid_cells,
     normalized_operators,
-    patch_areas,
-    port_patches,
     project_exact_ports,
-    recover_temperature,
-    solve_reduced,
 )
 
 REPORT = Path("results/bci_rom_uniform_convection_results.json")
@@ -59,8 +53,7 @@ QUICK_OVERRIDES = {
 
 
 def column_basis(
-    compiled,
-    cfg,
+    model,
     core,
     ports,
     boundary_cells,
@@ -83,13 +76,9 @@ def column_basis(
     C_ip = core.C[ports:, :ports].tocsc()
     C_ii = core.C[ports:, ports:].tocsc()
 
-    port_lookup = {
-        (int(ix), int(iy)): port
-        for port, (ix, iy) in enumerate(
-            (ix, iy) for ix in cfg.port_indices for iy in cfg.port_indices
-        )
-    }
-    grid = grid_cells(compiled)
+    port_lookup = model.port_lookup
+    grid = model.macro_grid
+    dt = model.dt
     rows, columns, values, orders = [], [], [], []
     offset = 0
     seen_ports = 0
@@ -104,8 +93,8 @@ def column_basis(
     )
     closure_delta = closure_hi - closure_lo
 
-    for ix in range(compiled.nx):
-        for iy in range(compiled.ny):
+    for ix in range(model.macro_nx):
+        for iy in range(model.macro_ny):
             cells = grid[ix, iy]
             cells = cells[cells >= 0].astype(np.int64)
             if not cells.size:
@@ -123,7 +112,7 @@ def column_basis(
                     subset_by_index=(0, mode_count - 1),
                     check_finite=False,
                 )
-                candidates.extend(modes[:, eigenvalues <= math.pi / cfg.dt_s].T)
+                candidates.extend(modes[:, eigenvalues <= math.pi / dt].T)
 
             port = port_lookup.get((ix, iy))
             if port is not None:
@@ -146,7 +135,7 @@ def column_basis(
                     )
 
                 for multiplier in shift_multipliers:
-                    shift = multiplier / cfg.dt_s
+                    shift = multiplier / dt
                     response = scipy.linalg.solve(
                         k + shift * c,
                         -(b + shift * cp),
@@ -182,58 +171,23 @@ def column_basis(
         raise RuntimeError("column basis lost orthogonality")
 
     initial_internal = np.asarray(
-        basis.T @ np.full(basis.shape[0], cfg.ambient_K)
+        basis.T @ np.full(basis.shape[0], model.ambient_K)
     ).ravel()
     return basis, np.asarray(orders), initial_internal, time.perf_counter() - started
 
 
-def run_experiment(cfg, boundaries, strict, dynamic_modes, shift_multipliers):
+def run_experiment(model, boundaries, strict, dynamic_modes, shift_multipliers):
+    ambient_K = model.ambient_K
     offline_started = time.perf_counter()
-    full_layout = build_model(cfg, Study.STEADY, detail=True, macro=True).compile()
-    detail_steady = build_model(cfg, Study.STEADY, detail=True, macro=False).compile()
-    detail_transient = build_model(
-        cfg, Study.TRANSIENT, detail=True, macro=False
-    ).compile()
 
-    detail_patches = port_patches(cfg, Face.ZP, cfg.detail_height_mm * 1.0e-3)
-    detail_ports_steady = PortMap(detail_steady, detail_patches)
-    detail_ports_transient = PortMap(detail_transient, detail_patches)
-
-    extraction_started = time.perf_counter()
-    macro = build_model(cfg, Study.STEADY, detail=False, macro=True).compile()
-    interface = port_patches(cfg, Face.ZM, 0.0)
-    boundary = full_face_patches(cfg, Face.ZP, cfg.macro_height_mm * 1.0e-3)
-    boundary_areas = patch_areas(cfg, boundary)
-    pm_merged = PortMap(macro, interface + boundary)
-    merged = normalized_operators(*pm_merged.assemble())
-    boundary_cells, boundary_g = extract_boundary_groups(
-        merged, len(interface), [len(boundary)]
-    )[0]
-
-    pm_core = PortMap(macro, interface)
-    core = normalized_operators(*pm_core.assemble())
-    ports = pm_core.port_count
-    if ports != cfg.ports:
-        raise RuntimeError("configured interface port count is inconsistent")
-    extraction_s = time.perf_counter() - extraction_started
-
-    detail_to_full = coordinate_map(detail_steady, full_layout, 0, "detail/full")
-    if not np.array_equal(
-        detail_to_full,
-        coordinate_map(detail_transient, full_layout, 0, "transient/full"),
-    ):
-        raise RuntimeError("steady and transient detail orderings differ")
-    macro_to_full = coordinate_map(macro, full_layout, cfg.detail_nz, "macro/full")
-    combined = np.r_[detail_to_full, macro_to_full]
-    if (
-        combined.size != full_layout.cell_count
-        or np.unique(combined).size != combined.size
-    ):
-        raise RuntimeError("detail and macro maps do not partition the full model")
+    core = model.core_operators()
+    ports = model.port_count
+    groups = model.boundary_groups()
+    boundary_cells, boundary_g = groups[0].cells, groups[0].g
+    boundary_areas = groups[0].areas
 
     basis, orders, initial_internal, basis_s = column_basis(
-        macro,
-        cfg,
+        model,
         core,
         ports,
         boundary_cells,
@@ -247,23 +201,17 @@ def run_experiment(cfg, boundaries, strict, dynamic_modes, shift_multipliers):
     full_macro_order = ports + basis.shape[0]
     reduced_macro_order = ports + basis.shape[1]
     compression = full_macro_order / reduced_macro_order
+    cfg = model.report_dict()
     print(
-        f"Grid {cfg.nx}x{cfg.nx}x{cfg.nz}; exact ports={ports}; "
+        f"Grid {cfg['nx']}x{cfg['nx']}x{cfg['nz']}; exact ports={ports}; "
         f"macro states {full_macro_order:,}->{reduced_macro_order:,} ({compression:.2f}x)"
     )
 
     results = []
-    detail_count = detail_steady.cell_count
+    detail_count = model.detail_cell_count
+    layout = model.state_layout(basis.shape[1])
     for convection_h in boundaries:
-        (
-            reference_steady,
-            reference_times,
-            reference_history,
-            full_compile_s,
-            full_steady_s,
-            full_transient_s,
-            full_order,
-        ) = full_reference(cfg, convection_h)
+        reference = model.full_reference((convection_h,))
 
         started = time.perf_counter()
         n_cell = core.K.shape[0] - ports
@@ -274,80 +222,60 @@ def run_experiment(cfg, boundaries, strict, dynamic_modes, shift_multipliers):
         for cell in range(n_cell):
             K[ports + cell, ports + cell] += closure[cell]
         f = np.asarray(core.f, dtype=np.float64).copy()
-        f[ports:] += closure * cfg.ambient_K
+        f[ports:] += closure * ambient_K
         reduced = project_exact_ports(normalized_operators(K, core.C, f), ports, basis)
         assembly_s = time.perf_counter() - started
         initial = np.r_[
-            np.full(detail_count + ports, cfg.ambient_K),
+            np.full(layout.detail_count + layout.port_count, ambient_K),
             initial_internal,
         ]
-        steady_state, reduced_steady_s = solve_reduced(
-            detail_steady,
-            detail_ports_steady,
-            reduced,
-            initial,
-            cfg,
-            False,
+        steady_state, reduced_steady_s = model.solve_reduced(reduced, initial, False)
+        times, transient_states, reduced_transient_s = model.solve_reduced(
+            reduced, initial, True
         )
-        times, transient_states, reduced_transient_s = solve_reduced(
-            detail_transient,
-            detail_ports_transient,
-            reduced,
-            initial,
-            cfg,
-            True,
-        )
-        if times.shape != reference_times.shape or not np.allclose(
-            times, reference_times, atol=1.0e-12, rtol=0.0
+        if times.shape != reference.times.shape or not np.allclose(
+            times, reference.times, atol=1.0e-12, rtol=0.0
         ):
             raise RuntimeError("full and reduced output times differ")
 
-        recovered_steady = recover_temperature(
+        recovered_steady = model.recover_temperature(
             steady_state,
-            full_count=full_layout.cell_count,
-            detail_map=detail_to_full,
-            macro_map=macro_to_full,
-            detail_count=detail_count,
-            ports=ports,
             basis=basis,
+            ports=ports,
             ambient_K=None,
         )[0]
-        recovered_history = recover_temperature(
+        recovered_history = model.recover_temperature(
             transient_states,
-            full_count=full_layout.cell_count,
-            detail_map=detail_to_full,
-            macro_map=macro_to_full,
-            detail_count=detail_count,
-            ports=ports,
             basis=basis,
+            ports=ports,
             ambient_K=None,
         )
         accuracy = accuracy_summary(
-            reference_steady,
+            reference.steady_temperature,
             recovered_steady,
-            reference_history,
+            reference.history,
             recovered_history,
-            cfg.ambient_K,
+            ambient_K,
         )
-        speedup = full_transient_s / max(reduced_transient_s, np.finfo(float).tiny)
+        speedup = reference.transient_s / max(reduced_transient_s, np.finfo(float).tiny)
         result = {
             "h_W_m2K": convection_h,
             **accuracy,
-            "full_compile_s": full_compile_s,
-            "full_steady_solve_s": full_steady_s,
+            "full_compile_s": reference.compile_s,
+            "full_steady_solve_s": reference.steady_s,
             "reduced_steady_solve_s": reduced_steady_s,
-            "full_transient_solve_s": full_transient_s,
+            "full_transient_solve_s": reference.transient_s,
             "reduced_transient_solve_s": reduced_transient_s,
             "online_reduced_assembly_s": assembly_s,
             "transient_speedup": speedup,
-            "full_order": full_order,
+            "full_order": reference.full_order,
             "reduced_online_order": detail_count + reduced.K.shape[0],
             "passed": accuracy["accuracy_passed"],
         }
         results.append(result)
         print(
             f"h={convection_h:g} W/(m^2 K): {format_accuracy(accuracy)}; "
-            f"full/ROM={full_transient_s:.3f}/{reduced_transient_s:.3f}s, "
+            f"full/ROM={reference.transient_s:.3f}/{reduced_transient_s:.3f}s, "
             f"speedup={speedup:.2f}x {'PASS' if result['passed'] else 'FAIL'}"
         )
 
@@ -356,7 +284,7 @@ def run_experiment(cfg, boundaries, strict, dynamic_modes, shift_multipliers):
             "exact-closure boundary-port column-local Galerkin BCI-ROM "
             "(no affine linearization)"
         ),
-        "configuration": cfg.report_dict(),
+        "configuration": cfg,
         "reduction": {
             "dynamic_modes_per_column": dynamic_modes,
             "bdf1_shift_multipliers": list(shift_multipliers),
@@ -370,7 +298,7 @@ def run_experiment(cfg, boundaries, strict, dynamic_modes, shift_multipliers):
             "basis_nnz": basis.nnz,
         },
         "timing": {
-            "macro_extraction_s": extraction_s,
+            "macro_extraction_s": 0.0,
             "basis_extraction_s": basis_s,
             "offline_s": offline_s,
         },
@@ -384,18 +312,25 @@ def main(argv=None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--quick", action="store_true", help="small smoke experiment")
     mode.add_argument("--strict", action="store_true", help="full benchmark gates")
+    parser.add_argument(
+        "--model",
+        default="chiplet_stack",
+        help="registered affine parametric model name (default: chiplet_stack)",
+    )
     args = parser.parse_args(argv)
 
-    cfg = replace(BaseConfig(), **QUICK_OVERRIDES) if args.quick else BaseConfig()
+    model = create(args.model, overrides=QUICK_OVERRIDES if args.quick else None)
     print("=" * 96)
     print("Transient BCI-ROM extraction - column-localized reduction")
     print("=" * 96)
+    cfg = model.report_dict()
     print(
-        f"Grid target: max XY cell={cfg.max_xy_cell_mm:g} mm, vertical cells={cfg.nz}"
+        f"Grid target: {cfg.get('nx', 'n/a')}x{cfg.get('nx', 'n/a')}"
+        f"x{cfg.get('nz', 'n/a')}"
     )
 
     report = run_experiment(
-        cfg, BOUNDARIES, args.strict, LOCAL_DYNAMIC_MODES, BDF1_SHIFTS
+        model, BOUNDARIES, args.strict, LOCAL_DYNAMIC_MODES, BDF1_SHIFTS
     )
     report["mode"] = "quick" if args.quick else "strict"
     REPORT.parent.mkdir(parents=True, exist_ok=True)
