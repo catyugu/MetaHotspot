@@ -30,7 +30,11 @@ MATERIALS = (
     ("organic", ".65", ".65", ".55", "1900", "1100"),
     ("silicon", "130", "130", "115", "2330", "700"),
 )
-DEFAULT_H_RANGE = (1.0, 1.0e6)  # Flotherm default 1..10,000 W/m2K
+DEFAULT_H_RANGE = (1.0, 1.0e6)
+
+QUICK_OVERRIDES = {
+    "max_xy_cell_mm": 2.0,
+}
 
 
 @dataclass(frozen=True)
@@ -49,8 +53,6 @@ class BciPkgConfig:
     duration_s: float = 600.0
     dt_s: float = 30.0
     h_ranges: tuple = (DEFAULT_H_RANGE, DEFAULT_H_RANGE)  # [top, side]
-    top_h: float = 10000.0
-    side_h: float = 10000.0
 
     @property
     def macro_layers(self):
@@ -318,6 +320,20 @@ class _BciPkg(AffineParametricModel):
 
     def group_h_ranges(self):
         return self.config.h_ranges
+
+    def parameter_points(self, count: int = 5) -> list[tuple[float, ...]]:
+        """Product grid over {top, side}: ``count`` points per axis.
+
+        The two boundary groups (top / side) are independent, so the validation
+        points span their full ``(h_top, h_side)`` space — which is exactly the
+        grid the BCI-FANTASTIC report's ``error_vs_h`` scatter needs.
+        """
+        top_range, side_range = self.config.h_ranges
+        top_axis = np.geomspace(top_range[0], top_range[1], count)
+        side_axis = np.geomspace(side_range[0], side_range[1], count)
+        return [
+            (float(h_top), float(h_side)) for h_top in top_axis for h_side in side_axis
+        ]
 
     def detail_interface_patches(self) -> list[PortPatch]:
         # Interface on the detail model = die top, same lateral extent.

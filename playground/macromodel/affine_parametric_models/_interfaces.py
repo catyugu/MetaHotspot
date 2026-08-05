@@ -31,7 +31,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Sequence
 
 import numpy as np
 
@@ -93,6 +92,9 @@ class AffineParametricModel:
     ``detail_interface_patches``, ``detail_nz``, ``monitor_cells``,
     ``port_lookup``.  Everything else — DtN assembly, boundary-group recovery,
     native reference, reduced solve, temperature recovery — is shared here.
+    ``parameter_points`` has a default; override it when a model wants its own
+    parameter-space sampling (e.g. a product grid over several boundary
+    groups).
     """
 
     # ------------------------------------------------------------------ config
@@ -140,6 +142,25 @@ class AffineParametricModel:
     def group_h_ranges(self) -> tuple[tuple[float, float], ...]:
         """Admissible coefficient range per boundary group, in order."""
         raise NotImplementedError
+
+    def parameter_points(self, count: int = 5) -> list[tuple[float, ...]]:
+        """Parameter-space points (one h-vector per boundary group) to validate.
+
+        Default: sweep the first boundary group's admissible range at ``count``
+        geometrically spaced points and anchor every remaining group at the
+        geometric mean of its own range — for a single-group model this is
+        exactly the scalar h sweep.  A model overrides this to describe its own
+        parameterization (e.g. the product grid over two independent groups),
+        so an experiment never needs to know how many affine parameters a model
+        has.
+        """
+        ranges = self.group_h_ranges()
+        if not ranges:
+            return []
+        first = ranges[0]
+        axis = np.geomspace(first[0], first[1], count)
+        anchors = tuple(float(np.sqrt(lo * hi)) for lo, hi in ranges[1:])
+        return [tuple((float(h), *anchors)) for h in axis]
 
     def detail_interface_patches(self) -> list[PortPatch]:
         """Interface patches expressed on the detail model (die top)."""

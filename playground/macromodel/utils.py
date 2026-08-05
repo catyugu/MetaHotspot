@@ -13,9 +13,10 @@ Contents
 * dense helpers:            symmetric_dense, eigenpairs_descending
 * MPMM frequency sampling:  mpmm_elliptic_shift_count, mpmm_elliptic_shifts
 * Krylov enrichment:        orthonormalize_block, reduced_response, response_error
-* sparse operator helpers:  normalized_operators
-* boundary-port machinery:  extract_boundary_groups, closure_diagonal,
-                            closure_diagonal_multi, project_closure_group
+* sparse operator helpers:  normalized_operators, internal_blocks
+* boundary-port machinery:  extract_boundary_groups, closure_diagonal_multi,
+                            project_closure_group
+* parametric basis:         random_parameter_vectors, build_parametric_basis
 * Galerkin projection:      project_exact_ports
 * accuracy metrics:         temperature_error_metrics, accuracy_summary, format_accuracy
 * mesh helpers:             grid_cells, coordinate_map
@@ -29,10 +30,12 @@ concrete model config).
 from __future__ import annotations
 
 import math
+import time
 
 import numpy as np
 import scipy.linalg
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 from scipy import special
 
 from metahotspot.compiled import Operators
@@ -198,19 +201,20 @@ def extract_boundary_groups(merged: Operators, interface_ports: int, group_sizes
     return groups
 
 
-def closure_diagonal(h: float, boundary_cells, boundary_g, boundary_areas, n_cell):
-    """Diagonal closure K_ii(h) = K_ii + diag(closure) after port elimination.
+def internal_blocks(operators: Operators, ports: int):
+    """Interior/port CSC blocks of a ``[ports | interior]`` DtN operator.
 
-    Each boundary port k couples cell c through conductance g_k; attaching the
-    ambient heat exchange h*A_k at the port and eliminating the port adds
-        closure_c = g_k * h * A_k / (g_k + h * A_k)
-    to the cell diagonal — the exact (saturating) series combination of the
-    in-cell conduction g_k and the external convection h*A_k.
+    Returns ``(K_ii, C_ii, B_io, D_io)`` — the interior-interior K/C and the
+    interior-port K/C coupling blocks used to assemble rational-Krylov
+    candidate operators.  Parameter-count agnostic: ``ports`` is the leading
+    block size, whatever the number of boundary groups behind it.
     """
-    closure = np.zeros(n_cell)
-    for cell, g, area in zip(boundary_cells, boundary_g, boundary_areas):
-        closure[cell] += g * h * area / (g + h * area)
-    return closure
+    return (
+        operators.K[ports:, ports:].tocsc(),
+        operators.C[ports:, ports:].tocsc(),
+        operators.K[ports:, :ports].tocsc(),
+        operators.C[ports:, :ports].tocsc(),
+    )
 
 
 def closure_diagonal_multi(h_values, boundary_groups, boundary_areas, n_cell):
@@ -248,6 +252,211 @@ def project_closure_group(cells, g, areas, n_cell, basis):
         return sp.csc_matrix(weighted.T @ basis)
 
     return closure
+
+
+# ---------------------------------------------------------------------------
+# parametric basis construction (FANTASTIC BCI 2015 Algorithm 1)
+# ---------------------------------------------------------------------------
+
+TARGET_RELATIVE_EPSILON = 5.0e-3  # elliptic shift-count target (FANTASTIC 2014 eq. 4)
+RESIDUAL_TOLERANCE = 5.0e-3  # residual-driven enrichment stop tolerance
+MAX_ORDER = 2048
+RANDOM_PARAMETER_SAMPLES = 20  # random h-vectors for training (Algorithm 1)
+RANDOM_SEED = 20260805
+
+
+def random_parameter_vectors(h_ranges, sample_count, seed, boundaries=None):
+    """Random admissible h-vectors (one h per group), log-uniform.  No greedy.
+
+    ``h_ranges`` is an ``(n_groups, 2)`` array of admissible ``(lo, hi)``
+    ranges, one row per affine parameter; the log-uniform draws are vectorized
+    across groups.  FANTASTIC BCI 2015 Algorithm 1: parameters chosen at
+    random to avoid reduced-basis greedy stagnation.  ``boundaries`` (geometric
+    holdout) are appended so the certified range is covered at its extremes.
+    """
+    h_ranges = np.asarray(h_ranges, dtype=np.float64)
+    lows = np.log10(h_ranges[:, 0])
+    highs = np.log10(h_ranges[:, 1])
+    rng = np.random.default_rng(seed)
+    draws = 10.0 ** rng.uniform(lows, highs, size=(sample_count, h_ranges.shape[0]))
+    vectors = [tuple(row) for row in draws]
+    for b in boundaries or ():
+        vectors.append(tuple(b))
+    seen, out = set(), []
+    for v in vectors:
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def build_parametric_basis(
+    core,
+    ports,
+    boundary_groups,
+    boundary_areas,
+    *,
+    h_ranges,
+    boundaries,
+    residual_tolerance=RESIDUAL_TOLERANCE,
+    max_order=MAX_ORDER,
+    target_relative_epsilon=TARGET_RELATIVE_EPSILON,
+    sample_count=RANDOM_PARAMETER_SAMPLES,
+    seed=RANDOM_SEED,
+):
+    """Certified interior basis by residual-driven enrichment (Algorithm 1).
+
+    Model- and parameter-count-agnostic: ``boundary_groups`` is a list of
+    ``(cells, g)`` pairs (one per boundary group, in port order) as returned by
+    :func:`extract_boundary_groups`, ``boundary_areas`` the per-group face area
+    arrays, and ``h_ranges`` an ``(n_groups, 2)`` array of admissible
+    ``(lo, hi)`` ranges, one row per affine parameter.
+
+    Candidates are ``(h_vec, shift)``: random admissible boundary-coefficient
+    vectors crossed with the FANTASTIC-2014 elliptic-optimal complex shifts.
+    The candidate operator is
+        A(h_vec, shift) = K_ii + shift*C_ii + diag(closure_multi(h_vec))
+    with the exact saturating per-group closure (the operators K_ii, C_ii never
+    contain h — only the boundary-port closure does).  Every candidate streams
+    one frequency-domain solve; residual directions above tolerance are inserted
+    immediately, so no full-state response is retained.  The basis is kept
+    column-orthonormal throughout.
+    """
+    started = time.perf_counter()
+    K0, C0, B0, D0 = internal_blocks(core, ports)
+    h_ranges = np.asarray(h_ranges, dtype=np.float64)
+    h_vectors = random_parameter_vectors(h_ranges, sample_count, seed, boundaries)
+
+    # Eigenvalue bounds of the h-free interior operator K_ii (generalized
+    # eigenvalue problem K_ii v = lambda C_ii v) drive both the elliptic
+    # shift distribution and the per-candidate shift count.
+    eigenvalue_scale = max(float(np.max(np.abs(C0.diagonal()))), np.finfo(float).tiny)
+    eigenvalue_ratio = max(
+        math.sqrt(np.linalg.cond(K0.todense().astype(np.float64))),
+        1.0,
+    )
+    kappa = eigenvalue_ratio**2
+    lambda_min = float(eigenvalue_scale / kappa)
+    lambda_max = float(eigenvalue_scale)
+    if kappa > 1.0e6:
+        lambda_min = max(lambda_min, lambda_max / 1.0e6)
+        kappa = lambda_max / lambda_min
+    elliptic_count = mpmm_elliptic_shift_count(
+        target_relative_epsilon, lambda_min, lambda_max
+    )
+    shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
+
+    raw_points = [(hv, float(shift)) for hv in h_vectors for shift in shifts]
+    internal_order = K0.shape[0]
+    order_limit = min(max_order, internal_order)
+    basis = np.empty((internal_order, 0), dtype=np.float64)
+    history = []
+    worst_score = 0.0
+    converged = True
+
+    for h_vec, shift in raw_points:
+        closure = closure_diagonal_multi(
+            h_vec, boundary_groups, boundary_areas, internal_order
+        )
+        A = (K0 + shift * C0 + sp.diags(closure)).tocsc()
+        A = (0.5 * (A + A.T)).tocsc()
+        B_dense = (B0 + shift * D0).toarray()
+
+        response = np.asarray(spla.splu(A).solve(-B_dense))
+        response_gram = symmetric_dense(-response.T @ B_dense)
+        response_values, _ = eigenpairs_descending(response_gram)
+        reference = max(float(response_values[0]), np.finfo(float).tiny)
+
+        order_before = basis.shape[1]
+        reduced = reduced_response(basis, A, B_dense)
+        error_response, error_values, tangents, score_before = response_error(
+            response,
+            basis,
+            reduced,
+            A,
+            reference,
+        )
+        requested = int(
+            np.count_nonzero(error_values > residual_tolerance**2 * reference)
+        )
+        available = order_limit - basis.shape[1]
+        count = min(requested, available)
+
+        added = 0
+        if count:
+            block = orthonormalize_block(
+                basis,
+                error_response @ tangents[:, :count],
+            )
+            if not block.shape[1]:
+                raise RuntimeError("rational Krylov enrichment stalled")
+            basis = np.column_stack((basis, block))
+            added = block.shape[1]
+
+        if count == requested and added == count:
+            score_after = (
+                math.sqrt(float(error_values[count]) / reference)
+                if count < error_values.size
+                else 0.0
+            )
+        else:
+            reduced = reduced_response(basis, A, B_dense)
+            _, _, _, score_after = response_error(
+                response,
+                basis,
+                reduced,
+                A,
+                reference,
+            )
+
+        worst_score = max(worst_score, score_after)
+        history.append(
+            {
+                "order_before": int(order_before),
+                "order_after": int(basis.shape[1]),
+                "score_before": float(score_before),
+                "score_after": float(score_after),
+                "h_vec": h_vec,
+                "shift": float(shift),
+                "requested": int(requested),
+                "added": int(added),
+            }
+        )
+        if requested > available or score_after > residual_tolerance:
+            converged = False
+            break
+
+    if basis.shape[1]:
+        orthogonality = basis.T @ basis - np.eye(basis.shape[1])
+        orthogonality_error = float(np.max(np.abs(orthogonality)))
+    else:
+        orthogonality_error = 0.0
+    if orthogonality_error > 1.0e-10:
+        raise RuntimeError("rational Krylov basis lost orthogonality")
+
+    return basis, {
+        "parameter_vectors": h_vectors,
+        "elliptic_shift_count": elliptic_count,
+        "elliptic_shifts_per_s": shifts[1:].tolist(),
+        "eigenvalue_ratio_kappa": kappa,
+        "eigenvalue_bounds_per_s": [lambda_min, lambda_max],
+        "target_relative_epsilon": target_relative_epsilon,
+        "parameter_sampling": "random (FANTASTIC BCI 2015 Algorithm 1)",
+        "candidate_count": len(raw_points),
+        "processed_candidate_count": len(history),
+        "basis_order": int(basis.shape[1]),
+        "maximum_order": int(order_limit),
+        "orthogonality_error": orthogonality_error,
+        "relative_response_error": float(worst_score),
+        "residual_tolerance": residual_tolerance,
+        "converged": bool(converged and len(history) == len(raw_points)),
+        "history": history,
+        "seconds": time.perf_counter() - started,
+        "memory_strategy": (
+            "stream one full response per candidate; form the residual Gramian "
+            "directly; never cache candidates or repeat global scans"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------

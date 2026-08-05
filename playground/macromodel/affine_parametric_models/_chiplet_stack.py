@@ -26,6 +26,8 @@ from metahotspot.macromodel import PortPatch
 
 from affine_parametric_models._interfaces import AffineParametricModel
 
+DEFAULT_H_RANGE = (1.0, 1.0e6)
+
 POWER_MAP = np.asarray(
     (
         (0.10, 0.15, 0.20, 0.15),
@@ -79,7 +81,10 @@ ACTIVITY_TRACES = (
         (1.00, 0.70),
     ),
 )
-DEFAULT_H = 2500.0  # W/m^2 K
+
+QUICK_OVERRIDES = {
+    "max_xy_cell_mm": 4.0,
+}
 
 
 @dataclass(frozen=True)
@@ -113,8 +118,6 @@ class ChipletStackConfig:
     chiplet_power_W: float = 25.0
     duration_s: float = 100.0
     dt_s: float = 10.0
-    # nominal heat-exchange coefficient on the top face (W/m^2 K)
-    top_h: float = DEFAULT_H
 
     @property
     def detail_layers(self):
@@ -414,7 +417,7 @@ class _ChipletStack(AffineParametricModel):
         return {"top": float(h_vec[0])}
 
     def group_h_ranges(self):
-        return ((1.0, 1.0e5),)
+        return (DEFAULT_H_RANGE,)
 
     def detail_interface_patches(self) -> list[PortPatch]:
         return _patches(
