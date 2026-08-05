@@ -43,10 +43,8 @@ from functools import cached_property
 from pathlib import Path
 
 import numpy as np
-import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from scipy import special
 
 import matplotlib
 
@@ -66,17 +64,16 @@ from metahotspot.macromodel import (
     solve as solve_macro,
 )  # noqa: E402
 
-from experiment_setup import (  # noqa: E402
+from utils import (  # noqa: E402
     closure_diagonal_multi,
-    extract_boundary_groups,
-    normalized_operators,
-    solve_options,
-)
-from tangential_rational_krylov_reduction import (  # noqa: E402
     eigenpairs_descending,
+    extract_boundary_groups,
     mpmm_elliptic_shift_count,
     mpmm_elliptic_shifts,
+    normalized_operators,
     orthonormalize_block,
+    project_exact_ports,
+    project_closure_group,
     reduced_response,
     response_error,
     symmetric_dense,
@@ -170,6 +167,25 @@ class PkgConfig:
             "nx": self.nx,
             "nz": self.nz,
         }
+
+
+def solve_options(cfg: PkgConfig, transient: bool) -> SolveOptions:
+    """Solve options tuned for the package geometry (fixed-step BDF1)."""
+    dt = cfg.dt_s if transient else 1.0
+    return SolveOptions(
+        linear_solver="EigenSparseLU",
+        linear_tolerance=1.0e-12,
+        linear_max_iterations=5000,
+        nonlinear_max_iterations=30,
+        nonlinear_relative_tolerance=1.0e-11,
+        nonlinear_absolute_tolerance=1.0e-11,
+        integrator="Bdf1",
+        step_strategy="Fixed",
+        error_rel_tol=1.0e-3,
+        min_dt=dt,
+        max_dt=dt,
+        fixed_dt=dt,
+    )
 
 
 def z_vertices(layers) -> np.ndarray:
@@ -528,55 +544,6 @@ def build_bci_basis(
         "history": history,
         "seconds": time.perf_counter() - started,
     }
-
-
-# ------------------------------------------------------------- online solve ----
-
-
-def project_exact_ports(
-    operators: Operators, ports: int, basis, ambient_K: float | None = None
-) -> Operators:
-    source = np.asarray(operators.f, dtype=np.float64)
-    if ambient_K is not None:
-        offset = np.full(operators.K.shape[0] - ports, ambient_K)
-        source = np.asarray(source - operators.K[:, ports:] @ offset).ravel()
-
-    def project(matrix):
-        reduced = sp.bmat(
-            (
-                (
-                    sp.csc_matrix(matrix[:ports, :ports]),
-                    sp.csc_matrix(matrix[:ports, ports:] @ basis),
-                ),
-                (
-                    sp.csc_matrix(basis.T @ matrix[ports:, :ports]),
-                    sp.csc_matrix(basis.T @ matrix[ports:, ports:] @ basis),
-                ),
-            ),
-            format="csc",
-        )
-        reduced = (0.5 * (reduced + reduced.T)).tocsc()
-        reduced.eliminate_zeros()
-        return reduced
-
-    return Operators(
-        project(operators.K),
-        project(operators.C),
-        np.r_[source[:ports], np.asarray(basis.T @ source[ports:]).ravel()],
-    )
-
-
-def project_closure_group(cells, g, areas, n_cell, basis):
-    """h_k -> B^T diag(closure_k(h_k)) B for one boundary group."""
-
-    def closure(h_k):
-        closure = np.zeros(n_cell)
-        for cell, g_k, area in zip(cells, g, areas):
-            closure[cell] += g_k * h_k * area / (g_k + h_k * area)
-        weighted = closure[:, None] * basis
-        return sp.csc_matrix(weighted.T @ basis)
-
-    return closure
 
 
 # -------------------------------------------------------------- validation ----

@@ -19,13 +19,24 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-from scipy import special
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from utils import (  # noqa: E402
+    closure_diagonal,
+    eigenpairs_descending,
+    extract_boundary_groups,
+    mpmm_elliptic_shift_count,
+    mpmm_elliptic_shifts,
+    normalized_operators,
+    orthonormalize_block,
+    project_exact_ports,
+    reduced_response,
+    response_error,
+    symmetric_dense,
+)
 from experiment_setup import (  # noqa: E402
     BaseConfig,
     Face,
@@ -34,16 +45,12 @@ from experiment_setup import (  # noqa: E402
     Operators,
     accuracy_summary,
     build_model,
-    closure_diagonal,
     coordinate_map,
-    extract_boundary_groups,
     format_accuracy,
     full_face_patches,
     full_reference,
-    normalized_operators,
     patch_areas,
     port_patches,
-    project_exact_ports,
     recover_temperature,
     solve_reduced,
 )
@@ -61,46 +68,6 @@ QUICK_OVERRIDES = {
 }
 
 
-def symmetric_dense(matrix) -> np.ndarray:
-    matrix = np.asarray(matrix, dtype=np.float64)
-    return 0.5 * (matrix + matrix.T)
-
-
-def eigenpairs_descending(matrix):
-    values, vectors = scipy.linalg.eigh(symmetric_dense(matrix), check_finite=False)
-    order = np.argsort(values)[::-1]
-    return np.maximum(values[order], 0.0), vectors[:, order]
-
-
-def mpmm_elliptic_shift_count(
-    relative_epsilon: float, lambda_min: float, lambda_max: float
-):
-    kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
-    k_prime = lambda_min / lambda_max
-    log_term = max(math.log(4.0 / k_prime), np.finfo(float).tiny)
-    for m in range(1, 200):
-        if 4.0 * math.exp(-(m * m) * math.pi * math.pi / log_term) <= relative_epsilon:
-            return m
-    raise RuntimeError("MPMM elliptic shift count did not converge")
-
-
-def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
-    modulus = 1.0 - 1.0 / (kappa * kappa)
-    modulus = float(np.clip(modulus, 0.0, 1.0 - 1.0e-12))
-    k_complete = special.ellipk(modulus)
-    theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / count
-    _, _, dn_values, _ = special.ellipj(theta, modulus)
-    shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
-    return np.sort(shifts)[::-1]
-
-
-def mpmm_svd_truncate(basis, relative_epsilon: float):
-    _, singular_values, vt = np.linalg.svd(basis, full_matrices=False)
-    keep = np.count_nonzero(singular_values > relative_epsilon * singular_values[0])
-    keep = max(1, min(keep, basis.shape[1]))
-    return np.ascontiguousarray(vt[:keep].T), keep
-
-
 def internal_blocks(operators, ports):
     return (
         operators.K[ports:, ports:].tocsc(),
@@ -108,54 +75,6 @@ def internal_blocks(operators, ports):
         operators.K[ports:, :ports].tocsc(),
         operators.C[ports:, :ports].tocsc(),
     )
-
-
-def orthonormalize_block(basis, vectors):
-    block = np.asarray(vectors, dtype=np.float64).copy()
-    if not block.size:
-        return np.empty((block.shape[0], 0), dtype=np.float64)
-
-    for _ in range(2):
-        if basis.shape[1]:
-            block -= basis @ (basis.T @ block)
-
-    q, r, _ = scipy.linalg.qr(
-        block,
-        mode="economic",
-        pivoting=True,
-        check_finite=False,
-    )
-    diagonal = np.abs(np.diag(r))
-    if not diagonal.size or diagonal[0] == 0.0:
-        return np.empty((block.shape[0], 0), dtype=np.float64)
-    keep = diagonal > np.finfo(float).eps * max(block.shape) * diagonal[0]
-    return np.ascontiguousarray(q[:, keep])
-
-
-def reduced_response(basis, A, B_dense):
-    if not basis.shape[1]:
-        return np.empty((0, B_dense.shape[1]), dtype=np.float64)
-    reduced_A = symmetric_dense(basis.T @ (A @ basis))
-    factor = scipy.linalg.cho_factor(
-        reduced_A,
-        lower=True,
-        overwrite_a=False,
-        check_finite=False,
-    )
-    return scipy.linalg.cho_solve(
-        factor,
-        -(basis.T @ B_dense),
-        overwrite_b=False,
-        check_finite=False,
-    )
-
-
-def response_error(response, basis, reduced, A, reference):
-    error_response = response - basis @ reduced if basis.shape[1] else response
-    error_gram = symmetric_dense(error_response.T @ (A @ error_response))
-    values, tangents = eigenpairs_descending(error_gram)
-    score = math.sqrt(float(values[0]) / reference)
-    return error_response, values, tangents, score
 
 
 def build_krylov_basis(
