@@ -10,7 +10,6 @@ from functools import cached_property
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 import metahotspot
 from metahotspot.compiled import Operators, SolveOptions
@@ -71,7 +70,6 @@ ACTIVITY_TRACES = (
         (1.00, 0.70),
     ),
 )
-BOUNDARIES = (500.0, 2500.0, 8000.0)
 MAX_RELATIVE_RISE_ERROR = 0.01
 
 
@@ -108,7 +106,6 @@ class BaseConfig:
     chiplet_power_W: float = 25.0
     duration_s: float = 100.0
     dt_s: float = 10.0
-    affine_anchor_h: float = 2500.0
     speedup_target: float = 1.5
     compression_target: float = 2.5
 
@@ -300,6 +297,34 @@ def build_model(
     if convection_h is not None and convection_h < 0.0:
         raise ValueError("convection coefficient must be non-negative")
 
+    model = _build_geometry(cfg, study, detail=detail, macro=macro)
+    if macro and convection_h:
+        half = cfg.cold_plate_size_mm / 2.0
+        top_z = cfg.total_height_mm if detail else cfg.macro_height_mm
+        model.add_convection(
+            str(float(convection_h)),
+            str(cfg.ambient_K),
+            [(Axis.Z, top_z, -half, half, -half, half)],
+        )
+    return model
+
+
+def _build_geometry(
+    cfg: BaseConfig,
+    study: Study,
+    *,
+    detail: bool,
+    macro: bool,
+):
+    """Shared geometry/material/source construction (no boundary conditions).
+
+    Returns a model with its default Neumann BC set, ready for the caller to
+    attach convection.  Extracted from :func:`build_model` so the multi-face
+    :func:`build_convection_model` reuses identical geometry.
+    """
+    if not detail and not macro:
+        raise ValueError("at least one domain must be enabled")
+
     model = metahotspot.Model()
     layers = (
         (*cfg.detail_layers, *cfg.macro_layers)
@@ -388,14 +413,6 @@ def build_model(
         add_square(model, model.add_block(substrate, "organic"), cfg.substrate_size_mm)
 
     model.set_default_neumann("0")
-    if macro and convection_h:
-        half = cfg.cold_plate_size_mm / 2.0
-        top_z = cfg.total_height_mm if detail else cfg.macro_height_mm
-        model.add_convection(
-            str(float(convection_h)),
-            str(cfg.ambient_K),
-            [(Axis.Z, top_z, -half, half, -half, half)],
-        )
     return model
 
 
@@ -449,14 +466,179 @@ def normalized_operators(K, C, f) -> Operators:
     return Operators(K, C, np.asarray(f, dtype=np.float64).copy())
 
 
-def affine_operators(base: Operators, delta: Operators, alpha: float) -> Operators:
-    if not np.isfinite(alpha) or alpha < 0.0:
-        raise ValueError("normalized convection coordinate must be non-negative")
-    return normalized_operators(
-        base.K + alpha * delta.K,
-        base.C + alpha * delta.C,
-        np.asarray(base.f) + alpha * delta.f,
+@dataclass(frozen=True)
+class AffineParameter:
+    """One scalar affine parameter and the boundary faces it controls.
+
+    ``faces`` is a list of ``(axis, coordinate, a_min, a_max, b_min, b_max)``
+    tuples exactly as passed to :meth:`Model.add_convection`, so each affine
+    term can target an arbitrary set of boundary regions (a single face, a
+    partial face, or several).  The physical meaning is "heat-exchange
+    coefficient h over these faces".
+    """
+
+    name: str
+    faces: tuple
+    default_h: float = 2500.0
+
+
+def build_convection_model(
+    cfg: BaseConfig,
+    parameters: tuple[AffineParameter, ...],
+    values: tuple[float, ...] | None = None,
+    *,
+    detail: bool = True,
+    macro: bool = True,
+    study: Study = Study.STEADY,
+) -> "metahotspot.Model":
+    """Build the geometry with convection on each parameter's faces.
+
+    ``values`` (if given) is a per-parameter coefficient; otherwise each
+    parameter uses its ``default_h``.  Parameters with a ``0.0`` value simply
+    leave that face insulated.  ``study`` selects steady or transient so the
+    same model can serve as a native reference for both.
+
+    Parameter faces are expressed relative to the macro block (z=0 at its
+    base).  When ``detail=True`` the macro block sits on top of the detail
+    layers, so every Z coordinate is offset by ``detail_height_mm``.
+    """
+    if values is None:
+        values = tuple(p.default_h for p in parameters)
+    if len(values) != len(parameters):
+        raise ValueError("values must match parameter count")
+    model = _build_geometry(cfg, study, detail=detail, macro=macro)
+    z_offset = cfg.detail_height_mm if detail else 0.0
+    for parameter, value in zip(parameters, values):
+        if value == 0.0:
+            continue
+        regions = []
+        for axis, coord, a_min, a_max, b_min, b_max in parameter.faces:
+            if axis == 2:  # Z face: coord is the face z, offset it
+                coord += z_offset
+            else:  # X/Y side face: tangential extents are (., z); offset z
+                b_min += z_offset
+                b_max += z_offset
+            regions.append((axis, coord, a_min, a_max, b_min, b_max))
+        model.add_convection(
+            str(float(value)),
+            str(cfg.ambient_K),
+            regions,
+        )
+    return model
+
+
+def full_reference_multiface(
+    cfg: BaseConfig,
+    parameters: tuple[AffineParameter, ...],
+    values: tuple[float, ...],
+) -> tuple:
+    """Native steady+transient reference for a multi-face convection model.
+
+    Mirrors :func:`full_reference` for the :func:`build_convection_model`
+    geometry: compiles a full (detail+macro) model with each parameter's face
+    at its value and returns steady temperature, times, transient history,
+    compile/solve durations, and cell count.
+    """
+    started = time.perf_counter()
+    steady = build_convection_model(
+        cfg, parameters, values, detail=True, macro=True, study=Study.STEADY
+    ).compile()
+    transient = build_convection_model(
+        cfg, parameters, values, detail=True, macro=True, study=Study.TRANSIENT
+    ).compile()
+    compile_s = time.perf_counter() - started
+
+    started = time.perf_counter()
+    with steady.solve(opts=solve_options(cfg, False)) as solution:
+        steady_temperature = solution.temperature
+    steady_s = time.perf_counter() - started
+
+    started = time.perf_counter()
+    with transient.solve(opts=solve_options(cfg, True)) as solution:
+        times = solution.history_times
+        history = solution.temperature_history
+    transient_s = time.perf_counter() - started
+
+    return (
+        steady_temperature,
+        times,
+        history,
+        compile_s,
+        steady_s,
+        transient_s,
+        transient.cell_count,
     )
+
+
+def extract_boundary_groups(merged: Operators, interface_ports: int, group_sizes):
+    """Extract per-group boundary coupling in a consistent internal frame.
+
+    ``merged`` is the full DtN operator ``[interface ports | boundary group
+    ports | FVM cells]``, ``interface_ports`` the count of interface ports,
+    and ``group_sizes`` the list of port counts per boundary group (in order).
+    Each group's coupled cells are returned in the internal-block frame
+    (0-based within the FVM cells), regardless of where the group sits among
+    the ports.
+    """
+    internal_base = interface_ports + sum(group_sizes)
+    groups = []
+    offset = interface_ports
+    for size in group_sizes:
+        rows = merged.K[offset : offset + size, :].tocsr()
+        cells = np.empty(size, dtype=np.int64)
+        conductance = np.empty(size, dtype=np.float64)
+        for k in range(size):
+            row = rows[k]
+            negative = [col for col in row.indices if row[0, col] < 0.0]
+            if len(negative) != 1:
+                raise RuntimeError("boundary port must couple to exactly one cell")
+            cells[k] = negative[0] - internal_base
+            conductance[k] = -row[0, negative[0]]
+        groups.append((cells, conductance))
+        offset += size
+    return groups
+
+
+def closure_diagonal(h: float, boundary_cells, boundary_g, boundary_areas, n_cell):
+    """Diagonal correction K_ii(h) = K_ii + diag(closure) after elimination.
+
+    Each boundary port k couples cell c through conductance g_k; attaching the
+    ambient heat exchange h*A_k at the port and eliminating the port adds
+        closure_c = g_k * h * A_k / (g_k + h * A_k)
+    to the cell diagonal — exactly the native convection coefficient
+    face_k*h*A/(face_k + h*dx) since g_k = face_k*A/dx.  The closure is h-
+    dependent but the operators are not: h enters only through this diagonal.
+
+    This is the exact (saturating) generalization of the linear affine term:
+    ``g*h*A/(g+h*A)`` approaches ``h*A`` as h->0 and ``g`` as h->infinity,
+    whereas the affine form ``(h/h_ref)*coefficient(h_ref)`` grows linearly and
+    over-predicts at large h.
+    """
+    closure = np.zeros(n_cell)
+    for cell, g, area in zip(boundary_cells, boundary_g, boundary_areas):
+        closure[cell] += g * h * area / (g + h * area)
+    return closure
+
+
+def closure_diagonal_multi(h_values, boundary_groups, boundary_areas, n_cell):
+    """Sum of per-group saturation closures, one heat-exchange coefficient each.
+
+    ``boundary_groups`` is a list of ``(cells, g)`` pairs (one per affine
+    parameter / boundary face, in port order) as returned by
+    :func:`extract_boundary_groups`, and ``boundary_areas`` the per-group face
+    area arrays.  ``h_values`` the per-group coefficient.  Because each group
+    couples disjoint cells, the total closure is the per-cell sum — the exact
+    multi-face generalization of :func:`closure_diagonal`.
+    """
+    if len(h_values) != len(boundary_groups):
+        raise ValueError("h_values must match boundary group count")
+    if len(boundary_areas) != len(boundary_groups):
+        raise ValueError("boundary_areas must match boundary group count")
+    closure = np.zeros(n_cell)
+    for h_value, (cells, g), areas in zip(h_values, boundary_groups, boundary_areas):
+        for cell, g_k, area in zip(cells, g, areas):
+            closure[cell] += g_k * h_value * area / (g_k + h_value * area)
+    return closure
 
 
 def project_exact_ports(
@@ -490,16 +672,6 @@ def project_exact_ports(
         project(operators.C),
         np.r_[source[:ports], np.asarray(basis.T @ source[ports:]).ravel()],
     )
-
-
-def validate_affine_macro(base: Operators, delta: Operators, ambient_K: float) -> None:
-    ambient = np.full(base.K.shape[0], ambient_K)
-    balance_error = np.linalg.norm(delta.K @ ambient - delta.f)
-    balance_scale = max(np.linalg.norm(delta.f), np.finfo(float).tiny)
-    if spla.norm(delta.C) > 1.0e-11 * max(spla.norm(base.C), 1.0):
-        raise RuntimeError("convection unexpectedly changed macro capacitance")
-    if balance_error > 1.0e-10 * balance_scale:
-        raise RuntimeError("affine convection component violates ambient balance")
 
 
 def grid_cells(compiled) -> np.ndarray:

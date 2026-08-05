@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Run the tangential rational Krylov thermal macromodel experiment."""
+"""Run the tangential rational Krylov thermal macromodel experiment.
+
+Builds a certified interior basis by residual-driven enrichment over the
+exact boundary-port closure (g*h*A/(g+h*A)) at several heat-exchange
+coefficients, then validates the reduced model on the same range.  The
+operators contain no fixed h — h enters only through the precomputed diagonal
+closure, so the model is boundary-condition independent.
+"""
 
 from __future__ import annotations
 
@@ -13,32 +20,35 @@ from pathlib import Path
 
 import numpy as np
 import scipy.linalg
+import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from macromodel.experiment_setup import (  # noqa: E402
-    BOUNDARIES,
     BaseConfig,
     Face,
     PortMap,
     Study,
     accuracy_summary,
-    affine_operators,
     build_model,
+    closure_diagonal,
     coordinate_map,
+    extract_boundary_groups,
     format_accuracy,
+    full_face_patches,
     full_reference,
     normalized_operators,
+    patch_areas,
     port_patches,
     project_exact_ports,
     recover_temperature,
     solve_reduced,
-    validate_affine_macro,
 )
 
 REPORT = Path("results/bci_rom_parametric_krylov_results.json")
-PARAMETER_SAMPLES = 3
+H_RANGE = (1.0, 1.0e5)
+BOUNDARIES = tuple(np.geomspace(H_RANGE[0], H_RANGE[1], 5))
 FREQUENCY_SAMPLES = 5
 RESIDUAL_TOLERANCE = 5.0e-3
 MAX_ORDER = 1024
@@ -68,15 +78,11 @@ def eigenpairs_descending(matrix):
     return np.maximum(values[order], 0.0), vectors[:, order]
 
 
-def training_points(cfg, boundaries, parameter_samples, frequency_samples):
-    """Return parameter samples and the real shifts used by fixed-step BDF1."""
+def training_points(cfg, h_range, boundaries, frequency_samples):
+    """Return h samples (h_range geometric grid + boundaries) and BDF1 shifts."""
     h_values = np.unique(
-        np.r_[np.asarray(boundaries, dtype=np.float64), cfg.affine_anchor_h]
+        np.r_[np.asarray(boundaries, dtype=np.float64), np.geomspace(*h_range, 8)]
     )
-    if h_values.size < parameter_samples:
-        extra = np.geomspace(min(boundaries), max(boundaries), parameter_samples)
-        h_values = np.unique(np.r_[h_values, extra])
-
     positive_count = max(1, frequency_samples - 1)
     positive_shifts = np.geomspace(
         1.0 / cfg.duration_s,
@@ -84,13 +90,7 @@ def training_points(cfg, boundaries, parameter_samples, frequency_samples):
         positive_count,
     )
     shifts = np.unique(np.r_[0.0, positive_shifts])
-
-    anchor = cfg.affine_anchor_h
-    h_values = np.asarray(
-        sorted(h_values, key=lambda value: (abs(math.log(value / anchor)), value)),
-        dtype=np.float64,
-    )
-    return h_values, shifts
+    return np.asarray(h_values, dtype=np.float64), shifts
 
 
 def internal_blocks(operators, ports):
@@ -152,36 +152,29 @@ def response_error(response, basis, reduced, A, reference):
 
 def build_krylov_basis(
     cfg,
-    boundaries,
-    base,
-    delta,
+    core,
     ports,
+    boundary_cells,
+    boundary_g,
+    boundary_areas,
     *,
-    parameter_samples,
+    h_range,
+    boundaries,
     frequency_samples,
     residual_tolerance,
     max_order,
 ):
     """Build a certified basis with one streamed residual solve per candidate.
 
-    Each training response is factored and solved once. All tangential residual
-    directions above the tolerance are inserted immediately, so a candidate
-    never needs to be rescanned and no full-state response is retained.
+    Each candidate operator is ``K_ii + shift*C_ii + diag(closure(h))`` where
+    closure is the exact boundary-port saturation term.  Residual directions
+    above the tolerance are inserted immediately, so a candidate never needs
+    to be rescanned and no full-state response is retained.
     """
     started = time.perf_counter()
-    K0, C0, B0, D0 = internal_blocks(base, ports)
-    K1, C1, B1, D1 = internal_blocks(delta, ports)
-    h_values, shifts = training_points(
-        cfg,
-        boundaries,
-        parameter_samples,
-        frequency_samples,
-    )
-    raw_points = [
-        (float(h / cfg.affine_anchor_h), float(h), float(shift))
-        for h in h_values
-        for shift in shifts
-    ]
+    K0, C0, B0, D0 = internal_blocks(core, ports)
+    h_values, shifts = training_points(cfg, h_range, boundaries, frequency_samples)
+    raw_points = [(float(h), float(shift)) for h in h_values for shift in shifts]
 
     internal_order = K0.shape[0]
     order_limit = min(max_order, internal_order)
@@ -190,11 +183,13 @@ def build_krylov_basis(
     worst_score = 0.0
     converged = True
 
-    for mu, h_value, shift in raw_points:
-        A = (K0 + mu * K1 + shift * (C0 + mu * C1)).tocsc()
+    for h_value, shift in raw_points:
+        closure = closure_diagonal(
+            h_value, boundary_cells, boundary_g, boundary_areas, internal_order
+        )
+        A = (K0 + shift * C0 + sp.diags(closure)).tocsc()
         A = (0.5 * (A + A.T)).tocsc()
-        B = (B0 + mu * B1 + shift * (D0 + mu * D1)).tocsc()
-        B_dense = B.toarray()
+        B_dense = (B0 + shift * D0).toarray()
 
         response = np.asarray(spla.splu(A).solve(-B_dense))
         response_gram = symmetric_dense(-response.T @ B_dense)
@@ -234,7 +229,6 @@ def build_krylov_basis(
                 else 0.0
             )
         else:
-            # This path is only expected for numerical rank loss or an order cap.
             reduced = reduced_response(basis, A, B_dense)
             _, _, _, score_after = response_error(
                 response,
@@ -325,31 +319,21 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
 
     extraction_started = time.perf_counter()
     macro = build_model(cfg, Study.STEADY, detail=False, macro=True).compile()
-    macro_ports = PortMap(macro, port_patches(cfg, Face.ZM, 0.0))
-    base = normalized_operators(*macro_ports.assemble())
+    interface = port_patches(cfg, Face.ZM, 0.0)
+    boundary = full_face_patches(cfg, Face.ZP, cfg.macro_height_mm * 1.0e-3)
+    boundary_areas = patch_areas(cfg, boundary)
+    pm_merged = PortMap(macro, interface + boundary)
+    merged = normalized_operators(*pm_merged.assemble())
+    boundary_cells, boundary_g = extract_boundary_groups(
+        merged, len(interface), [len(boundary)]
+    )[0]
 
-    anchor = build_model(
-        cfg,
-        Study.STEADY,
-        detail=False,
-        macro=True,
-        convection_h=cfg.affine_anchor_h,
-    ).compile()
-    anchor_ports = PortMap(anchor, port_patches(cfg, Face.ZM, 0.0))
-    anchor_operators = normalized_operators(*anchor_ports.assemble())
-    if anchor_operators.K.shape != base.K.shape:
-        raise RuntimeError("convection changed macro state ordering")
-    delta = normalized_operators(
-        anchor_operators.K - base.K,
-        anchor_operators.C - base.C,
-        np.asarray(anchor_operators.f) - base.f,
-    )
-    validate_affine_macro(base, delta, cfg.ambient_K)
-    extraction_s = time.perf_counter() - extraction_started
-
-    ports = macro_ports.port_count
+    pm_core = PortMap(macro, interface)
+    core = normalized_operators(*pm_core.assemble())
+    ports = pm_core.port_count
     if ports != cfg.ports:
         raise RuntimeError("configured interface port count is inconsistent")
+    extraction_s = time.perf_counter() - extraction_started
 
     detail_to_full = coordinate_map(detail_steady, full_layout, 0, "detail/full")
     if not np.array_equal(
@@ -367,11 +351,16 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
 
     basis, basis_summary = build_krylov_basis(
         cfg,
-        boundaries,
-        base,
-        delta,
+        core,
         ports,
-        **krylov_options,
+        boundary_cells,
+        boundary_g,
+        boundary_areas,
+        h_range=H_RANGE,
+        boundaries=boundaries,
+        frequency_samples=FREQUENCY_SAMPLES,
+        residual_tolerance=RESIDUAL_TOLERANCE,
+        max_order=MAX_ORDER,
     )
     if not basis_summary["converged"]:
         raise RuntimeError(
@@ -382,27 +371,17 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
             f"target={basis_summary['residual_tolerance']:.3e}"
         )
 
-    projection_started = time.perf_counter()
-    reduced_base = project_exact_ports(base, ports, basis, cfg.ambient_K)
-    reduced_delta = project_exact_ports(delta, ports, basis, cfg.ambient_K)
-    projection_s = time.perf_counter() - projection_started
+    reduced_core = project_exact_ports(core, ports, basis, cfg.ambient_K)
     verify_ambient_balance(
-        reduced_base,
+        reduced_core,
         ports,
         basis.shape[1],
         cfg.ambient_K,
         "base",
     )
-    verify_ambient_balance(
-        reduced_delta,
-        ports,
-        basis.shape[1],
-        cfg.ambient_K,
-        "convection increment",
-    )
     offline_s = time.perf_counter() - offline_started
 
-    full_macro_order = ports + basis.shape[0]
+    full_macro_order = core.K.shape[0]
     reduced_macro_order = ports + basis.shape[1]
     compression = full_macro_order / reduced_macro_order
     print(
@@ -411,6 +390,20 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         f"({compression:.2f}x); "
         f"Krylov residual={basis_summary['relative_response_error']:.3e}"
     )
+
+    def online_operators(convection_h):
+        n_cell = core.K.shape[0] - ports
+        closure = closure_diagonal(
+            convection_h, boundary_cells, boundary_g, boundary_areas, n_cell
+        )
+        K = core.K.copy().tolil()
+        for cell in range(n_cell):
+            K[ports + cell, ports + cell] += closure[cell]
+        f = np.asarray(core.f, dtype=np.float64).copy()
+        f[ports:] += closure * cfg.ambient_K
+        return project_exact_ports(
+            normalized_operators(K, core.C, f), ports, basis, cfg.ambient_K
+        )
 
     results = []
     detail_count = detail_steady.cell_count
@@ -430,11 +423,7 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         ) = full_reference(cfg, convection_h)
 
         started = time.perf_counter()
-        reduced = affine_operators(
-            reduced_base,
-            reduced_delta,
-            convection_h / cfg.affine_anchor_h,
-        )
+        reduced = online_operators(convection_h)
         assembly_s = time.perf_counter() - started
         steady_state, reduced_steady_s = solve_reduced(
             detail_steady,
@@ -517,10 +506,9 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
 
     compression_passed = compression >= cfg.compression_target
     return {
-        "schema_version": 23,
         "method": (
-            "exact-port affine-parametric streamed tangential rational "
-            "Krylov BCI-ROM"
+            "exact-closure boundary-port tangential rational Krylov BCI-ROM "
+            "(no affine linearization)"
         ),
         "configuration": cfg.report_dict(),
         "reduction": {
@@ -538,7 +526,6 @@ def run_experiment(cfg, boundaries, strict, krylov_options):
         },
         "timing": {
             "macro_extraction_s": extraction_s,
-            "projection_s": projection_s,
             "offline_s": offline_s,
         },
         "boundary_reuse": results,
@@ -556,12 +543,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     cfg = replace(BaseConfig(), **QUICK_OVERRIDES) if args.quick else BaseConfig()
-    krylov_options = {
-        "parameter_samples": PARAMETER_SAMPLES,
-        "frequency_samples": FREQUENCY_SAMPLES,
-        "residual_tolerance": RESIDUAL_TOLERANCE,
-        "max_order": MAX_ORDER,
-    }
 
     print("=" * 96)
     print("Transient BCI-ROM extraction - tangential rational Krylov")
@@ -571,7 +552,7 @@ def main(argv=None) -> int:
         f"vertical cells={cfg.nz}"
     )
 
-    report = run_experiment(cfg, BOUNDARIES, args.strict, krylov_options)
+    report = run_experiment(cfg, BOUNDARIES, args.strict, {})
     report["mode"] = "quick" if args.quick else "strict"
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(
