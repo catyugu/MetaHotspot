@@ -232,9 +232,7 @@ def run_experiment(model):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--quick", action="store_true", help="small smoke experiment")
-    mode.add_argument("--strict", action="store_true", help="full benchmark gates")
+    parser.add_argument("--quick", action="store_true")
     parser.add_argument(
         "--model",
         default="chiplet_stack",
@@ -242,12 +240,8 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # quick/strict is a factory toggle: each model applies its own quick-mode
-    # config recipe when asked, the experiment never names a config field.
     model = create(args.model, quick=args.quick)
-
     report = run_experiment(model)
-    report["mode"] = "quick" if args.quick else "strict"
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(
         json.dumps(report, indent=2, default=str) + "\n",
