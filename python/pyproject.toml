@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=64"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "metahotspot"
@@ -14,3 +14,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/catyugu/MetaHotspot"
+
+[tool.setuptools.packages.find]
+include = ["metahotspot*"]
+
+[tool.setuptools.package-data]
+metahotspot = ["mhs_c_api.dll"]
