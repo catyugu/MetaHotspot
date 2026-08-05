@@ -214,8 +214,8 @@ def reference_solution() -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
             options = metahotspot.SolveOptions.default()
             options.nonlinear_relative_tolerance = 1e-10
             with compiled.solve(opts=options) as solution:
-                temperature = solution.temperature.copy()
-            block_ids = compiled.block_ids.copy()
+                temperature = solution.temperature
+            block_ids = compiled.block_ids
     detail = np.flatnonzero(block_ids == FULL_DETAIL_BLOCK_ID)
     macro = np.flatnonzero(block_ids == FULL_MACRO_BLOCK_ID)
     return temperature, detail, macro, perf_counter() - started
@@ -242,13 +242,12 @@ def solve_condensed_case(
     options = metahotspot.SolveOptions.default()
     options.nonlinear_relative_tolerance = 1e-10
     with metahotspot.macromodel.solve(
-        detailed,
         operators=operators,
         ports=detailed_ports,
         state=initial_state,
         opts=options,
     ) as solution:
-        reduced = solution.state.copy()
+        reduced = solution.state
 
     detail_count = full_detail_cells.size
     port_temperature = reduced[detail_count:]

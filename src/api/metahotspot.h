@@ -42,6 +42,7 @@ extern "C" {
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
+typedef struct mhs_operators_t mhs_operators_t;
 
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
@@ -118,72 +119,37 @@ typedef struct {
     double nonlinear_absolute_tolerance;
     int32_t integrator; // mhs_integrator_t
     int32_t step_strategy; // mhs_step_strategy_t
-    double error_abs_tol;
+    double error_rel_tol;
     double error_safety;
     double min_dt;
     double max_dt;
     double fixed_dt;
 } mhs_solve_options_t;
 
-/** Compiled model metadata — scalar fields + per-cell array views.
-
-    All pointer fields are read-only views valid while the compiled handle lives.
-    For inactive grid cells, grid_to_cell[i] == SIZE_MAX.
-*/
+/** Scalar compiled-model metadata. Array data is retrieved with copy functions. */
 typedef struct {
     size_t cell_count;
+    size_t grid_count;
     mhs_study_t study_type;
     double initial_temperature;
-
     size_t nx, ny, nz;
-    const size_t* grid_to_cell; // [nx*ny*nz], SIZE_MAX for inactive cells
-    const uint32_t* layer_ids; // [cell_count]
-    const uint32_t* block_ids; // [cell_count]
-} mhs_compiled_metadata_t;
+} mhs_compiled_info_t;
 
-/** Non-owning CSC matrix view — valid until the source handle is destroyed. */
+/** Sizes for an owned operator handle. K and C are square state_count matrices. */
 typedef struct {
-    int32_t rows, columns, nnz;
-    const int32_t* outer_indices;
-    const int32_t* inner_indices;
-    const double* values;
-} mhs_csc_view_t;
+    size_t state_count;
+    size_t k_nnz;
+    size_t c_nnz;
+} mhs_operators_info_t;
 
-/** Operators K, C, f of the linearised system: C * dx/dt + K * x = f. */
-typedef struct {
-    mhs_csc_view_t K;
-    mhs_csc_view_t C;
-    const double* rhs; // [n]
-    size_t n; // state count
-} mhs_operators_t;
-
-/** Solution bulk data view — valid until the solution handle is destroyed. */
+/** Scalar solution metadata. Array data is retrieved with copy functions. */
 typedef struct {
     size_t fvm_count;
     size_t state_count;
+    size_t record_count;
+    size_t probe_count;
     double time;
-    const double* state; // [state_count], temperatures first
-} mhs_solution_view_t;
-
-/** Read-only row-major output history owned by mhs_solution_t.
-
-    states[record * state_count + state] is the state value at times[record].
-    The view remains valid until the solution handle is destroyed.
-*/
-typedef struct {
-    const double* times;
-    const double* states;
-    size_t record_count;
-    size_t state_count;
-} mhs_solution_history_view_t;
-
-/** Non-owning probe trace view — valid while the solution handle is alive. */
-typedef struct {
-    const char* name;
-    const double* times; // [record_count]
-    const double* values; // [record_count]
-    size_t record_count;
-} mhs_probe_view_t;
+} mhs_solution_info_t;
 
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
@@ -284,16 +250,30 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_metadata(const mhs_compiled_t* c, mhs_compiled_metadata_t* out);
+MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
+MHS_API mhs_status_t mhs_compiled_copy_grid_to_cell(const mhs_compiled_t* c, size_t* out, size_t count);
+MHS_API mhs_status_t mhs_compiled_copy_layer_ids(const mhs_compiled_t* c, uint32_t* out, size_t count);
+MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32_t* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Evaluate K, C, f at *temperature* at time *time*.
-    Returns an mhs_operators_t valid until the next assemble call. */
+/** Evaluate K, C, f at *temperature* and return a new owned operator handle. */
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t* out);
+    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
+
+/** Create an owned operator handle by copying square CSC matrices and rhs. */
+MHS_API mhs_status_t mhs_operators_create(size_t state_count, const int32_t* k_outer, const int32_t* k_inner,
+    const double* k_values, size_t k_nnz, const int32_t* c_outer, const int32_t* c_inner, const double* c_values,
+    size_t c_nnz, const double* rhs, mhs_operators_t** out);
+MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
+MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Half-conductance  k*A/(dx/2)                                       */
@@ -317,21 +297,25 @@ MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_write_vtu(const mhs_compiled_t* c, const mhs_solution_t* s, const char* path);
+MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
-/*  Solution views                                                     */
+/*  Solution copy-out accessors                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_solution_view(const mhs_solution_t* s, mhs_solution_view_t* out);
-MHS_API mhs_status_t mhs_solution_history_view(const mhs_solution_t* solution, mhs_solution_history_view_t* out);
+MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution_info_t* out);
+MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* out, size_t count);
+MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count);
+MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API size_t mhs_solution_probe_count(const mhs_solution_t* s);
-MHS_API mhs_status_t mhs_solution_probe_view(const mhs_solution_t* s, size_t index, mhs_probe_view_t* out);
+MHS_API mhs_status_t mhs_solution_probe_get_info(
+    const mhs_solution_t* s, size_t index, size_t* name_size, size_t* record_count);
+MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
+    double* times, double* values, size_t record_count);
 
 #ifdef __cplusplus
 } /* extern "C" */

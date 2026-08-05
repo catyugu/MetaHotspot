@@ -222,7 +222,7 @@ namespace {
         auto hist = make_hist(state, state, 0.5);
 
         mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-4;
+        cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
         auto est = mhs::sim::time_scheme::estimate_error(hist, state, 0.5, cfg);
@@ -242,7 +242,7 @@ namespace {
 
         std::vector<double> trial_state = {1000.0, 2000.0};
         mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-4;
+        cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
         auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
@@ -260,7 +260,7 @@ namespace {
 
         std::vector<double> trial_state = {315.0};
         mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-4;
+        cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
         // Before recording trial_state into hist, size() == 2 → 2 prior snapshots
@@ -270,7 +270,7 @@ namespace {
         // Manually: T_curr=315, T_prev=310, T_prev2=300
         // ratio = 0.5/0.5 = 1.0
         // err_vec = |(315-310) - 1.0*(310-300)| = |5 - 10| = 5
-        // Normalised by max(|315|, 1) = 315 → err = 5/315 ≈ 0.01587
+        // Relative error = 5/315 ≈ 0.01587
         // error_ratio = 0.01587 / 1e-4 ≈ 158.7
         // fac = 0.9 * (1e-4 / max(0.01587, zero_guard))^0.5 = 0.9 * 0.0063^0.5 = 0.9*0.0794 = 0.071
         // Clamped to [0.5, 2.0] → 0.5
@@ -288,12 +288,12 @@ namespace {
 
         std::vector<double> trial_state = {310.0};
         mhs::sim::time_scheme::ErrorControlConfig cfg;
-        cfg.abs_tol = 1e-4;
+        cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
         auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
 
-        // err_vec = |310-300| = 10, normalised by max(310,1)=310 → 0.03225
+        // err_vec = |310-300| = 10, relative error = 10/310 → 0.03225
         // error_ratio = 0.03225 / 1e-4 = 322.5
         EXPECT_GT(est.error_ratio, 100.0);
         // suggested_factor = 0.9 * (1e-4/0.03225)^0.5 = 0.9*0.0557 = 0.0501 → clamped to 0.5

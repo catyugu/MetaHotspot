@@ -174,15 +174,17 @@ namespace mhs::sim {
             }
 
             bool accepted_step = true;
+            bool forced_minimum_step = false;
             double suggested_dt_factor = 1.0;
 
             if (step_strategy == time_scheme::StepStrategy::Fixed) {
                 accepted.accept(state, current_time + dt);
             }
             else {
-                auto est = time_scheme::estimate_error(accepted, state, dt, {opts.error_abs_tol, opts.error_safety});
+                auto est = time_scheme::estimate_error(accepted, state, dt, {opts.error_rel_tol, opts.error_safety});
                 suggested_dt_factor = est.suggested_factor;
-                accepted_step = (est.error_ratio <= 1.0) || (dt <= min_dt * 1.0001);
+                forced_minimum_step = est.error_ratio > 1.0 && dt <= min_dt * 1.0001;
+                accepted_step = (est.error_ratio <= 1.0) || forced_minimum_step;
 
                 if (accepted_step) {
                     accepted.accept(state, current_time + dt);
@@ -198,7 +200,9 @@ namespace mhs::sim {
 
                 dt_sug = (step_strategy == time_scheme::StepStrategy::Fixed)
                     ? opts.fixed_dt
-                    : std::clamp(dt * suggested_dt_factor, min_dt, max_dt);
+                    // Probe upward after a forced floor acceptance; otherwise
+                    // the preceding shrink request makes min_dt absorbing.
+                    : std::clamp(dt * (forced_minimum_step ? 2.0 : suggested_dt_factor), min_dt, max_dt);
             }
             else {
                 state = std::move(saved_state);

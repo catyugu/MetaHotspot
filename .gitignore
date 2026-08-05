@@ -13,4 +13,5 @@ results
 *.log
 *.vtu
 __pycache__
+*.egg-info
 !src/**

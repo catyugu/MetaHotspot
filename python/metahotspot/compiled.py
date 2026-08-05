@@ -9,8 +9,14 @@ from typing import NamedTuple
 import numpy as np
 
 from metahotspot._error import check
+from metahotspot._dll_interface import copy_array
 from metahotspot._handle import OwnedHandle
-from metahotspot.types import MhsCompiled, MhsCompiledMetadataView
+from metahotspot.types import (
+    MhsCompiled,
+    MhsCompiledInfo,
+    MhsOperators,
+    MhsOperatorsInfo,
+)
 
 
 class Operators(NamedTuple):
@@ -19,6 +25,64 @@ class Operators(NamedTuple):
     K: object
     C: object
     f: np.ndarray
+
+
+@dataclass(frozen=True)
+class _CompiledMetadata:
+    cell_count: int
+    study_type: int
+    initial_temperature: float
+    nx: int
+    ny: int
+    nz: int
+    grid_to_cell: np.ndarray
+    layer_ids: np.ndarray
+    block_ids: np.ndarray
+
+
+def _operators_from_handle(dll, handle) -> Operators:
+    """Copy a native operator handle into Python-owned SciPy/NumPy storage."""
+    import scipy.sparse
+
+    try:
+        info = MhsOperatorsInfo()
+        check(dll.mhs_operators_get_info(handle, ctypes.byref(info)), "operators_info")
+        n = int(info.state_count)
+
+        def copy_matrix(function, nnz: int):
+            outer = np.empty(n + 1, dtype=np.int32)
+            inner = np.empty(nnz, dtype=np.int32)
+            values = np.empty(nnz, dtype=np.float64)
+            check(
+                function(
+                    handle,
+                    outer.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+                    outer.size,
+                    inner.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+                    inner.size,
+                    values.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                    values.size,
+                ),
+                "operators_copy",
+            )
+            return scipy.sparse.csc_matrix((values, inner, outer), shape=(n, n))
+
+        rhs = np.empty(n, dtype=np.float64)
+        check(
+            dll.mhs_operators_copy_rhs(
+                handle,
+                rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                rhs.size,
+            ),
+            "operators_copy_rhs",
+        )
+        return Operators(
+            copy_matrix(dll.mhs_operators_copy_k, int(info.k_nnz)),
+            copy_matrix(dll.mhs_operators_copy_c, int(info.c_nnz)),
+            rhs,
+        )
+    finally:
+        dll.mhs_operators_destroy(handle)
 
 
 @dataclass
@@ -34,7 +98,7 @@ class SolveOptions:
     nonlinear_absolute_tolerance: float = 1e-12
     integrator: str = "Bdf1"
     step_strategy: str = "Adaptive"
-    error_abs_tol: float = 1e-4
+    error_rel_tol: float = 1e-4
     error_safety: float = 0.9
     min_dt: float = 1e-12
     max_dt: float = 1.0
@@ -62,7 +126,7 @@ class SolveOptions:
         c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
         c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
         c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
-        c_opts.error_abs_tol = self.error_abs_tol
+        c_opts.error_rel_tol = self.error_rel_tol
         c_opts.error_safety = self.error_safety
         c_opts.min_dt = self.min_dt
         c_opts.max_dt = self.max_dt
@@ -85,16 +149,38 @@ class Compiled(OwnedHandle):
         handle = ctypes.POINTER(MhsCompiled)()
         check(dll.mhs_model_compile(model_handle, ctypes.byref(handle)), "compile")
         self._handle = handle
+        self._fetch_metadata()
         return self
 
-    def _fetch_metadata(self) -> MhsCompiledMetadataView:
+    def _fetch_metadata(self) -> _CompiledMetadata:
         if self._metadata_cache is None:
-            view = MhsCompiledMetadataView()
+            info = MhsCompiledInfo()
             check(
-                self._dll.mhs_compiled_metadata(self._handle, ctypes.byref(view)),
-                "compiled_metadata",
+                self._dll.mhs_compiled_get_info(self._handle, ctypes.byref(info)),
+                "compiled_info",
             )
-            self._metadata_cache = view
+            grid = np.empty(info.grid_count, dtype=np.intp)
+            layers = np.empty(info.cell_count, dtype=np.uint32)
+            blocks = np.empty(info.cell_count, dtype=np.uint32)
+            for function, array, c_type in (
+                (self._dll.mhs_compiled_copy_grid_to_cell, grid, ctypes.c_size_t),
+                (self._dll.mhs_compiled_copy_layer_ids, layers, ctypes.c_uint32),
+                (self._dll.mhs_compiled_copy_block_ids, blocks, ctypes.c_uint32),
+            ):
+                copy_array(
+                    function, self._handle, array, c_type, "compiled_metadata_copy"
+                )
+            self._metadata_cache = _CompiledMetadata(
+                int(info.cell_count),
+                int(info.study_type),
+                float(info.initial_temperature),
+                int(info.nx),
+                int(info.ny),
+                int(info.nz),
+                grid,
+                layers,
+                blocks,
+            )
         return self._metadata_cache
 
     @property
@@ -123,29 +209,21 @@ class Compiled(OwnedHandle):
 
     @property
     def grid_to_cell(self) -> np.ndarray:
-        metadata = self._fetch_metadata()
-        return np.ctypeslib.as_array(
-            metadata.grid_to_cell, shape=(metadata.nx * metadata.ny * metadata.nz,)
-        )
+        return self._fetch_metadata().grid_to_cell
 
     @property
     def layer_ids(self) -> np.ndarray:
-        metadata = self._fetch_metadata()
-        return np.ctypeslib.as_array(metadata.layer_ids, shape=(metadata.cell_count,))
+        return self._fetch_metadata().layer_ids
 
     @property
     def block_ids(self) -> np.ndarray:
-        metadata = self._fetch_metadata()
-        return np.ctypeslib.as_array(metadata.block_ids, shape=(metadata.cell_count,))
+        return self._fetch_metadata().block_ids
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""
-        from metahotspot.types import MhsOperatorsView
-        import scipy.sparse
-
         if state is None:
             state = self.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
@@ -154,38 +232,19 @@ class Compiled(OwnedHandle):
                 f"state size ({state.size}) != cell_count ({self.cell_count})"
             )
 
-        view = MhsOperatorsView()
+        handle = ctypes.POINTER(MhsOperators)()
         check(
             self._dll.mhs_compiled_assemble(
                 self._handle,
                 state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
                 state.size,
                 time,
-                ctypes.byref(view),
+                ctypes.byref(handle),
             ),
             "assemble",
         )
 
-        def to_csc(matrix_view):
-            columns = matrix_view.columns
-            nnz = matrix_view.nnz
-            outer = np.ctypeslib.as_array(
-                matrix_view.outer_indices, shape=(columns + 1,)
-            ).copy()
-            inner = np.ctypeslib.as_array(
-                matrix_view.inner_indices, shape=(nnz,)
-            ).copy()
-            values = np.ctypeslib.as_array(matrix_view.values, shape=(nnz,)).copy()
-            return scipy.sparse.csc_matrix(
-                (values, inner, outer),
-                shape=(matrix_view.rows, matrix_view.columns),
-            )
-
-        return Operators(
-            to_csc(view.K),
-            to_csc(view.C),
-            np.ctypeslib.as_array(view.rhs, shape=(view.n,)).copy(),
-        )
+        return _operators_from_handle(self._dll, handle)
 
     def solve(
         self,

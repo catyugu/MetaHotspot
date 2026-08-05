@@ -41,10 +41,9 @@ def get_ext_dll() -> ctypes.CDLL:
     global _ext_dll
     if _ext_dll is None:
         _ext_dll = load_library()
-        from metahotspot._dll_interface import configure_dll, configure_ext_dll
+        from metahotspot._dll_interface import configure_dll
 
         configure_dll(_ext_dll)
-        configure_ext_dll(_ext_dll)
     return _ext_dll
 
 

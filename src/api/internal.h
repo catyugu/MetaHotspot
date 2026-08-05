@@ -9,6 +9,7 @@
 #include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -73,10 +74,14 @@ struct mhs_model_t {
 };
 
 struct mhs_compiled_t {
-    mhs::core::Model model;
-    mhs::sim::Operators assemble_scratch; // reused across calls, not thread-safe
+    std::shared_ptr<const mhs::core::Model> model;
+};
+
+struct mhs_operators_t {
+    mhs::sim::Operators operators;
 };
 
 struct mhs_solution_t {
     mhs::core::Solution sol;
+    std::shared_ptr<const mhs::core::Model> model;
 };
