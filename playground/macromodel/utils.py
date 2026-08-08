@@ -13,11 +13,10 @@ Contents
 * dense helpers:            symmetric_dense, eigenpairs_descending
 * MPMM frequency sampling:  mpmm_elliptic_shift_count, mpmm_elliptic_shifts
 * Krylov enrichment:        orthonormalize_block, reduced_response, response_error
-* sparse operator helpers:  normalized_operators, internal_blocks
-* boundary-port machinery:  extract_boundary_groups, closure_diagonal_multi,
-                            project_closure_group
+* sparse operator helpers:  normalized_operators
 * parametric basis:         random_parameter_vectors, build_parametric_basis
-* Galerkin projection:      project_exact_ports
+* BCI Galerkin projection:  project_bci
+* ROM linear solves:        assemble_reduced_k, solve_rom_steady, solve_rom_transient
 * accuracy metrics:         temperature_error_metrics, accuracy_summary, format_accuracy
 * mesh helpers:             grid_cells, coordinate_map
 
@@ -67,12 +66,20 @@ def eigenpairs_descending(matrix):
 def mpmm_elliptic_shift_count(
     relative_epsilon: float, lambda_min: float, lambda_max: float
 ):
-    """Smallest m satisfying 4*exp(-m^2*pi^2/log(4/k')) <= eps (FANTASTIC 2014 eq. 4)."""
+    """Smallest m satisfying 4*exp(-m*pi^2/log(4/k')) <= eps (Extended FANTASTIC eq.).
+
+    This is the Zolotarev-optimal point count of the MPMM method (Codecasa
+    et al.): the relative error of the elliptic-rational approximation decays
+    as ``4 exp(-m pi^2 / log(4/k'))`` with the *first* power of m.  The ``m^2``
+    exponent in the THERMINIC 2014 preprint rendering is a typesetting
+    artefact; the 2021 journal formulation and the exponential-convergence
+    rate agree on the linear-in-m exponent.
+    """
     kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
     k_prime = lambda_min / lambda_max
     log_term = max(math.log(4.0 / k_prime), np.finfo(float).tiny)
-    for m in range(1, 200):
-        if 4.0 * math.exp(-(m * m) * math.pi * math.pi / log_term) <= relative_epsilon:
+    for m in range(1, 400):
+        if 4.0 * math.exp(-m * math.pi * math.pi / log_term) <= relative_epsilon:
             return m
     raise RuntimeError("MPMM elliptic shift count did not converge")
 
@@ -168,98 +175,135 @@ def normalized_operators(K, C, f) -> Operators:
 
 
 # ---------------------------------------------------------------------------
-# boundary-port machinery
+# BCI Galerkin projection  (FANTASTIC 2014 + BCI matrix reduction 2015)
 # ---------------------------------------------------------------------------
 
 
-def extract_boundary_groups(merged: Operators, interface_ports: int, group_sizes):
-    """Extract per-group boundary coupling in a consistent internal frame.
+def project_bci(
+    operators: Operators,
+    source_shape: np.ndarray,
+    boundary_terms,
+    basis,
+    boundary_epsilon=1.0e-3,
+):
+    """Project the full-domain operators onto ``basis``, exposing BCI ports.
 
-    ``merged`` is the full DtN operator ``[interface ports | boundary group
-    ports | FVM cells]``, ``interface_ports`` the count of interface ports,
-    and ``group_sizes`` the list of port counts per boundary group (in order).
-    Each group's coupled cells are returned in the internal-block frame
-    (0-based within the FVM cells), regardless of where the group sits among
-    the ports.
-    """
-    internal_base = interface_ports + sum(group_sizes)
-    groups = []
-    offset = interface_ports
-    for size in group_sizes:
-        rows = merged.K[offset : offset + size, :].tocsr()
-        cells = np.empty(size, dtype=np.int64)
-        conductance = np.empty(size, dtype=np.float64)
-        for k in range(size):
-            row = rows[k]
-            negative = [col for col in row.indices if row[0, col] < 0.0]
-            if len(negative) != 1:
-                raise RuntimeError("boundary port must couple to exactly one cell")
-            cells[k] = negative[0] - internal_base
-            conductance[k] = -row[0, negative[0]]
-        groups.append((cells, conductance))
-        offset += size
-    return groups
+    Builds the reduced (Ĉ, K̂0, F̂, F̂_ϑ, A_k) of a boundary-condition-independent
+    DCTM following Extended FANTASTIC (Codecasa et al. 2021, eqs. 9-16 and the
+    boundary-DoF definition of Section IV-B):
 
+    * the source ports enter the RHS through ``F̂ = Vᵀ G_src`` and the junction
+      temperatures read ``T_j = T0 + F̂ᵀ θ``;
+    * the boundary is exposed as an explicit port: the rows of ``V`` on the
+      boundary cells form ``V_∂Ω``, whose SVD ``V_∂Ω = U_∂Ω Σ_∂Ω W_∂Ωᵀ`` is
+      truncated at singular values below ``boundary_epsilon``; the boundary
+      output matrix is ``F̂_ϑ = W_∂Ω Σ_∂Ω`` (M̂ × Θ) so ``T_ϑ = T0 + F̂_ϑᵀ θ``;
+    * each boundary group k contributes the affine term ``h_k F̂_ϑ A_k F̂_ϑᵀ``
+      with ``A_k = U_∂Ωᵀ H_k U_∂Ω`` (Θ × Θ, H_k the group's exposed-area
+      diagonal), so the effective stiffness is ``K̂(h) = K̂0 + Σ_k h_k F̂_ϑ A_k
+      F̂_ϑᵀ`` — the projected HTC matrix of the ambient coupling
+      ``P_ϑ = -Ĥ(T_ϑ - T_A e_Θ)``, ``Ĥ = Σ_k h_k A_k``.
 
-def internal_blocks(operators: Operators, ports: int):
-    """Interior/port CSC blocks of a ``[ports | interior]`` DtN operator.
+    ``operators`` is the full-domain h-free ``(K, C, f)``, ``source_shape``
+    the (N, n_src) source-shape matrix ``G_src``, and ``boundary_terms`` a
+    list of diagonal sparse ``H_k`` (exposed area per cell, one per group).
+    Interior modes are *rise* coordinates above ambient.
 
-    Returns ``(K_ii, C_ii, B_io, D_io)`` — the interior-interior K/C and the
-    interior-port K/C coupling blocks used to assemble rational-Krylov
-    candidate operators.  Parameter-count agnostic: ``ports`` is the leading
-    block size, whatever the number of boundary groups behind it.
-    """
-    return (
-        operators.K[ports:, ports:].tocsc(),
-        operators.C[ports:, ports:].tocsc(),
-        operators.K[ports:, :ports].tocsc(),
-        operators.C[ports:, :ports].tocsc(),
-    )
-
-
-def closure_diagonal_multi(h_values, boundary_groups, boundary_areas, n_cell):
-    """Sum of per-group saturation closures, one heat-exchange coefficient each.
-
-    ``boundary_groups`` is a list of ``(cells, g)`` pairs (one per boundary
-    group, in port order) as returned by :func:`extract_boundary_groups`, and
-    ``boundary_areas`` the per-group face area arrays.  ``h_values`` the
-    per-group coefficient.  Because each group couples disjoint cells, the
-    total closure is the per-cell sum.
-    """
-    if len(h_values) != len(boundary_groups):
-        raise ValueError("h_values must match boundary group count")
-    if len(boundary_areas) != len(boundary_groups):
-        raise ValueError("boundary_areas must match boundary group count")
-    closure = np.zeros(n_cell)
-    for h_value, (cells, g), areas in zip(h_values, boundary_groups, boundary_areas):
-        for cell, g_k, area in zip(cells, g, areas):
-            closure[cell] += g_k * h_value * area / (g_k + h_value * area)
-    return closure
-
-
-def project_closure_group(cells, g, areas, n_cell, basis):
-    """Return ``h_k -> B^T diag(closure_k(h_k)) B`` for one boundary group.
-
-    The projected closure matrix is what the online model adds to the reduced
-    interior block for a given boundary coefficient of that group.
+    Returns ``(C_hat, K_hat0, F_hat, F_bdry, A_bdry)`` where ``F_bdry`` is the
+    (M̂, Θ) boundary output matrix and ``A_bdry[k]`` the (Θ, Θ) HTC matrix of
+    boundary group k.
     """
 
-    def closure(h_k):
-        closure = np.zeros(n_cell)
-        for cell, g_k, area in zip(cells, g, areas):
-            closure[cell] += g_k * h_k * area / (g_k + h_k * area)
-        weighted = closure[:, None] * basis
-        return sp.csc_matrix(weighted.T @ basis)
+    def project(matrix):
+        reduced = sp.csc_matrix(basis.T @ matrix @ basis)
+        reduced = (0.5 * (reduced + reduced.T)).tocsc()
+        reduced.eliminate_zeros()
+        return reduced
 
-    return closure
+    C_hat = project(operators.C)
+    K_hat0 = project(operators.K)
+    F_hat = np.asarray(basis.T @ source_shape, dtype=np.float64)
+
+    # Boundary cells: union of cells carrying any exposed area.
+    n_cell = operators.K.shape[0]
+    b_diag = np.zeros(n_cell)
+    for term in boundary_terms:
+        b_diag += np.asarray(term.diagonal()).ravel()
+    b_cells = np.flatnonzero(b_diag > 0.0)
+    if b_cells.size == 0:
+        raise ValueError("no boundary cells found for BCI port extraction")
+
+    # V_∂Ω = rows of V on boundary cells; SVD, truncated at boundary_epsilon.
+    V_d = np.asarray(basis[b_cells, :])
+    U_d, s_d, Wt_d = np.linalg.svd(V_d, full_matrices=False)
+    keep = np.flatnonzero(s_d > boundary_epsilon * s_d[0])
+    theta = keep.size
+    if theta == 0:
+        raise RuntimeError("boundary SVD retained no modes")
+    U_t = np.ascontiguousarray(U_d[:, keep])  # (M_∂Ω, Θ)
+    S_t = s_d[keep]  # (Θ,)
+    W_t = np.ascontiguousarray(Wt_d[keep, :].T)  # (M̂, Θ)
+    F_bdry = W_t * S_t  # (M̂, Θ) = W Σ
+
+    # Per-group HTC matrices A_k = U_∂Ωᵀ H_k U_∂Ω (Θ, Θ), in boundary-cell frame.
+    A_bdry = []
+    for term in boundary_terms:
+        Hk_b = np.asarray(term.diagonal()).ravel()[b_cells]
+        A_k = U_t.T @ (Hk_b[:, None] * U_t)  # Θ×Θ
+        A_bdry.append((0.5 * (A_k + A_k.T)).astype(np.float64))
+
+    return C_hat, K_hat0, F_hat, F_bdry, A_bdry
+
+
+def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
+    """``K̂(h) = K̂0 + Σ_k h_k F̂_ϑ A_k F̂_ϑᵀ`` for admissible ``h_vec``."""
+    K = K_hat0.tocsc()
+    for h, A in zip(h_vec, A_bdry):
+        K = K + h * sp.csc_matrix(F_bdry @ A @ F_bdry.T)
+    return K.tocsc()
+
+
+def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
+    """Steady reduced interior: ``K̂(h) θ = F̂ P`` (K̂ is SPD for h > 0)."""
+    rhs = F_hat @ np.asarray(power, dtype=np.float64)
+    return np.asarray(sp.linalg.spsolve(K_hat.tocsc(), rhs)).ravel()
+
+
+def solve_rom_transient(
+    C_hat,
+    K_hat,
+    F_hat,
+    power_t,
+    dt: float,
+    duration: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fixed-step BDF1 transient of the reduced interior.
+
+    ``(Ĉ/dt + K̂) θ_{n+1} = Ĉ θ_n/dt + F̂ P(t_{n+1})`` on the same output grid
+    as the model reference (0, dt, 2·dt, …, duration).  ``K_hat`` is the
+    already-assembled ``K̂(h)``; ``power_t`` is a callable ``t -> P(t)``.
+    Returns ``(times, theta_history)``.
+    """
+    n_modes = C_hat.shape[0]
+    A = K_hat.tocsc()
+    lhs = (C_hat / dt + A).tocsc()
+    times = np.arange(0.0, duration + 0.5 * dt, dt)
+    history = np.empty((times.size, n_modes), dtype=np.float64)
+    theta = np.zeros(n_modes)
+    solver = sp.linalg.splu(lhs)
+    for i, t in enumerate(times):
+        rhs = (C_hat @ theta) / dt + F_hat @ np.asarray(power_t(t), dtype=np.float64)
+        theta = solver.solve(rhs)
+        history[i] = theta
+    return times, history
 
 
 # ---------------------------------------------------------------------------
 # parametric basis construction (FANTASTIC BCI 2015 Algorithm 1)
 # ---------------------------------------------------------------------------
 
-TARGET_RELATIVE_EPSILON = 5.0e-3  # elliptic shift-count target (FANTASTIC 2014 eq. 4)
-RESIDUAL_TOLERANCE = 5.0e-3  # residual-driven enrichment stop tolerance
+TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
+RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 MAX_ORDER = 2048
 RANDOM_PARAMETER_SAMPLES = 20  # random h-vectors for training (Algorithm 1)
 RANDOM_SEED = 20260805
@@ -291,12 +335,11 @@ def random_parameter_vectors(h_ranges, sample_count, seed, boundaries=None):
 
 
 def build_parametric_basis(
-    core,
-    ports,
-    boundary_groups,
-    boundary_areas,
-    *,
+    operators,
+    source_shape,
+    boundary_terms,
     h_ranges,
+    *,
     boundaries,
     residual_tolerance=RESIDUAL_TOLERANCE,
     max_order=MAX_ORDER,
@@ -304,71 +347,79 @@ def build_parametric_basis(
     sample_count=RANDOM_PARAMETER_SAMPLES,
     seed=RANDOM_SEED,
 ):
-    """Certified interior basis by residual-driven enrichment (Algorithm 1).
+    """Certified full-domain basis by residual-driven enrichment (Algorithm 1).
 
-    Model- and parameter-count-agnostic: ``boundary_groups`` is a list of
-    ``(cells, g)`` pairs (one per boundary group, in port order) as returned by
-    :func:`extract_boundary_groups`, ``boundary_areas`` the per-group face area
-    arrays, and ``h_ranges`` an ``(n_groups, 2)`` array of admissible
-    ``(lo, hi)`` ranges, one row per affine parameter.
+    Model- and parameter-count-agnostic, driven by the *real power inputs*:
+    ``operators`` is the full-domain h-free ``(K, C, f)`` (``f`` = the
+    constant heat-source RHS), ``source_shape`` the ``(N, n_src)`` source-shape
+    matrix ``G_src`` whose columns are the per-port unit-power shapes, and
+    ``boundary_terms`` a list of diagonal sparse ``H_k`` (exposed area per
+    cell, one per group).  ``h_ranges`` is an ``(n_groups, 2)`` array of
+    admissible ``(lo, hi)`` ranges, one row per affine parameter.
 
     Candidates are ``(h_vec, shift)``: random admissible boundary-coefficient
-    vectors crossed with the FANTASTIC-2014 elliptic-optimal complex shifts.
-    The candidate operator is
-        A(h_vec, shift) = K_ii + shift*C_ii + diag(closure_multi(h_vec))
-    with the exact saturating per-group closure (the operators K_ii, C_ii never
-    contain h — only the boundary-port closure does).  Every candidate streams
-    one frequency-domain solve; residual directions above tolerance are inserted
-    immediately, so no full-state response is retained.  The basis is kept
-    column-orthonormal throughout.
+    vectors crossed with the elliptic-optimal complex shifts.  The candidate
+    operator is the full-domain affine Robin system
+        A(h_vec, shift) = K + shift*C + sum_k h_k H_k
+    and the RHS is the source-shape matrix ``G_src`` (FANTASTIC 2014: solve
+    ``(σM + K) X = g_i`` for every source port i).  Every candidate streams one
+    frequency-domain solve (shared LU, n_src right-hand sides); residual
+    directions above tolerance are inserted immediately, so no full-state
+    response is retained.  The basis is kept column-orthonormal throughout.
     """
     started = time.perf_counter()
-    K0, C0, B0, D0 = internal_blocks(core, ports)
+    K = operators.K.tocsc()
+    C = operators.C.tocsc()
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
     h_vectors = random_parameter_vectors(h_ranges, sample_count, seed, boundaries)
 
-    # Eigenvalue bounds of the h-free interior operator K_ii (generalized
-    # eigenvalue problem K_ii v = lambda C_ii v) drive both the elliptic
-    # shift distribution and the per-candidate shift count.
-    eigenvalue_scale = max(float(np.max(np.abs(C0.diagonal()))), np.finfo(float).tiny)
-    eigenvalue_ratio = max(
-        math.sqrt(np.linalg.cond(K0.todense().astype(np.float64))),
-        1.0,
-    )
-    kappa = eigenvalue_ratio**2
-    lambda_min = float(eigenvalue_scale / kappa)
-    lambda_max = float(eigenvalue_scale)
-    if kappa > 1.0e6:
-        lambda_min = max(lambda_min, lambda_max / 1.0e6)
-        kappa = lambda_max / lambda_min
+    try:
+        vals_high, _ = spla.eigsh(K, k=1, M=C, which="LA")
+        vals_low, _ = spla.eigsh(K, k=3, M=C, sigma=0.0, which="LM")
+        positive_low = vals_low[vals_low > 1.0e-9]
+        if positive_low.size == 0:
+            raise RuntimeError("no positive small eigenvalue found")
+        lambda_min = float(positive_low.min())
+        lambda_max = float(vals_high.max())
+    except Exception as exc:
+        raise RuntimeError(
+            "spectrum estimation failed for elliptic shift placement "
+            f"({exc}); the operator is likely pathologically ill-conditioned"
+        ) from exc
+
+    kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
     elliptic_count = mpmm_elliptic_shift_count(
         target_relative_epsilon, lambda_min, lambda_max
     )
     shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
 
     raw_points = [(hv, float(shift)) for hv in h_vectors for shift in shifts]
-    internal_order = K0.shape[0]
+    internal_order = K.shape[0]
     order_limit = min(max_order, internal_order)
-    basis = np.empty((internal_order, 0), dtype=np.float64)
+    # Algorithm 1 line 1: start from the uniform-temperature direction e_M so
+    # the basis can represent arbitrary ambient shifts (Extended FANTASTIC).
+    basis = np.full((internal_order, 1), 1.0 / math.sqrt(internal_order))
     history = []
     worst_score = 0.0
     converged = True
 
-    for h_vec, shift in raw_points:
-        closure = closure_diagonal_multi(
-            h_vec, boundary_groups, boundary_areas, internal_order
-        )
-        A = (K0 + shift * C0 + sp.diags(closure)).tocsc()
-        A = (0.5 * (A + A.T)).tocsc()
-        B_dense = (B0 + shift * D0).toarray()
+    def candidate_A(h_vec, shift):
+        A = K + shift * C
+        for h, H in zip(h_vec, boundary_terms):
+            A = A + h * H
+        return (0.5 * (A + A.T)).tocsc()
 
-        response = np.asarray(spla.splu(A).solve(-B_dense))
-        response_gram = symmetric_dense(-response.T @ B_dense)
+    for h_vec, shift in raw_points:
+        A = candidate_A(h_vec, shift)
+        B_dense = np.asarray(source_shape, dtype=np.float64)
+
+        response = np.asarray(spla.splu(A).solve(B_dense))
+        response_gram = symmetric_dense(response.T @ B_dense)
         response_values, _ = eigenpairs_descending(response_gram)
         reference = max(float(response_values[0]), np.finfo(float).tiny)
 
         order_before = basis.shape[1]
-        reduced = reduced_response(basis, A, B_dense)
+        reduced = reduced_response(basis, A, -B_dense)
         error_response, error_values, tangents, score_before = response_error(
             response,
             basis,
@@ -400,7 +451,7 @@ def build_parametric_basis(
                 else 0.0
             )
         else:
-            reduced = reduced_response(basis, A, B_dense)
+            reduced = reduced_response(basis, A, -B_dense)
             _, _, _, score_after = response_error(
                 response,
                 basis,
@@ -457,50 +508,6 @@ def build_parametric_basis(
             "directly; never cache candidates or repeat global scans"
         ),
     }
-
-
-# ---------------------------------------------------------------------------
-# Galerkin projection (exact ports + reduced interior)
-# ---------------------------------------------------------------------------
-
-
-def project_exact_ports(
-    operators: Operators, ports: int, basis, ambient_K: float | None = None
-) -> Operators:
-    """Project ``[ports | interior]`` onto ``[ports | basis]``.
-
-    Physical ports stay exact (identity on the leading block); the interior is
-    projected with ``basis``.  When ``ambient_K`` is given, the rhs is shifted
-    so the interior modes are *rise* coordinates above ambient.
-    """
-    source = np.asarray(operators.f, dtype=np.float64)
-    if ambient_K is not None:
-        offset = np.full(operators.K.shape[0] - ports, ambient_K)
-        source = np.asarray(source - operators.K[:, ports:] @ offset).ravel()
-
-    def project(matrix):
-        reduced = sp.bmat(
-            (
-                (
-                    sp.csc_matrix(matrix[:ports, :ports]),
-                    sp.csc_matrix(matrix[:ports, ports:] @ basis),
-                ),
-                (
-                    sp.csc_matrix(basis.T @ matrix[ports:, :ports]),
-                    sp.csc_matrix(basis.T @ matrix[ports:, ports:] @ basis),
-                ),
-            ),
-            format="csc",
-        )
-        reduced = (0.5 * (reduced + reduced.T)).tocsc()
-        reduced.eliminate_zeros()
-        return reduced
-
-    return Operators(
-        project(operators.K),
-        project(operators.C),
-        np.r_[source[:ports], np.asarray(basis.T @ source[ports:]).ravel()],
-    )
 
 
 # ---------------------------------------------------------------------------

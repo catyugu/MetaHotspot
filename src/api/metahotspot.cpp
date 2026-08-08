@@ -650,42 +650,6 @@ MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, const size_t* cells, mhs_face_t face,
-    double temperature, double time, double* out, size_t n)
-{
-    CHECK_NULL(c);
-    CHECK_NULL(cells);
-    CHECK_NULL(out);
-    MHS_TRY(MHS_ERR_ASSEMBLE, {
-        if (static_cast<int>(face) < 0 || static_cast<int>(face) >= 6) {
-            throw std::invalid_argument("invalid face direction");
-        }
-        const auto& model = *c->model;
-        const auto face_dir = static_cast<mhs::core::FaceDir>(static_cast<int>(face));
-        const auto cell_count = model.cells.cell_to_grid.size();
-        for (size_t i = 0; i < n; ++i) {
-            const auto cell = cells[i];
-            if (cell >= cell_count) {
-                throw std::out_of_range("cell index " + std::to_string(cell)
-                    + " out of range (cell_count=" + std::to_string(cell_count) + ")");
-            }
-            const auto grid = model.cells.cell_to_grid[cell];
-            mhs::core::Index ix, iy, iz;
-            mhs::utils::decode_index(grid, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-            const auto& material = model.material_table[model.cells.material_id[cell]];
-            const mhs::core::FieldContext ctx {
-                model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], temperature, time};
-            const double k
-                = mhs::utils::k_along(face_dir, material.kx.eval(ctx), material.ky.eval(ctx), material.kz.eval(ctx));
-            const double area
-                = mhs::utils::face_area(face_dir, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            const double half_len
-                = mhs::utils::half_length_along(face_dir, model.mesh.dx[ix], model.mesh.dy[iy], model.mesh.dz[iz]);
-            out[i] = (k > 0.0 && half_len > 0.0) ? k * area / half_len : 0.0;
-        }
-    });
-}
-
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out)
 {

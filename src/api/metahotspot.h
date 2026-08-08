@@ -276,15 +276,6 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int3
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
-/*  Half-conductance  k*A/(dx/2)                                       */
-/* ------------------------------------------------------------------ */
-
-/** Compute k*A/(dx/2) for each cell at the given face.
- *  Temperature and time are used to evaluate material properties. */
-MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, const size_t* cells, mhs_face_t face,
-    double temperature, double time, double* out, size_t n);
-
-/* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 

@@ -22,9 +22,13 @@ import numpy as np
 
 import metahotspot
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel import PortPatch
 
-from affine_parametric_models._interfaces import AffineParametricModel
+from affine_parametric_models._interfaces import (
+    AffineParametricModel,
+    BoundaryGroup,
+    SourcePort,
+    surface_exposed_cells,
+)
 
 MATERIALS = (
     ("organic", ".65", ".65", ".55", "1900", "1100"),
@@ -152,11 +156,15 @@ def build_geometry(
     detail: bool,
     macro: bool,
     boundary_h: dict[str, float] | None = None,
+    source_sink: list | None = None,
 ):
     """Assemble geometry.  Layers bottom-up: die (detail), then substrate+cap (macro).
 
     ``boundary_h`` (if given) maps boundary-group name -> coefficient and
     applies the group's convection via :func:`apply_boundary_convection`.
+    When ``source_sink`` is given, each heat-source block appends
+    ``(block_id, power_W)`` to it (in add order), so the model can recover
+    per-source cells from the compiled ``block_ids``.
     """
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
@@ -194,6 +202,8 @@ def build_geometry(
         add_square(model, model.add_block(die, "silicon"), cfg.size_mm)
         half = cfg.size_mm / 2.0
         zone_volume = half * cfg.size_mm * cfg.die_h_mm * 1.0e-9  # m^3
+        # die-layer block id counter: 0 = die base block, then one per zone
+        die_block_count = 1
         for x0, frac in (
             (-half, cfg.left_power_frac),
             (0.0, 1.0 - cfg.left_power_frac),
@@ -211,6 +221,9 @@ def build_geometry(
                 f"{half:.17g}",
                 f"{cfg.size_mm:.17g}",
             )
+            if source_sink is not None:
+                source_sink.append((die_block_count, float(frac * cfg.source_power_W)))
+            die_block_count += 1
 
     model.set_default_neumann("0")
 
@@ -227,73 +240,12 @@ def build_geometry(
     return model
 
 
-def _full_face_patches(cfg: BciPkgConfig, face: Face, z_m: float) -> list[PortPatch]:
-    verts = cfg.axis_vertices_mm * 1.0e-3
-    return [
-        PortPatch(int(face), z_m, (verts[ix], verts[ix + 1], verts[iy], verts[iy + 1]))
-        for ix in range(verts.size - 1)
-        for iy in range(verts.size - 1)
-    ]
-
-
-def _boundary_patch_groups(cfg: BciPkgConfig):
-    """Boundary port groups [top, side] with per-group patch areas."""
-    verts = cfg.axis_vertices_mm * 1.0e-3
-    zv = z_vertices(cfg.macro_layers) * 1.0e-3
-    top_z = zv[-1]
-
-    top = [
-        PortPatch(
-            int(Face.ZP), top_z, (verts[ix], verts[ix + 1], verts[iy], verts[iy + 1])
-        )
-        for ix in range(verts.size - 1)
-        for iy in range(verts.size - 1)
-    ]
-    top_areas = np.asarray(
-        [
-            (verts[ix + 1] - verts[ix]) * (verts[iy + 1] - verts[iy])
-            for ix in range(verts.size - 1)
-            for iy in range(verts.size - 1)
-        ]
-    )
-
-    half = cfg.size_mm / 2.0 * 1e-3
-    side, side_areas = [], []
-    for axis_face, coord, a_verts in (
-        (Face.XM, -half, verts),
-        (Face.XP, half, verts),
-        (Face.YM, -half, verts),
-        (Face.YP, half, verts),
-    ):
-        for a0, a1 in zip(a_verts[:-1], a_verts[1:]):
-            for b0, b1 in zip(zv[:-1], zv[1:]):
-                side.append(PortPatch(int(axis_face), float(coord), (a0, a1, b0, b1)))
-                side_areas.append((a1 - a0) * (b1 - b0))
-    return [top, side], [top_areas, np.asarray(side_areas)]
-
-
-def _detail_monitor_cells(cfg: BciPkgConfig, detail_compiled) -> np.ndarray:
-    """Die-top cell indices (in the detail model) above each heat zone centre."""
-    grid = detail_compiled.grid_to_cell.reshape(
-        detail_compiled.nx, detail_compiled.ny, detail_compiled.nz
-    )
-    top = grid[:, :, -1]
-    verts = cfg.axis_vertices_mm * 1e-3
-    centres = (verts[:-1] + verts[1:]) / 2.0
-    quarter = cfg.size_mm / 4.0 * 1e-3
-    cells = []
-    for xc in (-quarter, quarter):
-        ix = int(np.argmin(np.abs(centres - xc)))
-        iy = int(np.argmin(np.abs(centres - 0.0)))
-        cells.append(int(top[ix, iy]))
-    return np.asarray(cells)
-
-
 class _BciPkg(AffineParametricModel):
     """Private concrete implementation registered as ``"bci_pkg"``."""
 
     def __init__(self, cfg: BciPkgConfig):
         self.config = cfg
+        self._source_sink: list = []
 
     @property
     def name(self) -> str:
@@ -302,16 +254,80 @@ class _BciPkg(AffineParametricModel):
     # ------------------------------------------------- geometry hooks
 
     def build_geometry(self, study, *, detail, macro, boundary_h=None):
+        self._source_sink.clear()
         return build_geometry(
-            self.config, study, detail=detail, macro=macro, boundary_h=boundary_h
+            self.config,
+            study,
+            detail=detail,
+            macro=macro,
+            boundary_h=boundary_h,
+            source_sink=self._source_sink,
         )
 
-    def interface_patches(self) -> list[PortPatch]:
-        # Macro block bottom (= die top, macro z=0): full lateral extent.
-        return _full_face_patches(self.config, Face.ZM, 0.0)
+    def source_ports(self) -> list[SourcePort]:
+        """One :class:`SourcePort` per heat-source block (two die zones)."""
+        f = np.asarray(self._core.f, dtype=np.float64)
+        source_cells = np.flatnonzero(f > 0.0)
+        block = self._full.block_ids[source_cells]
+        order = np.argsort(block, kind="stable")
+        block_sorted = block[order]
+        cell_sorted = source_cells[order]
+        boundaries = np.flatnonzero(np.diff(block_sorted) != 0) + 1
+        groups = np.split(cell_sorted, boundaries)
 
-    def boundary_patch_groups(self):
-        return _boundary_patch_groups(self.config)
+        if len(groups) != len(self._source_sink):
+            raise RuntimeError(
+                f"source block count mismatch: {len(groups)} groups vs "
+                f"{len(self._source_sink)} sink entries"
+            )
+        ports = []
+        for cells, (block_id, power_W) in zip(groups, self._source_sink):
+            ports.append(
+                SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power_W)
+            )
+        return ports
+
+    def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
+        full = self._full
+        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = self.config.axis_vertices_mm * 1.0e-3
+        y = x
+        z = z_vertices((*self.config.detail_layers, *self.config.macro_layers)) * 1.0e-3
+        half = self.config.size_mm / 2.0 * 1.0e-3
+        total_h = self.config.total_height_mm * 1.0e-3
+
+        # top group: cap top face (ZP at full height)
+        top_cells, top_areas = surface_exposed_cells(grid, x, y, z, Face.ZP, total_h)
+
+        # side group: four lateral walls of the macro block (z in [die_h, total_h])
+        side_cells, side_areas = [], []
+        die_h = self.config.die_h_mm * 1.0e-3
+        for face, coord in (
+            (Face.XM, -half),
+            (Face.XP, half),
+            (Face.YM, -half),
+            (Face.YP, half),
+        ):
+            cells, areas = surface_exposed_cells(
+                grid, x, y, z, face, coord, z_range=(die_h, total_h)
+            )
+            side_cells.append(cells)
+            side_areas.append(areas)
+        side_cells = (
+            np.concatenate(side_cells) if side_cells else np.empty(0, dtype=np.int64)
+        )
+        side_areas = (
+            np.concatenate(side_areas) if side_areas else np.empty(0, dtype=np.float64)
+        )
+
+        return (
+            BoundaryGroup(
+                cells=top_cells, areas=top_areas, h_range=self.config.h_ranges[0]
+            ),
+            BoundaryGroup(
+                cells=side_cells, areas=side_areas, h_range=self.config.h_ranges[1]
+            ),
+        )
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 2:
@@ -335,25 +351,9 @@ class _BciPkg(AffineParametricModel):
             (float(h_top), float(h_side)) for h_top in top_axis for h_side in side_axis
         ]
 
-    def detail_interface_patches(self) -> list[PortPatch]:
-        # Interface on the detail model = die top, same lateral extent.
-        return _full_face_patches(self.config, Face.ZP, self.config.die_h_mm * 1e-3)
-
     @property
     def detail_nz(self) -> int:
         return self.config.detail_nz
-
-    def monitor_cells(self) -> np.ndarray:
-        return _detail_monitor_cells(self.config, self._detail_steady)
-
-    @cached_property
-    def port_lookup(self) -> dict[tuple[int, int], int]:
-        return {
-            (int(ix), int(iy)): port
-            for port, (ix, iy) in enumerate(
-                (ix, iy) for ix in range(self.config.nx) for iy in range(self.config.nx)
-            )
-        }
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

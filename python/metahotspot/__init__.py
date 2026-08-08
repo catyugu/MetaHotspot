@@ -9,11 +9,6 @@ Usage::
     compiled = model.compile()
     solution = compiled.solve()
     temperatures = solution.temperature
-
-Macromodel coupling uses ``metahotspot.Operators`` directly::
-
-    from metahotspot.macromodel import PortMap, solve
-    solution = solve(operators, ports, state)
 """
 
 from metahotspot import enums

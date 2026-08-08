@@ -11,7 +11,6 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 | `mhs_common`     | header-only 运行期数据契约和网格助手          |
 | `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场 |
 | `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
-| `mhs_macromodel` | 宏模型降阶端口耦合插件（可选）                |
 | `mhs_expression` | muparser 与 TBB 表达式封装                    |
 | `mhs_linear`     | Eigen / MKL 线性求解封装                      |
 | `mhs_io`         | XML 输入、XML/VTU 输出及外部格式适配          |
@@ -21,7 +20,6 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 ```text
 IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
-mhs_macromodel → mhs_solver + mhs_common（插件，可选）
 ```
 
 `mhs::core` 不依赖 `mhs::sim`、`mhs::io`、`mhs::post` 或 `mhs::logger`。命名空间规则和目录归属见 [项目结构](docs/design/project-structure.md)。
@@ -33,12 +31,9 @@ mhs_macromodel → mhs_solver + mhs_common（插件，可选）
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
   端口或耦合拓扑。
-- 宏块可在 setup 阶段凝聚到物理端口，再用 SVD 基底 `Phi` 降到少量模态；
-  在线状态排列为 `[Model FVM temperatures, macro modal coefficients]`，
-  物理端口温度由 `T_port = Phi * q` 恢复。
-- `assemble_modal_port_system` 拥有 FVM 与外部宏模型之间的组合逻辑。
-  每次非线性线性化都会按当前 FVM 温度重算模型侧半热导，并把物理接口
-  贡献投影到端口模态；scheduler 不参与该过程。
+- 模型降阶（BCI-FANTASTIC 热源即端口）在 `playground/macromodel` 以纯
+  Python 实现：热源区作为端口、边界组作为仿射 Robin 项，降阶基由功率
+  输入驱动，在线用 scipy 固定步 BDF1 求解，不依赖 C++ 端口耦合。
 - 瞬态只保留 `Adaptive` 与 `Fixed` 两种步进。二者都会在输出时刻和终止
   时刻截短当前步，observer 只接收真实积分状态；禁止对包含模态系数的
   全局状态做时间插值。

@@ -1,7 +1,7 @@
 #pragma once
 
-/* Internal solve driver — NOT part of the public API.
-   Shared between the standard solver (solve.cpp) and the macromodel module. */
+/* Internal solve driver — NOT part of the public API.  Shared between the
+   standard solver (solve.cpp) and the callback-driven solve_system. */
 
 #include "common/solution.hpp"
 #include "common/solver.hpp"
@@ -22,8 +22,8 @@ namespace mhs::sim {
         double output_interval = 1.0;
     };
 
-    /// Generalized callback-driven solver. Standard solve() and the macromodel
-    /// both call this internally.
+    /// Generalized callback-driven solver. Standard solve() calls this
+    /// internally.
     mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
         std::span<const double> initial_state, const SolveOptions& opts = {}, const StateObserver& observe = {});
 
