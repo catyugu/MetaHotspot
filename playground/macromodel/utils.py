@@ -175,6 +175,112 @@ def normalized_operators(K, C, f) -> Operators:
 
 
 # ---------------------------------------------------------------------------
+# per-port spectral bounds  (FANTASTIC 2014 step 1, Extended FANTASTIC line 2)
+# ---------------------------------------------------------------------------
+
+
+EIGENBOUND_SUBSPACE_CAP = 64  # block-Krylov dimension for per-port bounds
+
+
+def _global_eigenvalue_bounds(K, C) -> tuple[float, float]:
+    """Global ``(lambda_min, lambda_max)`` of the generalized pencil ``K x = λ C x``."""
+    vals_high, _ = spla.eigsh(K, k=1, M=C, which="LA")
+    vals_low, _ = spla.eigsh(K, k=3, M=C, sigma=0.0, which="LM")
+    positive_low = vals_low[vals_low > 1.0e-9]
+    if positive_low.size == 0:
+        raise RuntimeError("no positive small eigenvalue found")
+    return float(positive_low.min()), float(vals_high.max())
+
+
+def port_eigenvalue_bounds(
+    K,
+    C,
+    g,
+    *,
+    shift=1.0e-6,
+    cap=EIGENBOUND_SUBSPACE_CAP,
+) -> tuple[float, float]:
+    """Per-port spectral bounds ``(lambda_min, lambda_max)`` for source shape ``g``.
+
+    FANTASTIC 2014 step 1: the min/max eigenvalues are estimated *with
+    respect to the power impulse thermal response of the i-th heat source*,
+    i.e. only the part of the ``(K, C)`` pencil that the source actually
+    excites is considered — a global eigsh over the whole pencil over-
+    broadens the shift set.  The pencil is projected onto the Krylov
+    subspace the source drives:
+
+    * slow end  ``{(shift*C + K)^-1 C}^n g`` — one factorization at a small
+      positive ``shift`` (well-posed despite Neumann-singular K), the rest
+      are triangular back-solves; the projected pencil's min positive
+      eigenvalue.
+    * fast end  ``{C^-1 K}^n g`` — C is the FVM diagonal mass matrix, so
+      ``C^-1 K`` is a plain sparse matvec; the projected pencil's max
+      eigenvalue.
+
+    Returns ``(lambda_min, lambda_max)``; falls back to the global ``eigsh``
+    bounds when the per-port projection yields a degenerate interval.
+    """
+    K = K.tocsc()
+    C = C.tocsc()
+    c_diag = np.asarray(C.diagonal()).ravel()
+    if np.any(c_diag <= 0.0):
+        raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
+    g = np.asarray(g, dtype=np.float64).ravel()
+    n = K.shape[0]
+    scale = float(np.median(c_diag))
+    g_norm = max(float(np.linalg.norm(g)), np.finfo(float).tiny)
+
+    def project_spectrum(Q, keep):
+        if keep < 2:
+            return None
+        Q = np.ascontiguousarray(Q[:, :keep])
+        Kp = Q.T @ (K @ Q)
+        Cp = Q.T @ (C @ Q)
+        Kp = 0.5 * (Kp + Kp.T)
+        Cp = 0.5 * (Cp + Cp.T)
+        try:
+            return scipy.linalg.eigvalsh(Kp, Cp, check_finite=False)
+        except Exception:
+            return None
+
+    def krylov(apply_step):
+        Q = np.zeros((n, cap))
+        Q[:, 0] = g / g_norm
+        keep = 1
+        for _ in range(1, cap):
+            w = apply_step(Q[:, keep - 1])
+            for _rep in range(2):
+                w = w - Q[:, :keep] @ (Q[:, :keep].T @ w)
+            nrm = float(np.linalg.norm(w))
+            if nrm < 1.0e-10:
+                break
+            Q[:, keep] = w / nrm
+            keep += 1
+        return Q, keep
+
+    # -- slow end: shift-invert block-Krylov, min positive eigenvalue ------
+    s0 = max(float(shift), scale * 1.0e-6)
+    lu = spla.splu((K + s0 * C).tocsc())
+    Qs, ks = krylov(lambda v: lu.solve(C @ v))
+    vals = project_spectrum(Qs, ks)
+    positive = vals[vals > 1.0e-9] if vals is not None else np.empty(0)
+    lambda_min = float(positive.min()) if positive.size else None
+
+    # -- fast end: forward block-Krylov, max eigenvalue --------------------
+    Qf, kf = krylov(lambda v: (K @ v) / c_diag)
+    vals = project_spectrum(Qf, kf)
+    lambda_max = float(vals.max()) if vals is not None and vals.size else None
+
+    if (
+        lambda_min is not None
+        and lambda_max is not None
+        and lambda_max > lambda_min
+    ):
+        return lambda_min, lambda_max
+    return _global_eigenvalue_bounds(K, C)
+
+
+# ---------------------------------------------------------------------------
 # BCI Galerkin projection  (FANTASTIC 2014 + BCI matrix reduction 2015)
 # ---------------------------------------------------------------------------
 
@@ -306,6 +412,7 @@ TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTAS
 RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 MAX_ORDER = 2048
 RANDOM_PARAMETER_SAMPLES = 20  # random h-vectors for training (Algorithm 1)
+PER_PORT_SAMPLES = 6  # random h-vectors per (port, shift) candidate
 RANDOM_SEED = 20260805
 
 
@@ -340,66 +447,55 @@ def build_parametric_basis(
     boundary_terms,
     h_ranges,
     *,
-    boundaries,
+    boundaries=None,
     residual_tolerance=RESIDUAL_TOLERANCE,
     max_order=MAX_ORDER,
     target_relative_epsilon=TARGET_RELATIVE_EPSILON,
-    sample_count=RANDOM_PARAMETER_SAMPLES,
+    sample_count=PER_PORT_SAMPLES,
     seed=RANDOM_SEED,
 ):
-    """Certified full-domain basis by residual-driven enrichment (Algorithm 1).
+    """Certified full-domain basis by per-port residual-driven enrichment.
 
-    Model- and parameter-count-agnostic, driven by the *real power inputs*:
-    ``operators`` is the full-domain h-free ``(K, C, f)`` (``f`` = the
-    constant heat-source RHS), ``source_shape`` the ``(N, n_src)`` source-shape
-    matrix ``G_src`` whose columns are the per-port unit-power shapes, and
-    ``boundary_terms`` a list of diagonal sparse ``H_k`` (exposed area per
-    cell, one per group).  ``h_ranges`` is an ``(n_groups, 2)`` array of
-    admissible ``(lo, hi)`` ranges, one row per affine parameter.
+    Faithful realization of the Extended FANTASTIC Algorithm 1 (Codecasa
+    et al. 2021) — the algorithm behind Simcenter Flotherm's BCI-ROM — as far
+    as the model-agnostic ``(K, C, f, G_src, H_k)`` interface allows:
 
-    Candidates are ``(h_vec, shift)``: random admissible boundary-coefficient
-    vectors crossed with the elliptic-optimal complex shifts.  The candidate
-    operator is the full-domain affine Robin system
-        A(h_vec, shift) = K + shift*C + sum_k h_k H_k
-    and the RHS is the source-shape matrix ``G_src`` (FANTASTIC 2014: solve
-    ``(σM + K) X = g_i`` for every source port i).  Every candidate streams one
-    frequency-domain solve (shared LU, n_src right-hand sides); residual
-    directions above tolerance are inserted immediately, so no full-state
-    response is retained.  The basis is kept column-orthonormal throughout.
+    * **per heat-source port** the spectral bounds ``(λ_i, Λ_i)`` of the
+      power-impulse response are estimated (FANTASTIC 2014 step 1, via
+      :func:`port_eigenvalue_bounds`), giving its own elliptic shift count
+      ``m_i`` (eq. 4) and dn-distributed real shifts (eq. 5);
+    * each candidate solves the **single-column** frequency-domain problem
+      ``(σM + K + Σ_k h_k H_k) φ = g_k`` for the k-th source shape (paper
+      eq. 26), crossed with **fresh random** HTC vectors per (port, shift);
+    * residual directions above tolerance are inserted immediately
+      (Algorithm 1 line 6: ``||residual|| > ε``), the basis is kept
+      column-orthonormal throughout;
+    * a final SVD truncates columns whose singular values fall below
+      ``ε · σ_max`` (Algorithm 1 closing / FANTASTIC 2014 step 7).
+
+    ``operators`` is the full-domain h-free ``(K, C, f)``, ``source_shape``
+    the ``(N, n_src)`` source-shape matrix ``G_src`` whose columns are the
+    per-port unit-power shapes, ``boundary_terms`` a list of diagonal sparse
+    ``H_k`` (exposed area per cell, one per group), and ``h_ranges`` an
+    ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
     C = operators.C.tocsc()
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
-    h_vectors = random_parameter_vectors(h_ranges, sample_count, seed, boundaries)
+    G = np.asarray(source_shape, dtype=np.float64)
+    n_src = G.shape[1]
 
-    try:
-        vals_high, _ = spla.eigsh(K, k=1, M=C, which="LA")
-        vals_low, _ = spla.eigsh(K, k=3, M=C, sigma=0.0, which="LM")
-        positive_low = vals_low[vals_low > 1.0e-9]
-        if positive_low.size == 0:
-            raise RuntimeError("no positive small eigenvalue found")
-        lambda_min = float(positive_low.min())
-        lambda_max = float(vals_high.max())
-    except Exception as exc:
-        raise RuntimeError(
-            "spectrum estimation failed for elliptic shift placement "
-            f"({exc}); the operator is likely pathologically ill-conditioned"
-        ) from exc
-
-    kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
-    elliptic_count = mpmm_elliptic_shift_count(
-        target_relative_epsilon, lambda_min, lambda_max
-    )
-    shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
-
-    raw_points = [(hv, float(shift)) for hv in h_vectors for shift in shifts]
     internal_order = K.shape[0]
     order_limit = min(max_order, internal_order)
     # Algorithm 1 line 1: start from the uniform-temperature direction e_M so
     # the basis can represent arbitrary ambient shifts (Extended FANTASTIC).
     basis = np.full((internal_order, 1), 1.0 / math.sqrt(internal_order))
     history = []
+    per_port_plans = []
+    candidate_total = 0
+    processed_count = 0
+    pre_svd_order = 1
     worst_score = 0.0
     converged = True
 
@@ -409,17 +505,17 @@ def build_parametric_basis(
             A = A + h * H
         return (0.5 * (A + A.T)).tocsc()
 
-    for h_vec, shift in raw_points:
+    def enrich(g):
+        """One candidate: solve, measure residual, insert directions above tol."""
+        nonlocal basis, worst_score, converged, processed_count
         A = candidate_A(h_vec, shift)
-        B_dense = np.asarray(source_shape, dtype=np.float64)
-
-        response = np.asarray(spla.splu(A).solve(B_dense))
-        response_gram = symmetric_dense(response.T @ B_dense)
+        response = np.asarray(spla.splu(A).solve(g))
+        response_gram = symmetric_dense(response.T @ g)
         response_values, _ = eigenpairs_descending(response_gram)
         reference = max(float(response_values[0]), np.finfo(float).tiny)
 
         order_before = basis.shape[1]
-        reduced = reduced_response(basis, A, -B_dense)
+        reduced = reduced_response(basis, A, -g)
         error_response, error_values, tangents, score_before = response_error(
             response,
             basis,
@@ -435,10 +531,7 @@ def build_parametric_basis(
 
         added = 0
         if count:
-            block = orthonormalize_block(
-                basis,
-                error_response @ tangents[:, :count],
-            )
+            block = orthonormalize_block(basis, error_response @ tangents[:, :count])
             if not block.shape[1]:
                 raise RuntimeError("rational Krylov enrichment stalled")
             basis = np.column_stack((basis, block))
@@ -451,18 +544,16 @@ def build_parametric_basis(
                 else 0.0
             )
         else:
-            reduced = reduced_response(basis, A, -B_dense)
+            reduced = reduced_response(basis, A, -g)
             _, _, _, score_after = response_error(
-                response,
-                basis,
-                reduced,
-                A,
-                reference,
+                response, basis, reduced, A, reference
             )
 
         worst_score = max(worst_score, score_after)
+        processed_count += 1
         history.append(
             {
+                "port": port,
                 "order_before": int(order_before),
                 "order_after": int(basis.shape[1]),
                 "score_before": float(score_before),
@@ -475,7 +566,56 @@ def build_parametric_basis(
         )
         if requested > available or score_after > residual_tolerance:
             converged = False
+
+    for port in range(n_src):
+        g = G[:, port : port + 1]
+        try:
+            lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
+        except Exception as exc:
+            raise RuntimeError(
+                "per-port spectrum estimation failed for source port "
+                f"{port} ({exc}); falling back would need the global pencil"
+            ) from exc
+        kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
+        elliptic_count = mpmm_elliptic_shift_count(
+            target_relative_epsilon, lambda_min, lambda_max
+        )
+        shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
+        per_port_plans.append(
+            {
+                "port": int(port),
+                "lambda_min": float(lambda_min),
+                "lambda_max": float(lambda_max),
+                "kappa": float(kappa),
+                "shift_count": int(elliptic_count) + 1,  # + steady-state shift 0
+                "shifts_per_s": shifts.tolist(),
+            }
+        )
+
+        for shift in shifts:
+            if not converged:
+                break
+            # fresh random h-vectors per (port, shift): deterministic sub-seed
+            sub_seed = seed + 100003 * port + int(round(float(shift) * 1.0e6))
+            h_vecs = random_parameter_vectors(
+                h_ranges, sample_count, sub_seed, boundaries
+            )
+            candidate_total += len(h_vecs)
+            for h_vec in h_vecs:
+                if not converged:
+                    break
+                enrich(g)
+        if not converged:
             break
+
+    # Algorithm 1 closing: SVD-truncate the basis at the relative error ε.
+    pre_svd_order = int(basis.shape[1])
+    U_b, s_b, Vt_b = scipy.linalg.svd(
+        np.asarray(basis), full_matrices=False, check_finite=False
+    )
+    s_cut = residual_tolerance * max(float(s_b[0]), np.finfo(float).tiny)
+    keep = np.flatnonzero(s_b > s_cut)
+    basis = np.ascontiguousarray(U_b[:, keep])
 
     if basis.shape[1]:
         orthogonality = basis.T @ basis - np.eye(basis.shape[1])
@@ -486,26 +626,25 @@ def build_parametric_basis(
         raise RuntimeError("rational Krylov basis lost orthogonality")
 
     return basis, {
-        "parameter_vectors": h_vectors,
-        "elliptic_shift_count": elliptic_count,
-        "elliptic_shifts_per_s": shifts[1:].tolist(),
-        "eigenvalue_ratio_kappa": kappa,
-        "eigenvalue_bounds_per_s": [lambda_min, lambda_max],
+        "per_port_plans": per_port_plans,
         "target_relative_epsilon": target_relative_epsilon,
-        "parameter_sampling": "random (FANTASTIC BCI 2015 Algorithm 1)",
-        "candidate_count": len(raw_points),
-        "processed_candidate_count": len(history),
+        "parameter_sampling": "random per (port, shift) (FANTASTIC BCI Algorithm 1)",
+        "candidate_count": candidate_total,
+        "processed_candidate_count": processed_count,
         "basis_order": int(basis.shape[1]),
+        "pre_svd_order": pre_svd_order,
+        "svd_kept_order": int(basis.shape[1]),
         "maximum_order": int(order_limit),
         "orthogonality_error": orthogonality_error,
         "relative_response_error": float(worst_score),
         "residual_tolerance": residual_tolerance,
-        "converged": bool(converged and len(history) == len(raw_points)),
+        "converged": bool(converged),
         "history": history,
         "seconds": time.perf_counter() - started,
         "memory_strategy": (
-            "stream one full response per candidate; form the residual Gramian "
-            "directly; never cache candidates or repeat global scans"
+            "stream one single-column frequency-domain response per candidate; "
+            "form the residual Gramian directly; never cache candidates or "
+            "repeat global scans; per-port eigenvalue/shift planning"
         ),
     }
 

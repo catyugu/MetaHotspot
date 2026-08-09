@@ -10,15 +10,19 @@ Validation (v2020.2, Sec. 3-4) validates its ROMs:
       - the *whole package* is one FEM domain; heat sources are the ports
         (FANTASTIC 2014: ``(σM + K)X = g_i`` for every source port i), each
         with an independent shape in ``G_src``;
-      - boundary faces are partitioned into groups (top / side), each with an
-        independent heat-exchange coefficient h_k drawn from an admissible
-        range   (BCI 2015 Sec. 2, eq. 5);
+      - **per heat-source port** the spectral bounds ``(λ_i, Λ_i)`` of the
+        power-impulse response are estimated and a per-port elliptic shift
+        count ``m_i`` is computed (Extended FANTASTIC 2021 Algorithm 1 — the
+        method behind Simcenter Flotherm's BCI-ROM), so ports that excite
+        narrower spectra get fewer shifts;
+      - boundary faces are partitioned into groups (top / sides / bottom),
+        each with an independent heat-exchange coefficient h_k drawn from an
+        admissible range   (BCI 2015 Sec. 2, eq. 5);
       - the Robin terms enter linearly as ``Σ_k h_k Ĥ_k`` (BCI 2015 eq. 7),
         each group exposed as an area-averaged boundary port ``Ĝ_k``;
       - Algorithm 1: parameters sampled at random (not greedy), residual-driven
         enrichment one step per candidate   (BCI 2015 Algorithm 1);
-      - complex-frequency shifts are the FANTASTIC-2014 elliptic-optimal
-        points with per-problem shift count from the eigenvalue bounds.
+      - the final basis is SVD-truncated at the relative error ε.
   * Flotherm-style validation:
       - power step at t=0 (exercises all frequencies), transient to steady;
       - independent holdout HTC scenarios drawn in-range (NOT the training
@@ -32,11 +36,11 @@ This script is *model-agnostic*: it obtains its model from the
 abstract :class:`AffineParametricModel` contract.  It never names a concrete
 model or a config field, and it is *parameter-count-agnostic*: the number of
 affine parameters is whatever ``boundary_groups()`` reports, and the shared
-:func:`build_parametric_basis` enrichment is driven unchanged.  The validation
-plots are shaped for the two-group case (transient comparison at
-``(10000, 10000)``, error scatter over ``(h_top, h_side)``), so when the model
-does not have exactly two boundary groups the validation still runs but the
-report plots are skipped.
+:func:`build_parametric_basis` enrichment is driven unchanged.  The default
+model is the Package-on-Package ``bci_pop`` (Flotherm BCI-ROM Validation §4.1:
+two stacked wire-bonded BGAs, three ambient groups).  The report plots adapt
+to the group count: transient comparison at the first holdout point, error-vs-h
+scatter for two groups and a max-error histogram otherwise.
 
 Outputs curves (PNG) instead of a JSON report.
 """
@@ -73,7 +77,7 @@ RANDOM_SEED = 20260805
 RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
 MAX_ORDER = 2048
-GRID_PER_AXIS = 8  # holdout points per sweep axis (two-group: 8x8 = 64 combos)
+GRID_PER_AXIS = 8  # holdout points (2-group: 8x8=64 grid; 3-group: 8 scenarios)
 
 
 def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
@@ -110,11 +114,11 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
     errors = np.asarray([s["max_err_pct"] for s in scenario_results])
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    # always show the transient comparison at h = (1000, 1000) W/m2K
-    target = (10000.0, 10000.0)
+    # transient comparison at the first holdout point (any group count)
+    target = scenario_results[0]["h_vec"] if scenario_results else None
     ambient_K = cfg.get("ambient_K", 300.0)
     for i, (h_vec, t, ref, rom) in enumerate(curves):
-        if tuple(h_vec) != target:
+        if target is not None and tuple(h_vec) != tuple(target):
             continue
         for m in range(ref.shape[1]):
             ax.plot(t, ref[:, m] - ambient_K, "-", color=f"C{m}", label=f"full mon{m}")
@@ -128,25 +132,41 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
             )
         ax.set_xlabel("time [s]")
         ax.set_ylabel("rise over ambient [K]")
-        ax.set_title(f"Transient response, h=({h_vec[0]:.2g}, {h_vec[1]:.2g})")
+        ax.set_title(
+            f"Transient response, h=({', '.join(f'{v:.2g}' for v in h_vec)})"
+        )
         ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(plot_dir / "transient_comparison.png", dpi=150)
     plt.close(fig)
 
-    h0 = np.asarray([s["h_vec"][0] for s in scenario_results])
-    h1 = np.asarray([s["h_vec"][1] for s in scenario_results])
-    fig, ax = plt.subplots(figsize=(7, 5))
-    sc = ax.scatter(h0, h1, c=errors, cmap="viridis", s=80)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("h_top [W/m2K]")
-    ax.set_ylabel("h_side [W/m2K]")
-    fig.colorbar(sc, label="max err [%]")
-    ax.set_title("Holdout error vs boundary coefficients")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "error_vs_h.png", dpi=150)
-    plt.close(fig)
+    if len(scenario_results[0]["h_vec"]) == 2:
+        h0 = np.asarray([s["h_vec"][0] for s in scenario_results])
+        h1 = np.asarray([s["h_vec"][1] for s in scenario_results])
+        fig, ax = plt.subplots(figsize=(7, 5))
+        sc = ax.scatter(h0, h1, c=errors, cmap="viridis", s=80)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("h_0 [W/m2K]")
+        ax.set_ylabel("h_1 [W/m2K]")
+        fig.colorbar(sc, label="max err [%]")
+        ax.set_title("Holdout error vs boundary coefficients")
+        fig.tight_layout()
+        fig.savefig(plot_dir / "error_vs_h.png", dpi=150)
+        plt.close(fig)
+    else:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.hist(errors, bins=min(12, max(4, errors.size // 4)), color="tab:blue")
+        ax.set_xlabel("max err [%]")
+        ax.set_ylabel("holdout scenarios")
+        ax.set_title(
+            "Holdout max-error distribution "
+            f"(n={errors.size}, max={errors.max():.3f}%, "
+            f"mean={errors.mean():.3f}%)"
+        )
+        fig.tight_layout()
+        fig.savefig(plot_dir / "error_vs_h.png", dpi=150)
+        plt.close(fig)
 
     print(f"plots -> {plot_dir}")
 
@@ -154,7 +174,7 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
 # ------------------------------------------------------------- main ----
 
 
-def run(model, plot_dir: Path):
+def run(model, plot_dir: Path, quick: bool = False):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     ambient_K = model.ambient_K
 
@@ -166,6 +186,7 @@ def run(model, plot_dir: Path):
     h_ranges = model.h_ranges()
 
     # -- extraction (driven by the real power inputs) -------------------
+    sample_count = 3 if quick else RANDOM_PARAMETER_SAMPLES
     basis, summary = build_parametric_basis(
         core,
         source_shape,
@@ -175,7 +196,7 @@ def run(model, plot_dir: Path):
         residual_tolerance=RESIDUAL_TOLERANCE,
         max_order=MAX_ORDER,
         target_relative_epsilon=TARGET_RELATIVE_EPSILON,
-        sample_count=RANDOM_PARAMETER_SAMPLES,
+        sample_count=sample_count,
         seed=RANDOM_SEED,
     )
     cfg = model.report_dict()
@@ -186,6 +207,12 @@ def run(model, plot_dir: Path):
         f"basis order {n_modes}; "
         f"worst response err {summary['relative_response_error']:.3e}"
     )
+    for plan in summary["per_port_plans"]:
+        print(
+            f"  port {plan['port']}: lambda in [{plan['lambda_min']:.3e}, "
+            f"{plan['lambda_max']:.3e}] 1/s, kappa={plan['kappa']:.2e}, "
+            f"{plan['shift_count']} shifts"
+        )
 
     C_hat, K_hat0, F_hat, F_bdry, A_bdry = project_bci(
         core, source_shape, boundary_terms, basis
@@ -196,11 +223,11 @@ def run(model, plot_dir: Path):
         return C_hat, K_hat, F_hat
 
     # -- validation with independent holdout ----------------------------
-    # The model lays out its own parameter space (for the two-group package
-    # this is the dense (h_top, h_side) product grid); the experiment only
-    # iterates the points, so the BCI claim (any BC in range) is exercised
-    # across the parameter space, and error_vs_h has enough points.
-    holdout = model.parameter_points(count=GRID_PER_AXIS)
+    # The model lays out its own parameter space (e.g. bci_pop: DoE-style
+    # random scenarios); the experiment only iterates the points, so the BCI
+    # claim (any BC in range) is exercised across the parameter space.  Quick
+    # mode keeps the holdout light.
+    holdout = model.parameter_points(count=GRID_PER_AXIS if not quick else 4)
 
     scenario_results = []
     curves = []
@@ -284,18 +311,12 @@ def run(model, plot_dir: Path):
         f"holdout max {errors.max():.4f}% mean {errors.mean():.4f}% std {errors.std():.4f}%"
     )
 
-    # The report plots are shaped for the two-group parameterization (the
-    # transient comparison pins h=(10000, 10000) and the error scatter maps
-    # (h_top, h_side)); for any other number of affine parameters skip them.
-    if len(groups) == 2:
-        plot_results(
-            model.report_dict(), summary, basis, scenario_results, curves, plot_dir
-        )
-    else:
-        print(
-            f"{len(groups)} affine parameter(s) — report plots are two-group "
-            "shaped, skipping plot generation"
-        )
+    # report plots: transient comparison at the first holdout point (any group
+    # count); the error-vs-h scatter for the two-group case, a max-error
+    # histogram otherwise.  Always safe to plot.
+    plot_results(
+        model.report_dict(), summary, basis, scenario_results, curves, plot_dir
+    )
     return summary, scenario_results
 
 
@@ -304,8 +325,8 @@ def main(argv=None) -> int:
     parser.add_argument("--quick", action="store_true")
     parser.add_argument(
         "--model",
-        default="bci_pkg",
-        help="registered affine parametric model name (default: bci_pkg)",
+        default="bci_pop",
+        help="registered affine parametric model name (default: bci_pop)",
     )
     args = parser.parse_args(argv)
 
@@ -313,7 +334,7 @@ def main(argv=None) -> int:
     # config recipe when asked, the experiment never names a config field.
     model = create(args.model, quick=args.quick)
     t0 = time.perf_counter()
-    run(model, OUT_DIR)
+    run(model, OUT_DIR, quick=args.quick)
     print(f"total {time.perf_counter() - t0:.1f}s")
     return 0
 
