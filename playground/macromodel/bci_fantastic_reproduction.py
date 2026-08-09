@@ -20,8 +20,11 @@ Validation (v2020.2, Sec. 3-4) validates its ROMs:
         admissible range   (BCI 2015 Sec. 2, eq. 5);
       - the Robin terms enter linearly as ``Σ_k h_k Ĥ_k`` (BCI 2015 eq. 7),
         each group exposed as an area-averaged boundary port ``Ĝ_k``;
-      - Algorithm 1: parameters sampled at random (not greedy), residual-driven
-        enrichment one step per candidate   (BCI 2015 Algorithm 1);
+      - Algorithm 1: parameters sampled at random (not greedy); after each
+        enrichment the reduced model is probed at freshly drawn random HTC
+        vectors until the residual satisfies the tolerance — sampling stops on
+        the error estimate, not on a hardcoded count  (BCI 2015 Algorithm 1 /
+        Extended FANTASTIC 2021 lines 5-6);
       - the final basis is SVD-truncated at the relative error ε.
   * Flotherm-style validation:
       - power step at t=0 (exercises all frequencies), transient to steady;
@@ -38,9 +41,9 @@ model or a config field, and it is *parameter-count-agnostic*: the number of
 affine parameters is whatever ``boundary_groups()`` reports, and the shared
 :func:`build_parametric_basis` enrichment is driven unchanged.  The default
 model is the Package-on-Package ``bci_pop`` (Flotherm BCI-ROM Validation §4.1:
-two stacked wire-bonded BGAs, three ambient groups).  The report plots adapt
-to the group count: transient comparison at the first holdout point, error-vs-h
-scatter for two groups and a max-error histogram otherwise.
+two stacked wire-bonded BGAs, three ambient groups).  The report plots the
+per-(port, shift) inner-loop sample count (enrichment cost) and a transient
+comparison at the first holdout point.
 
 Outputs curves (PNG) instead of a JSON report.
 """
@@ -72,7 +75,7 @@ from utils import (
 )
 
 OUT_DIR = Path("results/bci_fantastic_reproduction")
-RANDOM_PARAMETER_SAMPLES = 24  # random h-vectors for training (Algorithm 1)
+PROBE_ROUNDS = 3  # consecutive random h-vectors certifying each (port, shift)
 RANDOM_SEED = 20260805
 RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
@@ -85,33 +88,52 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
 
     hist = summary["history"]
     if hist:
-        fig, ax = plt.subplots(figsize=(7, 4))
-        x = np.arange(1, len(hist) + 1)
-        ax.plot(
-            x,
-            [h["order_after"] for h in hist],
-            "o-",
-            color="tab:blue",
-            label="basis order",
+        # One bar per (port, shift): the number of h-vector samples the inner
+        # loop needed (enrichment rounds plus certified probes) before the
+        # reduced model met the residual tolerance.  x is the outer-loop
+        # sequence number.
+        ports = [h["port"] for h in hist]
+        shifts = [h["shift"] for h in hist]
+        samples = np.asarray([h["h_samples"] for h in hist])
+        x = np.asarray([h["outer_idx"] for h in hist])
+        colors = plt.cm.tab10(np.asarray(ports) % 10)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.bar(x, samples, color=colors, width=0.8, edgecolor="none", alpha=0.85)
+        ax.set_xticks(x)
+        ax.set_xlabel("outer-loop sequence (port, shift)")
+        ax.set_ylabel("h-vector samples in inner loop")
+        ax.grid(axis="y", alpha=0.3)
+
+        # label each bar with (port, shift)
+        ticks = ax.get_xticks()
+        labels = [f"({p},{s:.3g})" for p, s in zip(ports, shifts)]
+        ax.set_xticklabels(labels, rotation=60, ha="right", fontsize=7)
+
+        # legend: distinct ports
+        handles = [
+            plt.Line2D(
+                [0],
+                [0],
+                marker="s",
+                color="none",
+                markerfacecolor=plt.cm.tab10(p % 10),
+                markersize=8,
+                label=f"port {p}",
+            )
+            for p in sorted(set(ports))
+        ]
+        ax.legend(handles=handles, loc="upper right", frameon=False, fontsize=9)
+
+        ax.set_title(
+            "Inner-loop sample count per (port, shift)\n"
+            f"(certified after {summary['probe_rounds']} consecutive probes "
+            f"below $\\varepsilon$ = {summary['residual_tolerance']:.0e})",
+            fontsize=11,
         )
-        ax.set_xlabel("candidate")
-        ax.set_ylabel("basis order", color="tab:blue")
-        ax2 = ax.twinx()
-        ax2.plot(
-            x,
-            [h["score_after"] for h in hist],
-            "s--",
-            color="tab:red",
-            label="response error",
-        )
-        ax2.set_ylabel("response error", color="tab:red")
-        ax.set_title("Residual-driven enrichment (Algorithm 1)")
-        ax.legend(loc="upper left", fontsize=8)
         fig.tight_layout()
         fig.savefig(plot_dir / "enrichment.png", dpi=150)
         plt.close(fig)
-
-    errors = np.asarray([s["max_err_pct"] for s in scenario_results])
 
     fig, ax = plt.subplots(figsize=(8, 5))
     # transient comparison at the first holdout point (any group count)
@@ -132,41 +154,11 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
             )
         ax.set_xlabel("time [s]")
         ax.set_ylabel("rise over ambient [K]")
-        ax.set_title(
-            f"Transient response, h=({', '.join(f'{v:.2g}' for v in h_vec)})"
-        )
+        ax.set_title(f"Transient response, h=({', '.join(f'{v:.2g}' for v in h_vec)})")
         ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(plot_dir / "transient_comparison.png", dpi=150)
     plt.close(fig)
-
-    if len(scenario_results[0]["h_vec"]) == 2:
-        h0 = np.asarray([s["h_vec"][0] for s in scenario_results])
-        h1 = np.asarray([s["h_vec"][1] for s in scenario_results])
-        fig, ax = plt.subplots(figsize=(7, 5))
-        sc = ax.scatter(h0, h1, c=errors, cmap="viridis", s=80)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("h_0 [W/m2K]")
-        ax.set_ylabel("h_1 [W/m2K]")
-        fig.colorbar(sc, label="max err [%]")
-        ax.set_title("Holdout error vs boundary coefficients")
-        fig.tight_layout()
-        fig.savefig(plot_dir / "error_vs_h.png", dpi=150)
-        plt.close(fig)
-    else:
-        fig, ax = plt.subplots(figsize=(7, 5))
-        ax.hist(errors, bins=min(12, max(4, errors.size // 4)), color="tab:blue")
-        ax.set_xlabel("max err [%]")
-        ax.set_ylabel("holdout scenarios")
-        ax.set_title(
-            "Holdout max-error distribution "
-            f"(n={errors.size}, max={errors.max():.3f}%, "
-            f"mean={errors.mean():.3f}%)"
-        )
-        fig.tight_layout()
-        fig.savefig(plot_dir / "error_vs_h.png", dpi=150)
-        plt.close(fig)
 
     print(f"plots -> {plot_dir}")
 
@@ -186,17 +178,15 @@ def run(model, plot_dir: Path, quick: bool = False):
     h_ranges = model.h_ranges()
 
     # -- extraction (driven by the real power inputs) -------------------
-    sample_count = 3 if quick else RANDOM_PARAMETER_SAMPLES
     basis, summary = build_parametric_basis(
         core,
         source_shape,
         boundary_terms,
         h_ranges,
-        boundaries=None,
         residual_tolerance=RESIDUAL_TOLERANCE,
         max_order=MAX_ORDER,
         target_relative_epsilon=TARGET_RELATIVE_EPSILON,
-        sample_count=sample_count,
+        probe_rounds=PROBE_ROUNDS,
         seed=RANDOM_SEED,
     )
     cfg = model.report_dict()

@@ -12,9 +12,9 @@ Contents
 --------
 * dense helpers:            symmetric_dense, eigenpairs_descending
 * MPMM frequency sampling:  mpmm_elliptic_shift_count, mpmm_elliptic_shifts
-* Krylov enrichment:        orthonormalize_block, reduced_response, response_error
+* Krylov enrichment:        orthonormalize_block, response_error
 * sparse operator helpers:  normalized_operators
-* parametric basis:         random_parameter_vectors, build_parametric_basis
+* parametric basis:         build_parametric_basis
 * BCI Galerkin projection:  project_bci
 * ROM linear solves:        assemble_reduced_k, solve_rom_steady, solve_rom_transient
 * accuracy metrics:         temperature_error_metrics, accuracy_summary, format_accuracy
@@ -127,23 +127,39 @@ def orthonormalize_block(basis, vectors):
     return np.ascontiguousarray(q[:, keep])
 
 
-def reduced_response(basis, A, B_dense):
-    """Solve the projected system (basis^T A basis) x = -(basis^T B_dense)."""
-    if not basis.shape[1]:
-        return np.empty((0, B_dense.shape[1]), dtype=np.float64)
-    reduced_A = symmetric_dense(basis.T @ (A @ basis))
-    factor = scipy.linalg.cho_factor(
-        reduced_A,
-        lower=True,
-        overwrite_a=False,
-        check_finite=False,
+# ---------------------------------------------------------------------------
+# SPD linear solve  (Extended FANTASTIC 2021 lines 715-720: iterative solver
+# warm-started from the reduced-model estimate; no re-factorization)
+# ---------------------------------------------------------------------------
+
+
+def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
+    """Solve the SPD system ``A x = b`` by Jacobi-preconditioned CG.
+
+    ``A`` is the full-domain operator ``(σM + K + Σ_k h_k H_k)`` — symmetric
+    positive definite (h > 0 makes the boundary term positive definite and
+    σ ≥ 0).  ``x0`` is the warm-start guess (the reduced-model estimate, or
+    the previous shift's response), which makes CG converge in a few
+    iterations (Extended FANTASTIC 2021: the linear systems are solved from
+    the least to the most onerous, each starting from an increasingly
+    accurate estimate).
+    """
+    b = np.asarray(b, dtype=np.float64).ravel()
+    if x0 is None:
+        x0 = np.zeros(b.size, dtype=np.float64)
+    x0 = np.asarray(x0, dtype=np.float64).ravel()
+    d = np.asarray(A.diagonal()).ravel()
+    jacobi = sp.diags(1.0 / np.maximum(np.abs(d), np.finfo(float).tiny))
+    x, _ = spla.cg(
+        A,
+        b,
+        x0=x0,
+        rtol=rtol,
+        atol=0.0,
+        maxiter=maxiter,
+        M=jacobi,
     )
-    return scipy.linalg.cho_solve(
-        factor,
-        -(basis.T @ B_dense),
-        overwrite_b=False,
-        check_finite=False,
-    )
+    return x
 
 
 def response_error(response, basis, reduced, A, reference):
@@ -271,11 +287,7 @@ def port_eigenvalue_bounds(
     vals = project_spectrum(Qf, kf)
     lambda_max = float(vals.max()) if vals is not None and vals.size else None
 
-    if (
-        lambda_min is not None
-        and lambda_max is not None
-        and lambda_max > lambda_min
-    ):
+    if lambda_min is not None and lambda_max is not None and lambda_max > lambda_min:
         return lambda_min, lambda_max
     return _global_eigenvalue_bounds(K, C)
 
@@ -411,34 +423,25 @@ def solve_rom_transient(
 TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
 RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 MAX_ORDER = 2048
-RANDOM_PARAMETER_SAMPLES = 20  # random h-vectors for training (Algorithm 1)
-PER_PORT_SAMPLES = 6  # random h-vectors per (port, shift) candidate
+PROBE_ROUNDS = 3  # consecutive random h-vectors that must certify a (port, shift)
 RANDOM_SEED = 20260805
 
 
-def random_parameter_vectors(h_ranges, sample_count, seed, boundaries=None):
-    """Random admissible h-vectors (one h per group), log-uniform.  No greedy.
+def random_h(h_ranges, seed) -> tuple[float, ...]:
+    """One random admissible h-vector (one h per group), log-uniform.  No greedy.
 
-    ``h_ranges`` is an ``(n_groups, 2)`` array of admissible ``(lo, hi)``
-    ranges, one row per affine parameter; the log-uniform draws are vectorized
-    across groups.  FANTASTIC BCI 2015 Algorithm 1: parameters chosen at
-    random to avoid reduced-basis greedy stagnation.  ``boundaries`` (geometric
-    holdout) are appended so the certified range is covered at its extremes.
+    ``h_ranges`` is an ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges,
+    one row per affine parameter; a single log-uniform draw across all groups.
+    FANTASTIC BCI 2015 Algorithm 1: parameters chosen at random to avoid
+    reduced-basis greedy stagnation.  A deterministic ``seed`` is advanced per
+    call so consecutive draws are independent but reproducible.
     """
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
     lows = np.log10(h_ranges[:, 0])
     highs = np.log10(h_ranges[:, 1])
     rng = np.random.default_rng(seed)
-    draws = 10.0 ** rng.uniform(lows, highs, size=(sample_count, h_ranges.shape[0]))
-    vectors = [tuple(row) for row in draws]
-    for b in boundaries or ():
-        vectors.append(tuple(b))
-    seen, out = set(), []
-    for v in vectors:
-        if v not in seen:
-            seen.add(v)
-            out.append(v)
-    return out
+    draws = 10.0 ** rng.uniform(lows, highs, size=h_ranges.shape[0])
+    return tuple(float(v) for v in draws)
 
 
 def build_parametric_basis(
@@ -447,11 +450,10 @@ def build_parametric_basis(
     boundary_terms,
     h_ranges,
     *,
-    boundaries=None,
     residual_tolerance=RESIDUAL_TOLERANCE,
     max_order=MAX_ORDER,
     target_relative_epsilon=TARGET_RELATIVE_EPSILON,
-    sample_count=PER_PORT_SAMPLES,
+    probe_rounds=PROBE_ROUNDS,
     seed=RANDOM_SEED,
 ):
     """Certified full-domain basis by per-port residual-driven enrichment.
@@ -464,12 +466,15 @@ def build_parametric_basis(
       power-impulse response are estimated (FANTASTIC 2014 step 1, via
       :func:`port_eigenvalue_bounds`), giving its own elliptic shift count
       ``m_i`` (eq. 4) and dn-distributed real shifts (eq. 5);
-    * each candidate solves the **single-column** frequency-domain problem
-      ``(σM + K + Σ_k h_k H_k) φ = g_k`` for the k-th source shape (paper
-      eq. 26), crossed with **fresh random** HTC vectors per (port, shift);
-    * residual directions above tolerance are inserted immediately
-      (Algorithm 1 line 6: ``||residual|| > ε``), the basis is kept
-      column-orthonormal throughout;
+    * for each (port, shift) a random HTC vector is drawn and the **current**
+      basis is probed (small dense reduced solve + one sparse matvec); only
+      when a probe fails (``ρ > ε``) is a **single-column** full solve
+      ``(σM + K + Σ_k h_k H_k) φ = g_k`` (paper eq. 26) done and its residual
+      directions inserted (Algorithm 1 line 6), keeping the basis
+      column-orthonormal;
+    * the **adaptive stop**: the (port, shift) is certified only when
+      ``probe_rounds`` consecutive freshly drawn parameters all satisfy
+      ``ρ ≤ ε`` — sampling stops on the error estimate, not a hardcoded count;
     * a final SVD truncates columns whose singular values fall below
       ``ε · σ_max`` (Algorithm 1 closing / FANTASTIC 2014 step 7).
 
@@ -477,7 +482,10 @@ def build_parametric_basis(
     the ``(N, n_src)`` source-shape matrix ``G_src`` whose columns are the
     per-port unit-power shapes, ``boundary_terms`` a list of diagonal sparse
     ``H_k`` (exposed area per cell, one per group), and ``h_ranges`` an
-    ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges.
+    ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges.  ``probe_rounds``
+    is the number of consecutive random draws that must certify a (port, shift)
+    before the model advances (a small robustness constant, not a sample
+    budget).
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
@@ -495,6 +503,7 @@ def build_parametric_basis(
     per_port_plans = []
     candidate_total = 0
     processed_count = 0
+    outer_idx = 0
     pre_svd_order = 1
     worst_score = 0.0
     converged = True
@@ -505,67 +514,81 @@ def build_parametric_basis(
             A = A + h * H
         return (0.5 * (A + A.T)).tocsc()
 
-    def enrich(g):
-        """One candidate: solve, measure residual, insert directions above tol."""
+    H_diags = [np.asarray(H.diagonal()).ravel() for H in boundary_terms]
+    c_diag = np.asarray(C.diagonal()).ravel()
+    projected: dict = {}
+    g_hat: np.ndarray
+    g_vec: np.ndarray
+    g_norm: float
+
+    def init_port(g):
+        nonlocal projected, g_hat, g_vec, g_norm
+        g_vec = np.asarray(g, dtype=np.float64).ravel()
+        g_norm = max(float(np.linalg.norm(g_vec)), np.finfo(float).tiny)
+        projected = {
+            "K": symmetric_dense(basis.T @ (K @ basis)),
+            "C": symmetric_dense(basis.T @ (C @ basis)),
+            "H": [symmetric_dense(basis.T @ (H @ basis)) for H in boundary_terms],
+        }
+        g_hat = np.asarray(basis.T @ g_vec, dtype=np.float64).ravel()
+
+    def extend_projected(W, B_old):
+        """Append block W (basis before append = B_old) to every M̂ and ĝ."""
+        nonlocal g_hat
+        for key, M in (("K", K), ("C", C)):
+            MW = M @ W
+            cross = B_old.T @ MW
+            projected[key] = np.block(
+                [[projected[key], cross], [cross.T, symmetric_dense(W.T @ MW)]]
+            )
+        for j, H in enumerate(boundary_terms):
+            HW = H @ W
+            cross = B_old.T @ HW
+            projected["H"][j] = np.block(
+                [[projected["H"][j], cross], [cross.T, symmetric_dense(W.T @ HW)]]
+            )
+        g_hat = np.concatenate([g_hat, np.asarray(W.T @ g_vec).ravel()])
+
+    def reduced_solve(h_vec, shift):
+        """Solve the small dense reduced system (K̂+σĈ+Σ h_k Ĥ_k) x̂ = ĝ."""
+        A_hat = projected["K"].copy()
+        if shift:
+            A_hat = A_hat + shift * projected["C"]
+        for h, H_hat in zip(h_vec, projected["H"]):
+            A_hat = A_hat + h * H_hat
+        return np.linalg.solve(symmetric_dense(A_hat), g_hat)
+
+    def probe_residual(h_vec, shift):
+        """Relative residual ρ of the current basis at (shift, h_vec)."""
+        v = basis @ reduced_solve(h_vec, shift)
+        res = K @ v + shift * (c_diag * v) - g_vec
+        for h, Hd in zip(h_vec, H_diags):
+            res = res + h * (Hd * v)
+        return float(np.linalg.norm(res) / g_norm)
+
+    def enrich(h_vec, x0):
+        """Full solve at (shift, h_vec); append the response to the basis."""
         nonlocal basis, worst_score, converged, processed_count
+        if basis.shape[1] >= order_limit:
+            converged = False  # budget exhausted; outer loop will stop
+            return x0 if x0 is not None else np.zeros(g_vec.size)
         A = candidate_A(h_vec, shift)
-        response = np.asarray(spla.splu(A).solve(g))
-        response_gram = symmetric_dense(response.T @ g)
-        response_values, _ = eigenpairs_descending(response_gram)
-        reference = max(float(response_values[0]), np.finfo(float).tiny)
-
-        order_before = basis.shape[1]
-        reduced = reduced_response(basis, A, -g)
-        error_response, error_values, tangents, score_before = response_error(
-            response,
-            basis,
-            reduced,
-            A,
-            reference,
+        response = np.asarray(spd_solve(A, g_vec, x0=x0)).reshape(-1, 1)
+        block = orthonormalize_block(basis, response)
+        if not block.shape[1]:
+            raise RuntimeError("rational Krylov enrichment stalled")
+        B_old = basis
+        basis = np.column_stack((basis, block))
+        extend_projected(block, B_old)
+        reference = max(float(response.ravel() @ g_vec), np.finfo(float).tiny)
+        _, _, _, score_after = response_error(
+            response, basis, reduced_solve(h_vec, shift)[:, None], A, reference
         )
-        requested = int(
-            np.count_nonzero(error_values > residual_tolerance**2 * reference)
-        )
-        available = order_limit - basis.shape[1]
-        count = min(requested, available)
-
-        added = 0
-        if count:
-            block = orthonormalize_block(basis, error_response @ tangents[:, :count])
-            if not block.shape[1]:
-                raise RuntimeError("rational Krylov enrichment stalled")
-            basis = np.column_stack((basis, block))
-            added = block.shape[1]
-
-        if count == requested and added == count:
-            score_after = (
-                math.sqrt(float(error_values[count]) / reference)
-                if count < error_values.size
-                else 0.0
-            )
-        else:
-            reduced = reduced_response(basis, A, -g)
-            _, _, _, score_after = response_error(
-                response, basis, reduced, A, reference
-            )
-
         worst_score = max(worst_score, score_after)
         processed_count += 1
-        history.append(
-            {
-                "port": port,
-                "order_before": int(order_before),
-                "order_after": int(basis.shape[1]),
-                "score_before": float(score_before),
-                "score_after": float(score_after),
-                "h_vec": h_vec,
-                "shift": float(shift),
-                "requested": int(requested),
-                "added": int(added),
-            }
-        )
-        if requested > available or score_after > residual_tolerance:
+        if score_after > residual_tolerance:
             converged = False
+        return response
 
     for port in range(n_src):
         g = G[:, port : port + 1]
@@ -592,19 +615,36 @@ def build_parametric_basis(
             }
         )
 
+        # per-port reduced-model state: warm-start x0 and the incremental
+        # projected matrices are re-seeded for each source port.
+        init_port(g)
+        x0 = None
         for shift in shifts:
             if not converged:
                 break
-            # fresh random h-vectors per (port, shift): deterministic sub-seed
-            sub_seed = seed + 100003 * port + int(round(float(shift) * 1.0e6))
-            h_vecs = random_parameter_vectors(
-                h_ranges, sample_count, sub_seed, boundaries
+            passes = 0
+            h_samples = 0
+            while passes < probe_rounds and converged:
+                sub_seed = (
+                    seed + 100003 * port + int(round(float(shift) * 1.0e6)) + h_samples
+                )
+                h_vec = random_h(h_ranges, sub_seed)
+                h_samples += 1
+                candidate_total += 1
+                if probe_residual(h_vec, shift) <= residual_tolerance:
+                    passes += 1
+                    continue
+                passes = 0
+                x0 = enrich(h_vec, x0)
+            outer_idx += 1
+            history.append(
+                {
+                    "outer_idx": outer_idx,
+                    "port": int(port),
+                    "shift": float(shift),
+                    "h_samples": h_samples,
+                }
             )
-            candidate_total += len(h_vecs)
-            for h_vec in h_vecs:
-                if not converged:
-                    break
-                enrich(g)
         if not converged:
             break
 
@@ -628,9 +668,15 @@ def build_parametric_basis(
     return basis, {
         "per_port_plans": per_port_plans,
         "target_relative_epsilon": target_relative_epsilon,
-        "parameter_sampling": "random per (port, shift) (FANTASTIC BCI Algorithm 1)",
+        "parameter_sampling": (
+            "random per (port, shift), error-driven probe stop "
+            "(FANTASTIC BCI Algorithm 1 / Extended FANTASTIC 2021)"
+        ),
+        "probe_rounds": int(probe_rounds),
         "candidate_count": candidate_total,
         "processed_candidate_count": processed_count,
+        "outer_count": outer_idx,
+        "solver": "warm-started Jacobi-preconditioned CG (spd_solve)",
         "basis_order": int(basis.shape[1]),
         "pre_svd_order": pre_svd_order,
         "svd_kept_order": int(basis.shape[1]),
@@ -643,8 +689,9 @@ def build_parametric_basis(
         "seconds": time.perf_counter() - started,
         "memory_strategy": (
             "stream one single-column frequency-domain response per candidate; "
-            "form the residual Gramian directly; never cache candidates or "
-            "repeat global scans; per-port eigenvalue/shift planning"
+            "solve by warm-started Jacobi-CG (no re-factorization) with an "
+            "incremental reduced model for the probe residual; per-port "
+            "eigenvalue/shift planning"
         ),
     }
 
