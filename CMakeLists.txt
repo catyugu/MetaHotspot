@@ -8,6 +8,8 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/.cache/cpm" CACHE PATH "CPM cache to avoid repeated fetching")
+
 option(VERBOSE "Enable DEBUG level logging" OFF)
 option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" ON)
 
