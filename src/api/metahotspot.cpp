@@ -9,7 +9,6 @@
 #include "io/result_io.hpp"
 #include "solver/assembler.hpp"
 
-#include "common/mesh.hpp"
 #include <algorithm>
 #include <cstring>
 #include <limits>

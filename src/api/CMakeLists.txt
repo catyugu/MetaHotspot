@@ -11,5 +11,5 @@ target_compile_definitions(mhs_c_api PRIVATE
     MHS_API_EXPORT
     MHS_BUILD_SHARED
 )
-mhs_set_strict_warnings(mhs_c_api)
+target_link_libraries(mhs_c_api PRIVATE mhs_options)
 mhs_copy_runtime_dlls(mhs_c_api)
