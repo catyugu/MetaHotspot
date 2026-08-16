@@ -11,7 +11,7 @@ namespace mhs::sim {
     //
     // compute(A) detects whether the sparsity pattern changed and implicitly
     // reuses symbolic analysis when possible.
-    class EigenSparseLUSolver : public LinearSolver {
+    class EigenSparseLUSolver : public DirectSolver {
     public:
         void compute(const Eigen::SparseMatrix<double>& A) override;
         Eigen::VectorXd solve(const Eigen::VectorXd& b) override;

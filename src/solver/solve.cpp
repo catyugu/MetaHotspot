@@ -96,7 +96,7 @@ namespace mhs::sim {
         auto integrator = build_integrator(opts);
         auto step_strategy = build_strategy(opts);
 
-        auto solver = LinearSolver::create(solver_spec);
+        SolverHandle solver = create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
         const auto state_count = state.size();
         double current_time = 0.0;
@@ -131,7 +131,7 @@ namespace mhs::sim {
                 validate_operator_dimensions(ops, state_count);
                 return {std::move(ops.K), std::move(ops.f)};
             };
-            auto nl_result = nonlinear_solve(build_ls, state, *solver, nl_config);
+            auto nl_result = nonlinear_solve(build_ls, state, solver, nl_config);
             emit(0.0, state);
             return finish(nl_result.converged);
         }
@@ -159,7 +159,7 @@ namespace mhs::sim {
             };
 
             auto saved_state = state;
-            auto nl = nonlinear_solve(ls_provider, state, *solver, nl_config);
+            auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
 
             if (!nl.converged) {
                 state = std::move(saved_state);

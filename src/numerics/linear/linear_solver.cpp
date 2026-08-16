@@ -10,27 +10,32 @@ namespace mhs::sim {
 
     // --- Factory ---
 
-    std::unique_ptr<LinearSolver> LinearSolver::create(const SolverSpec& spec)
+    SolverHandle create_solver(const SolverSpec& spec)
     {
-        std::unique_ptr<LinearSolver> solver = nullptr;
         switch (spec.type) {
 #ifdef MHS_ENABLE_PARDISO
-        case SolverType::Pardiso:
-            solver = std::make_unique<PardisoLUSolver>();
-            break;
-#endif
-        case SolverType::EigenSparseLU:
-            solver = std::make_unique<EigenSparseLUSolver>();
-            break;
-        case SolverType::EigenBiCGSTAB:
-            solver = std::make_unique<EigenBiCGSTABSolver>();
-            break;
-        default:
-            solver = std::make_unique<EigenSparseLUSolver>();
-            break;
+        case SolverType::Pardiso: {
+            auto solver = std::make_unique<PardisoLUSolver>();
+            solver->set_config(spec.config);
+            return std::unique_ptr<DirectSolver>(std::move(solver));
         }
-        solver->set_config(spec.config);
-        return solver;
+#endif
+        case SolverType::EigenSparseLU: {
+            auto solver = std::make_unique<EigenSparseLUSolver>();
+            solver->set_config(spec.config);
+            return std::unique_ptr<DirectSolver>(std::move(solver));
+        }
+        case SolverType::EigenBiCGSTAB: {
+            auto solver = std::make_unique<EigenBiCGSTABSolver>();
+            solver->set_config(spec.config);
+            return std::unique_ptr<IterativeSolver>(std::move(solver));
+        }
+        default: {
+            auto solver = std::make_unique<EigenSparseLUSolver>();
+            solver->set_config(spec.config);
+            return std::unique_ptr<DirectSolver>(std::move(solver));
+        }
+        }
     }
 
 } // namespace mhs::sim

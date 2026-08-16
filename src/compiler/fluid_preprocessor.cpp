@@ -254,10 +254,10 @@ namespace mhs::sim::fluid {
 
             Eigen::SparseMatrix<double> matrix(eigen_count, eigen_count);
             matrix.setFromTriplets(triplets.begin(), triplets.end());
-            auto solver = mhs::sim::LinearSolver::create();
-            solver->compute(matrix);
-            Eigen::VectorXd pressure = solver->solve(rhs);
-            if (!solver->success()) {
+            auto solver = mhs::sim::create_solver();
+            mhs::sim::solver_compute(solver, matrix);
+            Eigen::VectorXd pressure = mhs::sim::solver_solve(solver, rhs);
+            if (!mhs::sim::solver_success(solver)) {
                 throw std::runtime_error("fluid pressure solve failed");
             }
             workspace.pressure.assign(pressure.data(), pressure.data() + pressure.size());
