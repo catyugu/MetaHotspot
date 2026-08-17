@@ -17,23 +17,19 @@ namespace mhs::sim {
         case SolverType::Pardiso: {
             auto solver = std::make_unique<PardisoLUSolver>();
             solver->set_config(spec.config);
-            return std::unique_ptr<DirectSolver>(std::move(solver));
+            return solver;
         }
 #endif
-        case SolverType::EigenSparseLU: {
+        case SolverType::EigenSparseLU:
+        default: { // Pardiso without MKL falls back to SparseLU
             auto solver = std::make_unique<EigenSparseLUSolver>();
             solver->set_config(spec.config);
-            return std::unique_ptr<DirectSolver>(std::move(solver));
+            return solver;
         }
         case SolverType::EigenBiCGSTAB: {
             auto solver = std::make_unique<EigenBiCGSTABSolver>();
             solver->set_config(spec.config);
-            return std::unique_ptr<IterativeSolver>(std::move(solver));
-        }
-        default: {
-            auto solver = std::make_unique<EigenSparseLUSolver>();
-            solver->set_config(spec.config);
-            return std::unique_ptr<DirectSolver>(std::move(solver));
+            return solver;
         }
         }
     }

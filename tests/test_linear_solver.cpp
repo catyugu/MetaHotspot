@@ -31,29 +31,42 @@ namespace {
     constexpr int kSize = 16;
     const Eigen::VectorXd kExact = Eigen::VectorXd::LinSpaced(kSize, 1.0, 4.0);
 
+    constexpr auto kBiCGSTABSpec = mhs::sim::SolverSpec {mhs::sim::SolverType::EigenBiCGSTAB, {1e-10, 2000}};
+
+    // Right-hand side and a computed solver over the SPD test system.
+    struct SolverFixture {
+        Eigen::VectorXd b;
+        mhs::sim::SolverHandle solver;
+    };
+
+    SolverFixture make_fixture(const mhs::sim::SolverSpec& spec = {})
+    {
+        const auto A = make_spd_tridiagonal(kSize);
+        SolverFixture fixture;
+        fixture.b = A * kExact;
+        fixture.solver = mhs::sim::create_solver(spec);
+        mhs::sim::solver_compute(fixture.solver, A);
+        return fixture;
+    }
+
 } // namespace
 
 // The iterative backend accepts an initial guess and warm-starts from it.
 TEST(LinearSolver, IterativeWarmStartConvergesFromGuess)
 {
-    const auto A = make_spd_tridiagonal(kSize);
-    const Eigen::VectorXd b = A * kExact;
-
-    auto spec = mhs::sim::SolverSpec {mhs::sim::SolverType::EigenBiCGSTAB, {1e-10, 2000}};
+    auto cold_fixture = make_fixture(kBiCGSTABSpec);
 
     // Cold start (zero guess).
-    auto cold = mhs::sim::create_solver(spec);
-    mhs::sim::solver_compute(cold, A);
-    const Eigen::VectorXd x_cold = mhs::sim::solver_solve(cold, b, Eigen::VectorXd::Zero(kSize));
-    const int cold_iters = mhs::sim::solver_iterations(cold);
-    ASSERT_TRUE(mhs::sim::solver_success(cold));
+    const Eigen::VectorXd x_cold
+        = mhs::sim::solver_solve(cold_fixture.solver, cold_fixture.b, Eigen::VectorXd::Zero(kSize));
+    const int cold_iters = mhs::sim::solver_iterations(cold_fixture.solver);
+    ASSERT_TRUE(mhs::sim::solver_success(cold_fixture.solver));
 
     // Warm start (exact guess): should converge in very few iterations.
-    auto warm = mhs::sim::create_solver(spec);
-    mhs::sim::solver_compute(warm, A);
-    const Eigen::VectorXd x_warm = mhs::sim::solver_solve(warm, b, kExact);
-    const int warm_iters = mhs::sim::solver_iterations(warm);
-    ASSERT_TRUE(mhs::sim::solver_success(warm));
+    auto warm_fixture = make_fixture(kBiCGSTABSpec);
+    const Eigen::VectorXd x_warm = mhs::sim::solver_solve(warm_fixture.solver, warm_fixture.b, kExact);
+    const int warm_iters = mhs::sim::solver_iterations(warm_fixture.solver);
+    ASSERT_TRUE(mhs::sim::solver_success(warm_fixture.solver));
 
     EXPECT_NEAR((x_cold - kExact).norm(), 0.0, 1e-7);
     EXPECT_NEAR((x_warm - kExact).norm(), 0.0, 1e-7);
@@ -65,30 +78,22 @@ TEST(LinearSolver, IterativeWarmStartConvergesFromGuess)
 // The iterative interface requires a matching-size initial guess.
 TEST(LinearSolver, IterativeRejectsMismatchedInitialGuess)
 {
-    const auto A = make_spd_tridiagonal(kSize);
-    const Eigen::VectorXd b = A * kExact;
-
-    auto solver = mhs::sim::create_solver(mhs::sim::SolverSpec {mhs::sim::SolverType::EigenBiCGSTAB, {1e-10, 2000}});
-    mhs::sim::solver_compute(solver, A);
+    auto fixture = make_fixture(kBiCGSTABSpec);
 
     Eigen::VectorXd wrong_size(3);
     wrong_size.setZero();
-    EXPECT_THROW(mhs::sim::solver_solve(solver, b, wrong_size), std::invalid_argument);
+    EXPECT_THROW(mhs::sim::solver_solve(fixture.solver, fixture.b, wrong_size), std::invalid_argument);
 }
 
 // The direct backend ignores the initial guess entirely.
 TEST(LinearSolver, DirectIgnoresInitialGuess)
 {
-    const auto A = make_spd_tridiagonal(kSize);
-    const Eigen::VectorXd b = A * kExact;
+    auto fixture = make_fixture(mhs::sim::SolverSpec {mhs::sim::SolverType::EigenSparseLU, {}});
 
-    auto solver = mhs::sim::create_solver(mhs::sim::SolverSpec {mhs::sim::SolverType::EigenSparseLU, {}});
-    mhs::sim::solver_compute(solver, A);
-
-    const Eigen::VectorXd with_guess = mhs::sim::solver_solve(solver, b, kExact);
-    ASSERT_TRUE(mhs::sim::solver_success(solver));
-    const Eigen::VectorXd no_guess = mhs::sim::solver_solve(solver, b);
-    ASSERT_TRUE(mhs::sim::solver_success(solver));
+    const Eigen::VectorXd with_guess = mhs::sim::solver_solve(fixture.solver, fixture.b, kExact);
+    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
+    const Eigen::VectorXd no_guess = mhs::sim::solver_solve(fixture.solver, fixture.b);
+    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
 
     EXPECT_NEAR((with_guess - kExact).norm(), 0.0, 1e-8);
     EXPECT_NEAR((no_guess - kExact).norm(), 0.0, 1e-8);
@@ -98,14 +103,11 @@ TEST(LinearSolver, DirectIgnoresInitialGuess)
 // fallback when MKL is disabled).
 TEST(LinearSolver, DefaultFactoryYieldsWorkingDirectSolver)
 {
-    const auto A = make_spd_tridiagonal(kSize);
-    const Eigen::VectorXd b = A * kExact;
+    auto fixture = make_fixture(); // default spec
 
-    auto solver = mhs::sim::create_solver();
-    mhs::sim::solver_compute(solver, A);
-    const Eigen::VectorXd x = mhs::sim::solver_solve(solver, b);
+    const Eigen::VectorXd x = mhs::sim::solver_solve(fixture.solver, fixture.b);
 
-    ASSERT_TRUE(mhs::sim::solver_success(solver));
+    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
     EXPECT_NEAR((x - kExact).norm(), 0.0, 1e-8);
 }
 

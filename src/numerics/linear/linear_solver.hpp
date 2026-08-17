@@ -80,7 +80,7 @@ namespace mhs::sim {
     {
         return std::visit(
             [&](auto& ptr) -> Eigen::VectorXd {
-                using SolverT = std::remove_pointer_t<std::decay_t<decltype(ptr.get())>>;
+                using SolverT = std::remove_reference_t<decltype(*ptr)>;
                 if constexpr (std::is_base_of_v<IterativeSolver, SolverT>)
                     throw std::logic_error("iterative solve requires an initial guess (use the x0 overload)");
                 else
@@ -96,7 +96,7 @@ namespace mhs::sim {
     {
         return std::visit(
             [&](auto& ptr) -> Eigen::VectorXd {
-                using SolverT = std::remove_pointer_t<std::decay_t<decltype(ptr.get())>>;
+                using SolverT = std::remove_reference_t<decltype(*ptr)>;
                 if constexpr (std::is_base_of_v<IterativeSolver, SolverT>)
                     return ptr->solve(b, x0);
                 else
@@ -113,11 +113,6 @@ namespace mhs::sim {
     inline int solver_iterations(const SolverHandle& handle)
     {
         return std::visit([](const auto& ptr) { return ptr->iterations(); }, handle);
-    }
-
-    inline double solver_residual(const SolverHandle& handle)
-    {
-        return std::visit([](const auto& ptr) { return ptr->residual(); }, handle);
     }
 
     /// Build a solver from a spec (defaults to Pardiso, falling back to

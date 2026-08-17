@@ -112,8 +112,13 @@ namespace mhs::sim {
         // Warm start for the iterative backend: iteration 0 seeds from the
         // current iterate, later iterations from the previous linear solution
         // (the linear systems change slowly across a fixed-point loop). Direct
-        // backends ignore the guess entirely.
-        Eigen::VectorXd warm_start = state_map;
+        // backends ignore the guess, so the buffer stays empty for them and no
+        // per-iteration copy is paid on the default (direct) path.
+        const bool iterative = std::holds_alternative<IterativeSolverPtr>(solver);
+        Eigen::VectorXd warm_start;
+        if (iterative) {
+            warm_start = state_map;
+        }
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
             LinearSystem linear_system = ls_provider(state);
@@ -131,7 +136,9 @@ namespace mhs::sim {
 
             solver_compute(solver, linear_system.A);
             const Eigen::VectorXd G_k = solver_solve(solver, linear_system.b, warm_start);
-            warm_start = G_k;
+            if (iterative) {
+                warm_start = G_k;
+            }
             if (!solver_success(solver)) {
                 throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
             }
