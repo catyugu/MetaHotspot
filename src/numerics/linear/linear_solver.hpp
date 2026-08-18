@@ -7,17 +7,17 @@
 
 namespace mhs::sim {
 
-    enum class SolverType { Pardiso, EigenSparseLU, EigenBiCGSTAB };
+    enum class SolverType { Pardiso, AmgCg };
 
-    // LinearSolver configuration
+    // LinearSolver configuration (shared by direct and iterative backends).
     struct SolverConfig {
-        // EigenBiCGSTAB-only knobs.
+        // Iterative knobs (AmgCg).
         double tolerance = 1e-8;
         int max_iterations = 1000;
     };
 
     struct SolverSpec {
-        SolverType type = SolverType::Pardiso;
+        SolverType type = SolverType::AmgCg;
         SolverConfig config {};
     };
 
@@ -115,8 +115,10 @@ namespace mhs::sim {
         return std::visit([](const auto& ptr) { return ptr->iterations(); }, handle);
     }
 
-    /// Build a solver from a spec (defaults to Pardiso, falling back to
-    /// EigenSparseLU when MKL is disabled).
+    /// Build a solver from a spec. The default is the self-tuning AMGCL solver
+    /// (CG on symmetric, GMRES on non-symmetric operators) so that no direct
+    /// MKL/Pardiso dependency is required; Pardiso remains available as an
+    /// optional direct backend when MKL is enabled.
     SolverHandle create_solver(const SolverSpec& spec = {});
 
 } // namespace mhs::sim

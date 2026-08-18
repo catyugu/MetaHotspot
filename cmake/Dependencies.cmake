@@ -97,8 +97,21 @@ if(MINGW AND TARGET tbb)
 endif()
 
 # ----------------------------------------------------------------------------
-# Intel oneMKL (optional, provides MKL::MKL). Pardiso is optional: when oneMKL
-# is absent, the existing solver factory falls back to Eigen EigenSparseLU.
+# amgcl - header-only algebraic multigrid library (builtin backend). Powers
+# the AMG-preconditioned CG solver (thermal steady/transient default).
+# ----------------------------------------------------------------------------
+CPMAddPackage(
+    NAME amgcl
+    GITHUB_REPOSITORY ddemidov/amgcl
+    GIT_TAG 1.5.0
+    OPTIONS
+    "AMGCL_BUILD_TESTS OFF"
+    "AMGCL_BUILD_EXAMPLES OFF"
+)
+
+# ----------------------------------------------------------------------------
+# Intel oneMKL (optional, provides MKL::MKL). Pardiso is the direct solver;
+# the AMG-preconditioned CG (AmgCg) default does not depend on MKL.
 # ----------------------------------------------------------------------------
 set(MHS_ENABLE_PARDISO FALSE CACHE INTERNAL "" FORCE)
 
@@ -125,8 +138,8 @@ if(USE_MKL)
         endif()
     else()
         message(WARNING
-            "USE_MKL=ON but oneMKL was not found; disabling Pardiso and "
-            "falling back to Eigen EigenSparseLU")
+            "USE_MKL=ON but oneMKL was not found; Pardiso is disabled "
+            "(the AmgCg default still works)")
     endif()
 else()
     message(STATUS "USE_MKL=OFF; Pardiso support is disabled")

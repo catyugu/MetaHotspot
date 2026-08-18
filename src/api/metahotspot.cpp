@@ -95,10 +95,8 @@ static mhs::sim::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_
     switch (t) {
     case MHS_SOLVER_PARDISO:
         return mhs::sim::SolveOptions::LinearSolverType::Pardiso;
-    case MHS_SOLVER_EIGEN_SPARSE_LU:
-        return mhs::sim::SolveOptions::LinearSolverType::EigenSparseLU;
-    case MHS_SOLVER_EIGEN_BICGSTAB:
-        return mhs::sim::SolveOptions::LinearSolverType::EigenBiCGSTAB;
+    case MHS_SOLVER_AMG:
+        return mhs::sim::SolveOptions::LinearSolverType::AmgCg;
     }
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
@@ -148,7 +146,7 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 {
     if (!opts)
         return;
-    opts->solver_type = MHS_SOLVER_PARDISO;
+    opts->solver_type = MHS_SOLVER_AMG;
     opts->linear_tolerance = 1e-8;
     opts->linear_max_iterations = 1000;
     opts->underrelaxation = 1.0;
