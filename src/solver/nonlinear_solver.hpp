@@ -24,7 +24,7 @@ namespace mhs::sim {
     /// Per-iteration linear-system factory evaluated at the current state (read-only).
     using LinearSystemProvider = std::function<LinearSystem(std::span<const double>)>;
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, LinearSolver& solver,
+    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, SolverHandle& solver,
         const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

@@ -9,7 +9,7 @@ TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 {
     mhs::sim::Study study {mhs::core::StudyType::Transient, 0.5, 0.25};
     mhs::sim::SolveOptions options;
-    options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::EigenSparseLU;
+    options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::AmgCg;
     options.integrator = mhs::sim::SolveOptions::Integrator::Bdf1;
     options.step_strategy = mhs::sim::SolveOptions::StepStrategy::Fixed;
     options.fixed_dt = 0.25;
@@ -42,7 +42,7 @@ TEST(SolutionHistoryTest, SteadySolveProducesOneSnapshot)
 {
     mhs::sim::Study study {mhs::core::StudyType::Steady, 0.0, 1.0};
     mhs::sim::SolveOptions options;
-    options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::EigenSparseLU;
+    options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::AmgCg;
 
     mhs::sim::SystemAssembler assemble = [](std::span<const double>, double) {
         mhs::sim::Operators operators;

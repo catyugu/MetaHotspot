@@ -26,7 +26,7 @@ from affine_parametric_models._registry import create, register, registered_name
 # this package costs nothing beyond the base contract).  Each model brings its
 # own quick-mode config recipe, so an experiment only ever asks the factory
 # *whether* it is quick — never what that means for a given model.
-from affine_parametric_models import _chiplet_stack, _bci_pkg
+from affine_parametric_models import _chiplet_stack, _bci_pop
 
 register(
     "chiplet_stack",
@@ -34,9 +34,9 @@ register(
     quick_overrides=_chiplet_stack.QUICK_OVERRIDES,
 )
 register(
-    "bci_pkg",
-    _bci_pkg._builder,
-    quick_overrides=_bci_pkg.QUICK_OVERRIDES,
+    "bci_pop",
+    _bci_pop._builder,
+    quick_overrides=_bci_pop.QUICK_OVERRIDES,
 )
 
 __all__ = [

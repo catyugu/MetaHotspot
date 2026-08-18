@@ -1,5 +1,4 @@
-mhs_add_library(mhs_solver
-    SOURCES
+add_library(mhs_solver STATIC
     assembler.cpp
     fluid_assembler.cpp
     interpolation.cpp
@@ -8,10 +7,14 @@ mhs_add_library(mhs_solver
     probe_recorder.cpp
     solve.cpp
     time_integration.cpp
-    PUBLIC_LINKS
+)
+target_include_directories(mhs_solver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(mhs_solver
+    PUBLIC
     mhs_common
     mhs_linear
-    PRIVATE_LINKS
+    PRIVATE
     mhs_logging
     TBB::tbb
+    mhs_options
 )

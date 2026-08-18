@@ -1,8 +1,6 @@
 """Configure ctypes function signatures on a loaded CDLL object.
 
 This module is internal — call ``configure_dll(dll)`` once after loading.
-The macromodel extension DLL is configured separately by
-:mod:`metahotspot.macromodel` (its signatures are hand-registered there).
 """
 
 from __future__ import annotations
@@ -345,20 +343,6 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.POINTER(MhsOperators)),
-        ],
-    ),
-    # ---- Half-conductance ----
-    (
-        "mhs_compiled_half_conductance",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_size_t),
-            ctypes.c_int32,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
         ],
     ),
     # ---- Solve ----

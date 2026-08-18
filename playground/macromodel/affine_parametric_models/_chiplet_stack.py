@@ -2,14 +2,14 @@
 
 This module is *private* — it is reachable only through the factory under the
 registered name ``"chiplet_stack"``.  It supplies the geometry hooks consumed by
-the shared :class:`AffineParametricModel` base (which carries the DtN/PortMap
-plumbing).
+the shared :class:`AffineParametricModel` base (which carries the full-domain
+operator assembly, source-port extraction, and boundary affine terms).
 
 Layout (z from 0 up): substrate (organic) / bump (underfill+Cu pillars) / die
-(silicon, chiplet heat sources) at the bottom (the *detail* domain), then TIM /
-spreader (copper) / cold plate (aluminum) on top (the *macro* domain).  The
-macro block bottom face is the interface (= die top); its top face is the
-single parametric boundary group (uniform heat-exchange coefficient ``h``).
+(silicon, chiplet heat sources) at the bottom, then TIM / spreader (copper) /
+cold plate (aluminum) on top.  Each of the four chiplets is one uniform
+heat-source port (FANTASTIC); the cold-plate top face is the single parametric
+boundary group (uniform heat-exchange coefficient ``h``).
 """
 
 from __future__ import annotations
@@ -22,22 +22,16 @@ import numpy as np
 
 import metahotspot
 from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel import PortPatch
 
-from affine_parametric_models._interfaces import AffineParametricModel
+from affine_parametric_models._interfaces import (
+    AffineParametricModel,
+    BoundaryGroup,
+    SourcePort,
+    surface_exposed_cells,
+)
 
 DEFAULT_H_RANGE = (1.0, 1.0e6)
 
-POWER_MAP = np.asarray(
-    (
-        (0.10, 0.15, 0.20, 0.15),
-        (0.15, 0.50, 1.20, 0.20),
-        (0.10, 0.80, 8.55, 0.25),
-        (0.10, 0.20, 1.20, 0.45),
-    ),
-    dtype=np.float64,
-)
-POWER_MAP /= POWER_MAP.mean()
 CHIPLET_POWER_SCALE = (1.00, 0.72, 1.25, 0.55)
 MATERIALS = (
     ("organic", ".65", ".65", ".55", "1900", "1100"),
@@ -196,8 +190,8 @@ class ChipletStackConfig:
         return self.axis_vertices_mm.size - 1
 
     @property
-    def ports(self) -> int:
-        return self.port_indices.size**2
+    def source_port_count(self) -> int:
+        return 4  # one uniform heat-source block per chiplet
 
     @property
     def nominal_power_W(self) -> float:
@@ -209,8 +203,8 @@ class ChipletStackConfig:
             "nx": self.nx,
             "ny": self.nx,
             "nz": self.nz,
-            "ports": self.ports,
-            "port_shape": [self.port_indices.size, self.port_indices.size],
+            "source_ports": self.source_port_count,
+            "source_port_shape": [4, 1],
             "nominal_power_W": self.nominal_power_W,
         }
 
@@ -249,11 +243,15 @@ def build_geometry(
     detail: bool,
     macro: bool,
     boundary_h: dict[str, float] | None = None,
+    source_sink: list | None = None,
 ):
     """Assemble the chiplet stack (no boundary conditions unless requested).
 
     ``boundary_h`` (if given) maps boundary-group name -> coefficient and
     applies the group's convection via :func:`apply_boundary_convection`.
+    When ``source_sink`` is given, each heat-source block appends
+    ``(block_id, power_W, activity_index)`` to it (in add order), so the model
+    can recover per-source cells from the compiled ``block_ids``.
     """
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
@@ -302,28 +300,36 @@ def build_geometry(
                     ),
                 )
 
-        tile = cfg.chiplet_size_mm / 4.0
-        tile_volume_m3 = tile * tile * cfg.die_mm * 1.0e-9
+        # One heat-source block per chiplet (uniform power over the whole
+        # 12x12 mm chiplet), instead of 4x4 = 16 tiles per chiplet.  Each
+        # chiplet carries its own activity trace.
+        chiplet_volume_m3 = (
+            cfg.chiplet_size_mm * cfg.chiplet_size_mm * cfg.die_mm * 1.0e-9
+        )
+        # die-layer block id counter: 0 = die base block, then one per chiplet
+        die_block_count = 1
         for chiplet, ((x0, y0), scale) in enumerate(
             zip(cfg.chiplet_origins_mm, CHIPLET_POWER_SCALE)
         ):
-            for iy in range(4):
-                for ix in range(4):
-                    tile_power = (
-                        cfg.chiplet_power_W * scale * POWER_MAP[iy, ix] / POWER_MAP.size
-                    )
-                    source = f"{tile_power / tile_volume_m3:.17g}"
-                    if transient:
-                        source += f"*activity_{(chiplet + 2 * ix + iy) % 4}(x)"
-                    block = model.add_block(die, "silicon", heat_source=source)
-                    model.add_rect(
-                        block,
-                        GeometryOp.ADD,
-                        f"{x0 + ix * tile:.17g}",
-                        f"{y0 + iy * tile:.17g}",
-                        f"{tile:.17g}",
-                        f"{tile:.17g}",
-                    )
+            chiplet_power = cfg.chiplet_power_W * scale
+            source = f"{chiplet_power / chiplet_volume_m3:.17g}"
+            activity_idx = chiplet % 4
+            if transient:
+                source += f"*activity_{activity_idx}(x)"
+            block = model.add_block(die, "silicon", heat_source=source)
+            model.add_rect(
+                block,
+                GeometryOp.ADD,
+                f"{x0:.17g}",
+                f"{y0:.17g}",
+                f"{cfg.chiplet_size_mm:.17g}",
+                f"{cfg.chiplet_size_mm:.17g}",
+            )
+            if source_sink is not None:
+                source_sink.append(
+                    (die_block_count, float(chiplet_power), activity_idx)
+                )
+            die_block_count += 1
 
         bump = model.add_layer(str(cfg.bump_mm))
         add_square(model, model.add_block(bump, "underfill"), cfg.bump_region_size_mm)
@@ -362,36 +368,12 @@ def build_geometry(
     return model
 
 
-def _patches(
-    cfg: ChipletStackConfig, face: Face, z_m: float, indices=None
-) -> list[PortPatch]:
-    vertices = cfg.axis_vertices_mm * 1.0e-3
-    if indices is None:
-        indices = range(vertices.size - 1)
-    return [
-        PortPatch(
-            int(face),
-            z_m,
-            (vertices[ix], vertices[ix + 1], vertices[iy], vertices[iy + 1]),
-        )
-        for ix in indices
-        for iy in indices
-    ]
-
-
-def _patch_areas(cfg: ChipletStackConfig, patches: list[PortPatch]) -> np.ndarray:
-    areas = np.empty(len(patches), dtype=np.float64)
-    for index, patch in enumerate(patches):
-        a_min, a_max, b_min, b_max = patch.rectangle
-        areas[index] = (a_max - a_min) * (b_max - b_min)
-    return areas
-
-
 class _ChipletStack(AffineParametricModel):
     """Private concrete implementation registered as ``"chiplet_stack"``."""
 
     def __init__(self, cfg: ChipletStackConfig):
         self.config = cfg
+        self._source_sink: list = []
 
     @property
     def name(self) -> str:
@@ -400,16 +382,74 @@ class _ChipletStack(AffineParametricModel):
     # ------------------------------------------------- geometry hooks
 
     def build_geometry(self, study, *, detail, macro, boundary_h=None):
+        self._source_sink.clear()
         return build_geometry(
-            self.config, study, detail=detail, macro=macro, boundary_h=boundary_h
+            self.config,
+            study,
+            detail=detail,
+            macro=macro,
+            boundary_h=boundary_h,
+            source_sink=self._source_sink,
         )
 
-    def interface_patches(self) -> list[PortPatch]:
-        return _patches(self.config, Face.ZM, 0.0, self.config.port_indices)
+    def source_ports(self) -> list[SourcePort]:
+        """One :class:`SourcePort` per heat-source block (4 chiplet regions).
 
-    def boundary_patch_groups(self):
-        boundary = _patches(self.config, Face.ZP, self.config.macro_height_mm * 1.0e-3)
-        return [boundary], [_patch_areas(self.config, boundary)]
+        Source cells are located directly from the compiled model: the cells
+        with non-zero constant heat-source RHS.  They are grouped by block id
+        (each heat-source block has exactly one block id), and the sink (in
+        the same add order) supplies the power and activity trace.
+        """
+        f = np.asarray(self._core.f, dtype=np.float64)
+        source_cells = np.flatnonzero(f > 0.0)
+        block = self._full.block_ids[source_cells]
+        # group by block id, preserving block-id order
+        order = np.argsort(block, kind="stable")
+        block_sorted = block[order]
+        cell_sorted = source_cells[order]
+        boundaries = np.flatnonzero(np.diff(block_sorted) != 0) + 1
+        groups = np.split(cell_sorted, boundaries)
+
+        if len(groups) != len(self._source_sink):
+            raise RuntimeError(
+                f"source block count mismatch: {len(groups)} groups vs "
+                f"{len(self._source_sink)} sink entries"
+            )
+        ports = []
+        for cells, (block_id, power_W, activity_idx) in zip(groups, self._source_sink):
+            if activity_idx is not None:
+                ports.append(
+                    SourcePort(
+                        cells=np.asarray(cells, dtype=np.int64),
+                        power_W=power_W,
+                        activity=lambda t, idx=activity_idx: self._activity_value(
+                            idx, t
+                        ),
+                    )
+                )
+            else:
+                ports.append(
+                    SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power_W)
+                )
+        return ports
+
+    def _activity_value(self, index: int, t: float) -> float:
+        """Piecewise-linear activity trace ``index`` evaluated at time ``t``."""
+        points = np.asarray(ACTIVITY_TRACES[index], dtype=np.float64)
+        xs = points[:, 0] * self.config.duration_s
+        ys = points[:, 1]
+        return float(np.interp(t, xs, ys))
+
+    def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
+        full = self._full
+        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = self.config.axis_vertices_mm * 1.0e-3
+        y = x
+        z = z_vertices((*self.config.detail_layers, *self.config.macro_layers)) * 1.0e-3
+        half = self.config.cold_plate_size_mm / 2.0 * 1.0e-3
+        top_z = (self.config.detail_height_mm + self.config.macro_height_mm) * 1.0e-3
+        cells, areas = surface_exposed_cells(grid, x, y, z, Face.ZP, top_z)
+        return (BoundaryGroup(cells=cells, areas=areas, h_range=DEFAULT_H_RANGE),)
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 1:
@@ -419,33 +459,16 @@ class _ChipletStack(AffineParametricModel):
     def group_h_ranges(self):
         return (DEFAULT_H_RANGE,)
 
-    def detail_interface_patches(self) -> list[PortPatch]:
-        return _patches(
-            self.config,
-            Face.ZP,
-            self.config.detail_height_mm * 1.0e-3,
-            self.config.port_indices,
+    def source_power(self, t: float) -> np.ndarray:
+        ports = self.source_ports()
+        return np.asarray(
+            [p.power_W * (p.activity(t) if p.activity else 1.0) for p in ports],
+            dtype=np.float64,
         )
 
     @property
     def detail_nz(self) -> int:
         return self.config.detail_nz
-
-    def monitor_cells(self) -> np.ndarray:
-        # Chiplet stack has no dedicated monitor semantic; the experiments
-        # score full-field accuracy, not per-monitor curves.
-        return np.arange(self.detail_cell_count, dtype=np.int64)
-
-    @cached_property
-    def port_lookup(self) -> dict[tuple[int, int], int]:
-        return {
-            (int(ix), int(iy)): port
-            for port, (ix, iy) in enumerate(
-                (ix, iy)
-                for ix in self.config.port_indices
-                for iy in self.config.port_indices
-            )
-        }
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

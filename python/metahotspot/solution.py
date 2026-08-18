@@ -24,9 +24,9 @@ class ProbeTrace(NamedTuple):
 class Solution(OwnedHandle):
     """Read-only simulation result.
 
-    Do not instantiate directly — use ``Compiled.solve()`` or the macromodel
-    extension.  ``state_history`` contains every C++ output snapshot, including
-    the initial transient state and final accepted state.
+    Do not instantiate directly — use ``Compiled.solve()``.  ``state_history``
+    contains every C++ output snapshot, including the initial transient state
+    and final accepted state.
     """
 
     def __init__(self) -> None:

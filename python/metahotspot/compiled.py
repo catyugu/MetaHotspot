@@ -89,7 +89,7 @@ def _operators_from_handle(dll, handle) -> Operators:
 class SolveOptions:
     """Solver configuration options."""
 
-    linear_solver: str = "Pardiso"
+    linear_solver: str = "AmgCg"
     linear_tolerance: float = 1e-8
     linear_max_iterations: int = 1000
     underrelaxation: float = 1.0
@@ -115,9 +115,8 @@ class SolveOptions:
         dll.mhs_solve_options_default(ctypes.byref(c_opts))
         c_opts.solver_type = {
             "Pardiso": 0,
-            "EigenSparseLU": 1,
-            "EigenBiCGSTAB": 2,
-        }.get(self.linear_solver, 0)
+            "AmgCg": 1,
+        }.get(self.linear_solver, 1)
         c_opts.linear_tolerance = self.linear_tolerance
         c_opts.linear_max_iterations = self.linear_max_iterations
         c_opts.underrelaxation = self.underrelaxation

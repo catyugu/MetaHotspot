@@ -1,7 +1,7 @@
 #pragma once
 
-/* Internal opaque handle definitions shared between metahotspot.cpp and
-   metahotspot_macromodel.cpp.  Not part of the public API. */
+/* Internal opaque handle definitions shared across the core API TUs.  Not
+   part of the public API. */
 
 #include "api/metahotspot.h" // mhs_solve_options_t etc.
 #include "common/model_definition.hpp"

@@ -60,7 +60,7 @@ typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
 typedef int32_t mhs_solver_type_t;
-enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_EIGEN_SPARSE_LU = 1, MHS_SOLVER_EIGEN_BICGSTAB = 2 };
+enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE = 1, MHS_FLUID_MASS_FLOW = 2, MHS_FLUID_VELOCITY = 3 };
@@ -155,7 +155,7 @@ typedef struct {
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Fill opts with sensible defaults (Pardiso, 1e-8, 1e-6, …). */
+/** Fill opts with sensible defaults (AMG, 1e-8, 1e-6, …). */
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 
 /** Thread-local last error message. Reset on every API call. */
@@ -274,15 +274,6 @@ MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int3
 MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
     int32_t* inner, size_t inner_count, double* values, size_t value_count);
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
-
-/* ------------------------------------------------------------------ */
-/*  Half-conductance  k*A/(dx/2)                                       */
-/* ------------------------------------------------------------------ */
-
-/** Compute k*A/(dx/2) for each cell at the given face.
- *  Temperature and time are used to evaluate material properties. */
-MHS_API mhs_status_t mhs_compiled_half_conductance(const mhs_compiled_t* c, const size_t* cells, mhs_face_t face,
-    double temperature, double time, double* out, size_t n);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */

@@ -4,11 +4,6 @@ Module-level singleton::
 
     from metahotspot._lib import get_dll
     dll = get_dll()  # first call loads & configures; subsequent calls cached
-
-For macromodel extension::
-
-    from metahotspot._lib import get_ext_dll
-    dll = get_ext_dll()
 """
 
 from __future__ import annotations
@@ -22,7 +17,6 @@ from pathlib import Path
 #  Cache for the loaded CDLL
 # ---------------------------------------------------------------------------
 _dll: ctypes.CDLL | None = None
-_ext_dll: ctypes.CDLL | None = None
 
 
 def get_dll() -> ctypes.CDLL:
@@ -34,17 +28,6 @@ def get_dll() -> ctypes.CDLL:
 
         configure_dll(_dll)
     return _dll
-
-
-def get_ext_dll() -> ctypes.CDLL:
-    """Return the loaded (and configured) macromodel extension CDLL."""
-    global _ext_dll
-    if _ext_dll is None:
-        _ext_dll = load_library()
-        from metahotspot._dll_interface import configure_dll
-
-        configure_dll(_ext_dll)
-    return _ext_dll
 
 
 def load_library() -> ctypes.CDLL:
