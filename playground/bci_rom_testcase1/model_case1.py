@@ -71,7 +71,7 @@ LAYERS = (
 )
 
 DIES = (
-    (0.1, (5.0, 15.0), (5.0, 15.0)),    # S0
+    (0.1, (5.0, 15.0), (5.0, 15.0)),  # S0
     (0.2, (-15.0, -5.0), (5.0, 15.0)),  # S1
     (0.3, (5.0, 15.0), (-15.0, -5.0)),  # S2
     (0.4, (-15.0, -5.0), (-15.0, -5.0)),  # S3
@@ -104,10 +104,16 @@ class Case1Config:
     def axis_vertices_mm(self) -> np.ndarray:
         """Lateral breakpoints: all block edges + package extents, subdivided."""
         pts = [
-            -30.0, 30.0,   # FR4 / aluminum x edges
-            -50.0, 50.0,   # FR4 y edges
-            -20.0, 20.0,   # E-10 edges
-            -15.0, -5.0, 5.0, 15.0,  # die edges (x & y)
+            -30.0,
+            30.0,  # FR4 / aluminum x edges
+            -50.0,
+            50.0,  # FR4 y edges
+            -20.0,
+            20.0,  # E-10 edges
+            -15.0,
+            -5.0,
+            5.0,
+            15.0,  # die edges (x & y)
         ]
         fixed = np.unique(np.asarray(pts, dtype=np.float64))
         vertices = [float(fixed[0])]
@@ -161,9 +167,7 @@ def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool)
         duration=cfg.duration_s if transient else 0.0,
         output_interval=cfg.dt_s if transient else 0.0,
     )
-    model.set_mesh(
-        cfg.axis_vertices_mm, cfg.axis_vertices_mm, cfg.z_vertices_mm
-    )
+    model.set_mesh(cfg.axis_vertices_mm, cfg.axis_vertices_mm, cfg.z_vertices_mm)
     for name, (kx, ky, kz, rho, c) in MATERIALS.items():
         model.add_material(name, kx, ky, kz, rho, c)
 
@@ -256,7 +260,9 @@ class Case1Model(AffineParametricModel):
                 & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
             )
             cells = source_cells[mask[source_cells]]
-            ports.append(SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power))
+            ports.append(
+                SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power)
+            )
         return ports
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
@@ -285,6 +291,21 @@ class Case1Model(AffineParametricModel):
 
     def group_h_ranges(self):
         return self.config.h_ranges
+
+    # ------------------------------------------------ cell geometry helpers
+
+    def _cell_z_centers(self) -> np.ndarray:
+        """Per-cell z-centre (m) from the compiled occupancy grid."""
+        full = self._full
+        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        z = self.config.z_vertices_mm * 1.0e-3
+        zc = 0.5 * (z[:-1] + z[1:])
+        out = np.empty(full.cell_count, dtype=np.float64)
+        for iz in range(full.nz):
+            slab = grid[:, :, iz].ravel()
+            valid = slab >= 0
+            out[slab[valid]] = zc[iz]
+        return out
 
 
 def builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
