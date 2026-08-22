@@ -36,6 +36,7 @@ import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy import special
+import pyamg
 
 from metahotspot.compiled import Operators
 
@@ -147,12 +148,11 @@ def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
     b = np.asarray(b, dtype=np.float64).ravel()
     if x0 is None:
         x0 = np.zeros(b.size, dtype=np.float64)
-    else:
-        x0 = np.asarray(x0, dtype=np.float64).ravel()
+    x0 = np.asarray(x0, dtype=np.float64).ravel()
 
     ml = pyamg.ruge_stuben_solver(A.tocsr())
     M = ml.aspreconditioner(cycle="V")
-    x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
+    x, _ = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
     return x
 
 
@@ -191,15 +191,17 @@ def normalized_operators(K, C, f) -> Operators:
 
 EIGENBOUND_SUBSPACE_CAP = 64  # block-Krylov dimension for per-port bounds
 
+_inv_precond_cache: dict = {}
 
-def _global_eigenvalue_bounds(K, C) -> tuple[float, float]:
-    """Global ``(lambda_min, lambda_max)`` of the generalized pencil ``K x = λ C x``."""
-    vals_high, _ = spla.eigsh(K, k=1, M=C, which="LA")
-    vals_low, _ = spla.eigsh(K, k=3, M=C, sigma=0.0, which="LM")
-    positive_low = vals_low[vals_low > 1.0e-9]
-    if positive_low.size == 0:
-        raise RuntimeError("no positive small eigenvalue found")
-    return float(positive_low.min()), float(vals_high.max())
+
+def _shift_invert_preconditioner(K, C, s0):
+    A = (K + s0 * C).tocsc()
+    key = (id(K.data), int(K.nnz), float(s0))
+    entry = _inv_precond_cache.get(key)
+    if entry is None:
+        entry = pyamg.ruge_stuben_solver(A.tocsr()).aspreconditioner(cycle="V")
+        _inv_precond_cache[key] = entry
+    return A, entry
 
 
 def port_eigenvalue_bounds(
@@ -270,8 +272,15 @@ def port_eigenvalue_bounds(
 
     # -- slow end: shift-invert block-Krylov, min positive eigenvalue ------
     s0 = max(float(shift), scale * 1.0e-6)
-    lu = spla.splu((K + s0 * C).tocsc())
-    Qs, ks = krylov(lambda v: lu.solve(C @ v))
+    _Ashot, _precond = _shift_invert_preconditioner(K, C, s0)
+
+    def _inv_apply(v):
+        x, _ = spla.cg(
+            _Ashot, v, x0=v, rtol=INNER_RTOL, atol=0.0, maxiter=1000, M=_precond
+        )
+        return x
+
+    Qs, ks = krylov(_inv_apply)
     vals = project_spectrum(Qs, ks)
     positive = vals[vals > 1.0e-9] if vals is not None else np.empty(0)
     lambda_min = float(positive.min()) if positive.size else None
@@ -280,10 +289,7 @@ def port_eigenvalue_bounds(
     Qf, kf = krylov(lambda v: (K @ v) / c_diag)
     vals = project_spectrum(Qf, kf)
     lambda_max = float(vals.max()) if vals is not None and vals.size else None
-
-    if lambda_min is not None and lambda_max is not None and lambda_max > lambda_min:
-        return lambda_min, lambda_max
-    return _global_eigenvalue_bounds(K, C)
+    return lambda_min, lambda_max
 
 
 # ---------------------------------------------------------------------------
@@ -376,9 +382,28 @@ def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
 
 
 def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
-    """Steady reduced interior: ``K̂(h) θ = F̂ P`` (K̂ is SPD for h > 0)."""
+    """Steady reduced interior solved via Jacobi-preconditioned CG.
+
+    Solves K̂(h) θ = F̂ P, where K̂ is SPD for h > 0.
+    """
     rhs = F_hat @ np.asarray(power, dtype=np.float64)
-    return np.asarray(sp.linalg.spsolve(K_hat.tocsc(), rhs)).ravel()
+    A = K_hat.tocsc().tocsr()
+
+    # ---- Jacobi preconditioner: M = diag(A)^{-1} ----
+    diag = A.diagonal()
+    M = sp.diags(1.0 / diag, format="csr")
+
+    theta, info = spla.cg(A, rhs, rtol=1e-8, atol=0.0, maxiter=1000, M=M)
+
+    if info != 0:
+        print(f"Warning: CG did not converge, info={info}")
+
+    return theta.ravel()
+
+
+LARGE_SYSTEM_DOF = 1000
+TRANSIENT_RTOL = 1.0e-8
+TRANSIENT_MAXITER = 10000
 
 
 def solve_rom_transient(
@@ -391,10 +416,7 @@ def solve_rom_transient(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Fixed-step BDF1 transient of the reduced interior.
 
-    ``(Ĉ/dt + K̂) θ_{n+1} = Ĉ θ_n/dt + F̂ P(t_{n+1})`` on the same output grid
-    as the model reference (0, dt, 2·dt, …, duration).  ``K_hat`` is the
-    already-assembled ``K̂(h)``; ``power_t`` is a callable ``t -> P(t)``.
-    Returns ``(times, theta_history)``.
+    Uses Jacobi-preconditioned CG (JPCG) instead of AMG.
     """
     n_modes = C_hat.shape[0]
     A = K_hat.tocsc()
@@ -402,10 +424,22 @@ def solve_rom_transient(
     times = np.arange(0.0, duration + 0.5 * dt, dt)
     history = np.empty((times.size, n_modes), dtype=np.float64)
     theta = np.zeros(n_modes)
-    solver = sp.linalg.splu(lhs)
+
+    lhs_csr = lhs.tocsr()
+    diag = lhs_csr.diagonal()
+    M = sp.diags(1.0 / diag, format="csr")
+
     for i, t in enumerate(times):
         rhs = (C_hat @ theta) / dt + F_hat @ np.asarray(power_t(t), dtype=np.float64)
-        theta = solver.solve(rhs)
+        theta, _ = spla.cg(
+            lhs_csr,
+            rhs,
+            x0=theta,
+            rtol=TRANSIENT_RTOL,
+            atol=0.0,
+            maxiter=TRANSIENT_MAXITER,
+            M=M,
+        )
         history[i] = theta
     return times, history
 
@@ -419,6 +453,8 @@ RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 MAX_ORDER = 2048
 PROBE_ROUNDS = 3  # consecutive random h-vectors that must certify a (port, shift)
 RANDOM_SEED = 20260805
+INNER_RTOL = 1.0e-3
+ENRICH_RTOL = 1.0e-6
 
 
 def random_h(h_ranges, seed) -> tuple[float, ...]:
@@ -506,7 +542,7 @@ def build_parametric_basis(
         A = K + shift * C
         for h, H in zip(h_vec, boundary_terms):
             A = A + h * H
-        return (0.5 * (A + A.T)).tocsc()
+        return A.tocsc()
 
     H_diags = [np.asarray(H.diagonal()).ravel() for H in boundary_terms]
     c_diag = np.asarray(C.diagonal()).ravel()
@@ -567,7 +603,9 @@ def build_parametric_basis(
             converged = False  # budget exhausted; outer loop will stop
             return x0 if x0 is not None else np.zeros(g_vec.size)
         A = candidate_A(h_vec, shift)
-        response = np.asarray(spd_solve(A, g_vec, x0=x0)).reshape(-1, 1)
+        response = np.asarray(spd_solve(A, g_vec, x0=x0, rtol=ENRICH_RTOL)).reshape(
+            -1, 1
+        )
         block = orthonormalize_block(basis, response)
         if not block.shape[1]:
             raise RuntimeError("rational Krylov enrichment stalled")

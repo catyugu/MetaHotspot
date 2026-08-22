@@ -63,6 +63,16 @@ MATERIALS = {
     "Silicon": ("130", "130", "130", "2330", "700"),
 }
 
+AIR_MATERIAL = "air"
+AIR_K = "1.0e-5"
+AIR_RHO = "1.225"
+AIR_C = "1005"
+
+A2_MIN_X = -30.0
+A2_MAX_X = 30.0
+A2_MIN_Y = -50.0
+A2_MAX_Y = 50.0
+
 # bottom-up (thickness_mm, material, size_x_mm, size_y_mm, center_x_mm, center_y_mm, power_W)
 LAYERS = (
     (10.0, "FR4", 60.0, 100.0, 0.0, 0.0, 0.0),
@@ -85,7 +95,7 @@ DEFAULT_H_RANGE = (1.0, 1.0e4)
 @dataclass(frozen=True)
 class Case1Config:
     ambient_K: float = 308.15  # 35 C = Tambient (rom_parameters.m)
-    duration_s: float = 1000.0
+    duration_s: float = 100.0
     dt_s: float = 5.0
     max_xy_cell_mm: float = 2.5
     max_z_cell_mm: float = 2.5
@@ -100,9 +110,14 @@ class Case1Config:
     def total_height_mm(self) -> float:
         return 22.0
 
-    @property
-    def axis_vertices_mm(self) -> np.ndarray:
-        """Lateral breakpoints: all block edges + package extents, subdivided."""
+    def _all_cuts_mm(self) -> np.ndarray:
+        """Every lateral cut (block edges + package/domain extents), unique.
+
+        FR4/Al x-edges at +-30, FR4 y-edges at +-50, E-10 at +-20, die edges at
+        +-15/+-5.  This is the *superset* of cuts; the x and y meshes each keep
+        only the cuts inside their own solution-domain extent so no empty cells
+        stretch beyond the domain (case1.ecxml solutionDomain 60x100 mm).
+        """
         pts = [
             -30.0,
             30.0,  # FR4 / aluminum x edges
@@ -115,12 +130,30 @@ class Case1Config:
             5.0,
             15.0,  # die edges (x & y)
         ]
-        fixed = np.unique(np.asarray(pts, dtype=np.float64))
+        return np.unique(np.asarray(pts, dtype=np.float64))
+
+    def _subdivide(self, fixed) -> np.ndarray:
         vertices = [float(fixed[0])]
         for left, right in zip(fixed[:-1], fixed[1:]):
             pieces = max(1, math.ceil((right - left) / self.max_xy_cell_mm))
             vertices.extend(np.linspace(left, right, pieces + 1)[1:])
         return np.asarray(vertices)
+
+    @property
+    def x_vertices_mm(self) -> np.ndarray:
+        """x mesh: solution-domain cuts inside [-30, 30] mm (60 mm wide)."""
+        full = self._all_cuts_mm()
+        return self._subdivide(
+            np.unique(full[(full >= A2_MIN_X - 1e-12) & (full <= A2_MAX_X + 1e-12)])
+        )
+
+    @property
+    def y_vertices_mm(self) -> np.ndarray:
+        """y mesh: solution-domain cuts inside [-50, 50] mm (100 mm tall)."""
+        full = self._all_cuts_mm()
+        return self._subdivide(
+            np.unique(full[(full >= A2_MIN_Y - 1e-12) & (full <= A2_MAX_Y + 1e-12)])
+        )
 
     @property
     def z_vertices_mm(self) -> np.ndarray:
@@ -134,11 +167,11 @@ class Case1Config:
 
     @property
     def nx(self) -> int:
-        return self.axis_vertices_mm.size - 1
+        return self.x_vertices_mm.size - 1
 
     @property
     def ny(self) -> int:
-        return self.axis_vertices_mm.size - 1
+        return self.y_vertices_mm.size - 1
 
     def report_dict(self) -> dict:
         return {
@@ -148,8 +181,8 @@ class Case1Config:
             "nz": self.nz,
             "source_power_W": [d[0] for d in DIES],
             "solid_domain_mm": [
-                self.axis_vertices_mm.min(),
-                self.axis_vertices_mm.max(),
+                self.x_vertices_mm.min(),
+                self.x_vertices_mm.max(),
             ],
         }
 
@@ -167,14 +200,26 @@ def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool)
         duration=cfg.duration_s if transient else 0.0,
         output_interval=cfg.dt_s if transient else 0.0,
     )
-    model.set_mesh(cfg.axis_vertices_mm, cfg.axis_vertices_mm, cfg.z_vertices_mm)
+    model.set_mesh(cfg.x_vertices_mm, cfg.y_vertices_mm, cfg.z_vertices_mm)
     for name, (kx, ky, kz, rho, c) in MATERIALS.items():
         model.add_material(name, kx, ky, kz, rho, c)
+    model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
 
-    # bottom-up stack added top-first (add_layer makes each new layer the
-    # highest, layer 0 = top; so add topmost first).  The dies layer (top) is
-    # added first, then E-10, Al, FR4.
+    def add_air_background(layer):
+        xlo, xhi = A2_MIN_X, A2_MAX_X
+        ylo, yhi = A2_MIN_Y, A2_MAX_Y
+        air_block = model.add_block(layer, AIR_MATERIAL)
+        model.add_rect(
+            air_block,
+            GeometryOp.ADD,
+            f"{xlo:.17g}",
+            f"{ylo:.17g}",
+            f"{xhi - xlo:.17g}",
+            f"{yhi - ylo:.17g}",
+        )
+
     layer = model.add_layer(str(DIE_THICKNESS_MM))
+    add_air_background(layer)
     for power, (xlo, xhi), (ylo, yhi) in DIES:
         volume_m3 = (xhi - xlo) * (yhi - ylo) * DIE_THICKNESS_MM * 1.0e-9
         block = model.add_block(
@@ -191,6 +236,7 @@ def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool)
 
     for thickness, material, sx, sy, cx, cy, power in reversed(LAYERS):
         layer = model.add_layer(str(thickness))
+        add_air_background(layer)
         if power > 0.0:
             volume_m3 = sx * sy * thickness * 1.0e-9
             block = model.add_block(
@@ -238,8 +284,8 @@ class Case1Model(AffineParametricModel):
     def _gate_by_geometry(self, source_cells) -> list[SourcePort]:
         full = self._full
         grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.axis_vertices_mm * 1.0e-3
-        y = x
+        x = self.config.x_vertices_mm * 1.0e-3
+        y = self.config.y_vertices_mm * 1.0e-3
         xc = 0.5 * (x[:-1] + x[1:])
         yc = 0.5 * (y[:-1] + y[1:])
         # cell (ix, iy) x/y centre, and the compact cell index.
@@ -268,8 +314,8 @@ class Case1Model(AffineParametricModel):
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
         grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.axis_vertices_mm * 1.0e-3
-        y = x
+        x = self.config.x_vertices_mm * 1.0e-3
+        y = self.config.y_vertices_mm * 1.0e-3
         z = self.config.z_vertices_mm * 1.0e-3
         total_h = self.config.total_height_mm * 1.0e-3
 

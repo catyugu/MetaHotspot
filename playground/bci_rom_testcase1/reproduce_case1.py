@@ -67,7 +67,7 @@ H_VEC_MODEL = (H_CROWN, H_FR4)  # our model group order [ZP, ZM]
 SOURCES = np.array([0.1, 0.2, 0.3, 0.4])
 DIE_NAMES = ["S0", "S1", "S2", "S3"]
 
-DURATION_S = 1000.0  # rom_parameters.m tscan = [0, 1000]
+DURATION_S = 100.0  # rom_parameters.m tscan = [0, 1000]
 DT_S = 5.0
 
 # FANTASTIC-BCI extraction options
@@ -113,7 +113,7 @@ def flotherm_transient(Mm, K_eff, g, dt, duration):
 
 def run():
     OUT.mkdir(parents=True, exist_ok=True)
-    model = Case1Model(Case1Config())
+    model = Case1Model(Case1Config(max_xy_cell_mm=1.0, max_z_cell_mm=1.0))
     print(
         f"model: {model.name}  full cells={model.full_cell_count}  "
         f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
@@ -128,6 +128,7 @@ def run():
     t0 = time.perf_counter()
     full = model.full_reference(H_VEC_MODEL)
     t_full_ref = time.perf_counter() - t0
+    print("Finished full reference solving")
     Tf_ss = full.steady_temperature
     junc_full_ss = model.junction_temperature(Tf_ss)
     junc_full_hist = model.junction_temperature(full.history)  # (nt, 4)
