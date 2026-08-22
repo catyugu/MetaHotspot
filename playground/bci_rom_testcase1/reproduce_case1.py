@@ -72,8 +72,7 @@ DT_S = 5.0
 
 # FANTASTIC-BCI extraction options
 PROBE_ROUNDS = 3
-TARGET_EPS = 1.0e-3
-RESIDUAL_TOL = 1.0e-3
+ROM_TOLERANCE = 1.0e-3
 MAX_ORDER = 1024
 SEED = 20260805
 
@@ -141,15 +140,14 @@ def run():
     print("building our BCI-FANTASTIC basis ...")
     t0 = time.perf_counter()
     basis, summary = build_parametric_basis(
-        core,
-        G,
-        terms,
-        h_ranges,
-        residual_tolerance=RESIDUAL_TOL,
-        max_order=MAX_ORDER,
-        target_relative_epsilon=TARGET_EPS,
-        probe_rounds=PROBE_ROUNDS,
-        seed=SEED,
+    core,
+    G,
+    terms,
+    h_ranges,
+    tolerance=ROM_TOLERANCE,
+    max_order=MAX_ORDER,
+    probe_rounds=PROBE_ROUNDS,
+    seed=SEED,
     )
     t_basis = time.perf_counter() - t0
     print(

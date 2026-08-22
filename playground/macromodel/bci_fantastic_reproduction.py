@@ -77,8 +77,7 @@ from utils import (
 OUT_DIR = Path("results/bci_fantastic_reproduction")
 PROBE_ROUNDS = 3  # consecutive random h-vectors certifying each (port, shift)
 RANDOM_SEED = 20260805
-RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
-TARGET_RELATIVE_EPSILON = 1.0e-2  # elliptic shift-count target (Extended FANTASTIC eq.)
+ROM_TOLERANCE = 1.0e-2  # unified FANTASTIC-BCI epsilon
 MAX_ORDER = 2048
 GRID_PER_AXIS = 8  # holdout points (2-group: 8x8=64 grid; 3-group: 8 scenarios)
 
@@ -128,7 +127,7 @@ def plot_results(cfg, summary, basis, scenario_results, curves, plot_dir):
         ax.set_title(
             "Inner-loop sample count per (port, shift)\n"
             f"(certified after {summary['probe_rounds']} consecutive probes "
-            f"below $\\varepsilon$ = {summary['residual_tolerance']:.0e})",
+            f"below $\\varepsilon$ = {summary['tolerance']:.0e})",
             fontsize=11,
         )
         fig.tight_layout()
@@ -183,9 +182,8 @@ def run(model, plot_dir: Path, quick: bool = False):
         source_shape,
         boundary_terms,
         h_ranges,
-        residual_tolerance=RESIDUAL_TOLERANCE,
+        tolerance=ROM_TOLERANCE,
         max_order=MAX_ORDER,
-        target_relative_epsilon=TARGET_RELATIVE_EPSILON,
         probe_rounds=PROBE_ROUNDS,
         seed=RANDOM_SEED,
     )

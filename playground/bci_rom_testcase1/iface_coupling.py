@@ -130,7 +130,7 @@ def build_rom_basis(
     boundary_terms,
     h_ranges,
     *,
-    residual_tolerance=1e-3,
+    tolerance=1e-3,
     max_order=1024,
     seed=20260805,
 ):
@@ -148,7 +148,7 @@ def build_rom_basis(
         G_block,
         boundary_terms,
         np.asarray(h_ranges, dtype=np.float64),
-        residual_tolerance=residual_tolerance,
+        tolerance=tolerance,
         max_order=max_order,
         seed=seed,
     )

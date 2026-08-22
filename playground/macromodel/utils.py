@@ -436,8 +436,7 @@ def solve_rom_transient(
 # parametric basis construction (FANTASTIC BCI 2015 Algorithm 1)
 # ---------------------------------------------------------------------------
 
-TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
-RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
+ROM_TOLERANCE = 1.0e-3  # unified FANTASTIC-BCI epsilon: shift count + probe stop + SVD truncation
 MAX_ORDER = 2048
 PROBE_ROUNDS = 3  # consecutive random h-vectors that must certify a (port, shift)
 RANDOM_SEED = 20260805
@@ -467,9 +466,8 @@ def build_parametric_basis(
     boundary_terms,
     h_ranges,
     *,
-    residual_tolerance=RESIDUAL_TOLERANCE,
+    tolerance=ROM_TOLERANCE,
     max_order=MAX_ORDER,
-    target_relative_epsilon=TARGET_RELATIVE_EPSILON,
     probe_rounds=PROBE_ROUNDS,
     seed=RANDOM_SEED,
 ):
@@ -619,7 +617,7 @@ def build_parametric_basis(
             ) from exc
         kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
         elliptic_count = mpmm_elliptic_shift_count(
-            target_relative_epsilon, lambda_min, lambda_max
+            tolerance, lambda_min, lambda_max
         )
         shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
         per_port_plans.append(
@@ -649,7 +647,7 @@ def build_parametric_basis(
                 h_vec = random_h(h_ranges, sub_seed)
                 h_samples += 1
                 candidate_total += 1
-                if probe_residual(h_vec, shift) <= residual_tolerance:
+                if probe_residual(h_vec, shift) <= tolerance:
                     passes += 1
                     continue
                 passes = 0
@@ -671,7 +669,7 @@ def build_parametric_basis(
     U_b, s_b, Vt_b = scipy.linalg.svd(
         np.asarray(basis), full_matrices=False, check_finite=False
     )
-    s_cut = residual_tolerance * max(float(s_b[0]), np.finfo(float).tiny)
+    s_cut = tolerance * max(float(s_b[0]), np.finfo(float).tiny)
     keep = np.flatnonzero(s_b > s_cut)
     basis = np.ascontiguousarray(U_b[:, keep])
 
@@ -685,7 +683,7 @@ def build_parametric_basis(
 
     return basis, {
         "per_port_plans": per_port_plans,
-        "target_relative_epsilon": target_relative_epsilon,
+        "tolerance": tolerance,
         "parameter_sampling": (
             "random per (port, shift), error-driven probe stop "
             "(FANTASTIC BCI Algorithm 1 / Extended FANTASTIC 2021)"
@@ -701,7 +699,7 @@ def build_parametric_basis(
         "maximum_order": int(order_limit),
         "orthogonality_error": orthogonality_error,
         "relative_response_error": float(worst_score),
-        "residual_tolerance": residual_tolerance,
+        "tolerance": tolerance,
         "converged": bool(converged),
         "history": history,
         "seconds": time.perf_counter() - started,

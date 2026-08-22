@@ -72,7 +72,7 @@ def main() -> None:
             G,
             terms,
             model.h_ranges(),
-            residual_tolerance=1.0e-3,
+            tolerance=1.0e-3,
         )
         t_basis = time.perf_counter() - t0
     finally:
