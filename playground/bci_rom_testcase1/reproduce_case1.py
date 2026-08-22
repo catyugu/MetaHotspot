@@ -60,14 +60,14 @@ from utils import (  # noqa: E402
 
 # ---------------------------------------------------------------- scenario ----
 
-AMB = 308.15            # 35 C ambient / initial
-H_CROWN = 5.0e1         # die crowns   (Face.ZP, area 4e-4) -> "Ambient:0"
-H_FR4 = 1.0e3           # FR4 bottom   (Face.ZM, area 6e-3) -> "Ambient:1"
-H_VEC_MODEL = (H_CROWN, H_FR4)   # our model group order [ZP, ZM]
+AMB = 308.15  # 35 C ambient / initial
+H_CROWN = 5.0e1  # die crowns   (Face.ZP, area 4e-4) -> "Ambient:0"
+H_FR4 = 1.0e3  # FR4 bottom   (Face.ZM, area 6e-3) -> "Ambient:1"
+H_VEC_MODEL = (H_CROWN, H_FR4)  # our model group order [ZP, ZM]
 SOURCES = np.array([0.1, 0.2, 0.3, 0.4])
 DIE_NAMES = ["S0", "S1", "S2", "S3"]
 
-DURATION_S = 1000.0     # rom_parameters.m tscan = [0, 1000]
+DURATION_S = 1000.0  # rom_parameters.m tscan = [0, 1000]
 DT_S = 5.0
 
 # FANTASTIC-BCI extraction options
@@ -82,6 +82,7 @@ OUT = _ROOT / "results" / "reproduce_case1"
 
 # --------------------------------------------------------- FloTHERM ROM ------
 
+
 def load_flotherm():
     """Load FloTHERM BCI-ROM matrices (n=34 modal)."""
     M_dir = _ROOT / "MATRICES"
@@ -91,9 +92,9 @@ def load_flotherm():
 
     K = load("K_bci_hat.mtx").tocsc()
     Mm = load("M_bci_hat.mtx").tocsc()
-    g = np.asarray(load("g_bci_hat.mtx").todense())          # (34, 4) source input
-    dH0 = load("delta_H_bci_hat[0].mtx").tocsc()             # Areas[0]=6e-3 -> h=1e3
-    dH1 = load("delta_H_bci_hat[1].mtx").tocsc()             # Areas[1]=4e-4 -> h=5e1
+    g = np.asarray(load("g_bci_hat.mtx").todense())  # (34, 4) source input
+    dH0 = load("delta_H_bci_hat[0].mtx").tocsc()  # Areas[0]=6e-3 -> h=1e3
+    dH1 = load("delta_H_bci_hat[1].mtx").tocsc()  # Areas[1]=4e-4 -> h=5e1
     return K, Mm, g, dH0, dH1
 
 
@@ -109,11 +110,14 @@ def flotherm_transient(Mm, K_eff, g, dt, duration):
 
 # ----------------------------------------------------------- run everything ---
 
+
 def run():
     OUT.mkdir(parents=True, exist_ok=True)
     model = Case1Model(Case1Config())
-    print(f"model: {model.name}  full cells={model.full_cell_count}  "
-          f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}")
+    print(
+        f"model: {model.name}  full cells={model.full_cell_count}  "
+        f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
+    )
 
     core = model.core_operators()
     G = model.source_shape()
@@ -126,29 +130,38 @@ def run():
     t_full_ref = time.perf_counter() - t0
     Tf_ss = full.steady_temperature
     junc_full_ss = model.junction_temperature(Tf_ss)
-    junc_full_hist = model.junction_temperature(full.history)   # (nt, 4)
+    junc_full_hist = model.junction_temperature(full.history)  # (nt, 4)
 
     # ---- our BCI-FANTASTIC ROM -----------------------------------------
     print("building our BCI-FANTASTIC basis ...")
     t0 = time.perf_counter()
     basis, summary = build_parametric_basis(
-        core, G, terms, h_ranges,
-        residual_tolerance=RESIDUAL_TOL, max_order=MAX_ORDER,
-        target_relative_epsilon=TARGET_EPS, probe_rounds=PROBE_ROUNDS, seed=SEED,
+        core,
+        G,
+        terms,
+        h_ranges,
+        residual_tolerance=RESIDUAL_TOL,
+        max_order=MAX_ORDER,
+        target_relative_epsilon=TARGET_EPS,
+        probe_rounds=PROBE_ROUNDS,
+        seed=SEED,
     )
     t_basis = time.perf_counter() - t0
-    print(f"  basis order = {basis.shape[1]}  ({t_basis:.1f}s)  "
-          f"response err={summary['relative_response_error']:.2e}")
+    print(
+        f"  basis order = {basis.shape[1]}  ({t_basis:.1f}s)  "
+        f"response err={summary['relative_response_error']:.2e}"
+    )
 
     C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(core, G, terms, basis)
     K_hat = assemble_reduced_k(K0, F_bdry, A_bdry, H_VEC_MODEL)
 
     theta_ss = solve_rom_steady(K_hat, F_hat, SOURCES)
     junc_rom_ss = AMB + F_hat.T @ theta_ss
-    rec_ss = AMB + basis @ theta_ss                      # recovered full field
+    rec_ss = AMB + basis @ theta_ss  # recovered full field
 
     r_times, theta_hist = solve_rom_transient(
-        C_hat, K_hat, F_hat, lambda t: SOURCES, DT_S, DURATION_S)
+        C_hat, K_hat, F_hat, lambda t: SOURCES, DT_S, DURATION_S
+    )
     junc_rom_hist = AMB + theta_hist @ F_hat
     rec_hist = AMB + theta_hist @ basis.T
 
@@ -161,14 +174,20 @@ def run():
 
     # ---- numeric comparison --------------------------------------------
     print("\n=== STEADY junction temperatures (K) ===")
-    print(f"{'port':<6}{'full FVM':>10}{'our ROM':>10}{'Flotherm':>10}"
-          f"{'our-FVM':>10}{'fl-FVM':>10}")
+    print(
+        f"{'port':<6}{'full FVM':>10}{'our ROM':>10}{'Flotherm':>10}"
+        f"{'our-FVM':>10}{'fl-FVM':>10}"
+    )
     for i, name in enumerate(DIE_NAMES):
-        print(f"{name:<6}{junc_full_ss[i]:>10.3f}{junc_rom_ss[i]:>10.3f}"
-              f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i]-junc_full_ss[i]:>+10.3f}"
-              f"{junc_fl_ss[i]-junc_full_ss[i]:>+10.3f}")
-    print(f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K  "
-          f"(Flotherm reported ~331 K)")
+        print(
+            f"{name:<6}{junc_full_ss[i]:>10.3f}{junc_rom_ss[i]:>10.3f}"
+            f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i]-junc_full_ss[i]:>+10.3f}"
+            f"{junc_fl_ss[i]-junc_full_ss[i]:>+10.3f}"
+        )
+    print(
+        f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K  "
+        f"(Flotherm reported ~331 K)"
+    )
 
     # steady full-field accuracy of our ROM vs full FVM
     rec_acc = accuracy_summary(Tf_ss, rec_ss, full.history, rec_hist, AMB)
@@ -196,8 +215,7 @@ def run():
     ax.set_xticklabels(DIE_NAMES)
     ax.axhline(AMB, color="gray", ls="--", lw=0.8)
     ax.set_ylabel("junction temperature [K]")
-    ax.set_title("Steady-state junction temperature, case1 "
-                 "(ambient 308.15 K)")
+    ax.set_title("Steady-state junction temperature, case1 " "(ambient 308.15 K)")
     ax.legend()
     fig.tight_layout()
     fig.savefig(OUT / "steady_junction.png", dpi=150)
@@ -206,12 +224,30 @@ def run():
     # ---- plot: transient time series (per die) -------------------------
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     for i, ax in enumerate(axes.ravel()):
-        ax.plot(full.times, junc_full_hist[:, i], "-", color="tab:blue",
-                label="full FVM", lw=2)
-        ax.plot(r_times, junc_rom_hist[:, i], "--", color="tab:orange",
-                label="our ROM", lw=2)
-        ax.plot(fl_times, junc_fl_hist[:, i], ":", color="tab:green",
-                label="FloTHERM ROM", lw=2)
+        ax.plot(
+            full.times,
+            junc_full_hist[:, i],
+            "-",
+            color="tab:blue",
+            label="full FVM",
+            lw=2,
+        )
+        ax.plot(
+            r_times,
+            junc_rom_hist[:, i],
+            "--",
+            color="tab:orange",
+            label="our ROM",
+            lw=2,
+        )
+        ax.plot(
+            fl_times,
+            junc_fl_hist[:, i],
+            ":",
+            color="tab:green",
+            label="FloTHERM ROM",
+            lw=2,
+        )
         ax.set_title(DIE_NAMES[i])
         ax.set_ylabel("[K]")
         ax.grid(alpha=0.3)
@@ -219,8 +255,7 @@ def run():
     axes[-1, 0].set_xlabel("time [s]")
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
-    fig.suptitle("Transient junction temperature — case1 "
-                 "(power step at t=0)", y=1.0)
+    fig.suptitle("Transient junction temperature — case1 " "(power step at t=0)", y=1.0)
     fig.tight_layout()
     fig.savefig(OUT / "transient_junction.png", dpi=150)
     plt.close(fig)
@@ -229,32 +264,45 @@ def run():
 
     # ---- save numeric summary ------------------------------------------
     with open(OUT / "summary.txt", "w") as f:
-        f.write(f"ambient={AMB}  h_crown={H_CROWN}  h_fr4={H_FR4}  "
-                f"dt={DT_S}  duration={DURATION_S}\n")
+        f.write(
+            f"ambient={AMB}  h_crown={H_CROWN}  h_fr4={H_FR4}  "
+            f"dt={DT_S}  duration={DURATION_S}\n"
+        )
         f.write(f"sources={SOURCES.tolist()}\n")
-        f.write(f"full cells={model.full_cell_count}  our basis order="
-                f"{basis.shape[1]}\n")
+        f.write(
+            f"full cells={model.full_cell_count}  our basis order="
+            f"{basis.shape[1]}\n"
+        )
         f.write("steady junction:\n")
         f.write("port,full_fvm,our_rom,flotherm\n")
         for i, n in enumerate(DIE_NAMES):
-            f.write(f"{n},{junc_full_ss[i]:.4f},{junc_rom_ss[i]:.4f},"
-                    f"{junc_fl_ss[i]:.4f}\n")
-        f.write("steady full-field peak: "
-                f"{Tf_ss.max():.4f}\n")
+            f.write(
+                f"{n},{junc_full_ss[i]:.4f},{junc_rom_ss[i]:.4f},"
+                f"{junc_fl_ss[i]:.4f}\n"
+            )
+        f.write("steady full-field peak: " f"{Tf_ss.max():.4f}\n")
         f.write("transient max junction error (% of steady rise):\n")
         f.write("port,our_rom,flotherm\n")
         for i, n in enumerate(DIE_NAMES):
             f.write(f"{n},{err_rom[i]:.4f},{err_fl[i]:.4f}\n")
         f.write("full-field recovery (our ROM vs full FVM):\n")
-        for k in ("steady_max_absolute_rise_error_K",
-                  "steady_max_relative_rise_error",
-                  "transient_final_max_absolute_rise_error_K"):
+        for k in (
+            "steady_max_absolute_rise_error_K",
+            "steady_max_relative_rise_error",
+            "transient_final_max_absolute_rise_error_K",
+        ):
             f.write(f"  {k} = {rec_acc[k]:.6g}\n")
 
     return dict(
-        junc_full_ss=junc_full_ss, junc_rom_ss=junc_rom_ss, junc_fl_ss=junc_fl_ss,
-        junc_full_hist=junc_full_hist, junc_rom_hist=junc_rom_hist,
-        junc_fl_hist=junc_fl_hist, times=full.times, basis=basis, summary=summary,
+        junc_full_ss=junc_full_ss,
+        junc_rom_ss=junc_rom_ss,
+        junc_fl_ss=junc_fl_ss,
+        junc_full_hist=junc_full_hist,
+        junc_rom_hist=junc_rom_hist,
+        junc_fl_hist=junc_fl_hist,
+        times=full.times,
+        basis=basis,
+        summary=summary,
     )
 
 

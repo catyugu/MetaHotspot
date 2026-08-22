@@ -256,7 +256,9 @@ namespace mhs::sim::fluid {
             matrix.setFromTriplets(triplets.begin(), triplets.end());
             auto solver = mhs::sim::create_solver();
             mhs::sim::solver_compute(solver, matrix);
-            Eigen::VectorXd pressure = mhs::sim::solver_solve(solver, rhs);
+            // Cold-start from zero via the x0 overload so this works with the
+            // default iterative (AMGCL) backend as well as a direct one.
+            Eigen::VectorXd pressure = mhs::sim::solver_solve(solver, rhs, Eigen::VectorXd::Zero(eigen_count));
             if (!mhs::sim::solver_success(solver)) {
                 throw std::runtime_error("fluid pressure solve failed");
             }

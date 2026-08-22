@@ -19,7 +19,7 @@ namespace mhs::sim {
         }
     }
 
-    Eigen::VectorXd PardisoLUSolver::solve(const Eigen::VectorXd& b)
+    Eigen::VectorXd PardisoLUSolver::solve(const Eigen::VectorXd& b, Eigen::Ref<const Eigen::VectorXd> /*x0*/)
     {
         success_ = (solver_.info() == Eigen::Success);
         if (!success_) {

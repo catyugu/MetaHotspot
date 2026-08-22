@@ -1,10 +1,11 @@
 #include "numerics/linear/linear_solver.hpp"
-#include "numerics/linear/eigen_bicgstab_solver.hpp"
-#include "numerics/linear/eigen_sparse_lu_solver.hpp"
+#include "numerics/linear/amg_solver.hpp"
 
 #ifdef MHS_ENABLE_PARDISO
 #include "numerics/linear/pardiso_lu_solver.hpp"
 #endif
+
+#include <stdexcept>
 
 namespace mhs::sim {
 
@@ -13,24 +14,24 @@ namespace mhs::sim {
     SolverHandle create_solver(const SolverSpec& spec)
     {
         switch (spec.type) {
+        case SolverType::Pardiso:
 #ifdef MHS_ENABLE_PARDISO
-        case SolverType::Pardiso: {
+        {
             auto solver = std::make_unique<PardisoLUSolver>();
             solver->set_config(spec.config);
             return solver;
         }
+#else
+            throw std::runtime_error("Pardiso solver requested but MKL/Pardiso is not enabled "
+                                     "(build with USE_MKL=ON)");
 #endif
-        case SolverType::EigenSparseLU:
-        default: { // Pardiso without MKL falls back to SparseLU
-            auto solver = std::make_unique<EigenSparseLUSolver>();
+        case SolverType::AmgCg: {
+            auto solver = std::make_unique<AmgCgSolver>();
             solver->set_config(spec.config);
             return solver;
         }
-        case SolverType::EigenBiCGSTAB: {
-            auto solver = std::make_unique<EigenBiCGSTABSolver>();
-            solver->set_config(spec.config);
-            return solver;
-        }
+        default:
+            throw std::invalid_argument("create_solver: unknown solver type");
         }
     }
 

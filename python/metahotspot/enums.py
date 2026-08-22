@@ -53,8 +53,7 @@ class GeometryOp(enum.IntEnum):
 
 class SolverType(enum.IntEnum):
     PARDISO = 0
-    EIGEN_SPARSE_LU = 1
-    EIGEN_BICGSTAB = 2
+    AMG = 1
 
 
 class FluidBC(enum.IntEnum):

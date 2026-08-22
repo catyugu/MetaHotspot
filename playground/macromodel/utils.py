@@ -134,31 +134,25 @@ def orthonormalize_block(basis, vectors):
 
 
 def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
-    """Solve the SPD system ``A x = b`` by Jacobi-preconditioned CG.
+    """Solve the SPD system ``A x = b`` by Ruge-Stueben AMG-preconditioned CG.
 
     ``A`` is the full-domain operator ``(σM + K + Σ_k h_k H_k)`` — symmetric
     positive definite (h > 0 makes the boundary term positive definite and
     σ ≥ 0).  ``x0`` is the warm-start guess (the reduced-model estimate, or
-    the previous shift's response), which makes CG converge in a few
-    iterations (Extended FANTASTIC 2021: the linear systems are solved from
-    the least to the most onerous, each starting from an increasingly
-    accurate estimate).
+    the previous shift's response), so CG is warm-started (Extended FANTASTIC
+    2021) on top of the AMG preconditioner.
     """
+    import pyamg
+
     b = np.asarray(b, dtype=np.float64).ravel()
     if x0 is None:
         x0 = np.zeros(b.size, dtype=np.float64)
-    x0 = np.asarray(x0, dtype=np.float64).ravel()
-    d = np.asarray(A.diagonal()).ravel()
-    jacobi = sp.diags(1.0 / np.maximum(np.abs(d), np.finfo(float).tiny))
-    x, _ = spla.cg(
-        A,
-        b,
-        x0=x0,
-        rtol=rtol,
-        atol=0.0,
-        maxiter=maxiter,
-        M=jacobi,
-    )
+    else:
+        x0 = np.asarray(x0, dtype=np.float64).ravel()
+
+    ml = pyamg.ruge_stuben_solver(A.tocsr())
+    M = ml.aspreconditioner(cycle="V")
+    x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
     return x
 
 
@@ -676,7 +670,7 @@ def build_parametric_basis(
         "candidate_count": candidate_total,
         "processed_candidate_count": processed_count,
         "outer_count": outer_idx,
-        "solver": "warm-started Jacobi-preconditioned CG (spd_solve)",
+        "solver": "warm-started Ruge-Stueben AMG-preconditioned CG (spd_solve)",
         "basis_order": int(basis.shape[1]),
         "pre_svd_order": pre_svd_order,
         "svd_kept_order": int(basis.shape[1]),
@@ -689,7 +683,7 @@ def build_parametric_basis(
         "seconds": time.perf_counter() - started,
         "memory_strategy": (
             "stream one single-column frequency-domain response per candidate; "
-            "solve by warm-started Jacobi-CG (no re-factorization) with an "
+            "solve by warm-started Ruge-Stueben AMG-CG (no re-factorization) with an "
             "incremental reduced model for the probe residual; per-port "
             "eigenvalue/shift planning"
         ),
