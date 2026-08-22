@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <neutralXML>
 
   <name>test2</name>
@@ -20,17 +20,6 @@
 
   <materials>
     <material>
-      <name>Copper (Pure)</name>
-      <density>8930.000000000000000</density>
-      <specific_heat>385.000000000000000</specific_heat>
-      <surfaceEmissivity>0.039999999105930</surfaceEmissivity>
-      <thermalConductivity>
-        <isotropic>
-          <conductivity>385.000000000000000</conductivity>
-        </isotropic>
-      </thermalConductivity>
-    </material>
-    <material>
       <name>FR4</name>
       <density>1200.000000000000000</density>
       <specific_heat>880.000000000000000</specific_heat>
@@ -50,19 +39,6 @@
         <isotropic>
           <conductivity>201.000000000000000</conductivity>
         </isotropic>
-      </thermalConductivity>
-    </material>
-    <material>
-      <name>Substrate PBGAFC (Typical)</name>
-      <density>1900.000000000000000</density>
-      <specific_heat>921.000000000000000</specific_heat>
-      <surfaceEmissivity>0.899999976158142</surfaceEmissivity>
-      <thermalConductivity>
-        <orthotropic>
-          <x>20.000000000000000</x>
-          <y>20.000000000000000</y>
-          <z>4.000000000000000</z>
-        </orthotropic>
       </thermalConductivity>
     </material>
     <material>

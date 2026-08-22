@@ -26,7 +26,7 @@ in.Tinitial = 3.50000e+01;
 % source name: S2
  in.source{3}.name = "S2";
  in.source{3}.steps_type = 'constant';
- in.source{3}.val = 3.00001e-01;
+ in.source{3}.val = 3.00000e-01;
 % source name: S3
  in.source{4}.name = "S3";
  in.source{4}.steps_type = 'constant';

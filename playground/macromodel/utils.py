@@ -436,7 +436,9 @@ def solve_rom_transient(
 # parametric basis construction (FANTASTIC BCI 2015 Algorithm 1)
 # ---------------------------------------------------------------------------
 
-ROM_TOLERANCE = 1.0e-3  # unified FANTASTIC-BCI epsilon: shift count + probe stop + SVD truncation
+ROM_TOLERANCE = (
+    1.0e-3  # unified FANTASTIC-BCI epsilon: shift count + probe stop + SVD truncation
+)
 MAX_ORDER = 2048
 PROBE_ROUNDS = 3  # consecutive random h-vectors that must certify a (port, shift)
 RANDOM_SEED = 20260805
@@ -616,9 +618,7 @@ def build_parametric_basis(
                 f"{port} ({exc}); falling back would need the global pencil"
             ) from exc
         kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
-        elliptic_count = mpmm_elliptic_shift_count(
-            tolerance, lambda_min, lambda_max
-        )
+        elliptic_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
         shifts = np.r_[0.0, mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)]
         per_port_plans.append(
             {

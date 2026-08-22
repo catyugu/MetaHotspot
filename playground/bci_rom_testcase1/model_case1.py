@@ -64,9 +64,9 @@ MATERIALS = {
 }
 
 AIR_MATERIAL = "air"
-AIR_K = "1.0e-5"
-AIR_RHO = "1.225"
-AIR_C = "1005"
+AIR_K = "0.02643"
+AIR_RHO = "1.149"
+AIR_C = "1007"
 
 A2_MIN_X = -30.0
 A2_MAX_X = 30.0

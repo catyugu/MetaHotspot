@@ -67,8 +67,8 @@ H_VEC_MODEL = (H_CROWN, H_FR4)  # our model group order [ZP, ZM]
 SOURCES = np.array([0.1, 0.2, 0.3, 0.4])
 DIE_NAMES = ["S0", "S1", "S2", "S3"]
 
-DURATION_S = 100.0  # rom_parameters.m tscan = [0, 1000]
-DT_S = 5.0
+DURATION_S = 10000.0
+DT_S = 100.0
 
 # FANTASTIC-BCI extraction options
 PROBE_ROUNDS = 3
@@ -140,14 +140,14 @@ def run():
     print("building our BCI-FANTASTIC basis ...")
     t0 = time.perf_counter()
     basis, summary = build_parametric_basis(
-    core,
-    G,
-    terms,
-    h_ranges,
-    tolerance=ROM_TOLERANCE,
-    max_order=MAX_ORDER,
-    probe_rounds=PROBE_ROUNDS,
-    seed=SEED,
+        core,
+        G,
+        terms,
+        h_ranges,
+        tolerance=ROM_TOLERANCE,
+        max_order=MAX_ORDER,
+        probe_rounds=PROBE_ROUNDS,
+        seed=SEED,
     )
     t_basis = time.perf_counter() - t0
     print(
