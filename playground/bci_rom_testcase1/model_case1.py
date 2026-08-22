@@ -149,11 +149,26 @@ class Case1Config:
 
     @property
     def y_vertices_mm(self) -> np.ndarray:
-        """y mesh: solution-domain cuts inside [-50, 50] mm (100 mm tall)."""
+        """y mesh mirroring the FloTHERM base-grid export.
+        Central span [-30, 30] mm (aluminum/E-10/dies extent; same cut set
+        as x, incl. the aluminum y-edges at +-30) is subdivided to
+        ``max_xy_cell_mm``.  The FR4-only overhang [30, 50] / [-50, -30]
+        (20 mm per side) is split into ``ceil(20 / max_xy_cell_mm) + 1``
+        equal cells — the FloTHERM auto-mesh rule, which at the 1 mm
+        nominal gives 21 x (20/21) mm cells per side, exactly reproducing
+        the reference ``Root Assembly_Temperature_Base Grid.csv``
+        (60 x 1 mm central + 21 x (20/21) mm per side = 102 y rows).
+        """
+
         full = self._all_cuts_mm()
-        return self._subdivide(
-            np.unique(full[(full >= A2_MIN_Y - 1e-12) & (full <= A2_MAX_Y + 1e-12)])
+        central = np.unique(
+            full[(full >= A2_MIN_X - 1e-12) & (full <= A2_MAX_X + 1e-12)]
         )
+        inner = self._subdivide(central)
+        overhang = A2_MAX_Y - A2_MAX_X  # 20 mm of FR4 beyond the aluminum span
+        pieces = max(1, math.ceil(overhang / self.max_xy_cell_mm) + 1)
+        outer = np.linspace(A2_MAX_X, A2_MAX_Y, pieces + 1)[1:]  # (30, 50]
+        return np.concatenate([-outer[::-1], inner, outer])
 
     @property
     def z_vertices_mm(self) -> np.ndarray:
@@ -282,21 +297,7 @@ class Case1Model(AffineParametricModel):
         return self._gate_by_geometry(source_cells)
 
     def _gate_by_geometry(self, source_cells) -> list[SourcePort]:
-        full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.x_vertices_mm * 1.0e-3
-        y = self.config.y_vertices_mm * 1.0e-3
-        xc = 0.5 * (x[:-1] + x[1:])
-        yc = 0.5 * (y[:-1] + y[1:])
-        # cell (ix, iy) x/y centre, and the compact cell index.
-        cell_x = np.empty(full.cell_count)
-        cell_y = np.empty(full.cell_count)
-        for ix in range(full.nx):
-            for iy in range(full.ny):
-                slab = grid[ix, iy, :]
-                valid = slab >= 0
-                cell_x[slab[valid]] = xc[ix]
-                cell_y[slab[valid]] = yc[iy]
+        cell_x, cell_y = self._cell_xy_centers
         ports = []
         for power, (xlo, xhi), (ylo, yhi) in DIES:
             mask = (
@@ -320,6 +321,12 @@ class Case1Model(AffineParametricModel):
         total_h = self.config.total_height_mm * 1.0e-3
 
         top_cells, top_areas = surface_exposed_cells(grid, x, y, z, Face.ZP, total_h)
+        # The top convective BC applies only to cells carrying real silicon fill
+        # (the die crowns); air-only cells on the top layer are dropped so no h
+        # is applied to the air domain around the dies.
+        cell_x, cell_y = self._cell_xy_centers
+        silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
+        top_cells, top_areas = top_cells[silicon], top_areas[silicon]
         bot_cells, bot_areas = surface_exposed_cells(grid, x, y, z, Face.ZM, 0.0)
         return (
             BoundaryGroup(
@@ -339,6 +346,37 @@ class Case1Model(AffineParametricModel):
         return self.config.h_ranges
 
     # ------------------------------------------------ cell geometry helpers
+
+    @cached_property
+    def _cell_xy_centers(self) -> tuple[np.ndarray, np.ndarray]:
+        """Per-cell x/y centres (m) from the compiled occupancy grid."""
+        full = self._full
+        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = self.config.x_vertices_mm * 1.0e-3
+        y = self.config.y_vertices_mm * 1.0e-3
+        xc = 0.5 * (x[:-1] + x[1:])
+        yc = 0.5 * (y[:-1] + y[1:])
+        cell_x = np.empty(full.cell_count)
+        cell_y = np.empty(full.cell_count)
+        for ix in range(full.nx):
+            for iy in range(full.ny):
+                slab = grid[ix, iy, :]
+                valid = slab >= 0
+                cell_x[slab[valid]] = xc[ix]
+                cell_y[slab[valid]] = yc[iy]
+        return cell_x, cell_y
+
+    def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
+        """Boolean mask over cells whose x/y centre sits inside a die footprint."""
+        mask = np.zeros(cell_x.shape, dtype=bool)
+        for _, (xlo, xhi), (ylo, yhi) in DIES:
+            mask |= (
+                (cell_x >= xlo * 1.0e-3 - 1.0e-12)
+                & (cell_x <= xhi * 1.0e-3 + 1.0e-12)
+                & (cell_y >= ylo * 1.0e-3 - 1.0e-12)
+                & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
+            )
+        return mask
 
     def _cell_z_centers(self) -> np.ndarray:
         """Per-cell z-centre (m) from the compiled occupancy grid."""

@@ -36,13 +36,17 @@ def main() -> None:
     )
     model = Case1Model(cfg)
     print(f"model      : {model.name}")
-    print(f"nx x ny x nz = {cfg.nx} x {cfg.ny} x {cfg.nz} -> {cfg.nx*cfg.ny*cfg.nz} cells")
+    print(
+        f"nx x ny x nz = {cfg.nx} x {cfg.ny} x {cfg.nz} -> {cfg.nx*cfg.ny*cfg.nz} cells"
+    )
 
     t0 = time.perf_counter()
     ops = model.core_operators()
     t_compile = time.perf_counter() - t0
     K, C, f = ops.K, ops.C, ops.f
-    print(f"assemble   : {t_compile:6.2f}s  (K nnz={K.nnz}, C nnz={C.nnz}, dof={K.shape[0]})")
+    print(
+        f"assemble   : {t_compile:6.2f}s  (K nnz={K.nnz}, C nnz={C.nnz}, dof={K.shape[0]})"
+    )
 
     G = model.source_shape()
     terms = model.boundary_terms()
@@ -69,19 +73,24 @@ def main() -> None:
             terms,
             model.h_ranges(),
             residual_tolerance=1.0e-3,
-            target_relative_epsilon=1.0e-3,
         )
         t_basis = time.perf_counter() - t0
     finally:
         utils.spd_solve = orig_spd
 
     print(f"\nbuild_parametric_basis (wall): {t_basis:6.2f}s")
-    print(f"  ├─ AMG-CG enrich solves     : {timing['solve']:6.2f}s "
-          f"({timing['solve_calls']} calls, sequential)")
-    print(f"  └─ bounds(parallel)+config  : "
-          f"{t_basis - timing['solve']:6.2f}s  (by difference)")
+    print(
+        f"  ├─ AMG-CG enrich solves     : {timing['solve']:6.2f}s "
+        f"({timing['solve_calls']} calls, sequential)"
+    )
+    print(
+        f"  └─ bounds(parallel)+config  : "
+        f"{t_basis - timing['solve']:6.2f}s  (by difference)"
+    )
     print(f"  basis_order={summary['basis_order']} pre_svd={summary['pre_svd_order']}")
-    print(f"  candidate_count={summary['candidate_count']} processed={summary['processed_candidate_count']}")
+    print(
+        f"  candidate_count={summary['candidate_count']} processed={summary['processed_candidate_count']}"
+    )
     print(f"  outer_count={summary['outer_count']} converged={summary['converged']}")
     print(f"  worst relative response error={summary['relative_response_error']:.3e}")
 

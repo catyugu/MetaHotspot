@@ -87,10 +87,9 @@ def mpmm_elliptic_shift_count(
 
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
     """Elliptic-dn distributed real shifts on [0, lambda_max] (FANTASTIC 2014 eq. 5)."""
-    modulus = 1.0 - 1.0 / (kappa * kappa)
-    modulus = float(np.clip(modulus, 0.0, 1.0 - 1.0e-12))
+    modulus = np.sqrt(1.0 - 1.0 / (kappa * kappa))
     k_complete = special.ellipk(modulus)
-    theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / count
+    theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / (2.0 * count)
     _, _, dn_values, _ = special.ellipj(theta, modulus)
     shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
     return np.sort(shifts)[::-1]
@@ -143,8 +142,6 @@ def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
     the previous shift's response), so CG is warm-started (Extended FANTASTIC
     2021) on top of the AMG preconditioner.
     """
-    import pyamg
-
     b = np.asarray(b, dtype=np.float64).ravel()
     if x0 is None:
         x0 = np.zeros(b.size, dtype=np.float64)
@@ -189,7 +186,8 @@ def normalized_operators(K, C, f) -> Operators:
 # ---------------------------------------------------------------------------
 
 
-EIGENBOUND_SUBSPACE_CAP = 64  # block-Krylov dimension for per-port bounds
+EIGENBOUND_SUBSPACE_CAP = 64  # per-end iteration / Arnoldi budget
+EIGENBOUND_RTOL = 1.0e-8  # residual tolerance for per-port extreme eigenvalues
 
 _inv_precond_cache: dict = {}
 
@@ -214,23 +212,23 @@ def port_eigenvalue_bounds(
 ) -> tuple[float, float]:
     """Per-port spectral bounds ``(lambda_min, lambda_max)`` for source shape ``g``.
 
-    FANTASTIC 2014 step 1: the min/max eigenvalues are estimated *with
-    respect to the power impulse thermal response of the i-th heat source*,
-    i.e. only the part of the ``(K, C)`` pencil that the source actually
-    excites is considered — a global eigsh over the whole pencil over-
-    broadens the shift set.  The pencil is projected onto the Krylov
-    subspace the source drives:
+    FANTASTIC 2014 step 1: the min/max eigenvalues of the ``(K, C)`` pencil
+    that the source excites are estimated on the generalized symmetric
+    eigenproblem ``K x = λ C x``.  No direct factorization anywhere:
 
-    * slow end  ``{(shift*C + K)^-1 C}^n g`` — one factorization at a small
-      positive ``shift`` (well-posed despite Neumann-singular K), the rest
-      are triangular back-solves; the projected pencil's min positive
-      eigenvalue.
-    * fast end  ``{C^-1 K}^n g`` — C is the FVM diagonal mass matrix, so
-      ``C^-1 K`` is a plain sparse matvec; the projected pencil's max
-      eigenvalue.
-
-    Returns ``(lambda_min, lambda_max)``; falls back to the global ``eigsh``
-    bounds when the per-port projection yields a degenerate interval.
+    * slow end  ``lambda_min``: ``scipy.sparse.linalg.lobpcg`` (a locally
+      optimal block preconditioned conjugate gradient) on the shifted pencil
+      ``(shift·C + K) x = λ C x`` for the smallest eigenvalues, seeded from
+      the source direction and the uniform ambient ``e_M`` (so the trivial
+      ``λ ≈ shift`` mode is captured and discarded), AMG-preconditioned by
+      the cached ``_shift_invert_preconditioner``; ``lambda_min`` is the
+      smallest retained ``μ = λ − shift > 0``.
+    * fast end  ``lambda_max``: ``scipy.sparse.linalg.eigsh`` (ARPACK
+      Lanczos, ``which='LM'``, ``M=C``) on the original ``(K, C)`` pencil
+      for the largest eigenvalue, seeded from the source direction.  ARPACK
+      is the robust choice here — an inverse-type preconditioned LOBPCG
+      would drag the Ritz pair toward the low end and stall on the
+      ill-conditioned air-domain pencil.
     """
     K = K.tocsc()
     C = C.tocsc()
@@ -239,56 +237,47 @@ def port_eigenvalue_bounds(
         raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
     g = np.asarray(g, dtype=np.float64).ravel()
     n = K.shape[0]
-    scale = float(np.median(c_diag))
     g_norm = max(float(np.linalg.norm(g)), np.finfo(float).tiny)
-
-    def project_spectrum(Q, keep):
-        if keep < 2:
-            return None
-        Q = np.ascontiguousarray(Q[:, :keep])
-        Kp = Q.T @ (K @ Q)
-        Cp = Q.T @ (C @ Q)
-        Kp = 0.5 * (Kp + Kp.T)
-        Cp = 0.5 * (Cp + Cp.T)
-        try:
-            return scipy.linalg.eigvalsh(Kp, Cp, check_finite=False)
-        except Exception:
-            return None
-
-    def krylov(apply_step):
-        Q = np.zeros((n, cap))
-        Q[:, 0] = g / g_norm
-        keep = 1
-        for _ in range(1, cap):
-            w = apply_step(Q[:, keep - 1])
-            for _rep in range(2):
-                w = w - Q[:, :keep] @ (Q[:, :keep].T @ w)
-            nrm = float(np.linalg.norm(w))
-            if nrm < 1.0e-10:
-                break
-            Q[:, keep] = w / nrm
-            keep += 1
-        return Q, keep
-
-    # -- slow end: shift-invert block-Krylov, min positive eigenvalue ------
+    g0 = g / g_norm
+    scale = float(np.median(c_diag))
     s0 = max(float(shift), scale * 1.0e-6)
-    _Ashot, _precond = _shift_invert_preconditioner(K, C, s0)
 
-    def _inv_apply(v):
-        x, _ = spla.cg(
-            _Ashot, v, x0=v, rtol=INNER_RTOL, atol=0.0, maxiter=1000, M=_precond
+    # -- fast end: largest eigenvalue of (K, C) via ARPACK Lanczos ---------
+    lambda_max = None
+    try:
+        w = spla.eigsh(
+            K,
+            k=2,
+            M=C,
+            which="LM",
+            tol=EIGENBOUND_RTOL,
+            ncv=min(cap, n - 1),
+            v0=g0,
+            return_eigenvectors=False,
         )
-        return x
+        lambda_max = float(np.max(w))
+    except Exception:
+        lambda_max = None
 
-    Qs, ks = krylov(_inv_apply)
-    vals = project_spectrum(Qs, ks)
-    positive = vals[vals > 1.0e-9] if vals is not None else np.empty(0)
-    lambda_min = float(positive.min()) if positive.size else None
+    # -- slow end: shifted pencil, min positive, AMG-preconditioned --------
+    _Ashift, _precond = _shift_invert_preconditioner(K, C, s0)
+    ambient = np.ones(n) / np.sqrt(n)
+    try:
+        lam_s, _ = spla.lobpcg(
+            _Ashift,
+            np.column_stack((g0, ambient)),
+            B=C,
+            M=_precond,
+            largest=False,
+            tol=EIGENBOUND_RTOL,
+            maxiter=cap,
+        )
+        mu = np.asarray(lam_s) - s0
+        positive = mu[mu > 1.0e-9]
+        lambda_min = float(positive.min()) if positive.size else None
+    except Exception:
+        lambda_min = None
 
-    # -- fast end: forward block-Krylov, max eigenvalue --------------------
-    Qf, kf = krylov(lambda v: (K @ v) / c_diag)
-    vals = project_spectrum(Qf, kf)
-    lambda_max = float(vals.max()) if vals is not None and vals.size else None
     return lambda_min, lambda_max
 
 
@@ -401,7 +390,6 @@ def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
     return theta.ravel()
 
 
-LARGE_SYSTEM_DOF = 1000
 TRANSIENT_RTOL = 1.0e-8
 TRANSIENT_MAXITER = 10000
 
@@ -453,7 +441,6 @@ RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
 MAX_ORDER = 2048
 PROBE_ROUNDS = 3  # consecutive random h-vectors that must certify a (port, shift)
 RANDOM_SEED = 20260805
-INNER_RTOL = 1.0e-3
 ENRICH_RTOL = 1.0e-6
 
 
@@ -589,12 +576,13 @@ def build_parametric_basis(
         return np.linalg.solve(symmetric_dense(A_hat), g_hat)
 
     def probe_residual(h_vec, shift):
-        """Relative residual ρ of the current basis at (shift, h_vec)."""
+        """Algorithm-1 step-2 residual η of the basis at (shift, h_vec)."""
         v = basis @ reduced_solve(h_vec, shift)
-        res = K @ v + shift * (c_diag * v) - g_vec
-        for h, Hd in zip(h_vec, H_diags):
-            res = res + h * (Hd * v)
-        return float(np.linalg.norm(res) / g_norm)
+        A = candidate_A(h_vec, shift)
+        Av = A @ v
+        res = Av - g_vec
+        norm_r_2 = float(np.linalg.norm(res))
+        return norm_r_2
 
     def enrich(h_vec, x0):
         """Full solve at (shift, h_vec); append the response to the basis."""
@@ -618,8 +606,6 @@ def build_parametric_basis(
         )
         worst_score = max(worst_score, score_after)
         processed_count += 1
-        if score_after > residual_tolerance:
-            converged = False
         return response
 
     for port in range(n_src):
@@ -658,7 +644,7 @@ def build_parametric_basis(
             h_samples = 0
             while passes < probe_rounds and converged:
                 sub_seed = (
-                    seed + 100003 * port + int(round(float(shift) * 1.0e6)) + h_samples
+                    seed + 1003 * port + int(round(float(shift) * 1.0e6)) + h_samples
                 )
                 h_vec = random_h(h_ranges, sub_seed)
                 h_samples += 1

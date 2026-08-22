@@ -78,7 +78,7 @@ OUT_DIR = Path("results/bci_fantastic_reproduction")
 PROBE_ROUNDS = 3  # consecutive random h-vectors certifying each (port, shift)
 RANDOM_SEED = 20260805
 RESIDUAL_TOLERANCE = 1.0e-3  # residual-driven enrichment stop tolerance
-TARGET_RELATIVE_EPSILON = 1.0e-3  # elliptic shift-count target (Extended FANTASTIC eq.)
+TARGET_RELATIVE_EPSILON = 1.0e-2  # elliptic shift-count target (Extended FANTASTIC eq.)
 MAX_ORDER = 2048
 GRID_PER_AXIS = 8  # holdout points (2-group: 8x8=64 grid; 3-group: 8 scenarios)
 
