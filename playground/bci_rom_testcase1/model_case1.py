@@ -60,7 +60,7 @@ from affine_parametric_models._interfaces import (  # noqa: E402
     surface_exposed_cells,
 )
 
-# (kx, ky, kz, rho, c) SI; ignored: Copper, Substrate PBGAFC (not in geometry)
+# (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
     "FR4": (".3", ".3", ".3", "1200", "880"),
     "Aluminum (Pure)": ("201", "201", "201", "2710", "913"),
@@ -104,7 +104,8 @@ class Case1Config:
     dt_s: float = 5.0
     max_xy_cell_mm: float = 2.5
     max_z_cell_mm: float = 2.5
-    # group 0 = top (Ambient:1), group 1 = bottom (Ambient:0), both [1, 1e4]
+    # group 0 = die crowns (Ambient:0), group 1 = FR4 bottom (Ambient:1),
+    # both physical [1, 1e4] (FloTHERM extraction range); see module docstring
     h_ranges: tuple = (DEFAULT_H_RANGE, DEFAULT_H_RANGE)
 
     @property
@@ -296,9 +297,8 @@ class Case1Model(AffineParametricModel):
     def source_ports(self) -> list[SourcePort]:
         f = np.asarray(self._core.f, dtype=np.float64)
         source_cells = np.flatnonzero(f > 0.0)
-        # dies occupy the top z slab (dz = 22 mm); split by region is not
-        # needed: separate blocks give distinct f-overlap cells only if we know
-        # block ids.  Recover per-die cells from the z-centre + x/y ranges.
+        # All four dies sit in the same top z slab; split them into per-die
+        # ports by x/y footprint (block ids do not distinguish them).
         return self._gate_by_geometry(source_cells)
 
     def _gate_by_geometry(self, source_cells) -> list[SourcePort]:

@@ -431,9 +431,7 @@ class _BciPop(AffineParametricModel):
         ``cfg.layers`` is already bottom-up (bottom substrate ... top mold).
         Single ground truth for layer layout; the base derives
         ``_layer_conductivity`` (layer_id 0 = top = top mold) and asserts
-        every ``layer_id``'s compiled z-band against it.  (This replaces the
-        old hand-written ``_layer_conductivity`` which was reversed: it
-        assigned the bottom substrate's material to the top layer_id.)
+        every ``layer_id``'s compiled z-band against it.
         """
         material_k = {
             name: (float(kx), float(ky), float(kz))

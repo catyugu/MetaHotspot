@@ -40,7 +40,7 @@ from typing import Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.compiled import Operators, SolveOptions
+from metahotspot.compiled import Operators
 from metahotspot.enums import Study
 
 from utils import (
@@ -378,12 +378,6 @@ class AffineParametricModel:
             terms.append(sp.diags(diagonal))
         return terms
 
-    def boundary_areas(self) -> list[float]:
-        """Per-group total exposed area ``A_k`` (m²)."""
-        return [float(np.sum(group.areas)) for group in self.boundary_groups()]
-
-    # --------------------------------------- per-cell layout (compile-time)
-
     # Axis index for face-direction / half-axis lookup.
     _AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
 
@@ -666,21 +660,3 @@ class AffineParametricModel:
     def report_dict(self) -> dict:
         """Opaque scalar configuration, dumped verbatim into result JSON."""
         return self.config.report_dict()
-
-    def solver_options(self, transient: bool) -> SolveOptions:
-        """Shared fixed-step BDF1 solve options (reference/integration)."""
-        dt = self.config.dt_s if transient else 1.0
-        return SolveOptions(
-            linear_solver="EigenSparseLU",
-            linear_tolerance=1.0e-12,
-            linear_max_iterations=5000,
-            nonlinear_max_iterations=30,
-            nonlinear_relative_tolerance=1.0e-11,
-            nonlinear_absolute_tolerance=1.0e-11,
-            integrator="Bdf1",
-            step_strategy="Fixed",
-            error_rel_tol=1.0e-3,
-            min_dt=dt,
-            max_dt=dt,
-            fixed_dt=dt,
-        )

@@ -17,13 +17,11 @@ Contents
 * parametric basis:         build_parametric_basis
 * BCI Galerkin projection:  project_bci
 * ROM linear solves:        assemble_reduced_k, solve_rom_steady, solve_rom_transient
-* accuracy metrics:         temperature_error_metrics, accuracy_summary, format_accuracy
-* mesh helpers:             grid_cells, coordinate_map
+* accuracy metrics:         temperature_error_metrics, accuracy_summary
 
-The accuracy metrics and mesh helpers were folded in from the former
-``experiment_setup.py`` when that module was absorbed here; everything remains
-model-agnostic (works on ``Compiled`` objects / plain arrays, never on a
-concrete model config).
+The accuracy metrics were folded in from the former ``experiment_setup.py``
+when that module was absorbed here; everything remains model-agnostic (works
+on ``Compiled`` objects / plain arrays, never on a concrete model config).
 """
 
 from __future__ import annotations
@@ -712,7 +710,7 @@ def build_parametric_basis(
 
 
 # ---------------------------------------------------------------------------
-# accuracy metrics and mesh helpers  (folded in from experiment_setup.py)
+# accuracy metrics  (folded in from experiment_setup.py)
 # ---------------------------------------------------------------------------
 
 MAX_RELATIVE_RISE_ERROR = 0.01
@@ -763,45 +761,3 @@ def accuracy_summary(
         "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
         "accuracy_passed": steady["passed"] and transient["passed"],
     }
-
-
-def format_accuracy(summary: dict) -> str:
-    steady_range = summary["steady_reference_temperature_range_K"]
-    transient_range = summary["transient_final_reference_temperature_range_K"]
-    return (
-        f"reference range steady={steady_range[0]:.3f}..{steady_range[1]:.3f} K, "
-        f"transient final={transient_range[0]:.3f}..{transient_range[1]:.3f} K; "
-        f"rise error steady={summary['steady_max_absolute_rise_error_K']:.5f} K/"
-        f"{summary['steady_max_relative_rise_error']:.3%}, transient final="
-        f"{summary['transient_final_max_absolute_rise_error_K']:.5f} K/"
-        f"{summary['transient_final_max_relative_rise_error']:.3%}"
-    )
-
-
-def grid_cells(compiled) -> np.ndarray:
-    return compiled.grid_to_cell.reshape(compiled.nx, compiled.ny, compiled.nz)
-
-
-def coordinate_map(source, target, z_offset: int, label: str) -> np.ndarray:
-    if source.nx != target.nx or source.ny != target.ny:
-        raise RuntimeError(f"{label}: lateral meshes differ")
-    source_grid = grid_cells(source)
-    target_grid = grid_cells(target)[:, :, z_offset : z_offset + source.nz]
-    if target_grid.shape != source_grid.shape:
-        raise RuntimeError(f"{label}: z range differs")
-    valid = source_grid >= 0
-    if not np.array_equal(valid, target_grid >= 0):
-        raise RuntimeError(f"{label}: geometry occupancy differs")
-
-    source_ids = source_grid[valid]
-    target_ids = target_grid[valid]
-    if (
-        source_ids.size != source.cell_count
-        or np.unique(source_ids).size != source.cell_count
-    ):
-        raise RuntimeError(f"{label}: source cell IDs are incomplete")
-    mapping = np.empty(source.cell_count, dtype=np.int64)
-    mapping[source_ids] = target_ids
-    if np.unique(mapping).size != mapping.size:
-        raise RuntimeError(f"{label}: target mapping is not one-to-one")
-    return mapping
