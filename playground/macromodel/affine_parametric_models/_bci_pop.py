@@ -27,12 +27,16 @@ Layer stack (physical z from bottom to top):
     top die             silicon     0.40              6 x  6       2 W
     top mold            mold        0.90             10 x 10       -
 
-The boundary parameter space is the *physical* HTC ``h`` (W/m²·K).  The ROM
-training path (:func:`~utils.assemble_reduced_k`) consumes it directly; the
-native reference (:meth:`~AffineParametricModel.full_reference`) performs
-the per-cell FloTHERM ThirdType series condensation internally using
-:attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
-half-distance.
+The public boundary-parameter space is the *physical* HTC ``h``
+(W/m²·K): callers pass physical values to
+:meth:`~AffineParametricModel.full_reference` / ``parameter_points``; the
+model maps them internally through
+:meth:`~AffineParametricModel.physical_to_effective` to the
+surface-consistent effective coefficient ``p`` before assembling the affine
+``K``.  The ROM is trained over the same effective ``p``
+(:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
+:meth:`~AffineParametricModel.h_ranges` returns the effective training
+ranges).
 """
 
 from __future__ import annotations
@@ -370,10 +374,11 @@ class _BciPop(AffineParametricModel):
     def _boundary_axis_per_group(self) -> tuple[int, ...]:
         """Face-normal axis for each boundary group: (top=z, sides=x, bottom=z).
 
-        Used by the native reference (:meth:`full_reference`) to pick the
-        per-cell (kx, ky, kz) and cell-side half-distance for FloTHERM
-        ThirdType series condensation.  Training-path consumers (the BCI
-        ROM) don't care — they consume the physical ``h_vec`` directly.
+        Used by :meth:`~AffineParametricModel.physical_to_effective` /
+        :meth:`~AffineParametricModel.h_ranges` to pick the per-cell (kx, ky,
+        kz) and cell-side half-distance for the FloTHERM ThirdType series
+        condensation.  The sides group faces sideways (x/y), so its effective
+        coefficient uses the lateral conductivity/half rather than the z-axis.
         """
         return (2, 0, 2)
 
@@ -396,11 +401,14 @@ class _BciPop(AffineParametricModel):
         their full physical ``(h_top, h_sides, h_bottom)`` space.  ``count``
         log-uniform random draws (deterministic seed) mirror the Flotherm
         DoE-style scenario set (40 scenarios in the validation doc).  The
-        physical range is what :meth:`build_parametric_basis` /
-        :meth:`assemble_reduced_k` / :meth:`full_reference` consume, so the
-        holdout and the basis share the same parameter space.
+        returned points are *physical* HTC validation scenarios;
+        :meth:`~AffineParametricModel.full_reference` maps them internally,
+        and the ROM must be assembled with
+        ``model.physical_to_effective(h)``.
         """
-        ranges = self.h_ranges()  # physical HTC
+        ranges = np.asarray(
+            [g.h_range for g in self.boundary_groups()], dtype=np.float64
+        )  # physical HTC
         if ranges.size == 0:
             return []
         lows = np.log10(ranges[:, 0])
@@ -417,22 +425,23 @@ class _BciPop(AffineParametricModel):
             return z_vertices(self.config.layers) * 1.0e-3
         return self.config.axis_vertices_mm * 1.0e-3
 
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """``{layer_id: (kx, ky, kz)}`` derived from the compiled config.
+    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
+        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
 
-        The compiler lays out ``cfg.layers`` bottom-up with ``layer_id``
-        ascending z (see ``src/compiler/geometry_compiler.cpp``:
-        ``resolved[l].z_start`` is bottom-up cumulative), so physical layer
-        ``cfg.layers[i]`` is at compiled ``layer_id = i``.
+        ``cfg.layers`` is already bottom-up (bottom substrate ... top mold).
+        Single ground truth for layer layout; the base derives
+        ``_layer_conductivity`` (layer_id 0 = top = top mold) and asserts
+        every ``layer_id``'s compiled z-band against it.  (This replaces the
+        old hand-written ``_layer_conductivity`` which was reversed: it
+        assigned the bottom substrate's material to the top layer_id.)
         """
         material_k = {
             name: (float(kx), float(ky), float(kz))
             for name, kx, ky, kz, _, _ in MATERIALS
         }
-        return {
-            i: material_k[self.config.layers[i][1]]
-            for i in range(len(self.config.layers))
-        }
+        return tuple(
+            (float(t), *material_k[m]) for t, m, _, _ in self.config.layers
+        )
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

@@ -22,15 +22,18 @@ Boundary: two ambient groups, side faces adiabatic —
     FR4 bottom face  (z =  0 mm, area 6e-3 m2)          h = 1e3   (Ambient:1)
 
 ``h_ranges`` keeps the model group order [ZP crowns, ZM FR4]; both are the
-*physical* HTC range [1, 1e4] (FloTHERM extraction range).  The boundary
-parameter space is the physical HTC ``h`` (W/m²·K): the ROM training path
-(:func:`~utils.assemble_reduced_k`) consumes it directly; the native
-reference (:meth:`~AffineParametricModel.full_reference`) performs the
-per-cell FloTHERM ThirdType series condensation internally using
-:attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
-half-distance.  In FloTHERM's own z-orientation the die side is its
-"bottom" (Ambient:0, small area) and the FR4 side is its "top"
-(Ambient:1, large area).
+*physical* HTC range [1, 1e4] (FloTHERM extraction range).  The public
+boundary-parameter space is the physical HTC ``h`` (W/m²·K): callers pass
+physical values to :meth:`~AffineParametricModel.full_reference` /
+``parameter_points``; the model maps them internally through
+:meth:`~AffineParametricModel.physical_to_effective` to the
+surface-consistent effective coefficient ``p`` before assembling the affine
+``K``.  The ROM is trained over the same effective ``p``
+(:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
+:meth:`~AffineParametricModel.h_ranges` returns the effective training
+ranges).  In FloTHERM's own z-orientation the die side is its "bottom"
+(Ambient:0, small area) and the FR4 side is its "top" (Ambient:1, large
+area).
 """
 
 from __future__ import annotations
@@ -364,21 +367,21 @@ class Case1Model(AffineParametricModel):
             return self.config.y_vertices_mm * 1.0e-3
         return self.config.z_vertices_mm * 1.0e-3
 
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """``{layer_id: (kx, ky, kz)}`` for the case1 stack.
+    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
+        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
 
-        Layers are added top-first (``add_layer`` pushes to the bottom), so
-        the bottom-up physical LAYERS tuple is added in reverse: the die
-        layer becomes compiled ``layer_id = 0`` (bottom), and FR4 becomes
-        the top ``layer_id = n_layers - 1``.
+        case1's stack is [FR4 10, Aluminum 5, E-10 5] bottom-up plus the
+        Silicon die layer (2 mm) on top.  Single ground truth for layer
+        layout; the base derives ``_layer_conductivity`` (layer_id 0 = top =
+        die) and asserts every ``layer_id``'s compiled z-band against it.
         """
         material_k = {
             name: (float(kx), float(ky), float(kz))
             for name, (kx, ky, kz, _, _) in MATERIALS.items()
         }
-        # Top-first add order: [die_layer, E-10, Aluminum, FR4] reversed.
-        add_order = (DIE_MATERIAL, *[lay[1] for lay in reversed(LAYERS)])
-        return {i: material_k[name] for i, name in enumerate(add_order)}
+        return tuple(
+            (float(t), *material_k[m]) for t, m, *_ in LAYERS
+        ) + ((DIE_THICKNESS_MM, *material_k[DIE_MATERIAL]),)
 
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""

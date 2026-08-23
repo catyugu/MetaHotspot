@@ -207,7 +207,8 @@ def run(model, plot_dir: Path, quick: bool = False):
     )
 
     def online_operators(h_vec):
-        K_hat = assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec)
+        p_vec = model.physical_to_effective(h_vec)
+        K_hat = assemble_reduced_k(K_hat0, F_bdry, A_bdry, p_vec)
         return C_hat, K_hat, F_hat
 
     # -- validation with independent holdout ----------------------------

@@ -10,12 +10,16 @@ Layout (z from 0 up): substrate (organic) / bump (underfill+Cu pillars) / die
 (silicon, chiplet heat sources) at the bottom, then TIM / spreader (copper) /
 cold plate (aluminum) on top.  Each of the four chiplets is one uniform
 heat-source port (FANTASTIC); the cold-plate top face is the single parametric
-boundary group.  The boundary parameter space is the *physical* HTC ``h``
-(W/m²·K): the ROM training path (:func:`~utils.assemble_reduced_k`) consumes
-it directly; the native reference (:meth:`~AffineParametricModel.full_reference`)
-performs the per-cell FloTHERM ThirdType series condensation internally
-using :attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
-half-distance.
+boundary group.  The public boundary-parameter space is the *physical* HTC ``h``
+(W/m²·K): callers pass physical values to
+:meth:`~AffineParametricModel.full_reference` / ``parameter_points``; the
+model maps them internally through
+:meth:`~AffineParametricModel.physical_to_effective` to the
+surface-consistent effective coefficient ``p`` before assembling the affine
+``K``.  The ROM is trained over the same effective ``p``
+(:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
+:meth:`~AffineParametricModel.h_ranges` returns the effective training
+ranges).
 """
 
 from __future__ import annotations
@@ -446,28 +450,27 @@ class _ChipletStack(AffineParametricModel):
             ),
         )
 
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """``{layer_id: (kx, ky, kz)}`` for the chiplet stack.
+    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
+        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
 
-        Layers are added bottom-first in the mesh build (``substrate`` last
-        in ``add_layer`` order in detail, ``tim`` last in macro), so the
-        ``layer_id`` ordering goes top→bottom: cold_plate=0, …, substrate=5.
+        substrate(organic) / bump(underfill) / die(silicon) at the bottom,
+        then tim / spreader(copper) / cold-plate(aluminum) on top.  Single
+        ground truth for layer layout; the base derives
+        ``_layer_conductivity`` (layer_id 0 = top = cold plate) and asserts
+        every ``layer_id``'s compiled z-band against it.
         """
         material_k = {
             name: (float(kx), float(ky), float(kz))
             for name, kx, ky, kz, _, _ in MATERIALS
         }
-        # In ``build_geometry``, ``add_layer`` is called in this order:
-        # macro: cold_plate, spreader, tim (top→down); detail: die, bump, substrate.
-        order = (
-            "aluminum",
-            "copper",
-            "tim",
-            "silicon",
-            "underfill",
-            "organic",
+        return (
+            (self.config.substrate_mm, *material_k["organic"]),
+            (self.config.bump_mm, *material_k["underfill"]),
+            (self.config.die_mm, *material_k["silicon"]),
+            (self.config.tim_mm, *material_k["tim"]),
+            (self.config.spreader_mm, *material_k["copper"]),
+            (self.config.cold_plate_mm, *material_k["aluminum"]),
         )
-        return {i: material_k[name] for i, name in enumerate(order)}
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 1:

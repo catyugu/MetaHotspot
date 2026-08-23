@@ -216,19 +216,22 @@ class AffineParametricModel:
     per-boundary-group data, and knows how to run a native (unreduced) linear
     reference and solve a reduced model on its own geometry.
 
-    ``h_vec`` passed to ``full_reference`` / ``parameter_points`` /
-        ``assemble_reduced_k`` is the *physical* HTC vector in W/m²·K (one
-        scalar per boundary group).  ``BoundaryGroup`` carries the exposed
-        cells and SI area of each group, and the per-cell (kx, ky, kz) /
-        cell-side half-distances come from :attr:`cell_layout`.  For the
-        native reference (:meth:`full_reference`), the model performs the
-        FloTHERM surface-consistent ThirdType series condensation per cell
-        (``p_c = k_c·h / (k_c + h·half_c)``) before assembling the affine
-        K, so the steady-state result reproduces a capacitance-free surface
-        face to ≤ 0.001 K of FloTHERM.  The training path
-        (:func:`~utils.assemble_reduced_k`) consumes the same physical
-        ``h_vec`` directly — the BCI ROM is affine in ``h`` as the algebraic
-        surrogate parameter, with no extra mapping.
+    ``h_vec`` passed to ``full_reference`` / ``parameter_points`` is the
+            *physical* HTC vector in W/m²·K (one scalar per boundary group) — the
+            public, validation-facing parameter space (FloTHERM calibration).
+            ``BoundaryGroup`` carries the exposed cells and SI area of each group,
+            and the per-cell (kx, ky, kz) / cell-side half-distances come from
+            :attr:`cell_layout`.  Internally the model performs the FloTHERM
+            surface-consistent ThirdType series condensation per cell
+            (``p_c = k_c·h / (k_c + h·half_c)``), maps the physical ``h`` to the
+            effective affine coefficient ``p = area-weighted p_c``
+            (:meth:`physical_to_effective`), and assembles ``K_h = K0 + Σ p_k H_k``
+            — the steady-state result reproduces a capacitance-free surface face
+            to ≤ 0.001 K of FloTHERM (exactly for homogeneous groups).  The BCI
+            ROM (``assemble_reduced_k``) is affine in the *same* effective ``p``:
+            callers feed it ``model.physical_to_effective(h)``, and
+            :meth:`h_ranges` returns the effective (training) coefficient range.
+            Callers never map physical→effective themselves for the reference.
 
         Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
         ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
@@ -302,7 +305,12 @@ class AffineParametricModel:
         independent groups), so an experiment never needs to know how many
         affine parameters a model has.
         """
-        ranges = self.h_ranges()
+        # Physical validation space (each group's declared physical range),
+        # NOT the effective range — parameter_points feeds the physical
+        # scenarios that full_reference maps internally.
+        ranges = np.asarray(
+            [g.h_range for g in self.boundary_groups()], dtype=np.float64
+        )
         if ranges.size == 0:
             return []
         first = ranges[0]
@@ -392,19 +400,35 @@ class AffineParametricModel:
             "return the SI vertex array for axis='x'/'y'/'z'."
         )
 
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """Per-layer ``(kx, ky, kz)`` in SI (W/m·K).
+    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
+        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
 
-        Keyed by the compiled ``layer_id`` (``Compiled.layer_ids[c]``).  Each
-        model derives this from its own material schema (e.g. an ``(name, kx,
-        ky, kz, rho, c)`` MATERIALS tuple).  Subclasses must override this;
-        :attr:`cell_layout` calls it once per compile.
+        The single ground truth for layer layout.  Subclasses must override
+        this; the base derives :meth:`_layer_conductivity` from it (layer_id 0
+        = top) and :attr:`cell_layout` cross-checks every ``layer_id``'s
+        compiled z-band against this stack, so a reversed or misordered layer
+        stack fails the layout self-check instead of silently mis-assigning
+        material conductivities.
         """
         raise NotImplementedError(
-            f"{type(self).__name__}: _layer_conductivity() is not implemented; "
-            "supply a {layer_id: (kx, ky, kz)} mapping from the model's "
-            "material schema."
+            f"{type(self).__name__}: _physical_stack() is not implemented; "
+            "return the bottom-up (thickness_mm, kx, ky, kz) layer stack."
         )
+
+    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
+        """Per-layer ``(kx, ky, kz)`` in SI (W/m·K), keyed by ``layer_id``.
+
+        Derived from :meth:`_physical_stack` reversed to the compiler's
+        top-first ``layer_id`` order (layer_id 0 = top).  :attr:`cell_layout`
+        calls it once per compile and validates the z-bands against the same
+        stack.
+        """
+        stack = self._physical_stack()
+        if not stack:
+            raise RuntimeError(
+                f"{type(self).__name__}: _physical_stack() returned an empty stack"
+            )
+        return {i: (kx, ky, kz) for i, (_, kx, ky, kz) in enumerate(reversed(stack))}
 
     @cached_property
     def cell_layout(self) -> CellLayout:
@@ -467,8 +491,6 @@ class AffineParametricModel:
 
         return CellLayout(centers=centers, half_sizes=half, conductivity=k)
 
-    # ---------------------------------------- series-condensed (effective) HTC
-
     def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
         """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.
 
@@ -519,10 +541,12 @@ class AffineParametricModel:
         """Effective affine ranges as an ``(n_groups, 2)`` array.
 
         Derived from each group's *physical* ``h_range`` through the per-cell
-        series-condensed coefficient (one group at a time), so the basis is
-        trained and validated over the effective coefficient that actually
-        enters ``Σ_k p_k H_k`` — the same space :meth:`full_reference`
-        consumes.
+        series-condensed coefficient (one group at a time), so the ROM basis is
+        trained over the effective coefficient that actually enters
+        ``Σ_k p_k H_k`` — the training space that
+        :func:`~utils.build_parametric_basis` samples and that
+        :func:`~utils.assemble_reduced_k` (fed ``physical_to_effective``) and
+        :meth:`full_reference` consume.
         """
         groups = self.boundary_groups()
         axes = self._boundary_axis_per_group()
@@ -542,33 +566,35 @@ class AffineParametricModel:
     # --------------------------------------- native reference + recovery
 
     def full_reference(self, h_vec) -> AffineSolveResult:
-        """Native (unreduced) steady+transient reference at effective ``h_vec``.
+        """Native (unreduced) steady+transient reference at physical ``h_vec``.
 
-        ``h_vec`` is the *effective* (series-condensed) affine coefficient
-        vector, one scalar per boundary group, in the same order as
-        :meth:`boundary_groups`.  Callers map physical HTC W/m²·K to effective
-        with :meth:`physical_to_effective` before calling.  The effective
-        coefficient ``p_k`` is what the FloTHERM ThirdType surface-consistent
-        face actually presents per unit area after static condensation of the
-        capacitance-free surface node; building
+        ``h_vec`` is the *physical* HTC vector (W/m²·K), one scalar per
+        boundary group in :meth:`boundary_groups` order — the public,
+        validation-facing space the ROM is calibrated against.  The model maps
+        it internally (:meth:`physical_to_effective`) to the surface-consistent
+        effective coefficient ``p`` before assembling
 
             K_h = K + Σ_k p_k · H_k,   H_k = diag(area)
 
-        reproduces a capacitance-free surface face to ≤ 0.001 K of FloTHERM.
-        Solves ``K_h x = G_src P(t)`` in rise coordinates above ambient; steady
-        uses the nominal port powers, transient uses :meth:`source_power`.
-        The reduced model is trained with the same effective ``h_vec``
-        (:func:`~utils.assemble_reduced_k`), so the only difference between
-        this reference and the ROM is the reduction error.
+        which reproduces a capacitance-free (ThirdType) surface face to
+        ≤ 0.001 K of FloTHERM for homogeneous groups.  Solves
+        ``K_h x = G_src P(t)`` in rise coordinates above ambient; steady uses
+        the nominal port powers, transient uses :meth:`source_power`.  The
+        reduced model is trained with the *same* effective ``p``
+        (:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``),
+        so the only difference between this reference and the ROM is the
+        reduction error.  Callers pass physical HTC directly — no caller-side
+        mapping.
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
         G = self.source_shape()
         terms = self.boundary_terms()
 
-        # h_vec is already the effective (series-condensed) coefficient.
+        # physical h -> effective (series-condensed) affine coefficient.
+        p = self.physical_to_effective(h_vec)
         K_h = K.copy()
-        for p_k, H_k in zip(h_vec, terms):
+        for p_k, H_k in zip(p, terms):
             K_h = K_h + float(p_k) * H_k
         K_h = (0.5 * (K_h + K_h.T)).tocsc()
 

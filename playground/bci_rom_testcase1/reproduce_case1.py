@@ -23,13 +23,14 @@ Boundary scenario (FloTHERM condition-independent pairing, see model_case1):::
     side faces                         : no BC (adiabatic)
     ambient / initial temperature      : 35 C = 308.15 K
 
-The physical HTC vector above is what the model consumes — both the ROM
-training path (:func:`assemble_reduced_k`) and the native reference
-(:meth:`full_reference`) take it verbatim.  The reference performs the
-per-cell FloTHERM ThirdType series condensation
-``p_c = k_c·h / (k_c + h·half_c)`` internally using
-:attr:`cell_layout` so the full FVM reproduces FloTHERM's surface-consistent
-junction temperatures without any caller-side mapping.
+The physical HTC vector is the public boundary parameter: the native
+reference (:meth:`full_reference`) takes it verbatim and maps it internally
+to the surface-consistent effective coefficient
+``p_c = k_c·h / (k_c + h·half_c)``, so the full FVM reproduces FloTHERM's
+surface-consistent junction temperatures with no caller-side mapping.  The
+ROM training consumes the *effective* coefficient
+``model.physical_to_effective(h)`` (the same space
+:meth:`~AffineParametricModel.h_ranges` returns for the basis).
 
 Sources S0..S3 = 0.1 / 0.2 / 0.3 / 0.4 W (constant).
 Outputs: PNG comparisons (steady bars + transient time series) and a printed
@@ -128,17 +129,14 @@ def run():
         f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
     )
 
-    p_vec = model.physical_to_effective(H_VEC_MODEL)
-    print(f"  physical h={H_VEC_MODEL} -> effective p={np.round(p_vec, 4).tolist()}")
-
     core = model.core_operators()
     G = model.source_shape()
     terms = model.boundary_terms()
     h_ranges = model.h_ranges()
 
-    # ---- full FVM (affine full-domain solve at the effective coefficients) ----
+    # ---- full FVM (affine full-domain solve; model maps physical h internally) --
     t0 = time.perf_counter()
-    full = model.full_reference(p_vec)
+    full = model.full_reference(H_VEC_MODEL)
     t_full_ref = time.perf_counter() - t0
     print("Finished full reference solving")
     Tf_ss = full.steady_temperature
@@ -165,6 +163,7 @@ def run():
     )
 
     C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(core, G, terms, basis)
+    p_vec = model.physical_to_effective(H_VEC_MODEL)
     K_hat = assemble_reduced_k(K0, F_bdry, A_bdry, p_vec)
 
     theta_ss = solve_rom_steady(K_hat, F_hat, SOURCES)
