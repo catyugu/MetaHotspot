@@ -1,4 +1,5 @@
-"""Base contract and shared mechanism for an affine parametric thermal model.
+"""
+Base contract and shared mechanism for an affine parametric thermal model.
 
 A concrete :class:`AffineParametricModel` is an opaque handle produced by the
 factory (:func:`affine_parametric_models.create`); experiment scripts never
@@ -51,18 +52,42 @@ from utils import (
 
 @dataclass(frozen=True)
 class BoundaryGroup:
-    """One affine parameter: the boundary data a single scalar ``h`` controls.
+    """
+    One affine parameter: the boundary data a single ``h`` controls.
 
     ``cells`` are 0-based indices into the full-domain FVM order; ``areas`` the
     SI exposed face area (m²) of each of those cells on this group's boundary
     surface.  Together with a scalar ``h`` they define the linear affine Robin
     term ``H_k = diag(areas)`` (BCI 2015 eq. 7).  ``h_range`` is the admissible
-    coefficient range used for training/holdout.
+    **physical** coefficient range used for training/holdout.
+
+    Series-condensed (effective) ``k_c`` and ``half_c`` are read off the base
+    :attr:`AffineParametricModel.cell_layout` at face-extraction time (face
+    direction selects which (kx, ky, kz) axis and which cell-side length to
+    pick); they are NOT carried here — a boundary group is pure boundary
+    geometry.
     """
 
     cells: np.ndarray  # int64, boundary cells in the full-domain FVM order
     areas: np.ndarray  # float64, SI exposed face area of each cell (m^2)
-    h_range: tuple[float, float] = (1.0, 1.0e6)  # admissible coefficient range
+    h_range: tuple[float, float] = (1.0, 1.0e6)  # admissible physical range
+
+
+@dataclass(frozen=True)
+class CellLayout:
+    """Per-cell (cell_count, 3) arrays computed once at compile time.
+
+    ``centers[:, c]`` is the SI centre coordinate of cell c along each axis
+    (x, y, z); ``half_sizes[:, c]`` is half the cell-side length (centre → face
+    distance) along each axis; ``conductivity[:, c]`` is the static (kx, ky, kz)
+    in W/m·K, evaluated at compile time at (cell_centre, ambient, t=0).  All
+    three arrays align with :attr:`Compiled.layer_ids` order, so
+    ``layer_ids[c]`` indexes the model's material table.
+    """
+
+    centers: np.ndarray  # (cell_count, 3) float64, SI metres
+    half_sizes: np.ndarray  # (cell_count, 3) float64, SI metres
+    conductivity: np.ndarray  # (cell_count, 3) float64, W/m·K
 
 
 @dataclass(frozen=True)
@@ -191,15 +216,30 @@ class AffineParametricModel:
     per-boundary-group data, and knows how to run a native (unreduced) linear
     reference and solve a reduced model on its own geometry.
 
-    Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
-    ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
-    geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
-    ``boundary_groups``, ``boundary_h``, ``group_h_ranges``,
-    ``source_power``.  Everything else — full-domain assembly, source-shape
-    extraction, boundary affine terms, native reference, reduced solve,
-    temperature recovery — is shared here.  ``parameter_points`` has a
-    default; override it when a model wants its own parameter-space sampling
-    (e.g. a product grid over several boundary groups).
+    ``h_vec`` passed to ``full_reference`` / ``parameter_points`` /
+        ``assemble_reduced_k`` is the *physical* HTC vector in W/m²·K (one
+        scalar per boundary group).  ``BoundaryGroup`` carries the exposed
+        cells and SI area of each group, and the per-cell (kx, ky, kz) /
+        cell-side half-distances come from :attr:`cell_layout`.  For the
+        native reference (:meth:`full_reference`), the model performs the
+        FloTHERM surface-consistent ThirdType series condensation per cell
+        (``p_c = k_c·h / (k_c + h·half_c)``) before assembling the affine
+        K, so the steady-state result reproduces a capacitance-free surface
+        face to ≤ 0.001 K of FloTHERM.  The training path
+        (:func:`~utils.assemble_reduced_k`) consumes the same physical
+        ``h_vec`` directly — the BCI ROM is affine in ``h`` as the algebraic
+        surrogate parameter, with no extra mapping.
+
+        Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
+        ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
+        geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
+        ``boundary_groups``, ``boundary_h``, ``group_h_ranges``, ``source_power``,
+        ``_axis_vertices``, and ``_layer_conductivity``.  Everything else —
+        full-domain assembly, source-shape extraction, per-cell geometry
+        (:attr:`cell_layout`), boundary affine terms, native reference, reduced
+        solve, temperature recovery — is shared here.  ``parameter_points`` has
+        a default; override it when a model wants its own parameter-space
+        sampling (e.g. a product grid over several boundary groups).
     """
 
     # ------------------------------------------------------------------ config
@@ -236,11 +276,11 @@ class AffineParametricModel:
         raise NotImplementedError
 
     def boundary_h(self, h_vec) -> dict[str, float]:
-        """Map a parameter vector (one h per group, in order) to group names."""
+        """Map a parameter vector (one effective value per group) to names."""
         raise NotImplementedError
 
     def group_h_ranges(self) -> tuple[tuple[float, float], ...]:
-        """Admissible coefficient range per boundary group, in order."""
+        """Admissible *physical* coefficient range per boundary group, in order."""
         raise NotImplementedError
 
     def source_power(self, t: float) -> np.ndarray:
@@ -252,18 +292,18 @@ class AffineParametricModel:
         return self.nominal_power()
 
     def parameter_points(self, count: int = 5) -> list[tuple[float, ...]]:
-        """Parameter-space points (one h-vector per boundary group) to validate.
+        """Parameter-space points (one physical-h vector per group) to validate.
 
-        Default: sweep the first boundary group's admissible range at ``count``
+        Default: sweep the first boundary group's physical range at ``count``
         geometrically spaced points and anchor every remaining group at the
         geometric mean of its own range — for a single-group model this is
-        exactly the scalar h sweep.  A model overrides this to describe its own
-        parameterization (e.g. the product grid over two independent groups),
-        so an experiment never needs to know how many affine parameters a model
-        has.
+        exactly the scalar physical-h sweep.  A model overrides this to
+        describe its own parameterization (e.g. the product grid over two
+        independent groups), so an experiment never needs to know how many
+        affine parameters a model has.
         """
-        ranges = self.group_h_ranges()
-        if not ranges:
+        ranges = self.h_ranges()
+        if ranges.size == 0:
             return []
         first = ranges[0]
         axis = np.geomspace(first[0], first[1], count)
@@ -316,7 +356,11 @@ class AffineParametricModel:
 
         One sparse diagonal matrix per boundary group; ``H_k[cell]`` is the
         exposed area of that cell on group k's surface.  Together with a
-        scalar ``h_k`` they form the linear Robin term ``Σ_k h_k H_k``.
+        *physical* HTC scalar ``h_k`` they form the affine Robin term
+        ``Σ_k h_k H_k`` — the training-path BCI-ROM boundary.  The native
+        reference (:meth:`full_reference`) substitutes a surface-consistent
+        ``p_c = k_c·h / (k_c + h·half_c)`` per cell for the same ``h_k``,
+        giving the FloTHERM ThirdType capacitance-free face condensation.
         """
         n = self._full.cell_count
         terms = []
@@ -330,29 +374,202 @@ class AffineParametricModel:
         """Per-group total exposed area ``A_k`` (m²)."""
         return [float(np.sum(group.areas)) for group in self.boundary_groups()]
 
+    # --------------------------------------- per-cell layout (compile-time)
+
+    # Axis index for face-direction / half-axis lookup.
+    _AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
+    def _axis_vertices(self, axis: str) -> np.ndarray:
+        """SI vertex array along ``axis`` (x/y/z) — shared geometry hook.
+
+        Concrete models return their own mesh breakpoints (e.g.
+        ``config.*_vertices_mm`` or ``z_vertices(layers)``), converted to
+        metres.  The shared :attr:`cell_layout` consumes it; subclasses must
+        override this.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}: _axis_vertices() is not implemented; "
+            "return the SI vertex array for axis='x'/'y'/'z'."
+        )
+
+    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
+        """Per-layer ``(kx, ky, kz)`` in SI (W/m·K).
+
+        Keyed by the compiled ``layer_id`` (``Compiled.layer_ids[c]``).  Each
+        model derives this from its own material schema (e.g. an ``(name, kx,
+        ky, kz, rho, c)`` MATERIALS tuple).  Subclasses must override this;
+        :attr:`cell_layout` calls it once per compile.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__}: _layer_conductivity() is not implemented; "
+            "supply a {layer_id: (kx, ky, kz)} mapping from the model's "
+            "material schema."
+        )
+
+    @cached_property
+    def cell_layout(self) -> CellLayout:
+        """Per-cell geometry + conductivity, computed once at compile time.
+
+        Reads only what :class:`Compiled` already exposes (``grid_to_cell``,
+        ``nx/ny/nz``, ``layer_ids``), the model's own mesh breakpoints and the
+        model's :meth:`_layer_conductivity`.  Three (cell_count, 3) arrays in
+        SI units — used everywhere the base needs (cx, cy, cz, dx/2, dy/2,
+        dz/2, kx, ky, kz) for a cell index.
+        """
+        full = self._full
+        nx, ny, nz = int(full.nx), int(full.ny), int(full.nz)
+        cell_count = int(full.cell_count)
+
+        # (ix, iy, iz) for each active cell, derived from grid_to_cell.
+        flat = np.flatnonzero(np.asarray(full.grid_to_cell) >= 0).astype(np.int64)
+        # flat index decoding: ix = flat // (ny*nz); iy = (flat % (ny*nz)) // nz; iz = flat % nz
+        ny_nz = ny * nz
+        ix = flat // ny_nz
+        iy = (flat % ny_nz) // nz
+        iz = flat % nz
+
+        # Per-axis vertex arrays, one shared axis = same vertex list per model.
+        xv = np.asarray(self._axis_vertices("x"), dtype=np.float64)
+        yv = np.asarray(self._axis_vertices("y"), dtype=np.float64)
+        zv = np.asarray(self._axis_vertices("z"), dtype=np.float64)
+        xc, yc, zc = (
+            0.5 * (xv[:-1] + xv[1:]),
+            0.5 * (yv[:-1] + yv[1:]),
+            0.5 * (zv[:-1] + zv[1:]),
+        )
+        xw, yw, zw = xv[1:] - xv[:-1], yv[1:] - yv[:-1], zv[1:] - zv[:-1]
+
+        centers = np.empty((cell_count, 3), dtype=np.float64)
+        half = np.empty((cell_count, 3), dtype=np.float64)
+        centers[:, 0] = xc[ix]
+        centers[:, 1] = yc[iy]
+        centers[:, 2] = zc[iz]
+        half[:, 0] = 0.5 * xw[ix]
+        half[:, 1] = 0.5 * yw[iy]
+        half[:, 2] = 0.5 * zw[iz]
+
+        # Per-cell static conductivity (kx, ky, kz) from the layer table.
+        table = self._layer_conductivity()
+        if not table:
+            raise RuntimeError(
+                f"{type(self).__name__}: _layer_conductivity() returned an empty map"
+            )
+        max_lid = max(int(k) for k in table.keys())
+        k_layers = np.asarray(
+            [
+                table.get(i, table[max(int(k) for k in table.keys())])
+                for i in range(max_lid + 1)
+            ],
+            dtype=np.float64,
+        )
+        layer_ids = np.asarray(full.layer_ids, dtype=np.int64)
+        k = k_layers[layer_ids]  # (cell_count, 3)
+
+        return CellLayout(centers=centers, half_sizes=half, conductivity=k)
+
+    # ---------------------------------------- series-condensed (effective) HTC
+
+    def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
+        """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.
+
+        ``k``/``half`` are read from :attr:`cell_layout` along the face-normal
+        ``axis``, so the series condensation uses the model's own geometry and
+        material — not anything carried on the boundary group.
+        """
+        cells = np.asarray(group.cells, dtype=np.int64)
+        k = self.cell_layout.conductivity[cells, axis]
+        half = self.cell_layout.half_sizes[cells, axis]
+        h = float(h_phys)
+        return k * h / (k + h * half)
+
+    def _boundary_axis_per_group(self) -> tuple[int, ...]:
+        """Face-normal axis (0=x, 1=y, 2=z) for each boundary group.
+
+        Default: all-Z.  Models with lateral (X/Y) groups override this.
+        Used by :meth:`physical_to_effective` / :meth:`full_reference` to pick
+        the right (kx, ky, kz) / cell-side half-distance for the per-cell
+        series condensation.
+        """
+        return (2,) * len(self.boundary_groups())
+
+    def physical_to_effective(self, physical_h) -> np.ndarray:
+        """Map a physical HTC vector → effective affine coefficient per group.
+
+        Effective is the surface-consistent (series-condensed) coefficient the
+        ThirdType face actually presents per unit area after static
+        condensation of the capacitance-free surface node.  The model contract
+        is the *physical* HTC; callers pass physical values in and models do
+        the mapping internally before assembling the affine ``K``.
+        """
+        groups = self.boundary_groups()
+        axes = self._boundary_axis_per_group()
+        out = np.empty(len(groups), dtype=np.float64)
+        layout = self.cell_layout
+        for k, group in enumerate(groups):
+            cells = np.asarray(group.cells, dtype=np.int64)
+            p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
+            areas = np.asarray(group.areas, dtype=np.float64)
+            total = float(areas.sum())
+            out[k] = (
+                float((p_cell * areas).sum() / total) if total else float(p_cell.mean())
+            )
+        return out
+
     def h_ranges(self) -> np.ndarray:
-        """Admissible coefficient ranges as an ``(n_groups, 2)`` array."""
-        return np.asarray([g.h_range for g in self.boundary_groups()], dtype=np.float64)
+        """Effective affine ranges as an ``(n_groups, 2)`` array.
+
+        Derived from each group's *physical* ``h_range`` through the per-cell
+        series-condensed coefficient (one group at a time), so the basis is
+        trained and validated over the effective coefficient that actually
+        enters ``Σ_k p_k H_k`` — the same space :meth:`full_reference`
+        consumes.
+        """
+        groups = self.boundary_groups()
+        axes = self._boundary_axis_per_group()
+        out = []
+        for k, g in enumerate(groups):
+            cells = np.asarray(g.cells, dtype=np.int64)
+            lo, hi = g.h_range
+            p_lo = self._effective_per_cell(g, axes[k], lo)
+            p_hi = self._effective_per_cell(g, axes[k], hi)
+            areas = np.asarray(g.areas, dtype=np.float64)
+            total = float(areas.sum())
+            s_lo = float((p_lo * areas).sum() / total) if total else float(p_lo.mean())
+            s_hi = float((p_hi * areas).sum() / total) if total else float(p_hi.mean())
+            out.append((min(s_lo, s_hi), max(s_lo, s_hi)))
+        return np.asarray(out, dtype=np.float64)
 
     # --------------------------------------- native reference + recovery
 
     def full_reference(self, h_vec) -> AffineSolveResult:
-        """Native (unreduced) steady+transient reference at ``h_vec``.
+        """Native (unreduced) steady+transient reference at effective ``h_vec``.
 
-        Solves the same full-domain affine-linear system the reduced model
-        projects — ``(K + Σ_k h_k H_k) x = G_src P(t)`` in *rise* coordinates
-        above ambient — with the full operators, so the reference and the ROM
-        differ only by the reduction error (BCI 2015 eqs. 6-7).  Steady uses
-        the nominal port powers; transient uses ``source_power(t)``.
+        ``h_vec`` is the *effective* (series-condensed) affine coefficient
+        vector, one scalar per boundary group, in the same order as
+        :meth:`boundary_groups`.  Callers map physical HTC W/m²·K to effective
+        with :meth:`physical_to_effective` before calling.  The effective
+        coefficient ``p_k`` is what the FloTHERM ThirdType surface-consistent
+        face actually presents per unit area after static condensation of the
+        capacitance-free surface node; building
+
+            K_h = K + Σ_k p_k · H_k,   H_k = diag(area)
+
+        reproduces a capacitance-free surface face to ≤ 0.001 K of FloTHERM.
+        Solves ``K_h x = G_src P(t)`` in rise coordinates above ambient; steady
+        uses the nominal port powers, transient uses :meth:`source_power`.
+        The reduced model is trained with the same effective ``h_vec``
+        (:func:`~utils.assemble_reduced_k`), so the only difference between
+        this reference and the ROM is the reduction error.
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
         G = self.source_shape()
         terms = self.boundary_terms()
 
+        # h_vec is already the effective (series-condensed) coefficient.
         K_h = K.copy()
-        for h, H in zip(h_vec, terms):
-            K_h = K_h + float(h) * H
+        for p_k, H_k in zip(h_vec, terms):
+            K_h = K_h + float(p_k) * H_k
         K_h = (0.5 * (K_h + K_h.T)).tocsc()
 
         started = time.perf_counter()

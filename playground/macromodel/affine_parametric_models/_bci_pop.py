@@ -26,6 +26,13 @@ Layer stack (physical z from bottom to top):
     top die-attach      underfill   0.05              6 x  6       -
     top die             silicon     0.40              6 x  6       2 W
     top mold            mold        0.90             10 x 10       -
+
+The boundary parameter space is the *physical* HTC ``h`` (W/m²·K).  The ROM
+training path (:func:`~utils.assemble_reduced_k`) consumes it directly; the
+native reference (:meth:`~AffineParametricModel.full_reference`) performs
+the per-cell FloTHERM ThirdType series condensation internally using
+:attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
+half-distance.
 """
 
 from __future__ import annotations
@@ -248,7 +255,7 @@ class _BciPop(AffineParametricModel):
 
     # ------------------------------------------------- geometry hooks
 
-    def build_geometry(self, study, *, detail, macro, boundary_h=None):
+    def build_geometry(self, study, *, detail, macro):
         return build_geometry(self.config, study, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
@@ -260,7 +267,7 @@ class _BciPop(AffineParametricModel):
         """
         f = np.asarray(self._core.f, dtype=np.float64)
         source_cells = np.flatnonzero(f > 0.0)
-        zc = self._cell_z_centers()
+        zc = self.cell_layout.centers[:, 2]
         bottom_hi = (
             self.config.bottom_substrate_mm
             + self.config.bottom_dieattach_mm
@@ -344,15 +351,31 @@ class _BciPop(AffineParametricModel):
 
         return (
             BoundaryGroup(
-                cells=top_cells, areas=top_areas, h_range=self.config.h_ranges[0]
+                cells=top_cells,
+                areas=top_areas,
+                h_range=self.config.h_ranges[0],
             ),
             BoundaryGroup(
-                cells=side_cells, areas=side_areas, h_range=self.config.h_ranges[1]
+                cells=side_cells,
+                areas=side_areas,
+                h_range=self.config.h_ranges[1],
             ),
             BoundaryGroup(
-                cells=bot_cells, areas=bot_areas, h_range=self.config.h_ranges[2]
+                cells=bot_cells,
+                areas=bot_areas,
+                h_range=self.config.h_ranges[2],
             ),
         )
+
+    def _boundary_axis_per_group(self) -> tuple[int, ...]:
+        """Face-normal axis for each boundary group: (top=z, sides=x, bottom=z).
+
+        Used by the native reference (:meth:`full_reference`) to pick the
+        per-cell (kx, ky, kz) and cell-side half-distance for FloTHERM
+        ThirdType series condensation.  Training-path consumers (the BCI
+        ROM) don't care — they consume the physical ``h_vec`` directly.
+        """
+        return (2, 0, 2)
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 3:
@@ -367,34 +390,49 @@ class _BciPop(AffineParametricModel):
         return self.config.h_ranges
 
     def parameter_points(self, count: int = 36) -> list[tuple[float, ...]]:
-        """Log-uniform random 3-vectors over the {top, sides, bottom} box.
+        """Log-uniform random 3-vectors over the physical {top, sides, bottom}.
 
         The three ambient groups are independent, so validation points span
-        their full ``(h_top, h_sides, h_bottom)`` space.  ``count``
+        their full physical ``(h_top, h_sides, h_bottom)`` space.  ``count``
         log-uniform random draws (deterministic seed) mirror the Flotherm
-        DoE-style scenario set (40 scenarios in the validation doc).
+        DoE-style scenario set (40 scenarios in the validation doc).  The
+        physical range is what :meth:`build_parametric_basis` /
+        :meth:`assemble_reduced_k` / :meth:`full_reference` consume, so the
+        holdout and the basis share the same parameter space.
         """
-        ranges = np.asarray(self.config.h_ranges, dtype=np.float64)
+        ranges = self.h_ranges()  # physical HTC
+        if ranges.size == 0:
+            return []
         lows = np.log10(ranges[:, 0])
         highs = np.log10(ranges[:, 1])
         rng = np.random.default_rng(20260805)
         draws = 10.0 ** rng.uniform(lows, highs, size=(count, ranges.shape[0]))
         return [tuple(float(v) for v in row) for row in draws]
 
-    # ------------------------------------------------ cell geometry helpers
+    # --------------------------------------------- boundary surface data
 
-    def _cell_z_centers(self) -> np.ndarray:
-        """Per-cell z-centre (m) from the compiled occupancy grid."""
-        full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        z = z_vertices(self.config.layers) * 1.0e-3
-        zc = 0.5 * (z[:-1] + z[1:])
-        out = np.empty(full.cell_count, dtype=np.float64)
-        for iz in range(full.nz):
-            slab = grid[:, :, iz].ravel()
-            valid = slab >= 0
-            out[slab[valid]] = zc[iz]
-        return out
+    def _axis_vertices(self, axis: str) -> np.ndarray:
+        """SI vertex array along ``axis`` (shared geometry hook)."""
+        if axis == "z":
+            return z_vertices(self.config.layers) * 1.0e-3
+        return self.config.axis_vertices_mm * 1.0e-3
+
+    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
+        """``{layer_id: (kx, ky, kz)}`` derived from the compiled config.
+
+        The compiler lays out ``cfg.layers`` bottom-up with ``layer_id``
+        ascending z (see ``src/compiler/geometry_compiler.cpp``:
+        ``resolved[l].z_start`` is bottom-up cumulative), so physical layer
+        ``cfg.layers[i]`` is at compiled ``layer_id = i``.
+        """
+        material_k = {
+            name: (float(kx), float(ky), float(kz))
+            for name, kx, ky, kz, _, _ in MATERIALS
+        }
+        return {
+            i: material_k[self.config.layers[i][1]]
+            for i in range(len(self.config.layers))
+        }
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

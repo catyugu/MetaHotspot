@@ -6,8 +6,8 @@ Reproduces ``playground/bci_rom_testcase1/case1.ecxml`` (a 3-layer stack +
 results from three sources:
 
     1. FULL FVM   : the full finite-volume model (operators assembled by the
-                    MetaHotspot C++ engine), solved directly at the validation
-                    htc.
+                    MetaHotspot C++ engine), solved directly at the effective
+                    (series-condensed) coefficient ``p = k·h/(k + h·half)``.
     2. FLOTHERM ROM: the BCI-ROM exported by Simcenter FloTHERM
                     (``MATRICES/*.mtx``, ROM size 36) — reduced solve +
                     junction (COG probe) recovery.
@@ -16,12 +16,20 @@ results from three sources:
                     Krylov enrichment -> SVD truncation -> Galerkin
                     projection), reduced solve + full-field recovery.
 
-Boundary scenario (FloTHERM condition-independent pairing, see model_case1)::
+Boundary scenario (FloTHERM condition-independent pairing, see model_case1):::
 
     Face.ZP (die crowns, area 4e-4 m2) : h = 5e1   (FloTHERM "Ambient:0")
     Face.ZM (FR4  bottom, area 6e-3 m2) : h = 1e3   (FloTHERM "Ambient:1")
     side faces                         : no BC (adiabatic)
     ambient / initial temperature      : 35 C = 308.15 K
+
+The physical HTC vector above is what the model consumes — both the ROM
+training path (:func:`assemble_reduced_k`) and the native reference
+(:meth:`full_reference`) take it verbatim.  The reference performs the
+per-cell FloTHERM ThirdType series condensation
+``p_c = k_c·h / (k_c + h·half_c)`` internally using
+:attr:`cell_layout` so the full FVM reproduces FloTHERM's surface-consistent
+junction temperatures without any caller-side mapping.
 
 Sources S0..S3 = 0.1 / 0.2 / 0.3 / 0.4 W (constant).
 Outputs: PNG comparisons (steady bars + transient time series) and a printed
@@ -61,12 +69,12 @@ from utils import (  # noqa: E402
 AMB = 308.15  # 35 C ambient / initial
 H_CROWN = 5.0e1  # die crowns   (Face.ZP, area 4e-4) -> "Ambient:0"
 H_FR4 = 1.0e3  # FR4 bottom   (Face.ZM, area 6e-3) -> "Ambient:1"
-H_VEC_MODEL = (H_CROWN, H_FR4)  # our model group order [ZP, ZM]
+H_VEC_MODEL = (H_CROWN, H_FR4)  # physical HTC vector [ZP crowns, ZM FR4]
 SOURCES = np.array([0.1, 0.2, 0.3, 0.4])
 DIE_NAMES = ["S0", "S1", "S2", "S3"]
 
-DURATION_S = 10000.0
-DT_S = 100.0
+DURATION_S = 2000.0
+DT_S = 50.0
 
 # FANTASTIC-BCI extraction options
 PROBE_ROUNDS = 3
@@ -120,14 +128,17 @@ def run():
         f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
     )
 
+    p_vec = model.physical_to_effective(H_VEC_MODEL)
+    print(f"  physical h={H_VEC_MODEL} -> effective p={np.round(p_vec, 4).tolist()}")
+
     core = model.core_operators()
     G = model.source_shape()
     terms = model.boundary_terms()
     h_ranges = model.h_ranges()
 
-    # ---- full FVM (affine full-domain solve at validation htc) ----------
+    # ---- full FVM (affine full-domain solve at the effective coefficients) ----
     t0 = time.perf_counter()
-    full = model.full_reference(H_VEC_MODEL)
+    full = model.full_reference(p_vec)
     t_full_ref = time.perf_counter() - t0
     print("Finished full reference solving")
     Tf_ss = full.steady_temperature
@@ -154,7 +165,7 @@ def run():
     )
 
     C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(core, G, terms, basis)
-    K_hat = assemble_reduced_k(K0, F_bdry, A_bdry, H_VEC_MODEL)
+    K_hat = assemble_reduced_k(K0, F_bdry, A_bdry, p_vec)
 
     theta_ss = solve_rom_steady(K_hat, F_hat, SOURCES)
     junc_rom_ss = AMB + F_hat.T @ theta_ss

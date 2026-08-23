@@ -3,13 +3,19 @@
 This module is *private* — it is reachable only through the factory under the
 registered name ``"chiplet_stack"``.  It supplies the geometry hooks consumed by
 the shared :class:`AffineParametricModel` base (which carries the full-domain
-operator assembly, source-port extraction, and boundary affine terms).
+operator assembly, source-port extraction, cell-geometry helpers and boundary
+affine terms).
 
 Layout (z from 0 up): substrate (organic) / bump (underfill+Cu pillars) / die
 (silicon, chiplet heat sources) at the bottom, then TIM / spreader (copper) /
 cold plate (aluminum) on top.  Each of the four chiplets is one uniform
 heat-source port (FANTASTIC); the cold-plate top face is the single parametric
-boundary group (uniform heat-exchange coefficient ``h``).
+boundary group.  The boundary parameter space is the *physical* HTC ``h``
+(W/m²·K): the ROM training path (:func:`~utils.assemble_reduced_k`) consumes
+it directly; the native reference (:meth:`~AffineParametricModel.full_reference`)
+performs the per-cell FloTHERM ThirdType series condensation internally
+using :attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
+half-distance.
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ from functools import cached_property
 import numpy as np
 
 import metahotspot
-from metahotspot.enums import Axis, Face, GeometryOp, LengthUnit, Study
+from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
 
 from affine_parametric_models._interfaces import (
     AffineParametricModel,
@@ -228,35 +234,22 @@ def add_square(model, block: int, size_mm: float) -> None:
     )
 
 
-def _boundary_regions(cfg: ChipletStackConfig) -> dict[str, tuple]:
-    """Face regions (macro frame, z=0 at macro base) for the top boundary group."""
-    half = cfg.cold_plate_size_mm / 2.0
-    return {
-        "top": ((Axis.Z, cfg.macro_height_mm, -half, half, -half, half),),
-    }
-
-
 def build_geometry(
     cfg: ChipletStackConfig,
     study: Study,
     *,
     detail: bool,
     macro: bool,
-    boundary_h: dict[str, float] | None = None,
     source_sink: list | None = None,
 ):
-    """Assemble the chiplet stack (no boundary conditions unless requested).
+    """Assemble the chiplet stack (no boundary conditions; default Neumann).
 
-    ``boundary_h`` (if given) maps boundary-group name -> coefficient and
-    applies the group's convection via :func:`apply_boundary_convection`.
     When ``source_sink`` is given, each heat-source block appends
     ``(block_id, power_W, activity_index)`` to it (in add order), so the model
     can recover per-source cells from the compiled ``block_ids``.
     """
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
-    if boundary_h is not None and any(h < 0.0 for h in boundary_h.values()):
-        raise ValueError("convection coefficient must be non-negative")
 
     model = metahotspot.Model()
     layers = (
@@ -355,16 +348,6 @@ def build_geometry(
 
     model.set_default_neumann("0")
 
-    if macro and boundary_h:
-        from affine_parametric_models._interfaces import apply_boundary_convection
-
-        apply_boundary_convection(
-            model,
-            _boundary_regions(cfg),
-            boundary_h,
-            cfg.ambient_K,
-            z_offset=cfg.detail_height_mm if detail else 0.0,
-        )
     return model
 
 
@@ -381,15 +364,22 @@ class _ChipletStack(AffineParametricModel):
 
     # ------------------------------------------------- geometry hooks
 
-    def build_geometry(self, study, *, detail, macro, boundary_h=None):
+    def build_geometry(self, study, *, detail, macro):
         self._source_sink.clear()
         return build_geometry(
             self.config,
             study,
             detail=detail,
             macro=macro,
-            boundary_h=boundary_h,
             source_sink=self._source_sink,
+        )
+
+    def _axis_vertices(self, axis: str) -> np.ndarray:
+        """SI vertex array along x/y/z (shared geometry hook)."""
+        if axis in ("x", "y"):
+            return self.config.axis_vertices_mm * 1.0e-3
+        return (
+            z_vertices((*self.config.detail_layers, *self.config.macro_layers)) * 1.0e-3
         )
 
     def source_ports(self) -> list[SourcePort]:
@@ -445,11 +435,39 @@ class _ChipletStack(AffineParametricModel):
         grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
         x = self.config.axis_vertices_mm * 1.0e-3
         y = x
-        z = z_vertices((*self.config.detail_layers, *self.config.macro_layers)) * 1.0e-3
-        half = self.config.cold_plate_size_mm / 2.0 * 1.0e-3
+        z = self._axis_vertices("z")
         top_z = (self.config.detail_height_mm + self.config.macro_height_mm) * 1.0e-3
         cells, areas = surface_exposed_cells(grid, x, y, z, Face.ZP, top_z)
-        return (BoundaryGroup(cells=cells, areas=areas, h_range=DEFAULT_H_RANGE),)
+        return (
+            BoundaryGroup(
+                cells=cells,
+                areas=areas,
+                h_range=DEFAULT_H_RANGE,
+            ),
+        )
+
+    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
+        """``{layer_id: (kx, ky, kz)}`` for the chiplet stack.
+
+        Layers are added bottom-first in the mesh build (``substrate`` last
+        in ``add_layer`` order in detail, ``tim`` last in macro), so the
+        ``layer_id`` ordering goes top→bottom: cold_plate=0, …, substrate=5.
+        """
+        material_k = {
+            name: (float(kx), float(ky), float(kz))
+            for name, kx, ky, kz, _, _ in MATERIALS
+        }
+        # In ``build_geometry``, ``add_layer`` is called in this order:
+        # macro: cold_plate, spreader, tim (top→down); detail: die, bump, substrate.
+        order = (
+            "aluminum",
+            "copper",
+            "tim",
+            "silicon",
+            "underfill",
+            "organic",
+        )
+        return {i: material_k[name] for i, name in enumerate(order)}
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 1:

@@ -21,19 +21,22 @@ Boundary: two ambient groups, side faces adiabatic —
     die-crown faces  (z = 22 mm, 4 dies, area 4e-4 m2)  h = 5e1   (Ambient:0)
     FR4 bottom face  (z =  0 mm, area 6e-3 m2)          h = 1e3   (Ambient:1)
 
-``h_ranges`` order keeps the model group order [ZP crowns, ZM FR4]; both
-groups range [1, 1e4] (FloTHERM extraction range).  Note the htc assignment is
-the one that makes the full model reproduce the FloTHERM BCI-ROM junction
-temperatures (see reproduce_case1.py); in FloTHERM's own z-orientation the
-die side is its "bottom" (Ambient:0, small area) and the FR4 side is its
-"top" (Ambient:1, large area).
+``h_ranges`` keeps the model group order [ZP crowns, ZM FR4]; both are the
+*physical* HTC range [1, 1e4] (FloTHERM extraction range).  The boundary
+parameter space is the physical HTC ``h`` (W/m²·K): the ROM training path
+(:func:`~utils.assemble_reduced_k`) consumes it directly; the native
+reference (:meth:`~AffineParametricModel.full_reference`) performs the
+per-cell FloTHERM ThirdType series condensation internally using
+:attr:`~AffineParametricModel.cell_layout` (kx, ky, kz) and cell-side
+half-distance.  In FloTHERM's own z-orientation the die side is its
+"bottom" (Ambient:0, small area) and the FR4 side is its "top"
+(Ambient:1, large area).
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from functools import cached_property
 
 import numpy as np
 
@@ -149,6 +152,7 @@ class Case1Config:
     @property
     def y_vertices_mm(self) -> np.ndarray:
         """y mesh mirroring the FloTHERM base-grid export.
+
         Central span [-30, 30] mm (aluminum/E-10/dies extent; same cut set
         as x, incl. the aluminum y-edges at +-30) is subdivided to
         ``max_xy_cell_mm``.  The FR4-only overhang [30, 50] / [-50, -30]
@@ -156,9 +160,8 @@ class Case1Config:
         equal cells — the FloTHERM auto-mesh rule, which at the 1 mm
         nominal gives 21 x (20/21) mm cells per side, exactly reproducing
         the reference ``Root Assembly_Temperature_Base Grid.csv``
-        (60 x 1 mm central + 21 x (20/21) mm per side = 102 y rows).
+        (60 x 1mm central + 21 x (20/21) mm per side = 102 y rows).
         """
-
         full = self._all_cuts_mm()
         central = np.unique(
             full[(full >= A2_MIN_X - 1e-12) & (full <= A2_MAX_X + 1e-12)]
@@ -284,7 +287,7 @@ class Case1Model(AffineParametricModel):
 
     # ------------------------------------------------ geometry hooks
 
-    def build_geometry(self, study, *, detail, macro, boundary_h=None):
+    def build_geometry(self, study, *, detail, macro):
         return build_geometry(self.config, study, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
@@ -296,7 +299,8 @@ class Case1Model(AffineParametricModel):
         return self._gate_by_geometry(source_cells)
 
     def _gate_by_geometry(self, source_cells) -> list[SourcePort]:
-        cell_x, cell_y = self._cell_xy_centers
+        cell_x = self.cell_layout.centers[:, 0]
+        cell_y = self.cell_layout.centers[:, 1]
         ports = []
         for power, (xlo, xhi), (ylo, yhi) in DIES:
             mask = (
@@ -323,16 +327,22 @@ class Case1Model(AffineParametricModel):
         # The top convective BC applies only to cells carrying real silicon fill
         # (the die crowns); air-only cells on the top layer are dropped so no h
         # is applied to the air domain around the dies.
-        cell_x, cell_y = self._cell_xy_centers
+        cell_x = self.cell_layout.centers[:, 0]
+        cell_y = self.cell_layout.centers[:, 1]
         silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
         top_cells, top_areas = top_cells[silicon], top_areas[silicon]
         bot_cells, bot_areas = surface_exposed_cells(grid, x, y, z, Face.ZM, 0.0)
+
         return (
             BoundaryGroup(
-                cells=top_cells, areas=top_areas, h_range=self.config.h_ranges[0]
+                cells=top_cells,
+                areas=top_areas,
+                h_range=self.config.h_ranges[0],
             ),
             BoundaryGroup(
-                cells=bot_cells, areas=bot_areas, h_range=self.config.h_ranges[1]
+                cells=bot_cells,
+                areas=bot_areas,
+                h_range=self.config.h_ranges[1],
             ),
         )
 
@@ -346,24 +356,29 @@ class Case1Model(AffineParametricModel):
 
     # ------------------------------------------------ cell geometry helpers
 
-    @cached_property
-    def _cell_xy_centers(self) -> tuple[np.ndarray, np.ndarray]:
-        """Per-cell x/y centres (m) from the compiled occupancy grid."""
-        full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.x_vertices_mm * 1.0e-3
-        y = self.config.y_vertices_mm * 1.0e-3
-        xc = 0.5 * (x[:-1] + x[1:])
-        yc = 0.5 * (y[:-1] + y[1:])
-        cell_x = np.empty(full.cell_count)
-        cell_y = np.empty(full.cell_count)
-        for ix in range(full.nx):
-            for iy in range(full.ny):
-                slab = grid[ix, iy, :]
-                valid = slab >= 0
-                cell_x[slab[valid]] = xc[ix]
-                cell_y[slab[valid]] = yc[iy]
-        return cell_x, cell_y
+    def _axis_vertices(self, axis: str) -> np.ndarray:
+        """SI vertex array along ``axis`` (shared geometry hook)."""
+        if axis == "x":
+            return self.config.x_vertices_mm * 1.0e-3
+        if axis == "y":
+            return self.config.y_vertices_mm * 1.0e-3
+        return self.config.z_vertices_mm * 1.0e-3
+
+    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
+        """``{layer_id: (kx, ky, kz)}`` for the case1 stack.
+
+        Layers are added top-first (``add_layer`` pushes to the bottom), so
+        the bottom-up physical LAYERS tuple is added in reverse: the die
+        layer becomes compiled ``layer_id = 0`` (bottom), and FR4 becomes
+        the top ``layer_id = n_layers - 1``.
+        """
+        material_k = {
+            name: (float(kx), float(ky), float(kz))
+            for name, (kx, ky, kz, _, _) in MATERIALS.items()
+        }
+        # Top-first add order: [die_layer, E-10, Aluminum, FR4] reversed.
+        add_order = (DIE_MATERIAL, *[lay[1] for lay in reversed(LAYERS)])
+        return {i: material_k[name] for i, name in enumerate(add_order)}
 
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""
@@ -376,19 +391,6 @@ class Case1Model(AffineParametricModel):
                 & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
             )
         return mask
-
-    def _cell_z_centers(self) -> np.ndarray:
-        """Per-cell z-centre (m) from the compiled occupancy grid."""
-        full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        z = self.config.z_vertices_mm * 1.0e-3
-        zc = 0.5 * (z[:-1] + z[1:])
-        out = np.empty(full.cell_count, dtype=np.float64)
-        for iz in range(full.nz):
-            slab = grid[:, :, iz].ravel()
-            valid = slab >= 0
-            out[slab[valid]] = zc[iz]
-        return out
 
 
 def builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
