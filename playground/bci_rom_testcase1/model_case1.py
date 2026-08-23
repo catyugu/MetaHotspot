@@ -16,8 +16,7 @@ Four 10x10x2 mm silicon dies sit on top (z 20..22 mm) at:
     S2  x[ 5,15]  y[-15,-5] 0.3 W
     S3  x[-15,-5] y[-15,-5] 0.4 W
 
-Boundary (from FloTHERM ``MATRICES`` area/htc pairing, which reproduces the
-reported ~331 K peak): two ambient groups, side faces adiabatic —
+Boundary: two ambient groups, side faces adiabatic —
 
     die-crown faces  (z = 22 mm, 4 dies, area 4e-4 m2)  h = 5e1   (Ambient:0)
     FR4 bottom face  (z =  0 mm, area 6e-3 m2)          h = 1e3   (Ambient:1)

@@ -402,22 +402,21 @@ def solve_rom_transient(
     dt: float,
     duration: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Fixed-step BDF1 transient of the reduced interior.
-
-    Uses Jacobi-preconditioned CG (JPCG) instead of AMG.
-    """
+    """Fixed-step BDF1 (implicit Euler) transient of the reduced interior."""
     n_modes = C_hat.shape[0]
     A = K_hat.tocsc()
     lhs = (C_hat / dt + A).tocsc()
     times = np.arange(0.0, duration + 0.5 * dt, dt)
     history = np.empty((times.size, n_modes), dtype=np.float64)
     theta = np.zeros(n_modes)
+    history[0] = theta
 
     lhs_csr = lhs.tocsr()
     diag = lhs_csr.diagonal()
     M = sp.diags(1.0 / diag, format="csr")
 
-    for i, t in enumerate(times):
+    for i in range(1, times.size):
+        t = times[i]
         rhs = (C_hat @ theta) / dt + F_hat @ np.asarray(power_t(t), dtype=np.float64)
         theta, _ = spla.cg(
             lhs_csr,

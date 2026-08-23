@@ -23,9 +23,7 @@ Boundary scenario (FloTHERM condition-independent pairing, see model_case1)::
     side faces                         : no BC (adiabatic)
     ambient / initial temperature      : 35 C = 308.15 K
 
-Sources S0..S3 = 0.1 / 0.2 / 0.3 / 0.4 W (constant).  The steady full-FVM peak
-is ~330 K, matching the FloTHERM-reported ~331 K.
-
+Sources S0..S3 = 0.1 / 0.2 / 0.3 / 0.4 W (constant).
 Outputs: PNG comparisons (steady bars + transient time series) and a printed
 numeric comparison table.
 """
@@ -187,10 +185,7 @@ def run():
             f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i]-junc_full_ss[i]:>+10.3f}"
             f"{junc_fl_ss[i]-junc_full_ss[i]:>+10.3f}"
         )
-    print(
-        f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K  "
-        f"(Flotherm reported ~331 K)"
-    )
+    print(f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K")
 
     # steady full-field accuracy of our ROM vs full FVM
     rec_acc = accuracy_summary(Tf_ss, rec_ss, full.history, rec_hist, AMB)
