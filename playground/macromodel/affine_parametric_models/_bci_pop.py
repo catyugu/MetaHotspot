@@ -437,9 +437,7 @@ class _BciPop(AffineParametricModel):
             name: (float(kx), float(ky), float(kz))
             for name, kx, ky, kz, _, _ in MATERIALS
         }
-        return tuple(
-            (float(t), *material_k[m]) for t, m, _, _ in self.config.layers
-        )
+        return tuple((float(t), *material_k[m]) for t, m, _, _ in self.config.layers)
 
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:

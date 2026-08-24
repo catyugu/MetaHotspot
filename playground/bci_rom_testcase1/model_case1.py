@@ -379,9 +379,9 @@ class Case1Model(AffineParametricModel):
             name: (float(kx), float(ky), float(kz))
             for name, (kx, ky, kz, _, _) in MATERIALS.items()
         }
-        return tuple(
-            (float(t), *material_k[m]) for t, m, *_ in LAYERS
-        ) + ((DIE_THICKNESS_MM, *material_k[DIE_MATERIAL]),)
+        return tuple((float(t), *material_k[m]) for t, m, *_ in LAYERS) + (
+            (DIE_THICKNESS_MM, *material_k[DIE_MATERIAL]),
+        )
 
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""
