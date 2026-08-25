@@ -320,13 +320,10 @@ class Case1Model(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
-        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = full.cells.x_vertices
-        y = full.cells.y_vertices
-        z = full.cells.z_vertices
-        total_h = self.config.total_height_mm * 1.0e-3
-
-        top_cells, top_areas = surface_exposed_cells(grid, x, y, z, Face.ZP, total_h)
+        cells = full.cells
+        top_cells, top_areas = surface_exposed_cells(
+            cells, Face.ZP, cells.z_vertices[-1]
+        )
         # The top convective BC applies only to cells carrying real silicon fill
         # (the die crowns); air-only cells on the top layer are dropped so no h
         # is applied to the air domain around the dies.
@@ -334,7 +331,7 @@ class Case1Model(AffineParametricModel):
         cell_y = self.cell_layout.centers[:, 1]
         silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
         top_cells, top_areas = top_cells[silicon], top_areas[silicon]
-        bot_cells, bot_areas = surface_exposed_cells(grid, x, y, z, Face.ZM, 0.0)
+        bot_cells, bot_areas = surface_exposed_cells(cells, Face.ZM, 0.0)
 
         return (
             BoundaryGroup(
@@ -356,8 +353,6 @@ class Case1Model(AffineParametricModel):
 
     def group_h_ranges(self):
         return self.config.h_ranges
-
-
 
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""

@@ -378,7 +378,6 @@ class _ChipletStack(AffineParametricModel):
             source_sink=self._source_sink,
         )
 
-
     def source_ports(self) -> list[SourcePort]:
         """One :class:`SourcePort` per heat-source block (4 chiplet regions).
 
@@ -428,21 +427,17 @@ class _ChipletStack(AffineParametricModel):
         return float(np.interp(t, xs, ys))
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        full = self._full
-        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = full.cells.x_vertices
-        y = full.cells.y_vertices
-        z = np.asarray(self._full.cells.z_vertices, dtype=np.float64)
-        top_z = (self.config.detail_height_mm + self.config.macro_height_mm) * 1.0e-3
-        cells, areas = surface_exposed_cells(grid, x, y, z, Face.ZP, top_z)
+        cells = self._full.cells
+        top_cells, top_areas = surface_exposed_cells(
+            cells, Face.ZP, cells.z_vertices[-1]
+        )
         return (
             BoundaryGroup(
-                cells=cells,
-                areas=areas,
+                cells=top_cells,
+                areas=top_areas,
                 h_range=DEFAULT_H_RANGE,
             ),
         )
-
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 1:

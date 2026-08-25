@@ -40,8 +40,8 @@ from typing import Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.compiled import Operators
-from metahotspot.enums import Study
+from metahotspot.compiled import CellFields, Operators
+from metahotspot.enums import Face, Study
 
 from utils import (
     normalized_operators,
@@ -120,90 +120,48 @@ class AffineSolveResult:
 
 
 def surface_exposed_cells(
-    grid_to_cell, x_verts, y_verts, z_verts, face, coord, z_range=None
-):
+    cells: CellFields, face: Face, coord: float, z_range=None
+) -> tuple[np.ndarray, np.ndarray]:
     """Exposed-surface cells + SI face areas for one flat face region.
 
-    ``grid_to_cell`` is the compiled ``(nx, ny, nz)`` occupancy grid (``-1``
-    where empty), ``x_verts/y_verts/z_verts`` the SI vertex arrays along each
-    axis, ``face`` a :class:`Face` and ``coord`` the face's SI coordinate.  A
-    cell is on the face if it touches that surface and has no active neighbour
-    across it (i.e. it is truly exposed).  ``z_range`` (optional) restricts the
-    cells to those whose z-centre falls inside ``(zmin, zmax)``.  Returns
-    ``(cells, areas)``: the full-domain FVM indices of the exposed cells and
-    their SI face area (m²).  Only the four lateral faces (X/Y) and the two Z
-    faces are supported.
+    ``cells`` is the compiled :class:`~metahotspot.compiled.CellFields` view,
+    ``face`` a :class:`~metahotspot.enums.Face` and ``coord`` the face's SI
+    coordinate.  A cell is on the face if it is truly exposed across it (no
+    active neighbour — :attr:`CellFields.exposed_face_mask`) and its face plane
+    sits at ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
+    those whose z-centre falls inside ``(zmin, zmax)``; it is not applied to the
+    Z faces.  Returns ``(cells, areas)``: the full-domain FVM indices of the
+    exposed cells (ascending compact order) and their SI face area (m²).
     """
-    nx, ny, nz = grid_to_cell.shape
-    cells, areas = [], []
-    z_center = 0.5 * (np.asarray(z_verts)[:-1] + np.asarray(z_verts)[1:])
-
-    def in_z(iz):
-        if z_range is None:
-            return True
-        return z_range[0] - 1.0e-9 <= z_center[iz] <= z_range[1] + 1.0e-9
-
-    def face_area(ix, iy, iz):
-        return (y_verts[iy + 1] - y_verts[iy]) * (z_verts[iz + 1] - z_verts[iz])
-
-    def inside(a, lo, hi):
-        return lo - 1.0e-9 <= a <= hi + 1.0e-9
-
-    def neighbour(ix, iy, iz):
-        if 0 <= ix < nx and 0 <= iy < ny and 0 <= iz < nz:
-            return grid_to_cell[ix, iy, iz]
-        return -1
-
-    if face in (4, 5):  # ZM/ZP
-        iz = 0 if face == 4 else nz - 1
-        z_face = z_verts[iz] if face == 4 else z_verts[iz + 1]
-        if not inside(z_face, coord, coord):
+    face = Face(face)
+    candidates = np.flatnonzero((cells.exposed_face_mask >> int(face)) & 1)
+    ijk = cells.ijk
+    sizes = cells.cell_sizes
+    if face in (Face.ZM, Face.ZP):
+        iz = 0 if face == Face.ZM else cells.nz - 1
+        candidates = candidates[ijk[candidates, 2] == iz]
+        z_face = cells.z_vertices[0 if face == Face.ZM else cells.nz]
+        if not (coord - 1.0e-9 <= z_face <= coord + 1.0e-9):
             return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64)
-        above = -1 if face == 4 else 1  # ZM exposed across iz-1, ZP across iz+1
-        for ix in range(nx):
-            for iy in range(ny):
-                cell = grid_to_cell[ix, iy, iz]
-                if cell < 0:
-                    continue
-                nz_ = iz + above
-                if 0 <= nz_ < nz and grid_to_cell[ix, iy, nz_] >= 0:
-                    continue  # not exposed
-                cells.append(cell)
-                areas.append(
-                    (x_verts[ix + 1] - x_verts[ix]) * (y_verts[iy + 1] - y_verts[iy])
-                )
-    else:  # XM(0)/XP(1)/YM(2)/YP(3)
-        for ix in range(nx):
-            for iy in range(ny):
-                for iz in range(nz):
-                    cell = grid_to_cell[ix, iy, iz]
-                    if cell < 0 or not in_z(iz):
-                        continue
-                    if face in (0, 1):  # X faces
-                        x_face = x_verts[ix] if face == 0 else x_verts[ix + 1]
-                        if not inside(x_face, coord, coord):
-                            continue
-                        nix = ix - 1 if face == 0 else ix + 1
-                        if 0 <= nix < nx and grid_to_cell[nix, iy, iz] >= 0:
-                            continue
-                        cells.append(cell)
-                        areas.append(face_area(ix, iy, iz))
-                    else:  # Y faces (2, 3)
-                        y_face = y_verts[iy] if face == 2 else y_verts[iy + 1]
-                        if not inside(y_face, coord, coord):
-                            continue
-                        niy = iy - 1 if face == 2 else iy + 1
-                        if 0 <= niy < ny and grid_to_cell[ix, niy, iz] >= 0:
-                            continue
-                        cells.append(cell)
-                        areas.append(
-                            (x_verts[ix + 1] - x_verts[ix])
-                            * (z_verts[iz + 1] - z_verts[iz])
-                        )
-    return (
-        np.asarray(cells, dtype=np.int64),
-        np.asarray(areas, dtype=np.float64),
-    )
+        areas = sizes[candidates, 0] * sizes[candidates, 1]
+    else:
+        if face in (Face.XM, Face.XP):
+            axis, sign = 0, 1 if face == Face.XP else 0
+            tangent = (1, 2)
+        else:  # YM / YP
+            axis, sign = 1, 1 if face == Face.YP else 0
+            tangent = (0, 2)
+        verts = (cells.x_vertices, cells.y_vertices, cells.z_vertices)[axis]
+        plane = verts[ijk[candidates, axis] + sign]
+        keep = (coord - 1.0e-9 <= plane) & (plane <= coord + 1.0e-9)
+        if z_range is not None:
+            z_center = cells.cz[ijk[candidates, 2]]
+            keep &= (z_range[0] - 1.0e-9 <= z_center) & (
+                z_center <= z_range[1] + 1.0e-9
+            )
+        candidates = candidates[keep]
+        areas = sizes[candidates, tangent[0]] * sizes[candidates, tangent[1]]
+    return candidates.astype(np.int64), np.asarray(areas, dtype=np.float64)
 
 
 class AffineParametricModel:
@@ -378,7 +336,6 @@ class AffineParametricModel:
             terms.append(sp.diags(diagonal))
         return terms
 
-
     @cached_property
     def cell_layout(self) -> CellLayout:
         """Per-cell geometry and reference material values from native fields."""
@@ -392,6 +349,14 @@ class AffineParametricModel:
             half_sizes=0.5 * sizes,
             conductivity=conductivity,
         )
+
+    @staticmethod
+    def _area_weighted(values, areas) -> float:
+        """Area-weighted mean; unweighted mean when ``areas`` sums to zero."""
+        values = np.asarray(values, dtype=np.float64)
+        areas = np.asarray(areas, dtype=np.float64)
+        total = float(areas.sum())
+        return float((values * areas).sum() / total) if total else float(values.mean())
 
     def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
         """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.
@@ -433,10 +398,7 @@ class AffineParametricModel:
             cells = np.asarray(group.cells, dtype=np.int64)
             p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
             areas = np.asarray(group.areas, dtype=np.float64)
-            total = float(areas.sum())
-            out[k] = (
-                float((p_cell * areas).sum() / total) if total else float(p_cell.mean())
-            )
+            out[k] = self._area_weighted(p_cell, areas)
         return out
 
     def h_ranges(self) -> np.ndarray:
@@ -459,9 +421,8 @@ class AffineParametricModel:
             p_lo = self._effective_per_cell(g, axes[k], lo)
             p_hi = self._effective_per_cell(g, axes[k], hi)
             areas = np.asarray(g.areas, dtype=np.float64)
-            total = float(areas.sum())
-            s_lo = float((p_lo * areas).sum() / total) if total else float(p_lo.mean())
-            s_hi = float((p_hi * areas).sum() / total) if total else float(p_hi.mean())
+            s_lo = self._area_weighted(p_lo, areas)
+            s_hi = self._area_weighted(p_hi, areas)
             out.append((min(s_lo, s_hi), max(s_lo, s_hi)))
         return np.asarray(out, dtype=np.float64)
 

@@ -295,14 +295,11 @@ class _BciPop(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
-        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = full.cells.x_vertices
-        y = full.cells.y_vertices
-        z = full.cells.z_vertices
+        cells = full.cells
         half_b = self.config.bottom_size_mm / 2.0 * 1.0e-3
         half_t = self.config.top_size_mm / 2.0 * 1.0e-3
         half_s = self.config.solder_size_mm / 2.0 * 1.0e-3
-        total_h = self.config.total_height_mm * 1.0e-3
+        total_h = cells.z_vertices[-1]
 
         # physical z-intervals (m) for the exposed-wall ranges.
         bottom_hi = (
@@ -316,10 +313,10 @@ class _BciPop(AffineParametricModel):
         top_lo = solder_hi
 
         # top group: top-mold top face (ZP at full height)
-        top_cells, top_areas = surface_exposed_cells(grid, x, y, z, Face.ZP, total_h)
+        top_cells, top_areas = surface_exposed_cells(cells, Face.ZP, total_h)
 
         # bottom group: bottom-substrate bottom face (ZM at z=0)
-        bot_cells, bot_areas = surface_exposed_cells(grid, x, y, z, Face.ZM, 0.0)
+        bot_cells, bot_areas = surface_exposed_cells(cells, Face.ZM, 0.0)
 
         # sides group: all exposed lateral walls.  The bottom package outer
         # walls (x/y = ±half_b) run z [0, bottom_hi]; the solder overhang adds
@@ -341,11 +338,11 @@ class _BciPop(AffineParametricModel):
             (Face.YM, -half_t, top_lo, total_h),
             (Face.YP, half_t, top_lo, total_h),
         ):
-            cells, areas = surface_exposed_cells(
-                grid, x, y, z, axis, coord, z_range=(lo, hi)
+            wall_cells, wall_areas = surface_exposed_cells(
+                cells, axis, coord, z_range=(lo, hi)
             )
-            side_cells.append(cells)
-            side_areas.append(areas)
+            side_cells.append(wall_cells)
+            side_areas.append(wall_areas)
         side_cells = (
             np.concatenate(side_cells) if side_cells else np.empty(0, dtype=np.int64)
         )
@@ -416,6 +413,7 @@ class _BciPop(AffineParametricModel):
         rng = np.random.default_rng(20260805)
         draws = 10.0 ** rng.uniform(lows, highs, size=(count, ranges.shape[0]))
         return [tuple(float(v) for v in row) for row in draws]
+
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
     cfg = PopConfig(**(overrides or {}))
