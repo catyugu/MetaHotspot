@@ -340,13 +340,12 @@ class AffineParametricModel:
     def cell_layout(self) -> CellLayout:
         """Per-cell geometry and reference material values from native fields."""
         cells = self._full.cells
-        sizes = cells.cell_sizes
         conductivity = np.column_stack(
             (cells.conductivity_x, cells.conductivity_y, cells.conductivity_z)
         )
         return CellLayout(
             centers=cells.centers,
-            half_sizes=0.5 * sizes,
+            half_sizes=cells.half_sizes,
             conductivity=conductivity,
         )
 
