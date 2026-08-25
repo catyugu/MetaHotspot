@@ -160,8 +160,12 @@ class CellFields:
         ijk[:, 1] = (grid % yz) // self.nz
         ijk[:, 2] = grid % self.nz
         object.__setattr__(self, "_ijk", ijk)
-        object.__setattr__(self, "_grid3d", self.grid_to_cell.reshape(self.nx, self.ny, self.nz))
-        object.__setattr__(self, "_exposed_face_mask", self._compute_exposed_face_mask())
+        object.__setattr__(
+            self, "_grid3d", self.grid_to_cell.reshape(self.nx, self.ny, self.nz)
+        )
+        object.__setattr__(
+            self, "_exposed_face_mask", self._compute_exposed_face_mask()
+        )
         for value in self.__dict__.values():
             if isinstance(value, np.ndarray):
                 value.setflags(write=False)
@@ -295,10 +299,7 @@ class Compiled(OwnedHandle):
                     name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
                     for name, ctype, _, _ in _CELL_FIELD_SPECS
                 },
-                **{
-                    count: arrays[name].size
-                    for name, _, _, count in _CELL_FIELD_SPECS
-                },
+                **{count: arrays[name].size for name, _, _, count in _CELL_FIELD_SPECS},
             )
             check(
                 self._dll.mhs_compiled_copy_cell_fields(
@@ -350,12 +351,24 @@ class Compiled(OwnedHandle):
             state = self.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
         if state.size != self.cell_count:
-            raise ValueError(f"state size ({state.size}) != cell_count ({self.cell_count})")
-        values = {name: np.empty(state.size, dtype=np.float64) for name in (
-            "conductivity_x", "conductivity_y", "conductivity_z", "density", "specific_heat"
-        )}
+            raise ValueError(
+                f"state size ({state.size}) != cell_count ({self.cell_count})"
+            )
+        values = {
+            name: np.empty(state.size, dtype=np.float64)
+            for name in (
+                "conductivity_x",
+                "conductivity_y",
+                "conductivity_z",
+                "density",
+                "specific_heat",
+            )
+        }
         native = MhsMaterialValues(
-            **{name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double)) for name in values},
+            **{
+                name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+                for name in values
+            },
             count=state.size,
         )
         check(

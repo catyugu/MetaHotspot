@@ -2,8 +2,8 @@
 #include "api/metahotspot.h"
 #include "api/internal.h"
 
-#include "common/model_definition.hpp"
 #include "common/mesh.hpp"
+#include "common/model_definition.hpp"
 #include "common/solver.hpp"
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
@@ -699,8 +699,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         mhs::core::Index ix, iy, iz;
         mhs::utils::decode_index(grid, mesh.ny, mesh.nz, ix, iy, iz);
         const auto& props = model.material_table[cells.material_id[cell]];
-        const mhs::core::FieldContext context {
-            mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], temperature[cell], time};
+        const mhs::core::FieldContext context {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], temperature[cell], time};
         values->conductivity_x[cell] = props.kx.eval(context);
         values->conductivity_y[cell] = props.ky.eval(context);
         values->conductivity_z[cell] = props.kz.eval(context);

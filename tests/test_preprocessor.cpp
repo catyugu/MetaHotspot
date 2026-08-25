@@ -2,8 +2,8 @@
 #include "compiler/model_compiler.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
-#include <gtest/gtest.h>
 #include <algorithm>
+#include <gtest/gtest.h>
 
 using namespace mhs::core;
 using namespace mhs::sim;
