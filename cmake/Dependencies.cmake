@@ -35,9 +35,7 @@ CPMAddPackage(
 )
 
 # ----------------------------------------------------------------------------
-# muparser - mathematical expression parser. Samples/OpenMP/shared defaults are
-# fine as-is; the only knob worth pinning is a static lib.
-#
+# muparser - mathematical expression parser.
 # NOTE the BUILD_SHARED_LIBS coupling below: setting it OFF here, and later ON
 # again for oneTBB, relies on call order (the last writer wins in the global
 # scope). The oneTBB block below sets it ON, which is what keeps TBB shared.
@@ -47,6 +45,8 @@ CPMAddPackage(
     GITHUB_REPOSITORY beltoforion/muparser
     GIT_TAG v2.3.5
     OPTIONS
+    "ENABLE_SAMPLES OFF"
+    "BUILD_TESTING OFF"
     "BUILD_SHARED_LIBS OFF"
 )
 
