@@ -2,11 +2,18 @@
 
 ## 0. 计划状态
 
-- 状态：已固定，待实施
+- 状态：已完成（as-built，2026-08-25）
 - 类型：约简重构（DRY）——在已完成的 cell-metadata 迁移（`cell-metadata-migration.md`，已删除）基础上，消除新契约引入的冗余与重复
 - 范围：C++ API copy-out、model_compiler、Python `CellFields` 视图、ROM 基础设施（`AffineParametricModel`）、playground 模型
 - 纪律：不改变任何数值语义、不改变 Compact Cell Order、不改变公开契约字段集合、不修改 solver/assembler
 - 本计划不包含代码实现细节之外的科学算法改动
+
+实施偏离记录（评审后回退）：
+
+- R1（表驱动 std::function copy-out）与 R2（`GridIndex` / `decode_grid_index` 共享 helper）被评审为过度工程，已回退：
+  - `mhs_compiled_copy_cell_fields` 恢复为顺序 `copy_vector` 链（仅保留 `heat_source_id` → `heat_source_idx` 命名统一，见 R3）；
+  - `src/common/model.hpp` 不再新增 `GridIndex`；`model_compiler.cpp` 与 `tests/test_preprocessor.cpp` 恢复各自内联的 grid→ijk 解码。
+  - 原因：copy-out 函数是单一调用点、顺序链可读且不重复；grid→ijk 解码仅在 compiler 局部使用，抽象成公共 helper 收益低。
 
 ## 1. 评估结论（refactor/cell-metadata 分支，0a18d97..HEAD）
 

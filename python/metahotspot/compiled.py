@@ -92,11 +92,6 @@ class CellFields:
         return self._vertices(self.cz, self.dz)
 
     @property
-    def grid3d(self) -> np.ndarray:
-        """Occupancy grid ``grid_to_cell`` reshaped to ``(nx, ny, nz)``."""
-        return self._grid3d
-
-    @property
     def ijk(self) -> np.ndarray:
         """Per-compact-cell ``(ix, iy, iz)`` grid coordinates, decoded once."""
         return self._ijk
