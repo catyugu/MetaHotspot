@@ -13,6 +13,7 @@ from metahotspot._handle import OwnedHandle
 from metahotspot.types import (
     MhsCompiled,
     MhsCellFields,
+    MhsMaterialValues,
     MhsCompiledInfo,
     MhsOperators,
     MhsOperatorsInfo,
@@ -43,11 +44,6 @@ _CELL_FIELD_SPECS: tuple[tuple[str, type, type, str], ...] = (
     ("block_id", ctypes.c_uint32, np.uint32, "cell_count"),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count"),
     ("heat_source_idx", ctypes.c_uint32, np.uint32, "cell_count"),
-    ("conductivity_x", ctypes.c_double, np.float64, "cell_count"),
-    ("conductivity_y", ctypes.c_double, np.float64, "cell_count"),
-    ("conductivity_z", ctypes.c_double, np.float64, "cell_count"),
-    ("density", ctypes.c_double, np.float64, "cell_count"),
-    ("specific_heat", ctypes.c_double, np.float64, "cell_count"),
 )
 
 
@@ -65,11 +61,6 @@ class CellFields:
     block_id: np.ndarray
     material_id: np.ndarray
     heat_source_idx: np.ndarray
-    conductivity_x: np.ndarray
-    conductivity_y: np.ndarray
-    conductivity_z: np.ndarray
-    density: np.ndarray
-    specific_heat: np.ndarray
 
     # Face directions in exposed_face_mask bit order (bit 0..5 = XM, XP, YM,
     # YP, ZM, ZP), matching metahotspot.enums.Face.
@@ -352,6 +343,32 @@ class Compiled(OwnedHandle):
     @property
     def cells(self) -> CellFields:
         return self._fetch_metadata()
+
+    def eval_materials(self, state: np.ndarray | None = None, time: float = 0.0):
+        """Evaluate material laws for every compact cell at ``state`` and ``time``."""
+        if state is None:
+            state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
+        if state.size != self.cell_count:
+            raise ValueError(f"state size ({state.size}) != cell_count ({self.cell_count})")
+        values = {name: np.empty(state.size, dtype=np.float64) for name in (
+            "conductivity_x", "conductivity_y", "conductivity_z", "density", "specific_heat"
+        )}
+        native = MhsMaterialValues(
+            **{name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double)) for name in values},
+            count=state.size,
+        )
+        check(
+            self._dll.mhs_compiled_eval_materials(
+                self._handle,
+                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                state.size,
+                time,
+                ctypes.byref(native),
+            ),
+            "eval_materials",
+        )
+        return values
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)

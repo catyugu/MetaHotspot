@@ -17,6 +17,7 @@ from metahotspot.types import (
     MhsFaceRegion,
     MhsCompiledInfo,
     MhsCellFields,
+    MhsMaterialValues,
     MhsOperatorsInfo,
     MhsSolutionInfo,
     _SolveOptionsCStruct,
@@ -265,6 +266,17 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
         "mhs_compiled_copy_cell_fields",
         ctypes.c_int32,
         [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCellFields)],
+    ),
+    (
+        "mhs_compiled_eval_materials",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.c_double,
+            ctypes.POINTER(MhsMaterialValues),
+        ],
     ),
     # ---- Assembly ----
     (

@@ -135,7 +135,7 @@ typedef struct {
     size_t nx, ny, nz;
 } mhs_compiled_info_t;
 
-/** Caller-owned buffers for one complete compiled CellFields snapshot. */
+/** Caller-owned buffers for compiled cell topology and identities. */
 typedef struct {
     size_t* grid_to_cell;
     size_t grid_count;
@@ -154,12 +154,17 @@ typedef struct {
     uint32_t* block_id;
     uint32_t* material_id;
     uint32_t* heat_source_idx;
+} mhs_cell_fields_t;
+
+/** Caller-owned buffers for material values evaluated at a supplied state/time. */
+typedef struct {
     double* conductivity_x;
     double* conductivity_y;
     double* conductivity_z;
     double* density;
     double* specific_heat;
-} mhs_cell_fields_t;
+    size_t count;
+} mhs_material_values_t;
 
 /** Sizes for an owned operator handle. K and C are square state_count matrices. */
 typedef struct {
@@ -278,6 +283,8 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
 MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
+MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
+    size_t temperature_count, double time, mhs_material_values_t* values);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */

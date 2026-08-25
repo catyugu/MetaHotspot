@@ -240,27 +240,9 @@ namespace mhs::sim {
         // Cell assignment and boundary resolution.
         model.cells = assign_cell_layers(resolved_layers, mesh);
         const auto cell_count = model.cells.cell_to_grid.size();
-        model.cells.conductivity_x.resize(cell_count);
-        model.cells.conductivity_y.resize(cell_count);
-        model.cells.conductivity_z.resize(cell_count);
-        model.cells.density.resize(cell_count);
-        model.cells.specific_heat.resize(cell_count);
         for (mhs::core::Index cell = 0; cell < cell_count; ++cell) {
-            const auto grid = model.cells.cell_to_grid[cell];
-            const auto ix = grid / (mesh.ny * mesh.nz);
-            const auto iy = (grid % (mesh.ny * mesh.nz)) / mesh.nz;
-            const auto iz = grid % mesh.nz;
-            const auto material = static_cast<size_t>(model.cells.material_id[cell]);
-            if (material >= model.material_table.size())
+            if (static_cast<size_t>(model.cells.material_id[cell]) >= model.material_table.size())
                 throw std::out_of_range("cell material ID out of range while compiling");
-            const auto& props = model.material_table[material];
-            const mhs::core::FieldContext context {
-                mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], model.initial_temperature, 0.0};
-            model.cells.conductivity_x[cell] = props.kx.eval(context);
-            model.cells.conductivity_y[cell] = props.ky.eval(context);
-            model.cells.conductivity_z[cell] = props.kz.eval(context);
-            model.cells.density[cell] = props.rho.eval(context);
-            model.cells.specific_heat[cell] = props.c.eval(context);
         }
         resolve_boundary_patches(mesh, model.cells, compiled_boundaries, default_boundary, model.face_bcs);
 

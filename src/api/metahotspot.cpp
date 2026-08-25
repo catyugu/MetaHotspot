@@ -3,6 +3,7 @@
 #include "api/internal.h"
 
 #include "common/model_definition.hpp"
+#include "common/mesh.hpp"
 #include "common/solver.hpp"
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
@@ -672,19 +673,42 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     status = copy_vector(cells.heat_source_idx, fields->heat_source_idx, fields->cell_count, "heat_source_idx");
     if (status != MHS_OK)
         return status;
-    status = copy_vector(cells.conductivity_x, fields->conductivity_x, fields->cell_count, "conductivity_x");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.conductivity_y, fields->conductivity_y, fields->cell_count, "conductivity_y");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.conductivity_z, fields->conductivity_z, fields->cell_count, "conductivity_z");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.density, fields->density, fields->cell_count, "density");
-    if (status != MHS_OK)
-        return status;
-    return copy_vector(cells.specific_heat, fields->specific_heat, fields->cell_count, "specific_heat");
+    return MHS_OK;
+}
+
+MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
+    size_t temperature_count, double time, mhs_material_values_t* values)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(temperature);
+    CHECK_NULL(values);
+    const auto& model = *c->model;
+    const auto& cells = model.cells;
+    const auto& mesh = model.mesh;
+    if (temperature_count != cells.cell_to_grid.size() || values->count != temperature_count) {
+        SET_ERR("material evaluation buffer sizes do not match compiled model");
+        return MHS_ERR_INVALID_ARG;
+    }
+    if (!values->conductivity_x || !values->conductivity_y || !values->conductivity_z || !values->density
+        || !values->specific_heat) {
+        SET_ERR("NULL material evaluation output buffer");
+        return MHS_ERR_NULL_PTR;
+    }
+    for (mhs::core::Index cell = 0; cell < cells.cell_to_grid.size(); ++cell) {
+        const auto grid = cells.cell_to_grid[cell];
+        mhs::core::Index ix, iy, iz;
+        mhs::utils::decode_index(grid, mesh.ny, mesh.nz, ix, iy, iz);
+        const auto& props = model.material_table[cells.material_id[cell]];
+        const mhs::core::FieldContext context {
+            mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], temperature[cell], time};
+        values->conductivity_x[cell] = props.kx.eval(context);
+        values->conductivity_y[cell] = props.ky.eval(context);
+        values->conductivity_z[cell] = props.kz.eval(context);
+        values->density[cell] = props.rho.eval(context);
+        values->specific_heat[cell] = props.c.eval(context);
+    }
+    mhs_detail_clear_last_error();
+    return MHS_OK;
 }
 
 /* ------------------------------------------------------------------ */

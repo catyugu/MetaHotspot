@@ -85,11 +85,17 @@ class MhsCellFields(ctypes.Structure):
         ("block_id", ctypes.POINTER(ctypes.c_uint32)),
         ("material_id", ctypes.POINTER(ctypes.c_uint32)),
         ("heat_source_idx", ctypes.POINTER(ctypes.c_uint32)),
+    ]
+
+
+class MhsMaterialValues(ctypes.Structure):
+    _fields_ = [
         ("conductivity_x", ctypes.POINTER(ctypes.c_double)),
         ("conductivity_y", ctypes.POINTER(ctypes.c_double)),
         ("conductivity_z", ctypes.POINTER(ctypes.c_double)),
         ("density", ctypes.POINTER(ctypes.c_double)),
         ("specific_heat", ctypes.POINTER(ctypes.c_double)),
+        ("count", ctypes.c_size_t),
     ]
 
 
