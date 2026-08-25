@@ -84,7 +84,7 @@ class MhsCellFields(ctypes.Structure):
         ("layer_id", ctypes.POINTER(ctypes.c_uint32)),
         ("block_id", ctypes.POINTER(ctypes.c_uint32)),
         ("material_id", ctypes.POINTER(ctypes.c_uint32)),
-        ("heat_source_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("heat_source_idx", ctypes.POINTER(ctypes.c_uint32)),
         ("conductivity_x", ctypes.POINTER(ctypes.c_double)),
         ("conductivity_y", ctypes.POINTER(ctypes.c_double)),
         ("conductivity_z", ctypes.POINTER(ctypes.c_double)),

@@ -84,10 +84,27 @@
 2. 三个模型 `boundary_groups` 改用 `cells = full.cells` + 新签名；删除 `grid`/`x`/`y`/`z` 重复局部变量；`_chiplet_stack.py` 删除冗余 `np.asarray`；`model_case1.py` / `_bci_pop.py` 顶部面坐标改用 `cells.z_vertices[-1]`（编译事实）替代 config 派生高度。
 3. R8：提取 `_area_weighted(values, areas)`，`physical_to_effective` 与 `h_ranges` 复用。
 
-基线记录（reproduce_case1，迁移前）：
+基线记录（reproduce_case1，迁移前，2026-08-25）：
 
-```
-（Phase 3 实施前填写：steady junction 温度、ROM 阶数、transient 最大误差、各 h 场景峰值温度）
+```text
+model: bci_case1  full cells=134640  ports=4  groups=2
+basis order = 45  response err=2.10e-07
+
+=== STEADY junction temperatures (K) ===
+port    full FVM   our ROM  Flotherm
+S0       316.827   316.827   316.827
+S1       320.781   320.781   320.780
+S2       324.735   324.735   324.735
+S3       328.690   328.690   328.689
+
+steady full-FVM field peak = 328.707 K
+
+=== TRANSIENT max junction error vs full FVM (% of steady rise) ===
+port     our ROM  Flotherm
+S0        0.0028    0.0088
+S1        0.0022    0.0029
+S2        0.0018    0.0043
+S3        0.0017    0.0026
 ```
 
 验证：`reproduce_case1.py` 结果与上表逐项一致（面积与暴露集合必须逐位相同，ROM 结果应完全复现）；`python run_cases.py` 全过。
