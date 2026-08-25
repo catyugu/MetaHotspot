@@ -163,10 +163,8 @@ TEST(PreprocessorTest, CellFieldsReferencePropertiesMatchCompactCellOrder)
     ASSERT_EQ(cells.specific_heat.size(), cells.cell_to_grid.size());
 
     for (mhs::core::Index cell = 0; cell < cells.cell_to_grid.size(); ++cell) {
-        const auto grid = cells.cell_to_grid[cell];
-        const auto ix = grid / (model.mesh.ny * model.mesh.nz);
-        const auto iy = (grid % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
-        const auto iz = grid % model.mesh.nz;
+        const auto [ix, iy, iz]
+            = mhs::core::decode_grid_index(cells.cell_to_grid[cell], model.mesh.ny, model.mesh.nz);
         const mhs::core::FieldContext context {
             model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], model.initial_temperature, 0.0};
         EXPECT_DOUBLE_EQ(cells.conductivity_x[cell], model.material_table[0].kx.eval(context));

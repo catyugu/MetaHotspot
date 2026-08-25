@@ -153,7 +153,7 @@ typedef struct {
     uint32_t* layer_id;
     uint32_t* block_id;
     uint32_t* material_id;
-    uint32_t* heat_source_id;
+    uint32_t* heat_source_idx;
     double* conductivity_x;
     double* conductivity_y;
     double* conductivity_z;

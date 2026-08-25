@@ -65,6 +65,21 @@ namespace mhs::core {
         std::vector<double> specific_heat;
     };
 
+    // ── Grid index decode (ix-iy-iz order) ──────────────────────────────
+    struct GridIndex {
+        Index ix = 0;
+        Index iy = 0;
+        Index iz = 0;
+    };
+
+    /// Decode a flat grid index into (ix, iy, iz) under the canonical
+    /// ix-iy-iz traversal: grid = ix * (ny * nz) + iy * nz + iz.
+    inline GridIndex decode_grid_index(Index grid, Index ny, Index nz)
+    {
+        const Index yz = ny * nz;
+        return {grid / yz, (grid % yz) / nz, grid % nz};
+    }
+
     // ── Probe / observation point ────────────────────────────────────────
     struct ProbePoint {
         std::string name;

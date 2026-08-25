@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <span>
@@ -636,55 +637,32 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERR_INVALID_ARG;
     }
-    auto status = copy_vector(cells.grid_to_cell, fields->grid_to_cell, fields->grid_count, "grid_to_cell");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.cell_to_grid, fields->cell_to_grid, fields->cell_count, "cell_to_grid");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dx, fields->dx, fields->nx, "dx");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dy, fields->dy, fields->ny, "dy");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dz, fields->dz, fields->nz, "dz");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cx, fields->cx, fields->nx, "cx");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cy, fields->cy, fields->ny, "cy");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cz, fields->cz, fields->nz, "cz");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.layer_id, fields->layer_id, fields->cell_count, "layer_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.block_id, fields->block_id, fields->cell_count, "block_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.material_id, fields->material_id, fields->cell_count, "material_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.heat_source_idx, fields->heat_source_id, fields->cell_count, "heat_source_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.conductivity_x, fields->conductivity_x, fields->cell_count, "conductivity_x");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.conductivity_y, fields->conductivity_y, fields->cell_count, "conductivity_y");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.conductivity_z, fields->conductivity_z, fields->cell_count, "conductivity_z");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.density, fields->density, fields->cell_count, "density");
-    if (status != MHS_OK)
-        return status;
-    return copy_vector(cells.specific_heat, fields->specific_heat, fields->cell_count, "specific_heat");
+    const std::vector<std::function<mhs_status_t()>> copies {
+        [&] { return copy_vector(cells.grid_to_cell, fields->grid_to_cell, fields->grid_count, "grid_to_cell"); },
+        [&] { return copy_vector(cells.cell_to_grid, fields->cell_to_grid, fields->cell_count, "cell_to_grid"); },
+        [&] { return copy_vector(mesh.dx, fields->dx, fields->nx, "dx"); },
+        [&] { return copy_vector(mesh.dy, fields->dy, fields->ny, "dy"); },
+        [&] { return copy_vector(mesh.dz, fields->dz, fields->nz, "dz"); },
+        [&] { return copy_vector(mesh.cx, fields->cx, fields->nx, "cx"); },
+        [&] { return copy_vector(mesh.cy, fields->cy, fields->ny, "cy"); },
+        [&] { return copy_vector(mesh.cz, fields->cz, fields->nz, "cz"); },
+        [&] { return copy_vector(cells.layer_id, fields->layer_id, fields->cell_count, "layer_id"); },
+        [&] { return copy_vector(cells.block_id, fields->block_id, fields->cell_count, "block_id"); },
+        [&] { return copy_vector(cells.material_id, fields->material_id, fields->cell_count, "material_id"); },
+        [&] {
+            return copy_vector(cells.heat_source_idx, fields->heat_source_idx, fields->cell_count, "heat_source_idx");
+        },
+        [&] { return copy_vector(cells.conductivity_x, fields->conductivity_x, fields->cell_count, "conductivity_x"); },
+        [&] { return copy_vector(cells.conductivity_y, fields->conductivity_y, fields->cell_count, "conductivity_y"); },
+        [&] { return copy_vector(cells.conductivity_z, fields->conductivity_z, fields->cell_count, "conductivity_z"); },
+        [&] { return copy_vector(cells.density, fields->density, fields->cell_count, "density"); },
+        [&] { return copy_vector(cells.specific_heat, fields->specific_heat, fields->cell_count, "specific_heat"); },
+    };
+    for (const auto& copy : copies) {
+        if (auto status = copy(); status != MHS_OK)
+            return status;
+    }
+    return MHS_OK;
 }
 
 /* ------------------------------------------------------------------ */
