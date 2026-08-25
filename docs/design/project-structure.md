@@ -17,7 +17,7 @@
 | `bin/`                     | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理                 |
 | `tests/`                   | `mhs_tests`         | 单元测试和模块行为验证                             |
 
-模块内按职责拆分 `.cpp`，但 assembler、scheduler、fluid 等实现细节不单独建库。第三方依赖或编译成本边界才构成独立目标。
+模块内按职责拆分 `.cpp`，但 assembler、time scheme、fluid 等实现细节不单独建库。第三方依赖或编译成本边界才构成独立目标。
 
 ## 命名空间
 

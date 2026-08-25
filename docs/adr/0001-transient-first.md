@@ -21,15 +21,11 @@ The whole system is designed for transient simulation. Steady state is a single 
     - `time_scheme::estimate_error(…)` is a pure function that returns an LTE estimate and a PI-style step-size suggestion.
 - Nonlinear iteration lives inside each step. The fixed-point iteration in `nonlinear_solve` uses Anderson acceleration with a divergence guard and warm-up; on guard trip it falls back to a damped Picard step.
 - `solve_system()` receives one `SystemAssembler(state, time)` callback. Each
-  nonlinear iteration requests a complete current linearization; the scheduler
+  nonlinear iteration requests a complete current linearization; the solve loop
   does not know state partitions or coupling topology.
-- `assemble_modal_port_system()` is a separate composition routine for
-  `[FVM temperatures, macro modes]`. It reassembles FVM physics, evaluates the
-  current model-side half conductance, and projects the physical interface with
-  `T_port = Phi * q`.
 - Time interpolation of the global state is forbidden. Modal coefficients are
   coordinates in a reduced trial space, not physical nodal values for which a
-  scheduler-level interpolation policy can be assumed.
+  time-step-level interpolation policy can be assumed.
 
 ## Rationale
 
@@ -45,9 +41,3 @@ The whole system is designed for transient simulation. Steady state is a single 
   solver calls the aggregate `SystemAssembler`, then passes the returned
   operators to `build_system`. The LTE estimate from `estimate_error` drives
   the next step's `dt` via `StepController::prepare`.
-- **Transient modal contract.** A reduced macro contributes `K_r`, `C_r`, and
-  `f_r` in one fixed basis and an initial modal state consistent with that
-  basis. Static compliance modes are suitable evidence for the steady demo,
-  but transient fidelity requires a dynamic/snapshot basis and a time-step
-  convergence study. The scheduler and assembler support the transient
-  algebra; the basis-generation method determines ROM accuracy.

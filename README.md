@@ -18,12 +18,12 @@
 
 ### 构建目标
 
-- **`src/model/`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
+- **`src/common/model_definition.hpp`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
 - **`mhs_common`**：header-only 的运行期数据契约与网格助手，作为 compiler、solver 和结果 IO 的稳定依赖边界。
 - **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
 - **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
 - **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
-- **`mhs_linear`**：Eigen / MKL 线性求解封装；与建模代码的增量编译隔离。
+- **`mhs_linear`**：AMGCL/Eigen 迭代求解和可选 MKL/Pardiso 封装；与建模代码的增量编译隔离。
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
@@ -65,7 +65,7 @@ metahotspot --input cases/.../case.xml --fluid-overlay cases/.../case_additional
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
-- **Eigen**：稠密向量、稀疏矩阵，以及 EigenSparseLU / EigenBiCGSTAB 求解器。
+- **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
 
