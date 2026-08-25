@@ -12,6 +12,7 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.types import (
     MhsCompiled,
+    MhsCellFields,
     MhsCompiledInfo,
     MhsOperators,
     MhsOperatorsInfo,
@@ -46,14 +47,6 @@ class CellFields:
     density: np.ndarray
     specific_heat: np.ndarray
 
-    @property
-    def _active_grid(self) -> np.ndarray:
-        return self.cell_to_grid
-
-    @property
-    def active_grid_to_cell(self) -> np.ndarray:
-        return self.grid_to_cell
-
     @staticmethod
     def _vertices(centers: np.ndarray, widths: np.ndarray) -> np.ndarray:
         return np.concatenate(([centers[0] - 0.5 * widths[0]], centers + 0.5 * widths))
@@ -77,10 +70,13 @@ class CellFields:
         mask = np.zeros(self.cell_to_grid.size, dtype=np.uint8)
         invalid = np.iinfo(self.grid_to_cell.dtype).max
         for cell, (ix, iy, iz) in enumerate(ijk):
-            for face, (dx, dy, dz) in enumerate(((-1, 0, 0), (1, 0, 0), (0, -1, 0),
-                                                   (0, 1, 0), (0, 0, -1), (0, 0, 1))):
+            for face, (dx, dy, dz) in enumerate(
+                ((-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1))
+            ):
                 nix, niy, niz = ix + dx, iy + dy, iz + dz
-                if not (0 <= nix < self.nx and 0 <= niy < self.ny and 0 <= niz < self.nz):
+                if not (
+                    0 <= nix < self.nx and 0 <= niy < self.ny and 0 <= niz < self.nz
+                ):
                     mask[cell] |= 1 << face
                 elif grid[nix, niy, niz] == invalid:
                     mask[cell] |= 1 << face
@@ -90,7 +86,9 @@ class CellFields:
     @property
     def cell_sizes(self) -> np.ndarray:
         ijk = self._ijk()
-        return np.column_stack((self.dx[ijk[:, 0]], self.dy[ijk[:, 1]], self.dz[ijk[:, 2]]))
+        return np.column_stack(
+            (self.dx[ijk[:, 0]], self.dy[ijk[:, 1]], self.dz[ijk[:, 2]])
+        )
 
     def _ijk(self) -> np.ndarray:
         grid = self.cell_to_grid
@@ -104,20 +102,17 @@ class CellFields:
     @property
     def centers(self) -> np.ndarray:
         ijk = self._ijk()
-        return np.column_stack((self.cx[ijk[:, 0]], self.cy[ijk[:, 1]], self.cz[ijk[:, 2]]))
-
-    @property
-    def sizes(self) -> np.ndarray:
-        ijk = self._ijk()
-        return np.column_stack((self.dx[ijk[:, 0]], self.dy[ijk[:, 1]], self.dz[ijk[:, 2]]))
+        return np.column_stack(
+            (self.cx[ijk[:, 0]], self.cy[ijk[:, 1]], self.cz[ijk[:, 2]])
+        )
 
     @property
     def half_sizes(self) -> np.ndarray:
-        return self.sizes * 0.5
+        return self.cell_sizes * 0.5
 
     @property
     def volumes(self) -> np.ndarray:
-        sizes = self.sizes
+        sizes = self.cell_sizes
         return sizes[:, 0] * sizes[:, 1] * sizes[:, 2]
 
     @property
@@ -140,17 +135,6 @@ class CellFields:
         for value in self.__dict__.values():
             if isinstance(value, np.ndarray):
                 value.setflags(write=False)
-
-
-@dataclass(frozen=True)
-class _CompiledMetadata:
-    cell_count: int
-    study_type: int
-    initial_temperature: float
-    nx: int
-    ny: int
-    nz: int
-    cells: CellFields
 
 
 def _operators_from_handle(dll, handle) -> Operators:
@@ -251,7 +235,8 @@ class Compiled(OwnedHandle):
 
     def __init__(self) -> None:
         super().__init__(None, None)
-        self._metadata_cache = None
+        self._info = None
+        self._cells = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
@@ -264,8 +249,8 @@ class Compiled(OwnedHandle):
         self._fetch_metadata()
         return self
 
-    def _fetch_metadata(self) -> _CompiledMetadata:
-        if self._metadata_cache is None:
+    def _fetch_metadata(self) -> CellFields:
+        if self._cells is None:
             info = MhsCompiledInfo()
             check(
                 self._dll.mhs_compiled_get_info(self._handle, ctypes.byref(info)),
@@ -283,72 +268,114 @@ class Compiled(OwnedHandle):
             blocks = np.empty(info.cell_count, dtype=np.uint32)
             materials = {
                 name: np.empty(info.cell_count, dtype=np.float64)
-                for name in ("conductivity_x", "conductivity_y", "conductivity_z", "density", "specific_heat")
+                for name in (
+                    "conductivity_x",
+                    "conductivity_y",
+                    "conductivity_z",
+                    "density",
+                    "specific_heat",
+                )
             }
-            check(self._dll.mhs_compiled_copy_cell_topology(
-                self._handle, grid.ctypes.data_as(ctypes.POINTER(ctypes.c_size_t)), grid.size,
-                cell_to_grid.ctypes.data_as(ctypes.POINTER(ctypes.c_size_t)), cell_to_grid.size), "cell_topology")
-            check(self._dll.mhs_compiled_copy_cell_geometry(
-                self._handle,
-                dx.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), dx.size,
-                dy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), dy.size,
-                dz.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), dz.size,
-                cx.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                cy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                cz.ctypes.data_as(ctypes.POINTER(ctypes.c_double))), "cell_geometry")
             material_ids = np.empty(info.cell_count, dtype=np.uint32)
             heat_source_ids = np.empty(info.cell_count, dtype=np.uint32)
-            check(self._dll.mhs_compiled_copy_cell_ownership(
-                self._handle,
-                layers.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
-                blocks.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
-                material_ids.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
-                heat_source_ids.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)), info.cell_count), "cell_ownership")
-            check(self._dll.mhs_compiled_copy_cell_material_values(
-                self._handle,
-                *(array.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) for array in materials.values()),
-                info.cell_count), "cell_material_values")
-            cells = CellFields(grid_to_cell=grid, cell_to_grid=cell_to_grid, dx=dx, dy=dy, dz=dz,
-                cx=cx, cy=cy, cz=cz, layer_id=layers, block_id=blocks, material_id=material_ids,
-                heat_source_id=heat_source_ids, **materials)
-            self._metadata_cache = _CompiledMetadata(
-                int(info.cell_count),
-                int(info.study_type),
-                float(info.initial_temperature),
-                int(info.nx),
-                int(info.ny),
-                int(info.nz),
-                cells,
+            native = MhsCellFields(
+                grid_to_cell=grid.ctypes.data_as(ctypes.POINTER(ctypes.c_size_t)),
+                grid_count=grid.size,
+                cell_to_grid=cell_to_grid.ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_size_t)
+                ),
+                cell_count=cell_to_grid.size,
+                dx=dx.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                nx=dx.size,
+                dy=dy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                ny=dy.size,
+                dz=dz.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                nz=dz.size,
+                cx=cx.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                cy=cy.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                cz=cz.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                layer_id=layers.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+                block_id=blocks.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+                material_id=material_ids.ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_uint32)
+                ),
+                heat_source_id=heat_source_ids.ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_uint32)
+                ),
+                conductivity_x=materials["conductivity_x"].ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_double)
+                ),
+                conductivity_y=materials["conductivity_y"].ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_double)
+                ),
+                conductivity_z=materials["conductivity_z"].ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_double)
+                ),
+                density=materials["density"].ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_double)
+                ),
+                specific_heat=materials["specific_heat"].ctypes.data_as(
+                    ctypes.POINTER(ctypes.c_double)
+                ),
             )
-        return self._metadata_cache
+            check(
+                self._dll.mhs_compiled_copy_cell_fields(
+                    self._handle, ctypes.byref(native)
+                ),
+                "cell_fields",
+            )
+            cells = CellFields(
+                grid_to_cell=grid,
+                cell_to_grid=cell_to_grid,
+                dx=dx,
+                dy=dy,
+                dz=dz,
+                cx=cx,
+                cy=cy,
+                cz=cz,
+                layer_id=layers,
+                block_id=blocks,
+                material_id=material_ids,
+                heat_source_id=heat_source_ids,
+                **materials,
+            )
+            self._info = info
+            self._cells = cells
+        return self._cells
 
     @property
     def cell_count(self) -> int:
-        return self._fetch_metadata().cell_count
+        self._fetch_metadata()
+        return int(self._info.cell_count)
 
     @property
     def study_type(self) -> int:
-        return self._fetch_metadata().study_type
+        self._fetch_metadata()
+        return int(self._info.study_type)
 
     @property
     def initial_temperature(self) -> float:
-        return self._fetch_metadata().initial_temperature
+        self._fetch_metadata()
+        return float(self._info.initial_temperature)
 
     @property
     def nx(self) -> int:
-        return self._fetch_metadata().nx
+        self._fetch_metadata()
+        return int(self._info.nx)
 
     @property
     def ny(self) -> int:
-        return self._fetch_metadata().ny
+        self._fetch_metadata()
+        return int(self._info.ny)
 
     @property
     def nz(self) -> int:
-        return self._fetch_metadata().nz
+        self._fetch_metadata()
+        return int(self._info.nz)
 
     @property
     def cells(self) -> CellFields:
-        return self._fetch_metadata().cells
+        return self._fetch_metadata()
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)

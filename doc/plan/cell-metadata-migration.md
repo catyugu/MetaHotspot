@@ -16,7 +16,7 @@
 C++ compiler
     → CellFields
     → compiled handle
-    → typed C API snapshot
+    → one typed C API CellFields copy-out
     → Python Compiled.cells
     → ROM / experiments / post-processing
 ```
@@ -164,15 +164,12 @@ compiled.cells.specific_heat
 
 ### Phase 3：C API 破坏性重构
 
-目标：用 typed snapshot 替换零散单数组接口。
+目标：用一个 typed CellFields copy-out 替换零散的 Cell API。
 
 任务：
 
-1. 在 `src/api/metahotspot.h` 定义 CellFields info 和 typed copy-out API。
-2. 按语义分组实现：
-   - topology；
-   - geometry；
-   - ownership/material。
+1. 在 `src/api/metahotspot.h` 定义 `mhs_cell_fields_t` 和 `mhs_compiled_copy_cell_fields()`。
+2. 一次性校验所有 buffer 尺寸并复制全部字段。
 3. 明确 NULL、空数组、错误 count、错误 handle 和错误状态行为。
 4. 更新 C API 内部实现和错误消息。
 5. 删除以下旧符号及实现：

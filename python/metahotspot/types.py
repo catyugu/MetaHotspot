@@ -66,6 +66,33 @@ class MhsCompiledInfo(ctypes.Structure):
     ]
 
 
+class MhsCellFields(ctypes.Structure):
+    _fields_ = [
+        ("grid_to_cell", ctypes.POINTER(ctypes.c_size_t)),
+        ("grid_count", ctypes.c_size_t),
+        ("cell_to_grid", ctypes.POINTER(ctypes.c_size_t)),
+        ("cell_count", ctypes.c_size_t),
+        ("dx", ctypes.POINTER(ctypes.c_double)),
+        ("nx", ctypes.c_size_t),
+        ("dy", ctypes.POINTER(ctypes.c_double)),
+        ("ny", ctypes.c_size_t),
+        ("dz", ctypes.POINTER(ctypes.c_double)),
+        ("nz", ctypes.c_size_t),
+        ("cx", ctypes.POINTER(ctypes.c_double)),
+        ("cy", ctypes.POINTER(ctypes.c_double)),
+        ("cz", ctypes.POINTER(ctypes.c_double)),
+        ("layer_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("block_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("material_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("heat_source_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("conductivity_x", ctypes.POINTER(ctypes.c_double)),
+        ("conductivity_y", ctypes.POINTER(ctypes.c_double)),
+        ("conductivity_z", ctypes.POINTER(ctypes.c_double)),
+        ("density", ctypes.POINTER(ctypes.c_double)),
+        ("specific_heat", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
 class MhsOperatorsInfo(ctypes.Structure):
     _fields_ = [
         ("state_count", ctypes.c_size_t),

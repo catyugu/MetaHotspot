@@ -135,6 +135,32 @@ typedef struct {
     size_t nx, ny, nz;
 } mhs_compiled_info_t;
 
+/** Caller-owned buffers for one complete compiled CellFields snapshot. */
+typedef struct {
+    size_t* grid_to_cell;
+    size_t grid_count;
+    size_t* cell_to_grid;
+    size_t cell_count;
+    double* dx;
+    size_t nx;
+    double* dy;
+    size_t ny;
+    double* dz;
+    size_t nz;
+    double* cx;
+    double* cy;
+    double* cz;
+    uint32_t* layer_id;
+    uint32_t* block_id;
+    uint32_t* material_id;
+    uint32_t* heat_source_id;
+    double* conductivity_x;
+    double* conductivity_y;
+    double* conductivity_z;
+    double* density;
+    double* specific_heat;
+} mhs_cell_fields_t;
+
 /** Sizes for an owned operator handle. K and C are square state_count matrices. */
 typedef struct {
     size_t state_count;
@@ -251,14 +277,7 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
-MHS_API mhs_status_t mhs_compiled_copy_cell_topology(const mhs_compiled_t* c, size_t* grid_to_cell,
-    size_t grid_count, size_t* cell_to_grid, size_t cell_count);
-MHS_API mhs_status_t mhs_compiled_copy_cell_geometry(const mhs_compiled_t* c, double* dx, size_t nx, double* dy,
-    size_t ny, double* dz, size_t nz, double* cx, double* cy, double* cz);
-MHS_API mhs_status_t mhs_compiled_copy_cell_ownership(const mhs_compiled_t* c, uint32_t* layer_id,
-    uint32_t* block_id, uint32_t* material_id, uint32_t* heat_source_id, size_t count);
-MHS_API mhs_status_t mhs_compiled_copy_cell_material_values(const mhs_compiled_t* c, double* conductivity_x,
-    double* conductivity_y, double* conductivity_z, double* density, double* specific_heat, size_t count);
+MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
