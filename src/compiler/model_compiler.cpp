@@ -246,8 +246,10 @@ namespace mhs::sim {
         model.cells.density.resize(cell_count);
         model.cells.specific_heat.resize(cell_count);
         for (mhs::core::Index cell = 0; cell < cell_count; ++cell) {
-            const auto [ix, iy, iz]
-                = mhs::core::decode_grid_index(model.cells.cell_to_grid[cell], mesh.ny, mesh.nz);
+            const auto grid = model.cells.cell_to_grid[cell];
+            const auto ix = grid / (mesh.ny * mesh.nz);
+            const auto iy = (grid % (mesh.ny * mesh.nz)) / mesh.nz;
+            const auto iz = grid % mesh.nz;
             const auto material = static_cast<size_t>(model.cells.material_id[cell]);
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell material ID out of range while compiling");
