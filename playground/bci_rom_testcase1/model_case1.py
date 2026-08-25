@@ -320,10 +320,10 @@ class Case1Model(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.x_vertices_mm * 1.0e-3
-        y = self.config.y_vertices_mm * 1.0e-3
-        z = self.config.z_vertices_mm * 1.0e-3
+        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = full.cells.x_vertices
+        y = full.cells.y_vertices
+        z = full.cells.z_vertices
         total_h = self.config.total_height_mm * 1.0e-3
 
         top_cells, top_areas = surface_exposed_cells(grid, x, y, z, Face.ZP, total_h)
@@ -357,31 +357,7 @@ class Case1Model(AffineParametricModel):
     def group_h_ranges(self):
         return self.config.h_ranges
 
-    # ------------------------------------------------ cell geometry helpers
 
-    def _axis_vertices(self, axis: str) -> np.ndarray:
-        """SI vertex array along ``axis`` (shared geometry hook)."""
-        if axis == "x":
-            return self.config.x_vertices_mm * 1.0e-3
-        if axis == "y":
-            return self.config.y_vertices_mm * 1.0e-3
-        return self.config.z_vertices_mm * 1.0e-3
-
-    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
-        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
-
-        case1's stack is [FR4 10, Aluminum 5, E-10 5] bottom-up plus the
-        Silicon die layer (2 mm) on top.  Single ground truth for layer
-        layout; the base derives ``_layer_conductivity`` (layer_id 0 = top =
-        die) and asserts every ``layer_id``'s compiled z-band against it.
-        """
-        material_k = {
-            name: (float(kx), float(ky), float(kz))
-            for name, (kx, ky, kz, _, _) in MATERIALS.items()
-        }
-        return tuple((float(t), *material_k[m]) for t, m, *_ in LAYERS) + (
-            (DIE_THICKNESS_MM, *material_k[DIE_MATERIAL]),
-        )
 
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""

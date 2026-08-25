@@ -295,10 +295,10 @@ class _BciPop(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.axis_vertices_mm * 1.0e-3
-        y = x
-        z = z_vertices(self.config.layers) * 1.0e-3
+        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = full.cells.x_vertices
+        y = full.cells.y_vertices
+        z = full.cells.z_vertices
         half_b = self.config.bottom_size_mm / 2.0 * 1.0e-3
         half_t = self.config.top_size_mm / 2.0 * 1.0e-3
         half_s = self.config.solder_size_mm / 2.0 * 1.0e-3
@@ -416,29 +416,6 @@ class _BciPop(AffineParametricModel):
         rng = np.random.default_rng(20260805)
         draws = 10.0 ** rng.uniform(lows, highs, size=(count, ranges.shape[0]))
         return [tuple(float(v) for v in row) for row in draws]
-
-    # --------------------------------------------- boundary surface data
-
-    def _axis_vertices(self, axis: str) -> np.ndarray:
-        """SI vertex array along ``axis`` (shared geometry hook)."""
-        if axis == "z":
-            return z_vertices(self.config.layers) * 1.0e-3
-        return self.config.axis_vertices_mm * 1.0e-3
-
-    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
-        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
-
-        ``cfg.layers`` is already bottom-up (bottom substrate ... top mold).
-        Single ground truth for layer layout; the base derives
-        ``_layer_conductivity`` (layer_id 0 = top = top mold) and asserts
-        every ``layer_id``'s compiled z-band against it.
-        """
-        material_k = {
-            name: (float(kx), float(ky), float(kz))
-            for name, kx, ky, kz, _, _ in MATERIALS
-        }
-        return tuple((float(t), *material_k[m]) for t, m, _, _ in self.config.layers)
-
 
 def _builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
     cfg = PopConfig(**(overrides or {}))

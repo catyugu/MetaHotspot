@@ -60,6 +60,7 @@ namespace mhs::sim {
     mhs::core::CellFields assign_cell_layers(
         const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh);
 
+
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
         std::vector<mhs::core::FaceBC>& face_bcs);

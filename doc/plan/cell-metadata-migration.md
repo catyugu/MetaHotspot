@@ -14,7 +14,7 @@
 
 ```text
 C++ compiler
-    → CellMetadata
+    → CellFields
     → compiled handle
     → typed C API snapshot
     → Python Compiled.cells
@@ -23,10 +23,10 @@ C++ compiler
 
 迁移完成后：
 
-1. C++ compiler 是 Cell 几何、拓扑、归属和参考状态物性的唯一事实源。
+1. C++ compiler 是 Cell 几何、拓扑、归属和参考状态物性的唯一事实源；可推导几何不重复存储。
 2. 所有 Cell 级数组使用同一个 Compact Cell Order。
-3. Python 不再从 `grid_to_cell` 反推 `cell_to_grid`、`ijk` 或 Cell 顺序。
-4. Python 不再从自身的 vertex、Layer 或材料配置重建 Cell 几何和材料含义。
+3. Python 从已公开的 `CellFields` / `MeshGeometry` 事实计算 `cell_to_grid`、`ijk`、centers、half sizes 和 volumes，不再从模型私有配置猜测。
+4. Python 不再从自身的 vertex、Layer 或材料配置重建材料含义。
 5. Python 通过 `Compiled.cells` 统一获取 Cell 元信息。
 6. 旧 C API 和旧 Python 属性全部删除。
 7. solver 的热方程、状态向量顺序、SoA 组装布局和数值语义不改变。
@@ -45,26 +45,35 @@ for ix = 0 .. nx-1
 
 活跃 Grid Cell 按此顺序分配 Compact Cell ID。该顺序从实现细节提升为跨 C++/C/Python 的公开契约。
 
-### 2.2 CellMetadata 字段
+### 2.2 元信息分层与去冗余
 
-所有字段长度均为 `cell_count`，二维字段使用最后一维表示坐标或面方向。
+不再额外建立 `CellMetadata` 类型。所有按 Compact Cell 对齐的数据统一进入 `CellFields`；字段只有在 Python 无法从已公开的运行期事实直接、无歧义地计算时，才允许新增存储。
 
-| 字段 | Shape | 语义 | 单位/类型 |
-| --- | ---: | --- | --- |
-| `cell_to_grid` | `(N,)` | Compact → Grid 映射 | `size_t` |
-| `ijk` | `(N, 3)` | `(ix, iy, iz)` | `uint32` |
-| `centers` | `(N, 3)` | Cell 中心坐标 | m |
-| `sizes` | `(N, 3)` | x/y/z 边长 | m |
-| `half_sizes` | `(N, 3)` | 中心到对应面的距离 | m |
-| `volumes` | `(N,)` | Cell 体积 | m³ |
-| `layer_id` | `(N,)` | Layer 归属 | `uint32` |
-| `block_id` | `(N,)` | Block 归属 | `uint32` |
-| `material_id` | `(N,)` | 材料表归属 | `uint32` |
-| `heat_source_id` | `(N,)` | 热源表归属 | `uint32` |
-| `conductivity` | `(N, 3)` | 参考状态下 kx/ky/kz | W/(m·K) |
-| `density` | `(N,)` | 参考状态密度 | kg/m³ |
-| `specific_heat` | `(N,)` | 参考状态比热 | J/(kg·K) |
-| `exposed_face_mask` | `(N,)` | 无活跃邻居的面 | `uint8` |
+已有运行期字段继续作为唯一来源：
+
+| 信息                             | 唯一来源                                  | Python 派生方式  |
+| -------------------------------- | ----------------------------------------- | ---------------- |
+| `grid_to_cell`                   | `CellFields.grid_to_cell`                 | 直接读取，不复制 |
+| `cell_to_grid`                   | `CellFields.cell_to_grid`                 | 直接读取，不复制 |
+| `layer_id` / `block_id`          | `CellFields`                              | 直接读取，不复制 |
+| `material_id` / `heat_source_id` | `CellFields`                              | 直接读取，不复制 |
+| `ix, iy, iz`                     | `cell_to_grid` + `nx, ny, nz`             | 直接解码，不复制 |
+| `centers`                        | `MeshGeometry.cx/cy/cz` + `ijk`           | 直接索引，不复制 |
+| `sizes`                          | `MeshGeometry.dx/dy/dz` + `ijk`           | 直接索引，不复制 |
+| `half_sizes`                     | `sizes / 2`                               | 直接计算，不复制 |
+| `volumes`                        | `sizes[:, 0] * sizes[:, 1] * sizes[:, 2]` | 直接计算，不复制 |
+| exposed faces                    | `grid_to_cell` + 邻居规则                 | 直接计算，不复制 |
+| face BC                          | `face_bcs` + `bc_params`                  | 直接读取，不复制 |
+
+因此 `CellFields` 除已有拓扑和归属数组外，只保存 Python 无法解释 C++ expression table、但实验确实需要的参考状态材料值：
+
+| 字段             |  Shape | 语义          | 单位/类型 |
+| ---------------- | -----: | ------------- | --------- |
+| `conductivity_x` | `(N,)` | 参考状态下 kx | W/(m·K)   |
+| `conductivity_y` | `(N,)` | 参考状态下 ky | W/(m·K)   |
+| `conductivity_z` | `(N,)` | 参考状态下 kz | W/(m·K)   |
+| `density`        | `(N,)` | 参考状态密度  | kg/m³     |
+| `specific_heat`  | `(N,)` | 参考状态比热  | J/(kg·K)  |
 
 参考状态固定为：
 
@@ -73,17 +82,7 @@ T = initial_temperature
  t = 0
 ```
 
-面方向 bit 固定为：
-
-```text
-bit 0 = XM
-bit 1 = XP
-bit 2 = YM
-bit 3 = YP
-bit 4 = ZM
-bit 5 = ZP
-```
-
+`CellFields` 不重复保存 `sizes`、`half_sizes`、`volumes`、`centers`、`ijk`、ownership IDs 或 exposed-face mask。
 `face_bc_type` 与 `face_bc_param_id` 只有在 BC parameter snapshot 同时设计完成后才作为 Python 公共字段暴露，禁止单独暴露半完成的 BC 契约。
 
 ### 2.3 Python 入口
@@ -97,21 +96,14 @@ compiled.cells
 目标字段：
 
 ```python
-compiled.cells.cell_to_grid
-compiled.cells.ijk
-compiled.cells.centers
-compiled.cells.sizes
-compiled.cells.half_sizes
-compiled.cells.volumes
-compiled.cells.layer_id
-compiled.cells.block_id
-compiled.cells.material_id
-compiled.cells.heat_source_id
-compiled.cells.conductivity
+compiled.cells.conductivity_x
+compiled.cells.conductivity_y
+compiled.cells.conductivity_z
 compiled.cells.density
 compiled.cells.specific_heat
-compiled.cells.exposed_face_mask
 ```
+
+其余 Cell 事实通过同一个 `compiled.cells` 视图从 C++ `CellFields` 和 `MeshGeometry` 读取或派生。
 
 返回数组必须为 Python-owned、连续、只读 NumPy 数组。
 
@@ -143,23 +135,17 @@ compiled.cells.exposed_face_mask
 - 调用者清单完整；
 - 没有在基线阶段修改生产代码。
 
-### Phase 2：C++ CellMetadata 内部契约
+### Phase 2：C++ CellFields 内部契约
 
-目标：在 C++ 内部生成完整、对齐、只读的 CellMetadata。
+目标：在 C++ 的 `CellFields` 内生成完整、对齐的 Cell 字段契约。
 
 任务：
 
-1. 在 `src/common/` 增加 CellMetadata 运行期类型。
+1. 扩展 `src/common/model.hpp` 中的 `CellFields`。
 2. 明确所有字段的元素类型、shape、单位和生命周期。
-3. 在 Cell 分配完成处同步填充：
-   - `cell_to_grid`；
-   - `ijk`；
-   - centers、sizes、half_sizes、volumes；
-   - ownership IDs；
-   - 参考状态物性；
-   - exposed-face mask。
-4. 确保 CellMetadata 与状态向量使用同一 Compact Cell Order。
-5. 将 CellMetadata 作为 compiled model 的只读数据发布。
+3. 在 Cell 分配完成处同步填充必要的 CellFields 字段；可由已有几何直接得到的 centers、sizes、half_sizes、volumes 不复制。
+4. 确保 CellFields 与状态向量使用同一 Compact Cell Order。
+5. 将 CellFields 作为 compiled model 的只读 Cell 视图发布。
 6. 不改变 `CellFields` 的 solver 使用方式和 assembly 热循环。
 
 测试先行：
@@ -170,7 +156,7 @@ compiled.cells.exposed_face_mask
 
 出口条件：
 
-- C++ 能直接提供完整 CellMetadata；
+- C++ 能直接提供完整 CellFields Cell 契约；
 - 所有字段长度均为 `cell_count`；
 - `cell_to_grid` 与 `grid_to_cell` 互逆；
 - geometry、ownership 和 material reference tests 通过；
@@ -182,7 +168,7 @@ compiled.cells.exposed_face_mask
 
 任务：
 
-1. 在 `src/api/metahotspot.h` 定义 metadata info 和 typed copy-out API。
+1. 在 `src/api/metahotspot.h` 定义 CellFields info 和 typed copy-out API。
 2. 按语义分组实现：
    - topology；
    - geometry；
@@ -210,8 +196,8 @@ compiled.cells.exposed_face_mask
 
 1. 更新 `python/metahotspot/types.py` 的 C struct 定义。
 2. 更新 `_dll_interface.py` 的函数签名。
-3. 新增 Python `CellMetadata` 类型。
-4. 在 `Compiled` 中一次性读取并缓存完整 snapshot。
+3. 新增 Python `CellFields` 视图类型。
+4. 在 `Compiled` 中一次性读取并缓存完整 CellFields 视图。
 5. 将所有 NumPy 数组转换为 Python-owned contiguous arrays。
 6. 设置数组为只读。
 7. 删除 `Compiled.grid_to_cell`、`Compiled.layer_ids`、`Compiled.block_ids`。
@@ -295,11 +281,11 @@ python playground/bci_rom_testcase1/reproduce_case1.py
 
 ### 契约验收
 
-- CellMetadata 字段、shape、dtype、单位和 CellOrder 已固定；
+- `CellFields` 字段、shape、dtype、单位和 CellOrder 已固定；
 - C++、C API 和 Python 对同一字段使用同一顺序；
-- `cell_to_grid`、`ijk`、geometry 和 volumes 一致；
+- `cell_to_grid`、`ijk`、geometry 和 volumes 的派生结果一致；
 - ownership/material 字段与 compiler 实际归属一致；
-- snapshot 生命周期和 buffer 错误行为明确。
+- CellFields 视图生命周期和 buffer 错误行为明确。
 
 ### 迁移验收
 

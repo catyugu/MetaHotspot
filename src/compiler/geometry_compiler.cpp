@@ -4,6 +4,7 @@
 #include "numerics/expression/expr.hpp"
 #include <algorithm>
 #include <cstddef>
+#include <stdexcept>
 
 namespace mhs::sim {
 
@@ -204,6 +205,7 @@ namespace mhs::sim {
         }
         return cells;
     }
+
 
     void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
         const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,

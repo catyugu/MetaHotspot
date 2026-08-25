@@ -81,8 +81,8 @@ class CellLayout:
     (x, y, z); ``half_sizes[:, c]`` is half the cell-side length (centre → face
     distance) along each axis; ``conductivity[:, c]`` is the static (kx, ky, kz)
     in W/m·K, evaluated at compile time at (cell_centre, ambient, t=0).  All
-    three arrays align with :attr:`Compiled.layer_ids` order, so
-    ``layer_ids[c]`` indexes the model's material table.
+    three arrays align with :attr:`Compiled.cells` order, so every column is
+    indexed by the same compact Cell ID.
     """
 
     centers: np.ndarray  # (cell_count, 3) float64, SI metres
@@ -237,7 +237,7 @@ class AffineParametricModel:
         ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
         geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
         ``boundary_groups``, ``boundary_h``, ``group_h_ranges``, ``source_power``,
-        ``_axis_vertices``, and ``_layer_conductivity``.  Everything else —
+        model-defined geometry and physical parameters. Everything else —
         full-domain assembly, source-shape extraction, per-cell geometry
         (:attr:`cell_layout`), boundary affine terms, native reference, reduced
         solve, temperature recovery — is shared here.  ``parameter_points`` has
@@ -378,112 +378,20 @@ class AffineParametricModel:
             terms.append(sp.diags(diagonal))
         return terms
 
-    # Axis index for face-direction / half-axis lookup.
-    _AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
-
-    def _axis_vertices(self, axis: str) -> np.ndarray:
-        """SI vertex array along ``axis`` (x/y/z) — shared geometry hook.
-
-        Concrete models return their own mesh breakpoints (e.g.
-        ``config.*_vertices_mm`` or ``z_vertices(layers)``), converted to
-        metres.  The shared :attr:`cell_layout` consumes it; subclasses must
-        override this.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__}: _axis_vertices() is not implemented; "
-            "return the SI vertex array for axis='x'/'y'/'z'."
-        )
-
-    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
-        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
-
-        The single ground truth for layer layout.  Subclasses must override
-        this; the base derives :meth:`_layer_conductivity` from it (layer_id 0
-        = top) and :attr:`cell_layout` cross-checks every ``layer_id``'s
-        compiled z-band against this stack, so a reversed or misordered layer
-        stack fails the layout self-check instead of silently mis-assigning
-        material conductivities.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__}: _physical_stack() is not implemented; "
-            "return the bottom-up (thickness_mm, kx, ky, kz) layer stack."
-        )
-
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """Per-layer ``(kx, ky, kz)`` in SI (W/m·K), keyed by ``layer_id``.
-
-        Derived from :meth:`_physical_stack` reversed to the compiler's
-        top-first ``layer_id`` order (layer_id 0 = top).  :attr:`cell_layout`
-        calls it once per compile and validates the z-bands against the same
-        stack.
-        """
-        stack = self._physical_stack()
-        if not stack:
-            raise RuntimeError(
-                f"{type(self).__name__}: _physical_stack() returned an empty stack"
-            )
-        return {i: (kx, ky, kz) for i, (_, kx, ky, kz) in enumerate(reversed(stack))}
 
     @cached_property
     def cell_layout(self) -> CellLayout:
-        """Per-cell geometry + conductivity, computed once at compile time.
-
-        Reads only what :class:`Compiled` already exposes (``grid_to_cell``,
-        ``nx/ny/nz``, ``layer_ids``), the model's own mesh breakpoints and the
-        model's :meth:`_layer_conductivity`.  Three (cell_count, 3) arrays in
-        SI units — used everywhere the base needs (cx, cy, cz, dx/2, dy/2,
-        dz/2, kx, ky, kz) for a cell index.
-        """
-        full = self._full
-        nx, ny, nz = int(full.nx), int(full.ny), int(full.nz)
-        cell_count = int(full.cell_count)
-
-        # (ix, iy, iz) for each active cell, derived from grid_to_cell.
-        flat = np.flatnonzero(np.asarray(full.grid_to_cell) >= 0).astype(np.int64)
-        # flat index decoding: ix = flat // (ny*nz); iy = (flat % (ny*nz)) // nz; iz = flat % nz
-        ny_nz = ny * nz
-        ix = flat // ny_nz
-        iy = (flat % ny_nz) // nz
-        iz = flat % nz
-
-        # Per-axis vertex arrays, one shared axis = same vertex list per model.
-        xv = np.asarray(self._axis_vertices("x"), dtype=np.float64)
-        yv = np.asarray(self._axis_vertices("y"), dtype=np.float64)
-        zv = np.asarray(self._axis_vertices("z"), dtype=np.float64)
-        xc, yc, zc = (
-            0.5 * (xv[:-1] + xv[1:]),
-            0.5 * (yv[:-1] + yv[1:]),
-            0.5 * (zv[:-1] + zv[1:]),
+        """Per-cell geometry and reference material values from native fields."""
+        cells = self._full.cells
+        sizes = cells.cell_sizes
+        conductivity = np.column_stack(
+            (cells.conductivity_x, cells.conductivity_y, cells.conductivity_z)
         )
-        xw, yw, zw = xv[1:] - xv[:-1], yv[1:] - yv[:-1], zv[1:] - zv[:-1]
-
-        centers = np.empty((cell_count, 3), dtype=np.float64)
-        half = np.empty((cell_count, 3), dtype=np.float64)
-        centers[:, 0] = xc[ix]
-        centers[:, 1] = yc[iy]
-        centers[:, 2] = zc[iz]
-        half[:, 0] = 0.5 * xw[ix]
-        half[:, 1] = 0.5 * yw[iy]
-        half[:, 2] = 0.5 * zw[iz]
-
-        # Per-cell static conductivity (kx, ky, kz) from the layer table.
-        table = self._layer_conductivity()
-        if not table:
-            raise RuntimeError(
-                f"{type(self).__name__}: _layer_conductivity() returned an empty map"
-            )
-        max_lid = max(int(k) for k in table.keys())
-        k_layers = np.asarray(
-            [
-                table.get(i, table[max(int(k) for k in table.keys())])
-                for i in range(max_lid + 1)
-            ],
-            dtype=np.float64,
+        return CellLayout(
+            centers=cells.centers,
+            half_sizes=0.5 * sizes,
+            conductivity=conductivity,
         )
-        layer_ids = np.asarray(full.layer_ids, dtype=np.int64)
-        k = k_layers[layer_ids]  # (cell_count, 3)
-
-        return CellLayout(centers=centers, half_sizes=half, conductivity=k)
 
     def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
         """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.

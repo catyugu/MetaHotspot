@@ -378,13 +378,6 @@ class _ChipletStack(AffineParametricModel):
             source_sink=self._source_sink,
         )
 
-    def _axis_vertices(self, axis: str) -> np.ndarray:
-        """SI vertex array along x/y/z (shared geometry hook)."""
-        if axis in ("x", "y"):
-            return self.config.axis_vertices_mm * 1.0e-3
-        return (
-            z_vertices((*self.config.detail_layers, *self.config.macro_layers)) * 1.0e-3
-        )
 
     def source_ports(self) -> list[SourcePort]:
         """One :class:`SourcePort` per heat-source block (4 chiplet regions).
@@ -396,7 +389,7 @@ class _ChipletStack(AffineParametricModel):
         """
         f = np.asarray(self._core.f, dtype=np.float64)
         source_cells = np.flatnonzero(f > 0.0)
-        block = self._full.block_ids[source_cells]
+        block = self._full.cells.block_id[source_cells]
         # group by block id, preserving block-id order
         order = np.argsort(block, kind="stable")
         block_sorted = block[order]
@@ -436,10 +429,10 @@ class _ChipletStack(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         full = self._full
-        grid = full.grid_to_cell.reshape(full.nx, full.ny, full.nz)
-        x = self.config.axis_vertices_mm * 1.0e-3
-        y = x
-        z = self._axis_vertices("z")
+        grid = full.cells.grid_to_cell.reshape(full.nx, full.ny, full.nz)
+        x = full.cells.x_vertices
+        y = full.cells.y_vertices
+        z = np.asarray(self._full.cells.z_vertices, dtype=np.float64)
         top_z = (self.config.detail_height_mm + self.config.macro_height_mm) * 1.0e-3
         cells, areas = surface_exposed_cells(grid, x, y, z, Face.ZP, top_z)
         return (
@@ -450,27 +443,6 @@ class _ChipletStack(AffineParametricModel):
             ),
         )
 
-    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
-        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
-
-        substrate(organic) / bump(underfill) / die(silicon) at the bottom,
-        then tim / spreader(copper) / cold-plate(aluminum) on top.  Single
-        ground truth for layer layout; the base derives
-        ``_layer_conductivity`` (layer_id 0 = top = cold plate) and asserts
-        every ``layer_id``'s compiled z-band against it.
-        """
-        material_k = {
-            name: (float(kx), float(ky), float(kz))
-            for name, kx, ky, kz, _, _ in MATERIALS
-        }
-        return (
-            (self.config.substrate_mm, *material_k["organic"]),
-            (self.config.bump_mm, *material_k["underfill"]),
-            (self.config.die_mm, *material_k["silicon"]),
-            (self.config.tim_mm, *material_k["tim"]),
-            (self.config.spreader_mm, *material_k["copper"]),
-            (self.config.cold_plate_mm, *material_k["aluminum"]),
-        )
 
     def boundary_h(self, h_vec) -> dict[str, float]:
         if len(h_vec) != 1:

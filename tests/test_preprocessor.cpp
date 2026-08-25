@@ -151,6 +151,32 @@ TEST(PreprocessorTest, CellMappingsAreExactInverses)
     }
 }
 
+TEST(PreprocessorTest, CellFieldsReferencePropertiesMatchCompactCellOrder)
+{
+    const auto model = build_model(make_simple_io());
+    const auto& cells = model.cells;
+
+    ASSERT_EQ(cells.conductivity_x.size(), cells.cell_to_grid.size());
+    ASSERT_EQ(cells.conductivity_y.size(), cells.cell_to_grid.size());
+    ASSERT_EQ(cells.conductivity_z.size(), cells.cell_to_grid.size());
+    ASSERT_EQ(cells.density.size(), cells.cell_to_grid.size());
+    ASSERT_EQ(cells.specific_heat.size(), cells.cell_to_grid.size());
+
+    for (mhs::core::Index cell = 0; cell < cells.cell_to_grid.size(); ++cell) {
+        const auto grid = cells.cell_to_grid[cell];
+        const auto ix = grid / (model.mesh.ny * model.mesh.nz);
+        const auto iy = (grid % (model.mesh.ny * model.mesh.nz)) / model.mesh.nz;
+        const auto iz = grid % model.mesh.nz;
+        const mhs::core::FieldContext context {
+            model.mesh.cx[ix], model.mesh.cy[iy], model.mesh.cz[iz], model.initial_temperature, 0.0};
+        EXPECT_DOUBLE_EQ(cells.conductivity_x[cell], model.material_table[0].kx.eval(context));
+        EXPECT_DOUBLE_EQ(cells.conductivity_y[cell], model.material_table[0].ky.eval(context));
+        EXPECT_DOUBLE_EQ(cells.conductivity_z[cell], model.material_table[0].kz.eval(context));
+        EXPECT_DOUBLE_EQ(cells.density[cell], model.material_table[0].rho.eval(context));
+        EXPECT_DOUBLE_EQ(cells.specific_heat[cell], model.material_table[0].c.eval(context));
+    }
+}
+
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 {
     auto definition = make_simple_io();

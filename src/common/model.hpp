@@ -55,6 +55,14 @@ namespace mhs::core {
 
         std::vector<TableIndex> layer_id;
         std::vector<TableIndex> block_id;
+
+        // Per-compact-cell reference-state material values. These are kept in
+        // the same CellFields contract as all other cell-aligned data.
+        std::vector<double> conductivity_x;
+        std::vector<double> conductivity_y;
+        std::vector<double> conductivity_z;
+        std::vector<double> density;
+        std::vector<double> specific_heat;
     };
 
     // ── Probe / observation point ────────────────────────────────────────

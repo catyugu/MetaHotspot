@@ -625,22 +625,71 @@ namespace {
     }
 }
 
-MHS_API mhs_status_t mhs_compiled_copy_grid_to_cell(const mhs_compiled_t* c, size_t* out, size_t count)
+MHS_API mhs_status_t mhs_compiled_copy_cell_topology(const mhs_compiled_t* c, size_t* grid_to_cell,
+    size_t grid_count, size_t* cell_to_grid, size_t cell_count)
 {
     CHECK_NULL(c);
-    return copy_vector(c->model->cells.grid_to_cell, out, count, "grid_to_cell");
+    auto status = copy_vector(c->model->cells.grid_to_cell, grid_to_cell, grid_count, "grid_to_cell");
+    if (status != MHS_OK)
+        return status;
+    return copy_vector(c->model->cells.cell_to_grid, cell_to_grid, cell_count, "cell_to_grid");
 }
 
-MHS_API mhs_status_t mhs_compiled_copy_layer_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
+MHS_API mhs_status_t mhs_compiled_copy_cell_geometry(const mhs_compiled_t* c, double* dx, size_t nx, double* dy,
+    size_t ny, double* dz, size_t nz, double* cx, double* cy, double* cz)
 {
     CHECK_NULL(c);
-    return copy_vector(c->model->cells.layer_id, out, count, "layer_ids");
+    auto status = copy_vector(c->model->mesh.dx, dx, nx, "dx");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->mesh.dy, dy, ny, "dy");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->mesh.dz, dz, nz, "dz");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->mesh.cx, cx, nx, "cx");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->mesh.cy, cy, ny, "cy");
+    if (status != MHS_OK)
+        return status;
+    return copy_vector(c->model->mesh.cz, cz, nz, "cz");
 }
 
-MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
+MHS_API mhs_status_t mhs_compiled_copy_cell_ownership(const mhs_compiled_t* c, uint32_t* layer_id,
+    uint32_t* block_id, uint32_t* material_id, uint32_t* heat_source_id, size_t count)
 {
     CHECK_NULL(c);
-    return copy_vector(c->model->cells.block_id, out, count, "block_ids");
+    auto status = copy_vector(c->model->cells.layer_id, layer_id, count, "layer_id");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->cells.block_id, block_id, count, "block_id");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->cells.material_id, material_id, count, "material_id");
+    if (status != MHS_OK)
+        return status;
+    return copy_vector(c->model->cells.heat_source_idx, heat_source_id, count, "heat_source_id");
+}
+
+MHS_API mhs_status_t mhs_compiled_copy_cell_material_values(const mhs_compiled_t* c, double* conductivity_x,
+    double* conductivity_y, double* conductivity_z, double* density, double* specific_heat, size_t count)
+{
+    CHECK_NULL(c);
+    auto status = copy_vector(c->model->cells.conductivity_x, conductivity_x, count, "conductivity_x");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->cells.conductivity_y, conductivity_y, count, "conductivity_y");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->cells.conductivity_z, conductivity_z, count, "conductivity_z");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(c->model->cells.density, density, count, "density");
+    if (status != MHS_OK)
+        return status;
+    return copy_vector(c->model->cells.specific_heat, specific_heat, count, "specific_heat");
 }
 
 /* ------------------------------------------------------------------ */
