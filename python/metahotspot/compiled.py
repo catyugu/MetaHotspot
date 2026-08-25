@@ -9,10 +9,10 @@ from typing import NamedTuple
 import numpy as np
 
 from metahotspot._error import check
-from metahotspot._dll_interface import copy_array
 from metahotspot._handle import OwnedHandle
 from metahotspot.types import (
     MhsCompiled,
+    MhsCellFields,
     MhsCompiledInfo,
     MhsOperators,
     MhsOperatorsInfo,
@@ -27,17 +27,153 @@ class Operators(NamedTuple):
     f: np.ndarray
 
 
+# Single declaration of the CellFields contract: (field name, ctypes element
+# type, numpy dtype, count source on MhsCompiledInfo).  Drives buffer
+# allocation, the native mhs_cell_fields_t wiring and the CellFields view.
+_CELL_FIELD_SPECS: tuple[tuple[str, type, type, str], ...] = (
+    ("grid_to_cell", ctypes.c_size_t, np.intp, "grid_count"),
+    ("cell_to_grid", ctypes.c_size_t, np.intp, "cell_count"),
+    ("dx", ctypes.c_double, np.float64, "nx"),
+    ("dy", ctypes.c_double, np.float64, "ny"),
+    ("dz", ctypes.c_double, np.float64, "nz"),
+    ("cx", ctypes.c_double, np.float64, "nx"),
+    ("cy", ctypes.c_double, np.float64, "ny"),
+    ("cz", ctypes.c_double, np.float64, "nz"),
+    ("layer_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("block_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("material_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("heat_source_idx", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("conductivity_x", ctypes.c_double, np.float64, "cell_count"),
+    ("conductivity_y", ctypes.c_double, np.float64, "cell_count"),
+    ("conductivity_z", ctypes.c_double, np.float64, "cell_count"),
+    ("density", ctypes.c_double, np.float64, "cell_count"),
+    ("specific_heat", ctypes.c_double, np.float64, "cell_count"),
+)
+
+
 @dataclass(frozen=True)
-class _CompiledMetadata:
-    cell_count: int
-    study_type: int
-    initial_temperature: float
-    nx: int
-    ny: int
-    nz: int
+class CellFields:
     grid_to_cell: np.ndarray
-    layer_ids: np.ndarray
-    block_ids: np.ndarray
+    cell_to_grid: np.ndarray
+    dx: np.ndarray
+    dy: np.ndarray
+    dz: np.ndarray
+    cx: np.ndarray
+    cy: np.ndarray
+    cz: np.ndarray
+    layer_id: np.ndarray
+    block_id: np.ndarray
+    material_id: np.ndarray
+    heat_source_idx: np.ndarray
+    conductivity_x: np.ndarray
+    conductivity_y: np.ndarray
+    conductivity_z: np.ndarray
+    density: np.ndarray
+    specific_heat: np.ndarray
+
+    # Face directions in exposed_face_mask bit order (bit 0..5 = XM, XP, YM,
+    # YP, ZM, ZP), matching metahotspot.enums.Face.
+    _FACE_STEPS = ((-1, 0, 0), (1, 0, 0), (0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1))
+
+    @staticmethod
+    def _vertices(centers: np.ndarray, widths: np.ndarray) -> np.ndarray:
+        return np.concatenate(([centers[0] - 0.5 * widths[0]], centers + 0.5 * widths))
+
+    @property
+    def x_vertices(self) -> np.ndarray:
+        return self._vertices(self.cx, self.dx)
+
+    @property
+    def y_vertices(self) -> np.ndarray:
+        return self._vertices(self.cy, self.dy)
+
+    @property
+    def z_vertices(self) -> np.ndarray:
+        return self._vertices(self.cz, self.dz)
+
+    @property
+    def ijk(self) -> np.ndarray:
+        """Per-compact-cell ``(ix, iy, iz)`` grid coordinates, decoded once."""
+        return self._ijk
+
+    @property
+    def exposed_face_mask(self) -> np.ndarray:
+        """Per-compact-cell ``(N, 6)`` uint8 mask: bit ``Face`` set when that
+        face has no active neighbour (out of bounds or empty cell)."""
+        return self._exposed_face_mask
+
+    @property
+    def cell_sizes(self) -> np.ndarray:
+        ijk = self._ijk
+        return np.column_stack(
+            (self.dx[ijk[:, 0]], self.dy[ijk[:, 1]], self.dz[ijk[:, 2]])
+        )
+
+    @property
+    def centers(self) -> np.ndarray:
+        ijk = self._ijk
+        return np.column_stack(
+            (self.cx[ijk[:, 0]], self.cy[ijk[:, 1]], self.cz[ijk[:, 2]])
+        )
+
+    @property
+    def half_sizes(self) -> np.ndarray:
+        return self.cell_sizes * 0.5
+
+    @property
+    def volumes(self) -> np.ndarray:
+        sizes = self.cell_sizes
+        return sizes[:, 0] * sizes[:, 1] * sizes[:, 2]
+
+    @property
+    def nx(self) -> int:
+        return self.dx.size
+
+    @property
+    def ny(self) -> int:
+        return self.dy.size
+
+    @property
+    def nz(self) -> int:
+        return self.dz.size
+
+    def _compute_exposed_face_mask(self) -> np.ndarray:
+        grid = self._grid3d
+        invalid = np.iinfo(self.grid_to_cell.dtype).max
+        # Pad with an invalid border so out-of-bounds neighbours read as
+        # inactive, then compare each of the six shifted views to `invalid`.
+        padded = np.full(
+            (self.nx + 2, self.ny + 2, self.nz + 2), invalid, dtype=grid.dtype
+        )
+        padded[1:-1, 1:-1, 1:-1] = grid
+        layers = [
+            padded[
+                1 + dx : self.nx + 1 + dx,
+                1 + dy : self.ny + 1 + dy,
+                1 + dz : self.nz + 1 + dz,
+            ]
+            == invalid
+            for dx, dy, dz in self._FACE_STEPS
+        ]
+        exposed = np.stack(layers, axis=-1)  # (nx, ny, nz, 6), grid order
+        bits = np.sum(
+            exposed.reshape(-1, 6) * (1 << np.arange(6, dtype=np.uint8)), axis=1
+        )
+        return bits[self.cell_to_grid].astype(np.uint8)
+
+    def __post_init__(self) -> None:
+        yz = self.ny * self.nz
+        grid = self.cell_to_grid
+        ijk = np.empty((grid.size, 3), dtype=np.intp)
+        ijk[:, 0] = grid // yz
+        ijk[:, 1] = (grid % yz) // self.nz
+        ijk[:, 2] = grid % self.nz
+        object.__setattr__(self, "_ijk", ijk)
+        object.__setattr__(self, "_grid3d", self.grid_to_cell.reshape(self.nx, self.ny, self.nz))
+        object.__setattr__(self, "_exposed_face_mask", self._compute_exposed_face_mask())
+        for value in self.__dict__.values():
+            if isinstance(value, np.ndarray):
+                value.setflags(write=False)
 
 
 def _operators_from_handle(dll, handle) -> Operators:
@@ -138,7 +274,8 @@ class Compiled(OwnedHandle):
 
     def __init__(self) -> None:
         super().__init__(None, None)
-        self._metadata_cache = None
+        self._info = None
+        self._cells = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
@@ -151,72 +288,70 @@ class Compiled(OwnedHandle):
         self._fetch_metadata()
         return self
 
-    def _fetch_metadata(self) -> _CompiledMetadata:
-        if self._metadata_cache is None:
+    def _fetch_metadata(self) -> CellFields:
+        if self._cells is None:
             info = MhsCompiledInfo()
             check(
                 self._dll.mhs_compiled_get_info(self._handle, ctypes.byref(info)),
                 "compiled_info",
             )
-            grid = np.empty(info.grid_count, dtype=np.intp)
-            layers = np.empty(info.cell_count, dtype=np.uint32)
-            blocks = np.empty(info.cell_count, dtype=np.uint32)
-            for function, array, c_type in (
-                (self._dll.mhs_compiled_copy_grid_to_cell, grid, ctypes.c_size_t),
-                (self._dll.mhs_compiled_copy_layer_ids, layers, ctypes.c_uint32),
-                (self._dll.mhs_compiled_copy_block_ids, blocks, ctypes.c_uint32),
-            ):
-                copy_array(
-                    function, self._handle, array, c_type, "compiled_metadata_copy"
-                )
-            self._metadata_cache = _CompiledMetadata(
-                int(info.cell_count),
-                int(info.study_type),
-                float(info.initial_temperature),
-                int(info.nx),
-                int(info.ny),
-                int(info.nz),
-                grid,
-                layers,
-                blocks,
+            arrays = {
+                name: np.empty(int(getattr(info, count)), dtype=dtype)
+                for name, _, dtype, count in _CELL_FIELD_SPECS
+            }
+            native = MhsCellFields(
+                **{
+                    name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
+                    for name, ctype, _, _ in _CELL_FIELD_SPECS
+                },
+                **{
+                    count: arrays[name].size
+                    for name, _, _, count in _CELL_FIELD_SPECS
+                },
             )
-        return self._metadata_cache
+            check(
+                self._dll.mhs_compiled_copy_cell_fields(
+                    self._handle, ctypes.byref(native)
+                ),
+                "cell_fields",
+            )
+            self._info = info
+            self._cells = CellFields(**arrays)
+        return self._cells
 
     @property
     def cell_count(self) -> int:
-        return self._fetch_metadata().cell_count
+        self._fetch_metadata()
+        return int(self._info.cell_count)
 
     @property
     def study_type(self) -> int:
-        return self._fetch_metadata().study_type
+        self._fetch_metadata()
+        return int(self._info.study_type)
 
     @property
     def initial_temperature(self) -> float:
-        return self._fetch_metadata().initial_temperature
+        self._fetch_metadata()
+        return float(self._info.initial_temperature)
 
     @property
     def nx(self) -> int:
-        return self._fetch_metadata().nx
+        self._fetch_metadata()
+        return int(self._info.nx)
 
     @property
     def ny(self) -> int:
-        return self._fetch_metadata().ny
+        self._fetch_metadata()
+        return int(self._info.ny)
 
     @property
     def nz(self) -> int:
-        return self._fetch_metadata().nz
+        self._fetch_metadata()
+        return int(self._info.nz)
 
     @property
-    def grid_to_cell(self) -> np.ndarray:
-        return self._fetch_metadata().grid_to_cell
-
-    @property
-    def layer_ids(self) -> np.ndarray:
-        return self._fetch_metadata().layer_ids
-
-    @property
-    def block_ids(self) -> np.ndarray:
-        return self._fetch_metadata().block_ids
+    def cells(self) -> CellFields:
+        return self._fetch_metadata()
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)

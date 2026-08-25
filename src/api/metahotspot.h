@@ -135,6 +135,32 @@ typedef struct {
     size_t nx, ny, nz;
 } mhs_compiled_info_t;
 
+/** Caller-owned buffers for one complete compiled CellFields snapshot. */
+typedef struct {
+    size_t* grid_to_cell;
+    size_t grid_count;
+    size_t* cell_to_grid;
+    size_t cell_count;
+    double* dx;
+    size_t nx;
+    double* dy;
+    size_t ny;
+    double* dz;
+    size_t nz;
+    double* cx;
+    double* cy;
+    double* cz;
+    uint32_t* layer_id;
+    uint32_t* block_id;
+    uint32_t* material_id;
+    uint32_t* heat_source_idx;
+    double* conductivity_x;
+    double* conductivity_y;
+    double* conductivity_z;
+    double* density;
+    double* specific_heat;
+} mhs_cell_fields_t;
+
 /** Sizes for an owned operator handle. K and C are square state_count matrices. */
 typedef struct {
     size_t state_count;
@@ -251,9 +277,7 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
-MHS_API mhs_status_t mhs_compiled_copy_grid_to_cell(const mhs_compiled_t* c, size_t* out, size_t count);
-MHS_API mhs_status_t mhs_compiled_copy_layer_ids(const mhs_compiled_t* c, uint32_t* out, size_t count);
-MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32_t* out, size_t count);
+MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */

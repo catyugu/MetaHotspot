@@ -16,6 +16,7 @@ from metahotspot.types import (
     Point2D,
     MhsFaceRegion,
     MhsCompiledInfo,
+    MhsCellFields,
     MhsOperatorsInfo,
     MhsSolutionInfo,
     _SolveOptionsCStruct,
@@ -261,19 +262,9 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
         [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCompiledInfo)],
     ),
     (
-        "mhs_compiled_copy_grid_to_cell",
+        "mhs_compiled_copy_cell_fields",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t],
-    ),
-    (
-        "mhs_compiled_copy_layer_ids",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
-    ),
-    (
-        "mhs_compiled_copy_block_ids",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCellFields)],
     ),
     # ---- Assembly ----
     (

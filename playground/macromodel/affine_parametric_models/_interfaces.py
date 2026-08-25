@@ -40,8 +40,8 @@ from typing import Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.compiled import Operators
-from metahotspot.enums import Study
+from metahotspot.compiled import CellFields, Operators
+from metahotspot.enums import Face, Study
 
 from utils import (
     normalized_operators,
@@ -81,8 +81,8 @@ class CellLayout:
     (x, y, z); ``half_sizes[:, c]`` is half the cell-side length (centre → face
     distance) along each axis; ``conductivity[:, c]`` is the static (kx, ky, kz)
     in W/m·K, evaluated at compile time at (cell_centre, ambient, t=0).  All
-    three arrays align with :attr:`Compiled.layer_ids` order, so
-    ``layer_ids[c]`` indexes the model's material table.
+    three arrays align with :attr:`Compiled.cells` order, so every column is
+    indexed by the same compact Cell ID.
     """
 
     centers: np.ndarray  # (cell_count, 3) float64, SI metres
@@ -120,90 +120,48 @@ class AffineSolveResult:
 
 
 def surface_exposed_cells(
-    grid_to_cell, x_verts, y_verts, z_verts, face, coord, z_range=None
-):
+    cells: CellFields, face: Face, coord: float, z_range=None
+) -> tuple[np.ndarray, np.ndarray]:
     """Exposed-surface cells + SI face areas for one flat face region.
 
-    ``grid_to_cell`` is the compiled ``(nx, ny, nz)`` occupancy grid (``-1``
-    where empty), ``x_verts/y_verts/z_verts`` the SI vertex arrays along each
-    axis, ``face`` a :class:`Face` and ``coord`` the face's SI coordinate.  A
-    cell is on the face if it touches that surface and has no active neighbour
-    across it (i.e. it is truly exposed).  ``z_range`` (optional) restricts the
-    cells to those whose z-centre falls inside ``(zmin, zmax)``.  Returns
-    ``(cells, areas)``: the full-domain FVM indices of the exposed cells and
-    their SI face area (m²).  Only the four lateral faces (X/Y) and the two Z
-    faces are supported.
+    ``cells`` is the compiled :class:`~metahotspot.compiled.CellFields` view,
+    ``face`` a :class:`~metahotspot.enums.Face` and ``coord`` the face's SI
+    coordinate.  A cell is on the face if it is truly exposed across it (no
+    active neighbour — :attr:`CellFields.exposed_face_mask`) and its face plane
+    sits at ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
+    those whose z-centre falls inside ``(zmin, zmax)``; it is not applied to the
+    Z faces.  Returns ``(cells, areas)``: the full-domain FVM indices of the
+    exposed cells (ascending compact order) and their SI face area (m²).
     """
-    nx, ny, nz = grid_to_cell.shape
-    cells, areas = [], []
-    z_center = 0.5 * (np.asarray(z_verts)[:-1] + np.asarray(z_verts)[1:])
-
-    def in_z(iz):
-        if z_range is None:
-            return True
-        return z_range[0] - 1.0e-9 <= z_center[iz] <= z_range[1] + 1.0e-9
-
-    def face_area(ix, iy, iz):
-        return (y_verts[iy + 1] - y_verts[iy]) * (z_verts[iz + 1] - z_verts[iz])
-
-    def inside(a, lo, hi):
-        return lo - 1.0e-9 <= a <= hi + 1.0e-9
-
-    def neighbour(ix, iy, iz):
-        if 0 <= ix < nx and 0 <= iy < ny and 0 <= iz < nz:
-            return grid_to_cell[ix, iy, iz]
-        return -1
-
-    if face in (4, 5):  # ZM/ZP
-        iz = 0 if face == 4 else nz - 1
-        z_face = z_verts[iz] if face == 4 else z_verts[iz + 1]
-        if not inside(z_face, coord, coord):
+    face = Face(face)
+    candidates = np.flatnonzero((cells.exposed_face_mask >> int(face)) & 1)
+    ijk = cells.ijk
+    sizes = cells.cell_sizes
+    if face in (Face.ZM, Face.ZP):
+        iz = 0 if face == Face.ZM else cells.nz - 1
+        candidates = candidates[ijk[candidates, 2] == iz]
+        z_face = cells.z_vertices[0 if face == Face.ZM else cells.nz]
+        if not (coord - 1.0e-9 <= z_face <= coord + 1.0e-9):
             return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64)
-        above = -1 if face == 4 else 1  # ZM exposed across iz-1, ZP across iz+1
-        for ix in range(nx):
-            for iy in range(ny):
-                cell = grid_to_cell[ix, iy, iz]
-                if cell < 0:
-                    continue
-                nz_ = iz + above
-                if 0 <= nz_ < nz and grid_to_cell[ix, iy, nz_] >= 0:
-                    continue  # not exposed
-                cells.append(cell)
-                areas.append(
-                    (x_verts[ix + 1] - x_verts[ix]) * (y_verts[iy + 1] - y_verts[iy])
-                )
-    else:  # XM(0)/XP(1)/YM(2)/YP(3)
-        for ix in range(nx):
-            for iy in range(ny):
-                for iz in range(nz):
-                    cell = grid_to_cell[ix, iy, iz]
-                    if cell < 0 or not in_z(iz):
-                        continue
-                    if face in (0, 1):  # X faces
-                        x_face = x_verts[ix] if face == 0 else x_verts[ix + 1]
-                        if not inside(x_face, coord, coord):
-                            continue
-                        nix = ix - 1 if face == 0 else ix + 1
-                        if 0 <= nix < nx and grid_to_cell[nix, iy, iz] >= 0:
-                            continue
-                        cells.append(cell)
-                        areas.append(face_area(ix, iy, iz))
-                    else:  # Y faces (2, 3)
-                        y_face = y_verts[iy] if face == 2 else y_verts[iy + 1]
-                        if not inside(y_face, coord, coord):
-                            continue
-                        niy = iy - 1 if face == 2 else iy + 1
-                        if 0 <= niy < ny and grid_to_cell[ix, niy, iz] >= 0:
-                            continue
-                        cells.append(cell)
-                        areas.append(
-                            (x_verts[ix + 1] - x_verts[ix])
-                            * (z_verts[iz + 1] - z_verts[iz])
-                        )
-    return (
-        np.asarray(cells, dtype=np.int64),
-        np.asarray(areas, dtype=np.float64),
-    )
+        areas = sizes[candidates, 0] * sizes[candidates, 1]
+    else:
+        if face in (Face.XM, Face.XP):
+            axis, sign = 0, 1 if face == Face.XP else 0
+            tangent = (1, 2)
+        else:  # YM / YP
+            axis, sign = 1, 1 if face == Face.YP else 0
+            tangent = (0, 2)
+        verts = (cells.x_vertices, cells.y_vertices, cells.z_vertices)[axis]
+        plane = verts[ijk[candidates, axis] + sign]
+        keep = (coord - 1.0e-9 <= plane) & (plane <= coord + 1.0e-9)
+        if z_range is not None:
+            z_center = cells.cz[ijk[candidates, 2]]
+            keep &= (z_range[0] - 1.0e-9 <= z_center) & (
+                z_center <= z_range[1] + 1.0e-9
+            )
+        candidates = candidates[keep]
+        areas = sizes[candidates, tangent[0]] * sizes[candidates, tangent[1]]
+    return candidates.astype(np.int64), np.asarray(areas, dtype=np.float64)
 
 
 class AffineParametricModel:
@@ -237,7 +195,7 @@ class AffineParametricModel:
         ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
         geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
         ``boundary_groups``, ``boundary_h``, ``group_h_ranges``, ``source_power``,
-        ``_axis_vertices``, and ``_layer_conductivity``.  Everything else —
+        model-defined geometry and physical parameters. Everything else —
         full-domain assembly, source-shape extraction, per-cell geometry
         (:attr:`cell_layout`), boundary affine terms, native reference, reduced
         solve, temperature recovery — is shared here.  ``parameter_points`` has
@@ -378,112 +336,26 @@ class AffineParametricModel:
             terms.append(sp.diags(diagonal))
         return terms
 
-    # Axis index for face-direction / half-axis lookup.
-    _AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
-
-    def _axis_vertices(self, axis: str) -> np.ndarray:
-        """SI vertex array along ``axis`` (x/y/z) — shared geometry hook.
-
-        Concrete models return their own mesh breakpoints (e.g.
-        ``config.*_vertices_mm`` or ``z_vertices(layers)``), converted to
-        metres.  The shared :attr:`cell_layout` consumes it; subclasses must
-        override this.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__}: _axis_vertices() is not implemented; "
-            "return the SI vertex array for axis='x'/'y'/'z'."
-        )
-
-    def _physical_stack(self) -> tuple[tuple[float, float, float, float], ...]:
-        """Bottom-up ``(thickness_mm, kx, ky, kz)`` physical layer stack.
-
-        The single ground truth for layer layout.  Subclasses must override
-        this; the base derives :meth:`_layer_conductivity` from it (layer_id 0
-        = top) and :attr:`cell_layout` cross-checks every ``layer_id``'s
-        compiled z-band against this stack, so a reversed or misordered layer
-        stack fails the layout self-check instead of silently mis-assigning
-        material conductivities.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__}: _physical_stack() is not implemented; "
-            "return the bottom-up (thickness_mm, kx, ky, kz) layer stack."
-        )
-
-    def _layer_conductivity(self) -> dict[int, tuple[float, float, float]]:
-        """Per-layer ``(kx, ky, kz)`` in SI (W/m·K), keyed by ``layer_id``.
-
-        Derived from :meth:`_physical_stack` reversed to the compiler's
-        top-first ``layer_id`` order (layer_id 0 = top).  :attr:`cell_layout`
-        calls it once per compile and validates the z-bands against the same
-        stack.
-        """
-        stack = self._physical_stack()
-        if not stack:
-            raise RuntimeError(
-                f"{type(self).__name__}: _physical_stack() returned an empty stack"
-            )
-        return {i: (kx, ky, kz) for i, (_, kx, ky, kz) in enumerate(reversed(stack))}
-
     @cached_property
     def cell_layout(self) -> CellLayout:
-        """Per-cell geometry + conductivity, computed once at compile time.
-
-        Reads only what :class:`Compiled` already exposes (``grid_to_cell``,
-        ``nx/ny/nz``, ``layer_ids``), the model's own mesh breakpoints and the
-        model's :meth:`_layer_conductivity`.  Three (cell_count, 3) arrays in
-        SI units — used everywhere the base needs (cx, cy, cz, dx/2, dy/2,
-        dz/2, kx, ky, kz) for a cell index.
-        """
-        full = self._full
-        nx, ny, nz = int(full.nx), int(full.ny), int(full.nz)
-        cell_count = int(full.cell_count)
-
-        # (ix, iy, iz) for each active cell, derived from grid_to_cell.
-        flat = np.flatnonzero(np.asarray(full.grid_to_cell) >= 0).astype(np.int64)
-        # flat index decoding: ix = flat // (ny*nz); iy = (flat % (ny*nz)) // nz; iz = flat % nz
-        ny_nz = ny * nz
-        ix = flat // ny_nz
-        iy = (flat % ny_nz) // nz
-        iz = flat % nz
-
-        # Per-axis vertex arrays, one shared axis = same vertex list per model.
-        xv = np.asarray(self._axis_vertices("x"), dtype=np.float64)
-        yv = np.asarray(self._axis_vertices("y"), dtype=np.float64)
-        zv = np.asarray(self._axis_vertices("z"), dtype=np.float64)
-        xc, yc, zc = (
-            0.5 * (xv[:-1] + xv[1:]),
-            0.5 * (yv[:-1] + yv[1:]),
-            0.5 * (zv[:-1] + zv[1:]),
+        """Per-cell geometry and reference material values from native fields."""
+        cells = self._full.cells
+        conductivity = np.column_stack(
+            (cells.conductivity_x, cells.conductivity_y, cells.conductivity_z)
         )
-        xw, yw, zw = xv[1:] - xv[:-1], yv[1:] - yv[:-1], zv[1:] - zv[:-1]
-
-        centers = np.empty((cell_count, 3), dtype=np.float64)
-        half = np.empty((cell_count, 3), dtype=np.float64)
-        centers[:, 0] = xc[ix]
-        centers[:, 1] = yc[iy]
-        centers[:, 2] = zc[iz]
-        half[:, 0] = 0.5 * xw[ix]
-        half[:, 1] = 0.5 * yw[iy]
-        half[:, 2] = 0.5 * zw[iz]
-
-        # Per-cell static conductivity (kx, ky, kz) from the layer table.
-        table = self._layer_conductivity()
-        if not table:
-            raise RuntimeError(
-                f"{type(self).__name__}: _layer_conductivity() returned an empty map"
-            )
-        max_lid = max(int(k) for k in table.keys())
-        k_layers = np.asarray(
-            [
-                table.get(i, table[max(int(k) for k in table.keys())])
-                for i in range(max_lid + 1)
-            ],
-            dtype=np.float64,
+        return CellLayout(
+            centers=cells.centers,
+            half_sizes=cells.half_sizes,
+            conductivity=conductivity,
         )
-        layer_ids = np.asarray(full.layer_ids, dtype=np.int64)
-        k = k_layers[layer_ids]  # (cell_count, 3)
 
-        return CellLayout(centers=centers, half_sizes=half, conductivity=k)
+    @staticmethod
+    def _area_weighted(values, areas) -> float:
+        """Area-weighted mean; unweighted mean when ``areas`` sums to zero."""
+        values = np.asarray(values, dtype=np.float64)
+        areas = np.asarray(areas, dtype=np.float64)
+        total = float(areas.sum())
+        return float((values * areas).sum() / total) if total else float(values.mean())
 
     def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
         """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.
@@ -525,10 +397,7 @@ class AffineParametricModel:
             cells = np.asarray(group.cells, dtype=np.int64)
             p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
             areas = np.asarray(group.areas, dtype=np.float64)
-            total = float(areas.sum())
-            out[k] = (
-                float((p_cell * areas).sum() / total) if total else float(p_cell.mean())
-            )
+            out[k] = self._area_weighted(p_cell, areas)
         return out
 
     def h_ranges(self) -> np.ndarray:
@@ -551,9 +420,8 @@ class AffineParametricModel:
             p_lo = self._effective_per_cell(g, axes[k], lo)
             p_hi = self._effective_per_cell(g, axes[k], hi)
             areas = np.asarray(g.areas, dtype=np.float64)
-            total = float(areas.sum())
-            s_lo = float((p_lo * areas).sum() / total) if total else float(p_lo.mean())
-            s_hi = float((p_hi * areas).sum() / total) if total else float(p_hi.mean())
+            s_lo = self._area_weighted(p_lo, areas)
+            s_hi = self._area_weighted(p_hi, areas)
             out.append((min(s_lo, s_hi), max(s_lo, s_hi)))
         return np.asarray(out, dtype=np.float64)
 

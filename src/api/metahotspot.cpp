@@ -625,22 +625,66 @@ namespace {
     }
 }
 
-MHS_API mhs_status_t mhs_compiled_copy_grid_to_cell(const mhs_compiled_t* c, size_t* out, size_t count)
+MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields)
 {
     CHECK_NULL(c);
-    return copy_vector(c->model->cells.grid_to_cell, out, count, "grid_to_cell");
-}
-
-MHS_API mhs_status_t mhs_compiled_copy_layer_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
-{
-    CHECK_NULL(c);
-    return copy_vector(c->model->cells.layer_id, out, count, "layer_ids");
-}
-
-MHS_API mhs_status_t mhs_compiled_copy_block_ids(const mhs_compiled_t* c, uint32_t* out, size_t count)
-{
-    CHECK_NULL(c);
-    return copy_vector(c->model->cells.block_id, out, count, "block_ids");
+    CHECK_NULL(fields);
+    const auto& cells = c->model->cells;
+    const auto& mesh = c->model->mesh;
+    if (fields->grid_count != cells.grid_to_cell.size() || fields->cell_count != cells.cell_to_grid.size()
+        || fields->nx != mesh.nx || fields->ny != mesh.ny || fields->nz != mesh.nz) {
+        SET_ERR("CellFields buffer sizes do not match compiled model");
+        return MHS_ERR_INVALID_ARG;
+    }
+    auto status = copy_vector(cells.grid_to_cell, fields->grid_to_cell, fields->grid_count, "grid_to_cell");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.cell_to_grid, fields->cell_to_grid, fields->cell_count, "cell_to_grid");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.dx, fields->dx, fields->nx, "dx");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.dy, fields->dy, fields->ny, "dy");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.dz, fields->dz, fields->nz, "dz");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.cx, fields->cx, fields->nx, "cx");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.cy, fields->cy, fields->ny, "cy");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(mesh.cz, fields->cz, fields->nz, "cz");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.layer_id, fields->layer_id, fields->cell_count, "layer_id");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.block_id, fields->block_id, fields->cell_count, "block_id");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.material_id, fields->material_id, fields->cell_count, "material_id");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.heat_source_idx, fields->heat_source_idx, fields->cell_count, "heat_source_idx");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.conductivity_x, fields->conductivity_x, fields->cell_count, "conductivity_x");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.conductivity_y, fields->conductivity_y, fields->cell_count, "conductivity_y");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.conductivity_z, fields->conductivity_z, fields->cell_count, "conductivity_z");
+    if (status != MHS_OK)
+        return status;
+    status = copy_vector(cells.density, fields->density, fields->cell_count, "density");
+    if (status != MHS_OK)
+        return status;
+    return copy_vector(cells.specific_heat, fields->specific_heat, fields->cell_count, "specific_heat");
 }
 
 /* ------------------------------------------------------------------ */
