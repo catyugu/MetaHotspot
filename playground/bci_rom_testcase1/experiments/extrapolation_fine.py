@@ -29,7 +29,7 @@ from utils import (
     spd_solve,
 )  # noqa: E402
 
-OUT = PROJECT / "results" / "weekly_0825"
+OUT = PROJECT / "results" / "experiments"
 POWER = np.array([0.1, 0.2, 0.3, 0.4])
 MM = 1.0
 CASES = [

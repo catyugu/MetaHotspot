@@ -30,7 +30,7 @@ from utils import (
     solve_rom_transient,
 )  # noqa: E402
 
-OUT = PROJECT / "results" / "weekly_0825"
+OUT = PROJECT / "results" / "experiments"
 H = (50.0, 1000.0)
 POWER = np.array([0.1, 0.2, 0.3, 0.4])
 DURATION_S = 1000.0

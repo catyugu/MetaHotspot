@@ -32,7 +32,7 @@ from utils import (
     solve_rom_transient,
 )
 
-OUT = PROJECT / "results" / "weekly_0825"
+OUT = PROJECT / "results" / "experiments"
 AMB = 308.15
 POWER = np.array([0.1, 0.2, 0.3, 0.4])
 
