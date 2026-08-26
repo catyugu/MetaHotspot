@@ -10,7 +10,7 @@ the K/C/f interface, not the concrete model internals.
 
 Contents
 --------
-* dense helpers:            symmetric_dense, eigenpairs_descending
+* dense helpers:            eigenpairs_descending
 * MPMM frequency sampling:  mpmm_elliptic_shift_count, mpmm_elliptic_shifts
 * Krylov enrichment:        orthonormalize_block, response_error
 * sparse operator helpers:  normalized_operators
@@ -44,15 +44,9 @@ from metahotspot.compiled import Operators
 # ---------------------------------------------------------------------------
 
 
-def symmetric_dense(matrix) -> np.ndarray:
-    """Symmetric part of a dense matrix (0.5*(M + M^T))."""
-    matrix = np.asarray(matrix, dtype=np.float64)
-    return 0.5 * (matrix + matrix.T)
-
-
 def eigenpairs_descending(matrix):
     """Symmetric eigen-decomposition, eigenpairs sorted by descending value."""
-    values, vectors = scipy.linalg.eigh(symmetric_dense(matrix), check_finite=False)
+    values, vectors = scipy.linalg.eigh(matrix, check_finite=False)
     order = np.argsort(values)[::-1]
     return np.maximum(values[order], 0.0), vectors[:, order]
 
@@ -159,7 +153,7 @@ def response_error(response, basis, reduced, A, reference):
     ``reference`` (the response Gramian's leading eigenvalue).
     """
     error_response = response - basis @ reduced if basis.shape[1] else response
-    error_gram = symmetric_dense(error_response.T @ (A @ error_response))
+    error_gram = error_response.T @ (A @ error_response)
     values, tangents = eigenpairs_descending(error_gram)
     score = math.sqrt(float(values[0]) / reference)
     return error_response, values, tangents, score
@@ -338,7 +332,6 @@ def project_bci(
 
     def project(matrix):
         reduced = sp.csc_matrix(basis.T @ matrix @ basis)
-        reduced = (0.5 * (reduced + reduced.T)).tocsc()
         reduced.eliminate_zeros()
         return reduced
 
@@ -372,7 +365,7 @@ def project_bci(
     for term in boundary_terms:
         Hk_b = np.asarray(term.diagonal()).ravel()[b_cells]
         A_k = U_t.T @ (Hk_b[:, None] * U_t)  # Θ×Θ
-        A_bdry.append((0.5 * (A_k + A_k.T)).astype(np.float64))
+        A_bdry.append(A_k.astype(np.float64))
 
     return C_hat, K_hat0, F_hat, F_bdry, A_bdry
 
@@ -559,9 +552,9 @@ def build_parametric_basis(
         g_vec = np.asarray(g, dtype=np.float64).ravel()
         g_norm = max(float(np.linalg.norm(g_vec)), np.finfo(float).tiny)
         projected = {
-            "K": symmetric_dense(basis.T @ (K @ basis)),
-            "C": symmetric_dense(basis.T @ (C @ basis)),
-            "H": [symmetric_dense(basis.T @ (H @ basis)) for H in boundary_terms],
+            "K": basis.T @ (K @ basis),
+            "C": basis.T @ (C @ basis),
+            "H": [basis.T @ (H @ basis) for H in boundary_terms],
         }
         g_hat = np.asarray(basis.T @ g_vec, dtype=np.float64).ravel()
 
@@ -571,14 +564,12 @@ def build_parametric_basis(
         for key, M in (("K", K), ("C", C)):
             MW = M @ W
             cross = B_old.T @ MW
-            projected[key] = np.block(
-                [[projected[key], cross], [cross.T, symmetric_dense(W.T @ MW)]]
-            )
+            projected[key] = np.block([[projected[key], cross], [cross.T, W.T @ MW]])
         for j, H in enumerate(boundary_terms):
             HW = H @ W
             cross = B_old.T @ HW
             projected["H"][j] = np.block(
-                [[projected["H"][j], cross], [cross.T, symmetric_dense(W.T @ HW)]]
+                [[projected["H"][j], cross], [cross.T, W.T @ HW]]
             )
         g_hat = np.concatenate([g_hat, np.asarray(W.T @ g_vec).ravel()])
 
@@ -589,7 +580,7 @@ def build_parametric_basis(
             A_hat = A_hat + shift * projected["C"]
         for h, H_hat in zip(h_vec, projected["H"]):
             A_hat = A_hat + h * H_hat
-        return np.linalg.solve(symmetric_dense(A_hat), g_hat)
+        return np.linalg.solve(A_hat, g_hat)
 
     def probe_residual(h_vec, shift):
         """Algorithm-1 step-2 residual η of the basis at (shift, h_vec)."""

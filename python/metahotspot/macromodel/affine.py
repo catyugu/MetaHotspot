@@ -462,7 +462,6 @@ class AffineParametricModel:
         K_h = K.copy()
         for p_k, H_k in zip(p, terms):
             K_h = K_h + float(p_k) * H_k
-        K_h = (0.5 * (K_h + K_h.T)).tocsc()
 
         started = time.perf_counter()
         steady_rise = solve_rom_steady(K_h, G, self.nominal_power())

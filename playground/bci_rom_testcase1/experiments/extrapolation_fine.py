@@ -61,7 +61,6 @@ def steady_reference(model, h):
     K = core.K.tocsc()
     for pk, Hk in zip(model.physical_to_effective(h), model.boundary_terms()):
         K = K + float(pk) * Hk.tocsc()
-    K = (0.5 * (K + K.T)).tocsc()
     x = spd_solve(K, model.source_shape() @ POWER)  # rise above ambient
     return model.ambient_K + model.source_shape().T @ x  # absolute junction
 

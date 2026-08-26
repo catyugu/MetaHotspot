@@ -299,7 +299,6 @@ def build_subdomain(
         if value < 0.0:
             phantom[row] -= value
     K = (K - sp.diags(phantom)).tocsc()
-    K = (0.5 * (K + K.T)).tocsc()
 
     ports = enumerate_interface_ports(model, cells)
     return Subdomain(
@@ -469,8 +468,8 @@ def extract_rom(
     # interior <-> band cross terms (explicit band rows, reduced interior cols)
     K_s = subdomain.K.tocsc()
     C_s = subdomain.C.tocsc()
-    K_BB = sp.csc_matrix(0.5 * (K_s[band][:, band] + K_s[band][:, band].T))
-    C_BB = sp.csc_matrix(0.5 * (C_s[band][:, band] + C_s[band][:, band].T))
+    K_BB = K_s[band][:, band].tocsc()
+    C_BB = C_s[band][:, band].tocsc()
     K_BQ = K_s[band][:, interior] @ basis
     C_BQ = C_s[band][:, interior] @ basis
     band_rhs = np.asarray(subdomain.source[band, :], dtype=np.float64)
@@ -481,7 +480,7 @@ def extract_rom(
         interior=interior,
         band=band,
         basis=np.asarray(basis, dtype=np.float64),
-        C_hat=sp.csc_matrix(0.5 * (C_hat + C_hat.T)),
+        C_hat=C_hat,
         K0_hat=K0_hat,
         F_hat=np.asarray(F_hat, dtype=np.float64),
         F_bdry=np.asarray(F_bdry, dtype=np.float64),
@@ -637,7 +636,7 @@ def extract_trace_rom(
         name=subdomain.name,
         cells=subdomain.cells,
         basis=np.asarray(basis, dtype=np.float64),
-        C_hat=sp.csc_matrix(0.5 * (C_hat + C_hat.T)),
+        C_hat=C_hat,
         K0_hat=K0,
         F_hat=np.asarray(F_hat, dtype=np.float64),
         F_bdry=np.asarray(F_bdry, dtype=np.float64),

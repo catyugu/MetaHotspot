@@ -82,7 +82,6 @@ def main(mm: float):
     K_h = core.K.tocsc().copy()
     for pk, Hk in zip(model.physical_to_effective(H), terms):
         K_h = K_h + float(pk) * Hk.tocsc()
-    K_h = (0.5 * (K_h + K_h.T)).tocsc()
     C = core.C.tocsc()
 
     # ---- detailed (full FVM) transient with AMG preconditioner ----------

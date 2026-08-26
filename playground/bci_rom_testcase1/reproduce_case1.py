@@ -178,7 +178,6 @@ def run():
     # ---- FloTHERM ROM ---------------------------------------------------
     Kf, Mf, g, dH0, dH1 = load_flotherm()
     K_eff_fl = Kf + H_FR4 * dH0 + H_CROWN * dH1
-    K_eff_fl = (0.5 * (K_eff_fl + K_eff_fl.T)).tocsc()
     junc_fl_ss = flotherm_steady(K_eff_fl, g)
     fl_times, junc_fl_hist = flotherm_transient(Mf, K_eff_fl, g, DT_S, DURATION_S)
 
