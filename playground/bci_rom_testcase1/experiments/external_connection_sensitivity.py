@@ -1,135 +1,152 @@
 #!/usr/bin/env python3
-"""Test whether an extracted ROM is independent of its external load."""
+"""Test whether an *extracted* embeddable ROM is independent of its external load."""
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from interface_coupling_experiments import (
-    BOUNDARY_H,
-    POWER_W,
-    build_full_system,
-    build_interface,
-    build_rom,
-    build_side,
-    identity_basis,
-    make_model,
-    run_case,
-)
+ROOT = Path(__file__).resolve().parents[3]
+CASE_DIR = ROOT / "playground" / "bci_rom_testcase1"
+MACRO_DIR = ROOT / "playground" / "macromodel"
+sys.path[:0] = [str(CASE_DIR), str(MACRO_DIR), str(ROOT / "python")]
 
-RESULT_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "results"
-    / "experiments"
-    / "external_connection_sensitivity.json"
-)
+from model_case1 import Case1Config, Case1Model  # noqa: E402
+import embeddable_rom as er  # noqa: E402
+
+AMBIENT_K = 308.15
+BOUNDARY_H = (5.0e1, 1.0e3)
+POWER_W = np.array([0.1, 0.2, 0.3, 0.4])
+INTERFACE_Z = 10.0e-3
+DT_S = 5.0
+DURATION_S = 100.0
+
+RESULT_PATH = ROOT / "results" / "experiments" / "external_connection_sensitivity.json"
 
 
-def lower_bottom_pattern(model, lower):
-    """Return a lower side with a spatially varying bottom HTC."""
-    bottom_area = lower.boundary_terms[1].diagonal()
-    centers = model.cell_layout.centers[lower.cells]
-    parity = (np.floor((centers[:, 0] + 0.03) / 0.005) + np.floor((centers[:, 1] + 0.05) / 0.005)) % 2
-    factor = np.where(parity == 0, 0.1, 1.9)
+def split_cells(model, upper):
+    z = model.cell_layout.centers[:, 2]
+    if upper:
+        return np.flatnonzero(z >= INTERFACE_Z - 1.0e-12)
+    return np.flatnonzero(z < INTERFACE_Z - 1.0e-12)
+
+
+def make_model(cell_size_mm):
+    return Case1Model(
+        Case1Config(
+            max_xy_cell_mm=cell_size_mm,
+            max_z_cell_mm=2.5,
+            dt_s=DT_S,
+            duration_s=DURATION_S,
+        )
+    )
+
+
+def build_patterned_lower(model, lower_cells):
+    """Lower side with a spatially varying bottom HTC (folded via ambient_diag)."""
+    full = model.full_cell_count
     effective_bottom_h = model.physical_to_effective(BOUNDARY_H)[1]
-    delta = effective_bottom_h * (factor - 1.0) * bottom_area
-    stiffness = lower.stiffness + sp.diags(delta)
-    return replace(lower, stiffness=stiffness.tocsc())
+    bot_cells = np.asarray(model.boundary_groups()[1].cells, dtype=np.int64)
+    area = np.asarray(model.boundary_terms()[1].diagonal()).ravel()
+    centers = model.cell_layout.centers[bot_cells]
+    parity = (
+        np.floor((centers[:, 0] + 0.03) / 0.005)
+        + np.floor((centers[:, 1] + 0.05) / 0.005)
+    ) % 2
+    factor = np.where(parity == 0, 0.1, 1.9)
+    diag = np.zeros(full)
+    diag[bot_cells] = effective_bottom_h * factor * area[bot_cells]
+    return er.build_subdomain(
+        model, lower_cells, name="patterned_lower", ambient_diag=diag
+    )
 
 
-def lower_active_source(model, lower):
-    """Return a lower side with one additional localized source port."""
+def build_active_lower(model, lower_cells):
+    """Lower side with one additional localized source port (column 0)."""
+    lower = er.build_subdomain(
+        model, lower_cells, name="active_lower", physical_h=BOUNDARY_H
+    )
     centers = model.cell_layout.centers[lower.cells]
     target = np.array([0.0, 0.0, 0.005])
     cell = int(np.argmin(np.linalg.norm(centers - target, axis=1)))
     source = lower.source.copy()
     source[cell, 0] = 1.0
-    return replace(lower, source=source)
+    lower.source = source
+    return lower
 
 
-def upper_junctions(upper, lower, interface, upper_basis, lower_basis):
-    result = run_case(
-        upper,
+def upper_junctions(upper_side, lower, lport_label="z-", rport_label="z+"):
+    """Upper-side junction temperatures (K) for a given external lower side."""
+    K, C, rhs, left_order, right_order, npatch = er.connect(
+        upper_side,
         lower,
-        interface,
-        upper_basis,
-        lower_basis,
-        np.zeros(upper.source.shape[1] * 2),
+        upper_side.port(lport_label),
+        lower.port(rport_label),
+        power=POWER_W,
     )
-    return np.asarray(result["steady_junction_K"][: upper.source.shape[1]])
+    steady, _ = er.solve_system(K, C, rhs, DT_S, DURATION_S)
+    return AMBIENT_K + er.side_junction_rise(steady, upper_side, 0)
 
 
-def evaluate_case(name, upper, lower, interface, rom_basis, identity_lower, reference):
-    rom = upper_junctions(upper, lower, interface, rom_basis, identity_lower)
-    detailed = upper_junctions(
-        upper,
-        lower,
-        interface,
-        identity_basis(upper)[0],
-        identity_lower,
-    )
+def evaluate_case(upper, upper_identity, lower, rom):
+    """Compare detailed (identity upper) vs embedded-ROM upper junction."""
+    detailed = upper_junctions(upper_identity, lower)
+    rom_j = upper_junctions(upper, lower)
     return {
-        "reference_upper_junction_K": reference.tolist(),
         "detailed_upper_junction_K": detailed.tolist(),
-        "rom_upper_junction_K": rom.tolist(),
-        "detailed_vs_reference_max_error_K": float(np.max(np.abs(detailed - reference))),
-        "rom_vs_detailed_max_error_K": float(np.max(np.abs(rom - detailed))),
+        "rom_upper_junction_K": rom_j.tolist(),
+        "rom_vs_detailed_max_error_K": float(np.max(np.abs(rom_j - detailed))),
     }
 
 
 def run():
     model = make_model(2.5)
-    stiffness, capacitance, source = build_full_system(model)
-    upper = build_side(model, stiffness, capacitance, source, True)
-    lower = build_side(model, stiffness, capacitance, source, False)
-    interface = build_interface(upper, lower)
-    identity_upper, _ = identity_basis(upper)
-    identity_lower, _ = identity_basis(lower)
-    area_by_cell = np.bincount(
-        upper.interface_cells[interface.upper_cells],
-        weights=interface.areas,
-        minlength=upper.cells.size,
-    )
-    rom, summary = build_rom(upper, area_by_cell)
+    upper_cells = split_cells(model, True)
+    lower_cells = split_cells(model, False)
 
-    baseline_reference = upper_junctions(
-        upper, lower, interface, identity_upper, identity_lower
+    upper_identity = er.build_subdomain(
+        model, upper_cells, name="upper", physical_h=BOUNDARY_H
     )
-    patterned_lower = lower_bottom_pattern(model, lower)
-    patterned_interface = build_interface(upper, patterned_lower)
-    active_lower = lower_active_source(model, lower)
-    active_interface = build_interface(upper, active_lower)
+    uniform_lower = er.build_subdomain(
+        model, lower_cells, name="uniform_lower", physical_h=BOUNDARY_H
+    )
+
+    # ONE paper-Section-4 extraction (boundary + interior reduced together),
+    # exposing all ports; reused for every external structure.
+    rom = er.extract_trace_rom(
+        upper_identity, tolerance=1.0e-2, max_order=2048, probe_rounds=2,
+        seed=20260825, interface_ports=["z-"],
+    )
+    summary = rom.summary
+
+    patterned_lower = build_patterned_lower(model, lower_cells)
+    active_lower = build_active_lower(model, lower_cells)
 
     results = {
         "baseline_uniform_external": evaluate_case(
-            "baseline", upper, lower, interface, rom, identity_lower, baseline_reference
+            rom, upper_identity, uniform_lower, rom
         ),
         "nonuniform_external_boundary": evaluate_case(
-            "patterned", upper, patterned_lower, patterned_interface, rom,
-            identity_basis(patterned_lower)[0],
-            upper_junctions(upper, patterned_lower, patterned_interface,
-                            identity_upper, identity_basis(patterned_lower)[0]),
+            rom, upper_identity, patterned_lower, rom
         ),
         "active_external_subdomain": evaluate_case(
-            "active", upper, active_lower, active_interface, rom,
-            identity_basis(active_lower)[0],
-            upper_junctions(upper, active_lower, active_interface,
-                            identity_upper, identity_basis(active_lower)[0]),
+            rom, upper_identity, active_lower, rom
         ),
     }
     payload = {
-        "question": "Does changing the external connection change the result of a fixed ROM?",
+        "question": (
+            "Does changing the external connection change the result of a fixed, "
+            "once-extracted embeddable ROM?"
+        ),
         "extraction": {
-            "external_structure_used": "uniform interface port plus declared boundary groups",
-            "basis_order": int(rom.shape[1]),
+            "external_structure_used": "same upper ROM reused verbatim across all "
+            "three lower-side structures (uniform / patterned BC / active subdomain)",
+            "basis_order": int(rom.order),
             "seconds": float(summary["seconds"]),
             "relative_response_error": float(summary["relative_response_error"]),
+            "ports": [p.normal for p in rom.ports],
         },
         "results": results,
     }
