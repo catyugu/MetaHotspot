@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/fluid_domain.hpp"
-#include "common/types.hpp"
+#include "core/fluid_domain.hpp"
+#include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include <string>

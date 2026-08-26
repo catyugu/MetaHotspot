@@ -1,6 +1,6 @@
 # Authoring Model
 
-`src/common/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
+`src/core/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 
 XML reader 和外部代码都直接填充 `ModelDefinition` 结构，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 

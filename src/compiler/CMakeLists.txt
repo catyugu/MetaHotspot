@@ -6,7 +6,7 @@ add_library(mhs_compiler STATIC
 )
 target_include_directories(mhs_compiler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(mhs_compiler
-    PUBLIC mhs_common
+    PUBLIC mhs_core
     PRIVATE mhs_linear
     PRIVATE mhs_options
 )

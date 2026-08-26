@@ -7,7 +7,7 @@ add_library(mhs_io STATIC
 )
 target_include_directories(mhs_io PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(mhs_io
-    PUBLIC mhs_common
+    PUBLIC mhs_core
     PRIVATE tinyxml2
     PRIVATE mhs_options
 )

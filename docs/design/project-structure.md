@@ -6,7 +6,7 @@
 
 | 目录                       | 目标                | 职责                                               |
 | -------------------------- | ------------------- | -------------------------------------------------- |
-| `src/common/`              | `mhs_common`        | header-only authoring/runtime 契约、网格和结果类型 |
+| `src/core/`                | `mhs_core`          | header-only authoring/runtime 契约、网格和结果类型 |
 | `src/compiler/`            | `mhs_compiler`      | 几何解析、表达式编译、SoA 编译和冻结流场构建       |
 | `src/solver/`              | `mhs_solver`        | 组装、非线性迭代、线性求解、时间推进、探针和后处理 |
 | `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                         |
@@ -14,7 +14,7 @@
 | `src/io/`                  | `mhs_io`            | tinyxml2 适配及 XML/VTU 输出                       |
 | `src/logging/`             | `mhs_logging`       | spdlog 封装                                        |
 | `src/api/`                 | `metahotspot` C API | opaque handle 与 C ABI 适配                        |
-| `bin/`                     | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理                 |
+| `apps/metahotspot/`        | `metahotspot` CLI   | 参数解析、日志初始化和顶层错误处理                 |
 | `tests/`                   | `mhs_tests`         | 单元测试和模块行为验证                             |
 
 模块内按职责拆分 `.cpp`，但 assembler、time scheme、fluid 等实现细节不单独建库。第三方依赖或编译成本边界才构成独立目标。
@@ -40,8 +40,8 @@
 - C++20，禁用编译器扩展。
 - 项目源码启用严格告警并视为错误；第三方库除外。
 - Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
-- `mhs_common` 通过 `mhs_expression` 提供的表达式类型保存编译后表达式；当前实现依赖 muparser/TBB。
-- `mhs_common` 不直接引入 Eigen、tinyxml2 或 spdlog；`mhs_solver` 和 `mhs_linear` 使用 Eigen，`mhs_io` 使用 tinyxml2，`mhs_logging` 使用 spdlog。
+- `mhs_core` 通过 `mhs_expression` 提供的表达式类型保存编译后表达式；当前实现依赖 muparser/TBB。
+- `mhs_core` 不直接引入 Eigen、tinyxml2 或 spdlog；`mhs_solver` 和 `mhs_linear` 使用 Eigen，`mhs_io` 使用 tinyxml2，`mhs_logging` 使用 spdlog。
 - C API 公共头只暴露 C 类型、枚举和 opaque handle；批量结果通过 copy-out API 写入调用方缓冲区。
 
 具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。

@@ -8,7 +8,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 | 目标             | 职责                                          |
 | ---------------- | --------------------------------------------- |
-| `mhs_common`     | header-only 运行期数据契约和网格助手          |
+| `mhs_core`       | header-only 运行期数据契约和网格助手          |
 | `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场 |
 | `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
 | `mhs_expression` | muparser 与 TBB 表达式封装                    |

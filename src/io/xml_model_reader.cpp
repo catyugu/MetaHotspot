@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "common/model_definition.hpp"
+#include "core/model_definition.hpp"
 #include "io/face_region_parser.hpp"
 #include "io/model_io.hpp"
 #include "io/xml_helpers.hpp"

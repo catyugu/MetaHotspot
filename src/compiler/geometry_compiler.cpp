@@ -1,6 +1,6 @@
 #include "compiler/geometry_compiler.hpp"
-#include "common/constants.hpp"
-#include "common/mesh.hpp"
+#include "core/constants.hpp"
+#include "core/mesh.hpp"
 #include "numerics/expression/expr.hpp"
 #include <algorithm>
 #include <cstddef>

@@ -1,6 +1,6 @@
-#include "common/mesh.hpp"
 #include "compiler/model_compiler.hpp"
 #include "config.h"
+#include "core/mesh.hpp"
 #include "io/model_io.hpp"
 #include "solver/fluid_assembler.hpp"
 

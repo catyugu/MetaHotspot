@@ -1,11 +1,11 @@
 /* Implementation of the MetaHotspot C API. */
-#include "api/metahotspot.h"
+#include "metahotspot.h"
 #include "api/internal.h"
 
-#include "common/mesh.hpp"
-#include "common/model_definition.hpp"
-#include "common/solver.hpp"
 #include "compiler/model_compiler.hpp"
+#include "core/mesh.hpp"
+#include "core/model_definition.hpp"
+#include "core/solver.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "solver/assembler.hpp"

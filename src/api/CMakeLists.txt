@@ -6,7 +6,10 @@ target_link_libraries(mhs_c_api PRIVATE
     mhs_solver
     mhs_io
 )
-target_include_directories(mhs_c_api PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(mhs_c_api
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/src
+)
 target_compile_definitions(mhs_c_api PRIVATE
     MHS_API_EXPORT
     MHS_BUILD_SHARED

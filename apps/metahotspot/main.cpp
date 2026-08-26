@@ -1,9 +1,9 @@
 #include "cli.hpp"
 #include "compiler/model_compiler.hpp"
+#include "core/solver.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "logging/logger.hpp"
-#include "common/solver.hpp"
 #include "solver/postprocessor.hpp"
 #include <iostream>
 #include <optional>
@@ -29,9 +29,6 @@ int main(int argc, char* argv[])
     const std::string& output_vtu = opts.output_vtu;
     const std::string& output_xml = opts.output_xml;
 
-    // Fluid overlay 路径策略：
-    //   - --fluid-overlay <file>     -> 显式覆盖；只有显式传入时才执行流体相关逻辑
-    //   - (默认)                    -> 不加载 fluid overlay，所有流体逻辑跳过
     std::optional<std::string> fluidOverlayPath;
     fluidOverlayPath = opts.fluid_overlay;
 
@@ -48,7 +45,6 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", definition.layers.size(),
             definition.materials.size(), definition.boundaries.size());
 
-        // Fluid overlay: 加载与否由 CLI 决定；只有显式传入 --fluid-overlay 时才执行流体相关逻辑。
         if (fluidOverlayPath.has_value()) {
             mhs::io::merge_fluid_xml(*fluidOverlayPath, definition);
             MHS_LOG_INFO("Merged fluid data with {} boundaries", definition.fluid_boundaries.size());

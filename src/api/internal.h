@@ -3,9 +3,9 @@
 /* Internal opaque handle definitions shared across the core API TUs.  Not
    part of the public API. */
 
-#include "api/metahotspot.h" // mhs_solve_options_t etc.
-#include "common/model_definition.hpp"
-#include "common/solver.hpp" // mhs::sim::SolveOptions
+#include "core/model_definition.hpp"
+#include "core/solver.hpp" // mhs::sim::SolveOptions
+#include "metahotspot.h" // mhs_solve_options_t etc.
 #include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>

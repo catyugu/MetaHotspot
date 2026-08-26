@@ -1,6 +1,6 @@
 #include "solver/solve.hpp"
-#include "common/constants.hpp"
-#include "common/solver.hpp"
+#include "core/constants.hpp"
+#include "core/solver.hpp"
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"

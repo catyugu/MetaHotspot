@@ -16,7 +16,7 @@
 ## 三、架构重构
 
 1. **求解器层重构**：将原来的 `solver` 模块拆分为独立的 `linear_solver`，内部按求解器类型（AmgCg、Pardiso）封装，方便按需编译。
-2. **模块合并**：将 `logger` 和 `model` 合并入 `common_lib`，减少库数量；`model/types.hpp` 中的类型定义移入 `common/types.hpp`。
+2. **模块合并**：将 `logger` 和 `model` 合并入 `common_lib`，减少库数量；`model/types.hpp` 中的类型定义移入 `core/types.hpp`。
 3. **expr 模块改造**：重构了 expr 模块的原生函数注册机制，使绑定接口更加简单易用，同时解除了 command 与 expr 之间的循环依赖。
 4. **face_key_processor 简化**：引入 `mesh_utils` 查表替代原先的方向枚举分支判断，`face_key_processor` 逻辑精简。
 

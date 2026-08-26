@@ -1,6 +1,6 @@
 #include "solver/nonlinear_solver.hpp"
 
-#include "common/types.hpp"
+#include "core/types.hpp"
 #include "logging/logger.hpp"
 #include <Eigen/QR>
 

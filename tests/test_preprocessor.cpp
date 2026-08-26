@@ -1,5 +1,5 @@
-#include "common/model_definition.hpp"
 #include "compiler/model_compiler.hpp"
+#include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
 #include <algorithm>

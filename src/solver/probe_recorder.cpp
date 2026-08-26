@@ -1,5 +1,5 @@
 #include "solver/probe_recorder.hpp"
-#include "common/mesh.hpp"
+#include "core/mesh.hpp"
 #include "solver/interpolation.hpp"
 
 #include <span>

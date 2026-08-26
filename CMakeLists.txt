@@ -26,4 +26,4 @@ add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
-add_subdirectory(bin)
+add_subdirectory(apps/metahotspot)

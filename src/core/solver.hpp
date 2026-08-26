@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/model.hpp"
-#include "common/solution.hpp"
+#include "core/model.hpp"
+#include "core/solution.hpp"
 #include <span>
 
 namespace mhs::sim {
