@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Interface-node coupling experiments for the Case-1 BCI-ROM model.
 
-Migrated onto the *embeddable* ROM mechanism (``macromodel/embeddable_rom.py``):
+Migrated onto the *embeddable* ROM mechanism (``metahotspot.macromodel.embeddable``):
 the source-bearing upper subdomain is reduced **once** and exposes all its
 boundary faces as connectable ports; each case below reuses that single
 extraction and merely connects the bottom cut port ``z-`` to a different
@@ -23,11 +23,10 @@ import scipy.sparse.linalg as spla
 
 ROOT = Path(__file__).resolve().parents[3]
 CASE_DIR = ROOT / "playground" / "bci_rom_testcase1"
-MACRO_DIR = ROOT / "playground" / "macromodel"
-sys.path[:0] = [str(CASE_DIR), str(MACRO_DIR), str(ROOT / "python")]
+sys.path[:0] = [str(CASE_DIR)]
 
 from model_case1 import Case1Config, Case1Model  # noqa: E402
-import embeddable_rom as er  # noqa: E402
+from metahotspot.macromodel import embeddable as er  # noqa: E402
 
 AMBIENT_K = 308.15
 BOUNDARY_H = (5.0e1, 1.0e3)
@@ -149,9 +148,13 @@ def run():
     # One paper-Section-4 extraction (boundary + interior reduced together),
     # exposing every boundary face as a port; reused in every coupling case.
     rom = er.extract_trace_rom(
-            fine_upper, tolerance=1.0e-2, max_order=2048, probe_rounds=2,
-            seed=20260825, interface_ports=["z-"],
-        )
+        fine_upper,
+        tolerance=1.0e-2,
+        max_order=2048,
+        probe_rounds=2,
+        seed=20260825,
+        interface_ports=["z-"],
+    )
     summary = rom.summary
 
     monolithic = monolithic_reference(fine_model)[:4]  # upper ports S0..S3

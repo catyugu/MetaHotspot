@@ -2,7 +2,7 @@
 """Embeddable FANTASTIC–BCI ROM extraction: extract once, connect everywhere.
 
 A *subdomain* (an arbitrary connected set of cells of the full model) is reduced
-a single time. Its boundary splits in two roles:
+a single time.  Its boundary splits in two roles:
 
 * **BCI faces** — the faces carrying an explicitly declared ambient boundary
   condition.  These are handled *exactly as in the classic pipeline*: each is an
@@ -49,7 +49,7 @@ import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
 
-from utils import (
+from metahotspot.macromodel.utils import (
     assemble_reduced_k,
     build_parametric_basis,
     normalized_operators,
@@ -281,9 +281,12 @@ def build_subdomain(
             diag = np.asarray(term.diagonal()).ravel()[cells]
             ambient_terms.append(sp.diags(diag))
             ambient_ranges.append(list(h_range))
-        effective_p = np.asarray(
-            model.physical_to_effective(physical_h), dtype=np.float64
-        )
+        if physical_h is None:
+            effective_p = np.empty(len(ambient_terms), dtype=np.float64)
+        else:
+            effective_p = np.asarray(
+                model.physical_to_effective(physical_h), dtype=np.float64
+            )
     else:
         K = K + sp.diags(np.asarray(ambient_diag, dtype=np.float64)[cells])
 
@@ -596,9 +599,11 @@ def extract_trace_rom(
     ops = normalized_operators(subdomain.K, subdomain.C, np.zeros(n))
     G = np.asarray(subdomain.source, dtype=np.float64)
 
-    use = list(subdomain.ports) if interface_ports is None else [
-        p for p in subdomain.ports if p.label in interface_ports
-    ]
+    use = (
+        list(subdomain.ports)
+        if interface_ports is None
+        else [p for p in subdomain.ports if p.label in interface_ports]
+    )
     train_terms = list(subdomain.ambient_terms)
     train_ranges = list(np.asarray(subdomain.ambient_ranges, dtype=float))
     for p in use:
@@ -608,14 +613,21 @@ def extract_trace_rom(
         train_terms.append(sp.diags(diag))
         htc = np.asarray(p.k, dtype=float) / np.asarray(p.half, dtype=float)
         train_ranges.append(
-            [float(np.min(htc) * interface_htc_factor[0]),
-             float(np.max(htc) * interface_htc_factor[1])]
+            [
+                float(np.min(htc) * interface_htc_factor[0]),
+                float(np.max(htc) * interface_htc_factor[1]),
+            ]
         )
 
     basis, summary = build_parametric_basis(
-        ops, G, train_terms, np.asarray(train_ranges, dtype=float),
-        tolerance=tolerance, max_order=max_order,
-        probe_rounds=probe_rounds, seed=seed,
+        ops,
+        G,
+        train_terms,
+        np.asarray(train_ranges, dtype=float),
+        tolerance=tolerance,
+        max_order=max_order,
+        probe_rounds=probe_rounds,
+        seed=seed,
     )
 
     C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(
@@ -738,6 +750,10 @@ def interface_trace(side, port, li, xi):
 
     * ``Subdomain`` (full-FVM): ``V_if`` is the face→cell incidence ``E·A_S``, a
       single 1 at the owning band cell's DOF;
+    * ``EmbeddableRom`` (reduced interior + full-FVM interface band): same
+      incidence as a ``Subdomain``, mapped into the ``[band | q]`` DOF layout —
+      the interface lives entirely in the explicit band, so the interface
+      differential is exact (no basis truncation at the interface);
     * ``TraceRom`` (paper Section 4): ``V_if = E·A_if·V``, the rows of the
       interior basis on the owning face cells (boundary + interior reduce
       together into ``V``, exposed through the trace).
@@ -747,7 +763,7 @@ def interface_trace(side, port, li, xi):
     """
     li = np.asarray(li, dtype=np.int64)
     h_if = xi * port.g[li]
-    if isinstance(side, Subdomain):
+    if isinstance(side, (Subdomain, EmbeddableRom)):
         dofs = side.port_dofs(port)[li]
         V_if = sp.coo_matrix(
             (np.ones(dofs.size), (np.arange(dofs.size), dofs)),

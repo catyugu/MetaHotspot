@@ -52,11 +52,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _ROOT = Path(__file__).resolve().parent
-for p in (_ROOT, _ROOT.parent / "macromodel", _ROOT.parent.parent.parent / "python"):
-    sys.path.insert(0, str(p))
+sys.path.insert(0, str(_ROOT))
 
 from model_case1 import Case1Config, Case1Model, DIES  # noqa: E402
-from utils import (  # noqa: E402
+from metahotspot.macromodel.utils import (  # noqa: E402
     build_parametric_basis,
     project_bci,
     assemble_reduced_k,

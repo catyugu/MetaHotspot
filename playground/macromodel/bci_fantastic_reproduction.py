@@ -65,7 +65,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from affine_parametric_models import create
-from utils import (
+from metahotspot.macromodel.utils import (
     accuracy_summary,
     assemble_reduced_k,
     build_parametric_basis,

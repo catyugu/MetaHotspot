@@ -21,10 +21,9 @@ import numpy as np
 
 PROJECT = Path(__file__).resolve().parents[3]  # repo root
 CASE = PROJECT / "playground" / "bci_rom_testcase1"
-MACRO = PROJECT / "playground" / "macromodel"
-sys.path[:0] = [str(CASE), str(MACRO), str(PROJECT / "python")]
+sys.path[:0] = [str(CASE)]
 from model_case1 import Case1Config, Case1Model
-from utils import (
+from metahotspot.macromodel.utils import (
     assemble_reduced_k,
     build_parametric_basis,
     project_bci,

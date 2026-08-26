@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared operator-level utilities for macromodel (MOR) experiments.
+"""Model-agnostic operator-level utilities for macromodel (MOR) experiments.
 
 This module is deliberately *model-agnostic*: it operates only on the generic
 `Operators` interface (K, C, f sparse matrices + rhs) and plain numpy/scipy
@@ -276,6 +276,23 @@ def port_eigenvalue_bounds(
     except Exception:
         lambda_min = None
 
+    # -- small-system fallback: exact dense pencil when either end failed ----
+    if lambda_min is None or lambda_max is None:
+        try:
+            if n <= 512:
+                Kd = K.toarray()
+                Cd = C.toarray()
+                eig = scipy.linalg.eigh(Kd, Cd, check_finite=False)
+                vals = np.maximum(eig[0], 0.0)
+                # smallest positive generalized eigenvalue (discard ~0 kernel)
+                pos = vals[vals > 1.0e-9 * max(float(vals.max()), 1.0)]
+                if lambda_min is None and pos.size:
+                    lambda_min = float(pos.min())
+                if lambda_max is None and vals.size:
+                    lambda_max = float(vals.max())
+        except Exception:
+            pass
+
     return lambda_min, lambda_max
 
 
@@ -452,6 +469,8 @@ def random_h(h_ranges, seed) -> tuple[float, ...]:
     call so consecutive draws are independent but reproducible.
     """
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
+    if h_ranges.size == 0:
+        return ()
     lows = np.log10(h_ranges[:, 0])
     highs = np.log10(h_ranges[:, 1])
     rng = np.random.default_rng(seed)

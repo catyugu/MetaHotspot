@@ -10,11 +10,10 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
 CASE_DIR = ROOT / "playground" / "bci_rom_testcase1"
-MACRO_DIR = ROOT / "playground" / "macromodel"
-sys.path[:0] = [str(CASE_DIR), str(MACRO_DIR), str(ROOT / "python")]
+sys.path[:0] = [str(CASE_DIR)]
 
 from model_case1 import Case1Config, Case1Model  # noqa: E402
-import embeddable_rom as er  # noqa: E402
+from metahotspot.macromodel import embeddable as er  # noqa: E402
 
 AMBIENT_K = 308.15
 BOUNDARY_H = (5.0e1, 1.0e3)
@@ -116,8 +115,12 @@ def run():
     # ONE paper-Section-4 extraction (boundary + interior reduced together),
     # exposing all ports; reused for every external structure.
     rom = er.extract_trace_rom(
-        upper_identity, tolerance=1.0e-2, max_order=2048, probe_rounds=2,
-        seed=20260825, interface_ports=["z-"],
+        upper_identity,
+        tolerance=1.0e-2,
+        max_order=2048,
+        probe_rounds=2,
+        seed=20260825,
+        interface_ports=["z-"],
     )
     summary = rom.summary
 
