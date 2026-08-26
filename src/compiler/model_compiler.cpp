@@ -16,7 +16,7 @@ namespace mhs::sim {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        double length_unit_to_si(mhs::model::LengthUnit unit)
+        inline double length_unit_to_si(mhs::model::LengthUnit unit)
         {
             switch (unit) {
             case mhs::model::LengthUnit::Meter:
@@ -32,7 +32,7 @@ namespace mhs::sim {
             case mhs::model::LengthUnit::Mil:
                 return 2.54e-5;
             }
-            return 1.0;
+            throw std::invalid_argument("invalid length unit");
         }
 
         inline void compute_cell_spacing(
