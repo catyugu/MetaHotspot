@@ -76,6 +76,135 @@ namespace mhs::sim {
             }
         }
 
+        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state, SolverPtr& solver,
+            const NonLinearConfig& nl_config, const StateObserver& observe)
+        {
+            const auto state_count = state.size();
+            mhs::core::Solution result;
+            LinearSystemProvider build_ls = [&](std::span<const double> current_state) -> LinearSystem {
+                auto ops = assemble(current_state, 0.0);
+                validate_operator_dimensions(ops, state_count);
+                return {std::move(ops.K), std::move(ops.f)};
+            };
+            auto nonlinear_result = nonlinear_solve(build_ls, state, solver, nl_config);
+            result.state = std::move(state);
+            result.fvm_count = state_count;
+            result.time = 0.0;
+            result.converged = nonlinear_result.converged;
+            result.snapshot_times.push_back(0.0);
+            result.snapshot_states = result.state;
+            if (observe)
+                observe(0.0, result.state);
+            return result;
+        }
+
+        mhs::core::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
+            std::vector<double> state, SolverPtr& solver, const SolveOptions& opts, NonLinearConfig nl_config,
+            time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
+            const StateObserver& observe)
+        {
+            const auto state_count = state.size();
+            mhs::core::Solution result;
+            result.fvm_count = state_count;
+            const double duration = study.duration;
+            const double output_dt = study.output_interval;
+            time_scheme::StepController step_ctrl {
+                step_strategy, opts.min_dt, opts.max_dt, duration, output_dt, opts.fixed_dt};
+            mhs::core::SolutionHistory accepted {state_count, 2};
+            double current_time = 0.0;
+            accepted.initialize(state, current_time);
+            result.snapshot_times.push_back(current_time);
+            result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
+            if (observe)
+                observe(current_time, state);
+
+            double dt_sug = std::clamp(output_dt, opts.min_dt, opts.max_dt);
+            while (current_time < duration - mhs::core::zero_guard) {
+                double dt = step_ctrl.prepare(dt_sug, current_time);
+                if (dt <= 0.0)
+                    break;
+
+                LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
+                    auto ops = assemble(iter_state, current_time + dt);
+                    validate_operator_dimensions(ops, state_count);
+                    return time_scheme::build_system(integrator, ops, accepted, dt);
+                };
+
+                auto saved_state = state;
+                auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
+
+                if (!nl.converged) {
+                    state = std::move(saved_state);
+                    dt_sug = dt * 0.5;
+                    MHS_LOG_DEBUG("Step rejected at t={} (nonlinear), retry dt={}", current_time, dt_sug);
+
+                    if (dt <= opts.min_dt * 1.0001) {
+                        MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
+                        result.state = std::move(state);
+                        result.time = current_time;
+                        result.converged = false;
+                        return result;
+                    }
+                    continue;
+                }
+
+                bool accepted_step = true;
+                bool forced_minimum_step = false;
+                double suggested_dt_factor = 1.0;
+
+                if (step_strategy == time_scheme::StepStrategy::Fixed) {
+                    accepted.accept(state, current_time + dt);
+                }
+                else {
+                    auto est
+                        = time_scheme::estimate_error(accepted, state, dt, {opts.error_rel_tol, opts.error_safety});
+                    suggested_dt_factor = est.suggested_factor;
+                    forced_minimum_step = est.error_ratio > 1.0 && dt <= opts.min_dt * 1.0001;
+                    accepted_step = (est.error_ratio <= 1.0) || forced_minimum_step;
+
+                    if (accepted_step)
+                        accepted.accept(state, current_time + dt);
+                }
+
+                if (accepted_step) {
+                    current_time += dt;
+                    MHS_LOG_DEBUG("Time: {} solved (dt={})", current_time, dt);
+
+                    if (step_ctrl.output_due(current_time)) {
+                        result.snapshot_times.push_back(current_time);
+                        result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
+                        if (observe)
+                            observe(current_time, state);
+                    }
+
+                    dt_sug = (step_strategy == time_scheme::StepStrategy::Fixed)
+                        ? opts.fixed_dt
+                        // Probe upward after a forced floor acceptance; otherwise
+                        // the preceding shrink request makes min_dt absorbing.
+                        : std::clamp(dt * (forced_minimum_step ? 2.0 : suggested_dt_factor), opts.min_dt, opts.max_dt);
+                }
+                else {
+                    state = std::move(saved_state);
+                    dt_sug = dt * 0.5;
+                    MHS_LOG_DEBUG("Step rejected at t={} (LTE), retry dt={}", current_time, dt_sug);
+                }
+            }
+
+            // A duration that is not an exact output interval must still expose its
+            // final accepted state exactly once.
+            if (result.snapshot_times.empty()
+                || std::abs(result.snapshot_times.back() - current_time) > mhs::core::zero_guard) {
+                result.snapshot_times.push_back(current_time);
+                result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
+                if (observe)
+                    observe(current_time, state);
+            }
+            result.state = std::move(state);
+            result.time = current_time;
+            result.converged = true;
+            return result;
+        }
+
     } // namespace
 
     mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
@@ -95,124 +224,12 @@ namespace mhs::sim {
 
         SolverPtr solver = create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
-        const auto state_count = state.size();
-        double current_time = 0.0;
-        mhs::core::SolutionHistory accepted {state_count, 2};
-        std::vector<double> snapshot_times;
-        std::vector<double> snapshot_states;
-
-        auto emit = [&](double time, std::span<const double> accepted_state) {
-            if (accepted_state.size() != state_count) {
-                throw std::logic_error("solve_system: observer state size changed during solve");
-            }
-            snapshot_times.push_back(time);
-            snapshot_states.insert(snapshot_states.end(), accepted_state.begin(), accepted_state.end());
-            if (observe)
-                observe(time, accepted_state);
-        };
-
-        auto finish = [&](bool converged) {
-            mhs::core::Solution result;
-            result.state = std::move(state);
-            result.fvm_count = state_count;
-            result.time = current_time;
-            result.converged = converged;
-            result.snapshot_times = std::move(snapshot_times);
-            result.snapshot_states = std::move(snapshot_states);
-            return result;
-        };
 
         if (study.type == mhs::core::StudyType::Steady) {
-            LinearSystemProvider build_ls = [&](std::span<const double> s) -> LinearSystem {
-                auto ops = assemble(s, 0.0);
-                validate_operator_dimensions(ops, state_count);
-                return {std::move(ops.K), std::move(ops.f)};
-            };
-            auto nl_result = nonlinear_solve(build_ls, state, solver, nl_config);
-            emit(0.0, state);
-            return finish(nl_result.converged);
+            return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         }
-
-        const double duration = study.duration;
-        const double output_dt = study.output_interval;
-        const double min_dt = opts.min_dt;
-        const double max_dt = opts.max_dt;
-        time_scheme::StepController step_ctrl {step_strategy, min_dt, max_dt, duration, output_dt, opts.fixed_dt};
-
-        accepted.initialize(state, current_time);
-        emit(current_time, state);
-
-        double dt_sug = std::clamp(output_dt, min_dt, max_dt);
-
-        while (current_time < duration - mhs::core::zero_guard) {
-            double dt = step_ctrl.prepare(dt_sug, current_time);
-            if (dt <= 0.0)
-                break;
-
-            LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
-                auto ops = assemble(iter_state, current_time + dt);
-                validate_operator_dimensions(ops, state_count);
-                return time_scheme::build_system(integrator, ops, accepted, dt);
-            };
-
-            auto saved_state = state;
-            auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
-
-            if (!nl.converged) {
-                state = std::move(saved_state);
-                dt_sug = dt * 0.5;
-                MHS_LOG_DEBUG("Step rejected at t={} (nonlinear), retry dt={}", current_time, dt_sug);
-
-                if (dt <= min_dt * 1.0001) {
-                    MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
-                    return finish(false);
-                }
-                continue;
-            }
-
-            bool accepted_step = true;
-            bool forced_minimum_step = false;
-            double suggested_dt_factor = 1.0;
-
-            if (step_strategy == time_scheme::StepStrategy::Fixed) {
-                accepted.accept(state, current_time + dt);
-            }
-            else {
-                auto est = time_scheme::estimate_error(accepted, state, dt, {opts.error_rel_tol, opts.error_safety});
-                suggested_dt_factor = est.suggested_factor;
-                forced_minimum_step = est.error_ratio > 1.0 && dt <= min_dt * 1.0001;
-                accepted_step = (est.error_ratio <= 1.0) || forced_minimum_step;
-
-                if (accepted_step) {
-                    accepted.accept(state, current_time + dt);
-                }
-            }
-
-            if (accepted_step) {
-                current_time += dt;
-                MHS_LOG_DEBUG("Time: {} solved (dt={})", current_time, dt);
-
-                if (step_ctrl.output_due(current_time))
-                    emit(current_time, state);
-
-                dt_sug = (step_strategy == time_scheme::StepStrategy::Fixed)
-                    ? opts.fixed_dt
-                    // Probe upward after a forced floor acceptance; otherwise
-                    // the preceding shrink request makes min_dt absorbing.
-                    : std::clamp(dt * (forced_minimum_step ? 2.0 : suggested_dt_factor), min_dt, max_dt);
-            }
-            else {
-                state = std::move(saved_state);
-                dt_sug = dt * 0.5;
-                MHS_LOG_DEBUG("Step rejected at t={} (LTE), retry dt={}", current_time, dt_sug);
-            }
-        }
-
-        // A duration that is not an exact output interval must still expose its
-        // final accepted state exactly once.
-        if (snapshot_times.empty() || std::abs(snapshot_times.back() - current_time) > mhs::core::zero_guard)
-            emit(current_time, state);
-        return finish(true);
+        return solve_transient(
+            study, assemble, std::move(state), solver, opts, nl_config, integrator, step_strategy, observe);
     }
 
     mhs::core::Solution solve(
