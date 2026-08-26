@@ -17,7 +17,7 @@ model maps them internally through
 :meth:`~AffineParametricModel.physical_to_effective` to the
 surface-consistent effective coefficient ``p`` before assembling the affine
 ``K``.  The ROM is trained over the same effective ``p``
-(:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
+(:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
 :meth:`~AffineParametricModel.h_ranges` returns the effective training
 ranges).
 """
@@ -33,7 +33,7 @@ import numpy as np
 import metahotspot
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
 
-from affine_parametric_models._interfaces import (
+from metahotspot.macromodel.affine import (
     AffineParametricModel,
     BoundaryGroup,
     SourcePort,

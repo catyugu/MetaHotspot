@@ -29,7 +29,7 @@ physical values to :meth:`~AffineParametricModel.full_reference` /
 :meth:`~AffineParametricModel.physical_to_effective` to the
 surface-consistent effective coefficient ``p`` before assembling the affine
 ``K``.  The ROM is trained over the same effective ``p``
-(:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
+(:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
 :meth:`~AffineParametricModel.h_ranges` returns the effective training
 ranges).  In FloTHERM's own z-orientation the die side is its "bottom"
 (Ambient:0, small area) and the FR4 side is its "top" (Ambient:1, large
@@ -46,14 +46,7 @@ import numpy as np
 import metahotspot
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
 
-import sys
-from pathlib import Path
-
-_MACRO = Path(__file__).resolve().parent.parent / "macromodel"
-if str(_MACRO) not in sys.path:
-    sys.path.insert(0, str(_MACRO))
-
-from affine_parametric_models._interfaces import (  # noqa: E402
+from metahotspot.macromodel.affine import (  # noqa: E402
     AffineParametricModel,
     BoundaryGroup,
     SourcePort,
@@ -370,3 +363,14 @@ class Case1Model(AffineParametricModel):
 def builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
     cfg = Case1Config(**(overrides or {}))
     return Case1Model(cfg)
+
+
+# Register the case-1 model with the library registry so experiments can obtain
+# it through the same factory as the packaged models.  Registration happens on
+# import; re-registering replaces the previous entry (idempotent).
+try:
+    from metahotspot.macromodel.affine import register as _register
+
+    _register("bci_case1", builder)
+except Exception:  # pragma: no cover - import-only convenience, never fatal
+    pass

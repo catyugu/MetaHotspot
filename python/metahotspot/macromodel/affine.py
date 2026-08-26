@@ -1,9 +1,8 @@
-"""
-Base contract and shared mechanism for an affine parametric thermal model.
+"""Base contract and shared mechanism for an affine parametric thermal model.
 
 A concrete :class:`AffineParametricModel` is an opaque handle produced by the
-factory (:func:`affine_parametric_models.create`); experiment scripts never
-name a concrete implementation or reach into a config dataclass.
+factory (:func:`metahotspot.macromodel.affine.create`); experiment scripts
+never name a concrete implementation or reach into a config dataclass.
 
 The class is deliberately light: it is a **concrete base** that carries all the
 shared mechanism — full-domain DtN-free operator assembly, heat-source shape
@@ -35,7 +34,7 @@ import math
 import time
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import scipy.sparse as sp
@@ -43,7 +42,7 @@ import scipy.sparse as sp
 from metahotspot.compiled import CellFields, Operators
 from metahotspot.enums import Face, Study
 
-from utils import (
+from metahotspot.macromodel.utils import (
     normalized_operators,
     solve_rom_steady,
     solve_rom_transient,
@@ -412,9 +411,9 @@ class AffineParametricModel:
         series-condensed coefficient (one group at a time), so the ROM basis is
         trained over the effective coefficient that actually enters
         ``Σ_k p_k H_k`` — the training space that
-        :func:`~utils.build_parametric_basis` samples and that
-        :func:`~utils.assemble_reduced_k` (fed ``physical_to_effective``) and
-        :meth:`full_reference` consume.
+        :func:`~metahotspot.macromodel.utils.build_parametric_basis` samples
+        and that :func:`~metahotspot.macromodel.utils.assemble_reduced_k` (fed
+        ``physical_to_effective``) and :meth:`full_reference` consume.
         """
         groups = self.boundary_groups()
         axes = self._boundary_axis_per_group()
@@ -448,10 +447,10 @@ class AffineParametricModel:
         ``K_h x = G_src P(t)`` in rise coordinates above ambient; steady uses
         the nominal port powers, transient uses :meth:`source_power`.  The
         reduced model is trained with the *same* effective ``p``
-        (:func:`~utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``),
-        so the only difference between this reference and the ROM is the
-        reduction error.  Callers pass physical HTC directly — no caller-side
-        mapping.
+        (:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed
+        ``model.physical_to_effective(h)``), so the only difference between
+        this reference and the ROM is the reduction error.  Callers pass
+        physical HTC directly — no caller-side mapping.
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
@@ -463,7 +462,6 @@ class AffineParametricModel:
         K_h = K.copy()
         for p_k, H_k in zip(p, terms):
             K_h = K_h + float(p_k) * H_k
-        K_h = (0.5 * (K_h + K_h.T)).tocsc()
 
         started = time.perf_counter()
         steady_rise = solve_rom_steady(K_h, G, self.nominal_power())
@@ -533,3 +531,72 @@ class AffineParametricModel:
     def report_dict(self) -> dict:
         """Opaque scalar configuration, dumped verbatim into result JSON."""
         return self.config.report_dict()
+
+
+# ---------------------------------------------------------------------------
+# factory / registry  (concrete models register here from playground adapters)
+# ---------------------------------------------------------------------------
+
+
+class _Entry:
+    """Registered builder plus its quick-mode config overrides.
+
+    ``builder`` is called as ``builder(overrides: dict | None = None, **kw)``
+    and must return an :class:`AffineParametricModel`.  ``quick_overrides`` is
+    the model's own recipe for a fast smoke experiment; the factory applies it
+    when ``create(..., quick=True)`` is used, so the experiment only has to
+    say *whether* it is quick, never *what* that means for a given model.
+    """
+
+    __slots__ = ("builder", "quick_overrides")
+
+    def __init__(self, builder, quick_overrides=None):
+        self.builder = builder
+        self.quick_overrides = quick_overrides
+
+
+_REGISTRY: dict[str, _Entry] = {}
+
+
+def register(
+    name: str,
+    builder: Callable[..., AffineParametricModel],
+    *,
+    quick_overrides: dict | None = None,
+) -> None:
+    """Register a concrete model under ``name``.
+
+    ``builder`` is called as ``builder(overrides: dict | None = None, **kw)``
+    and must return an :class:`AffineParametricModel`.  ``quick_overrides`` is
+    the mapping of scalar config fields the model applies in quick mode (its
+    own smoke-experiment recipe).  Re-registering a name replaces the previous
+    entry.
+    """
+    if not name or not name.isidentifier():
+        raise ValueError(f"invalid model name: {name!r}")
+    _REGISTRY[name] = _Entry(builder, quick_overrides)
+
+
+def create(name: str, *, quick: bool = False, **kwargs: Any) -> AffineParametricModel:
+    """Instantiate the registered model ``name``.
+
+    ``quick`` toggles the model's own quick-mode overrides (``True`` applies
+    them); additional ``**kwargs`` are forwarded to the registered builder as
+    config overrides and take precedence.  Raises ``KeyError`` for unknown
+    names.  The returned value is typed as the abstract base; the concrete
+    class is private to the registering package.
+    """
+    try:
+        entry = _REGISTRY[name]
+    except KeyError:
+        raise KeyError(
+            f"unknown affine parametric model {name!r}; "
+            f"registered: {sorted(_REGISTRY)}"
+        ) from None
+    overrides = entry.quick_overrides if quick else None
+    return entry.builder(overrides=overrides, **kwargs)
+
+
+def registered_names() -> list[str]:
+    """Sorted names of all registered models."""
+    return sorted(_REGISTRY)

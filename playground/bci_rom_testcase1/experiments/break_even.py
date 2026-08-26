@@ -19,18 +19,17 @@ import scipy.sparse as sp
 
 PROJECT = Path(__file__).resolve().parents[3]  # repo root
 CASE = PROJECT / "playground" / "bci_rom_testcase1"
-MACRO = PROJECT / "playground" / "macromodel"
-sys.path[:0] = [str(CASE), str(MACRO), str(PROJECT / "python")]
+sys.path[:0] = [str(CASE)]
 from model_case1 import Case1Config, Case1Model  # noqa: E402
-from utils import (
+from metahotspot.macromodel.utils import (  # noqa: E402
     assemble_reduced_k,
     build_parametric_basis,
     project_bci,
     solve_rom_steady,
     solve_rom_transient,
-)  # noqa: E402
+)
 
-OUT = PROJECT / "results" / "weekly_0825"
+OUT = PROJECT / "results" / "experiments"
 H = (50.0, 1000.0)
 POWER = np.array([0.1, 0.2, 0.3, 0.4])
 DURATION_S = 1000.0
@@ -83,7 +82,6 @@ def main(mm: float):
     K_h = core.K.tocsc().copy()
     for pk, Hk in zip(model.physical_to_effective(H), terms):
         K_h = K_h + float(pk) * Hk.tocsc()
-    K_h = (0.5 * (K_h + K_h.T)).tocsc()
     C = core.C.tocsc()
 
     # ---- detailed (full FVM) transient with AMG preconditioner ----------

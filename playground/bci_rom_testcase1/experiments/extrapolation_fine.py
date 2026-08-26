@@ -18,18 +18,17 @@ import numpy as np
 
 PROJECT = Path(__file__).resolve().parents[3]  # repo root
 CASE = PROJECT / "playground" / "bci_rom_testcase1"
-MACRO = PROJECT / "playground" / "macromodel"
-sys.path[:0] = [str(CASE), str(MACRO), str(PROJECT / "python")]
+sys.path[:0] = [str(CASE)]
 from model_case1 import Case1Config, Case1Model  # noqa: E402
-from utils import (
+from metahotspot.macromodel.utils import (  # noqa: E402
     assemble_reduced_k,
     build_parametric_basis,
     project_bci,
     solve_rom_steady,
     spd_solve,
-)  # noqa: E402
+)
 
-OUT = PROJECT / "results" / "weekly_0825"
+OUT = PROJECT / "results" / "experiments"
 POWER = np.array([0.1, 0.2, 0.3, 0.4])
 MM = 1.0
 CASES = [
@@ -62,7 +61,6 @@ def steady_reference(model, h):
     K = core.K.tocsc()
     for pk, Hk in zip(model.physical_to_effective(h), model.boundary_terms()):
         K = K + float(pk) * Hk.tocsc()
-    K = (0.5 * (K + K.T)).tocsc()
     x = spd_solve(K, model.source_shape() @ POWER)  # rise above ambient
     return model.ambient_K + model.source_shape().T @ x  # absolute junction
 

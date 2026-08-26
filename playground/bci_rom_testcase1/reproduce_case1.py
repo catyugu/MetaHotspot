@@ -52,11 +52,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _ROOT = Path(__file__).resolve().parent
-for p in (_ROOT, _ROOT.parent / "macromodel", _ROOT.parent.parent.parent / "python"):
-    sys.path.insert(0, str(p))
+sys.path.insert(0, str(_ROOT))
 
 from model_case1 import Case1Config, Case1Model, DIES  # noqa: E402
-from utils import (  # noqa: E402
+from metahotspot.macromodel.utils import (  # noqa: E402
     build_parametric_basis,
     project_bci,
     assemble_reduced_k,
@@ -179,7 +178,6 @@ def run():
     # ---- FloTHERM ROM ---------------------------------------------------
     Kf, Mf, g, dH0, dH1 = load_flotherm()
     K_eff_fl = Kf + H_FR4 * dH0 + H_CROWN * dH1
-    K_eff_fl = (0.5 * (K_eff_fl + K_eff_fl.T)).tocsc()
     junc_fl_ss = flotherm_steady(K_eff_fl, g)
     fl_times, junc_fl_hist = flotherm_transient(Mf, K_eff_fl, g, DT_S, DURATION_S)
 
