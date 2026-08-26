@@ -93,7 +93,7 @@ namespace mhs::sim {
         auto integrator = build_integrator(opts);
         auto step_strategy = build_strategy(opts);
 
-        SolverHandle solver = create_solver(solver_spec);
+        SolverPtr solver = create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
         const auto state_count = state.size();
         double current_time = 0.0;

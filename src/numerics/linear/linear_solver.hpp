@@ -52,27 +52,11 @@ namespace mhs::sim {
     };
 
     using SolverPtr = std::unique_ptr<LinearSolver>;
-    /// Retained alias for backward compatibility during the refactoring.
-    using SolverHandle = SolverPtr;
-
-    // ── Dispatch helpers ──────────────────────────────────────────────────
-
-    inline void solver_compute(SolverHandle& handle, const Eigen::SparseMatrix<double>& A) { handle->compute(A); }
-
-    /// Solve A * x = b with an initial guess. Pass VectorXd::Zero(n) for a
-    /// cold start — this is the only solve path, shared by all backends.
-    inline Eigen::VectorXd solver_solve(
-        SolverHandle& handle, const Eigen::VectorXd& b, Eigen::Ref<const Eigen::VectorXd> x0)
-    { return handle->solve(b, x0); }
-
-    inline bool solver_success(const SolverHandle& handle) { return handle->success(); }
-
-    inline int solver_iterations(const SolverHandle& handle) { return handle->iterations(); }
 
     /// Build a solver from a spec. The default is the self-tuning AMGCL solver
     /// (CG on symmetric, GMRES on non-symmetric operators) so that no direct
     /// MKL/Pardiso dependency is required; Pardiso remains available as an
     /// optional direct backend when MKL is enabled.
-    SolverHandle create_solver(const SolverSpec& spec = {});
+    SolverPtr create_solver(const SolverSpec& spec = {});
 
 } // namespace mhs::sim

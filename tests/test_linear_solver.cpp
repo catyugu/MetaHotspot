@@ -37,7 +37,7 @@ namespace {
     // Right-hand side and a computed solver over the SPD test system.
     struct SolverFixture {
         Eigen::VectorXd b;
-        mhs::sim::SolverHandle solver;
+        mhs::sim::SolverPtr solver;
     };
 
     SolverFixture make_fixture(const mhs::sim::SolverSpec& spec = {})
@@ -46,7 +46,7 @@ namespace {
         SolverFixture fixture;
         fixture.b = A * kExact;
         fixture.solver = mhs::sim::create_solver(spec);
-        mhs::sim::solver_compute(fixture.solver, A);
+        fixture.solver->compute(A);
         return fixture;
     }
 
@@ -58,16 +58,15 @@ TEST(LinearSolver, IterativeWarmStartConvergesFromGuess)
     auto cold_fixture = make_fixture(kAmgSpec);
 
     // Cold start (zero guess).
-    const Eigen::VectorXd x_cold
-        = mhs::sim::solver_solve(cold_fixture.solver, cold_fixture.b, Eigen::VectorXd::Zero(kSize));
-    const int cold_iters = mhs::sim::solver_iterations(cold_fixture.solver);
-    ASSERT_TRUE(mhs::sim::solver_success(cold_fixture.solver));
+    const Eigen::VectorXd x_cold = cold_fixture.solver->solve(cold_fixture.b, Eigen::VectorXd::Zero(kSize));
+    const int cold_iters = cold_fixture.solver->iterations();
+    ASSERT_TRUE(cold_fixture.solver->success());
 
     // Warm start (exact guess): should converge in very few iterations.
     auto warm_fixture = make_fixture(kAmgSpec);
-    const Eigen::VectorXd x_warm = mhs::sim::solver_solve(warm_fixture.solver, warm_fixture.b, kExact);
-    const int warm_iters = mhs::sim::solver_iterations(warm_fixture.solver);
-    ASSERT_TRUE(mhs::sim::solver_success(warm_fixture.solver));
+    const Eigen::VectorXd x_warm = warm_fixture.solver->solve(warm_fixture.b, kExact);
+    const int warm_iters = warm_fixture.solver->iterations();
+    ASSERT_TRUE(warm_fixture.solver->success());
 
     EXPECT_NEAR((x_cold - kExact).norm(), 0.0, 1e-7);
     EXPECT_NEAR((x_warm - kExact).norm(), 0.0, 1e-7);
@@ -83,7 +82,7 @@ TEST(LinearSolver, IterativeRejectsMismatchedInitialGuess)
 
     Eigen::VectorXd wrong_size(3);
     wrong_size.setZero();
-    EXPECT_THROW(mhs::sim::solver_solve(fixture.solver, fixture.b, wrong_size), std::invalid_argument);
+    EXPECT_THROW(fixture.solver->solve(fixture.b, wrong_size), std::invalid_argument);
 }
 
 // The default factory returns a working self-tuning AMG solver (AmgCg),
@@ -92,9 +91,9 @@ TEST(LinearSolver, DefaultFactoryYieldsWorkingIterativeSolver)
 {
     auto fixture = make_fixture(); // default spec = AmgCg
 
-    const Eigen::VectorXd x = mhs::sim::solver_solve(fixture.solver, fixture.b, Eigen::VectorXd::Zero(kSize));
+    const Eigen::VectorXd x = fixture.solver->solve(fixture.b, Eigen::VectorXd::Zero(kSize));
 
-    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
+    ASSERT_TRUE(fixture.solver->success());
     EXPECT_NEAR((x - kExact).norm(), 0.0, 1e-8);
 }
 
@@ -104,10 +103,10 @@ TEST(LinearSolver, DirectIgnoresInitialGuess)
 {
     auto fixture = make_fixture(mhs::sim::SolverSpec {mhs::sim::SolverType::Pardiso, {}});
 
-    const Eigen::VectorXd with_guess = mhs::sim::solver_solve(fixture.solver, fixture.b, kExact);
-    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
-    const Eigen::VectorXd no_guess = mhs::sim::solver_solve(fixture.solver, fixture.b, Eigen::VectorXd::Zero(kSize));
-    ASSERT_TRUE(mhs::sim::solver_success(fixture.solver));
+    const Eigen::VectorXd with_guess = fixture.solver->solve(fixture.b, kExact);
+    ASSERT_TRUE(fixture.solver->success());
+    const Eigen::VectorXd no_guess = fixture.solver->solve(fixture.b, Eigen::VectorXd::Zero(kSize));
+    ASSERT_TRUE(fixture.solver->success());
 
     EXPECT_NEAR((with_guess - kExact).norm(), 0.0, 1e-8);
     EXPECT_NEAR((no_guess - kExact).norm(), 0.0, 1e-8);
@@ -115,7 +114,7 @@ TEST(LinearSolver, DirectIgnoresInitialGuess)
 #endif // MHS_ENABLE_PARDISO
 
 // End-to-end: the nonlinear solver drives an iterative backend through the
-// dispatch helpers and seeds each linear solve with the previous iterate.
+// direct backend calls and seeds each linear solve with the previous iterate.
 TEST(LinearSolver, NonlinearSolveWarmStartsIterativeBackend)
 {
     mhs::sim::Study study {mhs::core::StudyType::Steady, 0.0, 1.0};
