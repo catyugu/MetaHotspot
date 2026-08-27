@@ -284,7 +284,6 @@ def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
 
     # reduce the source-bearing upper side
     rom = mm.extract_rom(right, tolerance=1.0e-2, max_order=64, probe_rounds=1, seed=7)
-    assert rom.n_band == 0
     assert rom.basis.shape[0] == right.cells.size
     assert rom.m >= 1
     assert np.max(np.abs(rom.C_hat.toarray() - np.eye(rom.m))) < 1.0e-10
@@ -293,6 +292,13 @@ def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
     )
     expected_ambient = rom.basis.T @ right.ambient_terms[0] @ rom.basis
     assert np.max(np.abs(rom.ambient_hat[0].toarray() - expected_ambient)) < 1.0e-10
+    # every subdomain boundary face is exported as a physical trace V_b = A_b.T@V
+    assert set(rom.boundary_traces) == {p.label for p in right.boundary_ports}
+    assert set(rom.boundary_conductances) == set(rom.boundary_traces)
+    for port in right.boundary_ports:
+        trace = rom.boundary_traces[port.label]
+        assert trace.shape == (port.cells.size, rom.m)
+        assert np.allclose(rom.boundary_conductances[port.label], port.g)
 
     Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
         rom, left, rom.port("z-"), left.port("z+"), power=np.array([1.0])
@@ -303,6 +309,4 @@ def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
     )
     assert npatch == np_i
     assert lo == rom.m
-    pd = rom.port_dofs(rom.port("z-"))
-    assert np.all(pd < right.cells.size)
     assert Kc.shape == (lo + npatch + ro, lo + npatch + ro)
