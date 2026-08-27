@@ -288,9 +288,11 @@ def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
     assert rom.basis.shape[0] == right.cells.size
     assert rom.m >= 1
     assert np.max(np.abs(rom.C_hat.toarray() - np.eye(rom.m))) < 1.0e-10
-    assert np.max(
-        np.abs(rom.K0_hat.toarray() - np.diag(rom.K0_hat.diagonal()))
-    ) < 1.0e-10
+    assert (
+        np.max(np.abs(rom.K0_hat.toarray() - np.diag(rom.K0_hat.diagonal()))) < 1.0e-10
+    )
+    expected_ambient = rom.basis.T @ right.ambient_terms[0] @ rom.basis
+    assert np.max(np.abs(rom.ambient_hat[0].toarray() - expected_ambient)) < 1.0e-10
 
     Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
         rom, left, rom.port("z-"), left.port("z+"), power=np.array([1.0])

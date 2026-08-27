@@ -5,11 +5,9 @@ A *subdomain* (an arbitrary connected set of cells of the full model) is reduced
 a single time.  Its boundary splits in two roles:
 
 * **BCI faces** — the faces carrying an explicitly declared ambient boundary
-  condition.  These are handled *exactly as in the classic pipeline*: each is an
-  affine boundary group entering ``K(p) = K0 + Σ_k p_k F_bdry A_k F_bdryᵀ`` built
-  by :func:`project_bci` / :func:`assemble_reduced_k` at the surface-consistent
-  effective coefficient ``p = physical_to_effective(h)`` (so the ROM is
-  boundary-condition independent over them, and reproduce_case1.py is matched).
+  condition.  Their projected terms are assembled directly as
+  ``K(p) = K0 + Σ_k p_k Vᵀ H_k V`` at the surface-consistent effective
+  coefficient ``p = physical_to_effective(h)``.
 * **interface faces** — every *other* boundary face of the subdomain.  These
   become connectable :class:`FacePort` ports and, following the coupling-method
   gold rule, the interface **cells are kept at full FVM resolution** (never
@@ -50,12 +48,7 @@ import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
 
-from metahotspot.macromodel.utils import (
-    assemble_reduced_k,
-    build_parametric_basis,
-    normalized_operators,
-    project_bci,
-)
+from metahotspot.macromodel.utils import build_parametric_basis, normalized_operators
 
 # (axis, direction) -> Face enum bit  (XM, XP, YM, YP, ZM, ZP = 0..5)
 _FACE_BIT = {
@@ -351,8 +344,7 @@ class EmbeddableRom:
     C_hat: sp.csc_matrix
     K0_hat: sp.csc_matrix
     F_hat: np.ndarray  # Vᵀ·source (m, n_src)
-    F_bdry: np.ndarray  # ambient boundary output matrix
-    A_bdry: list[np.ndarray]  # per-ambient-group HTC matrices
+    ambient_hat: list[sp.csc_matrix]  # Vᵀ H_k V, one matrix per ambient group
     K_BB: sp.csc_matrix  # compatibility fields; unused
     C_BB: sp.csc_matrix
     K_BQ: sp.csc_matrix
@@ -381,9 +373,10 @@ class EmbeddableRom:
         return self.m
 
     def _q_k(self) -> sp.csc_matrix:
-        return assemble_reduced_k(
-            self.K0_hat, self.F_bdry, self.A_bdry, self.effective_p
-        )
+        K = self.K0_hat
+        for p, H in zip(self.effective_p, self.ambient_hat):
+            K = K + float(p) * H
+        return K.tocsc()
 
     def internal_operator(self) -> sp.csc_matrix:
         return self._q_k()
@@ -438,7 +431,10 @@ def extract_rom(
         probe_rounds=probe_rounds,
         seed=seed,
     )
-    C_hat, K0_hat, F_hat, F_bdry, A_bdry = project_bci(ops, G, ambient, basis)
+    C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
+    K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
+    F_hat = np.asarray(basis.T @ G, dtype=np.float64)
+    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in ambient]
 
     # Change only the reduced coordinates to C-orthonormal generalized modes.
     # This makes M_hat the identity and K_hat0 diagonal without adding any
@@ -451,7 +447,9 @@ def extract_rom(
     C_hat = sp.eye(modal_k.size, format="csc")
     K0_hat = sp.diags(modal_k, format="csc")
     F_hat = np.asarray(modal_q.T @ F_hat, dtype=np.float64)
-    F_bdry = np.asarray(modal_q.T @ F_bdry, dtype=np.float64)
+    ambient_hat = [
+        sp.csc_matrix(modal_q.T @ H.toarray() @ modal_q) for H in ambient_hat
+    ]
 
     return EmbeddableRom(
         name=subdomain.name,
@@ -462,8 +460,7 @@ def extract_rom(
         C_hat=C_hat,
         K0_hat=K0_hat,
         F_hat=np.asarray(F_hat, dtype=np.float64),
-        F_bdry=np.asarray(F_bdry, dtype=np.float64),
-        A_bdry=A_bdry,
+        ambient_hat=ambient_hat,
         K_BB=sp.csc_matrix((0, 0)),
         C_BB=sp.csc_matrix((0, 0)),
         K_BQ=sp.csc_matrix((0, basis.shape[1])),
