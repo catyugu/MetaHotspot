@@ -1,5 +1,6 @@
 #include "io/face_region_parser.hpp"
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -25,11 +26,13 @@ namespace mhs::io::detail {
 
         mhs::model::Axis parse_axis(const std::string& value)
         {
-            if (!value.empty() && value[0] == 'X')
+            if (value == "X")
                 return mhs::model::Axis::X;
-            if (!value.empty() && value[0] == 'Y')
+            if (value == "Y")
                 return mhs::model::Axis::Y;
-            return mhs::model::Axis::Z;
+            if (value == "Z")
+                return mhs::model::Axis::Z;
+            throw std::invalid_argument("invalid face region axis: " + value);
         }
     } // namespace
 
@@ -38,7 +41,7 @@ namespace mhs::io::detail {
         const auto parts = split(encoded, '|');
         mhs::model::FaceRegion region;
         if (parts.size() < 3)
-            return region;
+            throw std::invalid_argument("malformed face region: " + encoded);
 
         region.axis = parse_axis(parts[0]);
         region.coordinate = std::stod(parts[2]);
@@ -46,15 +49,18 @@ namespace mhs::io::detail {
         if (region.axis == mhs::model::Axis::Z && parts.size() == 4) {
             for (const auto& encoded_rectangle : split(parts[3], ';')) {
                 const auto values = split(encoded_rectangle, ',');
-                if (values.size() == 4) {
-                    region.rectangles.push_back(
-                        {std::stod(values[0]), std::stod(values[1]), std::stod(values[2]), std::stod(values[3])});
-                }
+                if (values.size() != 4)
+                    throw std::invalid_argument("malformed face region rectangle: " + encoded);
+                region.rectangles.push_back(
+                    {std::stod(values[0]), std::stod(values[1]), std::stod(values[2]), std::stod(values[3])});
             }
         }
-        else if ((region.axis == mhs::model::Axis::X || region.axis == mhs::model::Axis::Y) && parts.size() >= 7) {
+        else if ((region.axis == mhs::model::Axis::X || region.axis == mhs::model::Axis::Y) && parts.size() == 7) {
             region.rectangles.push_back(
                 {std::stod(parts[3]), std::stod(parts[4]), std::stod(parts[5]), std::stod(parts[6])});
+        }
+        else {
+            throw std::invalid_argument("malformed face region: " + encoded);
         }
 
         return region;

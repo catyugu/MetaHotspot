@@ -110,7 +110,7 @@ namespace mhs::post {
     {
         auto filtered = T | std::views::filter([](double v) { return !std::isnan(v); });
         if (filtered.empty())
-            return 0.0;
+            return std::numeric_limits<double>::quiet_NaN();
         return std::ranges::max(filtered);
     }
 
@@ -118,7 +118,7 @@ namespace mhs::post {
     {
         auto filtered = T | std::views::filter([](double v) { return !std::isnan(v); });
         if (filtered.empty())
-            return 0.0;
+            return std::numeric_limits<double>::quiet_NaN();
         return std::ranges::min(filtered);
     }
 

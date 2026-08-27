@@ -84,7 +84,7 @@ static mhs_study_t _from_core_study(mhs::core::StudyType s)
     case mhs::core::StudyType::Transient:
         return MHS_STUDY_TRANSIENT;
     default:
-        return MHS_STUDY_STEADY;
+        throw std::logic_error("invalid core study type");
     }
 }
 

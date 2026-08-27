@@ -122,7 +122,7 @@ namespace mhs::sim {
             while (current_time < duration - mhs::core::zero_guard) {
                 double dt = step_ctrl.prepare(dt_sug, current_time);
                 if (dt <= 0.0)
-                    break;
+                    throw std::logic_error("time-step controller returned non-positive dt before completion");
 
                 LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
                     auto ops = assemble(iter_state, current_time + dt);
@@ -201,7 +201,7 @@ namespace mhs::sim {
             }
             result.state = std::move(state);
             result.time = current_time;
-            result.converged = true;
+            result.converged = current_time >= duration - mhs::core::zero_guard;
             return result;
         }
 
