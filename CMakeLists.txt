@@ -11,7 +11,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/.cache/cpm" CACHE PATH "CPM cache to avoid repeated fetching")
 
 option(VERBOSE "Enable DEBUG level logging" OFF)
-option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" ON)
+option(USE_MKL "Enable Intel MKL-backed Pardiso solver (default ON)" OFF)
 
 configure_file(${CMAKE_SOURCE_DIR}/cmake/config.h.in ${CMAKE_BINARY_DIR}/config.h)
 
