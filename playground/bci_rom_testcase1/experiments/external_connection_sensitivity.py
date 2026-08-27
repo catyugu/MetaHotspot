@@ -112,15 +112,14 @@ def run():
         model, lower_cells, name="uniform_lower", physical_h=BOUNDARY_H
     )
 
-    # ONE paper-Section-4 extraction (boundary + interior reduced together),
-    # exposing all ports; reused for every external structure.
-    rom = er.extract_trace_rom(
+    # Extract the whole-subdomain EmbeddableRom once and reuse its physical
+    # interface traces for every external structure.
+    rom = er.extract_rom(
         upper_identity,
         tolerance=1.0e-2,
         max_order=2048,
         probe_rounds=2,
         seed=20260825,
-        interface_ports=["z-"],
     )
     summary = rom.summary
 

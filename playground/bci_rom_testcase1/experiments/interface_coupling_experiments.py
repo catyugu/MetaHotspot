@@ -18,8 +18,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
+
 
 ROOT = Path(__file__).resolve().parents[3]
 CASE_DIR = ROOT / "playground" / "bci_rom_testcase1"
@@ -91,43 +90,6 @@ def run_case(left, right, lport, rport, reference):
     }
 
 
-def _pin(K, rhs, fixed, values):
-    K = sp.csc_matrix(K)
-    free = np.setdiff1d(np.arange(K.shape[0]), fixed)
-    values = np.asarray(values, dtype=np.float64).ravel()
-    x = np.zeros(K.shape[0])
-    x[fixed] = values
-    x[free] = sp.linalg.spsolve(
-        K[free][:, free].tocsc(), rhs[free] - K[free][:, fixed] @ values
-    )
-    return x
-
-
-def trace_decomposition(rom, lower, mono_die, node_true):
-    """Coupled error, node-pinned error, and interface shift for a reduced side."""
-    K, C, rhs, lo_, ro_, npatch = er.connect(
-        rom, lower, rom.port("z-"), lower.port("z+"), power=POWER_W
-    )
-    steady, _hist = er.solve_system(K, C, rhs, DT_S, DURATION_S)
-    junc_coupled = upper_junction(steady, rom, 0)
-    node_idx = np.arange(lo_, lo_ + npatch)
-    pinned = _pin(K, rhs, node_idx, node_true)
-    junc_pinned = upper_junction(pinned, rom, 0)
-    return {
-        "basis_order": int(rom.order),
-        "coupled_die_err_K": float(np.max(np.abs(junc_coupled - mono_die))),
-        "node_pinned_die_err_K": float(np.max(np.abs(junc_pinned - mono_die))),
-        "interface_node_shift_K": float(
-            np.max(np.abs(np.asarray(steady[node_idx]) - np.asarray(node_true)))
-        ),
-        "note": (
-            "paper Section-4 TraceRom: node-pinned error ~0 confirms the coupling "
-            "structure is correct; the residual coupled error is basis truncation "
-            "and converges with basis order."
-        ),
-    }
-
-
 def run():
     fine_model = make_model(2.5)
     coarse_model = make_model(3.0)
@@ -145,15 +107,14 @@ def run():
         coarse_model, coarse_lower_cells, name="coarse_lower", physical_h=BOUNDARY_H
     )
 
-    # One paper-Section-4 extraction (boundary + interior reduced together),
-    # exposing every boundary face as a port; reused in every coupling case.
-    rom = er.extract_trace_rom(
+    # Extract the whole-subdomain EmbeddableRom once and reuse its physical
+    # interface traces in every coupling case.
+    rom = er.extract_rom(
         fine_upper,
         tolerance=1.0e-2,
         max_order=2048,
         probe_rounds=2,
         seed=20260825,
-        interface_ports=["z-"],
     )
     summary = rom.summary
 
@@ -177,25 +138,11 @@ def run():
         rom, fine_lower, rom.port("z-"), fine_lower.port("z+"), reference_full
     )
 
-    # True interface node temperatures from the identity (conforming) solve.
-    K_id, _C, rhs_id, lo_id, _ro, np_id = er.connect(
-        fine_upper,
-        fine_lower,
-        fine_upper.port("z-"),
-        fine_lower.port("z+"),
-        power=POWER_W,
-    )
-    sd_id = sp.linalg.spsolve(K_id.tocsc(), rhs_id)
-    node_true = sd_id[lo_id : lo_id + np_id]
-    del sd_id, K_id, rhs_id
-
-    rom_fvm_decomp = trace_decomposition(rom, fine_lower, monolithic, node_true)
 
     payload = {
-        "method": "paper Section-4 TraceRom (extract once, connect everywhere): "
-        "boundary + interior DOFs reduced together by one basis; independent "
-        "interface face nodes theta_if coupled via reduced trace V_if; "
-        "interface faces are first-class BCI boundary groups in training; "
+        "method": "EmbeddableRom (extract once, connect everywhere): "
+        "whole-subdomain cells reduced by one basis; independent interface "
+        "face nodes theta_if coupled through the physical trace V_if; "
         "non-conforming grids area-weighted (E, xi) at model-definition level; "
         f"per-face conductance g = k*A/half; upper ports = "
         f"{[p.normal for p in rom.ports]}",
@@ -208,7 +155,6 @@ def run():
         "identity_vs_monolithic_max_error_K": float(
             np.max(np.abs(np.asarray(conforming["steady_junction_K"])[:4] - monolithic))
         ),
-        "rom_fvm_decomposition": rom_fvm_decomp,
         "results": {
             "conforming": conforming,
             "nonconforming": nonconforming,

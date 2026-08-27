@@ -24,11 +24,10 @@ Modules:
 * :mod:`embeddable` — the embeddable ROM extractor: boundary-face port
   enumeration (only explicitly declared ambient faces are excluded; every other
   boundary face becomes a connectable :class:`~metahotspot.macromodel.embeddable.FacePort`),
-  subdomain assembly, reduced-interior + full-FVM-interface-band extraction
-  (:class:`~metahotspot.macromodel.embeddable.EmbeddableRom`), paper Section-4
-  whole-subdomain trace reduction
-  (:class:`~metahotspot.macromodel.embeddable.TraceRom`), non-conforming
-  common-patch area weighting, and independent-interface-node coupling
+  subdomain assembly and whole-subdomain extraction
+  (:class:`~metahotspot.macromodel.embeddable.EmbeddableRom`),
+  non-conforming common-patch area weighting, and
+  independent-interface-node coupling
   (:func:`~metahotspot.macromodel.embeddable.connect`).
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
@@ -55,13 +54,13 @@ from metahotspot.macromodel.embeddable import (
     EmbeddableRom,
     FacePort,
     Subdomain,
-    TraceRom,
+
     build_subdomain,
     common_patches,
     connect,
     enumerate_interface_ports,
     extract_rom,
-    extract_trace_rom,
+
     interface_trace,
     side_junction_rise,
     solve_system,
@@ -86,13 +85,13 @@ __all__ = [
     "EmbeddableRom",
     "FacePort",
     "Subdomain",
-    "TraceRom",
+
     "build_subdomain",
     "common_patches",
     "connect",
     "enumerate_interface_ports",
     "extract_rom",
-    "extract_trace_rom",
+
     "interface_trace",
     "side_junction_rise",
     "solve_system",

@@ -259,11 +259,8 @@ def test_coupled_system_is_symmetric_psd():
     assert Cc.shape == Kc.shape
 
 
-def test_embeddable_rom_couples_through_its_interface_band():
-    """A reduced interior + full-FVM interface band must connect like a
-    Subdomain: interface cells live in the explicit band, so the coupled
-    system is exact there and the reduced interior contributes only through
-    the basis."""
+def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
+    """Embeddable ROM reduces all cells and couples through its physical trace."""
     _model, compiled, ops = _build_operators(4, 4, 6)
     model = _FakePortsModel(compiled, ops)
     # declare the top crown (z+) as an ambient boundary group so the BCI
@@ -287,8 +284,13 @@ def test_embeddable_rom_couples_through_its_interface_band():
 
     # reduce the source-bearing upper side
     rom = mm.extract_rom(right, tolerance=1.0e-2, max_order=64, probe_rounds=1, seed=7)
-    assert rom.n_band >= 1  # interface band kept explicit
-    assert rom.m >= 1  # interior reduced
+    assert rom.n_band == 0
+    assert rom.basis.shape[0] == right.cells.size
+    assert rom.m >= 1
+    assert np.max(np.abs(rom.C_hat.toarray() - np.eye(rom.m))) < 1.0e-10
+    assert np.max(
+        np.abs(rom.K0_hat.toarray() - np.diag(rom.K0_hat.diagonal()))
+    ) < 1.0e-10
 
     Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
         rom, left, rom.port("z-"), left.port("z+"), power=np.array([1.0])
@@ -298,9 +300,7 @@ def test_embeddable_rom_couples_through_its_interface_band():
         right, left, right.port("z-"), left.port("z+"), power=np.array([1.0])
     )
     assert npatch == np_i
-    # reduced side DOF layout = [band | interior modes]; interface patches
-    # map into the band block only
-    assert lo == rom.n_band + rom.m
+    assert lo == rom.m
     pd = rom.port_dofs(rom.port("z-"))
-    assert np.all(pd < rom.n_band)
+    assert np.all(pd < right.cells.size)
     assert Kc.shape == (lo + npatch + ro, lo + npatch + ro)
