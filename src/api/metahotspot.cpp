@@ -779,8 +779,18 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int3
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
 {
     CHECK_NULL(operators);
-    return copy_vector(
-        std::vector<double>(operators->operators.f.data(), operators->operators.f.data() + count), out, count, "rhs");
+    const auto expected_count = static_cast<size_t>(operators->operators.f.size());
+    if (count != expected_count) {
+        SET_ERR("rhs count must equal " << expected_count);
+        return MHS_ERR_INVALID_ARG;
+    }
+    if (count > 0 && !out) {
+        SET_ERR("NULL pointer: out");
+        return MHS_ERR_NULL_PTR;
+    }
+    std::copy_n(operators->operators.f.data(), count, out);
+    mhs_detail_clear_last_error();
+    return MHS_OK;
 }
 
 /* ------------------------------------------------------------------ */
