@@ -158,20 +158,24 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 {
     if (!opts)
         return;
-    opts->solver_type = MHS_SOLVER_AMG;
-    opts->linear_tolerance = 1e-8;
-    opts->linear_max_iterations = 1000;
-    opts->underrelaxation = 1.0;
-    opts->nonlinear_max_iterations = 200;
-    opts->nonlinear_relative_tolerance = 1e-6;
-    opts->nonlinear_absolute_tolerance = 1e-12;
-    opts->integrator = MHS_INTEGRATOR_BDF1;
-    opts->step_strategy = MHS_STEP_ADAPTIVE;
-    opts->error_rel_tol = 1e-4;
-    opts->error_safety = 0.9;
-    opts->min_dt = 1e-12;
-    opts->max_dt = 1.0;
-    opts->fixed_dt = 1.0;
+    const mhs::sim::SolveOptions defaults {};
+    opts->solver_type = defaults.linear_solver == mhs::sim::SolveOptions::LinearSolverType::Pardiso ? MHS_SOLVER_PARDISO
+                                                                                                    : MHS_SOLVER_AMG;
+    opts->linear_tolerance = defaults.linear_tolerance;
+    opts->linear_max_iterations = defaults.linear_max_iterations;
+    opts->underrelaxation = defaults.underrelaxation;
+    opts->nonlinear_max_iterations = defaults.nonlinear_max_iterations;
+    opts->nonlinear_relative_tolerance = defaults.nonlinear_relative_tolerance;
+    opts->nonlinear_absolute_tolerance = defaults.nonlinear_absolute_tolerance;
+    opts->integrator
+        = defaults.integrator == mhs::sim::SolveOptions::Integrator::Bdf1 ? MHS_INTEGRATOR_BDF1 : MHS_INTEGRATOR_BDF2;
+    opts->step_strategy
+        = defaults.step_strategy == mhs::sim::SolveOptions::StepStrategy::Adaptive ? MHS_STEP_ADAPTIVE : MHS_STEP_FIXED;
+    opts->error_rel_tol = defaults.error_rel_tol;
+    opts->error_safety = defaults.error_safety;
+    opts->min_dt = defaults.min_dt;
+    opts->max_dt = defaults.max_dt;
+    opts->fixed_dt = defaults.fixed_dt;
 }
 
 MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }

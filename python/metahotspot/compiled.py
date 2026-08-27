@@ -226,20 +226,20 @@ def _operators_from_handle(dll, handle) -> Operators:
 class SolveOptions:
     """Solver configuration options."""
 
-    linear_solver: SolverType | str = SolverType.AMG
-    linear_tolerance: float = 1e-8
-    linear_max_iterations: int = 1000
-    underrelaxation: float = 1.0
-    nonlinear_max_iterations: int = 200
-    nonlinear_relative_tolerance: float = 1e-6
-    nonlinear_absolute_tolerance: float = 1e-12
-    integrator: IntegratorKind | str = IntegratorKind.BDF1
-    step_strategy: StepStrategy | str = StepStrategy.ADAPTIVE
-    error_rel_tol: float = 1e-4
-    error_safety: float = 0.9
-    min_dt: float = 1e-12
-    max_dt: float = 1.0
-    fixed_dt: float = 1.0
+    linear_solver: SolverType | str | None = None
+    linear_tolerance: float | None = None
+    linear_max_iterations: int | None = None
+    underrelaxation: float | None = None
+    nonlinear_max_iterations: int | None = None
+    nonlinear_relative_tolerance: float | None = None
+    nonlinear_absolute_tolerance: float | None = None
+    integrator: IntegratorKind | str | None = None
+    step_strategy: StepStrategy | str | None = None
+    error_rel_tol: float | None = None
+    error_safety: float | None = None
+    min_dt: float | None = None
+    max_dt: float | None = None
+    fixed_dt: float | None = None
 
     @staticmethod
     def default() -> SolveOptions:
@@ -250,22 +250,40 @@ class SolveOptions:
 
         c_opts = _SolveOptionsCStruct()
         dll.mhs_solve_options_default(ctypes.byref(c_opts))
-        c_opts.solver_type = _enum_value(self.linear_solver, SolverType, _SOLVER_VALUES, "linear_solver")
-        c_opts.linear_tolerance = self.linear_tolerance
-        c_opts.linear_max_iterations = self.linear_max_iterations
-        c_opts.underrelaxation = self.underrelaxation
-        c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
-        c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
-        c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
-        c_opts.integrator = _enum_value(self.integrator, IntegratorKind, _INTEGRATOR_VALUES, "integrator")
-        c_opts.step_strategy = _enum_value(
-            self.step_strategy, StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"
-        )
-        c_opts.error_rel_tol = self.error_rel_tol
-        c_opts.error_safety = self.error_safety
-        c_opts.min_dt = self.min_dt
-        c_opts.max_dt = self.max_dt
-        c_opts.fixed_dt = self.fixed_dt
+        if self.linear_solver is not None:
+            c_opts.solver_type = _enum_value(
+                self.linear_solver, SolverType, _SOLVER_VALUES, "linear_solver"
+            )
+        if self.linear_tolerance is not None:
+            c_opts.linear_tolerance = self.linear_tolerance
+        if self.linear_max_iterations is not None:
+            c_opts.linear_max_iterations = self.linear_max_iterations
+        if self.underrelaxation is not None:
+            c_opts.underrelaxation = self.underrelaxation
+        if self.nonlinear_max_iterations is not None:
+            c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
+        if self.nonlinear_relative_tolerance is not None:
+            c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
+        if self.nonlinear_absolute_tolerance is not None:
+            c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
+        if self.integrator is not None:
+            c_opts.integrator = _enum_value(
+                self.integrator, IntegratorKind, _INTEGRATOR_VALUES, "integrator"
+            )
+        if self.step_strategy is not None:
+            c_opts.step_strategy = _enum_value(
+                self.step_strategy, StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"
+            )
+        if self.error_rel_tol is not None:
+            c_opts.error_rel_tol = self.error_rel_tol
+        if self.error_safety is not None:
+            c_opts.error_safety = self.error_safety
+        if self.min_dt is not None:
+            c_opts.min_dt = self.min_dt
+        if self.max_dt is not None:
+            c_opts.max_dt = self.max_dt
+        if self.fixed_dt is not None:
+            c_opts.fixed_dt = self.fixed_dt
         return c_opts
 
 
