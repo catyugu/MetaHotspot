@@ -285,8 +285,6 @@ namespace mhs::sim::fluid {
 
                     const int axis = mhs::utils::AXIS_OF_DIR[face];
                     const auto& conductance = workspace.hydraulic_conductance[axis];
-                    if (conductance[fi] <= mhs::core::zero_guard || conductance[fn] <= mhs::core::zero_guard)
-                        continue;
                     const double effective = mhs::utils::harmonicAverage(conductance[fi], conductance[fn]);
                     model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face]
                         = (workspace.pressure[fi] - workspace.pressure[fn]) * effective;

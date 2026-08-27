@@ -42,7 +42,6 @@ const char* mhs_detail_last_error();
 
 #define MHS_TRY(err_code, ...)                                                                                         \
     try {                                                                                                              \
-        mhs_detail_clear_last_error();                                                                                 \
         __VA_ARGS__;                                                                                                   \
         mhs_detail_clear_last_error();                                                                                 \
         return MHS_OK;                                                                                                 \

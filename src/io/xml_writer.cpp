@@ -157,7 +157,7 @@ namespace mhs::io {
         }
 
         const std::filesystem::path dir_path(output_path);
-        if (!dir_path.parent_path().empty() && !std::filesystem::exists(dir_path.parent_path())) {
+        if (!dir_path.parent_path().empty()) {
             std::filesystem::create_directories(dir_path.parent_path());
         }
         doc.SaveFile(output_path.c_str());

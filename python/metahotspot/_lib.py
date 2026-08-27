@@ -37,7 +37,8 @@ def load_library() -> ctypes.CDLL:
     Raises RuntimeError if the library cannot be found.
     """
     errors: list[str] = []
-    for cand in _probe_lib_paths():
+    candidates = _probe_lib_paths()
+    for cand in candidates:
         if cand.is_file():
             try:
                 return ctypes.CDLL(str(cand))
@@ -46,7 +47,7 @@ def load_library() -> ctypes.CDLL:
                 continue
 
     msg = "Cannot locate MetaHotspot C API library. Tried:\n"
-    for cand in _probe_lib_paths():
+    for cand in candidates:
         exists = " (found)" if cand.is_file() else " (missing)"
         msg += f"  {cand!s}{exists}\n"
     if errors:
