@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import ctypes
 
+from metahotspot._error import check
+
 from metahotspot.types import (
     MhsModel,
     MhsCompiled,
@@ -428,8 +430,6 @@ def copy_array(fn, handle, array, c_type, label) -> None:
     Wraps the simple ``mhs_*_copy_*`` C calls, which take
     ``(handle, buffer, count)`` and fill the pre-allocated buffer.
     """
-    from metahotspot._error import check
-
     check(
         fn(handle, array.ctypes.data_as(ctypes.POINTER(c_type)), array.size),
         label,

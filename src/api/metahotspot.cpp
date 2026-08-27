@@ -91,6 +91,17 @@ static mhs_study_t _from_core_study(mhs::core::StudyType s)
 static mhs::model::FaceRegion _make_face_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
 { return {_to_axis(axis), coord, {{r.a_min, r.a_max, r.b_min, r.b_max}}}; }
 
+template <typename Boundary>
+static void _add_boundary_patch(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, Boundary condition)
+{
+    mhs::model::BoundaryPatch bp;
+    bp.condition = std::move(condition);
+    bp.regions.reserve(n_regions);
+    for (size_t i = 0; i < n_regions; ++i)
+        bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    m->def.boundaries.push_back(std::move(bp));
+}
+
 static mhs::sim::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
 {
     switch (t) {
@@ -342,14 +353,8 @@ MHS_API mhs_status_t mhs_model_add_dirichlet(
     CHECK_NULL(m);
     CHECK_NULL(regions);
     CHECK_NULL(temperature);
-    MHS_TRY(MHS_ERR_INVALID_ARG, {
-        mhs::model::BoundaryPatch bp;
-        bp.condition = mhs::model::DirichletBoundary {temperature};
-        bp.regions.reserve(n_regions);
-        for (size_t i = 0; i < n_regions; ++i)
-            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-        m->def.boundaries.push_back(std::move(bp));
-    });
+    MHS_TRY(MHS_ERR_INVALID_ARG,
+        { _add_boundary_patch(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_neumann(
@@ -358,14 +363,8 @@ MHS_API mhs_status_t mhs_model_add_neumann(
     CHECK_NULL(m);
     CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
-    MHS_TRY(MHS_ERR_INVALID_ARG, {
-        mhs::model::BoundaryPatch bp;
-        bp.condition = mhs::model::NeumannBoundary {heat_flux};
-        bp.regions.reserve(n_regions);
-        for (size_t i = 0; i < n_regions; ++i)
-            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-        m->def.boundaries.push_back(std::move(bp));
-    });
+    MHS_TRY(
+        MHS_ERR_INVALID_ARG, { _add_boundary_patch(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
@@ -376,12 +375,7 @@ MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_reg
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY(MHS_ERR_INVALID_ARG, {
-        mhs::model::BoundaryPatch bp;
-        bp.condition = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
-        bp.regions.reserve(n_regions);
-        for (size_t i = 0; i < n_regions; ++i)
-            bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-        m->def.boundaries.push_back(std::move(bp));
+        _add_boundary_patch(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     });
 }
 

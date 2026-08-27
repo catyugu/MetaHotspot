@@ -14,7 +14,6 @@ Usage::
 from metahotspot import enums
 from metahotspot._error import MetaHotspotError
 from metahotspot.compiled import Compiled, Operators, SolveOptions
-from metahotspot.macromodel import affine, embeddable, utils
 from metahotspot.model import Model
 from metahotspot.solution import Solution
 
@@ -26,9 +25,4 @@ __all__ = [
     "Operators",
     "enums",
     "MetaHotspotError",
-    # model-agnostic macromodel (MOR) algorithms
-    "macromodel",
-    "utils",
-    "affine",
-    "embeddable",
 ]

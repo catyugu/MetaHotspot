@@ -27,7 +27,7 @@ CASE_GROUPS = [
 
 def _run_one(input_path, vtu_path, xml_path):
     print(f">>> Running {os.path.basename(input_path)}", flush=True)
-    subprocess.run(
+    result = subprocess.run(
         [
             EXE,
             "--input",
@@ -39,19 +39,22 @@ def _run_one(input_path, vtu_path, xml_path):
         ],
         check=False,
     )
+    return result.returncode == 0
 
 
 def _run_group(case_dir, results_subdir, _kind=""):
     if not os.path.isdir(case_dir):
-        return
+        return True
     os.makedirs(os.path.join("results", results_subdir), exist_ok=True)
+    all_ok = True
     for case_file in sorted(f for f in os.listdir(case_dir) if f.endswith(".xml")):
         case_name = case_file[:-4]
-        _run_one(
+        all_ok &= _run_one(
             os.path.join(case_dir, case_file),
             os.path.join("results", results_subdir, f"{case_name}_output.vtu"),
             os.path.join("results", results_subdir, f"{case_name}_output.xml"),
         )
+    return all_ok
 
 
 def _compare_group(case_dir, results_subdir, kind):
@@ -73,10 +76,10 @@ def _compare_group(case_dir, results_subdir, kind):
 
 
 def main():
-    for group in CASE_GROUPS:
-        _run_group(*group)
-
     all_ok = True
+    for group in CASE_GROUPS:
+        all_ok &= _run_group(*group)
+
     for group in CASE_GROUPS:
         all_ok &= _compare_group(*group)
     return 0 if all_ok else 1

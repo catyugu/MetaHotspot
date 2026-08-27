@@ -35,10 +35,7 @@ CPMAddPackage(
 )
 
 # ----------------------------------------------------------------------------
-# muparser - mathematical expression parser.
-# NOTE the BUILD_SHARED_LIBS coupling below: setting it OFF here, and later ON
-# again for oneTBB, relies on call order (the last writer wins in the global
-# scope). The oneTBB block below sets it ON, which is what keeps TBB shared.
+# muparser - mathematical expression parser.  Build it static.
 # ----------------------------------------------------------------------------
 CPMAddPackage(
     NAME muparser
@@ -49,10 +46,9 @@ CPMAddPackage(
     "BUILD_TESTING OFF"
     "BUILD_SHARED_LIBS OFF"
 )
-
 # ----------------------------------------------------------------------------
 # googletest (tests only)
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 CPMAddPackage(
     NAME googletest
     GITHUB_REPOSITORY google/googletest
@@ -63,22 +59,19 @@ CPMAddPackage(
 )
 
 # ----------------------------------------------------------------------------
-# oneTBB - parallel assembly. TBB_STRICT (warnings-as-errors) and the test/
-# malloc targets are ON by default, so they are pinned OFF here. TBB reads the
-# global BUILD_SHARED_LIBS: force it ON so oneTBB builds shared (the DLL is
-# copied next to the executable on Windows, see RuntimeDlls.cmake) and so it
-# overrides the OFF muparser set above (order-dependent global, see above).
+# oneTBB - parallel assembly.  Build it static.
 # ----------------------------------------------------------------------------
 CPMAddPackage(
     NAME TBB
     GITHUB_REPOSITORY "oneapi-src/oneTBB"
     GIT_TAG "v2023.0.0"
     OPTIONS
-    "BUILD_SHARED_LIBS ON"
+    "BUILD_SHARED_LIBS OFF"
     "TBB_STRICT OFF"
     "TBBMALLOC_BUILD OFF"
     "TBB_TEST OFF"
 )
+
 
 # TBB 2023.0.0 needs two MinGW compatibility settings in Debug builds.
 if(MINGW AND TARGET tbb)

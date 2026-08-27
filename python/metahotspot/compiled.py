@@ -10,6 +10,7 @@ import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
+from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
 from metahotspot.types import (
     MhsCompiled,
     MhsCellFields,
@@ -26,6 +27,11 @@ class Operators(NamedTuple):
     K: object
     C: object
     f: np.ndarray
+
+
+_SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}
+_INTEGRATOR_VALUES = {"Bdf1": IntegratorKind.BDF1, "Bdf2": IntegratorKind.BDF2}
+_STEP_STRATEGY_VALUES = {"Adaptive": StepStrategy.ADAPTIVE, "Fixed": StepStrategy.FIXED}
 
 
 # Single declaration of the CellFields contract: (field name, ctypes element
@@ -220,15 +226,15 @@ def _operators_from_handle(dll, handle) -> Operators:
 class SolveOptions:
     """Solver configuration options."""
 
-    linear_solver: str = "AmgCg"
+    linear_solver: SolverType | str = SolverType.AMG
     linear_tolerance: float = 1e-8
     linear_max_iterations: int = 1000
     underrelaxation: float = 1.0
     nonlinear_max_iterations: int = 200
     nonlinear_relative_tolerance: float = 1e-6
     nonlinear_absolute_tolerance: float = 1e-12
-    integrator: str = "Bdf1"
-    step_strategy: str = "Adaptive"
+    integrator: IntegratorKind | str = IntegratorKind.BDF1
+    step_strategy: StepStrategy | str = StepStrategy.ADAPTIVE
     error_rel_tol: float = 1e-4
     error_safety: float = 0.9
     min_dt: float = 1e-12
@@ -244,24 +250,34 @@ class SolveOptions:
 
         c_opts = _SolveOptionsCStruct()
         dll.mhs_solve_options_default(ctypes.byref(c_opts))
-        c_opts.solver_type = {
-            "Pardiso": 0,
-            "AmgCg": 1,
-        }.get(self.linear_solver, 1)
+        c_opts.solver_type = _enum_value(self.linear_solver, SolverType, _SOLVER_VALUES, "linear_solver")
         c_opts.linear_tolerance = self.linear_tolerance
         c_opts.linear_max_iterations = self.linear_max_iterations
         c_opts.underrelaxation = self.underrelaxation
         c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
         c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
         c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
-        c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
-        c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
+        c_opts.integrator = _enum_value(self.integrator, IntegratorKind, _INTEGRATOR_VALUES, "integrator")
+        c_opts.step_strategy = _enum_value(
+            self.step_strategy, StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"
+        )
         c_opts.error_rel_tol = self.error_rel_tol
         c_opts.error_safety = self.error_safety
         c_opts.min_dt = self.min_dt
         c_opts.max_dt = self.max_dt
         c_opts.fixed_dt = self.fixed_dt
         return c_opts
+
+
+def _enum_value(value, enum_type, string_values, field_name: str) -> int:
+    if isinstance(value, enum_type):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(string_values[value])
+        except KeyError as exc:
+            raise ValueError(f"unknown {field_name}: {value!r}") from exc
+    raise TypeError(f"{field_name} must be {enum_type.__name__} or str")
 
 
 class Compiled(OwnedHandle):
@@ -349,11 +365,6 @@ class Compiled(OwnedHandle):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""
         if state is None:
             state = self.default_state()
-        state = np.ascontiguousarray(state, dtype=np.float64)
-        if state.size != self.cell_count:
-            raise ValueError(
-                f"state size ({state.size}) != cell_count ({self.cell_count})"
-            )
         values = {
             name: np.empty(state.size, dtype=np.float64)
             for name in (
@@ -390,11 +401,6 @@ class Compiled(OwnedHandle):
         """Assemble K, C, f at a state and time."""
         if state is None:
             state = self.default_state()
-        state = np.ascontiguousarray(state, dtype=np.float64)
-        if state.size != self.cell_count:
-            raise ValueError(
-                f"state size ({state.size}) != cell_count ({self.cell_count})"
-            )
 
         handle = ctypes.POINTER(MhsOperators)()
         check(

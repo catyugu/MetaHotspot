@@ -54,15 +54,12 @@ class Solution(OwnedHandle):
 
         opts_ptr = _opts_ptr(opts, self._dll)
 
-        normalized_state = None
-        if state is not None:
-            normalized_state = np.ascontiguousarray(state, dtype=np.float64)
         state_ptr = (
-            normalized_state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            if normalized_state is not None
+            state.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            if state is not None
             else None
         )
-        state_count = normalized_state.size if normalized_state is not None else 0
+        state_count = state.size if state is not None else 0
         check(
             self._dll.mhs_compiled_solve(
                 compiled._handle, state_ptr, state_count, opts_ptr, ctypes.byref(pp)
