@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<neutralXML>
+
+  <name>simple_case1</name>
+
+  <producer>FloTHERM</producer>
+
+  <solutionDomain>
+    <location>
+      <x>0.000000000000000</x>
+      <y>0.000000000000000</y>
+      <z>0.000000000000000</z>
+    </location>
+    <size>
+      <x>0.100000000000000</x>
+      <y>0.100000000000000</y>
+      <z>0.100000000000000</z>
+    </size>
+  </solutionDomain>
+
+  <materials>
+    <material>
+      <name>Copper (Pure)</name>
+      <density>8930.000000000000000</density>
+      <specific_heat>385.000000000000000</specific_heat>
+      <surfaceEmissivity>1.000000000000000</surfaceEmissivity>
+      <thermalConductivity>
+        <isotropic>
+          <conductivity>385.000000000000000</conductivity>
+        </isotropic>
+      </thermalConductivity>
+    </material>
+    <material>
+      <name>Titanium (Pure)</name>
+      <density>4508.000000000000000</density>
+      <specific_heat>536.000000000000000</specific_heat>
+      <surfaceEmissivity>1.000000000000000</surfaceEmissivity>
+      <thermalConductivity>
+        <isotropic>
+          <conductivity>21.000000000000000</conductivity>
+        </isotropic>
+      </thermalConductivity>
+    </material>
+  </materials>
+
+  <geometry>
+    <solid3dBlock>
+      <name>Cuboid</name>
+      <active>true</active>
+      <location>
+        <x>0.000000000000000</x>
+        <y>0.000000000000000</y>
+        <z>0.000000000000000</z>
+      </location>
+      <size>
+        <x>0.050000000000000</x>
+        <y>0.100000000000000</y>
+        <z>0.100000000000000</z>
+      </size>
+      <material>Copper (Pure)</material>
+      <powerDissipation>0.000000000000000</powerDissipation>
+    </solid3dBlock>
+    <solid3dBlock>
+      <name>Cuboid</name>
+      <active>true</active>
+      <location>
+        <x>0.050000000000000</x>
+        <y>0.000000000000000</y>
+        <z>0.000000000000000</z>
+      </location>
+      <size>
+        <x>0.050000000000000</x>
+        <y>0.100000000000000</y>
+        <z>0.100000000000000</z>
+      </size>
+      <material>Titanium (Pure)</material>
+      <powerDissipation>0.000000000000000</powerDissipation>
+    </solid3dBlock>
+    <sourceBlock>
+      <name>Cuboid</name>
+      <active>true</active>
+      <location>
+        <x>0.025000000000000</x>
+        <y>0.025000000000000</y>
+        <z>0.025000000000000</z>
+      </location>
+      <size>
+        <x>0.050000000000000</x>
+        <y>0.050000000000000</y>
+        <z>0.050000000000000</z>
+      </size>
+      <powerDissipation>1.000000000000000</powerDissipation>
+    </sourceBlock>
+  </geometry>
+
+</neutralXML>
