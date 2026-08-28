@@ -48,7 +48,11 @@ import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
 
-from metahotspot.macromodel.utils import build_parametric_basis, normalized_operators
+from metahotspot.macromodel.utils import (
+    build_parametric_basis,
+    normalized_operators,
+    orthonormalize_block,
+)
 
 # (axis, direction) -> Face enum bit  (XM, XP, YM, YP, ZM, ZP = 0..5)
 _FACE_BIT = {
@@ -410,6 +414,11 @@ def extract_rom(
     ops = normalized_operators(subdomain.K, subdomain.C, np.zeros(cells.size))
     G = np.asarray(subdomain.source, dtype=np.float64)
     ambient = list(subdomain.ambient_terms)
+    interface_terms = []
+    for port in subdomain.ports:
+        diagonal = np.zeros(cells.size, dtype=np.float64)
+        diagonal[np.asarray(port.cells, dtype=np.int64)] = port.areas
+        interface_terms.append(sp.diags(diagonal, format="csc"))
 
     basis, summary = build_parametric_basis(
         ops,
@@ -421,14 +430,59 @@ def extract_rom(
         probe_rounds=probe_rounds,
         seed=seed,
     )
+    # Extended FANTASTIC bilinearization: close the source/moment space under
+    # each boundary operator D_i at the low-frequency expansion point.
+    closure_iterations = 2
+    closure_nme = 2
+    closure_rrtol = 1.0e-3
+    closure_columns = 0
+    closure_round_columns = []
+    closure_operator = (subdomain.K + 1.0e-8 * subdomain.C).tocsc()
+    closure_solve = spla.factorized(closure_operator)
+    frontier = basis
+    for _ in range(closure_iterations):
+        previous = basis
+        responses = []
+        for term in interface_terms:
+            response = closure_solve(term @ frontier)
+            responses.append(response)
+        if not responses:
+            break
+        response_block = np.column_stack(responses)
+        c_diag = np.asarray(subdomain.C.diagonal(), dtype=np.float64)
+        weighted = np.sqrt(c_diag)[:, None] * response_block
+        left, _, _ = scipy.linalg.svd(
+            weighted, full_matrices=False, check_finite=False
+        )
+        singular_values = scipy.linalg.svdvals(weighted)
+        cutoff = closure_rrtol * max(float(singular_values[0]), np.finfo(float).tiny)
+        n_keep = min(
+            closure_nme,
+            int(np.count_nonzero(singular_values > cutoff)),
+        )
+        if n_keep == 0:
+            closure_round_columns.append(0)
+            break
+        selected = left[:, :n_keep] / np.sqrt(c_diag)[:, None]
+        block = orthonormalize_block(previous, selected)
+        if not block.shape[1]:
+            closure_round_columns.append(0)
+            break
+        basis = np.column_stack((previous, block))
+        frontier = block
+        closure_columns += int(block.shape[1])
+        closure_round_columns.append(int(block.shape[1]))
+    summary["bilinear_closure_iterations"] = closure_iterations
+    summary["bilinear_closure_nme"] = closure_nme
+    summary["bilinear_closure_rrtol"] = closure_rrtol
+    summary["bilinear_closure_columns"] = closure_columns
+    summary["bilinear_closure_round_columns"] = closure_round_columns
     C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
     K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
     F_hat = np.asarray(basis.T @ G, dtype=np.float64)
     ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in ambient]
 
-    # Change only the reduced coordinates to C-orthonormal generalized modes.
-    # This makes M_hat the identity and K_hat0 diagonal without adding any
-    # interface-response directions to the training set.
+    # This basis is then transformed to C-orthonormal generalized modes.
     modal_k, modal_q = scipy.linalg.eigh(
         K0_hat.toarray(), C_hat.toarray(), check_finite=False
     )

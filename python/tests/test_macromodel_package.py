@@ -292,6 +292,10 @@ def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
     )
     expected_ambient = rom.basis.T @ right.ambient_terms[0] @ rom.basis
     assert np.max(np.abs(rom.ambient_hat[0].toarray() - expected_ambient)) < 1.0e-10
+    assert rom.summary["bilinear_closure_iterations"] == 2
+    assert rom.summary["bilinear_closure_nme"] == 2
+    assert rom.summary["bilinear_closure_columns"] > 0
+    assert len(rom.summary["bilinear_closure_round_columns"]) == 2
     # every subdomain boundary face is exported as a physical trace V_b = A_b.T@V
     assert set(rom.boundary_traces) == {p.label for p in right.boundary_ports}
     assert set(rom.boundary_conductances) == set(rom.boundary_traces)
