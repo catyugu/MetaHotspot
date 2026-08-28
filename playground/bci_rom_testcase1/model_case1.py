@@ -6,11 +6,11 @@ Geometry mirrors ``playground/bci_rom_testcase1/case1.ecxml``:
     layer        material    thickness (mm)   lateral (mm)            power
     ----------   ----------  --------------   --------------------    ----
     FR4          FR4         10.0             60 x 100                -
-    aluminum     Aluminum    5.0              60 x  60                -
-    E-10         E-10        5.0              40 x  40                -
+    E-10         E-10        5.0              60 x  60                -
+    interconnect Interconnect 3.0             40 x  40                -
     dies         Silicon     2.0              4 x (10 x 10)           4 sources
 
-Four 10x10x2 mm silicon dies sit on top (z 20..22 mm) at:
+Four 10x10x2 mm silicon dies sit on top (z 18..20 mm) at:
     S0  x[ 5,15]  y[ 5,15]  0.1 W
     S1  x[-15,-5] y[ 5,15]  0.2 W
     S2  x[ 5,15]  y[-15,-5] 0.3 W
@@ -18,7 +18,7 @@ Four 10x10x2 mm silicon dies sit on top (z 20..22 mm) at:
 
 Boundary: two ambient groups, side faces adiabatic —
 
-    die-crown faces  (z = 22 mm, 4 dies, area 4e-4 m2)  h = 5e1   (Ambient:0)
+    die-crown faces  (z = 20 mm, 4 dies, area 4e-4 m2)  h = 5e1   (Ambient:0)
     FR4 bottom face  (z =  0 mm, area 6e-3 m2)          h = 1e3   (Ambient:1)
 
 ``h_ranges`` keeps the model group order [ZP crowns, ZM FR4]; both are the
@@ -56,7 +56,7 @@ from metahotspot.macromodel.affine import (  # noqa: E402
 # (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
     "FR4": (".3", ".3", ".3", "1200", "880"),
-    "Aluminum (Pure)": ("201", "201", "201", "2710", "913"),
+    "Interconnect(equivalent)": ("2", "2", "201", "2710", "913"),
     "E-10": (".56", ".56", ".56", "1140", "3330"),
     "Silicon": ("130", "130", "130", "2330", "700"),
 }
@@ -74,8 +74,8 @@ A2_MAX_Y = 50.0
 # bottom-up (thickness_mm, material, size_x_mm, size_y_mm, center_x_mm, center_y_mm, power_W)
 LAYERS = (
     (10.0, "FR4", 60.0, 100.0, 0.0, 0.0, 0.0),
-    (5.0, "Aluminum (Pure)", 60.0, 60.0, 0.0, 0.0, 0.0),
-    (5.0, "E-10", 40.0, 40.0, 0.0, 0.0, 0.0),
+    (5.0, "E-10", 60.0, 60.0, 0.0, 0.0, 0.0),
+    (3.0, "Interconnect(equivalent)", 40.0, 40.0, 0.0, 0.0, 0.0),
 )
 
 DIES = (
@@ -107,12 +107,12 @@ class Case1Config:
 
     @property
     def total_height_mm(self) -> float:
-        return 22.0
+        return 20.0
 
     def _all_cuts_mm(self) -> np.ndarray:
         """Every lateral cut (block edges + package/domain extents), unique.
 
-        FR4/Al x-edges at +-30, FR4 y-edges at +-50, E-10 at +-20, die edges at
+        FR4/E-10 x-edges at +-30, FR4 y-edges at +-50, interconnect at +-20, die edges at
         +-15/+-5.  This is the *superset* of cuts; the x and y meshes each keep
         only the cuts inside their own solution-domain extent so no empty cells
         stretch beyond the domain (case1.ecxml solutionDomain 60x100 mm).
@@ -150,8 +150,8 @@ class Case1Config:
     def y_vertices_mm(self) -> np.ndarray:
         """y mesh mirroring the FloTHERM base-grid export.
 
-        Central span [-30, 30] mm (aluminum/E-10/dies extent; same cut set
-        as x, incl. the aluminum y-edges at +-30) is subdivided to
+        Central span [-30, 30] mm (E-10/interconnect/dies extent; same cut set
+        as x, incl. the E-10 y-edges at +-30) is subdivided to
         ``max_xy_cell_mm``.  The FR4-only overhang [30, 50] / [-50, -30]
         (20 mm per side) is split into ``ceil(20 / max_xy_cell_mm) + 1``
         equal cells — the FloTHERM auto-mesh rule, which at the 1 mm
@@ -171,8 +171,8 @@ class Case1Config:
 
     @property
     def z_vertices_mm(self) -> np.ndarray:
-        """Cumulative z breakpoints (mm): 0,10,15,20,22, subdivided."""
-        fixed = [0.0, 10.0, 15.0, 20.0, 22.0]
+        """Cumulative z breakpoints (mm): 0,10,15,18,20, subdivided."""
+        fixed = [0.0, 10.0, 15.0, 18.0, 20.0]
         vertices = [0.0]
         for left, right in zip(fixed[:-1], fixed[1:]):
             pieces = max(1, math.ceil((right - left) / self.max_z_cell_mm))
