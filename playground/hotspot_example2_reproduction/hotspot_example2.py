@@ -270,9 +270,7 @@ def build_model(
 
 
 def main():
-    HOTSPOT_DIR = (
-        Path(__file__).resolve().parent.parent / "cases" / "hotspot_reproduction_cases"
-    )
+    HOTSPOT_DIR = Path(__file__).resolve().parent
     ptrace_path = HOTSPOT_DIR / "gcc.ptrace"
     if not ptrace_path.exists():
         ptrace_path = Path("gcc.ptrace")
