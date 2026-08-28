@@ -5,11 +5,9 @@ A *subdomain* (an arbitrary connected set of cells of the full model) is reduced
 a single time.  Its boundary splits in two roles:
 
 * **BCI faces** — the faces carrying an explicitly declared ambient boundary
-  condition.  These are handled *exactly as in the classic pipeline*: each is an
-  affine boundary group entering ``K(p) = K0 + Σ_k p_k F_bdry A_k F_bdryᵀ`` built
-  by :func:`project_bci` / :func:`assemble_reduced_k` at the surface-consistent
-  effective coefficient ``p = physical_to_effective(h)`` (so the ROM is
-  boundary-condition independent over them, and reproduce_case1.py is matched).
+  condition.  Their projected terms are assembled directly as
+  ``K(p) = K0 + Σ_k p_k Vᵀ H_k V`` at the surface-consistent effective
+  coefficient ``p = physical_to_effective(h)``.
 * **interface faces** — every *other* boundary face of the subdomain.  These
   become connectable :class:`FacePort` ports and, following the coupling-method
   gold rule, the interface **cells are kept at full FVM resolution** (never
@@ -44,16 +42,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
 
 from metahotspot.macromodel.utils import (
-    assemble_reduced_k,
     build_parametric_basis,
     normalized_operators,
-    project_bci,
+    orthonormalize_block,
 )
 
 # (axis, direction) -> Face enum bit  (XM, XP, YM, YP, ZM, ZP = 0..5)
@@ -94,6 +92,7 @@ class FacePort:
     t1: int  # first tangent global axis
     t2: int  # second tangent global axis
     rects: np.ndarray  # (n,4) tangential rectangles, SI
+    ambient: bool = False
 
     @property
     def g(self) -> np.ndarray:
@@ -114,7 +113,7 @@ def _tangent_pair(axis: int):
 # ---------------------------------------------------------------------------
 
 
-def enumerate_interface_ports(model, cells) -> list[FacePort]:
+def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[FacePort]:
     """Every boundary face of ``cells`` not covered by a declared ambient BC.
 
     A face is a boundary face of the subdomain when the cell across it is either
@@ -162,7 +161,9 @@ def enumerate_interface_ports(model, cells) -> list[FacePort]:
         fc = cells[rows]
         bit = int(_FACE_BIT[(axis, direction)])
         declared = in_group[fc] & (((exposed[fc] >> bit) & 1) == 1)
-        interface = np.flatnonzero(~declared)
+        interface = (
+            np.flatnonzero(~declared) if not include_ambient else np.arange(rows.size)
+        )
         if interface.size == 0:
             continue
         ir = rows[interface]
@@ -191,6 +192,7 @@ def enumerate_interface_ports(model, cells) -> list[FacePort]:
                 t1=t1,
                 t2=t2,
                 rects=rects,
+                ambient=bool(include_ambient and np.all(declared)),
             )
         )
     return ports
@@ -213,6 +215,7 @@ class Subdomain:
     C: sp.csc_matrix
     source: np.ndarray  # (n, n_src) unit-power shapes
     ports: list[FacePort]
+    boundary_ports: list[FacePort] = field(default_factory=list)
     ambient_terms: list[sp.csc_matrix] = field(default_factory=list)
     ambient_ranges: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
     effective_p: np.ndarray = field(default_factory=lambda: np.empty(0))
@@ -249,6 +252,14 @@ class Subdomain:
             if p.label == label:
                 return p
         raise KeyError(f"no port {label!r} on {self.name}")
+
+    def boundary_trace(self, label: str) -> np.ndarray:
+        port = next(p for p in self.boundary_ports if p.label == label)
+        return np.asarray(port.cells, dtype=np.int64)
+
+    def boundary_conductance(self, label: str) -> np.ndarray:
+        port = next(p for p in self.boundary_ports if p.label == label)
+        return np.asarray(port.g, dtype=np.float64)
 
 
 def build_subdomain(
@@ -300,7 +311,8 @@ def build_subdomain(
             phantom[row] -= value
     K = (K - sp.diags(phantom)).tocsc()
 
-    ports = enumerate_interface_ports(model, cells)
+    all_ports = enumerate_interface_ports(model, cells, include_ambient=True)
+    ports = [p for p in all_ports if not p.ambient]
     return Subdomain(
         name=name,
         cells=cells,
@@ -308,105 +320,65 @@ def build_subdomain(
         C=C,
         source=source,
         ports=ports,
+        boundary_ports=all_ports,
         ambient_terms=ambient_terms,
         ambient_ranges=np.asarray(ambient_ranges, dtype=np.float64),
         effective_p=effective_p,
     )
 
 
-def _interior_band_split(subdomain: Subdomain):
-    """Partition local cells into the full-FVM interface band + interior.
-
-    The band is the union of all port cells (kept explicit); the interior (the
-    rest, incl. the BCI ambient cells) is what a ROM reduces.
-    """
-    n = subdomain.cells.size
-    if subdomain.ports:
-        band = np.unique(
-            np.concatenate(
-                [np.asarray(p.cells, dtype=np.int64) for p in subdomain.ports]
-            )
-        )
-    else:
-        band = np.empty(0, dtype=np.int64)
-    interior = np.setdiff1d(np.arange(n), band, assume_unique=False)
-    return band, interior
-
-
 # ---------------------------------------------------------------------------
-# embeddable ROM (reduced interior + full-FVM interface band)
+# embeddable ROM (whole-subdomain basis + explicit interface nodes)
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class EmbeddableRom:
-    """A source-bearing subdomain: reduced interior + full-FVM interface band.
-
-    DOF layout is ``[band cells (full) | reduced interior modes q]``.
-
-    ``interior`` is the reduced cell set; ``basis`` (n_int, m) reduces it.  The
-    BCI ambient content ``(K0_hat, F_bdry, A_bdry, C_hat, F_hat)`` comes from
-    :func:`project_bci` on the interior (the classic form).  ``K_BB``/``C_BB`` are
-    the explicit interface-band blocks and ``K_BQ``/``C_BQ`` the interior↔band
-    couples, so the interface differential is exact.
-    """
+    """Whole-subdomain BCI ROM with independent physical interface nodes."""
 
     name: str
     cells: np.ndarray  # full-domain FVM indices (reporting only)
-    interior: np.ndarray  # local interior cell indices (reduced)
-    band: np.ndarray  # local interface/band cell indices (full FVM)
-    basis: np.ndarray  # (n_int, m)
-    C_hat: sp.csc_matrix  # interior capacitance projection
-    K0_hat: sp.csc_matrix  # interior ambient-free reduced stiffness
-    F_hat: np.ndarray  # Vᵀ·source_int  (m, n_src)
-    F_bdry: np.ndarray  # ambient boundary output matrix
-    A_bdry: list[np.ndarray]  # per-ambient-group HTC matrices
-    K_BB: sp.csc_matrix  # interface-band stiffness block
-    C_BB: sp.csc_matrix  # interface-band capacitance block
-    K_BQ: sp.csc_matrix  # interior↔band coupling (n_band, m)
-    C_BQ: sp.csc_matrix  # interior↔band capacitance coupling
-    band_rhs: np.ndarray  # (n_band, n_src) source on band cells
+    basis: np.ndarray  # (n_cells, m)
+    C_hat: sp.csc_matrix
+    K0_hat: sp.csc_matrix
+    F_hat: np.ndarray  # Vᵀ·source (m, n_src)
+    ambient_hat: list[sp.csc_matrix]  # Vᵀ H_k V
+    boundary_traces: dict[str, np.ndarray]  # A_b.T @ V, one trace per boundary
+    boundary_conductances: dict[str, np.ndarray]  # h_b per boundary
     ambient_ranges: np.ndarray  # (n_groups, 2) effective ranges
     effective_p: np.ndarray  # effective coefficient of this side's ambient load
     ports: list[FacePort]
     summary: dict = field(default_factory=dict)
 
-    n_band: int = field(init=False)
     m: int = field(init=False)
 
     def __post_init__(self):
-        self.n_band = int(self.band.size)
         self.m = int(self.basis.shape[1])
 
     @property
     def order(self) -> int:
-        """Reduction order = the number of interior ROM modes."""
+        """Reduction order = the number of whole-subdomain ROM modes."""
         return self.m
 
     # ---- uniform "side" interface consumed by connect() -----------------
     @property
     def dof_order(self) -> int:
-        return self.n_band + self.m
+        return self.m
 
     def _q_k(self) -> sp.csc_matrix:
-        return assemble_reduced_k(
-            self.K0_hat, self.F_bdry, self.A_bdry, self.effective_p
-        )
+        K = self.K0_hat
+        for p, H in zip(self.effective_p, self.ambient_hat):
+            K = K + float(p) * H
+        return K.tocsc()
 
     def internal_operator(self) -> sp.csc_matrix:
-        K = [[self.K_BB, self.K_BQ], [self.K_BQ.T, self._q_k()]]
-        return sp.bmat(K, format="csc")
+        return self._q_k()
 
     def capacitance_op(self) -> sp.csc_matrix:
-        C = [[self.C_BB, self.C_BQ], [self.C_BQ.T, self.C_hat]]
-        return sp.bmat(C, format="csc")
+        return self.C_hat.tocsc()
 
     def rhs_op(self) -> np.ndarray:
-        return np.vstack([self.band_rhs, self.F_hat])
-
-    def port_dofs(self, port: FacePort) -> np.ndarray:
-        """Interface cells of a port live in the full-FVM band (exact)."""
-        return np.searchsorted(self.band, np.asarray(port.cells, dtype=np.int64))
+        return np.asarray(self.F_hat, dtype=np.float64)
 
     def port(self, label: str) -> FacePort:
         for p in self.ports:
@@ -414,16 +386,19 @@ class EmbeddableRom:
                 return p
         raise KeyError(f"no port {label!r} on {self.name}")
 
+    def boundary_trace(self, label: str) -> np.ndarray:
+        return self.boundary_traces[label]
+
+    def boundary_conductance(self, label: str) -> np.ndarray:
+        return self.boundary_conductances[label]
+
     def junction_rise(self, state, offset: int) -> np.ndarray:
         """Per-source-port temperature rise from a full coupled state.
-
         ``state`` is the whole coupled state; ``offset`` the position of this
-        side's DOF block within it.  Sources live in the interior (``F_hat``) and
-        possibly on the explicit band (``band_rhs``).
+        side's ROM block within it.
         """
-        band = np.asarray(state[offset : offset + self.n_band])
-        q = np.asarray(state[offset + self.n_band : offset + self.dof_order])
-        return self.band_rhs.T @ band + self.F_hat.T @ q
+        q = np.asarray(state[offset : offset + self.dof_order])
+        return self.F_hat.T @ q
 
 
 def extract_rom(
@@ -434,62 +409,109 @@ def extract_rom(
     probe_rounds=2,
     seed=20260825,
 ) -> EmbeddableRom:
-    """Reduce only the interior; keep the interface band full-FVM.
+    """Reduce the complete subdomain and expose physical interface traces."""
+    cells = np.arange(subdomain.cells.size, dtype=np.int64)
+    ops = normalized_operators(subdomain.K, subdomain.C, np.zeros(cells.size))
+    G = np.asarray(subdomain.source, dtype=np.float64)
+    ambient = list(subdomain.ambient_terms)
+    interface_terms = []
+    for port in subdomain.ports:
+        diagonal = np.zeros(cells.size, dtype=np.float64)
+        diagonal[np.asarray(port.cells, dtype=np.int64)] = port.areas
+        interface_terms.append(sp.diags(diagonal, format="csc"))
 
-    The interior basis is built by :func:`build_parametric_basis` over the
-    interior's heat sources and declared ambient groups (the *heat path* —
-    exactly as the classic pipeline).  Interface ports are *not* affine training
-    parameters; their cells stay full-FVM so the interface-node coupling is exact.
-    """
-    band, interior = _interior_band_split(subdomain)
-    if interior.size == 0:
-        raise RuntimeError("subdomain is entirely interface; nothing to reduce")
-
-    K_II = subdomain.K.tocsc()[interior, :][:, interior].tocsc()
-    C_II = subdomain.C.tocsc()[interior, :][:, interior].tocsc()
-    G_I = np.asarray(subdomain.source[interior, :], dtype=np.float64)
-    amb_I = [
-        H.tocsc()[interior, :][:, interior].tocsc() for H in subdomain.ambient_terms
-    ]
-
-    ops = normalized_operators(K_II, C_II, np.zeros(interior.size))
     basis, summary = build_parametric_basis(
         ops,
-        G_I,
-        amb_I,
+        G,
+        ambient,
         subdomain.ambient_ranges,
         tolerance=tolerance,
         max_order=max_order,
         probe_rounds=probe_rounds,
         seed=seed,
     )
-    C_hat, K0_hat, F_hat, F_bdry, A_bdry = project_bci(ops, G_I, amb_I, basis)
+    # Extended FANTASTIC bilinearization: close the source/moment space under
+    # each boundary operator D_i at the low-frequency expansion point.
+    closure_iterations = 2
+    closure_nme = 2
+    closure_rrtol = 1.0e-3
+    closure_columns = 0
+    closure_round_columns = []
+    closure_operator = (subdomain.K + 1.0e-8 * subdomain.C).tocsc()
+    closure_solve = spla.factorized(closure_operator)
+    frontier = basis
+    for _ in range(closure_iterations):
+        previous = basis
+        responses = []
+        for term in interface_terms:
+            response = closure_solve(term @ frontier)
+            responses.append(response)
+        if not responses:
+            break
+        response_block = np.column_stack(responses)
+        c_diag = np.asarray(subdomain.C.diagonal(), dtype=np.float64)
+        weighted = np.sqrt(c_diag)[:, None] * response_block
+        left, _, _ = scipy.linalg.svd(
+            weighted, full_matrices=False, check_finite=False
+        )
+        singular_values = scipy.linalg.svdvals(weighted)
+        cutoff = closure_rrtol * max(float(singular_values[0]), np.finfo(float).tiny)
+        n_keep = min(
+            closure_nme,
+            int(np.count_nonzero(singular_values > cutoff)),
+        )
+        if n_keep == 0:
+            closure_round_columns.append(0)
+            break
+        selected = left[:, :n_keep] / np.sqrt(c_diag)[:, None]
+        block = orthonormalize_block(previous, selected)
+        if not block.shape[1]:
+            closure_round_columns.append(0)
+            break
+        basis = np.column_stack((previous, block))
+        frontier = block
+        closure_columns += int(block.shape[1])
+        closure_round_columns.append(int(block.shape[1]))
+    summary["bilinear_closure_iterations"] = closure_iterations
+    summary["bilinear_closure_nme"] = closure_nme
+    summary["bilinear_closure_rrtol"] = closure_rrtol
+    summary["bilinear_closure_columns"] = closure_columns
+    summary["bilinear_closure_round_columns"] = closure_round_columns
+    C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
+    K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
+    F_hat = np.asarray(basis.T @ G, dtype=np.float64)
+    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in ambient]
 
-    # interior <-> band cross terms (explicit band rows, reduced interior cols)
-    K_s = subdomain.K.tocsc()
-    C_s = subdomain.C.tocsc()
-    K_BB = K_s[band][:, band].tocsc()
-    C_BB = C_s[band][:, band].tocsc()
-    K_BQ = K_s[band][:, interior] @ basis
-    C_BQ = C_s[band][:, interior] @ basis
-    band_rhs = np.asarray(subdomain.source[band, :], dtype=np.float64)
+    # This basis is then transformed to C-orthonormal generalized modes.
+    modal_k, modal_q = scipy.linalg.eigh(
+        K0_hat.toarray(), C_hat.toarray(), check_finite=False
+    )
+    modal_q = np.asarray(modal_q, dtype=np.float64)
+    basis = np.asarray(basis @ modal_q, dtype=np.float64)
+    C_hat = sp.eye(modal_k.size, format="csc")
+    K0_hat = sp.diags(modal_k, format="csc")
+    F_hat = np.asarray(modal_q.T @ F_hat, dtype=np.float64)
+    ambient_hat = [
+        sp.csc_matrix(modal_q.T @ H.toarray() @ modal_q) for H in ambient_hat
+    ]
+    boundary_traces = {
+        p.label: np.asarray(basis[np.asarray(p.cells), :], dtype=np.float64)
+        for p in subdomain.boundary_ports
+    }
+    boundary_conductances = {
+        p.label: np.asarray(p.g, dtype=np.float64) for p in subdomain.boundary_ports
+    }
 
     return EmbeddableRom(
         name=subdomain.name,
         cells=subdomain.cells,
-        interior=interior,
-        band=band,
         basis=np.asarray(basis, dtype=np.float64),
         C_hat=C_hat,
         K0_hat=K0_hat,
         F_hat=np.asarray(F_hat, dtype=np.float64),
-        F_bdry=np.asarray(F_bdry, dtype=np.float64),
-        A_bdry=A_bdry,
-        K_BB=K_BB,
-        C_BB=C_BB,
-        K_BQ=sp.csc_matrix(K_BQ),
-        C_BQ=sp.csc_matrix(C_BQ),
-        band_rhs=band_rhs,
+        ambient_hat=ambient_hat,
+        boundary_traces=boundary_traces,
+        boundary_conductances=boundary_conductances,
         ambient_ranges=subdomain.ambient_ranges,
         effective_p=subdomain.effective_p,
         ports=subdomain.ports,
@@ -504,147 +526,6 @@ def side_junction_rise(state, side, offset: int) -> np.ndarray:
     return np.asarray(
         side.source.T @ np.asarray(state[offset : offset + side.dof_order]),
         dtype=np.float64,
-    )
-
-
-@dataclass
-class TraceRom:
-    """Paper Section 4 reduced side: boundary + interior DOFs reduce together.
-
-    The whole subdomain (interior *and* the boundary/interface cells) is reduced
-    by a single basis ``V``, so the boundary conditions and interior DOFs enter
-    one reduced system.  The interface is exposed through the reduced trace
-    ``V_if`` (rows of ``basis`` on the interface face cells) and its own
-    independent face nodes ``θ_if``; ``dof_order = m`` only — there is no
-    full-FVM band.  The declared ambient groups are folded at the operating
-    point; the interface is coupled via :func:`interface_trace` at connect time.
-    """
-
-    name: str
-    cells: np.ndarray  # full-domain FVM indices (reporting)
-    basis: np.ndarray  # (n_cells, m)
-    C_hat: sp.csc_matrix
-    K0_hat: sp.csc_matrix
-    F_hat: np.ndarray  # (m, n_src)
-    F_bdry: np.ndarray  # (m, theta) boundary output
-    A_bdry: list[np.ndarray]  # per-ambient-group HTC matrices
-    ambient_ranges: np.ndarray
-    effective_p: np.ndarray
-    ports: list[FacePort]
-    summary: dict = field(default_factory=dict)
-    m: int = field(init=False)
-
-    def __post_init__(self):
-        self.m = int(self.basis.shape[1])
-
-    @property
-    def dof_order(self) -> int:
-        return self.m
-
-    @property
-    def order(self) -> int:
-        return self.m
-
-    def internal_operator(self) -> sp.csc_matrix:
-        return assemble_reduced_k(
-            self.K0_hat, self.F_bdry, self.A_bdry, self.effective_p
-        ).tocsc()
-
-    def capacitance_op(self) -> sp.csc_matrix:
-        return self.C_hat.tocsc()
-
-    def rhs_op(self) -> np.ndarray:
-        return np.asarray(self.F_hat, dtype=np.float64)
-
-    def junction_rise(self, state, offset: int = 0) -> np.ndarray:
-        state = np.asarray(state, dtype=np.float64)
-        return self.F_hat.T @ state[offset : offset + self.m]
-
-    def port(self, label: str) -> FacePort:
-        for p in self.ports:
-            if p.label == label:
-                return p
-        raise KeyError(f"no port {label!r} on {self.name}")
-
-
-def extract_trace_rom(
-    subdomain: Subdomain,
-    *,
-    tolerance=1.0e-2,
-    max_order=2048,
-    probe_rounds=2,
-    seed=20260825,
-    interface_ports=None,
-    interface_htc_factor=(0.5, 8.0),
-) -> TraceRom:
-    """Paper Section 4: reduce the ENTIRE subdomain — interior AND boundary cells
-    — by one basis, BCI over the sources, the declared ambient groups AND the
-    interface faces that are actually coupled (``interface_ports``).
-
-    The interface faces are first-class BCI boundary groups (no separate
-    treatment), so ``V`` spans responses driven into the coupling and the
-    boundary/interior DOFs enter the one reduced system; the interface is then
-    coupled through its reduced trace ``V_if``.
-
-    ``interface_ports`` selects which port labels are trained as interface BCI
-    groups: ``None`` (default) trains every exposed port (a true "connect
-    anywhere" ROM, higher order), while listing the ports you will actually
-    couple (e.g. ``['z-']``) keeps the basis focused and the order at paper
-    scale (~31) with the best coupled accuracy.  Only the declared ambient
-    groups are folded at the operating point; the interface conductance is never
-    baked in as an internal sink.
-    """
-    n = subdomain.cells.size
-    ops = normalized_operators(subdomain.K, subdomain.C, np.zeros(n))
-    G = np.asarray(subdomain.source, dtype=np.float64)
-
-    use = (
-        list(subdomain.ports)
-        if interface_ports is None
-        else [p for p in subdomain.ports if p.label in interface_ports]
-    )
-    train_terms = list(subdomain.ambient_terms)
-    train_ranges = list(np.asarray(subdomain.ambient_ranges, dtype=float))
-    for p in use:
-        areas = np.asarray(p.areas, dtype=float)
-        diag = np.zeros(n)
-        diag[np.asarray(p.cells, dtype=np.int64)] = areas
-        train_terms.append(sp.diags(diag))
-        htc = np.asarray(p.k, dtype=float) / np.asarray(p.half, dtype=float)
-        train_ranges.append(
-            [
-                float(np.min(htc) * interface_htc_factor[0]),
-                float(np.max(htc) * interface_htc_factor[1]),
-            ]
-        )
-
-    basis, summary = build_parametric_basis(
-        ops,
-        G,
-        train_terms,
-        np.asarray(train_ranges, dtype=float),
-        tolerance=tolerance,
-        max_order=max_order,
-        probe_rounds=probe_rounds,
-        seed=seed,
-    )
-
-    C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(
-        ops, G, subdomain.ambient_terms, basis
-    )
-    return TraceRom(
-        name=subdomain.name,
-        cells=subdomain.cells,
-        basis=np.asarray(basis, dtype=np.float64),
-        C_hat=C_hat,
-        K0_hat=K0,
-        F_hat=np.asarray(F_hat, dtype=np.float64),
-        F_bdry=np.asarray(F_bdry, dtype=np.float64),
-        A_bdry=A_bdry,
-        ambient_ranges=subdomain.ambient_ranges,
-        effective_p=subdomain.effective_p,
-        ports=subdomain.ports,
-        summary=summary,
     )
 
 
@@ -737,49 +618,45 @@ def _diag_at(diag_vals, rows, size):
     return sp.coo_matrix((diag_vals, (rows, rows)), shape=(size, size)).tocsc()
 
 
-def interface_trace(side, port, li, xi):
+def interface_trace(side, port, incidence, xi):
     """Paper Section 4: the interface *trace* ``(V_if, h_if)`` of one side.
 
-    ``li`` is the owner-face index of each common patch (from
-    :func:`common_patches`), ``xi`` the per-patch area fraction, so
-    ``h_if = xi·h[li]`` is the per-common-face conductance (paper's
-    ``diag(ξ)·diag(E·h)``).  ``V_if`` maps each common face into the side's DOF
+    ``incidence`` is the common-patch-to-side-face matrix ``E`` and ``xi`` the
+    per-patch area fraction, so ``h_if = xi·(E·g)`` is the per-common-face
+    conductance (paper's ``diag(ξ)·diag(E·h)``). ``V_if`` maps each common face
+    into the side's DOF
     space — the only structure that differs between a detailed and a reduced
     side:
 
-    * ``Subdomain`` (full-FVM): ``V_if`` is the face→cell incidence ``E·A_S``, a
-      single 1 at the owning band cell's DOF;
-    * ``EmbeddableRom`` (reduced interior + full-FVM interface band): same
-      incidence as a ``Subdomain``, mapped into the ``[band | q]`` DOF layout —
-      the interface lives entirely in the explicit band, so the interface
-      differential is exact (no basis truncation at the interface);
-    * ``TraceRom`` (paper Section 4): ``V_if = E·A_if·V``, the rows of the
-      interior basis on the owning face cells (boundary + interior reduce
-      together into ``V``, exposed through the trace).
+    * ``Subdomain`` (full-FVM): ``V_b = A_b.T`` for the owning cell DOFs;
+    * ``EmbeddableRom``: ``V_b = A_b.T·V`` is stored at extraction time;
+
+    In both cases the common-grid trace is ``V_if = E·V_b``.
+
 
     In the coupled system this contributes ``V_ifᵀ H_if V_if`` on the side
     block and ``-V_ifᵀ H_if`` to the shared interface node.
     """
-    li = np.asarray(li, dtype=np.int64)
-    h_if = xi * port.g[li]
-    if isinstance(side, (Subdomain, EmbeddableRom)):
-        dofs = side.port_dofs(port)[li]
-        V_if = sp.coo_matrix(
-            (np.ones(dofs.size), (np.arange(dofs.size), dofs)),
-            shape=(dofs.size, side.dof_order),
-        ).tocsc()
+    incidence = sp.csr_matrix(incidence)
+    V_b = side.boundary_trace(port.label)
+    h_b = side.boundary_conductance(port.label)
+    h_if = np.asarray(xi, dtype=np.float64) * np.asarray(incidence @ h_b).ravel()
+    if isinstance(side, Subdomain):
+        # Subdomain trace is the identity over the owning cell DOFs (A_S).
+        V_face = sp.coo_matrix(
+            (np.ones(V_b.size), (np.arange(V_b.size), V_b)),
+            shape=(V_b.size, side.dof_order),
+        ).tocsr()
+        V_if = incidence @ V_face
         return V_if, h_if
-    if isinstance(side, TraceRom):
-        rows = np.asarray(side.basis, dtype=np.float64)[
-            np.asarray(port.cells, dtype=np.int64)[li], :
-        ]
-        return np.asarray(rows, dtype=np.float64), np.asarray(h_if, dtype=np.float64)
+    if isinstance(side, EmbeddableRom):
+        return np.asarray(incidence @ V_b, dtype=np.float64), h_if
     raise TypeError(f"unsupported side type: {type(side).__name__}")
 
 
 def connect(
-    left: Subdomain | EmbeddableRom | TraceRom,
-    right: Subdomain | EmbeddableRom | TraceRom,
+    left: Subdomain | EmbeddableRom,
+    right: Subdomain | EmbeddableRom,
     left_port: FacePort,
     right_port: FacePort,
     *,
@@ -788,7 +665,7 @@ def connect(
     """Couple ``left`` and ``right`` through one interface at shared common patches.
 
     Interface temperatures stay independent (un-reduced) nodes connecting the two
-    full-FVM interface bands.  Each side exposes its boundary conductance
+    sides. Each side exposes its boundary conductance
     ``H_S = diag(h_S)`` (``h_S = k·A/half`` per face); against the common face set
     this is replaced by ``diag(ξ_S)·diag(E_S h_S)`` (non-conforming grids, the
     paper's Section 5).  The shared-node block sees ``gl + gr`` and off-diagonal
@@ -796,9 +673,9 @@ def connect(
     reproduces the monolithic solve.
     Returns ``(K, C, rhs, left_order, right_order, interface_count)``.
     """
-    areas, _E_l, _E_r, xi_l, xi_r, li, ri = common_patches(left_port, right_port)
-    Vl, hl = interface_trace(left, left_port, li, xi_l)
-    Vr, hr = interface_trace(right, right_port, ri, xi_r)
+    areas, E_l, E_r, xi_l, xi_r, _li, _ri = common_patches(left_port, right_port)
+    Vl, hl = interface_trace(left, left_port, E_l, xi_l)
+    Vr, hr = interface_trace(right, right_port, E_r, xi_r)
     Vl_s = sp.csr_matrix(Vl)
     Vr_s = sp.csr_matrix(Vr)
 
