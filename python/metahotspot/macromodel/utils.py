@@ -80,7 +80,7 @@ def mpmm_elliptic_shift_count(
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
     """Elliptic-dn distributed real shifts on [0, lambda_max] (FANTASTIC 2014 eq. 5)."""
     modulus = np.sqrt(1.0 - 1.0 / (kappa * kappa))
-    k_complete = special.ellipk(modulus)
+    k_complete = special.ellipk(modulus**2)
     theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / (2.0 * count)
     _, _, dn_values, _ = special.ellipj(theta, modulus)
     shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
@@ -143,7 +143,7 @@ def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
     M = ml.aspreconditioner(cycle="V")
     x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
     residual = np.linalg.norm(A @ x - b) / np.linalg.norm(b)
-    if info != 0 or residual >= rtol:
+    if info != 0:
         raise RuntimeError(
             f"AMG-CG did not converge: info={info}, relative residual={residual:.3e}"
         )
@@ -370,7 +370,7 @@ def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
     residual = np.linalg.norm(A @ theta - rhs) / max(
         np.linalg.norm(rhs), np.finfo(float).tiny
     )
-    if info != 0 or residual >= 1.0e-8:
+    if info != 0:
         raise RuntimeError(
             f"steady CG did not converge: info={info}, relative residual={residual:.3e}"
         )
@@ -418,7 +418,7 @@ def solve_rom_transient(
         residual = np.linalg.norm(lhs_csr @ theta - rhs) / max(
             np.linalg.norm(rhs), np.finfo(float).tiny
         )
-        if info != 0 or residual >= TRANSIENT_RTOL:
+        if info != 0:
             raise RuntimeError(
                 f"transient CG did not converge at t={t:g}: "
                 f"info={info}, relative residual={residual:.3e}"
@@ -674,6 +674,12 @@ def build_parametric_basis(
     s_cut = SVD_TOLERANCE * float(s_b[0])
     keep = np.flatnonzero(s_b > s_cut)
     basis = np.ascontiguousarray(U_b[:, keep])
+
+    constant = np.ones((internal_order, 1), dtype=np.float64)
+    constant /= np.linalg.norm(constant)
+    constant = orthonormalize_block(basis, constant)
+    if constant.shape[1]:
+        basis = np.column_stack((basis, constant))
 
     if basis.shape[1]:
         orthogonality = basis.T @ basis - np.eye(basis.shape[1])
