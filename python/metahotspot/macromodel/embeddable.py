@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
 """Embeddable FANTASTIC–BCI ROM extraction: extract once, connect everywhere.
 
-A *subdomain* (an arbitrary connected set of cells of the full model) is reduced
-a single time.  Its boundary splits in two roles:
+A *subdomain* (an arbitrary connected set of cells of the full model) is
+reduced a single time.  Its boundary splits in two roles:
 
-* **BCI faces** — the faces carrying an explicitly declared ambient boundary
-  condition.  Their projected terms are assembled directly as
+* **BCI/ambient faces** — the faces carrying an explicitly declared ambient
+  boundary condition.  Their projected terms are assembled directly as
   ``K(p) = K0 + Σ_k p_k Vᵀ H_k V`` at the surface-consistent effective
   coefficient ``p = physical_to_effective(h)``.
 * **interface faces** — every *other* boundary face of the subdomain.  These
-  become connectable :class:`FacePort` ports and, following the coupling-method
-  gold rule, the interface **cells are kept at full FVM resolution** (never
-  reduced through the basis).  Only the interior cells are reduced.  The
-  interface-node coupling therefore operates on a full-resolution interface
-  differential (no basis-truncation error at the interface).
+  become connectable :class:`FacePort` ports.
 
-Reduction and coupling math:
+**Embedded-EROM interface (FloTHERM contract).**  The whole subdomain —
+interior *and* boundary cells — is reduced into one modal basis, and the
+interface is exposed as a connection surface rather than as ``h``-symbolic
+affine terms:
 
-* The per-face series conduction from a boundary cell to an interface node is
-  ``g = k·A / half`` along the face normal — **not** a homogenised layer ``k``
+* the interface faces enter the *boundary-parameter sampling during
+  extraction* (same affine-BCI treatment as the ambient groups), which is what
+  gives the reduced basis its response richness under an arbitrary external
+  attachment;
+* the exported boundary is the **modal trace** ``Vb`` (the basis restricted to
+  the interface cells) plus the per-face **series conduction**
+  ``X = (dz/2)/k``, equivalently ``g = A/X = k·A/half``;
+* the reduced model is **modalized** so ``M = I`` and ``K = diag(λ)`` with one
+  ~0 ambient mode.
+
+Only the *full-FVM* side (:class:`Subdomain`) keeps its interface cells
+explicit; the reduced side (:class:`EmbeddableRom`) reproduces its face
+temperature through the trace ``T_face = Vb·q``.
+
+Coupling math (independent-interface-node, :func:`connect`):
+
+* Per-face series conduction from a boundary cell to the shared interface node
+  is ``g = k·A/half`` along the face normal — **not** a homogenised layer ``k``
   and **not** the raw ``k·A`` (the latter is dimensionally wrong and does not
   reproduce the monolithic solve).
 * At an artificial cut the extracted diagonal block still carries the phantom
@@ -30,8 +45,6 @@ Reduction and coupling math:
   full-domain solve to machine precision (~1e-9 K).
 * Non-conforming meshes are joined by building every common patch of the two
   face sets (area-weight ``E``/fraction ``ξ`` at model-definition level).
-* Interface temperatures are never reduced (coupling-method gold rule); likewise
-  the interface cells themselves stay full-FVM.
 
 The module is model-agnostic (as ``utils.py``): it consumes the ``Operators``
 interface, a per-cell geometry view, and the declared ambient groups.
@@ -51,7 +64,6 @@ from metahotspot.enums import Face
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
     normalized_operators,
-    orthonormalize_block,
 )
 
 # (axis, direction) -> Face enum bit  (XM, XP, YM, YP, ZM, ZP = 0..5)
@@ -408,81 +420,53 @@ def extract_rom(
     max_order=512,
     probe_rounds=2,
     seed=20260825,
+    interface_h_range=(1.0, 1.0e4),
 ) -> EmbeddableRom:
-    """Reduce the complete subdomain and expose physical interface traces."""
+    """Reduce the whole subdomain and expose the interfaces as physical traces.
+
+    Faithful to the FloTHERM embedded-EROM contract (project skill reference
+    ``erom-embedding-contract.md``): the interface faces are treated as *affine
+    boundary parameters* during basis enrichment -- the same treatment as the
+    declared ambient groups -- so the modal basis captures the subdomain
+    response under an arbitrary external attachment.  They are then *exported*
+    as a connection surface (the modal trace ``Vb`` restricted to the interface
+    cells + the per-face series conduction ``X = (dz/2)/k``, i.e.
+    ``g = A/X = k*A/half``) instead of as ``h``-symbolic affine terms.  Declared
+    ambient groups keep the affine ``Vᵀ H V`` export.  The reduced model is
+    modalized so ``M = I`` and ``K = diag(λ)`` with one ~0 ambient mode.
+    """
+
     cells = np.arange(subdomain.cells.size, dtype=np.int64)
     ops = normalized_operators(subdomain.K, subdomain.C, np.zeros(cells.size))
     G = np.asarray(subdomain.source, dtype=np.float64)
-    ambient = list(subdomain.ambient_terms)
-    interface_terms = []
+
+    # Enrichment over the declared ambient groups AND every interface port.
+    boundary_terms = list(subdomain.ambient_terms)
+    h_ranges = [list(r) for r in subdomain.ambient_ranges]
+    interface_areas = np.zeros(cells.size, dtype=np.float64)
     for port in subdomain.ports:
-        diagonal = np.zeros(cells.size, dtype=np.float64)
-        diagonal[np.asarray(port.cells, dtype=np.int64)] = port.areas
-        interface_terms.append(sp.diags(diagonal, format="csc"))
+        interface_areas[np.asarray(port.cells, dtype=np.int64)] += port.areas
+    if subdomain.ports:
+        boundary_terms.append(sp.diags(interface_areas, format="csc"))
+        h_ranges.append(list(interface_h_range))
 
     basis, summary = build_parametric_basis(
         ops,
         G,
-        ambient,
-        subdomain.ambient_ranges,
+        boundary_terms,
+        np.asarray(h_ranges, dtype=np.float64),
         tolerance=tolerance,
         max_order=max_order,
         probe_rounds=probe_rounds,
         seed=seed,
     )
-    # Extended FANTASTIC bilinearization: close the source/moment space under
-    # each boundary operator D_i at the low-frequency expansion point.
-    closure_iterations = 2
-    closure_nme = 2
-    closure_rrtol = 1.0e-3
-    closure_columns = 0
-    closure_round_columns = []
-    closure_operator = (subdomain.K + 1.0e-8 * subdomain.C).tocsc()
-    closure_solve = spla.factorized(closure_operator)
-    frontier = basis
-    for _ in range(closure_iterations):
-        previous = basis
-        responses = []
-        for term in interface_terms:
-            response = closure_solve(term @ frontier)
-            responses.append(response)
-        if not responses:
-            break
-        response_block = np.column_stack(responses)
-        c_diag = np.asarray(subdomain.C.diagonal(), dtype=np.float64)
-        weighted = np.sqrt(c_diag)[:, None] * response_block
-        left, _, _ = scipy.linalg.svd(
-            weighted, full_matrices=False, check_finite=False
-        )
-        singular_values = scipy.linalg.svdvals(weighted)
-        cutoff = closure_rrtol * max(float(singular_values[0]), np.finfo(float).tiny)
-        n_keep = min(
-            closure_nme,
-            int(np.count_nonzero(singular_values > cutoff)),
-        )
-        if n_keep == 0:
-            closure_round_columns.append(0)
-            break
-        selected = left[:, :n_keep] / np.sqrt(c_diag)[:, None]
-        block = orthonormalize_block(previous, selected)
-        if not block.shape[1]:
-            closure_round_columns.append(0)
-            break
-        basis = np.column_stack((previous, block))
-        frontier = block
-        closure_columns += int(block.shape[1])
-        closure_round_columns.append(int(block.shape[1]))
-    summary["bilinear_closure_iterations"] = closure_iterations
-    summary["bilinear_closure_nme"] = closure_nme
-    summary["bilinear_closure_rrtol"] = closure_rrtol
-    summary["bilinear_closure_columns"] = closure_columns
-    summary["bilinear_closure_round_columns"] = closure_round_columns
+
     C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
     K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
     F_hat = np.asarray(basis.T @ G, dtype=np.float64)
-    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in ambient]
+    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in subdomain.ambient_terms]
 
-    # This basis is then transformed to C-orthonormal generalized modes.
+    # Modalize: M-normalized generalized modes (M = I, K = diag(λ), one ~0 mode).
     modal_k, modal_q = scipy.linalg.eigh(
         K0_hat.toarray(), C_hat.toarray(), check_finite=False
     )
