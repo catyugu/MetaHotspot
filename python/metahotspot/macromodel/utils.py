@@ -80,7 +80,7 @@ def mpmm_elliptic_shift_count(
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
     """Elliptic-dn distributed real shifts on [0, lambda_max] (FANTASTIC 2014 eq. 5)."""
     modulus = np.sqrt(1.0 - 1.0 / (kappa * kappa))
-    k_complete = special.ellipk(modulus)
+    k_complete = special.ellipk(modulus**2)
     theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / (2.0 * count)
     _, _, dn_values, _ = special.ellipj(theta, modulus)
     shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
@@ -141,7 +141,12 @@ def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
 
     ml = pyamg.ruge_stuben_solver(A.tocsr())
     M = ml.aspreconditioner(cycle="V")
-    x, _ = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
+    x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
+    residual = np.linalg.norm(A @ x - b) / np.linalg.norm(b)
+    if info != 0:
+        raise RuntimeError(
+            f"AMG-CG did not converge: info={info}, relative residual={residual:.3e}"
+        )
     return x
 
 
@@ -350,21 +355,25 @@ def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
 
 
 def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
-    """Steady reduced interior solved via Jacobi-preconditioned CG.
+    """Steady system solved by AMG-preconditioned CG with residual checking.
 
     Solves K̂(h) θ = F̂ P, where K̂ is SPD for h > 0.
     """
     rhs = F_hat @ np.asarray(power, dtype=np.float64)
     A = K_hat.tocsc().tocsr()
 
-    # ---- Jacobi preconditioner: M = diag(A)^{-1} ----
-    diag = A.diagonal()
-    M = sp.diags(1.0 / diag, format="csr")
+    ml = pyamg.ruge_stuben_solver(A)
+    M = ml.aspreconditioner(cycle="V")
 
-    theta, info = spla.cg(A, rhs, rtol=1e-8, atol=0.0, maxiter=1000, M=M)
+    theta, info = spla.cg(A, rhs, rtol=1e-8, atol=0.0, maxiter=10000, M=M)
 
+    residual = np.linalg.norm(A @ theta - rhs) / max(
+        np.linalg.norm(rhs), np.finfo(float).tiny
+    )
     if info != 0:
-        print(f"Warning: CG did not converge, info={info}")
+        raise RuntimeError(
+            f"steady CG did not converge: info={info}, relative residual={residual:.3e}"
+        )
 
     return theta.ravel()
 
@@ -391,13 +400,13 @@ def solve_rom_transient(
     history[0] = theta
 
     lhs_csr = lhs.tocsr()
-    diag = lhs_csr.diagonal()
-    M = sp.diags(1.0 / diag, format="csr")
+    ml = pyamg.ruge_stuben_solver(lhs_csr)
+    M = ml.aspreconditioner(cycle="V")
 
     for i in range(1, times.size):
         t = times[i]
         rhs = (C_hat @ theta) / dt + F_hat @ np.asarray(power_t(t), dtype=np.float64)
-        theta, _ = spla.cg(
+        theta, info = spla.cg(
             lhs_csr,
             rhs,
             x0=theta,
@@ -406,6 +415,14 @@ def solve_rom_transient(
             maxiter=TRANSIENT_MAXITER,
             M=M,
         )
+        residual = np.linalg.norm(lhs_csr @ theta - rhs) / max(
+            np.linalg.norm(rhs), np.finfo(float).tiny
+        )
+        if info != 0:
+            raise RuntimeError(
+                f"transient CG did not converge at t={t:g}: "
+                f"info={info}, relative residual={residual:.3e}"
+            )
         history[i] = theta
     return times, history
 
@@ -419,7 +436,6 @@ MAX_ORDER = 2048
 PROBE_ROUNDS = 3
 RANDOM_SEED = 20260805
 ENRICH_RTOL = 1.0e-6
-SVD_TOLERANCE = 1.0e-4
 
 
 def random_h(h_ranges, seed) -> tuple[float, ...]:
@@ -654,9 +670,16 @@ def build_parametric_basis(
     U_b, s_b, Vt_b = scipy.linalg.svd(
         snapshot_matrix, full_matrices=False, check_finite=False
     )
-    s_cut = SVD_TOLERANCE * float(s_b[0])
+    svd_tol = tolerance ** (3 / 2)
+    s_cut = svd_tol * float(s_b[0])
     keep = np.flatnonzero(s_b > s_cut)
     basis = np.ascontiguousarray(U_b[:, keep])
+
+    constant = np.ones((internal_order, 1), dtype=np.float64)
+    constant /= np.linalg.norm(constant)
+    constant = orthonormalize_block(basis, constant)
+    if constant.shape[1]:
+        basis = np.column_stack((basis, constant))
 
     if basis.shape[1]:
         orthogonality = basis.T @ basis - np.eye(basis.shape[1])
