@@ -1,27 +1,4 @@
 #include "numerics/linear/amg_solver.hpp"
-
-// AMGCL is a large third-party header template library. Its builtin backend
-// normally compiles warning-clean, but it is instantiated inside this TU, so
-// suppress every warning class before pulling the headers in — this keeps the
-// project's strict /WX / -Werror flags from tripping on AMGCL templates (the
-// whole subsystem is compiled separately below and never gets mhs_options).
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable : 4244 4267 4100 4127 4389 4456 4457 4458 4459 4701 4702 4703 4996 4242 6287)
-#elif defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wall"
-#pragma clang diagnostic ignored "-Wextra"
-#pragma clang diagnostic ignored "-Wpedantic"
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#else
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wall"
-#pragma GCC diagnostic ignored "-Wextra"
-#pragma GCC diagnostic ignored "-Wpedantic"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#endif
-
 #include <amgcl/adapter/eigen.hpp>
 #include <amgcl/amg.hpp>
 #include <amgcl/backend/builtin.hpp>
