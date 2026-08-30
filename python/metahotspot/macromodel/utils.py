@@ -436,7 +436,6 @@ MAX_ORDER = 2048
 PROBE_ROUNDS = 3
 RANDOM_SEED = 20260805
 ENRICH_RTOL = 1.0e-6
-SVD_TOLERANCE = 1.0e-4
 
 
 def random_h(h_ranges, seed) -> tuple[float, ...]:
@@ -671,7 +670,8 @@ def build_parametric_basis(
     U_b, s_b, Vt_b = scipy.linalg.svd(
         snapshot_matrix, full_matrices=False, check_finite=False
     )
-    s_cut = SVD_TOLERANCE * float(s_b[0])
+    svd_tol = tolerance ** (3 / 2)
+    s_cut = svd_tol * float(s_b[0])
     keep = np.flatnonzero(s_b > s_cut)
     basis = np.ascontiguousarray(U_b[:, keep])
 
