@@ -259,6 +259,19 @@ def test_coupled_system_is_symmetric_psd():
     assert Cc.shape == Kc.shape
 
 
+def test_steady_solver_returns_a_converged_solution_for_ill_conditioned_spd():
+    """Steady solves must not silently return a CG iterate with a large residual."""
+    n = 256
+    diagonal = np.geomspace(1.0e-8, 1.0, n)
+    matrix = sp.diags(diagonal, format="csc")
+    rhs = np.ones(n)
+
+    solution = mm.utils.solve_rom_steady(matrix, rhs.reshape(-1, 1), np.array([1.0]))
+
+    relative_residual = np.linalg.norm(matrix @ solution - rhs) / np.linalg.norm(rhs)
+    assert relative_residual < 1.0e-8
+
+
 def test_embeddable_rom_reduces_cells_and_exposes_interface_trace():
     """Embeddable ROM reduces all cells and couples through its physical trace."""
     _model, compiled, ops = _build_operators(4, 4, 6)
