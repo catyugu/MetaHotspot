@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <erom_specification version="2504" xmlns="https://www.mentor.com/FloTHERMXT/XtXML">
 
-  <erom_identifier id="7C1DEEAA8D9D08416A9180F40000018F"/>
+  <erom_identifier id="7C1DEEAA8D9D08416A9594080000008D"/>
 
   <erom_optional_geometry has_probe="1" has_source="1"/>
 
@@ -62,9 +62,9 @@
   </faces>
 
   <sources>
-    <erom_source id="7C1DEEAA8D9D08416A9180F40000006C" name="Cuboid" power="1">
-      <position x="0.024999999999999994" y="0.024999999999999994" z="0.024999999999999994"/>
-      <size x="0.050000000000000003" y="0.050000000000000003" z="0.050000000000000003"/>
+    <erom_source id="7C1DEEAA8D9D08416A9594080000006B" name="Cuboid:1" power="100">
+      <position x="0.025000000000000001" y="0.025000000000000001" z="0.025000000000000001"/>
+      <size x="0.049999999999999996" y="0.049999999999999982" z="0.049999999999999996"/>
     </erom_source>
   </sources>
 
