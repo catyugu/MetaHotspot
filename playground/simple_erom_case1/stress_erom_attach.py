@@ -33,11 +33,19 @@ CASES = {
     "bottom_htc_strong": dict(ext_bottom_h=1000.0),
     "external_source_50w": dict(ext_source_w=50.0),
     "external_source_200w": dict(ext_source_w=200.0),
-    "lowk_source_100w": dict(
-        ext_k=0.5, ext_rho=1200.0, ext_c=1500.0, ext_source_w=100.0
+    "lowk_source": dict(
+        ext_k=2.0,  # glass-fibre board (moderate insulator) carrying the source
+        ext_rho=1200.0,
+        ext_c=1500.0,
+        ext_source_w=50.0,
+        ext_bottom_h=100.0,  # a heat sink path so the exterior source is realistic
     ),
     "all_stress": dict(
-        ext_k=0.5, ext_rho=1200.0, ext_c=1500.0, ext_bottom_h=300.0, ext_source_w=200.0
+        ext_k=3.0,
+        ext_rho=1200.0,
+        ext_c=1500.0,
+        ext_bottom_h=300.0,
+        ext_source_w=50.0,
     ),
     # --- z-layered external materials, strongly disparate conductivities ---
     # three bands top->bottom (z_hi decreasing) but listed bottom->top.  Each
@@ -50,12 +58,13 @@ CASES = {
         )
     ),
     "layered_soft_source": dict(
-        ext_layers=(  # same stack, but with internal source in the mid low-k band
+        ext_layers=(  # bottom Al / mid alumina / top Si, source in mid low-k band
             (0.0, 30.0, 205.0, 2700.0, 900.0),
             (30.0, 60.0, 1.4, 3950.0, 880.0),
             (60.0, 100.0, 149.0, 2330.0, 712.0),
         ),
-        ext_source_w=80.0,
+        ext_source_w=40.0,
+        ext_bottom_h=50.0,  # heat-sink path for the interior source
     ),
     "layered_extreme": dict(
         # 3 dex spread: hard hi-k outer, near-vacuum centre insulator
@@ -66,13 +75,15 @@ CASES = {
         )
     ),
     "layered_extreme_source": dict(
+        # aerogel surrounds the centre source but a bottom sink keeps the
+        # steady-state rise physical (~tens of K), still stressing the EROM.
         ext_layers=(
-            (0.0, 25.0, 40.0, 7870.0, 490.0),
-            (25.0, 75.0, 0.05, 120.0, 700.0),
-            (75.0, 100.0, 385.0, 8930.0, 385.0),
+            (0.0, 25.0, 385.0, 8930.0, 385.0),  # copper heat-spreader under source
+            (25.0, 75.0, 0.2, 250.0, 900.0),  # low-k matrix around centre source
+            (75.0, 100.0, 385.0, 8930.0, 385.0),  # copper cap at interface
         ),
-        ext_source_w=120.0,
-        ext_bottom_h=150.0,
+        ext_source_w=30.0,
+        ext_bottom_h=500.0,  # strong bottom sink -> realistic interior-source rise
     ),
 }
 

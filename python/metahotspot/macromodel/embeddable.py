@@ -518,12 +518,15 @@ def side_junction_rise(state, side, offset: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
+_EDGE_TOL = 1.0e-9
+
+
 def _contains(rects, xl, xr, yl, yr):
     return np.flatnonzero(
-        (rects[:, 0] <= xl + 1.0e-12)
-        & (rects[:, 1] >= xr - 1.0e-12)
-        & (rects[:, 2] <= yl + 1.0e-12)
-        & (rects[:, 3] >= yr - 1.0e-12)
+        (rects[:, 0] <= xl + _EDGE_TOL)
+        & (rects[:, 1] >= xr - _EDGE_TOL)
+        & (rects[:, 2] <= yl + _EDGE_TOL)
+        & (rects[:, 3] >= yr - _EDGE_TOL)
     )
 
 
