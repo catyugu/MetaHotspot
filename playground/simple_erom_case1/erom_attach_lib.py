@@ -283,10 +283,13 @@ def write_vtu(
     path, cells: CellFields, cell_field: np.ndarray, name: str = "Temperature_K"
 ) -> str:
     """Write a cell-centred scalar field on the structured grid to ``path`` (SI)."""
-    NX, NY, NZ = cells.nx, cells.ny, cells.nz
+    # Vertex-point coordinate order matches _grid_vertices: iz outer, iy middle,
+    # ix inner.  index = iz*(Yv*Xv) + iy*Xv + ix, with Xv/Yv the *vertex* counts.
+    Xv = cells.x_vertices.size
+    Yv = cells.y_vertices.size
 
     def vid(ix, iy, iz):
-        return iz * (NY * NX) + iy * NX + ix
+        return iz * (Yv * Xv) + iy * Xv + ix
 
     ijk = cells.ijk
     n_cells = ijk.shape[0]
@@ -315,10 +318,7 @@ def write_vtu(
 
     pts_arr = _grid_vertices(cells)
     pts_str = " ".join(f"{x:.12e} {y:.12e} {z:.12e}" for x, y, z in pts_arr)
-    cells_block = "".join(
-        f"{n:d} " + " ".join(str(v) for v in conn[i]) + "\n"
-        for i, n in enumerate(cell_offsets)
-    )
+    cells_block = "\n".join(" ".join(str(v) for v in conn[i]) for i in range(n_cells))
     xml = (
         '<?xml version="1.0"?>\n'
         '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">\n'
