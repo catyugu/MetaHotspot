@@ -90,13 +90,19 @@ CASES = {
 SUMMARY_FIELDS = [
     "rom_order",
     "n_interface_nodes",
+    "steady_max_rise_reference_K",
+    "steady_max_rise_coupled_K",
     "junction_error_pct",
+    "junction_error_abs_pct",
     "junction_error_K",
     "interface_trace_maxerr_K",
     "erom_field_maxerr_K",
     "external_field_maxerr_K",
     "global_field_maxerr_K",
+    "global_field_max_relative_error",
     "junction_traj_maxerr_K",
+    "junction_traj_max_relative_error",
+    "global_traj_max_relative_error",
     "top_flux_reference_W",
     "top_flux_coupled_W",
     "interface_flux_erom_W",
@@ -109,8 +115,8 @@ def main() -> None:
     rows = []
     for tag, overrides in CASES.items():
         overrides = dict(overrides)
-        overrides.setdefault("duration_s", 160.0)  # bounded transient window
-        overrides.setdefault("dt_s", 4.0)
+        overrides.setdefault("duration_s", 1000.0)
+        overrides.setdefault("dt_s", 10.0)
         cfg = AttachConfig(**overrides)
         try:
             m = run_attached(cfg, OUT / tag)["metrics"]
@@ -118,10 +124,11 @@ def main() -> None:
             rows.append(row)
             print(
                 f"[{tag:24s}] order={m['rom_order']:3d}  "
-                f"junction_err={m['junction_error_pct']:+.2f}%  "
-                f"gbl={m['global_field_maxerr_K']:.4f} K  "
-                f"ext={m['external_field_maxerr_K']:.4f} K  "
-                f"iface_trace={m['interface_trace_maxerr_K']:.4f} K",
+                f"dTmax={m['steady_max_rise_reference_K']:.3f} K  "
+                f"junction_rel={m['junction_error_abs_pct']:.3f}%  "
+                f"global_rel={100.0 * m['global_field_max_relative_error']:.3f}%  "
+                f"transient_junction_rel={100.0 * m['junction_traj_max_relative_error']:.3f}%  "
+                f"transient_global_rel={100.0 * m['global_traj_max_relative_error']:.3f}%",
                 flush=True,
             )
         except Exception as exc:  # pragma: no cover - a failed case is a result

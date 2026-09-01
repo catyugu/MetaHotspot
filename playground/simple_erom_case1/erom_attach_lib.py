@@ -371,6 +371,12 @@ def _maxerr(a, b) -> float:
     return float(np.max(np.abs(a - b)))
 
 
+def _max_relative_error(a, b, scale) -> float:
+    """Maximum absolute error normalised by a non-zero reference scale."""
+    denominator = np.maximum(np.abs(np.asarray(scale, dtype=np.float64)), 1.0e-12)
+    return float(np.max(np.abs(np.asarray(a) - np.asarray(b)) / denominator))
+
+
 def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     """Solve the coupled ROM-FVM system, export VTU + trajectory, return report."""
     outdir.mkdir(parents=True, exist_ok=True)
@@ -450,6 +456,23 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
         [np.interp(step_times, ref.times, ref.history[:, c]) for c in probe_cells],
         axis=1,
     )
+    ref_hist = np.stack(
+        [
+            np.interp(step_times, ref.times, ref.history[:, c])
+            for c in range(model.full_cell_count)
+        ],
+        axis=1,
+    )
+    ref_hist_rise = ref_hist - cfg.ambient_K
+    coup_hist_rise = np.empty_like(ref_hist_rise)
+    for t in range(n_steps):
+        coup_hist_rise[t] = np.zeros(model.full_cell_count, dtype=np.float64)
+        coup_hist_rise[t, erom_cells] = basis @ np.asarray(
+            history[t, :m], dtype=np.float64
+        )
+        coup_hist_rise[t, ext_sub_cells] = np.asarray(
+            history[t, ext_offset:], dtype=np.float64
+        )
 
     # --- exports --------------------------------------------------------------
     vtu_coupled = write_vtu(outdir / "coupled_field.vtu", cells, coupled_field)
@@ -505,6 +528,19 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     flux_ext = float(np.sum(hr * (np.asarray(Vr @ q_ext) - T_if)))
 
     traj_maxerr = [_maxerr(coup_traj[:, i], ref_traj[:, i]) for i in range(nprobe)]
+    steady_global_scale = ref_rise
+    steady_junction_scale = ref_junction
+    steady_global_relative = _max_relative_error(
+        coup_rise, ref_rise, steady_global_scale
+    )
+    transient_junction_relative = _max_relative_error(
+        coup_traj[:, 0] - cfg.ambient_K,
+        ref_traj[:, 0] - cfg.ambient_K,
+        steady_junction_scale,
+    )
+    transient_global_relative = _max_relative_error(
+        coup_hist_rise, ref_hist_rise, steady_global_scale
+    )
 
     metrics = {
         "rom_order": m,
@@ -522,13 +558,21 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
         "junction_reference_K": ref_junction,
         "junction_error_K": coup_junction - ref_junction,
         "junction_error_pct": 100.0 * (coup_junction - ref_junction) / ref_junction,
+        "junction_error_abs_pct": 100.0
+        * abs(coup_junction - ref_junction)
+        / abs(ref_junction),
+        "steady_max_rise_reference_K": float(np.max(ref_rise)),
+        "steady_max_rise_coupled_K": float(np.max(coup_rise)),
         "interface_trace_maxerr_K": _maxerr(erom_trace, ref_rise[cube_bot_full]),
         "erom_field_maxerr_K": _maxerr(coup_rise[erom.cells], ref_rise[erom.cells]),
         "external_field_maxerr_K": _maxerr(
             coup_rise[ext_sub.cells], ref_rise[ext_sub.cells]
         ),
         "global_field_maxerr_K": _maxerr(coup_rise, ref_rise),
+        "global_field_max_relative_error": steady_global_relative,
         "junction_traj_maxerr_K": float(traj_maxerr[0]),
+        "junction_traj_max_relative_error": transient_junction_relative,
+        "global_traj_max_relative_error": transient_global_relative,
         "probe_traj_maxerr_K": traj_maxerr,
     }
 
