@@ -82,6 +82,11 @@ class AttachConfig:
     ext_bottom_h: float | None = None  # external bottom HTC (None = adiabatic)
     ext_source_w: float = 0.0  # external centre source power (W; 0 = none)
     ext_vox_mm: float = 10.0  # external z mesh target cell size (mm)
+    # z-layered external materials: entries (z_lo_mm, z_hi_mm, k, rho, c),
+    # stacking bottom->top and covering [0, ext_thickness_mm].  Empty = uniform
+    # body made of ext_k / ext_rho / ext_c.  Geometry (100x100x100 cube + centre
+    # 50x50x50 source) is identical to the BCI-ROM domain either way.
+    ext_layers: tuple = ()
 
     @property
     def n_ext(self) -> int:
@@ -119,6 +124,37 @@ def _add_solid(model, layer, material, xlo, xhi, ylo, yhi):
     return block
 
 
+def _ext_material_bands(cfg: AttachConfig):
+    """Normalise the external body's z-layered materials.
+
+    Returns a list of ``(z_lo_mm, z_hi_mm, name, k, rho, c)`` bands stacked
+    bottom->top; a single full-body band when ``ext_layers`` is empty.
+    """
+    if cfg.ext_layers:
+        bands = []
+        for i, (lo, hi, k, rho, c) in enumerate(cfg.ext_layers):
+            bands.append((float(lo), float(hi), f"ExternalBand{i}", k, rho, c))
+        return bands
+    return [
+        (
+            0.0,
+            cfg.ext_thickness_mm,
+            "External",
+            cfg.ext_k,
+            cfg.ext_rho,
+            cfg.ext_c,
+        )
+    ]
+
+
+def _band_for_z(bands, z_mm: float):
+    """Index of the material band containing ``z_mm`` (falls back to nearest)."""
+    for i, (lo, hi, *_rest) in enumerate(bands):
+        if lo <= z_mm < hi:
+            return i
+    return min(range(len(bands)), key=lambda i: abs(bands[i][0] - z_mm))
+
+
 def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool):
     """Assemble the full stacked model (no BC; default Neumann)."""
     if not detail and not macro:
@@ -133,14 +169,11 @@ def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool
     )
     model.set_mesh(cube_axis_mm(), cube_axis_mm(), _z_full_mm(cfg))
     model.add_material("Copper (Pure)", *COPPER)
-    model.add_material(
-        "External",
-        f"{cfg.ext_k:.17g}",
-        f"{cfg.ext_k:.17g}",
-        f"{cfg.ext_k:.17g}",
-        f"{cfg.ext_rho:.17g}",
-        f"{cfg.ext_c:.17g}",
-    )
+    ext_bands = _ext_material_bands(cfg)
+    for _lo, _hi, name, k, rho, c in ext_bands:
+        model.add_material(
+            name, f"{k:.17g}", f"{k:.17g}", f"{k:.17g}", f"{rho:.17g}", f"{c:.17g}"
+        )
 
     H = cfg.ext_thickness_mm  # external cube height (mm); ROM cube sits above it
     cube_src_density = CUBE_SOURCE_W / SOURCE_VOL_M3
@@ -160,10 +193,11 @@ def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool
                 )
                 model.add_rect(block, GeometryOp.ADD, "25", "25", "50", "50")
         else:  # lower cube = the external body (full 100x100x100, centre source)
-            _add_solid(model, layer, "External", 0.0, CUBE_MM, 0.0, CUBE_MM)
+            mat = ext_bands[_band_for_z(ext_bands, z)][2]
+            _add_solid(model, layer, mat, 0.0, CUBE_MM, 0.0, CUBE_MM)
             if cfg.ext_source_w > 0 and (H / 2.0 - 25.0) < z < (H / 2.0 + 25.0):
                 block = model.add_block(
-                    layer, "External", heat_source=f"{ext_src_density:.17g}"
+                    layer, mat, heat_source=f"{ext_src_density:.17g}"
                 )
                 model.add_rect(block, GeometryOp.ADD, "25", "25", "50", "50")
     model.set_default_neumann("0")

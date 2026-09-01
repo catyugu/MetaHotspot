@@ -39,6 +39,41 @@ CASES = {
     "all_stress": dict(
         ext_k=0.5, ext_rho=1200.0, ext_c=1500.0, ext_bottom_h=300.0, ext_source_w=200.0
     ),
+    # --- z-layered external materials, strongly disparate conductivities ---
+    # three bands top->bottom (z_hi decreasing) but listed bottom->top.  Each
+    # case keeps the identical 100x100x100 outer cube + centre 50x50x50 source.
+    "layered_soft": dict(
+        ext_layers=(  # bottom Al high-k / mid alumina / top Si high-k
+            (0.0, 30.0, 205.0, 2700.0, 900.0),
+            (30.0, 60.0, 1.4, 3950.0, 880.0),
+            (60.0, 100.0, 149.0, 2330.0, 712.0),
+        )
+    ),
+    "layered_soft_source": dict(
+        ext_layers=(  # same stack, but with internal source in the mid low-k band
+            (0.0, 30.0, 205.0, 2700.0, 900.0),
+            (30.0, 60.0, 1.4, 3950.0, 880.0),
+            (60.0, 100.0, 149.0, 2330.0, 712.0),
+        ),
+        ext_source_w=80.0,
+    ),
+    "layered_extreme": dict(
+        # 3 dex spread: hard hi-k outer, near-vacuum centre insulator
+        ext_layers=(
+            (0.0, 25.0, 40.0, 7870.0, 490.0),  # steel
+            (25.0, 75.0, 0.05, 120.0, 700.0),  # aerogel-like
+            (75.0, 100.0, 385.0, 8930.0, 385.0),  # copper
+        )
+    ),
+    "layered_extreme_source": dict(
+        ext_layers=(
+            (0.0, 25.0, 40.0, 7870.0, 490.0),
+            (25.0, 75.0, 0.05, 120.0, 700.0),
+            (75.0, 100.0, 385.0, 8930.0, 385.0),
+        ),
+        ext_source_w=120.0,
+        ext_bottom_h=150.0,
+    ),
 }
 
 SUMMARY_FIELDS = [
