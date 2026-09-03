@@ -40,7 +40,7 @@ const char* mhs_detail_last_error();
         }                                                                                                              \
     } while (0)
 
-#define MHS_TRY(err_code, ...)                                                                                         \
+#define MHS_TRY(...)                                                                                                   \
     try {                                                                                                              \
         __VA_ARGS__;                                                                                                   \
         mhs_detail_clear_last_error();                                                                                 \
@@ -48,7 +48,7 @@ const char* mhs_detail_last_error();
     }                                                                                                                  \
     catch (const std::exception& e) {                                                                                  \
         SET_ERR(e.what());                                                                                             \
-        return err_code;                                                                                               \
+        return MHS_ERROR;                                                                                              \
     }
 
 /* ------------------------------------------------------------------ */

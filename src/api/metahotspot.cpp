@@ -204,7 +204,7 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
 {
     CHECK_NULL(m);
     CHECK_NULL(path);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         m->def = mhs::io::read_xml(path);
         m->block_locations.clear();
     });
@@ -218,7 +218,7 @@ MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, m
     double initial_temperature_K, double duration, double output_interval)
 {
     CHECK_NULL(m);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         m->def.settings.study_type = _to_model_study(study);
         m->def.settings.length_unit = _to_unit(length_unit);
         m->def.settings.initial_temperature = initial_temperature_K;
@@ -231,7 +231,7 @@ MHS_API mhs_status_t mhs_model_set_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z)
 {
     CHECK_NULL(m);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         m->def.mesh.x_vertices.clear();
         m->def.mesh.y_vertices.clear();
         m->def.mesh.z_vertices.clear();
@@ -255,7 +255,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY(MHS_ERROR, { m->def.variables.push_back({name, expression}); });
+    MHS_TRY({ m->def.variables.push_back({name, expression}); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,7 +267,7 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         mhs::model::MaterialSpec spec;
         if (kx)
             spec.conductivity_x = kx;
@@ -293,7 +293,7 @@ MHS_API mhs_status_t mhs_model_add_layer(
     CHECK_NULL(x_offset);
     CHECK_NULL(y_offset);
     CHECK_NULL(out_id);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         m->def.layers.push_back({thickness, x_offset, y_offset, {}});
         *out_id = static_cast<uint32_t>(m->def.layers.size() - 1);
     });
@@ -309,7 +309,7 @@ MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const c
         SET_ERR("layer ID out of range");
         return MHS_ERROR;
     }
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         mhs::model::BlockSpec block;
         block.material = material_name;
         block.volumetric_heat_source = heat_source ? heat_source : "0.0";
@@ -336,7 +336,7 @@ MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geom
         SET_ERR("block ID out of range");
         return MHS_ERROR;
     }
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         const auto loc = m->block_locations[block];
         mhs::model::RectOperation rect_op;
         rect_op.operation
@@ -360,7 +360,7 @@ MHS_API mhs_status_t mhs_model_add_dirichlet(
     }
     CHECK_NULL(regions);
     CHECK_NULL(temperature);
-    MHS_TRY(MHS_ERROR, { _add_boundary_patch(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
+    MHS_TRY({ _add_boundary_patch(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_neumann(
@@ -373,7 +373,7 @@ MHS_API mhs_status_t mhs_model_add_neumann(
     }
     CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
-    MHS_TRY(MHS_ERROR, { _add_boundary_patch(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
+    MHS_TRY({ _add_boundary_patch(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
@@ -387,7 +387,7 @@ MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_reg
     CHECK_NULL(regions);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         _add_boundary_patch(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     });
 }
@@ -396,14 +396,14 @@ MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char*
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    MHS_TRY(MHS_ERROR, { m->def.default_boundary = mhs::model::DirichletBoundary {temperature}; });
+    MHS_TRY({ m->def.default_boundary = mhs::model::DirichletBoundary {temperature}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    MHS_TRY(MHS_ERROR, { m->def.default_boundary = mhs::model::NeumannBoundary {heat_flux}; });
+    MHS_TRY({ m->def.default_boundary = mhs::model::NeumannBoundary {heat_flux}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_convection(
@@ -412,8 +412,7 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    MHS_TRY(
-        MHS_ERROR, { m->def.default_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
+    MHS_TRY({ m->def.default_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
 }
 
 /* ------------------------------------------------------------------ */
@@ -425,7 +424,7 @@ MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* nam
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY(MHS_ERROR, { m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
+    MHS_TRY({ m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_function_gauss(
@@ -433,7 +432,7 @@ MHS_API mhs_status_t mhs_model_add_function_gauss(
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY(MHS_ERROR, { m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
+    MHS_TRY({ m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_function_sine(
@@ -441,7 +440,7 @@ MHS_API mhs_status_t mhs_model_add_function_sine(
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY(MHS_ERROR,
+    MHS_TRY(
         { m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
 }
 
@@ -450,7 +449,7 @@ MHS_API mhs_status_t mhs_model_add_function_double_exponential(
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY(MHS_ERROR,
+    MHS_TRY(
         { m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
 }
 
@@ -464,7 +463,7 @@ MHS_API mhs_status_t mhs_model_add_function_piecewise(
         SET_ERR("piecewise requires count >= 2");
         return MHS_ERROR;
     }
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
@@ -486,7 +485,7 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
         SET_ERR("period must be positive");
         return MHS_ERROR;
     }
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
         spec.values.assign(values, values + count);
@@ -502,15 +501,14 @@ MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, doubl
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY(MHS_ERROR,
-        { m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)}); });
+    MHS_TRY({ m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
     mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature)
 {
     CHECK_NULL(m);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         mhs::model::FluidBoundarySpec fb;
         fb.regions.push_back(_make_face_region(axis, coordinate, region));
         fb.kind = _to_fluid_kind(kind);
@@ -528,7 +526,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
 {
     CHECK_NULL(m);
     CHECK_NULL(out);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         auto core_model = mhs::sim::build_model(m->def);
         auto* c = new (std::nothrow) mhs_compiled_t {};
         if (!c) {
@@ -695,7 +693,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     CHECK_NULL(out);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         const auto cell_count = c->model->cells.cell_to_grid.size();
         if (temperature_count != cell_count) {
             SET_ERR("temperature_count must equal cell_count");
@@ -789,7 +787,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         auto so = to_solve_options(opts, c->model->transient_duration);
 
         // Build initial state span
@@ -824,7 +822,7 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char*
 {
     CHECK_NULL(s);
     CHECK_NULL(path);
-    MHS_TRY(MHS_ERROR, {
+    MHS_TRY({
         if (!s->model)
             throw std::invalid_argument("solution does not own a compiled runtime model");
         if (s->sol.fvm_count != s->model->cells.cell_to_grid.size())
