@@ -168,7 +168,7 @@ class Model(OwnedHandle):
         """Add a Dirichlet boundary condition.
 
         Each region is (axis, coordinate, a_min, a_max, b_min, b_max).
-        Pass ``None`` for regions to use an empty list.
+        Pass ``None`` or an empty list to ignore the call.
         """
         _native.add_boundary(
             self._dll, "mhs_model_add_dirichlet", self._handle, regions, temperature

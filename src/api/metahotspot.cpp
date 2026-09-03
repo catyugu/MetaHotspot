@@ -355,6 +355,10 @@ MHS_API mhs_status_t mhs_model_add_dirichlet(
     mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature)
 {
     CHECK_NULL(m);
+    if (n_regions == 0) {
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
     CHECK_NULL(regions);
     CHECK_NULL(temperature);
     MHS_TRY(MHS_ERR_INVALID_ARG,
@@ -365,6 +369,10 @@ MHS_API mhs_status_t mhs_model_add_neumann(
     mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux)
 {
     CHECK_NULL(m);
+    if (n_regions == 0) {
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
     CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
     MHS_TRY(
@@ -375,6 +383,10 @@ MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_reg
     const char* coefficient, const char* ambient_temperature)
 {
     CHECK_NULL(m);
+    if (n_regions == 0) {
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
     CHECK_NULL(regions);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
