@@ -41,6 +41,41 @@ XML
                                           └─> mhs::io::write_vtu + mhs::io::write_xml(probeTraces)   (virtual → NaN)
 ```
 
+## 核心对象与生命周期
+
+公共模型流程只保留四个对象。它们分别对应一个明确的数学或运行期语义，
+不把 C ABI handle、Python wrapper 或中间 buffer 当成新的领域对象。
+
+```text
+ModelDefinition
+    可变的 authoring model；保存几何、材料、边界、源和 study 设置
+    由 XML reader 或 Model builder 创建；compile 不修改它
+        │ compile
+        ▼
+CompiledModel (mhs::core::Model)
+    不可变的离散运行期模型；保存网格、cell mapping、已编译表达式、face BC
+    和流体预处理结果；独立拥有编译结果
+        │ assemble(state, time)
+        ▼
+Operators {K, C, f}
+    某一状态和时刻的线性化离散系统：C · dx/dt + K · x = f
+    一次 assembly 的值对象；不拥有 CompiledModel，也不改变它
+        │ solve(initial_state, options)
+        ▼
+Solution
+    一次求解的最终状态、accepted/output history 和 probe traces
+    独立拥有结果；不依赖调用方传入的 state buffer
+```
+
+生命周期约定：
+
+- `ModelDefinition` 只负责 setup；`compile` 是从定义到冻结离散模型的一次转换。
+- `CompiledModel` 是重复 `assemble` 和 `solve` 的唯一运行期入口。
+- `Operators` 是 assembly 的结果，不是第二种模型定义，也不是求解器的全局状态。
+- `Solution` 是一次 solve 的不可变快照；关闭或修改输入对象不改变它。
+- C API 的 opaque handle 和 Python 对象只负责 ownership 与转换，不增加上述对象的语义。
+- Python 返回的 NumPy/SciPy 数据属于 Python；native handle 销毁后仍然有效。
+
 ## 各阶段
 
 | 阶段              | 输入                                  | 输出                            | 关键                                                     |
