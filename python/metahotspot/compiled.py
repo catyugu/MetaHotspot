@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-import ctypes
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import NamedTuple
 
 import numpy as np
 
-from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
-from metahotspot.types import (
-    MhsCompiled,
-    MhsCellFields,
-    MhsMaterialValues,
-    MhsCompiledInfo,
-    MhsOperators,
-    MhsOperatorsInfo,
-)
+import metahotspot._native as _native
 
 
 class Operators(NamedTuple):
@@ -33,24 +24,24 @@ _SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}
 _INTEGRATOR_VALUES = {"Bdf1": IntegratorKind.BDF1, "Bdf2": IntegratorKind.BDF2}
 _STEP_STRATEGY_VALUES = {"Adaptive": StepStrategy.ADAPTIVE, "Fixed": StepStrategy.FIXED}
 
+# SolveOptions dataclass field -> C struct field name, with an enum coercer for
+# the three enum-typed fields.
+_ENUM_FIELDS = {
+    "linear_solver": (SolverType, _SOLVER_VALUES, "solver_type"),
+    "integrator": (IntegratorKind, _INTEGRATOR_VALUES, "integrator"),
+    "step_strategy": (StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"),
+}
 
-# Single declaration of the CellFields contract: (field name, ctypes element
-# type, numpy dtype, count source on MhsCompiledInfo).  Drives buffer
-# allocation, the native mhs_cell_fields_t wiring and the CellFields view.
-_CELL_FIELD_SPECS: tuple[tuple[str, type, type, str], ...] = (
-    ("grid_to_cell", ctypes.c_size_t, np.intp, "grid_count"),
-    ("cell_to_grid", ctypes.c_size_t, np.intp, "cell_count"),
-    ("dx", ctypes.c_double, np.float64, "nx"),
-    ("dy", ctypes.c_double, np.float64, "ny"),
-    ("dz", ctypes.c_double, np.float64, "nz"),
-    ("cx", ctypes.c_double, np.float64, "nx"),
-    ("cy", ctypes.c_double, np.float64, "ny"),
-    ("cz", ctypes.c_double, np.float64, "nz"),
-    ("layer_id", ctypes.c_uint32, np.uint32, "cell_count"),
-    ("block_id", ctypes.c_uint32, np.uint32, "cell_count"),
-    ("material_id", ctypes.c_uint32, np.uint32, "cell_count"),
-    ("heat_source_idx", ctypes.c_uint32, np.uint32, "cell_count"),
-)
+
+def _enum_value(value, enum_type, string_values, field_name: str) -> int:
+    if isinstance(value, enum_type):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(string_values[value])
+        except KeyError as exc:
+            raise ValueError(f"unknown {field_name}: {value!r}") from exc
+    raise TypeError(f"{field_name} must be {enum_type.__name__} or str")
 
 
 @dataclass(frozen=True)
@@ -177,54 +168,12 @@ class CellFields:
                 value.setflags(write=False)
 
 
-def _operators_from_handle(dll, handle) -> Operators:
-    """Copy a native operator handle into Python-owned SciPy/NumPy storage."""
-    import scipy.sparse
-
-    try:
-        info = MhsOperatorsInfo()
-        check(dll.mhs_operators_get_info(handle, ctypes.byref(info)), "operators_info")
-        n = int(info.state_count)
-
-        def copy_matrix(function, nnz: int):
-            outer = np.empty(n + 1, dtype=np.int32)
-            inner = np.empty(nnz, dtype=np.int32)
-            values = np.empty(nnz, dtype=np.float64)
-            check(
-                function(
-                    handle,
-                    outer.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
-                    outer.size,
-                    inner.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
-                    inner.size,
-                    values.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                    values.size,
-                ),
-                "operators_copy",
-            )
-            return scipy.sparse.csc_matrix((values, inner, outer), shape=(n, n))
-
-        rhs = np.empty(n, dtype=np.float64)
-        check(
-            dll.mhs_operators_copy_rhs(
-                handle,
-                rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                rhs.size,
-            ),
-            "operators_copy_rhs",
-        )
-        return Operators(
-            copy_matrix(dll.mhs_operators_copy_k, int(info.k_nnz)),
-            copy_matrix(dll.mhs_operators_copy_c, int(info.c_nnz)),
-            rhs,
-        )
-    finally:
-        dll.mhs_operators_destroy(handle)
-
-
 @dataclass
 class SolveOptions:
-    """Solver configuration options."""
+    """Solver configuration options.
+
+    ``None`` fields fall back to the C++ defaults (via ``mhs_solve_options_default``).
+    """
 
     linear_solver: SolverType | str | None = None
     linear_tolerance: float | None = None
@@ -245,57 +194,19 @@ class SolveOptions:
     def default() -> SolveOptions:
         return SolveOptions()
 
-    def _to_c_struct(self, dll):
-        from metahotspot.types import _SolveOptionsCStruct
-
-        c_opts = _SolveOptionsCStruct()
-        dll.mhs_solve_options_default(ctypes.byref(c_opts))
-        if self.linear_solver is not None:
-            c_opts.solver_type = _enum_value(
-                self.linear_solver, SolverType, _SOLVER_VALUES, "linear_solver"
-            )
-        if self.linear_tolerance is not None:
-            c_opts.linear_tolerance = self.linear_tolerance
-        if self.linear_max_iterations is not None:
-            c_opts.linear_max_iterations = self.linear_max_iterations
-        if self.underrelaxation is not None:
-            c_opts.underrelaxation = self.underrelaxation
-        if self.nonlinear_max_iterations is not None:
-            c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
-        if self.nonlinear_relative_tolerance is not None:
-            c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
-        if self.nonlinear_absolute_tolerance is not None:
-            c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
-        if self.integrator is not None:
-            c_opts.integrator = _enum_value(
-                self.integrator, IntegratorKind, _INTEGRATOR_VALUES, "integrator"
-            )
-        if self.step_strategy is not None:
-            c_opts.step_strategy = _enum_value(
-                self.step_strategy, StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"
-            )
-        if self.error_rel_tol is not None:
-            c_opts.error_rel_tol = self.error_rel_tol
-        if self.error_safety is not None:
-            c_opts.error_safety = self.error_safety
-        if self.min_dt is not None:
-            c_opts.min_dt = self.min_dt
-        if self.max_dt is not None:
-            c_opts.max_dt = self.max_dt
-        if self.fixed_dt is not None:
-            c_opts.fixed_dt = self.fixed_dt
-        return c_opts
-
-
-def _enum_value(value, enum_type, string_values, field_name: str) -> int:
-    if isinstance(value, enum_type):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(string_values[value])
-        except KeyError as exc:
-            raise ValueError(f"unknown {field_name}: {value!r}") from exc
-    raise TypeError(f"{field_name} must be {enum_type.__name__} or str")
+    def _overrides(self) -> dict:
+        """Present non-``None`` values as C solve-options struct field overrides."""
+        overrides = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if value is None:
+                continue
+            if f.name in _ENUM_FIELDS:
+                enum_type, string_values, c_name = _ENUM_FIELDS[f.name]
+                overrides[c_name] = _enum_value(value, enum_type, string_values, f.name)
+            else:
+                overrides[f.name] = value
+        return overrides
 
 
 class Compiled(OwnedHandle):
@@ -311,36 +222,13 @@ class Compiled(OwnedHandle):
         self = cls()
         self._dll = dll
         self._destroy_fn = dll.mhs_compiled_destroy
-        handle = ctypes.POINTER(MhsCompiled)()
-        check(dll.mhs_model_compile(model_handle, ctypes.byref(handle)), "compile")
-        self._handle = handle
+        self._handle = _native.compile_model(dll, model_handle)
         self._fetch_metadata()
         return self
 
     def _fetch_metadata(self) -> CellFields:
         if self._cells is None:
-            info = MhsCompiledInfo()
-            check(
-                self._dll.mhs_compiled_get_info(self._handle, ctypes.byref(info)),
-                "compiled_info",
-            )
-            arrays = {
-                name: np.empty(int(getattr(info, count)), dtype=dtype)
-                for name, _, dtype, count in _CELL_FIELD_SPECS
-            }
-            native = MhsCellFields(
-                **{
-                    name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
-                    for name, ctype, _, _ in _CELL_FIELD_SPECS
-                },
-                **{count: arrays[name].size for name, _, _, count in _CELL_FIELD_SPECS},
-            )
-            check(
-                self._dll.mhs_compiled_copy_cell_fields(
-                    self._handle, ctypes.byref(native)
-                ),
-                "cell_fields",
-            )
+            info, arrays = _native.compiled_metadata(self._dll, self._handle)
             self._info = info
             self._cells = CellFields(**arrays)
         return self._cells
@@ -348,32 +236,32 @@ class Compiled(OwnedHandle):
     @property
     def cell_count(self) -> int:
         self._fetch_metadata()
-        return int(self._info.cell_count)
+        return self._info["cell_count"]
 
     @property
     def study_type(self) -> int:
         self._fetch_metadata()
-        return int(self._info.study_type)
+        return self._info["study_type"]
 
     @property
     def initial_temperature(self) -> float:
         self._fetch_metadata()
-        return float(self._info.initial_temperature)
+        return self._info["initial_temperature"]
 
     @property
     def nx(self) -> int:
         self._fetch_metadata()
-        return int(self._info.nx)
+        return self._info["nx"]
 
     @property
     def ny(self) -> int:
         self._fetch_metadata()
-        return int(self._info.ny)
+        return self._info["ny"]
 
     @property
     def nz(self) -> int:
         self._fetch_metadata()
-        return int(self._info.nz)
+        return self._info["nz"]
 
     @property
     def cells(self) -> CellFields:
@@ -383,34 +271,7 @@ class Compiled(OwnedHandle):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""
         if state is None:
             state = self.default_state()
-        values = {
-            name: np.empty(state.size, dtype=np.float64)
-            for name in (
-                "conductivity_x",
-                "conductivity_y",
-                "conductivity_z",
-                "density",
-                "specific_heat",
-            )
-        }
-        native = MhsMaterialValues(
-            **{
-                name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-                for name in values
-            },
-            count=state.size,
-        )
-        check(
-            self._dll.mhs_compiled_eval_materials(
-                self._handle,
-                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                state.size,
-                time,
-                ctypes.byref(native),
-            ),
-            "eval_materials",
-        )
-        return values
+        return _native.eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
@@ -419,20 +280,9 @@ class Compiled(OwnedHandle):
         """Assemble K, C, f at a state and time."""
         if state is None:
             state = self.default_state()
-
-        handle = ctypes.POINTER(MhsOperators)()
-        check(
-            self._dll.mhs_compiled_assemble(
-                self._handle,
-                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                state.size,
-                time,
-                ctypes.byref(handle),
-            ),
-            "assemble",
+        return Operators(
+            *_native.assembled_operators(self._dll, self._handle, state, time)
         )
-
-        return _operators_from_handle(self._dll, handle)
 
     def solve(
         self,

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import ctypes
 
-from metahotspot._error import check
-
 from metahotspot.types import (
     MhsModel,
     MhsCompiled,
@@ -405,27 +403,3 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         fn = getattr(dll, name)
         fn.restype = restype
         fn.argtypes = argtypes
-
-
-def copy_array(fn, handle, array, c_type, label) -> None:
-    """Copy a native array out of *handle* into the caller-owned NumPy *array*.
-
-    Wraps the simple ``mhs_*_copy_*`` C calls, which take
-    ``(handle, buffer, count)`` and fill the pre-allocated buffer.
-    """
-    check(
-        fn(handle, array.ctypes.data_as(ctypes.POINTER(c_type)), array.size),
-        label,
-    )
-
-
-def _opts_ptr(opts, dll):
-    """Return a ctypes pointer to the C struct form of *opts* (or None).
-
-    *opts* is a :class:`SolveOptions`; anything already C-struct shaped is
-    passed through unchanged.
-    """
-    if opts is None:
-        return None
-    c_opts = opts._to_c_struct(dll) if hasattr(opts, "_to_c_struct") else opts
-    return ctypes.byref(c_opts)
