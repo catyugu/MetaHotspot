@@ -36,7 +36,7 @@ const char* mhs_detail_last_error();
     do {                                                                                                               \
         if (!(p)) {                                                                                                    \
             SET_ERR("NULL pointer: " #p);                                                                              \
-            return MHS_ERR_NULL_PTR;                                                                                   \
+            return MHS_ERROR;                                                                                          \
         }                                                                                                              \
     } while (0)
 

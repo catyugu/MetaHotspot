@@ -77,14 +77,7 @@ enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_F
 typedef int32_t mhs_status_t;
 enum {
     MHS_OK = 0,
-    MHS_ERR_NULL_PTR = -1,
-    MHS_ERR_INVALID_ARG = -2,
-    MHS_ERR_COMPILE = -3,
-    MHS_ERR_ASSEMBLE = -4,
-    MHS_ERR_SOLVE = -5,
-    MHS_ERR_IO = -6,
-    MHS_ERR_OOM = -7,
-    MHS_ERR_RUNTIME = -8,
+    MHS_ERROR = -1,
 };
 
 /* ------------------------------------------------------------------ */

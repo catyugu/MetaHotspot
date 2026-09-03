@@ -7,7 +7,6 @@ import ctypes
 import numpy as np
 
 from metahotspot._lib import get_dll
-from metahotspot.enums import Status
 from metahotspot.types import MhsOperators, MhsOperatorsInfo
 
 
@@ -30,7 +29,7 @@ def _make_operator(dll):
         rhs,
         ctypes.byref(handle),
     )
-    assert status == Status.OK
+    assert status == 0
     return handle
 
 
@@ -39,7 +38,7 @@ def test_operator_copy_rhs_rejects_oversized_count_without_reading_past_rhs():
     handle = _make_operator(dll)
     try:
         info = MhsOperatorsInfo()
-        assert dll.mhs_operators_get_info(handle, ctypes.byref(info)) == Status.OK
+        assert dll.mhs_operators_get_info(handle, ctypes.byref(info)) == 0
 
         output = np.full(info.state_count + 1, np.nan)
         status = dll.mhs_operators_copy_rhs(
@@ -48,7 +47,7 @@ def test_operator_copy_rhs_rejects_oversized_count_without_reading_past_rhs():
             output.size,
         )
 
-        assert status == Status.ERR_INVALID_ARG
+        assert status == -1
         assert np.all(np.isnan(output))
     finally:
         dll.mhs_operators_destroy(handle)
