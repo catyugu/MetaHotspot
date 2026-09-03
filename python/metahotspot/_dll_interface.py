@@ -333,23 +333,6 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.c_size_t,
         ],
     ),
-    (
-        "mhs_operators_create",
-        ctypes.c_int32,
-        [
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
-        ],
-    ),
     # ---- Solve ----
     (
         "mhs_compiled_solve",

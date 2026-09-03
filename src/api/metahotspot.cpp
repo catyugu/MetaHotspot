@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -581,36 +580,6 @@ namespace {
         return MHS_OK;
     }
 
-    Eigen::SparseMatrix<double> copy_csc(
-        size_t n, const int32_t* outer, const int32_t* inner, const double* values, size_t nnz, const char* label)
-    {
-        if (!outer || (nnz > 0 && (!inner || !values)))
-            throw std::invalid_argument(std::string("NULL pointer in ") + label);
-        if (n > static_cast<size_t>(std::numeric_limits<int32_t>::max())
-            || nnz > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
-            throw std::invalid_argument(std::string(label) + " dimensions exceed int32 range");
-        if (outer[0] != 0 || outer[n] != static_cast<int32_t>(nnz))
-            throw std::invalid_argument(std::string("invalid ") + label + " outer-index range");
-        std::vector<Eigen::Triplet<double>> entries;
-        entries.reserve(nnz);
-        for (size_t column = 0; column < n; ++column) {
-            const auto begin = outer[column];
-            const auto end = outer[column + 1];
-            if (begin < 0 || end < begin || static_cast<size_t>(end) > nnz)
-                throw std::invalid_argument(std::string("invalid ") + label + " column offsets");
-            for (int32_t entry = begin; entry < end; ++entry) {
-                const auto row = inner[entry];
-                if (row < 0 || static_cast<size_t>(row) >= n)
-                    throw std::invalid_argument(std::string("invalid ") + label + " row index");
-                entries.emplace_back(row, static_cast<int32_t>(column), values[entry]);
-            }
-        }
-        Eigen::SparseMatrix<double> matrix(static_cast<int32_t>(n), static_cast<int32_t>(n));
-        matrix.setFromTriplets(entries.begin(), entries.end());
-        matrix.makeCompressed();
-        return matrix;
-    }
-
     mhs_status_t copy_csc_matrix(const Eigen::SparseMatrix<double>& matrix, int32_t* outer, size_t outer_count,
         int32_t* inner, size_t inner_count, double* values, size_t value_count)
     {
@@ -737,22 +706,6 @@ MHS_API mhs_status_t mhs_compiled_assemble(
         auto result = std::make_unique<mhs_operators_t>();
         result->operators
             = mhs::sim::assemble_thermal(*c->model, std::span<const double>(temperature, temperature_count), time);
-        *out = result.release();
-    });
-}
-
-MHS_API mhs_status_t mhs_operators_create(size_t state_count, const int32_t* k_outer, const int32_t* k_inner,
-    const double* k_values, size_t k_nnz, const int32_t* c_outer, const int32_t* c_inner, const double* c_values,
-    size_t c_nnz, const double* rhs, mhs_operators_t** out)
-{
-    CHECK_NULL(out);
-    CHECK_NULL(rhs);
-    *out = nullptr;
-    MHS_TRY(MHS_ERROR, {
-        auto result = std::make_unique<mhs_operators_t>();
-        result->operators.K = copy_csc(state_count, k_outer, k_inner, k_values, k_nnz, "K");
-        result->operators.C = copy_csc(state_count, c_outer, c_inner, c_values, c_nnz, "C");
-        result->operators.f = Eigen::Map<const Eigen::VectorXd>(rhs, static_cast<Eigen::Index>(state_count));
         *out = result.release();
     });
 }
