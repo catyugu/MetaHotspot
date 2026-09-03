@@ -7,6 +7,7 @@ import ctypes
 from metahotspot._lib import get_dll
 from metahotspot.compiled import SolveOptions
 from metahotspot.types import _SolveOptionsCStruct
+import metahotspot._native as _native
 
 
 def _native_defaults(dll):
@@ -15,10 +16,14 @@ def _native_defaults(dll):
     return options
 
 
+def _build(dll, opts: SolveOptions | None):
+    return _native.solve_options(dll, opts._overrides() if opts is not None else {})
+
+
 def test_empty_solve_options_match_native_defaults():
     dll = get_dll()
     expected = _native_defaults(dll)
-    actual = SolveOptions()._to_c_struct(dll)
+    actual = _build(dll, SolveOptions())
 
     for name, _ in _SolveOptionsCStruct._fields_:
         assert getattr(actual, name) == getattr(expected, name), name
@@ -27,7 +32,7 @@ def test_empty_solve_options_match_native_defaults():
 def test_solve_options_only_override_explicit_fields():
     dll = get_dll()
     expected = _native_defaults(dll)
-    actual = SolveOptions(linear_tolerance=2.5e-10, fixed_dt=0.25)._to_c_struct(dll)
+    actual = _build(dll, SolveOptions(linear_tolerance=2.5e-10, fixed_dt=0.25))
 
     assert actual.linear_tolerance == 2.5e-10
     assert actual.fixed_dt == 0.25

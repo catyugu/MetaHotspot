@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from metahotspot.enums import Status
-
 
 class MetaHotspotError(RuntimeError):
-    """Raised when a C API function returns a non-OK status."""
+    """Raised when a C API function fails."""
 
-    def __init__(self, status: int, context: str = "", msg: str = ""):
-        self.status = status
+    def __init__(self, context: str = "", msg: str = ""):
         self.context = context
-        full = f"API error {status} ({Status(status).name})"
+        full = "MetaHotspot API error"
         if context:
             full += f" in {context}"
         if msg:
@@ -20,7 +17,7 @@ class MetaHotspotError(RuntimeError):
 
 
 def check(status: int, ctx: str = "") -> None:
-    """Raise MetaHotspotError if *status* is not OK."""
+    """Raise MetaHotspotError if the C API reports failure."""
     if status != 0:
         # Avoid circular import — we import _get_dll lazily in the error
         # path only.
@@ -34,4 +31,4 @@ def check(status: int, ctx: str = "") -> None:
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8", errors="replace")
             msg = raw
-        raise MetaHotspotError(status, context=ctx, msg=msg)
+        raise MetaHotspotError(context=ctx, msg=msg)

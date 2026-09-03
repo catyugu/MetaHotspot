@@ -77,14 +77,7 @@ enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_F
 typedef int32_t mhs_status_t;
 enum {
     MHS_OK = 0,
-    MHS_ERR_NULL_PTR = -1,
-    MHS_ERR_INVALID_ARG = -2,
-    MHS_ERR_COMPILE = -3,
-    MHS_ERR_ASSEMBLE = -4,
-    MHS_ERR_SOLVE = -5,
-    MHS_ERR_IO = -6,
-    MHS_ERR_OOM = -7,
-    MHS_ERR_RUNTIME = -8,
+    MHS_ERROR = -1,
 };
 
 /* ------------------------------------------------------------------ */
@@ -294,10 +287,6 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
 
-/** Create an owned operator handle by copying square CSC matrices and rhs. */
-MHS_API mhs_status_t mhs_operators_create(size_t state_count, const int32_t* k_outer, const int32_t* k_inner,
-    const double* k_values, size_t k_nnz, const int32_t* c_outer, const int32_t* c_inner, const double* c_values,
-    size_t c_nnz, const double* rhs, mhs_operators_t** out);
 MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
 MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
 MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
