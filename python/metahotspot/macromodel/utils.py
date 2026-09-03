@@ -142,11 +142,8 @@ def spd_solve(A, b, x0=None, rtol=1.0e-10, maxiter=2000):
     ml = pyamg.ruge_stuben_solver(A.tocsr())
     M = ml.aspreconditioner(cycle="V")
     x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=maxiter, M=M)
-    residual = np.linalg.norm(A @ x - b) / np.linalg.norm(b)
     if info != 0:
-        raise RuntimeError(
-            f"AMG-CG did not converge: info={info}, relative residual={residual:.3e}"
-        )
+        raise RuntimeError(f"AMG-CG did not converge: info={info}")
     return x
 
 
@@ -367,13 +364,8 @@ def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
 
     theta, info = spla.cg(A, rhs, rtol=1e-8, atol=0.0, maxiter=10000, M=M)
 
-    residual = np.linalg.norm(A @ theta - rhs) / max(
-        np.linalg.norm(rhs), np.finfo(float).tiny
-    )
     if info != 0:
-        raise RuntimeError(
-            f"steady CG did not converge: info={info}, relative residual={residual:.3e}"
-        )
+        raise RuntimeError(f"steady CG did not converge: info={info}")
 
     return theta.ravel()
 
