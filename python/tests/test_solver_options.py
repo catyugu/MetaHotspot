@@ -6,8 +6,8 @@ import ctypes
 
 from metahotspot._lib import get_dll
 from metahotspot.compiled import SolveOptions
+from metahotspot.solution import _solve_options
 from metahotspot.types import _SolveOptionsCStruct
-import metahotspot._native_solution as _native_solution
 
 
 def _native_defaults(dll):
@@ -17,9 +17,7 @@ def _native_defaults(dll):
 
 
 def _build(dll, opts: SolveOptions | None):
-    return _native_solution.solve_options(
-        dll, opts._overrides() if opts is not None else {}
-    )
+    return _solve_options(dll, opts._overrides() if opts is not None else {})
 
 
 def test_empty_solve_options_match_native_defaults():
