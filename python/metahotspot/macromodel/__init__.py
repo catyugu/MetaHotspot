@@ -54,13 +54,11 @@ from metahotspot.macromodel.embeddable import (
     EmbeddableRom,
     FacePort,
     Subdomain,
-
     build_subdomain,
     common_patches,
     connect,
     enumerate_interface_ports,
     extract_rom,
-
     side_junction_rise,
     solve_system,
 )
@@ -85,13 +83,11 @@ __all__ = [
     "EmbeddableRom",
     "FacePort",
     "Subdomain",
-
     "build_subdomain",
     "common_patches",
     "connect",
     "enumerate_interface_ports",
     "extract_rom",
-
     "side_junction_rise",
     "solve_system",
 ]

@@ -377,6 +377,7 @@ class EmbeddableRom:
     @property
     def dof_order(self) -> int:
         return self.m
+
     def internal_operator(self) -> sp.csc_matrix:
         """Modal effective stiffness: K0_hat + Σ p_k VᵀH_kV, ambient folded."""
         K = self.K0_hat
