@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from metahotspot._compiled_data import CellFields, CompiledMetadata
 from metahotspot._error import check
 from metahotspot.types import (
     MhsCellFields,
@@ -14,18 +15,6 @@ from metahotspot.types import (
     MhsOperators,
     MhsOperatorsInfo,
 )
-
-
-@dataclass(frozen=True)
-class CompiledMetadata:
-    cell_count: int
-    grid_count: int
-    study_type: int
-    initial_temperature: float
-    nx: int
-    ny: int
-    nz: int
-    cell_fields: dict[str, np.ndarray]
 
 
 @dataclass(frozen=True)
@@ -97,7 +86,7 @@ def compiled_metadata(dll, handle) -> CompiledMetadata:
         nx=int(info.nx),
         ny=int(info.ny),
         nz=int(info.nz),
-        cell_fields=arrays,
+        cell_fields=CellFields(**arrays),
     )
 
 
