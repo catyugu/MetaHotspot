@@ -39,7 +39,7 @@ class Model(OwnedHandle):
 
     def read_xml(self, path: str | Path) -> None:
         """Load a MetaHotspot XML case file."""
-        _native.call(self._dll, "mhs_model_read_xml", self._handle, str(path))
+        _native.read_xml(self._dll, self._handle, str(path))
 
     def set_settings(
         self,
@@ -71,9 +71,7 @@ class Model(OwnedHandle):
 
     def add_variable(self, name: str, expression: str) -> None:
         """Add a geometry variable."""
-        _native.call(
-            self._dll, "mhs_model_add_variable", self._handle, name, expression
-        )
+        _native.add_variable(self._dll, self._handle, name, expression)
 
     def add_material(
         self,
@@ -86,26 +84,16 @@ class Model(OwnedHandle):
         dynamic_viscosity: str | None = None,
     ) -> None:
         """Register a material."""
-        _native.call(
-            self._dll,
-            "mhs_model_add_material",
-            self._handle,
-            name,
-            kx,
-            ky,
-            kz,
-            rho,
-            c,
-            dynamic_viscosity,
+        _native.add_material(
+            self._dll, self._handle, name, kx, ky, kz, rho, c, dynamic_viscosity
         )
 
     def add_layer(
         self, thickness: str, x_offset: str = "0", y_offset: str = "0"
     ) -> int:
         """Add a layer.  Returns the layer ID."""
-        return _native.add_id(
+        return _native.add_layer(
             self._dll,
-            "mhs_model_add_layer",
             self._handle,
             thickness,
             x_offset,
@@ -122,9 +110,8 @@ class Model(OwnedHandle):
         thickness: str | None = None,
     ) -> int:
         """Add a block to a layer.  Returns the block ID."""
-        return _native.add_id(
+        return _native.add_block(
             self._dll,
-            "mhs_model_add_block",
             self._handle,
             layer,
             material_name,
@@ -144,17 +131,7 @@ class Model(OwnedHandle):
         height: str = "1",
     ) -> None:
         """Add a rectangular geometry operation (add or subtract)."""
-        _native.call(
-            self._dll,
-            "mhs_model_add_rect",
-            self._handle,
-            block,
-            int(op),
-            x,
-            y,
-            width,
-            height,
-        )
+        _native.add_rect(self._dll, self._handle, block, op, x, y, width, height)
 
     # ---- Atomic boundary conditions ----
 
@@ -170,9 +147,7 @@ class Model(OwnedHandle):
         Each region is (axis, coordinate, a_min, a_max, b_min, b_max).
         Pass ``None`` or an empty list to ignore the call.
         """
-        _native.add_boundary(
-            self._dll, "mhs_model_add_dirichlet", self._handle, regions, temperature
-        )
+        _native.add_dirichlet(self._dll, self._handle, regions, temperature)
 
     def add_neumann(
         self,
@@ -182,9 +157,7 @@ class Model(OwnedHandle):
         ) = None,
     ) -> None:
         """Add a Neumann (heat flux) boundary condition."""
-        _native.add_boundary(
-            self._dll, "mhs_model_add_neumann", self._handle, regions, heat_flux
-        )
+        _native.add_neumann(self._dll, self._handle, regions, heat_flux)
 
     def add_convection(
         self,
@@ -195,80 +168,47 @@ class Model(OwnedHandle):
         ) = None,
     ) -> None:
         """Add a convection (Robin) boundary condition."""
-        _native.add_boundary(
-            self._dll,
-            "mhs_model_add_convection",
-            self._handle,
-            regions,
-            coefficient,
-            ambient_temperature,
+        _native.add_convection(
+            self._dll, self._handle, regions, coefficient, ambient_temperature
         )
 
     def set_default_dirichlet(self, temperature: str) -> None:
-        _native.call(
-            self._dll, "mhs_model_set_default_dirichlet", self._handle, temperature
-        )
+        _native.set_default_dirichlet(self._dll, self._handle, temperature)
 
     def set_default_neumann(self, heat_flux: str) -> None:
-        _native.call(
-            self._dll, "mhs_model_set_default_neumann", self._handle, heat_flux
-        )
+        _native.set_default_neumann(self._dll, self._handle, heat_flux)
 
     def set_default_convection(
         self, coefficient: str, ambient_temperature: str
     ) -> None:
-        _native.call(
-            self._dll,
-            "mhs_model_set_default_convection",
-            self._handle,
-            coefficient,
-            ambient_temperature,
+        _native.set_default_convection(
+            self._dll, self._handle, coefficient, ambient_temperature
         )
 
     # ---- Functions ----
 
     def add_function_expr(self, name: str, expression: str) -> None:
-        _native.call(
-            self._dll, "mhs_model_add_function_expr", self._handle, name, expression
-        )
+        _native.add_function_expr(self._dll, self._handle, name, expression)
 
     def add_function_gauss(
         self, name: str, amplitude: float, tau: float, center: float
     ) -> None:
-        _native.call(
-            self._dll,
-            "mhs_model_add_function_gauss",
-            self._handle,
-            name,
-            amplitude,
-            tau,
-            center,
+        _native.add_function_gauss(
+            self._dll, self._handle, name, amplitude, tau, center
         )
 
     def add_function_sine(
         self, name: str, amplitude: float, angular_frequency: float, phase: float
     ) -> None:
-        _native.call(
-            self._dll,
-            "mhs_model_add_function_sine",
-            self._handle,
-            name,
-            amplitude,
-            angular_frequency,
-            phase,
+        _native.add_function_sine(
+            self._dll, self._handle, name, amplitude, angular_frequency, phase
         )
 
     def add_function_double_exponential(
         self, name: str, amplitude: float, alpha: float, beta: float
     ) -> None:
-        _native.call(
-            self._dll,
-            "mhs_model_add_function_double_exponential",
-            self._handle,
-            name,
-            amplitude,
-            alpha,
-            beta,
+        _native.add_function_double_exponential(
+            self._dll, self._handle, name, amplitude, alpha, beta
         )
 
     def add_function_piecewise(self, name: str, points: np.ndarray) -> None:
@@ -289,7 +229,7 @@ class Model(OwnedHandle):
     # ---- Probes & fluid boundaries ----
 
     def add_probe(self, name: str, x: float, y: float, z: float) -> None:
-        _native.call(self._dll, "mhs_model_add_probe", self._handle, name, x, y, z)
+        _native.add_probe(self._dll, self._handle, name, x, y, z)
 
     def add_fluid_boundary(
         self,
