@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from metahotspot._compiled_data import CellFields, CompiledMetadata
+from metahotspot._compiled_data import CellFields
 from metahotspot._error import check
 from metahotspot.types import (
     MhsCellFields,
@@ -24,6 +24,18 @@ class MaterialValues:
     conductivity_z: np.ndarray
     density: np.ndarray
     specific_heat: np.ndarray
+
+
+@dataclass(frozen=True)
+class CompiledMetadata:
+    cell_count: int
+    grid_count: int
+    study_type: int
+    initial_temperature: float
+    nx: int
+    ny: int
+    nz: int
+    cell_fields: CellFields
 
 
 def _double_ptr(array: np.ndarray):

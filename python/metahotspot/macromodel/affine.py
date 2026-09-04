@@ -41,6 +41,13 @@ import scipy.sparse as sp
 
 from metahotspot._compiled_data import CellFields, Operators
 from metahotspot.enums import Face, Study
+from metahotspot.macromodel.geometry import (
+    axis_vertices,
+    cell_centers,
+    cell_sizes,
+    exposed_face_mask,
+    grid_indices,
+)
 
 from metahotspot.macromodel.utils import (
     normalized_operators,
@@ -126,20 +133,20 @@ def surface_exposed_cells(
     ``cells`` is the compiled :class:`~metahotspot.compiled.CellFields` view,
     ``face`` a :class:`~metahotspot.enums.Face` and ``coord`` the face's SI
     coordinate.  A cell is on the face if it is truly exposed across it (no
-    active neighbour — :attr:`CellFields.exposed_face_mask`) and its face plane
-    sits at ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
+    active neighbour — :func:`exposed_face_mask`) and its face plane sits at
+    ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
     those whose z-centre falls inside ``(zmin, zmax)``; it is not applied to the
     Z faces.  Returns ``(cells, areas)``: the full-domain FVM indices of the
     exposed cells (ascending compact order) and their SI face area (m²).
     """
     face = Face(face)
-    candidates = np.flatnonzero((cells.exposed_face_mask >> int(face)) & 1)
-    ijk = cells.ijk
-    sizes = cells.cell_sizes
+    candidates = np.flatnonzero((exposed_face_mask(cells) >> int(face)) & 1)
+    ijk = grid_indices(cells)
+    sizes = cell_sizes(cells)
     if face in (Face.ZM, Face.ZP):
-        iz = 0 if face == Face.ZM else cells.nz - 1
+        iz = 0 if face == Face.ZM else cells.dz.size - 1
         candidates = candidates[ijk[candidates, 2] == iz]
-        z_face = cells.z_vertices[0 if face == Face.ZM else cells.nz]
+        z_face = axis_vertices(cells, 2)[0 if face == Face.ZM else cells.dz.size]
         if not (coord - 1.0e-9 <= z_face <= coord + 1.0e-9):
             return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64)
         areas = sizes[candidates, 0] * sizes[candidates, 1]
@@ -150,7 +157,7 @@ def surface_exposed_cells(
         else:  # YM / YP
             axis, sign = 1, 1 if face == Face.YP else 0
             tangent = (0, 2)
-        verts = (cells.x_vertices, cells.y_vertices, cells.z_vertices)[axis]
+        verts = axis_vertices(cells, axis)
         plane = verts[ijk[candidates, axis] + sign]
         keep = (coord - 1.0e-9 <= plane) & (plane <= coord + 1.0e-9)
         if z_range is not None:
@@ -348,8 +355,8 @@ class AffineParametricModel:
             )
         )
         return CellLayout(
-            centers=cells.centers,
-            half_sizes=cells.half_sizes,
+            centers=cell_centers(cells),
+            half_sizes=cell_sizes(cells) * 0.5,
             conductivity=conductivity,
         )
 

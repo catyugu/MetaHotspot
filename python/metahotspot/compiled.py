@@ -6,7 +6,7 @@ from dataclasses import dataclass, fields
 
 import numpy as np
 
-from metahotspot._compiled_data import CellFields, CompiledMetadata, Operators
+from metahotspot._compiled_data import CellFields, Operators
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
 import metahotspot._native_compiled as _native_compiled
@@ -82,7 +82,7 @@ class Compiled(OwnedHandle):
 
     def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_compiled_destroy)
-        self._metadata: CompiledMetadata | None = None
+        self._metadata: _native_compiled.CompiledMetadata | None = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
