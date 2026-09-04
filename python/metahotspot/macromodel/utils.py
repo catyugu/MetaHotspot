@@ -183,18 +183,6 @@ def normalized_operators(K, C, f) -> Operators:
 EIGENBOUND_SUBSPACE_CAP = 64  # per-end iteration / Arnoldi budget
 EIGENBOUND_RTOL = 1.0e-8  # residual tolerance for per-port extreme eigenvalues
 
-_inv_precond_cache: dict = {}
-
-
-def _shift_invert_preconditioner(K, C, s0):
-    A = (K + s0 * C).tocsc()
-    key = (id(K.data), int(K.nnz), float(s0))
-    entry = _inv_precond_cache.get(key)
-    if entry is None:
-        entry = pyamg.ruge_stuben_solver(A.tocsr()).aspreconditioner(cycle="V")
-        _inv_precond_cache[key] = entry
-    return A, entry
-
 
 def port_eigenvalue_bounds(
     K,
@@ -211,6 +199,11 @@ def port_eigenvalue_bounds(
     the source-started Krylov space explicitly, then take endpoints of its
     projected generalized pencil.  This is also deterministic and does not
     mistake an ``eigsh(v0=g)`` convergence seed for source selectivity.
+
+    A failed estimate raises: the caller (:func:`build_parametric_basis`)
+    propagates the source port context.  There is no sound silent fallback for
+    the elliptic shift count, so resolving no usable endpoint is an error, not
+    a value to guess.
     """
     K = K.tocsc()
     C = C.tocsc()
@@ -225,40 +218,42 @@ def port_eigenvalue_bounds(
     s0 = max(float(shift), scale * 1.0e-6)
 
     # -- fast end: largest eigenvalue of (K, C) via ARPACK Lanczos ---------
-    lambda_max = None
-    try:
-        w = spla.eigsh(
-            K,
-            k=2,
-            M=C,
-            which="LM",
-            tol=EIGENBOUND_RTOL,
-            ncv=min(cap, n - 1),
-            v0=g0,
-            return_eigenvectors=False,
-        )
-        lambda_max = float(np.max(w))
-    except Exception:
-        lambda_max = None
+    w = spla.eigsh(
+        K,
+        k=2,
+        M=C,
+        which="LM",
+        tol=EIGENBOUND_RTOL,
+        ncv=min(cap, n - 1),
+        v0=g0,
+        return_eigenvectors=False,
+    )
+    if not w.size:
+        raise RuntimeError("port_eigenvalue_bounds: eigsh resolved no eigenvalues")
+    lambda_max = float(np.max(w))
 
     # -- slow end: shifted pencil, min positive, AMG-preconditioned --------
-    _Ashift, _precond = _shift_invert_preconditioner(K, C, s0)
-    ambient = np.ones(n) / np.sqrt(n)
-    try:
-        lam_s, _ = spla.lobpcg(
-            _Ashift,
-            np.column_stack((g0, ambient)),
-            B=C,
-            M=_precond,
-            largest=False,
-            tol=EIGENBOUND_RTOL,
-            maxiter=cap,
+    A_shift = (K + s0 * C).tocsc()
+    precond = (
+        pyamg.ruge_stuben_solver(A_shift.tocsr()).aspreconditioner(cycle="V")
+    )
+    lam_s, _ = spla.lobpcg(
+        A_shift,
+        np.column_stack((g0, np.ones(n) / np.sqrt(n))),
+        B=C,
+        M=precond,
+        largest=False,
+        tol=EIGENBOUND_RTOL,
+        maxiter=cap,
+    )
+    mu = np.asarray(lam_s) - s0
+    positive = mu[mu > 1.0e-9]
+    if not positive.size:
+        raise RuntimeError(
+            "port_eigenvalue_bounds: lobpcg resolved no positive eigenvalue; "
+            "cannot form the elliptic shift plan"
         )
-        mu = np.asarray(lam_s) - s0
-        positive = mu[mu > 1.0e-9]
-        lambda_min = float(positive.min()) if positive.size else None
-    except Exception:
-        lambda_min = None
+    lambda_min = float(positive.min())
 
     return lambda_min, lambda_max
 
