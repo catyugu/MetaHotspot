@@ -8,7 +8,7 @@ from typing import NamedTuple
 import numpy as np
 
 from metahotspot._handle import OwnedHandle
-import metahotspot._native as _native
+import metahotspot._native_solution as _native_solution
 
 
 class ProbeTrace(NamedTuple):
@@ -52,7 +52,9 @@ class Solution(OwnedHandle):
         self._dll = compiled._dll
         self._destroy_fn = self._dll.mhs_solution_destroy
         overrides = opts._overrides() if opts is not None else {}
-        self._handle = _native.solve(self._dll, compiled._handle, state, overrides)
+        self._handle = _native_solution.solve(
+            self._dll, compiled._handle, state, overrides
+        )
         self._load_data()
         return self
 
@@ -72,7 +74,7 @@ class Solution(OwnedHandle):
 
     def _load_data(self) -> None:
         """Snapshot native results into independent Python-owned arrays."""
-        data = _native.solution_snapshot(self._dll, self._handle)
+        data = _native_solution.solution_snapshot(self._dll, self._handle)
         self._data = _SolutionData(
             time=data["time"],
             fvm_count=data["fvm_count"],
@@ -127,4 +129,4 @@ class Solution(OwnedHandle):
 
     def write_vtu(self, path: str) -> None:
         """Export the final FVM temperature field to a VTU file."""
-        _native.write_vtu(self._dll, self._handle, str(path))
+        _native_solution.write_vtu(self._dll, self._handle, str(path))

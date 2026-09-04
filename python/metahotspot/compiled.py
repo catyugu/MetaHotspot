@@ -9,7 +9,7 @@ import numpy as np
 
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
-import metahotspot._native as _native
+import metahotspot._native_compiled as _native_compiled
 
 
 class Operators(NamedTuple):
@@ -232,13 +232,13 @@ class Compiled(OwnedHandle):
         self = cls()
         self._dll = dll
         self._destroy_fn = dll.mhs_compiled_destroy
-        self._handle = _native.compile_model(dll, model_handle)
+        self._handle = _native_compiled.compile_model(dll, model_handle)
         self._fetch_metadata()
         return self
 
     def _fetch_metadata(self) -> CellFields:
         if self._metadata is None:
-            info, arrays = _native.compiled_metadata(self._dll, self._handle)
+            info, arrays = _native_compiled.compiled_metadata(self._dll, self._handle)
             self._metadata = (_CompiledInfo(**info), CellFields(**arrays))
         return self._metadata[1]
 
@@ -278,7 +278,7 @@ class Compiled(OwnedHandle):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""
         if state is None:
             state = self.default_state()
-        return _native.eval_materials(self._dll, self._handle, state, time)
+        return _native_compiled.eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
         return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
@@ -288,7 +288,7 @@ class Compiled(OwnedHandle):
         if state is None:
             state = self.default_state()
         return Operators(
-            *_native.assembled_operators(self._dll, self._handle, state, time)
+            *_native_compiled.assembled_operators(self._dll, self._handle, state, time)
         )
 
     def solve(
