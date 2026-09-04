@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
+from functools import cached_property
 
 import numpy as np
 
@@ -78,48 +79,23 @@ class Compiled(OwnedHandle):
 
     def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_compiled_destroy)
-        self._metadata: _native_compiled.CompiledMetadata | None = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
         handle = _native_compiled.compile_model(dll, model_handle)
-        self = cls(dll, handle)
-        self._fetch_metadata()
-        return self
+        return cls(dll, handle)
 
-    def _fetch_metadata(self) -> _native_compiled.CompiledMetadata:
-        if self._metadata is None:
-            metadata = _native_compiled.compiled_metadata(self._dll, self._handle)
-            self._metadata = metadata
-        return self._metadata
+    @cached_property
+    def metadata(self) -> _native_compiled.CompiledMetadata:
+        return _native_compiled.compiled_metadata(self._dll, self._handle)
 
     @property
     def cell_count(self) -> int:
-        return self._fetch_metadata().cell_count
-
-    @property
-    def study_type(self) -> int:
-        return self._fetch_metadata().study_type
-
-    @property
-    def initial_temperature(self) -> float:
-        return self._fetch_metadata().initial_temperature
-
-    @property
-    def nx(self) -> int:
-        return self._fetch_metadata().nx
-
-    @property
-    def ny(self) -> int:
-        return self._fetch_metadata().ny
-
-    @property
-    def nz(self) -> int:
-        return self._fetch_metadata().nz
+        return self.metadata.cell_count
 
     @property
     def cells(self) -> CellFields:
-        return self._fetch_metadata().cell_fields
+        return self.metadata.cell_fields
 
     def eval_materials(self, state: np.ndarray | None = None, time: float = 0.0):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""
@@ -128,7 +104,9 @@ class Compiled(OwnedHandle):
         return _native_compiled.eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
-        return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
+        return np.full(
+            self.cell_count, self.metadata.initial_temperature, dtype=np.float64
+        )
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""

@@ -142,7 +142,7 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
         assert np.all(p.g > 0.0)
 
     # declare the top face (z+) as an ambient group -> it must disappear
-    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.nz - 1
+    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.metadata.nz - 1
     top_cells = np.flatnonzero(top)
     top_areas = np.full(top_cells.size, 1.0e-6)
     model.boundary_groups = lambda: (
