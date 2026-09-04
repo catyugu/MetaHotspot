@@ -168,6 +168,17 @@ class CellFields:
                 value.setflags(write=False)
 
 
+@dataclass(frozen=True)
+class _CompiledInfo:
+    cell_count: int
+    grid_count: int
+    study_type: int
+    initial_temperature: float
+    nx: int
+    ny: int
+    nz: int
+
+
 @dataclass
 class SolveOptions:
     """Solver configuration options.
@@ -214,8 +225,7 @@ class Compiled(OwnedHandle):
 
     def __init__(self) -> None:
         super().__init__(None, None)
-        self._info = None
-        self._cells = None
+        self._metadata = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
@@ -227,41 +237,38 @@ class Compiled(OwnedHandle):
         return self
 
     def _fetch_metadata(self) -> CellFields:
-        if self._cells is None:
+        if self._metadata is None:
             info, arrays = _native.compiled_metadata(self._dll, self._handle)
-            self._info = info
-            self._cells = CellFields(**arrays)
-        return self._cells
+            self._metadata = (_CompiledInfo(**info), CellFields(**arrays))
+        return self._metadata[1]
 
     @property
     def cell_count(self) -> int:
-        self._fetch_metadata()
-        return self._info["cell_count"]
+        return self._fetch_metadata_info().cell_count
 
     @property
     def study_type(self) -> int:
-        self._fetch_metadata()
-        return self._info["study_type"]
+        return self._fetch_metadata_info().study_type
 
     @property
     def initial_temperature(self) -> float:
-        self._fetch_metadata()
-        return self._info["initial_temperature"]
+        return self._fetch_metadata_info().initial_temperature
 
     @property
     def nx(self) -> int:
-        self._fetch_metadata()
-        return self._info["nx"]
+        return self._fetch_metadata_info().nx
 
     @property
     def ny(self) -> int:
-        self._fetch_metadata()
-        return self._info["ny"]
+        return self._fetch_metadata_info().ny
 
     @property
     def nz(self) -> int:
+        return self._fetch_metadata_info().nz
+
+    def _fetch_metadata_info(self) -> _CompiledInfo:
         self._fetch_metadata()
-        return self._info["nz"]
+        return self._metadata[0]
 
     @property
     def cells(self) -> CellFields:
