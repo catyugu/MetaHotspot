@@ -59,14 +59,6 @@ class CellGeometry:
     def nz(self) -> int:
         return self.fields.dz.size
 
-    @property
-    def widths(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.fields.dx, self.fields.dy, self.fields.dz
-
-    @property
-    def coordinates(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return self.fields.cx, self.fields.cy, self.fields.cz
-
     @cached_property
     def indices(self) -> np.ndarray:
         grid = self.fields.cell_to_grid

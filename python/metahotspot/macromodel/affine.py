@@ -269,6 +269,7 @@ class AffineParametricModel:
             G[cells, k] = f[cells] / scale
         return G
 
+    @cached_property
     def boundary_terms(self) -> list[sp.diags]:
         """Diagonal affine terms ``H_k = diag(exposed area per cell)``.
 
