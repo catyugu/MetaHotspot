@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import NamedTuple
 
 import numpy as np
 
-from metahotspot._compiled_data import CellFields, CompiledMetadata
+from metahotspot._compiled_data import CellFields, CompiledMetadata, Operators
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
 import metahotspot._native_compiled as _native_compiled
-
-
-class Operators(NamedTuple):
-    """K, C, f of the linearised system: C * dx/dt + K * x = f."""
-
-    K: object
-    C: object
-    f: np.ndarray
 
 
 _SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}

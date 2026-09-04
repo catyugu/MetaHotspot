@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
+
+
+class Operators(NamedTuple):
+    """K, C, f of the linearised system: C * dx/dt + K * x = f."""
+
+    K: object
+    C: object
+    f: np.ndarray
 
 
 @dataclass(frozen=True)

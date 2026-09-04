@@ -13,7 +13,8 @@ Usage::
 
 from metahotspot import enums
 from metahotspot._error import MetaHotspotError
-from metahotspot.compiled import Compiled, Operators, SolveOptions
+from metahotspot._compiled_data import Operators
+from metahotspot.compiled import Compiled, SolveOptions
 from metahotspot.model import Model
 from metahotspot.solution import Solution
 

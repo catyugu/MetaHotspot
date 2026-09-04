@@ -39,7 +39,7 @@ from typing import Any, Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.compiled import CellFields, Operators
+from metahotspot._compiled_data import CellFields, Operators
 from metahotspot.enums import Face, Study
 
 from metahotspot.macromodel.utils import (
