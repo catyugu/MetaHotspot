@@ -2,31 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import NamedTuple
-
 import numpy as np
 
 from metahotspot._handle import OwnedHandle
 import metahotspot._native_solution as _native_solution
-
-
-class ProbeTrace(NamedTuple):
-    """A single probe trace — name plus time series."""
-
-    name: str
-    times: np.ndarray
-    values: np.ndarray
-
-
-@dataclass(frozen=True)
-class _SolutionData:
-    time: float
-    fvm_count: int
-    state: np.ndarray
-    history_times: np.ndarray
-    state_history: np.ndarray
-    probes: list[ProbeTrace]
 
 
 class Solution(OwnedHandle):
@@ -39,7 +18,7 @@ class Solution(OwnedHandle):
 
     def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_solution_destroy)
-        self._data: _SolutionData | None = None
+        self._data: _native_solution.SolutionSnapshot | None = None
 
     @classmethod
     def _solve_compiled(
@@ -58,18 +37,7 @@ class Solution(OwnedHandle):
 
     def _load_data(self) -> None:
         """Snapshot native results into independent Python-owned arrays."""
-        data = _native_solution.solution_snapshot(self._dll, self._handle)
-        self._data = _SolutionData(
-            time=data.time,
-            fvm_count=data.fvm_count,
-            state=data.state,
-            history_times=data.history_times,
-            state_history=data.state_history,
-            probes=[
-                ProbeTrace(probe.name, probe.times, probe.values)
-                for probe in data.probes
-            ],
-        )
+        self._data = _native_solution.solution_snapshot(self._dll, self._handle)
 
     @property
     def temperature(self) -> np.ndarray:
@@ -102,8 +70,8 @@ class Solution(OwnedHandle):
         return self.state_history[:, : self.fvm_count]
 
     @property
-    def probes(self) -> list[ProbeTrace]:
-        """Return all probe traces as high-level named tuples."""
+    def probes(self) -> list[_native_solution.ProbeSnapshot]:
+        """Return all probe traces as Python-owned snapshots."""
         return self._data.probes
 
     @property
