@@ -52,6 +52,7 @@ from metahotspot.macromodel.affine import (  # noqa: E402
     SourcePort,
     surface_exposed_cells,
 )
+from metahotspot.macromodel.geometry import axis_vertices
 
 # (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
@@ -315,7 +316,7 @@ class Case1Model(AffineParametricModel):
         full = self._full
         cells = full.cells
         top_cells, top_areas = surface_exposed_cells(
-            cells, Face.ZP, cells.z_vertices[-1]
+            cells, Face.ZP, axis_vertices(cells, 2)[-1]
         )
         # The top convective BC applies only to cells carrying real silicon fill
         # (the die crowns); air-only cells on the top layer are dropped so no h

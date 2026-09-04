@@ -349,9 +349,9 @@ class AffineParametricModel:
         values = self._full.eval_materials()
         conductivity = np.column_stack(
             (
-                values["conductivity_x"],
-                values["conductivity_y"],
-                values["conductivity_z"],
+                values.conductivity_x,
+                values.conductivity_y,
+                values.conductivity_z,
             )
         )
         return CellLayout(

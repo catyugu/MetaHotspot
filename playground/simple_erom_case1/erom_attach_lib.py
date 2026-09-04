@@ -34,6 +34,12 @@ import numpy as np
 import metahotspot
 from metahotspot.compiled import CellFields
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
+from metahotspot.macromodel.geometry import (
+    axis_vertices,
+    cell_centers,
+    cell_sizes,
+    grid_indices,
+)
 from metahotspot.macromodel.affine import (
     AffineParametricModel,
     BoundaryGroup,
@@ -234,12 +240,12 @@ class AttachModel(AffineParametricModel):
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         cells = self._full.cells
         top_cells, top_areas = surface_exposed_cells(
-            cells, Face.ZP, cells.z_vertices[-1]
+            cells, Face.ZP, axis_vertices(cells, 2)[-1]
         )
         groups = [BoundaryGroup(cells=top_cells, areas=top_areas, h_range=(1.0, 1.0e4))]
         if self.config.ext_bottom_h is not None:
             bot_cells, bot_areas = surface_exposed_cells(
-                cells, Face.ZM, cells.z_vertices[0]
+                cells, Face.ZM, axis_vertices(cells, 2)[0]
             )
             groups.append(
                 BoundaryGroup(cells=bot_cells, areas=bot_areas, h_range=(1.0, 1.0e4))
@@ -263,17 +269,16 @@ class AttachModel(AffineParametricModel):
 
 def _grid_vertices(cells: CellFields):
     """(V,3) vertex coordinates from the structured cell layout (SI metres)."""
-    pts = np.empty(
-        (cells.x_vertices.size * cells.y_vertices.size * cells.z_vertices.size, 3)
-    )
+    vertices = tuple(axis_vertices(cells, axis) for axis in range(3))
+    pts = np.empty((np.prod([vertex.size for vertex in vertices]), 3))
     k = 0
-    for iz in range(cells.z_vertices.size):
-        for iy in range(cells.y_vertices.size):
-            for ix in range(cells.x_vertices.size):
+    for iz in range(vertices[2].size):
+        for iy in range(vertices[1].size):
+            for ix in range(vertices[0].size):
                 pts[k] = (
-                    cells.x_vertices[ix],
-                    cells.y_vertices[iy],
-                    cells.z_vertices[iz],
+                    vertices[0][ix],
+                    vertices[1][iy],
+                    vertices[2][iz],
                 )
                 k += 1
     return pts
@@ -285,13 +290,16 @@ def write_vtu(
     """Write a cell-centred scalar field on the structured grid to ``path`` (SI)."""
     # Vertex-point coordinate order matches _grid_vertices: iz outer, iy middle,
     # ix inner.  index = iz*(Yv*Xv) + iy*Xv + ix, with Xv/Yv the *vertex* counts.
-    Xv = cells.x_vertices.size
-    Yv = cells.y_vertices.size
+    x_vertices, y_vertices, z_vertices = tuple(
+        axis_vertices(cells, axis) for axis in range(3)
+    )
+    Xv = x_vertices.size
+    Yv = y_vertices.size
 
     def vid(ix, iy, iz):
         return iz * (Yv * Xv) + iy * Xv + ix
 
-    ijk = cells.ijk
+    ijk = grid_indices(cells)
     n_cells = ijk.shape[0]
     conn = np.empty((n_cells, 8), dtype=np.int64)
     for c in range(n_cells):
@@ -360,7 +368,7 @@ def write_trajectory_csv(path, header: list[str], rows) -> str:
 
 
 def _probe_cells(cells: CellFields, points_m) -> list[int]:
-    c = cells.centers
+    c = cell_centers(cells)
     return [
         int(np.argmin((c[:, 0] - px) ** 2 + (c[:, 1] - py) ** 2 + (c[:, 2] - pz) ** 2))
         for (px, py, pz) in points_m
@@ -382,7 +390,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     outdir.mkdir(parents=True, exist_ok=True)
     model = AttachModel(cfg)
     cells = model._full.cells
-    zc = cells.centers[:, 2]
+    zc = cell_centers(cells)[:, 2]
     H_m = cfg.ext_thickness_mm * 1.0e-3
 
     cube_idx = np.flatnonzero(zc >= H_m - 1.0e-12)
@@ -506,9 +514,11 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
         np.asarray(side_junction_rise(steady, erom, 0)).ravel()[0] / CUBE_SOURCE_W
     )
 
-    top_cells, top_areas = surface_exposed_cells(cells, Face.ZP, cells.z_vertices[-1])
+    top_cells, top_areas = surface_exposed_cells(
+        cells, Face.ZP, axis_vertices(cells, 2)[-1]
+    )
     kz = model.cell_layout.conductivity[top_cells, 2]
-    half = cells.half_sizes[top_cells, 2]
+    half = cell_sizes(cells)[top_cells, 2] * 0.5
     p = kz * TOP_HTC / (kz + TOP_HTC * half)
     top_flux_ref = float(np.sum(p * top_areas * ref_rise[top_cells]))
     top_flux_coupled = float(np.sum(p * top_areas * coup_rise[top_cells]))
