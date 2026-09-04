@@ -242,12 +242,6 @@ class Subdomain:
             K = K + float(pk) * Hk.tocsc()
         return K.tocsc()
 
-    def capacitance_op(self) -> sp.csc_matrix:
-        return self.C.tocsc()
-
-    def rhs_op(self) -> np.ndarray:
-        return np.asarray(self.source, dtype=np.float64)
-
     def port(self, label: str) -> FacePort:
         for p in self.ports:
             if p.label == label:
@@ -370,12 +364,6 @@ class EmbeddableRom:
 
     def internal_operator(self) -> sp.csc_matrix:
         return self._q_k
-
-    def capacitance_op(self) -> sp.csc_matrix:
-        return self.C_hat.tocsc()
-
-    def rhs_op(self) -> np.ndarray:
-        return np.asarray(self.F_hat, dtype=np.float64)
 
     def port(self, label: str) -> FacePort:
         for p in self.ports:
@@ -675,15 +663,17 @@ def connect(
 
     C = sp.block_diag(
         (
-            left.capacitance_op(),
+            left.C.tocsc() if isinstance(left, Subdomain) else left.C_hat.tocsc(),
             sp.csc_matrix((n_patch, n_patch)),
-            right.capacitance_op(),
+            right.C.tocsc() if isinstance(right, Subdomain) else right.C_hat.tocsc(),
         ),
         format="csc",
     )
-    n_src = left.rhs_op().shape[1]
+    left_source = left.source if isinstance(left, Subdomain) else left.F_hat
+    right_source = right.source if isinstance(right, Subdomain) else right.F_hat
+    n_src = left_source.shape[1]
     p = np.asarray(power if power is not None else np.ones(n_src), dtype=np.float64)
-    rhs = np.r_[left.rhs_op() @ p, np.zeros(n_patch), right.rhs_op() @ p]
+    rhs = np.r_[left_source @ p, np.zeros(n_patch), right_source @ p]
     return K, C, rhs, ldof, rdof, n_patch
 
 
