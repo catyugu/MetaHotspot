@@ -130,32 +130,24 @@ class AffineParametricModel:
     reference and solve a reduced model on its own geometry.
 
     ``h_vec`` passed to ``full_reference`` / ``parameter_points`` is the
-            *physical* HTC vector in W/m²·K (one scalar per boundary group) — the
-            public, validation-facing parameter space (FloTHERM calibration).
-            ``BoundaryGroup`` carries the exposed cells and SI area of each group,
-            and the per-cell (kx, ky, kz) / cell-side half-distances come from
-            :attr:`cell_layout`.  Internally the model performs the FloTHERM
-            surface-consistent ThirdType series condensation per cell
-            (``p_c = k_c·h / (k_c + h·half_c)``), maps the physical ``h`` to the
-            effective affine coefficient ``p = area-weighted p_c``
-            (:meth:`physical_to_effective`), and assembles ``K_h = K0 + Σ p_k H_k``
-            — the steady-state result reproduces a capacitance-free surface face
-            to ≤ 0.001 K of FloTHERM (exactly for homogeneous groups).  The BCI
-            ROM (``assemble_reduced_k``) is affine in the *same* effective ``p``:
-            callers feed it ``model.physical_to_effective(h)``, and
-            :meth:`h_ranges` returns the effective (training) coefficient range.
-            Callers never map physical→effective themselves for the reference.
+    *physical* HTC vector in W/m²·K (one scalar per boundary group) — the
+    public, validation-facing parameter space (FloTHERM calibration).  The
+    model maps it internally to the surface-consistent *effective* affine
+    coefficient ``p`` via :meth:`physical_to_effective`, uses ``p`` to
+    assemble ``K_h = K0 + Σ p_k H_k``, and exposes the effective training
+    range through :meth:`h_ranges`.  Callers pass physical ``h`` and never do
+    the mapping themselves.  The BCI ROM is affine in the same effective ``p``.
 
-        Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
-        ``dt_s`` and ``duration_s``) and implement the geometry hooks:
-        ``name``, ``build_geometry``, ``source_ports``, ``boundary_groups``,
-        ``source_power``,
-        model-defined geometry and physical parameters. Everything else —
-        full-domain assembly, source-shape extraction, per-cell geometry
-        (:attr:`cell_layout`), boundary affine terms, native reference, reduced
-        solve, temperature recovery — is shared here.  ``parameter_points`` has
-        a default; override it when a model wants its own parameter-space
-        sampling (e.g. a product grid over several boundary groups).
+    Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
+    ``dt_s`` and ``duration_s``) and implement the geometry hooks:
+    ``name``, ``build_geometry``, ``source_ports``, ``boundary_groups``,
+    ``source_power``; the concrete model owns its geometry and physical
+    parameters.  Everything else — full-domain assembly, source-shape
+    extraction, per-cell geometry (:attr:`cell_layout`), boundary affine
+    terms, native reference, reduced solve, temperature recovery — is shared
+    here.  ``parameter_points`` has a default; override it when a model wants
+    its own parameter-space sampling (e.g. a product grid over several
+    boundary groups).
     """
 
     # ------------------------------------------------------------------ config
@@ -387,23 +379,15 @@ class AffineParametricModel:
     def full_reference(self, h_vec) -> AffineSolveResult:
         """Native (unreduced) steady+transient reference at physical ``h_vec``.
 
-        ``h_vec`` is the *physical* HTC vector (W/m²·K), one scalar per
-        boundary group in :meth:`boundary_groups` order — the public,
-        validation-facing space the ROM is calibrated against.  The model maps
-        it internally (:meth:`physical_to_effective`) to the surface-consistent
-        effective coefficient ``p`` before assembling
-
-            K_h = K + Σ_k p_k · H_k,   H_k = diag(area)
-
-        which reproduces a capacitance-free (ThirdType) surface face to
-        ≤ 0.001 K of FloTHERM for homogeneous groups.  Solves
-        ``K_h x = G_src P(t)`` in rise coordinates above ambient; steady uses
-        the nominal port powers, transient uses :meth:`source_power`.  The
-        reduced model is trained with the *same* effective ``p``
-        (:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed
-        ``model.physical_to_effective(h)``), so the only difference between
-        this reference and the ROM is the reduction error.  Callers pass
-        physical HTC directly — no caller-side mapping.
+        ``h_vec`` is one *physical* HTC scalar per boundary group in
+        :meth:`boundary_groups` order — the public space the ROM is calibrated
+        against.  Builds ``K_h = K + Σ_k p_k H_k`` with ``H_k = diag(area)`` and
+        ``p = physical_to_effective(h_vec)``, then solves ``K_h x = G_src P(t)``
+        in rise coordinates above ambient (steady: nominal port powers;
+        transient: :meth:`source_power`).  Because the ROM
+        (:func:`~metahotspot.macromodel.utils.assemble_reduced_k`) is trained in
+        the same effective ``p``, the only difference between this reference and
+        the ROM is the reduction error.
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
