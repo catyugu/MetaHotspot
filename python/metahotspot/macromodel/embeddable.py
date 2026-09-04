@@ -146,8 +146,6 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     in_group = np.zeros(model.full_cell_count, dtype=bool)
     for g in model.boundary_groups():
         in_group[np.asarray(g.cells, dtype=np.int64)] = True
-    exposed = full.exposed_faces
-
     by_key: dict[tuple[int, int], list[int]] = {}
     for r in range(n):
         ci, cj, ck = (int(ijk[r, 0]), int(ijk[r, 1]), int(ijk[r, 2]))
@@ -172,8 +170,7 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     for (axis, direction), rows in by_key.items():
         rows = np.asarray(rows, dtype=np.int64)
         fc = cells[rows]
-        bit = int(_FACE_BIT[(axis, direction)])
-        declared = in_group[fc] & (((exposed[fc] >> bit) & 1) == 1)
+        declared = in_group[fc] & full.exposed(_FACE_BIT[(axis, direction)])[fc]
         interface = (
             np.flatnonzero(~declared) if not include_ambient else np.arange(rows.size)
         )
@@ -296,12 +293,12 @@ def build_subdomain(
 
     K = core.K.tocsc()[cells, :][:, cells].tocsc()
     C = core.C.tocsc()[cells, :][:, cells].tocsc()
-    source = np.asarray(model.source_shape()[cells, :], dtype=np.float64)
+    source = np.asarray(model.source_shape[cells, :], dtype=np.float64)
 
     # Declared ambient groups as local affine terms + effective coefficients.
     ambient_terms, ambient_ranges, effective_p = [], [], []
     if ambient_diag is None:
-        for term, h_range in zip(model.boundary_terms(), model.h_ranges()):
+        for term, h_range in zip(model.boundary_terms, model.h_ranges()):
             diag = np.asarray(term.diagonal()).ravel()[cells]
             ambient_terms.append(sp.diags(diag))
             ambient_ranges.append(list(h_range))

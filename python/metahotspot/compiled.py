@@ -58,10 +58,6 @@ class SolveOptions:
     max_dt: float | None = None
     fixed_dt: float | None = None
 
-    @staticmethod
-    def default() -> SolveOptions:
-        return SolveOptions()
-
     def _overrides(self) -> dict:
         """Present non-``None`` values as C solve-options struct field overrides."""
         overrides = {}

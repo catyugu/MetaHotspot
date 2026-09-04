@@ -243,15 +243,6 @@ class AttachModel(AffineParametricModel):
             )
         return tuple(groups)
 
-    def boundary_h(self, h_vec) -> dict[str, float]:
-        out = {"top": float(h_vec[0])}
-        if self.config.ext_bottom_h is not None:
-            out["bottom"] = float(h_vec[1])
-        return out
-
-    def group_h_ranges(self):
-        return tuple(g.h_range for g in self.boundary_groups())
-
 
 # -----------------------------------------------------------------------------
 # IO (small VTU + CSV writers)
@@ -495,7 +486,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     erom_trace = erom.boundary_trace("z-") @ np.asarray(steady[:m], dtype=np.float64)
     cube_bot_full = erom_sub.cells[np.asarray(erom.port("z-").cells, dtype=np.int64)]
 
-    G = model.source_shape()
+    G = model.source_shape
     cube_src_rows = np.flatnonzero((G[:, 0] > 0) & (zc >= H_m - 1.0e-12))
     w = G[cube_src_rows, 0] / G[cube_src_rows, 0].sum()
     ref_junction = float(w @ ref_rise[cube_src_rows])

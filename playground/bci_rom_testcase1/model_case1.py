@@ -336,14 +336,6 @@ class Case1Model(AffineParametricModel):
             ),
         )
 
-    def boundary_h(self, h_vec) -> dict[str, float]:
-        if len(h_vec) != 2:
-            raise ValueError("bci_case1 has exactly two boundary groups")
-        return {"top": float(h_vec[0]), "bottom": float(h_vec[1])}
-
-    def group_h_ranges(self):
-        return self.config.h_ranges
-
     def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""
         mask = np.zeros(cell_x.shape, dtype=bool)

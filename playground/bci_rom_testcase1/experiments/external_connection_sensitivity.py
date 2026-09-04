@@ -48,7 +48,7 @@ def build_patterned_lower(model, lower_cells):
     full = model.full_cell_count
     effective_bottom_h = model.physical_to_effective(BOUNDARY_H)[1]
     bot_cells = np.asarray(model.boundary_groups()[1].cells, dtype=np.int64)
-    area = np.asarray(model.boundary_terms()[1].diagonal()).ravel()
+    area = np.asarray(model.boundary_terms[1].diagonal()).ravel()
     centers = model.cell_layout.centers[bot_cells]
     parity = (
         np.floor((centers[:, 0] + 0.03) / 0.005)

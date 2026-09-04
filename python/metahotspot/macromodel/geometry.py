@@ -118,30 +118,22 @@ class CellGeometry:
             )
         )
 
-    @cached_property
-    def exposed_faces(self) -> np.ndarray:
+    def exposed(self, face: Face) -> np.ndarray:
+        """Return whether each compact cell has an exposed ``face``."""
+        face = Face(face)
+        dx, dy, dz = _FACE_STEPS[int(face)]
         grid = self.fields.grid_to_cell.reshape(self.nx, self.ny, self.nz)
         invalid = np.iinfo(grid.dtype).max
         padded = np.full(
             tuple(size + 2 for size in grid.shape), invalid, dtype=grid.dtype
         )
         padded[1:-1, 1:-1, 1:-1] = grid
-        exposed = np.stack(
-            [
-                padded[
-                    1 + dx : self.nx + 1 + dx,
-                    1 + dy : self.ny + 1 + dy,
-                    1 + dz : self.nz + 1 + dz,
-                ]
-                == invalid
-                for dx, dy, dz in _FACE_STEPS
-            ],
-            axis=-1,
-        )
-        bits = np.sum(
-            exposed.reshape(-1, 6) * (1 << np.arange(6, dtype=np.uint8)), axis=1
-        )
-        return bits[self.fields.cell_to_grid].astype(np.uint8)
+        neighbor = padded[
+            1 + dx : self.nx + 1 + dx,
+            1 + dy : self.ny + 1 + dy,
+            1 + dz : self.nz + 1 + dz,
+        ]
+        return (neighbor == invalid).ravel()[self.fields.cell_to_grid]
 
     def surface(
         self,
@@ -153,7 +145,7 @@ class CellGeometry:
         face = Face(face)
         axis, edge = _FACE_AXIS[face]
         axis_index = int(axis)
-        candidates = np.flatnonzero((self.exposed_faces >> int(face)) & 1)
+        candidates = np.flatnonzero(self.exposed(face))
         indices = self.indices
         sizes = self.sizes
         edge_index = 0 if edge == 0 else (self.nx, self.ny, self.nz)[axis_index] - 1

@@ -87,6 +87,7 @@ class _FakePortsModel:
     def boundary_groups(self):
         return ()
 
+    @property
     def boundary_terms(self):
         return []
 
@@ -96,6 +97,7 @@ class _FakePortsModel:
     def physical_to_effective(self, h):
         return np.asarray(h, dtype=np.float64)
 
+    @property
     def source_shape(self):
         return self._ops.f.reshape(-1, 1)
 

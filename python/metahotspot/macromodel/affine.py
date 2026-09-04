@@ -147,9 +147,9 @@ class AffineParametricModel:
             Callers never map physical→effective themselves for the reference.
 
         Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
-        ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
-        geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
-        ``boundary_groups``, ``boundary_h``, ``group_h_ranges``, ``source_power``,
+        ``dt_s`` and ``duration_s``) and implement the geometry hooks:
+        ``name``, ``build_geometry``, ``source_ports``, ``boundary_groups``,
+        ``source_power``,
         model-defined geometry and physical parameters. Everything else —
         full-domain assembly, source-shape extraction, per-cell geometry
         (:attr:`cell_layout`), boundary affine terms, native reference, reduced
@@ -189,14 +189,6 @@ class AffineParametricModel:
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         """One :class:`BoundaryGroup` per affine parameter (BCI groups)."""
-        raise NotImplementedError
-
-    def boundary_h(self, h_vec) -> dict[str, float]:
-        """Map a parameter vector (one effective value per group) to names."""
-        raise NotImplementedError
-
-    def group_h_ranges(self) -> tuple[tuple[float, float], ...]:
-        """Admissible *physical* coefficient range per boundary group, in order."""
         raise NotImplementedError
 
     def source_power(self, t: float) -> np.ndarray:
@@ -259,6 +251,7 @@ class AffineParametricModel:
         """
         return self._core
 
+    @cached_property
     def source_shape(self) -> np.ndarray:
         """Unit-power source-shape matrix ``G_src`` (N, n_src).
 
@@ -356,7 +349,6 @@ class AffineParametricModel:
         groups = self.boundary_groups()
         axes = self._boundary_axis_per_group()
         out = np.empty(len(groups), dtype=np.float64)
-        layout = self.cell_layout
         for k, group in enumerate(groups):
             cells = np.asarray(group.cells, dtype=np.int64)
             p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
@@ -414,8 +406,8 @@ class AffineParametricModel:
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
-        G = self.source_shape()
-        terms = self.boundary_terms()
+        G = self.source_shape
+        terms = self.boundary_terms
 
         # physical h -> effective (series-condensed) affine coefficient.
         p = self.physical_to_effective(h_vec)
@@ -464,7 +456,7 @@ class AffineParametricModel:
         coincide by construction on the true field.
         """
         field = np.asarray(field)
-        G = self.source_shape()
+        G = self.source_shape
         if field.ndim == 1:
             return self.ambient_K + G.T @ (field - self.ambient_K)
         return self.ambient_K + (field - self.ambient_K) @ G
@@ -487,10 +479,6 @@ class AffineParametricModel:
         """
         theta = np.atleast_2d(theta)
         return theta @ basis.T
-
-    def report_dict(self) -> dict:
-        """Opaque scalar configuration, dumped verbatim into result JSON."""
-        return self.config.report_dict()
 
 
 # ---------------------------------------------------------------------------
