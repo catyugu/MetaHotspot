@@ -10,7 +10,6 @@ from metahotspot._lib import get_dll as _get_dll
 from metahotspot._handle import OwnedHandle
 import metahotspot._native_model as _native_model
 from metahotspot.enums import FluidBC, GeometryOp, Study, LengthUnit, Axis
-from metahotspot.types import MhsModel
 
 
 class Model(OwnedHandle):
@@ -31,9 +30,8 @@ class Model(OwnedHandle):
 
     def __init__(self) -> None:
         dll = _get_dll()
-        super().__init__(dll.mhs_model_destroy, dll)
-
-        self._handle: MhsModel = _native_model.create_model(dll)
+        handle = _native_model.create_model(dll)
+        super().__init__(dll, handle, dll.mhs_model_destroy)
 
     # ---- Model construction helpers ----
 
@@ -224,7 +222,9 @@ class Model(OwnedHandle):
         self, name: str, values: np.ndarray, period: float
     ) -> None:
         """Register a periodic piecewise-constant function."""
-        _native_model.add_periodic_constant(self._dll, self._handle, name, values, period)
+        _native_model.add_periodic_constant(
+            self._dll, self._handle, name, values, period
+        )
 
     # ---- Probes & fluid boundaries ----
 

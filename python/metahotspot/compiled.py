@@ -223,16 +223,14 @@ class SolveOptions:
 class Compiled(OwnedHandle):
     """Read-only compiled runtime model. Use ``Model.compile()``."""
 
-    def __init__(self) -> None:
-        super().__init__(None, None)
+    def __init__(self, dll, handle) -> None:
+        super().__init__(dll, handle, dll.mhs_compiled_destroy)
         self._metadata = None
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
-        self = cls()
-        self._dll = dll
-        self._destroy_fn = dll.mhs_compiled_destroy
-        self._handle = _native_compiled.compile_model(dll, model_handle)
+        handle = _native_compiled.compile_model(dll, model_handle)
+        self = cls(dll, handle)
         self._fetch_metadata()
         return self
 

@@ -37,9 +37,9 @@ class Solution(OwnedHandle):
     and final accepted state.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dll, handle) -> None:
+        super().__init__(dll, handle, dll.mhs_solution_destroy)
         self._data: _SolutionData | None = None
-        super().__init__(None, None)
 
     @classmethod
     def _solve_compiled(
@@ -48,27 +48,11 @@ class Solution(OwnedHandle):
         state: np.ndarray | None = None,
         opts=None,
     ) -> Solution:
-        self = cls()
-        self._dll = compiled._dll
-        self._destroy_fn = self._dll.mhs_solution_destroy
         overrides = opts._overrides() if opts is not None else {}
-        self._handle = _native_solution.solve(
-            self._dll, compiled._handle, state, overrides
+        handle = _native_solution.solve(
+            compiled._dll, compiled._handle, state, overrides
         )
-        self._load_data()
-        return self
-
-    @classmethod
-    def _from_handle(
-        cls,
-        dll,
-        destroy_fn,
-        handle,
-    ) -> Solution:
-        self = cls()
-        self._dll = dll
-        self._destroy_fn = destroy_fn
-        self._handle = handle
+        self = cls(compiled._dll, handle)
         self._load_data()
         return self
 
