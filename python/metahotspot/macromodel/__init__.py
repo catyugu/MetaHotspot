@@ -61,7 +61,6 @@ from metahotspot.macromodel.embeddable import (
     enumerate_interface_ports,
     extract_rom,
 
-    interface_trace,
     side_junction_rise,
     solve_system,
 )
@@ -93,7 +92,6 @@ __all__ = [
     "enumerate_interface_ports",
     "extract_rom",
 
-    "interface_trace",
     "side_junction_rise",
     "solve_system",
 ]
