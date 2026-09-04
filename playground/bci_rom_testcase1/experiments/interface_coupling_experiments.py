@@ -80,7 +80,7 @@ def run_case(left, right, lport, rport, reference):
     ]
     interface_state = steady[left_order : left_order + npatch]
     return {
-        "basis_order": [int(left.order), int(right.order)],
+        "basis_order": [int(left.cells.size), int(right.cells.size)],
         "interface_patches": int(npatch),
         "steady_junction_K": junction.tolist(),
         "reference_junction_K": np.asarray(reference).tolist(),
@@ -138,7 +138,6 @@ def run():
         rom, fine_lower, rom.port("z-"), fine_lower.port("z+"), reference_full
     )
 
-
     payload = {
         "method": "EmbeddableRom (extract once, connect everywhere): "
         "whole-subdomain cells reduced by one basis; independent interface "
@@ -147,7 +146,7 @@ def run():
         f"per-face conductance g = k*A/half; upper ports = "
         f"{[p.normal for p in rom.ports]}",
         "rom_extraction": {
-            "basis_order": int(rom.order),
+            "basis_order": int(rom.m),
             "seconds": float(summary["seconds"]),
             "relative_response_error": float(summary["relative_response_error"]),
             "ports": [p.normal for p in rom.ports],

@@ -39,8 +39,9 @@ from typing import Any, Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot.compiled import CellFields, Operators
-from metahotspot.enums import Face, Study
+from metahotspot._compiled_data import Operators
+from metahotspot.enums import Study
+from metahotspot.macromodel.geometry import CellGeometry
 
 from metahotspot.macromodel.utils import (
     normalized_operators,
@@ -118,51 +119,6 @@ class AffineSolveResult:
     full_order: int  # full model cell count
 
 
-def surface_exposed_cells(
-    cells: CellFields, face: Face, coord: float, z_range=None
-) -> tuple[np.ndarray, np.ndarray]:
-    """Exposed-surface cells + SI face areas for one flat face region.
-
-    ``cells`` is the compiled :class:`~metahotspot.compiled.CellFields` view,
-    ``face`` a :class:`~metahotspot.enums.Face` and ``coord`` the face's SI
-    coordinate.  A cell is on the face if it is truly exposed across it (no
-    active neighbour — :attr:`CellFields.exposed_face_mask`) and its face plane
-    sits at ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
-    those whose z-centre falls inside ``(zmin, zmax)``; it is not applied to the
-    Z faces.  Returns ``(cells, areas)``: the full-domain FVM indices of the
-    exposed cells (ascending compact order) and their SI face area (m²).
-    """
-    face = Face(face)
-    candidates = np.flatnonzero((cells.exposed_face_mask >> int(face)) & 1)
-    ijk = cells.ijk
-    sizes = cells.cell_sizes
-    if face in (Face.ZM, Face.ZP):
-        iz = 0 if face == Face.ZM else cells.nz - 1
-        candidates = candidates[ijk[candidates, 2] == iz]
-        z_face = cells.z_vertices[0 if face == Face.ZM else cells.nz]
-        if not (coord - 1.0e-9 <= z_face <= coord + 1.0e-9):
-            return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64)
-        areas = sizes[candidates, 0] * sizes[candidates, 1]
-    else:
-        if face in (Face.XM, Face.XP):
-            axis, sign = 0, 1 if face == Face.XP else 0
-            tangent = (1, 2)
-        else:  # YM / YP
-            axis, sign = 1, 1 if face == Face.YP else 0
-            tangent = (0, 2)
-        verts = (cells.x_vertices, cells.y_vertices, cells.z_vertices)[axis]
-        plane = verts[ijk[candidates, axis] + sign]
-        keep = (coord - 1.0e-9 <= plane) & (plane <= coord + 1.0e-9)
-        if z_range is not None:
-            z_center = cells.cz[ijk[candidates, 2]]
-            keep &= (z_range[0] - 1.0e-9 <= z_center) & (
-                z_center <= z_range[1] + 1.0e-9
-            )
-        candidates = candidates[keep]
-        areas = sizes[candidates, tangent[0]] * sizes[candidates, tangent[1]]
-    return candidates.astype(np.int64), np.asarray(areas, dtype=np.float64)
-
-
 class AffineParametricModel:
     """Affine-parametric thermal model: shared full-domain plumbing + hooks.
 
@@ -191,9 +147,9 @@ class AffineParametricModel:
             Callers never map physical→effective themselves for the reference.
 
         Subclasses must provide a frozen dataclass ``config`` (with ``ambient_K``,
-        ``dt_s``, ``duration_s`` and a ``report_dict()``) and implement the
-        geometry hooks: ``name``, ``build_geometry``, ``source_ports``,
-        ``boundary_groups``, ``boundary_h``, ``group_h_ranges``, ``source_power``,
+        ``dt_s`` and ``duration_s``) and implement the geometry hooks:
+        ``name``, ``build_geometry``, ``source_ports``, ``boundary_groups``,
+        ``source_power``,
         model-defined geometry and physical parameters. Everything else —
         full-domain assembly, source-shape extraction, per-cell geometry
         (:attr:`cell_layout`), boundary affine terms, native reference, reduced
@@ -235,14 +191,6 @@ class AffineParametricModel:
         """One :class:`BoundaryGroup` per affine parameter (BCI groups)."""
         raise NotImplementedError
 
-    def boundary_h(self, h_vec) -> dict[str, float]:
-        """Map a parameter vector (one effective value per group) to names."""
-        raise NotImplementedError
-
-    def group_h_ranges(self) -> tuple[tuple[float, float], ...]:
-        """Admissible *physical* coefficient range per boundary group, in order."""
-        raise NotImplementedError
-
     def source_power(self, t: float) -> np.ndarray:
         """Port power vector ``P(t)`` (one entry per source port, W).
 
@@ -281,6 +229,10 @@ class AffineParametricModel:
     def _full(self):
         return self.build_geometry(Study.STEADY, detail=True, macro=True).compile()
 
+    @cached_property
+    def geometry(self) -> CellGeometry:
+        return CellGeometry(self._full.cells)
+
     @property
     def full_cell_count(self) -> int:
         """Full-domain FVM cell count."""
@@ -299,6 +251,7 @@ class AffineParametricModel:
         """
         return self._core
 
+    @cached_property
     def source_shape(self) -> np.ndarray:
         """Unit-power source-shape matrix ``G_src`` (N, n_src).
 
@@ -316,6 +269,7 @@ class AffineParametricModel:
             G[cells, k] = f[cells] / scale
         return G
 
+    @cached_property
     def boundary_terms(self) -> list[sp.diags]:
         """Diagonal affine terms ``H_k = diag(exposed area per cell)``.
 
@@ -338,13 +292,13 @@ class AffineParametricModel:
     @cached_property
     def cell_layout(self) -> CellLayout:
         """Per-cell geometry and reference material values from native fields."""
-        cells = self._full.cells
+        cells = self.geometry
         values = self._full.eval_materials()
         conductivity = np.column_stack(
             (
-                values["conductivity_x"],
-                values["conductivity_y"],
-                values["conductivity_z"],
+                values.conductivity_x,
+                values.conductivity_y,
+                values.conductivity_z,
             )
         )
         return CellLayout(
@@ -396,7 +350,6 @@ class AffineParametricModel:
         groups = self.boundary_groups()
         axes = self._boundary_axis_per_group()
         out = np.empty(len(groups), dtype=np.float64)
-        layout = self.cell_layout
         for k, group in enumerate(groups):
             cells = np.asarray(group.cells, dtype=np.int64)
             p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
@@ -454,8 +407,8 @@ class AffineParametricModel:
         """
         K = self._core.K.tocsc()
         C = self._core.C.tocsc()
-        G = self.source_shape()
-        terms = self.boundary_terms()
+        G = self.source_shape
+        terms = self.boundary_terms
 
         # physical h -> effective (series-condensed) affine coefficient.
         p = self.physical_to_effective(h_vec)
@@ -504,7 +457,7 @@ class AffineParametricModel:
         coincide by construction on the true field.
         """
         field = np.asarray(field)
-        G = self.source_shape()
+        G = self.source_shape
         if field.ndim == 1:
             return self.ambient_K + G.T @ (field - self.ambient_K)
         return self.ambient_K + (field - self.ambient_K) @ G
@@ -527,10 +480,6 @@ class AffineParametricModel:
         """
         theta = np.atleast_2d(theta)
         return theta @ basis.T
-
-    def report_dict(self) -> dict:
-        """Opaque scalar configuration, dumped verbatim into result JSON."""
-        return self.config.report_dict()
 
 
 # ---------------------------------------------------------------------------

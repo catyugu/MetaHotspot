@@ -16,6 +16,7 @@ import scipy.sparse as sp
 import metahotspot
 from metahotspot import macromodel as mm
 from metahotspot.enums import Face, LengthUnit, Study
+from metahotspot.macromodel.geometry import CellGeometry
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +51,8 @@ def _build_operators(nx=2, ny=2, nz=3):
 
 def _cell_split(cells, half_z):
     """Split compact cell indices by z-centre below/above ``half_z``."""
-    ijk = cells.ijk
-    zc = cells.cz[ijk[:, 2]]
+    geometry = CellGeometry(cells)
+    zc = geometry.centers[:, 2]
     lower = np.flatnonzero(zc < half_z)
     upper = np.flatnonzero(zc >= half_z)
     return lower, upper
@@ -62,10 +63,11 @@ class _FakePortsModel:
 
     def __init__(self, compiled, ops):
         self._full = compiled
+        self.geometry = CellGeometry(compiled.cells)
         self._ops = ops
         self.cell_layout = mm.CellLayout(
-            centers=compiled.cells.centers,
-            half_sizes=compiled.cells.half_sizes,
+            centers=self.geometry.centers,
+            half_sizes=self.geometry.half_sizes,
             conductivity=np.column_stack(
                 (
                     np.full(compiled.cell_count, 1.0),
@@ -85,6 +87,7 @@ class _FakePortsModel:
     def boundary_groups(self):
         return ()
 
+    @property
     def boundary_terms(self):
         return []
 
@@ -94,6 +97,7 @@ class _FakePortsModel:
     def physical_to_effective(self, h):
         return np.asarray(h, dtype=np.float64)
 
+    @property
     def source_shape(self):
         return self._ops.f.reshape(-1, 1)
 
@@ -138,7 +142,7 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
         assert np.all(p.g > 0.0)
 
     # declare the top face (z+) as an ambient group -> it must disappear
-    top = compiled.cells.ijk[:, 2] == compiled.nz - 1
+    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.nz - 1
     top_cells = np.flatnonzero(top)
     top_areas = np.full(top_cells.size, 1.0e-6)
     model.boundary_groups = lambda: (

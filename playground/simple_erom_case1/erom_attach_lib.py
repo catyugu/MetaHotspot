@@ -34,11 +34,11 @@ import numpy as np
 import metahotspot
 from metahotspot.compiled import CellFields
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
+from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.affine import (
     AffineParametricModel,
     BoundaryGroup,
     SourcePort,
-    surface_exposed_cells,
 )
 from metahotspot.macromodel.embeddable import (
     build_subdomain,
@@ -232,28 +232,16 @@ class AttachModel(AffineParametricModel):
         return ports
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        cells = self._full.cells
-        top_cells, top_areas = surface_exposed_cells(
-            cells, Face.ZP, cells.z_vertices[-1]
-        )
+        top = self.geometry.surface(Face.ZP)
+        top_cells, top_areas = top.cell_ids, top.areas
         groups = [BoundaryGroup(cells=top_cells, areas=top_areas, h_range=(1.0, 1.0e4))]
         if self.config.ext_bottom_h is not None:
-            bot_cells, bot_areas = surface_exposed_cells(
-                cells, Face.ZM, cells.z_vertices[0]
-            )
+            bottom = self.geometry.surface(Face.ZM)
+            bot_cells, bot_areas = bottom.cell_ids, bottom.areas
             groups.append(
                 BoundaryGroup(cells=bot_cells, areas=bot_areas, h_range=(1.0, 1.0e4))
             )
         return tuple(groups)
-
-    def boundary_h(self, h_vec) -> dict[str, float]:
-        out = {"top": float(h_vec[0])}
-        if self.config.ext_bottom_h is not None:
-            out["bottom"] = float(h_vec[1])
-        return out
-
-    def group_h_ranges(self):
-        return tuple(g.h_range for g in self.boundary_groups())
 
 
 # -----------------------------------------------------------------------------
@@ -263,17 +251,16 @@ class AttachModel(AffineParametricModel):
 
 def _grid_vertices(cells: CellFields):
     """(V,3) vertex coordinates from the structured cell layout (SI metres)."""
-    pts = np.empty(
-        (cells.x_vertices.size * cells.y_vertices.size * cells.z_vertices.size, 3)
-    )
+    vertices = CellGeometry(cells).vertices
+    pts = np.empty((np.prod([vertex.size for vertex in vertices]), 3))
     k = 0
-    for iz in range(cells.z_vertices.size):
-        for iy in range(cells.y_vertices.size):
-            for ix in range(cells.x_vertices.size):
+    for iz in range(vertices[2].size):
+        for iy in range(vertices[1].size):
+            for ix in range(vertices[0].size):
                 pts[k] = (
-                    cells.x_vertices[ix],
-                    cells.y_vertices[iy],
-                    cells.z_vertices[iz],
+                    vertices[0][ix],
+                    vertices[1][iy],
+                    vertices[2][iz],
                 )
                 k += 1
     return pts
@@ -285,13 +272,14 @@ def write_vtu(
     """Write a cell-centred scalar field on the structured grid to ``path`` (SI)."""
     # Vertex-point coordinate order matches _grid_vertices: iz outer, iy middle,
     # ix inner.  index = iz*(Yv*Xv) + iy*Xv + ix, with Xv/Yv the *vertex* counts.
-    Xv = cells.x_vertices.size
-    Yv = cells.y_vertices.size
+    x_vertices, y_vertices, z_vertices = CellGeometry(cells).vertices
+    Xv = x_vertices.size
+    Yv = y_vertices.size
 
     def vid(ix, iy, iz):
         return iz * (Yv * Xv) + iy * Xv + ix
 
-    ijk = cells.ijk
+    ijk = CellGeometry(cells).indices
     n_cells = ijk.shape[0]
     conn = np.empty((n_cells, 8), dtype=np.int64)
     for c in range(n_cells):
@@ -360,7 +348,7 @@ def write_trajectory_csv(path, header: list[str], rows) -> str:
 
 
 def _probe_cells(cells: CellFields, points_m) -> list[int]:
-    c = cells.centers
+    c = CellGeometry(cells).centers
     return [
         int(np.argmin((c[:, 0] - px) ** 2 + (c[:, 1] - py) ** 2 + (c[:, 2] - pz) ** 2))
         for (px, py, pz) in points_m
@@ -382,7 +370,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     outdir.mkdir(parents=True, exist_ok=True)
     model = AttachModel(cfg)
     cells = model._full.cells
-    zc = cells.centers[:, 2]
+    zc = CellGeometry(cells).centers[:, 2]
     H_m = cfg.ext_thickness_mm * 1.0e-3
 
     cube_idx = np.flatnonzero(zc >= H_m - 1.0e-12)
@@ -498,7 +486,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     erom_trace = erom.boundary_trace("z-") @ np.asarray(steady[:m], dtype=np.float64)
     cube_bot_full = erom_sub.cells[np.asarray(erom.port("z-").cells, dtype=np.int64)]
 
-    G = model.source_shape()
+    G = model.source_shape
     cube_src_rows = np.flatnonzero((G[:, 0] > 0) & (zc >= H_m - 1.0e-12))
     w = G[cube_src_rows, 0] / G[cube_src_rows, 0].sum()
     ref_junction = float(w @ ref_rise[cube_src_rows])
@@ -506,9 +494,10 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
         np.asarray(side_junction_rise(steady, erom, 0)).ravel()[0] / CUBE_SOURCE_W
     )
 
-    top_cells, top_areas = surface_exposed_cells(cells, Face.ZP, cells.z_vertices[-1])
+    top = model.geometry.surface(Face.ZP)
+    top_cells, top_areas = top.cell_ids, top.areas
     kz = model.cell_layout.conductivity[top_cells, 2]
-    half = cells.half_sizes[top_cells, 2]
+    half = model.geometry.half_sizes[top_cells, 2]
     p = kz * TOP_HTC / (kz + TOP_HTC * half)
     top_flux_ref = float(np.sum(p * top_areas * ref_rise[top_cells]))
     top_flux_coupled = float(np.sum(p * top_areas * coup_rise[top_cells]))

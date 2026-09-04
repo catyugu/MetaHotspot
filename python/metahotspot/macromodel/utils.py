@@ -36,7 +36,7 @@ import scipy.sparse.linalg as spla
 from scipy import special
 import pyamg
 
-from metahotspot.compiled import Operators
+from metahotspot._compiled_data import Operators
 
 
 # ---------------------------------------------------------------------------

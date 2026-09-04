@@ -129,8 +129,8 @@ def run():
     )
 
     core = model.core_operators()
-    G = model.source_shape()
-    terms = model.boundary_terms()
+    G = model.source_shape
+    terms = model.boundary_terms
     h_ranges = model.h_ranges()
 
     # ---- full FVM (affine full-domain solve; model maps physical h internally) --

@@ -59,10 +59,10 @@ def steady_reference(model, h):
     """Unreduced steady solve of the affine operator at physical ``h``."""
     core = model.core_operators()
     K = core.K.tocsc()
-    for pk, Hk in zip(model.physical_to_effective(h), model.boundary_terms()):
+    for pk, Hk in zip(model.physical_to_effective(h), model.boundary_terms):
         K = K + float(pk) * Hk.tocsc()
-    x = spd_solve(K, model.source_shape() @ POWER)  # rise above ambient
-    return model.ambient_K + model.source_shape().T @ x  # absolute junction
+    x = spd_solve(K, model.source_shape @ POWER)  # rise above ambient
+    return model.ambient_K + model.source_shape.T @ x  # absolute junction
 
 
 def main():
@@ -71,8 +71,8 @@ def main():
         model = make_model(ranges)
         core, G, terms = (
             model.core_operators(),
-            model.source_shape(),
-            model.boundary_terms(),
+            model.source_shape,
+            model.boundary_terms,
         )
         t0 = time.perf_counter()
         basis, summary = build_parametric_basis(

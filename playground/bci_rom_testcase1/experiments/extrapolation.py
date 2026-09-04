@@ -51,8 +51,8 @@ def make_model(h_ranges):
 def run_rom(model, basis, h):
     core, G, terms = (
         model.core_operators(),
-        model.source_shape(),
-        model.boundary_terms(),
+        model.source_shape,
+        model.boundary_terms,
     )
     C, K0, F, Fb, Ab = project_bci(core, G, terms, basis)
     K = assemble_reduced_k(K0, Fb, Ab, model.physical_to_effective(h))
@@ -82,8 +82,8 @@ def extrapolation():
         model = make_model(ranges)
         core, G, terms = (
             model.core_operators(),
-            model.source_shape(),
-            model.boundary_terms(),
+            model.source_shape,
+            model.boundary_terms,
         )
         t0 = time.perf_counter()
         basis, summary = build_parametric_basis(
