@@ -72,7 +72,7 @@ def main(mm: float):
     )
     cells = int(model.full_cell_count)
 
-    core = model.core_operators()
+    core = model.core
     G = model.source_shape
     terms = model.boundary_terms
     h_ranges = model.h_ranges()

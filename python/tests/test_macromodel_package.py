@@ -81,7 +81,8 @@ class _FakePortsModel:
     def full_cell_count(self):
         return self._full.cell_count
 
-    def core_operators(self):
+    @property
+    def core(self):
         return self._ops
 
     def boundary_groups(self):

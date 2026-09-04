@@ -128,7 +128,7 @@ def run():
         f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
     )
 
-    core = model.core_operators()
+    core = model.core
     G = model.source_shape
     terms = model.boundary_terms
     h_ranges = model.h_ranges()

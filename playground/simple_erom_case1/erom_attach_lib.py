@@ -218,7 +218,7 @@ class AttachModel(AffineParametricModel):
         return build_geometry(self.config, study, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
-        f = np.asarray(self._core.f, dtype=np.float64)
+        f = np.asarray(self.core.f, dtype=np.float64)
         zc = self.cell_layout.centers[:, 2]
         H = self.config.ext_thickness_mm * 1.0e-3
         src = np.flatnonzero(f > 0.0)
@@ -502,7 +502,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     top_flux_ref = float(np.sum(p * top_areas * ref_rise[top_cells]))
     top_flux_coupled = float(np.sum(p * top_areas * coup_rise[top_cells]))
     injected = float(
-        np.sum(np.asarray(model._core.f).ravel())
+        np.sum(np.asarray(model.core.f).ravel())
     )  # actual RHS source power
 
     _areas, E_l, E_r, xi_l, xi_r, _li, _ri = common_patches(

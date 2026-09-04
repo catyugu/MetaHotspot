@@ -296,7 +296,7 @@ def build_subdomain(
     that load is baked directly into ``K`` and is not a BCI group.
     """
     cells = np.asarray(cells, dtype=np.int64)
-    core = model.core_operators()
+    core = model.core
     n = cells.size
 
     K = core.K.tocsc()[cells, :][:, cells].tocsc()
@@ -377,16 +377,12 @@ class EmbeddableRom:
     @property
     def dof_order(self) -> int:
         return self.m
-
-    @property
-    def _q_k(self) -> sp.csc_matrix:
+    def internal_operator(self) -> sp.csc_matrix:
+        """Modal effective stiffness: K0_hat + Σ p_k VᵀH_kV, ambient folded."""
         K = self.K0_hat
         for p, H in zip(self.effective_p, self.ambient_hat):
             K = K + float(p) * H
         return K.tocsc()
-
-    def internal_operator(self) -> sp.csc_matrix:
-        return self._q_k
 
     def port(self, label: str) -> FacePort:
         for p in self.ports:

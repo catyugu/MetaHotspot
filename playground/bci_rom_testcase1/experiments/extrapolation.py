@@ -50,7 +50,7 @@ def make_model(h_ranges):
 
 def run_rom(model, basis, h):
     core, G, terms = (
-        model.core_operators(),
+        model.core,
         model.source_shape,
         model.boundary_terms,
     )
@@ -81,7 +81,7 @@ def extrapolation():
     for name, ranges in cases:
         model = make_model(ranges)
         core, G, terms = (
-            model.core_operators(),
+            model.core,
             model.source_shape,
             model.boundary_terms,
         )

@@ -231,17 +231,14 @@ class AffineParametricModel:
         return self._full.cell_count
 
     @cached_property
-    def _core(self) -> Operators:
-        return normalized_operators(*self._full.assemble())
-
-    def core_operators(self) -> Operators:
-        """Full-domain h-free ``Operators(K, C, f)`` (cached).
+    def core(self) -> Operators:
+        """Full-domain h-free ``Operators(K, C, f)``.
 
         ``f`` is the constant heat-source RHS (volumetric power integrated
         over each source cell); ``K`` carries no boundary coefficient (default
         Neumann), the affine Robin terms live in :meth:`boundary_terms`.
         """
-        return self._core
+        return normalized_operators(*self._full.assemble())
 
     @cached_property
     def source_shape(self) -> np.ndarray:
@@ -252,7 +249,7 @@ class AffineParametricModel:
         nominal power.  ``G_src @ P(t)`` reproduces the native source RHS at
         any power vector (FANTASTIC 2014 eq. 2).
         """
-        f = np.asarray(self._core.f, dtype=np.float64)
+        f = np.asarray(self.core.f, dtype=np.float64)
         ports = self.source_ports()
         G = np.zeros((f.size, len(ports)), dtype=np.float64)
         for k, port in enumerate(ports):
@@ -389,8 +386,8 @@ class AffineParametricModel:
         the same effective ``p``, the only difference between this reference and
         the ROM is the reduction error.
         """
-        K = self._core.K.tocsc()
-        C = self._core.C.tocsc()
+        K = self.core.K.tocsc()
+        C = self.core.C.tocsc()
         G = self.source_shape
         terms = self.boundary_terms
 

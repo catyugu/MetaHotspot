@@ -57,7 +57,7 @@ def make_model(h_ranges):
 
 def steady_reference(model, h):
     """Unreduced steady solve of the affine operator at physical ``h``."""
-    core = model.core_operators()
+    core = model.core
     K = core.K.tocsc()
     for pk, Hk in zip(model.physical_to_effective(h), model.boundary_terms):
         K = K + float(pk) * Hk.tocsc()
@@ -70,7 +70,7 @@ def main():
     for name, ranges in CASES:
         model = make_model(ranges)
         core, G, terms = (
-            model.core_operators(),
+            model.core,
             model.source_shape,
             model.boundary_terms,
         )

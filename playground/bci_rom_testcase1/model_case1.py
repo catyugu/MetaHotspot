@@ -287,7 +287,7 @@ class Case1Model(AffineParametricModel):
         return build_geometry(self.config, study, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
-        f = np.asarray(self._core.f, dtype=np.float64)
+        f = np.asarray(self.core.f, dtype=np.float64)
         source_cells = np.flatnonzero(f > 0.0)
         # All four dies sit in the same top z slab; split them into per-die
         # ports by x/y footprint (block ids do not distinguish them).
