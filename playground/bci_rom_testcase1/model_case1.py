@@ -50,9 +50,7 @@ from metahotspot.macromodel.affine import (  # noqa: E402
     AffineParametricModel,
     BoundaryGroup,
     SourcePort,
-    surface_exposed_cells,
 )
-from metahotspot.macromodel.geometry import axis_vertices
 
 # (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
@@ -313,11 +311,8 @@ class Case1Model(AffineParametricModel):
         return ports
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        full = self._full
-        cells = full.cells
-        top_cells, top_areas = surface_exposed_cells(
-            cells, Face.ZP, axis_vertices(cells, 2)[-1]
-        )
+        top = self.geometry.surface(Face.ZP)
+        top_cells, top_areas = top.cell_ids, top.areas
         # The top convective BC applies only to cells carrying real silicon fill
         # (the die crowns); air-only cells on the top layer are dropped so no h
         # is applied to the air domain around the dies.
@@ -325,7 +320,8 @@ class Case1Model(AffineParametricModel):
         cell_y = self.cell_layout.centers[:, 1]
         silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
         top_cells, top_areas = top_cells[silicon], top_areas[silicon]
-        bot_cells, bot_areas = surface_exposed_cells(cells, Face.ZM, 0.0)
+        bottom = self.geometry.surface(Face.ZM, coordinate=0.0)
+        bot_cells, bot_areas = bottom.cell_ids, bottom.areas
 
         return (
             BoundaryGroup(

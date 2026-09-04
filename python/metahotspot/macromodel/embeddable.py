@@ -60,7 +60,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
-from metahotspot.macromodel.geometry import exposed_face_mask, grid_indices
+
 
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
@@ -136,17 +136,17 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     port); every other boundary face becomes a connectable :class:`FacePort`.
     """
     cells = np.asarray(cells, dtype=np.int64)
-    full = model._full.cells
+    full = model.geometry
     layout = model.cell_layout
     n = cells.size
     local = {int(c): i for i, c in enumerate(cells)}
-    ijk = grid_indices(full)[cells]  # (n,3)
-    nx, ny, nz = full.dx.size, full.dy.size, full.dz.size
+    ijk = full.indices[cells]  # (n,3)
+    nx, ny, nz = full.nx, full.ny, full.nz
 
     in_group = np.zeros(model.full_cell_count, dtype=bool)
     for g in model.boundary_groups():
         in_group[np.asarray(g.cells, dtype=np.int64)] = True
-    exposed = exposed_face_mask(full)
+    exposed = full.exposed_faces
 
     by_key: dict[tuple[int, int], list[int]] = {}
     for r in range(n):

@@ -17,7 +17,7 @@ Modules:
   :class:`~metahotspot.macromodel.affine.SourcePort`,
   :class:`~metahotspot.macromodel.affine.CellLayout`,
   :class:`~metahotspot.macromodel.affine.AffineSolveResult`), the
-  :func:`~metahotspot.macromodel.affine.surface_exposed_cells` geometry helper,
+  :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view,
   and the model registry/factory (:func:`~metahotspot.macromodel.affine.create`,
   :func:`~metahotspot.macromodel.affine.register`).  Concrete models register
   from playground adapters; the library itself registers nothing.
@@ -31,7 +31,7 @@ Modules:
   (:func:`~metahotspot.macromodel.embeddable.connect`).
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
-generic ``Operators`` / ``CellFields`` views — never a named case.
+generic ``Operators`` / ``CellFields`` contracts — never a named case.
 """
 
 from metahotspot.macromodel import utils
@@ -48,8 +48,8 @@ from metahotspot.macromodel.affine import (
     create,
     register,
     registered_names,
-    surface_exposed_cells,
 )
+from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.embeddable import (
     EmbeddableRom,
     FacePort,
@@ -80,7 +80,8 @@ __all__ = [
     "create",
     "register",
     "registered_names",
-    "surface_exposed_cells",
+    "BoundarySurface",
+    "CellGeometry",
     # embeddable ROM
     "EmbeddableRom",
     "FacePort",

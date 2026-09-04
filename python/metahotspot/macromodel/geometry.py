@@ -1,10 +1,14 @@
-"""Derived geometry and topology views for compiled cell fields."""
+"""Structured-grid geometry views for compiled cell fields."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import cached_property
 
 import numpy as np
 
 from metahotspot._compiled_data import CellFields
+from metahotspot.enums import Axis, Face
 
 
 _FACE_STEPS = (
@@ -15,59 +19,162 @@ _FACE_STEPS = (
     (0, 0, -1),
     (0, 0, 1),
 )
+_FACE_AXIS = {
+    Face.XM: (Axis.X, 0),
+    Face.XP: (Axis.X, -1),
+    Face.YM: (Axis.Y, 0),
+    Face.YP: (Axis.Y, -1),
+    Face.ZM: (Axis.Z, 0),
+    Face.ZP: (Axis.Z, -1),
+}
 
 
-def grid_indices(cells: CellFields) -> np.ndarray:
-    """Return ``(ix, iy, iz)`` for each compact cell."""
-    yz = cells.dy.size * cells.dz.size
-    grid = cells.cell_to_grid
-    ijk = np.empty((grid.size, 3), dtype=np.intp)
-    ijk[:, 0] = grid // yz
-    ijk[:, 1] = (grid % yz) // cells.dz.size
-    ijk[:, 2] = grid % cells.dz.size
-    return ijk
+@dataclass(frozen=True)
+class BoundarySurface:
+    """Exposed faces of one structured-grid boundary plane."""
+
+    cell_ids: np.ndarray
+    areas: np.ndarray
 
 
-def cell_sizes(cells: CellFields) -> np.ndarray:
-    """Return per-cell side lengths in compact-cell order."""
-    ijk = grid_indices(cells)
-    return np.column_stack(
-        (cells.dx[ijk[:, 0]], cells.dy[ijk[:, 1]], cells.dz[ijk[:, 2]])
-    )
+@dataclass(frozen=True)
+class CellGeometry:
+    """Geometry and topology views in compact-cell order.
 
+    ``fields`` contains the native copy-out arrays. This view owns the meaning
+    of their structured-grid layout and computes derived quantities lazily.
+    """
 
-def cell_centers(cells: CellFields) -> np.ndarray:
-    """Return per-cell centres in compact-cell order."""
-    ijk = grid_indices(cells)
-    return np.column_stack(
-        (cells.cx[ijk[:, 0]], cells.cy[ijk[:, 1]], cells.cz[ijk[:, 2]])
-    )
+    fields: CellFields
 
+    @property
+    def nx(self) -> int:
+        return self.fields.dx.size
 
-def axis_vertices(cells: CellFields, axis: int) -> np.ndarray:
-    """Return cell-plane coordinates along one grid axis."""
-    widths = (cells.dx, cells.dy, cells.dz)[axis]
-    centers = (cells.cx, cells.cy, cells.cz)[axis]
-    return np.concatenate(([centers[0] - 0.5 * widths[0]], centers + 0.5 * widths))
+    @property
+    def ny(self) -> int:
+        return self.fields.dy.size
 
+    @property
+    def nz(self) -> int:
+        return self.fields.dz.size
 
-def exposed_face_mask(cells: CellFields) -> np.ndarray:
-    """Return the six-bit exposed-face mask for each compact cell."""
-    grid = cells.grid_to_cell.reshape(cells.dx.size, cells.dy.size, cells.dz.size)
-    invalid = np.iinfo(grid.dtype).max
-    padded = np.full(tuple(size + 2 for size in grid.shape), invalid, dtype=grid.dtype)
-    padded[1:-1, 1:-1, 1:-1] = grid
-    exposed = np.stack(
-        [
-            padded[
-                1 + dx : cells.dx.size + 1 + dx,
-                1 + dy : cells.dy.size + 1 + dy,
-                1 + dz : cells.dz.size + 1 + dz,
-            ]
-            == invalid
-            for dx, dy, dz in _FACE_STEPS
-        ],
-        axis=-1,
-    )
-    bits = np.sum(exposed.reshape(-1, 6) * (1 << np.arange(6, dtype=np.uint8)), axis=1)
-    return bits[cells.cell_to_grid].astype(np.uint8)
+    @property
+    def widths(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return self.fields.dx, self.fields.dy, self.fields.dz
+
+    @property
+    def coordinates(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return self.fields.cx, self.fields.cy, self.fields.cz
+
+    @cached_property
+    def indices(self) -> np.ndarray:
+        grid = self.fields.cell_to_grid
+        yz = self.ny * self.nz
+        result = np.empty((grid.size, 3), dtype=np.intp)
+        result[:, 0] = grid // yz
+        result[:, 1] = (grid % yz) // self.nz
+        result[:, 2] = grid % self.nz
+        return result
+
+    @cached_property
+    def sizes(self) -> np.ndarray:
+        ijk = self.indices
+        return np.column_stack(
+            (
+                self.fields.dx[ijk[:, 0]],
+                self.fields.dy[ijk[:, 1]],
+                self.fields.dz[ijk[:, 2]],
+            )
+        )
+
+    @cached_property
+    def centers(self) -> np.ndarray:
+        ijk = self.indices
+        return np.column_stack(
+            (
+                self.fields.cx[ijk[:, 0]],
+                self.fields.cy[ijk[:, 1]],
+                self.fields.cz[ijk[:, 2]],
+            )
+        )
+
+    @cached_property
+    def half_sizes(self) -> np.ndarray:
+        return self.sizes * 0.5
+
+    @cached_property
+    def vertices(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return tuple(
+            np.concatenate(
+                (
+                    [centers[0] - 0.5 * widths[0]],
+                    centers + 0.5 * widths,
+                )
+            )
+            for centers, widths in zip(
+                (self.fields.cx, self.fields.cy, self.fields.cz),
+                (self.fields.dx, self.fields.dy, self.fields.dz),
+            )
+        )
+
+    @cached_property
+    def exposed_faces(self) -> np.ndarray:
+        grid = self.fields.grid_to_cell.reshape(self.nx, self.ny, self.nz)
+        invalid = np.iinfo(grid.dtype).max
+        padded = np.full(
+            tuple(size + 2 for size in grid.shape), invalid, dtype=grid.dtype
+        )
+        padded[1:-1, 1:-1, 1:-1] = grid
+        exposed = np.stack(
+            [
+                padded[
+                    1 + dx : self.nx + 1 + dx,
+                    1 + dy : self.ny + 1 + dy,
+                    1 + dz : self.nz + 1 + dz,
+                ]
+                == invalid
+                for dx, dy, dz in _FACE_STEPS
+            ],
+            axis=-1,
+        )
+        bits = np.sum(
+            exposed.reshape(-1, 6) * (1 << np.arange(6, dtype=np.uint8)), axis=1
+        )
+        return bits[self.fields.cell_to_grid].astype(np.uint8)
+
+    def surface(
+        self,
+        face: Face,
+        coordinate: float | None = None,
+        z_range: tuple[float, float] | None = None,
+    ) -> BoundarySurface:
+        """Return exposed cells and face areas on a boundary plane."""
+        face = Face(face)
+        axis, edge = _FACE_AXIS[face]
+        axis_index = int(axis)
+        candidates = np.flatnonzero((self.exposed_faces >> int(face)) & 1)
+        indices = self.indices
+        sizes = self.sizes
+        edge_index = 0 if edge == 0 else (self.nx, self.ny, self.nz)[axis_index] - 1
+        candidates = candidates[indices[candidates, axis_index] == edge_index]
+
+        if coordinate is None:
+            coordinate = self.vertices[axis_index][0 if edge == 0 else -1]
+        planes = self.vertices[axis_index][
+            indices[candidates, axis_index] + (edge != 0)
+        ]
+        keep = np.isclose(planes, coordinate, atol=1.0e-9, rtol=0.0)
+
+        if z_range is not None and axis != Axis.Z:
+            z_centers = self.fields.cz[indices[candidates, 2]]
+            keep &= (z_range[0] - 1.0e-9 <= z_centers) & (
+                z_centers <= z_range[1] + 1.0e-9
+            )
+
+        candidates = candidates[keep]
+        tangential = [a for a in range(3) if a != axis_index]
+        areas = sizes[candidates, tangential[0]] * sizes[candidates, tangential[1]]
+        return BoundarySurface(
+            candidates.astype(np.int64), np.asarray(areas, dtype=np.float64)
+        )

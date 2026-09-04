@@ -16,7 +16,7 @@ import scipy.sparse as sp
 import metahotspot
 from metahotspot import macromodel as mm
 from metahotspot.enums import Face, LengthUnit, Study
-from metahotspot.macromodel.geometry import cell_centers, cell_sizes, grid_indices
+from metahotspot.macromodel.geometry import CellGeometry
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ def _build_operators(nx=2, ny=2, nz=3):
 
 def _cell_split(cells, half_z):
     """Split compact cell indices by z-centre below/above ``half_z``."""
-    ijk = grid_indices(cells)
-    zc = cells.cz[ijk[:, 2]]
+    geometry = CellGeometry(cells)
+    zc = geometry.centers[:, 2]
     lower = np.flatnonzero(zc < half_z)
     upper = np.flatnonzero(zc >= half_z)
     return lower, upper
@@ -63,10 +63,11 @@ class _FakePortsModel:
 
     def __init__(self, compiled, ops):
         self._full = compiled
+        self.geometry = CellGeometry(compiled.cells)
         self._ops = ops
         self.cell_layout = mm.CellLayout(
-            centers=cell_centers(compiled.cells),
-            half_sizes=cell_sizes(compiled.cells) * 0.5,
+            centers=self.geometry.centers,
+            half_sizes=self.geometry.half_sizes,
             conductivity=np.column_stack(
                 (
                     np.full(compiled.cell_count, 1.0),
@@ -139,7 +140,7 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
         assert np.all(p.g > 0.0)
 
     # declare the top face (z+) as an ambient group -> it must disappear
-    top = grid_indices(compiled.cells)[:, 2] == compiled.nz - 1
+    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.nz - 1
     top_cells = np.flatnonzero(top)
     top_areas = np.full(top_cells.size, 1.0e-6)
     model.boundary_groups = lambda: (

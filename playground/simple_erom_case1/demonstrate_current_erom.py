@@ -21,10 +21,7 @@ sys.path.insert(0, str(ROOT / "python"))
 
 import metahotspot
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
-from metahotspot.macromodel.geometry import (
-    cell_sizes,
-    grid_indices,
-)
+from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.utils import normalized_operators
 
 CASE = Path(__file__).resolve().parent
@@ -143,15 +140,14 @@ def main():
     area = (link[:, 6] - link[:, 5]) * (link[:, 8] - link[:, 7])
     ops, compiled = build_current_detailed(x, y)
     cells = compiled.cells
-    ijk = grid_indices(cells)
-    sizes = cell_sizes(cells)
-    top = np.flatnonzero(ijk[:, 2] == cells.dz.size - 1)
-    centers = np.column_stack((cells.cx[ijk[:, 0]], cells.cy[ijk[:, 1]]))
+    geometry = CellGeometry(cells)
+    top = np.flatnonzero(geometry.indices[:, 2] == geometry.nz - 1)
+    centers = geometry.centers
     top = top[np.lexsort((centers[top, 1], centers[top, 0]))]
-    top_area = sizes[top, 0] * sizes[top, 1]
+    top_area = geometry.sizes[top, 0] * geometry.sizes[top, 1]
     source = ops.f.reshape(-1)
     k_top = compiled.eval_materials().conductivity_z[top]
-    half = sizes[top, 2] / 2.0
+    half = geometry.half_sizes[top, 2]
     p = k_top * HTC / (k_top + HTC * half)
     detailed = spla.spsolve(
         ops.K + sp.csc_matrix((p * top_area, (top, top)), shape=ops.K.shape), source

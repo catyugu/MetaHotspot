@@ -39,15 +39,9 @@ from typing import Any, Callable
 import numpy as np
 import scipy.sparse as sp
 
-from metahotspot._compiled_data import CellFields, Operators
-from metahotspot.enums import Face, Study
-from metahotspot.macromodel.geometry import (
-    axis_vertices,
-    cell_centers,
-    cell_sizes,
-    exposed_face_mask,
-    grid_indices,
-)
+from metahotspot._compiled_data import Operators
+from metahotspot.enums import Study
+from metahotspot.macromodel.geometry import CellGeometry
 
 from metahotspot.macromodel.utils import (
     normalized_operators,
@@ -123,51 +117,6 @@ class AffineSolveResult:
     steady_s: float  # steady solve wall-clock (s)
     transient_s: float  # transient solve wall-clock (s)
     full_order: int  # full model cell count
-
-
-def surface_exposed_cells(
-    cells: CellFields, face: Face, coord: float, z_range=None
-) -> tuple[np.ndarray, np.ndarray]:
-    """Exposed-surface cells + SI face areas for one flat face region.
-
-    ``cells`` is the compiled :class:`~metahotspot.compiled.CellFields` view,
-    ``face`` a :class:`~metahotspot.enums.Face` and ``coord`` the face's SI
-    coordinate.  A cell is on the face if it is truly exposed across it (no
-    active neighbour — :func:`exposed_face_mask`) and its face plane sits at
-    ``coord``.  ``z_range`` (optional) restricts lateral-face cells to
-    those whose z-centre falls inside ``(zmin, zmax)``; it is not applied to the
-    Z faces.  Returns ``(cells, areas)``: the full-domain FVM indices of the
-    exposed cells (ascending compact order) and their SI face area (m²).
-    """
-    face = Face(face)
-    candidates = np.flatnonzero((exposed_face_mask(cells) >> int(face)) & 1)
-    ijk = grid_indices(cells)
-    sizes = cell_sizes(cells)
-    if face in (Face.ZM, Face.ZP):
-        iz = 0 if face == Face.ZM else cells.dz.size - 1
-        candidates = candidates[ijk[candidates, 2] == iz]
-        z_face = axis_vertices(cells, 2)[0 if face == Face.ZM else cells.dz.size]
-        if not (coord - 1.0e-9 <= z_face <= coord + 1.0e-9):
-            return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.float64)
-        areas = sizes[candidates, 0] * sizes[candidates, 1]
-    else:
-        if face in (Face.XM, Face.XP):
-            axis, sign = 0, 1 if face == Face.XP else 0
-            tangent = (1, 2)
-        else:  # YM / YP
-            axis, sign = 1, 1 if face == Face.YP else 0
-            tangent = (0, 2)
-        verts = axis_vertices(cells, axis)
-        plane = verts[ijk[candidates, axis] + sign]
-        keep = (coord - 1.0e-9 <= plane) & (plane <= coord + 1.0e-9)
-        if z_range is not None:
-            z_center = cells.cz[ijk[candidates, 2]]
-            keep &= (z_range[0] - 1.0e-9 <= z_center) & (
-                z_center <= z_range[1] + 1.0e-9
-            )
-        candidates = candidates[keep]
-        areas = sizes[candidates, tangent[0]] * sizes[candidates, tangent[1]]
-    return candidates.astype(np.int64), np.asarray(areas, dtype=np.float64)
 
 
 class AffineParametricModel:
@@ -288,6 +237,10 @@ class AffineParametricModel:
     def _full(self):
         return self.build_geometry(Study.STEADY, detail=True, macro=True).compile()
 
+    @cached_property
+    def geometry(self) -> CellGeometry:
+        return CellGeometry(self._full.cells)
+
     @property
     def full_cell_count(self) -> int:
         """Full-domain FVM cell count."""
@@ -345,7 +298,7 @@ class AffineParametricModel:
     @cached_property
     def cell_layout(self) -> CellLayout:
         """Per-cell geometry and reference material values from native fields."""
-        cells = self._full.cells
+        cells = self.geometry
         values = self._full.eval_materials()
         conductivity = np.column_stack(
             (
@@ -355,8 +308,8 @@ class AffineParametricModel:
             )
         )
         return CellLayout(
-            centers=cell_centers(cells),
-            half_sizes=cell_sizes(cells) * 0.5,
+            centers=cells.centers,
+            half_sizes=cells.half_sizes,
             conductivity=conductivity,
         )
 
