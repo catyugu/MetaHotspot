@@ -1,11 +1,29 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
 
 import numpy as np
 
 from metahotspot._error import check
 from metahotspot.types import MhsCompiled, MhsSolution, MhsSolutionInfo
+
+
+@dataclass(frozen=True)
+class ProbeSnapshot:
+    name: str
+    times: np.ndarray
+    values: np.ndarray
+
+
+@dataclass(frozen=True)
+class SolutionSnapshot:
+    time: float
+    fvm_count: int
+    state: np.ndarray
+    history_times: np.ndarray
+    state_history: np.ndarray
+    probes: list[ProbeSnapshot]
 
 
 def _text(value: str | None) -> bytes | None:
@@ -52,7 +70,7 @@ def solve(dll, compiled_handle, state, opts_overrides: dict):
     return out
 
 
-def solution_snapshot(dll, handle) -> dict:
+def solution_snapshot(dll, handle) -> SolutionSnapshot:
     """Snapshot a native solution into Python-owned arrays."""
     info = MhsSolutionInfo()
     check(dll.mhs_solution_get_info(handle, ctypes.byref(info)), "solution_info")
@@ -79,7 +97,7 @@ def solution_snapshot(dll, handle) -> dict:
         "solution_copy_history_states",
     )
 
-    probes = []
+    probes: list[ProbeSnapshot] = []
     for index in range(int(info.probe_count)):
         name_size = ctypes.c_size_t()
         record_count = ctypes.c_size_t()
@@ -104,18 +122,18 @@ def solution_snapshot(dll, handle) -> dict:
             ),
             "solution_copy_probe",
         )
-        probes.append((name.value.decode("utf-8"), times, values))
+        probes.append(ProbeSnapshot(name.value.decode("utf-8"), times, values))
 
-    return {
-        "time": float(info.time),
-        "fvm_count": int(info.fvm_count),
-        "state": state,
-        "history_times": history_times,
-        "state_history": history_states.reshape(
+    return SolutionSnapshot(
+        time=float(info.time),
+        fvm_count=int(info.fvm_count),
+        state=state,
+        history_times=history_times,
+        state_history=history_states.reshape(
             int(info.record_count), int(info.state_count)
         ),
-        "probes": probes,
-    }
+        probes=probes,
+    )
 
 
 def write_vtu(dll, handle, path: str) -> None:

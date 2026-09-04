@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -13,6 +14,27 @@ from metahotspot.types import (
     MhsOperators,
     MhsOperatorsInfo,
 )
+
+
+@dataclass(frozen=True)
+class CompiledMetadata:
+    cell_count: int
+    grid_count: int
+    study_type: int
+    initial_temperature: float
+    nx: int
+    ny: int
+    nz: int
+    cell_fields: dict[str, np.ndarray]
+
+
+@dataclass(frozen=True)
+class MaterialValues:
+    conductivity_x: np.ndarray
+    conductivity_y: np.ndarray
+    conductivity_z: np.ndarray
+    density: np.ndarray
+    specific_heat: np.ndarray
 
 
 def _double_ptr(array: np.ndarray):
@@ -48,8 +70,7 @@ def compile_model(dll, model_handle):
     return handle
 
 
-def compiled_metadata(dll, handle) -> tuple[dict, dict]:
-    """Return ``(info, cell_fields)`` as plain dicts of Python values/arrays."""
+def compiled_metadata(dll, handle) -> CompiledMetadata:
     info = MhsCompiledInfo()
     check(dll.mhs_compiled_get_info(handle, ctypes.byref(info)), "compiled_info")
 
@@ -68,19 +89,19 @@ def compiled_metadata(dll, handle) -> tuple[dict, dict]:
         dll.mhs_compiled_copy_cell_fields(handle, ctypes.byref(native)), "cell_fields"
     )
 
-    info_dict = {
-        "cell_count": int(info.cell_count),
-        "grid_count": int(info.grid_count),
-        "study_type": int(info.study_type),
-        "initial_temperature": float(info.initial_temperature),
-        "nx": int(info.nx),
-        "ny": int(info.ny),
-        "nz": int(info.nz),
-    }
-    return info_dict, arrays
+    return CompiledMetadata(
+        cell_count=int(info.cell_count),
+        grid_count=int(info.grid_count),
+        study_type=int(info.study_type),
+        initial_temperature=float(info.initial_temperature),
+        nx=int(info.nx),
+        ny=int(info.ny),
+        nz=int(info.nz),
+        cell_fields=arrays,
+    )
 
 
-def eval_materials(dll, handle, state: np.ndarray, time: float) -> dict:
+def eval_materials(dll, handle, state: np.ndarray, time: float) -> MaterialValues:
     values = {
         name: np.empty(state.size, dtype=np.float64)
         for name in (
@@ -104,7 +125,7 @@ def eval_materials(dll, handle, state: np.ndarray, time: float) -> dict:
         ),
         "eval_materials",
     )
-    return values
+    return MaterialValues(**values)
 
 
 def assembled_operators(dll, handle, state: np.ndarray, time: float):

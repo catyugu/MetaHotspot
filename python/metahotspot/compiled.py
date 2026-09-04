@@ -238,8 +238,17 @@ class Compiled(OwnedHandle):
 
     def _fetch_metadata(self) -> CellFields:
         if self._metadata is None:
-            info, arrays = _native_compiled.compiled_metadata(self._dll, self._handle)
-            self._metadata = (_CompiledInfo(**info), CellFields(**arrays))
+            metadata = _native_compiled.compiled_metadata(self._dll, self._handle)
+            info = _CompiledInfo(
+                metadata.cell_count,
+                metadata.grid_count,
+                metadata.study_type,
+                metadata.initial_temperature,
+                metadata.nx,
+                metadata.ny,
+                metadata.nz,
+            )
+            self._metadata = (info, CellFields(**metadata.cell_fields))
         return self._metadata[1]
 
     @property

@@ -76,14 +76,14 @@ class Solution(OwnedHandle):
         """Snapshot native results into independent Python-owned arrays."""
         data = _native_solution.solution_snapshot(self._dll, self._handle)
         self._data = _SolutionData(
-            time=data["time"],
-            fvm_count=data["fvm_count"],
-            state=data["state"],
-            history_times=data["history_times"],
-            state_history=data["state_history"],
+            time=data.time,
+            fvm_count=data.fvm_count,
+            state=data.state,
+            history_times=data.history_times,
+            state_history=data.state_history,
             probes=[
-                ProbeTrace(name, times, values)
-                for name, times, values in data["probes"]
+                ProbeTrace(probe.name, probe.times, probe.values)
+                for probe in data.probes
             ],
         )
 
