@@ -145,7 +145,7 @@ def run():
         "extraction": {
             "external_structure_used": "same upper ROM reused verbatim across all "
             "three lower-side structures (uniform / patterned BC / active subdomain)",
-            "basis_order": int(rom.order),
+            "basis_order": int(rom.m),
             "seconds": float(summary["seconds"]),
             "relative_response_error": float(summary["relative_response_error"]),
             "ports": [p.normal for p in rom.ports],

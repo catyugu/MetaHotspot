@@ -235,11 +235,6 @@ class Subdomain:
     def dof_order(self) -> int:
         return self.cells.size
 
-    @property
-    def order(self) -> int:
-        """Reduction order = the full FVM side is an identity basis of this size."""
-        return self.cells.size
-
     def internal_operator(self) -> sp.csc_matrix:
         """Full-FVM internal stiffness with the ambient folded at effective p."""
         K = self.K.tocsc()
@@ -252,10 +247,6 @@ class Subdomain:
 
     def rhs_op(self) -> np.ndarray:
         return np.asarray(self.source, dtype=np.float64)
-
-    def port_dofs(self, port: FacePort) -> np.ndarray:
-        """Interface cells of a port are full FVM DOFs (identity numbering)."""
-        return np.asarray(port.cells, dtype=np.int64)
 
     def port(self, label: str) -> FacePort:
         for p in self.ports:
@@ -365,16 +356,12 @@ class EmbeddableRom:
     def __post_init__(self):
         self.m = int(self.basis.shape[1])
 
-    @property
-    def order(self) -> int:
-        """Reduction order = the number of whole-subdomain ROM modes."""
-        return self.m
-
     # ---- uniform "side" interface consumed by connect() -----------------
     @property
     def dof_order(self) -> int:
         return self.m
 
+    @property
     def _q_k(self) -> sp.csc_matrix:
         K = self.K0_hat
         for p, H in zip(self.effective_p, self.ambient_hat):
@@ -382,7 +369,7 @@ class EmbeddableRom:
         return K.tocsc()
 
     def internal_operator(self) -> sp.csc_matrix:
-        return self._q_k()
+        return self._q_k
 
     def capacitance_op(self) -> sp.csc_matrix:
         return self.C_hat.tocsc()
