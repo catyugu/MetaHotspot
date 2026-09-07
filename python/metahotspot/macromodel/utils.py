@@ -486,8 +486,9 @@ class _BasisBuilder:
         self.worst_score = 0.0
         self.converged = True
 
-        # Per-port scratch, re-seeded by _init_port.
+        # Per-source projection state; the final snapshot SVD is global.
         self.projected: dict = {}
+        self.port_basis = np.empty((self.internal_order, 0), dtype=np.float64)
         self.g_hat = np.empty(0, dtype=np.float64)
         self.g_vec = np.empty(0, dtype=np.float64)
 
@@ -503,12 +504,13 @@ class _BasisBuilder:
 
     def _init_port(self, g):
         self.g_vec = np.asarray(g, dtype=np.float64).ravel()
+        self.port_basis = np.empty((self.internal_order, 0), dtype=np.float64)
         self.projected = {
-            "K": self.basis.T @ (self.K @ self.basis),
-            "C": self.basis.T @ (self.C @ self.basis),
-            "H": [self.basis.T @ (H @ self.basis) for H in self.boundary_terms],
+            "K": np.empty((0, 0)),
+            "C": np.empty((0, 0)),
+            "H": [np.empty((0, 0)) for _ in self.boundary_terms],
         }
-        self.g_hat = np.asarray(self.basis.T @ self.g_vec, dtype=np.float64).ravel()
+        self.g_hat = np.empty(0, dtype=np.float64)
 
     def _extend_projected(self, W, B_old):
         """Append block W (basis before append = B_old) to every M-hat and g-hat."""
@@ -525,10 +527,11 @@ class _BasisBuilder:
                 [[self.projected["H"][j], cross], [cross.T, W.T @ HW]]
             )
         self.g_hat = np.concatenate([self.g_hat, np.asarray(W.T @ self.g_vec).ravel()])
+        self.port_basis = np.column_stack((self.port_basis, W))
 
     def _reduced_solve(self, h_vec, shift):
         """Solve the small dense reduced system (K-hat+sigma*C-hat+sum h_k H-hat_k) x = g-hat."""
-        if not self.basis.shape[1]:
+        if not self.port_basis.shape[1]:
             return np.empty(0, dtype=np.float64)
         A_hat = self.projected["K"].copy()
         if shift:
@@ -541,13 +544,13 @@ class _BasisBuilder:
 
     def _probe_residual(self, h_vec, shift):
         """Algorithm-1 step-2 residual eta of the basis at (shift, h_vec)."""
-        v = self.basis @ self._reduced_solve(h_vec, shift)
+        v = self.port_basis @ self._reduced_solve(h_vec, shift)
         res = self._candidate_A(h_vec, shift) @ v - self.g_vec
         return np.linalg.norm(res) / np.linalg.norm(self.g_vec)
 
     def _enrich(self, h_vec, shift, x0):
         """Full solve at (shift, h_vec); append the response to the basis."""
-        if self.basis.shape[1] >= self.order_limit:
+        if self.processed_count >= self.order_limit:
             self.converged = False  # budget exhausted; outer loop will stop
             return x0 if x0 is not None else np.zeros(self.g_vec.size)
         A = self._candidate_A(h_vec, shift)
@@ -555,16 +558,16 @@ class _BasisBuilder:
             spd_solve(A, self.g_vec, x0=x0, rtol=ENRICH_RTOL)
         ).reshape(-1, 1)
         self.snapshots.append(response)
-        block = orthonormalize_block(self.basis, response)
+        block = orthonormalize_block(self.port_basis, response)
         if not block.shape[1]:
             raise RuntimeError("rational Krylov enrichment stalled")
-        B_old = self.basis
-        self.basis = np.column_stack((self.basis, block))
+        B_old = self.port_basis
         self._extend_projected(block, B_old)
+        self.basis = np.column_stack((self.basis, block))
         reference = max(float(response.ravel() @ self.g_vec), np.finfo(float).tiny)
         _, _, _, score_after = response_error(
             response,
-            self.basis,
+            self.port_basis,
             self._reduced_solve(h_vec, shift)[:, None],
             A,
             reference,
@@ -650,9 +653,11 @@ class _BasisBuilder:
         U_b, s_b, Vt_b = scipy.linalg.svd(
             snapshot_matrix, full_matrices=False, check_finite=False
         )
-        svd_tol = self.tolerance ** (3 / 2)
-        s_cut = svd_tol * float(s_b[0])
-        keep = np.flatnonzero(s_b > s_cut)
+        # RomCore normalizes its extraction tolerance member by ten before the
+        # closing SVD; this is distinct from the requested residual tolerance.
+        svd_tol = self.tolerance / 10.0
+        cutoff = svd_tol * float(np.linalg.norm(s_b))
+        keep = np.flatnonzero(s_b >= cutoff)
         basis = np.ascontiguousarray(U_b[:, keep])
 
         constant = np.ones((self.internal_order, 1), dtype=np.float64)
