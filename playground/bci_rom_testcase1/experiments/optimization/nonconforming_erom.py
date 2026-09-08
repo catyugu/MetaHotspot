@@ -170,7 +170,7 @@ def patch_centres_from_ports(lport, rport, areas=None):
     centres = []
     for xl, xr in zip(x_edges[:-1], x_edges[1:]):
         for yl, yr in zip(y_edges[:-1], y_edges[1:]):
-            if xr <= xl or yr <= yl:
+            if xr - xl <= 2.0e-12 or yr - yl <= 2.0e-12:
                 continue
             lm = np.flatnonzero(
                 (rl[:, 0] <= xl + 1e-9)

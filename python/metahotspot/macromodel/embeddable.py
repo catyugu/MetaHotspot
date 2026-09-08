@@ -554,7 +554,7 @@ def common_patches(port_l: FacePort, port_r: FacePort):
     areas, li, ri = [], [], []
     for xl, xr in zip(x_edges[:-1], x_edges[1:]):
         for yl, yr in zip(y_edges[:-1], y_edges[1:]):
-            if xr <= xl or yr <= yl:
+            if (xr - xl) <= 2.0 * _EDGE_TOL or (yr - yl) <= 2.0 * _EDGE_TOL:
                 continue
             lm = _contains(rl, xl, xr, yl, yr)
             rm = _contains(rr, xl, xr, yl, yr)
