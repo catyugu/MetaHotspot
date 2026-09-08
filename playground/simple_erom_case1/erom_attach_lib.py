@@ -45,8 +45,6 @@ from metahotspot.macromodel.embeddable import (
     common_patches,
     connect,
     extract_rom,
-    interface_trace,
-    side_junction_rise,
     solve_system,
 )
 
@@ -491,7 +489,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     w = G[cube_src_rows, 0] / G[cube_src_rows, 0].sum()
     ref_junction = float(w @ ref_rise[cube_src_rows])
     coup_junction = float(
-        np.asarray(side_junction_rise(steady, erom, 0)).ravel()[0] / CUBE_SOURCE_W
+        np.asarray(erom.junction_rise(steady, 0)).ravel()[0] / CUBE_SOURCE_W
     )
 
     top = model.geometry.surface(Face.ZP)
@@ -508,8 +506,8 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     _areas, E_l, E_r, xi_l, xi_r, _li, _ri = common_patches(
         erom.port("z-"), ext_sub.port("z+")
     )
-    Vl, hl = interface_trace(erom, erom.port("z-"), E_l, xi_l)
-    Vr, hr = interface_trace(ext_sub, ext_sub.port("z+"), E_r, xi_r)
+    Vl, hl = erom.interface_trace(erom.port("z-"), E_l, xi_l)
+    Vr, hr = ext_sub.interface_trace(ext_sub.port("z+"), E_r, xi_r)
     q_rom = np.asarray(steady[:m], dtype=np.float64)
     q_ext = np.asarray(steady[ext_offset:], dtype=np.float64)
     T_if = np.asarray(steady[m:ext_offset], dtype=np.float64)
@@ -585,15 +583,3 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
         json.dumps(report, indent=2, default=float), encoding="utf-8"
     )
     return report
-
-
-# library registry convenience (idempotent; harmless on import)
-try:
-    from metahotspot.macromodel.affine import register as _register
-
-    def _builder(overrides: dict | None = None, **_kw):
-        return AttachModel(AttachConfig(**(overrides or {})))
-
-    _register("erom_cube_attach", _builder)
-except Exception:  # pragma: no cover
-    pass

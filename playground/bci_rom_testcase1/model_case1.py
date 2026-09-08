@@ -24,8 +24,8 @@ Boundary: two ambient groups, side faces adiabatic —
 ``h_ranges`` keeps the model group order [ZP crowns, ZM FR4]; both are the
 *physical* HTC range [1, 1e4] (FloTHERM extraction range).  The public
 boundary-parameter space is the physical HTC ``h`` (W/m²·K): callers pass
-physical values to :meth:`~AffineParametricModel.full_reference` /
-``parameter_points``; the model maps them internally through
+physical values to :meth:`~AffineParametricModel.full_reference`;
+the model maps them internally through
 :meth:`~AffineParametricModel.physical_to_effective` to the
 surface-consistent effective coefficient ``p`` before assembling the affine
 ``K``.  The ROM is trained over the same effective ``p``
@@ -347,19 +347,3 @@ class Case1Model(AffineParametricModel):
                 & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
             )
         return mask
-
-
-def builder(overrides: dict | None = None, **_kwargs) -> AffineParametricModel:
-    cfg = Case1Config(**(overrides or {}))
-    return Case1Model(cfg)
-
-
-# Register the case-1 model with the library registry so experiments can obtain
-# it through the same factory as the packaged models.  Registration happens on
-# import; re-registering replaces the previous entry (idempotent).
-try:
-    from metahotspot.macromodel.affine import register as _register
-
-    _register("bci_case1", builder)
-except Exception:  # pragma: no cover - import-only convenience, never fatal
-    pass
