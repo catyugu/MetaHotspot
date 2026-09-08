@@ -286,14 +286,12 @@ def build_subdomain(
     *,
     name: str,
     physical_h=None,
-    ambient_diag=None,
 ) -> Subdomain:
     """Assemble a :class:`Subdomain` from a cell set of the full model.
 
     ``physical_h`` is the physical HTC vector (one scalar per declared ambient
-    group); ``ambient_diag`` is an alternative full-domain diagonal conductance
-    array folding an arbitrary (e.g. spatially varying) external load instead —
-    that load is baked directly into ``K`` and is not a BCI group.
+    group); ``None`` leaves the ambient terms with an undefined effective
+    coefficient (caller folds them later via ``effective_p``).
     """
     cells = np.asarray(cells, dtype=np.int64)
     core = model.core
@@ -304,20 +302,17 @@ def build_subdomain(
     source = np.asarray(model.source_shape[cells, :], dtype=np.float64)
 
     # Declared ambient groups as local affine terms + effective coefficients.
-    ambient_terms, ambient_ranges, effective_p = [], [], []
-    if ambient_diag is None:
-        for term, h_range in zip(model.boundary_terms, model.h_ranges()):
-            diag = np.asarray(term.diagonal()).ravel()[cells]
-            ambient_terms.append(sp.diags(diag))
-            ambient_ranges.append(list(h_range))
-        if physical_h is None:
-            effective_p = np.empty(len(ambient_terms), dtype=np.float64)
-        else:
-            effective_p = np.asarray(
-                model.physical_to_effective(physical_h), dtype=np.float64
-            )
+    ambient_terms, ambient_ranges = [], []
+    for term, h_range in zip(model.boundary_terms, model.h_ranges()):
+        diag = np.asarray(term.diagonal()).ravel()[cells]
+        ambient_terms.append(sp.diags(diag))
+        ambient_ranges.append(list(h_range))
+    if physical_h is None:
+        effective_p = np.empty(len(ambient_terms), dtype=np.float64)
     else:
-        K = K + sp.diags(np.asarray(ambient_diag, dtype=np.float64)[cells])
+        effective_p = np.asarray(
+            model.physical_to_effective(physical_h), dtype=np.float64
+        )
 
     # Remove the phantom cross conductance(s) to now-removed neighbours so the
     # cut faces are genuinely adiabatic inside the subdomain.
@@ -514,11 +509,6 @@ def extract_rom(
     )
 
 
-def side_junction_rise(state, side, offset: int) -> np.ndarray:
-    """Per-source-port temperature rise of a coupled side."""
-    return side.junction_rise(state, offset)
-
-
 # ---------------------------------------------------------------------------
 # common-patch area weighting (non-conforming meshes)
 # ---------------------------------------------------------------------------
@@ -564,7 +554,7 @@ def common_patches(port_l: FacePort, port_r: FacePort):
     areas, li, ri = [], [], []
     for xl, xr in zip(x_edges[:-1], x_edges[1:]):
         for yl, yr in zip(y_edges[:-1], y_edges[1:]):
-            if xr <= xl or yr <= yl:
+            if (xr - xl) <= 2.0 * _EDGE_TOL or (yr - yl) <= 2.0 * _EDGE_TOL:
                 continue
             lm = _contains(rl, xl, xr, yl, yr)
             rm = _contains(rr, xl, xr, yl, yr)
@@ -604,11 +594,6 @@ def common_patches(port_l: FacePort, port_r: FacePort):
 # ---------------------------------------------------------------------------
 # connection (independent-interface-node coupling, full-resolution interface)
 # ---------------------------------------------------------------------------
-
-
-def _diag_at(diag_vals, rows, size):
-    """Diagonal sparse matrix with ``diag_vals`` placed at ``rows`` of ``size``."""
-    return sp.coo_matrix((diag_vals, (rows, rows)), shape=(size, size)).tocsc()
 
 
 def connect(

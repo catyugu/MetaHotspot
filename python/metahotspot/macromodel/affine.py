@@ -1,8 +1,8 @@
 """Base contract and shared mechanism for an affine parametric thermal model.
 
-A concrete :class:`AffineParametricModel` is an opaque handle produced by the
-factory (:func:`metahotspot.macromodel.affine.create`); experiment scripts
-never name a concrete implementation or reach into a config dataclass.
+A concrete :class:`AffineParametricModel` is built by a playground adapter
+(e.g. ``Case1Model`` in ``model_case1.py``); experiment scripts code against
+the base contract, never a concrete implementation or a config dataclass.
 
 The class is deliberately light: it is a **concrete base** that carries all the
 shared mechanism — full-domain DtN-free operator assembly, heat-source shape
@@ -30,11 +30,10 @@ in the shared signatures.
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Callable
+from typing import Callable
 
 import numpy as np
 import scipy.sparse as sp
@@ -113,10 +112,8 @@ class AffineSolveResult:
     steady_temperature: np.ndarray  # full-layout temperature field (K)
     times: np.ndarray  # transient output times (s)
     history: np.ndarray  # (n_times, full_cell_count) temperature history (K)
-    compile_s: float  # geometry compile wall-clock (s)
     steady_s: float  # steady solve wall-clock (s)
     transient_s: float  # transient solve wall-clock (s)
-    full_order: int  # full model cell count
 
 
 class AffineParametricModel:
@@ -129,7 +126,7 @@ class AffineParametricModel:
     per-boundary-group data, and knows how to run a native (unreduced) linear
     reference and solve a reduced model on its own geometry.
 
-    ``h_vec`` passed to ``full_reference`` / ``parameter_points`` is the
+    ``h_vec`` passed to ``full_reference`` is the
     *physical* HTC vector in W/m²·K (one scalar per boundary group) — the
     public, validation-facing parameter space (FloTHERM calibration).  The
     model maps it internally to the surface-consistent *effective* affine
@@ -145,9 +142,7 @@ class AffineParametricModel:
     parameters.  Everything else — full-domain assembly, source-shape
     extraction, per-cell geometry (:attr:`cell_layout`), boundary affine
     terms, native reference, reduced solve, temperature recovery — is shared
-    here.  ``parameter_points`` has a default; override it when a model wants
-    its own parameter-space sampling (e.g. a product grid over several
-    boundary groups).
+    here.
     """
 
     # ------------------------------------------------------------------ config
@@ -190,30 +185,6 @@ class AffineParametricModel:
         (e.g. chiplet activity traces) overrides this with ``t -> P(t)``.
         """
         return self.nominal_power()
-
-    def parameter_points(self, count: int = 5) -> list[tuple[float, ...]]:
-        """Parameter-space points (one physical-h vector per group) to validate.
-
-        Default: sweep the first boundary group's physical range at ``count``
-        geometrically spaced points and anchor every remaining group at the
-        geometric mean of its own range — for a single-group model this is
-        exactly the scalar physical-h sweep.  A model overrides this to
-        describe its own parameterization (e.g. the product grid over two
-        independent groups), so an experiment never needs to know how many
-        affine parameters a model has.
-        """
-        # Physical validation space (each group's declared physical range),
-        # NOT the effective range — parameter_points feeds the physical
-        # scenarios that full_reference maps internally.
-        ranges = np.asarray(
-            [g.h_range for g in self.boundary_groups()], dtype=np.float64
-        )
-        if ranges.size == 0:
-            return []
-        first = ranges[0]
-        axis = np.geomspace(first[0], first[1], count)
-        anchors = tuple(float(math.sqrt(lo * hi)) for lo, hi in ranges[1:])
-        return [tuple((float(h), *anchors)) for h in axis]
 
     # --------------------------------------------------- full-domain assembly
 
@@ -416,10 +387,8 @@ class AffineParametricModel:
             steady_temperature=steady_temperature,
             times=times,
             history=self.ambient_K + history,
-            compile_s=0.0,
             steady_s=steady_s,
             transient_s=transient_s,
-            full_order=self._full.cell_count,
         )
 
     def nominal_power(self) -> np.ndarray:
@@ -442,91 +411,3 @@ class AffineParametricModel:
         if field.ndim == 1:
             return self.ambient_K + G.T @ (field - self.ambient_K)
         return self.ambient_K + (field - self.ambient_K) @ G
-
-    def boundary_temperature(self, field) -> np.ndarray:
-        """Per-boundary-group area-averaged temperature (K) of a full-domain field."""
-        field = np.asarray(field)
-        out = np.empty(len(self.boundary_groups()), dtype=np.float64)
-        for k, group in enumerate(self.boundary_groups()):
-            cells = np.asarray(group.cells, dtype=np.int64)
-            area = float(np.sum(group.areas))
-            out[k] = float(np.sum(field[cells] * group.areas) / area) if area else 0.0
-        return out
-
-    def recover_temperature(self, theta, basis) -> np.ndarray:
-        """Lift reduced interior coordinates back to a full-domain rise field.
-
-        ``theta`` is the reduced interior state (rise above ambient, (n_modes,)
-        or (n_times, n_modes)); the recovered field is ``V @ theta`` (K rise).
-        """
-        theta = np.atleast_2d(theta)
-        return theta @ basis.T
-
-
-# ---------------------------------------------------------------------------
-# factory / registry  (concrete models register here from playground adapters)
-# ---------------------------------------------------------------------------
-
-
-class _Entry:
-    """Registered builder plus its quick-mode config overrides.
-
-    ``builder`` is called as ``builder(overrides: dict | None = None, **kw)``
-    and must return an :class:`AffineParametricModel`.  ``quick_overrides`` is
-    the model's own recipe for a fast smoke experiment; the factory applies it
-    when ``create(..., quick=True)`` is used, so the experiment only has to
-    say *whether* it is quick, never *what* that means for a given model.
-    """
-
-    __slots__ = ("builder", "quick_overrides")
-
-    def __init__(self, builder, quick_overrides=None):
-        self.builder = builder
-        self.quick_overrides = quick_overrides
-
-
-_REGISTRY: dict[str, _Entry] = {}
-
-
-def register(
-    name: str,
-    builder: Callable[..., AffineParametricModel],
-    *,
-    quick_overrides: dict | None = None,
-) -> None:
-    """Register a concrete model under ``name``.
-
-    ``builder`` is called as ``builder(overrides: dict | None = None, **kw)``
-    and must return an :class:`AffineParametricModel`.  ``quick_overrides`` is
-    the mapping of scalar config fields the model applies in quick mode (its
-    own smoke-experiment recipe).  Re-registering a name replaces the previous
-    entry.
-    """
-    if not name or not name.isidentifier():
-        raise ValueError(f"invalid model name: {name!r}")
-    _REGISTRY[name] = _Entry(builder, quick_overrides)
-
-
-def create(name: str, *, quick: bool = False, **kwargs: Any) -> AffineParametricModel:
-    """Instantiate the registered model ``name``.
-
-    ``quick`` toggles the model's own quick-mode overrides (``True`` applies
-    them); additional ``**kwargs`` are forwarded to the registered builder as
-    config overrides and take precedence.  Raises ``KeyError`` for unknown
-    names.  The returned value is typed as the abstract base; the concrete
-    class is private to the registering package.
-    """
-    try:
-        entry = _REGISTRY[name]
-    except KeyError:
-        raise KeyError(
-            f"unknown affine parametric model {name!r}; "
-            f"registered: {sorted(_REGISTRY)}"
-        ) from None
-    overrides = entry.quick_overrides if quick else None
-    return entry.builder(overrides=overrides, **kwargs)
-
-
-def registered_names() -> list[str]:
-    """Sorted names of all registered models."""
-    return sorted(_REGISTRY)

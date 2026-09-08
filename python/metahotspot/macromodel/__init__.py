@@ -16,11 +16,10 @@ Modules:
   plain-data satellites (:class:`~metahotspot.macromodel.affine.BoundaryGroup`,
   :class:`~metahotspot.macromodel.affine.SourcePort`,
   :class:`~metahotspot.macromodel.affine.CellLayout`,
-  :class:`~metahotspot.macromodel.affine.AffineSolveResult`), the
-  :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view,
-  and the model registry/factory (:func:`~metahotspot.macromodel.affine.create`,
-  :func:`~metahotspot.macromodel.affine.register`).  Concrete models register
-  from playground adapters; the library itself registers nothing.
+  :class:`~metahotspot.macromodel.affine.AffineSolveResult`), and the
+  :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view.
+  Concrete models subclass the base from playground adapters; the library
+  itself ships no concrete model.
 * :mod:`embeddable` — the embeddable ROM extractor: boundary-face port
   enumeration (only explicitly declared ambient faces are excluded; every other
   boundary face becomes a connectable :class:`~metahotspot.macromodel.embeddable.FacePort`),
@@ -45,9 +44,6 @@ from metahotspot.macromodel.affine import (
     BoundaryGroup,
     CellLayout,
     SourcePort,
-    create,
-    register,
-    registered_names,
 )
 from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.embeddable import (
@@ -59,7 +55,6 @@ from metahotspot.macromodel.embeddable import (
     connect,
     enumerate_interface_ports,
     extract_rom,
-    side_junction_rise,
     solve_system,
 )
 
@@ -74,9 +69,6 @@ __all__ = [
     "BoundaryGroup",
     "CellLayout",
     "SourcePort",
-    "create",
-    "register",
-    "registered_names",
     "BoundarySurface",
     "CellGeometry",
     # embeddable ROM
@@ -88,6 +80,5 @@ __all__ = [
     "connect",
     "enumerate_interface_ports",
     "extract_rom",
-    "side_junction_rise",
     "solve_system",
 ]

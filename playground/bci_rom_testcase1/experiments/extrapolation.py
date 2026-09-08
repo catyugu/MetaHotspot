@@ -65,6 +65,15 @@ def run_rom(model, basis, h):
     return ss, hist, online, F
 
 
+def max_transient_junction_error_pct(reference_steady, reference_history, rom_history):
+    """Worst junction trajectory error, normalized by each steady rise."""
+    steady_rise = np.maximum(np.abs(reference_steady - AMB), 1e-12)
+    per_junction = (
+        100 * np.max(np.abs(rom_history - reference_history), axis=0) / steady_rise
+    )
+    return float(np.max(per_junction))
+
+
 def extrapolation():
     cases = [
         ("1e-2..1e6", ((1e-2, 1e6), (1e-2, 1e6))),
@@ -111,15 +120,21 @@ def extrapolation():
             ss, hist, online, F = run_rom(model, basis, h)
             refj = model.junction_temperature(ref.steady_temperature)
             romj = AMB + F.T @ ss
-            err = float(
+            steady_error = float(
                 100 * np.max(np.abs(romj - refj)) / max(np.max(refj - AMB), 1e-12)
+            )
+            transient_error = max_transient_junction_error_pct(
+                refj,
+                model.junction_temperature(ref.history),
+                AMB + hist @ F,
             )
             rows.append(
                 dict(
                     training=name,
                     h1=h[0],
                     h2=h[1],
-                    error_pct=err,
+                    steady_error_pct=steady_error,
+                    transient_max_error_pct=transient_error,
                     online_s=online,
                     extraction_s=ext,
                     order=int(basis.shape[1]),
@@ -135,38 +150,44 @@ def main():
         json.dumps(dict(extraction=extraction, extrapolation=rows), indent=2),
         encoding="utf-8",
     )
-    # worst error by training range, shown over the two-dimensional extrapolation plane
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), constrained_layout=True)
-    for ax, (name, _) in zip(axes, [("1e-2..1e6", 0), ("1..1e4", 0), ("10..1e3", 0)]):
-        a = [r for r in rows if r["training"] == name]
-        xs = sorted(set(r["h1"] for r in a))
-        ys = sorted(set(r["h2"] for r in a))
-        Z = np.array(
-            [
+    # Steady and transient worst junction errors over the extrapolation plane.
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), constrained_layout=True)
+    training_names = ["1e-2..1e6", "1..1e4", "10..1e3"]
+    metrics = [
+        ("steady_error_pct", "steady junction error (%)"),
+        ("transient_max_error_pct", "transient max junction error (%)"),
+    ]
+    for row_axes, (metric, label) in zip(axes, metrics):
+        for ax, name in zip(row_axes, training_names):
+            a = [r for r in rows if r["training"] == name]
+            xs = sorted(set(r["h1"] for r in a))
+            ys = sorted(set(r["h2"] for r in a))
+            Z = np.array(
                 [
-                    next(r["error_pct"] for r in a if r["h1"] == x and r["h2"] == y)
-                    for x in xs
+                    [
+                        next(r[metric] for r in a if r["h1"] == x and r["h2"] == y)
+                        for x in xs
+                    ]
+                    for y in ys
                 ]
-                for y in ys
-            ]
-        )
-        im = ax.imshow(
-            Z,
-            origin="lower",
-            aspect="auto",
-            extent=[
-                np.log10(xs[0]),
-                np.log10(xs[-1]),
-                np.log10(ys[0]),
-                np.log10(ys[-1]),
-            ],
-            cmap="magma",
-            vmin=0,
-        )
-        ax.set_title(name)
-        ax.set_xlabel("log10(h1)")
-        ax.set_ylabel("log10(h2)")
-        fig.colorbar(im, ax=ax, label="junction error (%)")
+            )
+            im = ax.imshow(
+                Z,
+                origin="lower",
+                aspect="auto",
+                extent=[
+                    np.log10(xs[0]),
+                    np.log10(xs[-1]),
+                    np.log10(ys[0]),
+                    np.log10(ys[-1]),
+                ],
+                cmap="magma",
+                vmin=0,
+            )
+            ax.set_title(name)
+            ax.set_xlabel("log10(h1)")
+            ax.set_ylabel("log10(h2)")
+            fig.colorbar(im, ax=ax, label=label)
     fig.savefig(OUT / "extrapolation_error.png", dpi=180)
     plt.close(fig)
     fig, ax = plt.subplots(figsize=(7, 4.5))
