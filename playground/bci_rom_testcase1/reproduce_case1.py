@@ -9,7 +9,7 @@ results from three sources:
                     MetaHotspot C++ engine), solved directly at the effective
                     (series-condensed) coefficient ``p = k·h/(k + h·half)``.
     2. FLOTHERM ROM: the BCI-ROM exported by Simcenter FloTHERM
-                    (``MATRICES/*.mtx``, ROM size 36) — reduced solve +
+                    (``MATRICES/*.mtx``) — reduced solve +
                     junction (COG probe) recovery.
     3. OUR ROM    : the BCI-FANTASTIC reduced-order model built here (per-port
                     spectral bounds -> elliptic shift count -> residual-driven
@@ -89,7 +89,7 @@ OUT = _ROOT / "results" / "reproduce_case1"
 
 
 def load_flotherm():
-    """Load FloTHERM BCI-ROM matrices (n=36 modal)."""
+    """Load FloTHERM BCI-ROM matrices"""
     M_dir = _ROOT / "MATRICES"
 
     def load(name):
@@ -97,7 +97,7 @@ def load_flotherm():
 
     K = load("K_bci_hat.mtx").tocsc()
     Mm = load("M_bci_hat.mtx").tocsc()
-    g = np.asarray(load("g_bci_hat.mtx").todense())  # (36, 4) source input
+    g = np.asarray(load("g_bci_hat.mtx").todense())  # (order, 4) source input
     dH0 = load("delta_H_bci_hat[0].mtx").tocsc()  # Areas[0]=6e-3 -> h=1e3
     dH1 = load("delta_H_bci_hat[1].mtx").tocsc()  # Areas[1]=4e-4 -> h=5e1
     return K, Mm, g, dH0, dH1
