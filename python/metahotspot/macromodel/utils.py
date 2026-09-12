@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-"""Model-agnostic operator-level utilities for macromodel (MOR) experiments.
-
-This module is deliberately *model-agnostic*: it operates only on the generic
-`Operators` interface (K, C, f sparse matrices + rhs) and plain numpy/scipy
-data.  No geometry, mesh, material or config type appears here, so any
-reduction method (BCI-FANTASTIC, tangential rational Krylov, ...) can be
-built on top of whatever model supplies its operators — the method only sees
-the K/C/f interface, not the concrete model internals.
-
-Contents
---------
-* MPMM frequency sampling:  mpmm_elliptic_shift_count, mpmm_elliptic_shifts
-* Krylov enrichment:        orthonormalize_block, response_score
-* sparse operator helpers:  normalized_operators
-* parametric basis:         build_parametric_basis
-* BCI Galerkin projection:  project_bci
-* ROM linear solves:        assemble_reduced_k, solve_rom_steady, solve_rom_transient
-* accuracy metrics:         accuracy_summary
-
-Everything is model-agnostic (works on ``Compiled`` objects / plain arrays,
-never on a concrete model config).
-"""
+"""Model-agnostic operator-level utilities for thermal reduced-order models."""
 
 from __future__ import annotations
 
@@ -38,43 +17,16 @@ from metahotspot._compiled_data import Operators
 
 
 # ---------------------------------------------------------------------------
-# dense linear algebra
-# ---------------------------------------------------------------------------
-
-
-def _leading_energy_fraction(matrix, reference):
-    """sqrt of the largest A-energy residual over ``reference``.
-
-    Computes ``sqrt(lambda_max(EᵀAE) / reference)`` with E the residual block
-    (symmetric eigendecomposition, values floored at 0).  Used by the
-    enrichment certification to measure how much of the full response energy
-    the current reduced basis misses.
-    """
-    values = scipy.linalg.eigvalsh(matrix, check_finite=False)
-    largest = float(np.max(np.maximum(values, 0.0)))
-    return math.sqrt(largest / reference)
-
-
-# ---------------------------------------------------------------------------
-# MPMM elliptic-optimal frequency sampling  (FANTASTIC 2014 eqs. 4-5)
+# MPMM elliptic-optimal frequency sampling
 # ---------------------------------------------------------------------------
 
 
 def mpmm_elliptic_shift_count(
     relative_epsilon: float, lambda_min: float, lambda_max: float
 ):
-    """Smallest m satisfying 4*exp(-m*pi^2/log(4/k')) <= eps (Extended FANTASTIC eq.).
-
-    This is the Zolotarev-optimal point count of the MPMM method (Codecasa
-    et al.): the relative error of the elliptic-rational approximation decays
-    as ``4 exp(-m pi^2 / log(4/k'))`` with the *first* power of m.  The ``m^2``
-    exponent in the THERMINIC 2014 preprint rendering is a typesetting
-    artefact; the 2021 journal formulation and the exponential-convergence
-    rate agree on the linear-in-m exponent.
-    """
-    kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
+    """Smallest m satisfying 4 exp(-m pi^2/log(4/k')) <= epsilon."""
     k_prime = lambda_min / lambda_max
-    log_term = max(math.log(4.0 / k_prime), np.finfo(float).tiny)
+    log_term = math.log(4.0 / k_prime)
     for m in range(1, 400):
         if 4.0 * math.exp(-m * math.pi * math.pi / log_term) <= relative_epsilon:
             return m
@@ -82,29 +34,25 @@ def mpmm_elliptic_shift_count(
 
 
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
-    """Elliptic-dn distributed real shifts on [0, lambda_max] (FANTASTIC 2014 eq. 5)."""
+    """Elliptic-dn distributed positive real matching points."""
     modulus = np.sqrt(1.0 - 1.0 / (kappa * kappa))
     k_complete = special.ellipk(modulus**2)
     theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / (2.0 * count)
     _, _, dn_values, _ = special.ellipj(theta, modulus**2)
-    shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
-    return np.sort(shifts)[::-1]
+    return np.sort(lambda_max * np.asarray(dn_values, dtype=np.float64))[::-1]
 
 
 # ---------------------------------------------------------------------------
-# residual-driven Krylov enrichment
+# linear algebra
 # ---------------------------------------------------------------------------
 
 
 def orthonormalize_block(basis, vectors):
-    """Orthonormalize ``vectors`` against the current column-orthonormal ``basis``.
-
-    Returns the new orthonormal columns (a basis for the span of the input that
-    is orthogonal to ``basis``).  ``basis`` may be empty (shape (n, 0)).
-    """
+    """Return an orthonormal basis for ``vectors`` modulo ``basis``."""
     block = np.asarray(vectors, dtype=np.float64).copy()
     if not block.size:
         return np.empty((block.shape[0], 0), dtype=np.float64)
+    input_norm = float(np.linalg.norm(block))
 
     for _ in range(2):
         if basis.shape[1]:
@@ -117,73 +65,54 @@ def orthonormalize_block(basis, vectors):
         check_finite=False,
     )
     diagonal = np.abs(np.diag(r))
-    if not diagonal.size or diagonal[0] == 0.0:
-        return np.empty((block.shape[0], 0), dtype=np.float64)
-    keep = diagonal > np.finfo(float).eps * max(block.shape) * diagonal[0]
+    threshold = np.finfo(float).eps * max(block.shape) * input_norm
+    keep = diagonal > threshold
     return np.ascontiguousarray(q[:, keep])
 
 
-def _svd_rank_for_relative_error(singular_values, tolerance):
-    """Smallest rank whose discarded Frobenius energy is at most ``tolerance``."""
-    singular_values = np.asarray(singular_values, dtype=np.float64)
-    normalized = singular_values / np.linalg.norm(singular_values)
-    discarded_energy = np.cumsum(np.square(normalized[::-1]))
-    discarded_count = np.count_nonzero(discarded_energy <= tolerance**2)
-    return singular_values.size - discarded_count
+def _snapshot_svd_basis(snapshot_matrix, tolerance):
+    """Compress full responses by direction using the FANTASTIC SVD cutoff."""
+    snapshots = np.asarray(snapshot_matrix, dtype=np.float64)
+    snapshots = snapshots / np.linalg.norm(snapshots, axis=0)
+    U, singular_values, _ = scipy.linalg.svd(
+        snapshots,
+        full_matrices=False,
+        check_finite=False,
+    )
+    keep = singular_values >= tolerance * singular_values[0]
+    return np.ascontiguousarray(U[:, keep]), singular_values
 
 
 # ---------------------------------------------------------------------------
-# SPD linear solve  (Extended FANTASTIC 2021 lines 715-720: iterative solver
-# warm-started from the reduced-model estimate; no re-factorization)
+# SPD linear solve
 # ---------------------------------------------------------------------------
 
-ENRICH_RTOL = 1.0e-6  # relative residual of each enrich full-domain solve
+ENRICH_RTOL = 1.0e-6
 
 
 def _rs_preconditioner(A):
-    """Ruge-Stueben AMG hierarchy + V-cycle preconditioner for the SPD solve.
-
-    ``interpolation="direct"`` halves the classical-interpolation setup cost
-    (measured 0.33 s -> 0.15 s on the 122k-cell Case-1 operator) at the same
-    CG iteration count, i.e. a ~30 % end-to-end extraction speedup with
-    bit-identical basis and accuracy (see optimization/amg_interpolation_ab).
-    """
     ml = pyamg.ruge_stuben_solver(A, interpolation="direct")
     return ml.aspreconditioner(cycle="V")
 
 
 def spd_solve(A, b, x0=None, rtol=ENRICH_RTOL):
-    """Solve the SPD system ``A x = b`` by Ruge-Stueben AMG-preconditioned CG.
-
-    ``A`` is the full-domain operator ``(σM + K + Σ_k h_k H_k)`` — symmetric
-    positive definite (h > 0 makes the boundary term positive definite and
-    σ ≥ 0).  ``x0`` is the warm-start guess (the reduced-model estimate, or
-    the previous shift's response), so CG is warm-started (Extended FANTASTIC
-    2021) on top of the AMG preconditioner.
-    """
+    """Solve ``A x = b`` by Ruge-Stuben AMG-preconditioned CG."""
     b = np.asarray(b, dtype=np.float64).ravel()
     if x0 is None:
-        x0 = np.zeros(b.size, dtype=np.float64)
-    x0 = np.asarray(x0, dtype=np.float64).ravel()
-
+        x0 = np.zeros_like(b)
     M = _rs_preconditioner(A.tocsr())
-    x, info = spla.cg(A, b, x0=x0, rtol=rtol, atol=0.0, maxiter=2000, M=M)
+    x, info = spla.cg(
+        A,
+        b,
+        x0=np.asarray(x0, dtype=np.float64).ravel(),
+        rtol=rtol,
+        atol=0.0,
+        maxiter=2000,
+        M=M,
+    )
     if info != 0:
         raise RuntimeError(f"AMG-CG did not converge: info={info}")
     return x
-
-
-def response_score(response, basis, reduced, A, reference) -> float:
-    """A-energy score of the residual of ``basis @ reduced`` vs ``response``.
-
-    ``score = sqrt(lambda_max(EᵀAE) / reference)`` with ``E = response -
-    basis @ reduced`` the residual block — the enrichment certification
-    metric (worst residual direction relative to the response Gramian's
-    leading energy).
-    """
-    error_response = response - basis @ reduced if basis.shape[1] else response
-    error_gram = error_response.T @ (A @ error_response)
-    return _leading_energy_fraction(error_gram, reference)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +121,7 @@ def response_score(response, basis, reduced, A, reference) -> float:
 
 
 def normalized_operators(K, C, f) -> Operators:
-    """CSC-normalize K, C (eliminate explicit zeros) and copy f."""
+    """CSC-normalize K and C and copy f."""
     K = sp.csc_matrix(K)
     C = sp.csc_matrix(C)
     K.eliminate_zeros()
@@ -201,12 +130,11 @@ def normalized_operators(K, C, f) -> Operators:
 
 
 # ---------------------------------------------------------------------------
-# per-port spectral bounds  (FANTASTIC 2014 step 1, Extended FANTASTIC line 2)
+# per-port spectral bounds
 # ---------------------------------------------------------------------------
 
-
-EIGENBOUND_SUBSPACE_CAP = 64  # per-end iteration / Arnoldi budget
-EIGENBOUND_RTOL = 1.0e-8  # residual tolerance for per-port extreme eigenvalues
+EIGENBOUND_SUBSPACE_CAP = 64
+EIGENBOUND_RTOL = 1.0e-8
 
 
 def port_eigenvalue_bounds(
@@ -217,19 +145,7 @@ def port_eigenvalue_bounds(
     shift=1.0e-6,
     cap=EIGENBOUND_SUBSPACE_CAP,
 ) -> tuple[float, float]:
-    """Estimate the source-excited spectral interval of ``K x = λ C x``.
-
-    The FANTASTIC paper does not ask for the global pencil endpoints: it asks
-    for the endpoints visible in the impulse response of source ``g``.  Build
-    the source-started Krylov space explicitly, then take endpoints of its
-    projected generalized pencil.  This is also deterministic and does not
-    mistake an ``eigsh(v0=g)`` convergence seed for source selectivity.
-
-    A failed estimate raises: the caller (:func:`build_parametric_basis`)
-    propagates the source port context.  There is no sound silent fallback for
-    the elliptic shift count, so resolving no usable endpoint is an error, not
-    a value to guess.
-    """
+    """Estimate the generalized spectral interval used for one source port."""
     K = K.tocsc()
     C = C.tocsc()
     c_diag = np.asarray(C.diagonal()).ravel()
@@ -237,13 +153,11 @@ def port_eigenvalue_bounds(
         raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
     g = np.asarray(g, dtype=np.float64).ravel()
     n = K.shape[0]
-    g_norm = max(float(np.linalg.norm(g)), np.finfo(float).tiny)
-    g0 = g / g_norm
+    g0 = g / np.linalg.norm(g)
     scale = float(np.median(c_diag))
     s0 = max(float(shift), scale * 1.0e-6)
 
-    # -- fast end: largest eigenvalue of (K, C) via ARPACK Lanczos ---------
-    w = spla.eigsh(
+    high = spla.eigsh(
         K,
         k=2,
         M=C,
@@ -253,36 +167,27 @@ def port_eigenvalue_bounds(
         v0=g0,
         return_eigenvectors=False,
     )
-    if not w.size:
-        raise RuntimeError("port_eigenvalue_bounds: eigsh resolved no eigenvalues")
-    lambda_max = float(np.max(w))
+    lambda_max = float(np.max(high))
 
-    # -- slow end: shifted pencil, min positive, AMG-preconditioned --------
     A_shift = (K + s0 * C).tocsc()
-    precond = _rs_preconditioner(A_shift.tocsr())
-    lam_s, _ = spla.lobpcg(
+    low, _ = spla.lobpcg(
         A_shift,
         np.column_stack((g0, np.ones(n) / np.sqrt(n))),
         B=C,
-        M=precond,
+        M=_rs_preconditioner(A_shift.tocsr()),
         largest=False,
         tol=EIGENBOUND_RTOL,
         maxiter=cap,
     )
-    mu = np.asarray(lam_s) - s0
-    positive = mu[mu > 1.0e-9]
+    positive = np.asarray(low) - s0
+    positive = positive[positive > 1.0e-9]
     if not positive.size:
-        raise RuntimeError(
-            "port_eigenvalue_bounds: lobpcg resolved no positive eigenvalue; "
-            "cannot form the elliptic shift plan"
-        )
-    lambda_min = float(positive.min())
-
-    return lambda_min, lambda_max
+        raise RuntimeError("port_eigenvalue_bounds resolved no positive eigenvalue")
+    return float(positive.min()), lambda_max
 
 
 # ---------------------------------------------------------------------------
-# BCI Galerkin projection  (FANTASTIC 2014 + BCI matrix reduction 2015)
+# BCI Galerkin projection
 # ---------------------------------------------------------------------------
 
 
@@ -293,33 +198,7 @@ def project_bci(
     basis,
     boundary_epsilon=1.0e-3,
 ):
-    """Project the full-domain operators onto ``basis``, exposing BCI ports.
-
-    Builds the reduced (Ĉ, K̂0, F̂, F̂_ϑ, A_k) of a boundary-condition-independent
-    DCTM following Extended FANTASTIC (Codecasa et al. 2021, eqs. 9-16 and the
-    boundary-DoF definition of Section IV-B):
-
-    * the source ports enter the RHS through ``F̂ = Vᵀ G_src`` and the junction
-      temperatures read ``T_j = T0 + F̂ᵀ θ``;
-    * the boundary is exposed as an explicit port: the rows of ``V`` on the
-      boundary cells form ``V_∂Ω``, whose SVD ``V_∂Ω = U_∂Ω Σ_∂Ω W_∂Ωᵀ`` is
-      truncated at singular values below ``boundary_epsilon``; the boundary
-      output matrix is ``F̂_ϑ = W_∂Ω Σ_∂Ω`` (M̂ × Θ) so ``T_ϑ = T0 + F̂_ϑᵀ θ``;
-    * each boundary group k contributes the affine term ``h_k F̂_ϑ A_k F̂_ϑᵀ``
-      with ``A_k = U_∂Ωᵀ H_k U_∂Ω`` (Θ × Θ, H_k the group's exposed-area
-      diagonal), so the effective stiffness is ``K̂(h) = K̂0 + Σ_k h_k F̂_ϑ A_k
-      F̂_ϑᵀ`` — the projected HTC matrix of the ambient coupling
-      ``P_ϑ = -Ĥ(T_ϑ - T_A e_Θ)``, ``Ĥ = Σ_k h_k A_k``.
-
-    ``operators`` is the full-domain h-free ``(K, C, f)``, ``source_shape``
-    the (N, n_src) source-shape matrix ``G_src``, and ``boundary_terms`` a
-    list of diagonal sparse ``H_k`` (exposed area per cell, one per group).
-    Interior modes are *rise* coordinates above ambient.
-
-    Returns ``(C_hat, K_hat0, F_hat, F_bdry, A_bdry)`` where ``F_bdry`` is the
-    (M̂, Θ) boundary output matrix and ``A_bdry[k]`` the (Θ, Θ) HTC matrix of
-    boundary group k.
-    """
+    """Project the full-domain operators onto ``basis``, exposing BCI ports."""
 
     def project(matrix):
         reduced = sp.csc_matrix(basis.T @ matrix @ basis)
@@ -330,7 +209,6 @@ def project_bci(
     K_hat0 = project(operators.K)
     F_hat = np.asarray(basis.T @ source_shape, dtype=np.float64)
 
-    # Boundary cells: union of cells carrying any exposed area.
     n_cell = operators.K.shape[0]
     b_diag = np.zeros(n_cell)
     for term in boundary_terms:
@@ -339,30 +217,26 @@ def project_bci(
     if b_cells.size == 0:
         raise ValueError("no boundary cells found for BCI port extraction")
 
-    # V_∂Ω = rows of V on boundary cells; SVD, truncated at boundary_epsilon.
     V_d = np.asarray(basis[b_cells, :])
     U_d, s_d, Wt_d = np.linalg.svd(V_d, full_matrices=False)
     keep = np.flatnonzero(s_d > boundary_epsilon * s_d[0])
-    theta = keep.size
-    if theta == 0:
+    if not keep.size:
         raise RuntimeError("boundary SVD retained no modes")
-    U_t = np.ascontiguousarray(U_d[:, keep])  # (M_∂Ω, Θ)
-    S_t = s_d[keep]  # (Θ,)
-    W_t = np.ascontiguousarray(Wt_d[keep, :].T)  # (M̂, Θ)
-    F_bdry = W_t * S_t  # (M̂, Θ) = W Σ
+    U_t = np.ascontiguousarray(U_d[:, keep])
+    S_t = s_d[keep]
+    W_t = np.ascontiguousarray(Wt_d[keep, :].T)
+    F_bdry = W_t * S_t
 
-    # Per-group HTC matrices A_k = U_∂Ωᵀ H_k U_∂Ω (Θ, Θ), in boundary-cell frame.
     A_bdry = []
     for term in boundary_terms:
         Hk_b = np.asarray(term.diagonal()).ravel()[b_cells]
-        A_k = U_t.T @ (Hk_b[:, None] * U_t)  # Θ×Θ
-        A_bdry.append(A_k.astype(np.float64))
+        A_bdry.append((U_t.T @ (Hk_b[:, None] * U_t)).astype(np.float64))
 
     return C_hat, K_hat0, F_hat, F_bdry, A_bdry
 
 
 def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
-    """``K̂(h) = K̂0 + Σ_k h_k F̂_ϑ A_k F̂_ϑᵀ`` for admissible ``h_vec``."""
+    """Assemble K_hat(h) = K_hat0 + sum h_k F_bdry A_k F_bdry^T."""
     K = K_hat0.tocsc()
     for h, A in zip(h_vec, A_bdry):
         K = K + h * sp.csc_matrix(F_bdry @ A @ F_bdry.T)
@@ -370,20 +244,19 @@ def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
 
 
 def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:
-    """Steady system solved by AMG-preconditioned CG with residual checking.
-
-    Solves K̂(h) θ = F̂ P, where K̂ is SPD for h > 0.
-    """
+    """Solve K_hat theta = F_hat power by AMG-preconditioned CG."""
     rhs = F_hat @ np.asarray(power, dtype=np.float64)
     A = K_hat.tocsc().tocsr()
-
-    M = _rs_preconditioner(A)
-
-    theta, info = spla.cg(A, rhs, rtol=1e-8, atol=0.0, maxiter=10000, M=M)
-
+    theta, info = spla.cg(
+        A,
+        rhs,
+        rtol=1.0e-8,
+        atol=0.0,
+        maxiter=10000,
+        M=_rs_preconditioner(A),
+    )
     if info != 0:
         raise RuntimeError(f"steady CG did not converge: info={info}")
-
     return theta.ravel()
 
 
@@ -399,18 +272,16 @@ def solve_rom_transient(
     dt: float,
     duration: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Fixed-step BDF1 (implicit Euler) transient of the reduced interior."""
+    """Fixed-step BDF1 transient of the reduced system."""
     n_modes = C_hat.shape[0]
-    A = K_hat.tocsc()
-    lhs = (C_hat / dt + A).tocsc()
+    lhs = (C_hat / dt + K_hat.tocsc()).tocsc()
     times = np.arange(0.0, duration + 0.5 * dt, dt)
     history = np.empty((times.size, n_modes), dtype=np.float64)
     theta = np.zeros(n_modes)
     history[0] = theta
 
     lhs_csr = lhs.tocsr()
-    M = _rs_preconditioner(lhs_csr)
-
+    preconditioner = _rs_preconditioner(lhs_csr)
     for i in range(1, times.size):
         t = times[i]
         rhs = (C_hat @ theta) / dt + F_hat @ np.asarray(power_t(t), dtype=np.float64)
@@ -421,22 +292,16 @@ def solve_rom_transient(
             rtol=TRANSIENT_RTOL,
             atol=0.0,
             maxiter=TRANSIENT_MAXITER,
-            M=M,
-        )
-        residual = np.linalg.norm(lhs_csr @ theta - rhs) / max(
-            np.linalg.norm(rhs), np.finfo(float).tiny
+            M=preconditioner,
         )
         if info != 0:
-            raise RuntimeError(
-                f"transient CG did not converge at t={t:g}: "
-                f"info={info}, relative residual={residual:.3e}"
-            )
+            raise RuntimeError(f"transient CG did not converge at t={t:g}: info={info}")
         history[i] = theta
     return times, history
 
 
 # ---------------------------------------------------------------------------
-# parametric basis construction (FANTASTIC BCI 2015 Algorithm 1)
+# Extended-FANTASTIC parametric basis extraction
 # ---------------------------------------------------------------------------
 
 ROM_TOLERANCE = 1.0e-3
@@ -446,280 +311,39 @@ RANDOM_SEED = 20260805
 
 
 def random_h(h_ranges, seed) -> tuple[float, ...]:
-    """One random admissible h-vector (one h per group), log-uniform.  No greedy.
+    """Draw one log-uniform parameter vector from the admissible HTC box."""
+    return _draw_h(h_ranges, np.random.default_rng(seed))
 
-    ``h_ranges`` is an ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges,
-    one row per affine parameter; a single log-uniform draw across all groups.
-    FANTASTIC BCI 2015 Algorithm 1: parameters chosen at random to avoid
-    reduced-basis greedy stagnation.  A deterministic ``seed`` is advanced per
-    call so consecutive draws are independent but reproducible.
-    """
+
+def _draw_h(h_ranges, rng) -> tuple[float, ...]:
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
     if h_ranges.size == 0:
         return ()
-    lows = np.log10(h_ranges[:, 0])
-    highs = np.log10(h_ranges[:, 1])
-    rng = np.random.default_rng(seed)
-    draws = 10.0 ** rng.uniform(lows, highs, size=h_ranges.shape[0])
-    return tuple(float(v) for v in draws)
+    low = np.log10(h_ranges[:, 0])
+    high = np.log10(h_ranges[:, 1])
+    return tuple(float(v) for v in 10.0 ** rng.uniform(low, high))
 
 
-class _BasisBuilder:
-    """Stateful driver behind :func:`build_parametric_basis`.
+def _local_projection(K, C, boundary_terms, g, basis):
+    K_hat = basis.T @ (K @ basis)
+    C_hat = basis.T @ (C @ basis)
+    H_hat = [basis.T @ (H @ basis) for H in boundary_terms]
+    g_hat = basis.T @ g
+    return K_hat, C_hat, H_hat, g_hat
 
-    Holds the shared mutable state (basis, projected reduced operators, per-port
-    plan/history) as attributes instead of a closure heap, so the Algorithm-1
-    loop reads as explicit data flow over instance state.
-    """
 
-    def __init__(
-        self,
-        operators,
-        source_shape,
-        boundary_terms,
-        h_ranges,
-        *,
-        tolerance,
-        max_order,
-        probe_rounds,
-        seed,
-    ):
-        self.K = operators.K.tocsc()
-        self.C = operators.C.tocsc()
-        self.boundary_terms = boundary_terms
-        self.h_ranges = np.asarray(h_ranges, dtype=np.float64)
-        self.G = np.asarray(source_shape, dtype=np.float64)
-        self.tolerance = tolerance
-        self.probe_rounds = probe_rounds
-        self.seed = seed
-
-        self.n_src = self.G.shape[1]
-        self.internal_order = self.K.shape[0]
-        self.order_limit = min(max_order, self.internal_order)
-
-        # Accumulated basis + per-port planning state.
-        self.basis = np.empty((self.internal_order, 0), dtype=np.float64)
-        self.snapshots: list = []
-        self.history: list = []
-        self.per_port_plans: list = []
-        self.candidate_total = 0
-        self.processed_count = 0
-        self.outer_idx = 0
-        self.worst_score = 0.0
-        self.converged = True
-
-        # Per-source projection state; the final snapshot SVD is global.
-        self.projected: dict = {}
-        self.port_basis = np.empty((self.internal_order, 0), dtype=np.float64)
-        self.g_hat = np.empty(0, dtype=np.float64)
-        self.g_vec = np.empty(0, dtype=np.float64)
-
-    # ---- full-domain operator at (h_vec, shift) ----------------------------
-
-    def _candidate_A(self, h_vec, shift):
-        A = self.K + shift * self.C
-        for h, H in zip(h_vec, self.boundary_terms):
-            A = A + h * H
-        return A.tocsc()
-
-    # ---- incremental projected reduced model ------------------------------
-
-    def _init_port(self, g):
-        self.g_vec = np.asarray(g, dtype=np.float64).ravel()
-        self.port_basis = np.empty((self.internal_order, 0), dtype=np.float64)
-        self.projected = {
-            "K": np.empty((0, 0)),
-            "C": np.empty((0, 0)),
-            "H": [np.empty((0, 0)) for _ in self.boundary_terms],
-        }
-        self.g_hat = np.empty(0, dtype=np.float64)
-
-    def _extend_projected(self, W, B_old):
-        """Append block W (basis before append = B_old) to every M-hat and g-hat."""
-        for key, M in (("K", self.K), ("C", self.C)):
-            MW = M @ W
-            cross = B_old.T @ MW
-            self.projected[key] = np.block(
-                [[self.projected[key], cross], [cross.T, W.T @ MW]]
-            )
-        for j, H in enumerate(self.boundary_terms):
-            HW = H @ W
-            cross = B_old.T @ HW
-            self.projected["H"][j] = np.block(
-                [[self.projected["H"][j], cross], [cross.T, W.T @ HW]]
-            )
-        self.g_hat = np.concatenate([self.g_hat, np.asarray(W.T @ self.g_vec).ravel()])
-        self.port_basis = np.column_stack((self.port_basis, W))
-
-    def _reduced_solve(self, h_vec, shift):
-        """Solve the small dense reduced system (K-hat+sigma*C-hat+sum h_k H-hat_k) x = g-hat."""
-        if not self.port_basis.shape[1]:
-            return np.empty(0, dtype=np.float64)
-        A_hat = self.projected["K"].copy()
-        if shift:
-            A_hat = A_hat + shift * self.projected["C"]
-        for h, H_hat in zip(h_vec, self.projected["H"]):
-            A_hat = A_hat + h * H_hat
-        return np.linalg.solve(A_hat, self.g_hat)
-
-    # ---- Algorithm-1 steps -------------------------------------------------
-
-    def _probe_residual(self, h_vec, shift):
-        """Algorithm-1 step-2 residual eta of the basis at (shift, h_vec)."""
-        v = self.port_basis @ self._reduced_solve(h_vec, shift)
-        res = self._candidate_A(h_vec, shift) @ v - self.g_vec
-        return np.linalg.norm(res) / np.linalg.norm(self.g_vec)
-
-    def _enrich(self, h_vec, shift, x0):
-        """Full solve at (shift, h_vec); append the response to the basis."""
-        if self.processed_count >= self.order_limit:
-            self.converged = False  # budget exhausted; outer loop will stop
-            return x0 if x0 is not None else np.zeros(self.g_vec.size)
-        A = self._candidate_A(h_vec, shift)
-        response = np.asarray(spd_solve(A, self.g_vec, x0=x0)).reshape(-1, 1)
-        self.snapshots.append(response)
-        block = orthonormalize_block(self.port_basis, response)
-        if not block.shape[1]:
-            raise RuntimeError("rational Krylov enrichment stalled")
-        B_old = self.port_basis
-        self._extend_projected(block, B_old)
-        self.basis = np.column_stack((self.basis, block))
-        reference = max(float(response.ravel() @ self.g_vec), np.finfo(float).tiny)
-        score_after = response_score(
-            response,
-            self.port_basis,
-            self._reduced_solve(h_vec, shift)[:, None],
-            A,
-            reference,
-        )
-        self.worst_score = max(self.worst_score, score_after)
-        self.processed_count += 1
-        return response
-
-    # ---- main loop ---------------------------------------------------------
-
-    def run(self):
-        """Certified basis + summary, mirroring Algorithm 1 of Extended FANTASTIC 2021."""
-        started = time.perf_counter()
-        for port in range(self.n_src):
-            g = self.G[:, port : port + 1]
-            try:
-                lambda_min, lambda_max = port_eigenvalue_bounds(self.K, self.C, g)
-            except Exception as exc:
-                raise RuntimeError(
-                    "per-port spectrum estimation failed for source port "
-                    f"{port} ({exc}); falling back would need the global pencil"
-                ) from exc
-            kappa = lambda_max / max(lambda_min, np.finfo(float).tiny)
-            elliptic_count = mpmm_elliptic_shift_count(
-                self.tolerance, lambda_min, lambda_max
-            )
-            # FANTASTIC Eq. (5) supplies the complete positive-frequency set.
-            # The BCI Algorithm 1 does not append an extra zero-frequency solve;
-            # doing so adds one unnecessary response family per source and changes
-            # the extracted order.
-            shifts = mpmm_elliptic_shifts(elliptic_count, lambda_max, kappa)
-            self.per_port_plans.append(
-                {
-                    "port": int(port),
-                    "lambda_min": float(lambda_min),
-                    "lambda_max": float(lambda_max),
-                    "kappa": float(kappa),
-                    "shift_count": int(elliptic_count),
-                    "shifts_per_s": shifts.tolist(),
-                }
-            )
-
-            # per-port reduced-model state: warm-start x0 and the incremental
-            # projected matrices are re-seeded for each source port.
-            self._init_port(g)
-            x0 = None
-            for shift in shifts:
-                if not self.converged:
-                    break
-                passes = 0
-                h_samples = 0
-                while passes < self.probe_rounds and self.converged:
-                    sub_seed = (
-                        self.seed
-                        + 1003 * port
-                        + int(round(float(shift) * 1.0e6))
-                        + h_samples
-                    )
-                    h_vec = random_h(self.h_ranges, sub_seed)
-                    h_samples += 1
-                    self.candidate_total += 1
-                    if self._probe_residual(h_vec, shift) <= self.tolerance:
-                        passes += 1
-                        continue
-                    passes = 0
-                    x0 = self._enrich(h_vec, shift, x0)
-                self.outer_idx += 1
-                self.history.append(
-                    {
-                        "outer_idx": self.outer_idx,
-                        "port": int(port),
-                        "shift": float(shift),
-                        "h_samples": h_samples,
-                    }
-                )
-            if not self.converged:
-                break
-
-        # Algorithm 1 closing: apply SVD to the accumulated physical response
-        # functions, not to the globally Gram-Schmidt-orthogonal QR basis.
-        pre_svd_order = int(self.basis.shape[1])
-        snapshot_matrix = np.column_stack(self.snapshots)
-        relative_snapshots = snapshot_matrix / np.linalg.norm(snapshot_matrix, axis=0)
-        U_b, s_b, _ = scipy.linalg.svd(
-            relative_snapshots, full_matrices=False, check_finite=False
-        )
-        rank = _svd_rank_for_relative_error(s_b, self.tolerance)
-        basis = np.ascontiguousarray(U_b[:, :rank])
-
-        constant = np.ones((self.internal_order, 1), dtype=np.float64)
-        constant /= np.linalg.norm(constant)
-        constant = orthonormalize_block(basis, constant)
-        if constant.shape[1]:
-            basis = np.column_stack((basis, constant))
-
-        if basis.shape[1]:
-            orthogonality_error = float(
-                np.max(np.abs(basis.T @ basis - np.eye(basis.shape[1])))
-            )
-        else:
-            orthogonality_error = 0.0
-        if orthogonality_error > 1.0e-10:
-            raise RuntimeError("rational Krylov basis lost orthogonality")
-
-        return basis, {
-            "per_port_plans": self.per_port_plans,
-            "tolerance": self.tolerance,
-            "parameter_sampling": (
-                "random per (port, shift), error-driven probe stop "
-                "(FANTASTIC BCI Algorithm 1 / Extended FANTASTIC 2021)"
-            ),
-            "probe_rounds": int(self.probe_rounds),
-            "candidate_count": self.candidate_total,
-            "processed_candidate_count": self.processed_count,
-            "outer_count": self.outer_idx,
-            "solver": "warm-started Ruge-Stueben AMG-preconditioned CG (spd_solve)",
-            "basis_order": int(basis.shape[1]),
-            "pre_svd_order": pre_svd_order,
-            "svd_kept_order": int(basis.shape[1]),
-            "maximum_order": int(self.order_limit),
-            "orthogonality_error": orthogonality_error,
-            "relative_response_error": float(self.worst_score),
-            "converged": bool(self.converged),
-            "history": self.history,
-            "seconds": time.perf_counter() - started,
-            "memory_strategy": (
-                "stream one single-column frequency-domain response per candidate; "
-                "solve by warm-started Ruge-Stueben AMG-CG (no re-factorization) with an "
-                "incremental reduced model for the probe residual; per-port "
-                "eigenvalue/shift planning"
-            ),
-        }
+def _local_response(projected, basis, h_vec, shift):
+    K_hat, C_hat, H_hat, g_hat = projected
+    A_hat = K_hat + shift * C_hat
+    for h, H in zip(h_vec, H_hat):
+        A_hat = A_hat + h * H
+    coefficients = scipy.linalg.solve(
+        A_hat,
+        g_hat,
+        assume_a="pos",
+        check_finite=False,
+    )
+    return basis @ coefficients
 
 
 def build_parametric_basis(
@@ -733,48 +357,157 @@ def build_parametric_basis(
     probe_rounds=PROBE_ROUNDS,
     seed=RANDOM_SEED,
 ):
-    """Certified full-domain basis by per-port residual-driven enrichment.
+    """Extract an Extended-FANTASTIC basis for an affine HTC family.
 
-    Faithful realization of the Extended FANTASTIC Algorithm 1 (Codecasa
-    et al. 2021) — the algorithm behind Simcenter Flotherm's BCI-ROM — as far
-    as the model-agnostic ``(K, C, f, G_src, H_k)`` interface allows:
-
-    * **per heat-source port** the spectral bounds ``(λ_i, Λ_i)`` of the
-      power-impulse response are estimated (FANTASTIC 2014 step 1, via
-      :func:`port_eigenvalue_bounds`), giving its own elliptic shift count
-      ``m_i`` (eq. 4) and dn-distributed real shifts (eq. 5);
-    * for each (port, shift) a random HTC vector is drawn and the **current**
-      basis is probed (small dense reduced solve + one sparse matvec); only
-      when a probe fails (``ρ > ε``) is a **single-column** full solve
-      ``(σM + K + Σ_k h_k H_k) φ = g_k`` (paper eq. 26) done and its residual
-      directions inserted (Algorithm 1 line 6), keeping the basis
-      column-orthonormal;
-    * the **adaptive stop**: the (port, shift) is certified only when
-      ``probe_rounds`` consecutive freshly drawn parameters all satisfy
-      ``ρ ≤ ε`` — sampling stops on the error estimate, not a hardcoded count;
-    * a final SVD gives every response equal relative weight by normalizing each
-      snapshot, then retains the smallest rank whose discarded Frobenius energy
-      is at most ``ε`` (Algorithm 1 closing / FANTASTIC 2014 step 7).
-
-    ``operators`` is the full-domain h-free ``(K, C, f)``, ``source_shape``
-    the ``(N, n_src)`` source-shape matrix ``G_src`` whose columns are the
-    per-port unit-power shapes, ``boundary_terms`` a list of diagonal sparse
-    ``H_k`` (exposed area per cell, one per group), and ``h_ranges`` an
-    ``(n_groups, 2)`` array of admissible ``(lo, hi)`` ranges.  ``probe_rounds``
-    is the number of consecutive random draws that must certify a (port, shift)
-    before the model advances (a small robustness constant, not a sample
-    budget).
+    Each (source, matching-point) pair owns an independent response space
+    ``S_m(sigma)``.  A failed random-parameter residual test is solved exactly
+    at that same parameter value, warm-started by the projected response that
+    failed the test.  All exact responses are then collected in one snapshot
+    matrix.  Each full response is scaled to unit norm before the closing SVD,
+    so the FANTASTIC singular-value-ratio criterion measures redundancy of
+    response directions rather than the amplitude variation across matching
+    points.
     """
-    return _BasisBuilder(
-        operators,
-        source_shape,
-        boundary_terms,
-        h_ranges,
-        tolerance=tolerance,
-        max_order=max_order,
-        probe_rounds=probe_rounds,
-        seed=seed,
-    ).run()
+    started = time.perf_counter()
+    K = operators.K.tocsc()
+    C = operators.C.tocsc()
+    G = np.asarray(source_shape, dtype=np.float64)
+    h_ranges = np.asarray(h_ranges, dtype=np.float64)
+    rng = np.random.default_rng(seed)
+
+    snapshots = []
+    plans = []
+    history = []
+    validation_count = 0
+    max_accepted_residual = 0.0
+
+    def full_operator(h_vec, shift):
+        A = K + shift * C
+        for h, H in zip(h_vec, boundary_terms):
+            A = A + h * H
+        return A.tocsc()
+
+    for port in range(G.shape[1]):
+        g = G[:, port].copy()
+        g_norm = np.linalg.norm(g)
+        lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
+        kappa = lambda_max / lambda_min
+        shift_count = mpmm_elliptic_shift_count(
+            tolerance,
+            lambda_min,
+            lambda_max,
+        )
+        shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
+        plans.append(
+            {
+                "port": int(port),
+                "lambda_min": float(lambda_min),
+                "lambda_max": float(lambda_max),
+                "kappa": float(kappa),
+                "shift_count": int(shift_count),
+                "shifts_per_s": shifts.tolist(),
+            }
+        )
+
+        for shift in shifts:
+            local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
+            h_vec = _draw_h(h_ranges, rng)
+            initial_guess = np.zeros(K.shape[0], dtype=np.float64)
+            full_solves = 0
+            trials = 0
+
+            while True:
+                if len(snapshots) >= max_order:
+                    raise RuntimeError("FANTASTIC extraction reached max_order")
+
+                A = full_operator(h_vec, shift)
+                response = np.asarray(
+                    spd_solve(A, g, x0=initial_guess),
+                    dtype=np.float64,
+                ).ravel()
+                snapshots.append(response)
+                full_solves += 1
+
+                block = orthonormalize_block(local_basis, response[:, None])
+                if block.shape[1]:
+                    local_basis = np.column_stack((local_basis, block))
+                projected = _local_projection(
+                    K,
+                    C,
+                    boundary_terms,
+                    g,
+                    local_basis,
+                )
+
+                accepted = True
+                accepted_residual = 0.0
+                for _ in range(probe_rounds):
+                    trial_h = _draw_h(h_ranges, rng)
+                    estimate = _local_response(
+                        projected,
+                        local_basis,
+                        trial_h,
+                        shift,
+                    )
+                    trial_A = full_operator(trial_h, shift)
+                    residual = np.linalg.norm(trial_A @ estimate - g) / g_norm
+                    validation_count += 1
+                    trials += 1
+                    accepted_residual = max(accepted_residual, float(residual))
+                    if residual > tolerance:
+                        h_vec = trial_h
+                        initial_guess = estimate
+                        accepted = False
+                        break
+
+                if accepted:
+                    max_accepted_residual = max(
+                        max_accepted_residual,
+                        accepted_residual,
+                    )
+                    history.append(
+                        {
+                            "port": int(port),
+                            "shift": float(shift),
+                            "full_solves": int(full_solves),
+                            "validation_count": int(trials),
+                            "accepted_residual": float(accepted_residual),
+                        }
+                    )
+                    break
+
+    snapshot_matrix = np.column_stack(snapshots)
+    basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)
+    svd_order = basis.shape[1]
+
+    # The h-free BCI operator has the uniform-temperature null mode; preserve it exactly.
+    constant = np.ones((K.shape[0], 1), dtype=np.float64)
+    constant /= np.linalg.norm(constant)
+    constant = orthonormalize_block(basis, constant)
+    if constant.shape[1]:
+        basis = np.column_stack((basis, constant))
+
+    orthogonality_error = float(
+        np.max(np.abs(basis.T @ basis - np.eye(basis.shape[1])))
+    )
+
+    return np.ascontiguousarray(basis), {
+        "per_port_plans": plans,
+        "tolerance": float(tolerance),
+        "probe_rounds": int(probe_rounds),
+        "candidate_count": int(len(snapshots) + validation_count),
+        "processed_candidate_count": int(len(snapshots)),
+        "validation_count": int(validation_count),
+        "pre_svd_order": int(len(snapshots)),
+        "svd_kept_order": int(svd_order),
+        "basis_order": int(basis.shape[1]),
+        "maximum_order": int(max_order),
+        "orthogonality_error": orthogonality_error,
+        "max_accepted_residual": float(max_accepted_residual),
+        "history": history,
+        "seconds": time.perf_counter() - started,
+        "singular_value_ratios": (singular_values / singular_values[0]).tolist(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -785,7 +518,6 @@ MAX_RELATIVE_RISE_ERROR = 0.01
 
 
 def _field_error_metrics(reference, approximation, ambient_K: float) -> dict:
-    """Max absolute / rise-relative error of one field vs the reference."""
     reference = np.asarray(reference)
     approximation = np.asarray(approximation)
     absolute_error = float(np.max(np.abs(approximation - reference)))
@@ -813,7 +545,7 @@ def accuracy_summary(
     reduced_history,
     ambient_K: float,
 ) -> dict:
-    """Steady + transient-final accuracy of a reduced field vs the reference."""
+    """Steady and transient-final field accuracy versus the reference."""
     steady = _field_error_metrics(reference_steady, reduced_steady, ambient_K)
     transient = _field_error_metrics(
         reference_history[-1], reduced_history[-1], ambient_K
