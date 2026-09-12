@@ -275,3 +275,50 @@ def test_steady_solver_returns_a_converged_solution_for_ill_conditioned_spd():
 
     relative_residual = np.linalg.norm(matrix @ solution - rhs) / np.linalg.norm(rhs)
     assert relative_residual < 1.0e-8
+
+
+def test_svd_rank_limits_combined_discarded_snapshot_energy():
+    """The SVD tolerance bounds the whole discarded tail, not each mode."""
+    singular_values = np.array([1.0, *([0.05] * 6)])
+    tolerance = 0.1
+
+    rank = mm.utils._svd_rank_for_relative_error(singular_values, tolerance)
+    total_energy = np.linalg.norm(singular_values)
+    discarded_error = np.linalg.norm(singular_values[rank:]) / total_energy
+
+    assert discarded_error <= tolerance
+    assert np.linalg.norm(singular_values[rank - 1 :]) / total_energy > tolerance
+
+
+def test_basis_closing_svd_is_invariant_to_snapshot_scale(monkeypatch):
+    """Relative response weighting must not favor a high-amplitude source."""
+    monkeypatch.setattr(mm.utils, "port_eigenvalue_bounds", lambda *_: (1.0, 2.0))
+    monkeypatch.setattr(mm.utils, "mpmm_elliptic_shift_count", lambda *_: 1)
+    monkeypatch.setattr(mm.utils, "mpmm_elliptic_shifts", lambda *_: np.array([0.0]))
+    monkeypatch.setattr(
+        mm.utils,
+        "spd_solve",
+        lambda matrix, rhs, x0=None: sp.linalg.spsolve(matrix, rhs),
+    )
+
+    operators = mm.utils.normalized_operators(sp.eye(3), sp.eye(3), np.zeros(3))
+    sources = np.array([[1.0, 1.0], [0.0, 0.2], [0.0, 0.0]])
+
+    def extract(source_shape):
+        basis, _ = mm.utils.build_parametric_basis(
+            operators,
+            source_shape,
+            [],
+            np.empty((0, 2)),
+            tolerance=0.15,
+            probe_rounds=1,
+        )
+        return basis
+
+    basis = extract(sources)
+    scaled_sources = sources.copy()
+    scaled_sources[:, 0] *= 100.0
+    scaled_basis = extract(scaled_sources)
+
+    assert basis.shape == scaled_basis.shape
+    assert np.allclose(basis @ basis.T, scaled_basis @ scaled_basis.T)

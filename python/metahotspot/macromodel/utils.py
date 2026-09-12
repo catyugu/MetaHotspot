@@ -123,6 +123,15 @@ def orthonormalize_block(basis, vectors):
     return np.ascontiguousarray(q[:, keep])
 
 
+def _svd_rank_for_relative_error(singular_values, tolerance):
+    """Smallest rank whose discarded Frobenius energy is at most ``tolerance``."""
+    singular_values = np.asarray(singular_values, dtype=np.float64)
+    normalized = singular_values / np.linalg.norm(singular_values)
+    discarded_energy = np.cumsum(np.square(normalized[::-1]))
+    discarded_count = np.count_nonzero(discarded_energy <= tolerance**2)
+    return singular_values.size - discarded_count
+
+
 # ---------------------------------------------------------------------------
 # SPD linear solve  (Extended FANTASTIC 2021 lines 715-720: iterative solver
 # warm-started from the reduced-model estimate; no re-factorization)
@@ -661,15 +670,12 @@ class _BasisBuilder:
         # functions, not to the globally Gram-Schmidt-orthogonal QR basis.
         pre_svd_order = int(self.basis.shape[1])
         snapshot_matrix = np.column_stack(self.snapshots)
-        U_b, s_b, Vt_b = scipy.linalg.svd(
-            snapshot_matrix, full_matrices=False, check_finite=False
+        relative_snapshots = snapshot_matrix / np.linalg.norm(snapshot_matrix, axis=0)
+        U_b, s_b, _ = scipy.linalg.svd(
+            relative_snapshots, full_matrices=False, check_finite=False
         )
-        # RomCore normalizes its extraction tolerance member by ten before the
-        # closing SVD; this is distinct from the requested residual tolerance.
-        svd_tol = self.tolerance / 10.0
-        cutoff = svd_tol * float(np.linalg.norm(s_b))
-        keep = np.flatnonzero(s_b >= cutoff)
-        basis = np.ascontiguousarray(U_b[:, keep])
+        rank = _svd_rank_for_relative_error(s_b, self.tolerance)
+        basis = np.ascontiguousarray(U_b[:, :rank])
 
         constant = np.ones((self.internal_order, 1), dtype=np.float64)
         constant /= np.linalg.norm(constant)
@@ -746,8 +752,9 @@ def build_parametric_basis(
     * the **adaptive stop**: the (port, shift) is certified only when
       ``probe_rounds`` consecutive freshly drawn parameters all satisfy
       ``ρ ≤ ε`` — sampling stops on the error estimate, not a hardcoded count;
-    * a final SVD truncates columns whose singular values fall below
-      ``ε · σ_max`` (Algorithm 1 closing / FANTASTIC 2014 step 7).
+    * a final SVD gives every response equal relative weight by normalizing each
+      snapshot, then retains the smallest rank whose discarded Frobenius energy
+      is at most ``ε`` (Algorithm 1 closing / FANTASTIC 2014 step 7).
 
     ``operators`` is the full-domain h-free ``(K, C, f)``, ``source_shape``
     the ``(N, n_src)`` source-shape matrix ``G_src`` whose columns are the
