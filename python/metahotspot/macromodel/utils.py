@@ -86,7 +86,7 @@ def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndar
     modulus = np.sqrt(1.0 - 1.0 / (kappa * kappa))
     k_complete = special.ellipk(modulus**2)
     theta = (2.0 * np.arange(1, count + 1) - 1.0) * k_complete / (2.0 * count)
-    _, _, dn_values, _ = special.ellipj(theta, modulus)
+    _, _, dn_values, _ = special.ellipj(theta, modulus**2)
     shifts = lambda_max * np.asarray(dn_values, dtype=np.float64)
     return np.sort(shifts)[::-1]
 
