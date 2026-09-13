@@ -359,14 +359,13 @@ def build_parametric_basis(
 ):
     """Extract an Extended-FANTASTIC basis for an affine HTC family.
 
-    Each (source, matching-point) pair owns an independent response space
-    ``S_m(sigma)``.  A failed random-parameter residual test is solved exactly
-    at that same parameter value, warm-started by the projected response that
-    failed the test.  All exact responses are then collected in one snapshot
-    matrix.  Each full response is scaled to unit norm before the closing SVD,
-    so the FANTASTIC singular-value-ratio criterion measures redundancy of
-    response directions rather than the amplitude variation across matching
-    points.
+    Following Algorithm 1, each source owns one response space throughout its
+    matching-point loop.  At every matching point the current DCTM is tested at
+    random boundary parameters; a failed residual test is solved exactly at
+    that same parameter value, warm-started by the rejected DCTM response.
+    All exact responses are collected in one snapshot matrix for the closing
+    SVD.  ``probe_rounds`` repeats the paper's random acceptance test before
+    advancing to the next matching point.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
@@ -390,6 +389,8 @@ def build_parametric_basis(
     for port in range(G.shape[1]):
         g = G[:, port].copy()
         g_norm = np.linalg.norm(g)
+        local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
+        projected = None
         lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
         kappa = lambda_max / lambda_min
         shift_count = mpmm_elliptic_shift_count(
@@ -410,13 +411,32 @@ def build_parametric_basis(
         )
 
         for shift in shifts:
-            local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
-            h_vec = _draw_h(h_ranges, rng)
-            initial_guess = np.zeros(K.shape[0], dtype=np.float64)
             full_solves = 0
             trials = 0
+            accepted_residual = 0.0
+            accepted_rounds = 0
 
-            while True:
+            while accepted_rounds < probe_rounds:
+                h_vec = _draw_h(h_ranges, rng)
+                initial_guess = np.zeros(K.shape[0], dtype=np.float64)
+
+                if projected is not None:
+                    estimate = _local_response(
+                        projected,
+                        local_basis,
+                        h_vec,
+                        shift,
+                    )
+                    trial_A = full_operator(h_vec, shift)
+                    residual = np.linalg.norm(trial_A @ estimate - g) / g_norm
+                    validation_count += 1
+                    trials += 1
+                    if residual <= tolerance:
+                        accepted_residual = max(accepted_residual, float(residual))
+                        accepted_rounds += 1
+                        continue
+                    initial_guess = estimate
+
                 if len(snapshots) >= max_order:
                     raise RuntimeError("FANTASTIC extraction reached max_order")
 
@@ -438,43 +458,22 @@ def build_parametric_basis(
                     g,
                     local_basis,
                 )
-
-                accepted = True
                 accepted_residual = 0.0
-                for _ in range(probe_rounds):
-                    trial_h = _draw_h(h_ranges, rng)
-                    estimate = _local_response(
-                        projected,
-                        local_basis,
-                        trial_h,
-                        shift,
-                    )
-                    trial_A = full_operator(trial_h, shift)
-                    residual = np.linalg.norm(trial_A @ estimate - g) / g_norm
-                    validation_count += 1
-                    trials += 1
-                    accepted_residual = max(accepted_residual, float(residual))
-                    if residual > tolerance:
-                        h_vec = trial_h
-                        initial_guess = estimate
-                        accepted = False
-                        break
+                accepted_rounds = 0
 
-                if accepted:
-                    max_accepted_residual = max(
-                        max_accepted_residual,
-                        accepted_residual,
-                    )
-                    history.append(
-                        {
-                            "port": int(port),
-                            "shift": float(shift),
-                            "full_solves": int(full_solves),
-                            "validation_count": int(trials),
-                            "accepted_residual": float(accepted_residual),
-                        }
-                    )
-                    break
+            max_accepted_residual = max(
+                max_accepted_residual,
+                accepted_residual,
+            )
+            history.append(
+                {
+                    "port": int(port),
+                    "shift": float(shift),
+                    "full_solves": int(full_solves),
+                    "validation_count": int(trials),
+                    "accepted_residual": float(accepted_residual),
+                }
+            )
 
     snapshot_matrix = np.column_stack(snapshots)
     basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)

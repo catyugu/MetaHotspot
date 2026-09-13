@@ -38,7 +38,7 @@ DIE_NAMES = ["S0", "S1", "S2", "S3"]
 DURATION_S = 2000.0
 DT_S = 50.0
 
-PROBE_ROUNDS = 3
+PROBE_ROUNDS = 10
 ROM_TOLERANCE = 1.0e-3
 MAX_ORDER = 1024
 SEED = 20260805
@@ -197,9 +197,30 @@ def run():
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     for i, ax in enumerate(axes.ravel()):
-        ax.plot(full.times, junc_full_hist[:, i], "-", color="tab:blue", label="full FVM", lw=2)
-        ax.plot(r_times, junc_rom_hist[:, i], "--", color="tab:orange", label="our ROM", lw=2)
-        ax.plot(fl_times, junc_fl_hist[:, i], ":", color="tab:green", label="FloTHERM ROM", lw=2)
+        ax.plot(
+            full.times,
+            junc_full_hist[:, i],
+            "-",
+            color="tab:blue",
+            label="full FVM",
+            lw=2,
+        )
+        ax.plot(
+            r_times,
+            junc_rom_hist[:, i],
+            "--",
+            color="tab:orange",
+            label="our ROM",
+            lw=2,
+        )
+        ax.plot(
+            fl_times,
+            junc_fl_hist[:, i],
+            ":",
+            color="tab:green",
+            label="FloTHERM ROM",
+            lw=2,
+        )
         ax.set_title(DIE_NAMES[i])
         ax.set_ylabel("[K]")
         ax.grid(alpha=0.3)
