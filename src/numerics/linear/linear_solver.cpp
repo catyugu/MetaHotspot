@@ -11,7 +11,7 @@ namespace mhs::sim {
 
     // --- Factory ---
 
-    SolverHandle create_solver(const SolverSpec& spec)
+    SolverPtr create_solver(const SolverSpec& spec)
     {
         switch (spec.type) {
         case SolverType::Pardiso:

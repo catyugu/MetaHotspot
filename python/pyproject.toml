@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "metahotspot"
 version = "0.1.0"
-description = "MetaHotspot — thermal simulation C API Python bindings"
+description = "MetaHotspot — thermal simulation C API Python bindings + model-agnostic macromodel (MOR) algorithms"
 requires-python = ">=3.9"
 dependencies = [
     "numpy>=1.21",
     "scipy>=1.7",
+    "pyamg>=4.0",
 ]
 
 [project.urls]

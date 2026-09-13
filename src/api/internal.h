@@ -3,9 +3,9 @@
 /* Internal opaque handle definitions shared across the core API TUs.  Not
    part of the public API. */
 
-#include "api/metahotspot.h" // mhs_solve_options_t etc.
-#include "common/model_definition.hpp"
-#include "common/solver.hpp" // mhs::sim::SolveOptions
+#include "core/model_definition.hpp"
+#include "core/solver.hpp" // mhs::sim::SolveOptions
+#include "metahotspot.h" // mhs_solve_options_t etc.
 #include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>
@@ -36,20 +36,19 @@ const char* mhs_detail_last_error();
     do {                                                                                                               \
         if (!(p)) {                                                                                                    \
             SET_ERR("NULL pointer: " #p);                                                                              \
-            return MHS_ERR_NULL_PTR;                                                                                   \
+            return MHS_ERROR;                                                                                          \
         }                                                                                                              \
     } while (0)
 
-#define MHS_TRY(err_code, ...)                                                                                         \
+#define MHS_TRY(...)                                                                                                   \
     try {                                                                                                              \
-        mhs_detail_clear_last_error();                                                                                 \
         __VA_ARGS__;                                                                                                   \
         mhs_detail_clear_last_error();                                                                                 \
         return MHS_OK;                                                                                                 \
     }                                                                                                                  \
     catch (const std::exception& e) {                                                                                  \
         SET_ERR(e.what());                                                                                             \
-        return err_code;                                                                                               \
+        return MHS_ERROR;                                                                                              \
     }
 
 /* ------------------------------------------------------------------ */

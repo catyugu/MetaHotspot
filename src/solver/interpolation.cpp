@@ -1,5 +1,5 @@
 #include "solver/interpolation.hpp"
-#include "common/mesh.hpp"
+#include "core/mesh.hpp"
 
 #include <cassert>
 #include <cstddef>

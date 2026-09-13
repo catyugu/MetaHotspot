@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <neutralXML>
 
   <name>test2</name>
@@ -7,29 +7,18 @@
 
   <solutionDomain>
     <location>
-      <x>-0.050000000000000</x>
+      <x>-0.030000000000000</x>
       <y>-0.050000000000000</y>
       <z>0.000000000000000</z>
     </location>
     <size>
-      <x>0.100000000000000</x>
+      <x>0.060000000000000</x>
       <y>0.100000000000000</y>
-      <z>0.022000000000000</z>
+      <z>0.020000000000000</z>
     </size>
   </solutionDomain>
 
   <materials>
-    <material>
-      <name>Copper (Pure)</name>
-      <density>8930.000000000000000</density>
-      <specific_heat>385.000000000000000</specific_heat>
-      <surfaceEmissivity>0.039999999105930</surfaceEmissivity>
-      <thermalConductivity>
-        <isotropic>
-          <conductivity>385.000000000000000</conductivity>
-        </isotropic>
-      </thermalConductivity>
-    </material>
     <material>
       <name>FR4</name>
       <density>1200.000000000000000</density>
@@ -42,26 +31,15 @@
       </thermalConductivity>
     </material>
     <material>
-      <name>Aluminum (Pure)</name>
+      <name>Interconnect(equivalent)</name>
       <density>2710.000000000000000</density>
       <specific_heat>913.000000000000000</specific_heat>
       <surfaceEmissivity>1.000000000000000</surfaceEmissivity>
       <thermalConductivity>
-        <isotropic>
-          <conductivity>201.000000000000000</conductivity>
-        </isotropic>
-      </thermalConductivity>
-    </material>
-    <material>
-      <name>Substrate PBGAFC (Typical)</name>
-      <density>1900.000000000000000</density>
-      <specific_heat>921.000000000000000</specific_heat>
-      <surfaceEmissivity>0.899999976158142</surfaceEmissivity>
-      <thermalConductivity>
         <orthotropic>
-          <x>20.000000000000000</x>
-          <y>20.000000000000000</y>
-          <z>4.000000000000000</z>
+          <x>2.000000000000000</x>
+          <y>2.000000000000000</y>
+          <z>201.000000000000000</z>
         </orthotropic>
       </thermalConductivity>
     </material>
@@ -119,7 +97,7 @@
         <y>0.060000000000000</y>
         <z>0.005000000000000</z>
       </size>
-      <material>Aluminum (Pure)</material>
+      <material>E-10</material>
       <powerDissipation>0.000000000000000</powerDissipation>
     </solid3dBlock>
     <solid3dBlock>
@@ -133,9 +111,9 @@
       <size>
         <x>0.040000000000000</x>
         <y>0.040000000000000</y>
-        <z>0.005000000000000</z>
+        <z>0.003000000000000</z>
       </size>
-      <material>E-10</material>
+      <material>Interconnect(equivalent)</material>
       <powerDissipation>0.000000000000000</powerDissipation>
     </solid3dBlock>
     <assembly>
@@ -148,7 +126,7 @@
           <location>
             <x>0.005000000000000</x>
             <y>0.005000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -164,7 +142,7 @@
           <location>
             <x>-0.015000000000000</x>
             <y>0.005000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -180,7 +158,7 @@
           <location>
             <x>0.005000000000000</x>
             <y>-0.015000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -196,7 +174,7 @@
           <location>
             <x>-0.015000000000000</x>
             <y>-0.015000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -212,7 +190,7 @@
           <location>
             <x>0.005000000000000</x>
             <y>0.005000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -227,7 +205,7 @@
           <location>
             <x>-0.015000000000000</x>
             <y>0.005000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -242,7 +220,7 @@
           <location>
             <x>0.005000000000000</x>
             <y>-0.015000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>
@@ -257,7 +235,7 @@
           <location>
             <x>-0.015000000000000</x>
             <y>-0.015000000000000</y>
-            <z>0.020000000000000</z>
+            <z>0.018000000000000</z>
           </location>
           <size>
             <x>0.010000000000000</x>

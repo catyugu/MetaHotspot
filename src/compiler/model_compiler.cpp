@@ -16,7 +16,7 @@ namespace mhs::sim {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        double length_unit_to_si(mhs::model::LengthUnit unit)
+        inline double length_unit_to_si(mhs::model::LengthUnit unit)
         {
             switch (unit) {
             case mhs::model::LengthUnit::Meter:
@@ -32,7 +32,7 @@ namespace mhs::sim {
             case mhs::model::LengthUnit::Mil:
                 return 2.54e-5;
             }
-            return 1.0;
+            throw std::invalid_argument("invalid length unit");
         }
 
         inline void compute_cell_spacing(
@@ -239,6 +239,11 @@ namespace mhs::sim {
 
         // Cell assignment and boundary resolution.
         model.cells = assign_cell_layers(resolved_layers, mesh);
+        const auto cell_count = model.cells.cell_to_grid.size();
+        for (mhs::core::Index cell = 0; cell < cell_count; ++cell) {
+            if (static_cast<size_t>(model.cells.material_id[cell]) >= model.material_table.size())
+                throw std::out_of_range("cell material ID out of range while compiling");
+        }
         resolve_boundary_patches(mesh, model.cells, compiled_boundaries, default_boundary, model.face_bcs);
 
         // Fluid coupling.

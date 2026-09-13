@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/model.hpp"
-#include "common/model_definition.hpp"
+#include "core/model.hpp"
+#include "core/model_definition.hpp"
 
 #include <vector>
 

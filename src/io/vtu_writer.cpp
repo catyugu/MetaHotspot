@@ -178,7 +178,7 @@ namespace mhs::io {
         cells_elem->InsertEndChild(types_arr);
 
         const std::filesystem::path dir_path(path);
-        if (!dir_path.parent_path().empty() && !std::filesystem::exists(dir_path.parent_path())) {
+        if (!dir_path.parent_path().empty()) {
             std::filesystem::create_directories(dir_path.parent_path());
         }
 

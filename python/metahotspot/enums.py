@@ -5,18 +5,6 @@ from __future__ import annotations
 import enum
 
 
-class Status(enum.IntEnum):
-    OK = 0
-    ERR_NULL_PTR = -1
-    ERR_INVALID_ARG = -2
-    ERR_COMPILE = -3
-    ERR_ASSEMBLE = -4
-    ERR_SOLVE = -5
-    ERR_IO = -6
-    ERR_OOM = -7
-    ERR_RUNTIME = -8
-
-
 class Study(enum.IntEnum):
     STEADY = 0
     TRANSIENT = 1

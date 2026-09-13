@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/model.hpp"
+#include "core/model.hpp"
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 #include <span>

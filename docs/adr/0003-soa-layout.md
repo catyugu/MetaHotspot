@@ -10,7 +10,7 @@ CLAUDE.md mandates data-oriented design and flat SoA. The structured grid can ho
 
 ## Decision
 
-All mesh and field data uses SoA throughout the internal model. See `src/common/model.hpp` for concrete types. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the preprocessor.
+All mesh and field data uses SoA throughout the internal model. See `src/core/model.hpp` for concrete types. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the preprocessor.
 
 ## Rationale
 

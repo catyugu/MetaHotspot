@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<erom_specification version="2504" xmlns="https://www.mentor.com/FloTHERMXT/XtXML">
+
+  <erom_identifier id="7C1DEEAA8D9D08416A9594080000008D"/>
+
+  <erom_optional_geometry has_probe="1" has_source="1"/>
+
+  <volume volume="0.0010000000000000002">
+    <erom_block>
+      <position x="0" y="0" z="0"/>
+      <size x="0.10000000000000001" y="0.10000000000000001" z="0.10000000000000001"/>
+    </erom_block>
+  </volume>
+
+  <faces>
+    <erom_ambient has_htc="1" htc="1000" name="Ambient:0">
+      <erom_face emissivity="1" face_number="1">
+        <erom_face_collapsed_cuboid>
+          <position x="0" y="0" z="0.10000000000000001"/>
+          <size x="0.10000000000000001" y="0.10000000000000001" z="0"/>
+          <normal x="0" y="0" z="1"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+    </erom_ambient>
+    <erom_ambient has_htc="0" htc="0" name="No Heat Transfer">
+      <erom_face emissivity="1" face_number="2">
+        <erom_face_collapsed_cuboid>
+          <position x="0" y="0" z="0"/>
+          <size x="0" y="0.10000000000000001" z="0.10000000000000001"/>
+          <normal x="-1" y="0" z="0"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+      <erom_face emissivity="1" face_number="3">
+        <erom_face_collapsed_cuboid>
+          <position x="0.10000000000000001" y="0" z="0"/>
+          <size x="0" y="0.10000000000000001" z="0.10000000000000001"/>
+          <normal x="1" y="0" z="0"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+      <erom_face emissivity="1" face_number="4">
+        <erom_face_collapsed_cuboid>
+          <position x="0" y="0" z="0"/>
+          <size x="0.10000000000000001" y="0" z="0.10000000000000001"/>
+          <normal x="0" y="-1" z="0"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+      <erom_face emissivity="1" face_number="5">
+        <erom_face_collapsed_cuboid>
+          <position x="0" y="0.10000000000000001" z="0"/>
+          <size x="0.10000000000000001" y="0" z="0.10000000000000001"/>
+          <normal x="0" y="1" z="0"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+      <erom_face emissivity="1" face_number="6">
+        <erom_face_collapsed_cuboid>
+          <position x="0" y="0" z="0"/>
+          <size x="0.10000000000000001" y="0.10000000000000001" z="0"/>
+          <normal x="0" y="0" z="-1"/>
+        </erom_face_collapsed_cuboid>
+      </erom_face>
+    </erom_ambient>
+  </faces>
+
+  <sources>
+    <erom_source id="7C1DEEAA8D9D08416A9594080000006B" name="Cuboid:1" power="100">
+      <position x="0.025000000000000001" y="0.025000000000000001" z="0.025000000000000001"/>
+      <size x="0.049999999999999996" y="0.049999999999999982" z="0.049999999999999996"/>
+    </erom_source>
+  </sources>
+
+  <probes/>
+
+</erom_specification>

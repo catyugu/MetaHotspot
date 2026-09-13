@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <muParser.h>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -124,7 +125,7 @@ namespace mhs::core {
         if (is_const_)
             return const_val_;
         if (!tls_impl_)
-            return 0.0;
+            throw std::logic_error("non-constant expression has no evaluator");
         // Lock-free grab of this thread's dedicated AST
         return tls_impl_->tls.local()->eval(ctx);
     }

@@ -1,4 +1,4 @@
-#include "common/model_definition.hpp"
+#include "core/model_definition.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include <filesystem>

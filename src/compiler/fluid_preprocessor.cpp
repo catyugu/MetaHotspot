@@ -1,8 +1,8 @@
 #include "compiler/fluid_preprocessor.hpp"
 
-#include "common/constants.hpp"
-#include "common/mesh.hpp"
 #include "compiler/fluid_physics.hpp"
+#include "core/constants.hpp"
+#include "core/mesh.hpp"
 #include "numerics/linear/linear_solver.hpp"
 
 #include <Eigen/Sparse>
@@ -255,12 +255,11 @@ namespace mhs::sim::fluid {
             Eigen::SparseMatrix<double> matrix(eigen_count, eigen_count);
             matrix.setFromTriplets(triplets.begin(), triplets.end());
             auto solver = mhs::sim::create_solver();
-            mhs::sim::solver_compute(solver, matrix);
+            solver->compute(matrix);
             // Cold-start from zero via the x0 overload so this works with the
             // default iterative (AMGCL) backend as well as a direct one.
-            Eigen::VectorXd pressure
-                = mhs::sim::solver_solve(solver, rhs, Eigen::VectorXd::Zero(eigen_count));
-            if (!mhs::sim::solver_success(solver)) {
+            Eigen::VectorXd pressure = solver->solve(rhs, Eigen::VectorXd::Zero(eigen_count));
+            if (!solver->success()) {
                 throw std::runtime_error("fluid pressure solve failed");
             }
             workspace.pressure.assign(pressure.data(), pressure.data() + pressure.size());
@@ -286,8 +285,6 @@ namespace mhs::sim::fluid {
 
                     const int axis = mhs::utils::AXIS_OF_DIR[face];
                     const auto& conductance = workspace.hydraulic_conductance[axis];
-                    if (conductance[fi] <= mhs::core::zero_guard || conductance[fn] <= mhs::core::zero_guard)
-                        continue;
                     const double effective = mhs::utils::harmonicAverage(conductance[fi], conductance[fn]);
                     model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face]
                         = (workspace.pressure[fi] - workspace.pressure[fn]) * effective;

@@ -16,6 +16,8 @@ from metahotspot.types import (
     Point2D,
     MhsFaceRegion,
     MhsCompiledInfo,
+    MhsCellFields,
+    MhsMaterialValues,
     MhsOperatorsInfo,
     MhsSolutionInfo,
     _SolveOptionsCStruct,
@@ -261,19 +263,20 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
         [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCompiledInfo)],
     ),
     (
-        "mhs_compiled_copy_grid_to_cell",
+        "mhs_compiled_copy_cell_fields",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t],
+        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCellFields)],
     ),
     (
-        "mhs_compiled_copy_layer_ids",
+        "mhs_compiled_eval_materials",
         ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
-    ),
-    (
-        "mhs_compiled_copy_block_ids",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t],
+        [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.c_double,
+            ctypes.POINTER(MhsMaterialValues),
+        ],
     ),
     # ---- Assembly ----
     (
@@ -326,23 +329,6 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(MhsOperators),
             ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
-        ],
-    ),
-    (
-        "mhs_operators_create",
-        ctypes.c_int32,
-        [
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
         ],
     ),
     # ---- Solve ----
@@ -417,29 +403,3 @@ def configure_dll(dll: ctypes.CDLL) -> None:
         fn = getattr(dll, name)
         fn.restype = restype
         fn.argtypes = argtypes
-
-
-def copy_array(fn, handle, array, c_type, label) -> None:
-    """Copy a native array out of *handle* into the caller-owned NumPy *array*.
-
-    Wraps the simple ``mhs_*_copy_*`` C calls, which take
-    ``(handle, buffer, count)`` and fill the pre-allocated buffer.
-    """
-    from metahotspot._error import check
-
-    check(
-        fn(handle, array.ctypes.data_as(ctypes.POINTER(c_type)), array.size),
-        label,
-    )
-
-
-def _opts_ptr(opts, dll):
-    """Return a ctypes pointer to the C struct form of *opts* (or None).
-
-    *opts* is a :class:`SolveOptions`; anything already C-struct shaped is
-    passed through unchanged.
-    """
-    if opts is None:
-        return None
-    c_opts = opts._to_c_struct(dll) if hasattr(opts, "_to_c_struct") else opts
-    return ctypes.byref(c_opts)

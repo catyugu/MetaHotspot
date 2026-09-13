@@ -7,16 +7,116 @@ from pathlib import Path
 
 import numpy as np
 
-from metahotspot._lib import get_dll as _get_dll
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
+from metahotspot._lib import get_dll
 from metahotspot.enums import FluidBC, GeometryOp, Study, LengthUnit, Axis
-from metahotspot.types import (
-    MhsModel,
-    MhsFaceRegion,
-    Rect2D,
-    Point2D,
-)
+from metahotspot.types import MhsFaceRegion, MhsModel, Point2D, Rect2D
+
+
+# ---- low-level ctypes marshalling helpers --------------------------------
+
+
+def _text(value: str | None) -> bytes | None:
+    return None if value is None else value.encode("utf-8")
+
+
+def _double_ptr(array: np.ndarray):
+    return array.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+
+
+def _create_model(dll):
+    handle = ctypes.POINTER(MhsModel)()
+    check(dll.mhs_model_create(ctypes.byref(handle)), "create")
+    return handle
+
+
+def _set_mesh(dll, handle, x, y, z) -> None:
+    args = []
+    for array in (x, y, z):
+        args.extend(
+            (
+                0 if array is None else len(array),
+                None if array is None else _double_ptr(array),
+            )
+        )
+    check(dll.mhs_model_set_mesh(handle, *args), "set_mesh")
+
+
+def _add_layer(dll, handle, thickness, x_offset, y_offset) -> int:
+    identifier = ctypes.c_uint32()
+    check(
+        dll.mhs_model_add_layer(
+            handle,
+            _text(thickness),
+            _text(x_offset),
+            _text(y_offset),
+            ctypes.byref(identifier),
+        ),
+        "add_layer",
+    )
+    return identifier.value
+
+
+def _add_block(
+    dll, handle, layer, material_name, heat_source, x_offset, y_offset, thickness
+):
+    identifier = ctypes.c_uint32()
+    check(
+        dll.mhs_model_add_block(
+            handle,
+            layer,
+            _text(material_name),
+            _text(heat_source),
+            _text(x_offset),
+            _text(y_offset),
+            _text(thickness),
+            ctypes.byref(identifier),
+        ),
+        "add_block",
+    )
+    return identifier.value
+
+
+def _face_regions(regions) -> tuple[object, int]:
+    values = [
+        MhsFaceRegion(int(axis), coordinate, Rect2D(a_min, a_max, b_min, b_max))
+        for axis, coordinate, a_min, a_max, b_min, b_max in regions or ()
+    ]
+    return ((MhsFaceRegion * len(values))(*values) if values else None), len(values)
+
+
+def _add_piecewise(dll, handle, name, points) -> None:
+    native = (Point2D * len(points))(*[Point2D(x, y) for x, y in points])
+    check(
+        dll.mhs_model_add_function_piecewise(handle, _text(name), native, len(points)),
+        "add_function_piecewise",
+    )
+
+
+def _add_periodic_constant(dll, handle, name, values, period) -> None:
+    native = (ctypes.c_double * len(values))(*values)
+    check(
+        dll.mhs_model_add_function_periodic_piecewise_constant(
+            handle, _text(name), native, len(values), period
+        ),
+        "add_function_periodic_piecewise_constant",
+    )
+
+
+def _add_fluid_boundary(
+    dll, handle, axis, coordinate, region, kind, value, inlet_temperature
+) -> None:
+    rect = Rect2D(*region)
+    check(
+        dll.mhs_model_add_fluid_boundary(
+            handle, int(axis), coordinate, rect, int(kind), value, inlet_temperature
+        ),
+        "add_fluid_boundary",
+    )
+
+
+# ---- public wrapper ------------------------------------------------------
 
 
 class Model(OwnedHandle):
@@ -36,19 +136,15 @@ class Model(OwnedHandle):
     """
 
     def __init__(self) -> None:
-        dll = _get_dll()
-        super().__init__(dll.mhs_model_destroy, dll)
-
-        pp = ctypes.POINTER(MhsModel)()
-        check(dll.mhs_model_create(ctypes.byref(pp)), "create")
-        self._handle: MhsModel = pp
+        dll = get_dll()
+        handle = _create_model(dll)
+        super().__init__(dll, handle, dll.mhs_model_destroy)
 
     # ---- Model construction helpers ----
 
     def read_xml(self, path: str | Path) -> None:
         """Load a MetaHotspot XML case file."""
-        path_bytes = str(path).encode("utf-8")
-        check(self._dll.mhs_model_read_xml(self._handle, path_bytes), "read_xml")
+        self._call("mhs_model_read_xml", _text(str(path)), ctx="read_xml")
 
     def set_settings(
         self,
@@ -59,16 +155,14 @@ class Model(OwnedHandle):
         output_interval: float = 0.0,
     ) -> None:
         """Set global study parameters."""
-        check(
-            self._dll.mhs_model_set_settings(
-                self._handle,
-                int(study),
-                int(length_unit),
-                initial_temperature_K,
-                duration,
-                output_interval,
-            ),
-            "set_settings",
+        self._call(
+            "mhs_model_set_settings",
+            int(study),
+            int(length_unit),
+            initial_temperature_K,
+            duration,
+            output_interval,
+            ctx="set_settings",
         )
 
     def set_mesh(
@@ -78,32 +172,12 @@ class Model(OwnedHandle):
         z: np.ndarray | None = None,
     ) -> None:
         """Set mesh vertices."""
-        nx = len(x) if x is not None else 0
-        ny = len(y) if y is not None else 0
-        nz = len(z) if z is not None else 0
-
-        x_ptr = (
-            x.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if x is not None else None
-        )
-        y_ptr = (
-            y.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if y is not None else None
-        )
-        z_ptr = (
-            z.ctypes.data_as(ctypes.POINTER(ctypes.c_double)) if z is not None else None
-        )
-
-        check(
-            self._dll.mhs_model_set_mesh(self._handle, nx, x_ptr, ny, y_ptr, nz, z_ptr),
-            "set_mesh",
-        )
+        _set_mesh(self._dll, self._handle, x, y, z)
 
     def add_variable(self, name: str, expression: str) -> None:
         """Add a geometry variable."""
-        check(
-            self._dll.mhs_model_add_variable(
-                self._handle, name.encode("utf-8"), expression.encode("utf-8")
-            ),
-            "add_variable",
+        self._call(
+            "mhs_model_add_variable", _text(name), _text(expression), ctx="add_variable"
         )
 
     def add_material(
@@ -117,39 +191,19 @@ class Model(OwnedHandle):
         dynamic_viscosity: str | None = None,
     ) -> None:
         """Register a material."""
-        dv = (
-            dynamic_viscosity.encode("utf-8") if dynamic_viscosity is not None else None
-        )
-        check(
-            self._dll.mhs_model_add_material(
-                self._handle,
-                name.encode("utf-8"),
-                kx.encode("utf-8"),
-                ky.encode("utf-8"),
-                kz.encode("utf-8"),
-                rho.encode("utf-8"),
-                c.encode("utf-8"),
-                dv,
-            ),
-            "add_material",
+        text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
+        self._call(
+            "mhs_model_add_material",
+            *text_args,
+            _text(dynamic_viscosity),
+            ctx="add_material",
         )
 
     def add_layer(
         self, thickness: str, x_offset: str = "0", y_offset: str = "0"
     ) -> int:
         """Add a layer.  Returns the layer ID."""
-        lid = ctypes.c_uint32()
-        check(
-            self._dll.mhs_model_add_layer(
-                self._handle,
-                thickness.encode("utf-8"),
-                x_offset.encode("utf-8"),
-                y_offset.encode("utf-8"),
-                ctypes.byref(lid),
-            ),
-            "add_layer",
-        )
-        return lid.value
+        return _add_layer(self._dll, self._handle, thickness, x_offset, y_offset)
 
     def add_block(
         self,
@@ -161,22 +215,16 @@ class Model(OwnedHandle):
         thickness: str | None = None,
     ) -> int:
         """Add a block to a layer.  Returns the block ID."""
-        th = thickness.encode("utf-8") if thickness is not None else None
-        bid = ctypes.c_uint32()
-        check(
-            self._dll.mhs_model_add_block(
-                self._handle,
-                layer,
-                material_name.encode("utf-8"),
-                heat_source.encode("utf-8"),
-                x_offset.encode("utf-8"),
-                y_offset.encode("utf-8"),
-                th,
-                ctypes.byref(bid),
-            ),
-            "add_block",
+        return _add_block(
+            self._dll,
+            self._handle,
+            layer,
+            material_name,
+            heat_source,
+            x_offset,
+            y_offset,
+            thickness,
         )
-        return bid.value
 
     def add_rect(
         self,
@@ -188,31 +236,16 @@ class Model(OwnedHandle):
         height: str = "1",
     ) -> None:
         """Add a rectangular geometry operation (add or subtract)."""
-        check(
-            self._dll.mhs_model_add_rect(
-                self._handle,
-                block,
-                int(op),
-                x.encode("utf-8"),
-                y.encode("utf-8"),
-                width.encode("utf-8"),
-                height.encode("utf-8"),
-            ),
-            "add_rect",
+        self._call(
+            "mhs_model_add_rect",
+            block,
+            int(op),
+            _text(x),
+            _text(y),
+            _text(width),
+            _text(height),
+            ctx="add_rect",
         )
-
-    # ---- Face region builder ----
-
-    @staticmethod
-    def _make_face_regions(regions):
-        c_regions = []
-        if regions:
-            for r in regions:
-                axis, coord, a_min, a_max, b_min, b_max = r
-                rect = Rect2D(a_min, a_max, b_min, b_max)
-                c_regions.append(MhsFaceRegion(int(axis), coord, rect))
-        arr = (MhsFaceRegion * len(c_regions))(*c_regions) if c_regions else None
-        return arr, len(c_regions)
 
     # ---- Atomic boundary conditions ----
 
@@ -226,14 +259,15 @@ class Model(OwnedHandle):
         """Add a Dirichlet boundary condition.
 
         Each region is (axis, coordinate, a_min, a_max, b_min, b_max).
-        Pass ``None`` for regions to use an empty list.
+        Pass ``None`` or an empty list to ignore the call.
         """
-        arr, n = self._make_face_regions(regions)
-        check(
-            self._dll.mhs_model_add_dirichlet(
-                self._handle, arr, n, temperature.encode("utf-8")
-            ),
-            "add_dirichlet",
+        native_regions, count = _face_regions(regions)
+        self._call(
+            "mhs_model_add_dirichlet",
+            native_regions,
+            count,
+            _text(temperature),
+            ctx="add_dirichlet",
         )
 
     def add_neumann(
@@ -244,12 +278,13 @@ class Model(OwnedHandle):
         ) = None,
     ) -> None:
         """Add a Neumann (heat flux) boundary condition."""
-        arr, n = self._make_face_regions(regions)
-        check(
-            self._dll.mhs_model_add_neumann(
-                self._handle, arr, n, heat_flux.encode("utf-8")
-            ),
-            "add_neumann",
+        native_regions, count = _face_regions(regions)
+        self._call(
+            "mhs_model_add_neumann",
+            native_regions,
+            count,
+            _text(heat_flux),
+            ctx="add_neumann",
         )
 
     def add_convection(
@@ -261,98 +296,82 @@ class Model(OwnedHandle):
         ) = None,
     ) -> None:
         """Add a convection (Robin) boundary condition."""
-        arr, n = self._make_face_regions(regions)
-        check(
-            self._dll.mhs_model_add_convection(
-                self._handle,
-                arr,
-                n,
-                coefficient.encode("utf-8"),
-                ambient_temperature.encode("utf-8"),
-            ),
-            "add_convection",
+        native_regions, count = _face_regions(regions)
+        self._call(
+            "mhs_model_add_convection",
+            native_regions,
+            count,
+            _text(coefficient),
+            _text(ambient_temperature),
+            ctx="add_convection",
         )
 
     def set_default_dirichlet(self, temperature: str) -> None:
-        check(
-            self._dll.mhs_model_set_default_dirichlet(
-                self._handle, temperature.encode("utf-8")
-            ),
-            "set_default_dirichlet",
+        self._call(
+            "mhs_model_set_default_dirichlet",
+            _text(temperature),
+            ctx="set_default_dirichlet",
         )
 
     def set_default_neumann(self, heat_flux: str) -> None:
-        check(
-            self._dll.mhs_model_set_default_neumann(
-                self._handle, heat_flux.encode("utf-8")
-            ),
-            "set_default_neumann",
+        self._call(
+            "mhs_model_set_default_neumann", _text(heat_flux), ctx="set_default_neumann"
         )
 
     def set_default_convection(
         self, coefficient: str, ambient_temperature: str
     ) -> None:
-        check(
-            self._dll.mhs_model_set_default_convection(
-                self._handle,
-                coefficient.encode("utf-8"),
-                ambient_temperature.encode("utf-8"),
-            ),
-            "set_default_convection",
+        self._call(
+            "mhs_model_set_default_convection",
+            _text(coefficient),
+            _text(ambient_temperature),
+            ctx="set_default_convection",
         )
 
     # ---- Functions ----
 
     def add_function_expr(self, name: str, expression: str) -> None:
-        check(
-            self._dll.mhs_model_add_function_expr(
-                self._handle,
-                name.encode("utf-8"),
-                expression.encode("utf-8"),
-            ),
-            "add_function_expr",
+        self._call(
+            "mhs_model_add_function_expr",
+            _text(name),
+            _text(expression),
+            ctx="add_function_expr",
         )
 
     def add_function_gauss(
         self, name: str, amplitude: float, tau: float, center: float
     ) -> None:
-        check(
-            self._dll.mhs_model_add_function_gauss(
-                self._handle,
-                name.encode("utf-8"),
-                amplitude,
-                tau,
-                center,
-            ),
-            "add_function_gauss",
+        self._call(
+            "mhs_model_add_function_gauss",
+            _text(name),
+            amplitude,
+            tau,
+            center,
+            ctx="add_function_gauss",
         )
 
     def add_function_sine(
         self, name: str, amplitude: float, angular_frequency: float, phase: float
     ) -> None:
-        check(
-            self._dll.mhs_model_add_function_sine(
-                self._handle,
-                name.encode("utf-8"),
-                amplitude,
-                angular_frequency,
-                phase,
-            ),
-            "add_function_sine",
+        self._call(
+            "mhs_model_add_function_sine",
+            _text(name),
+            amplitude,
+            angular_frequency,
+            phase,
+            ctx="add_function_sine",
         )
 
     def add_function_double_exponential(
         self, name: str, amplitude: float, alpha: float, beta: float
     ) -> None:
-        check(
-            self._dll.mhs_model_add_function_double_exponential(
-                self._handle,
-                name.encode("utf-8"),
-                amplitude,
-                alpha,
-                beta,
-            ),
-            "add_function_double_exponential",
+        self._call(
+            "mhs_model_add_function_double_exponential",
+            _text(name),
+            amplitude,
+            alpha,
+            beta,
+            ctx="add_function_double_exponential",
         )
 
     def add_function_piecewise(self, name: str, points: np.ndarray) -> None:
@@ -362,53 +381,18 @@ class Model(OwnedHandle):
         ----------
         points : ndarray of shape (N, 2) — columns are (x, y).
         """
-        n = points.shape[0]
-        c_points = (Point2D * n)()
-        for i in range(n):
-            c_points[i].x = points[i, 0]
-            c_points[i].y = points[i, 1]
-        check(
-            self._dll.mhs_model_add_function_piecewise(
-                self._handle,
-                name.encode("utf-8"),
-                c_points,
-                n,
-            ),
-            "add_function_piecewise",
-        )
+        _add_piecewise(self._dll, self._handle, name, points)
 
     def add_function_periodic_piecewise_constant(
         self, name: str, values: np.ndarray, period: float
     ) -> None:
         """Register a periodic piecewise-constant function."""
-        n = values.shape[0]
-        c_values = (ctypes.c_double * n)()
-        for i in range(n):
-            c_values[i] = values[i]
-        check(
-            self._dll.mhs_model_add_function_periodic_piecewise_constant(
-                self._handle,
-                name.encode("utf-8"),
-                c_values,
-                n,
-                period,
-            ),
-            "add_function_periodic_piecewise_constant",
-        )
+        _add_periodic_constant(self._dll, self._handle, name, values, period)
 
     # ---- Probes & fluid boundaries ----
 
     def add_probe(self, name: str, x: float, y: float, z: float) -> None:
-        check(
-            self._dll.mhs_model_add_probe(
-                self._handle,
-                name.encode("utf-8"),
-                x,
-                y,
-                z,
-            ),
-            "add_probe",
-        )
+        self._call("mhs_model_add_probe", _text(name), x, y, z, ctx="add_probe")
 
     def add_fluid_boundary(
         self,
@@ -422,18 +406,15 @@ class Model(OwnedHandle):
         value: float,
         inlet_temperature: float = 0.0,
     ) -> None:
-        rect = Rect2D(a_min, a_max, b_min, b_max)
-        check(
-            self._dll.mhs_model_add_fluid_boundary(
-                self._handle,
-                int(axis),
-                coordinate,
-                rect,
-                int(kind),
-                value,
-                inlet_temperature,
-            ),
-            "add_fluid_boundary",
+        _add_fluid_boundary(
+            self._dll,
+            self._handle,
+            axis,
+            coordinate,
+            (a_min, a_max, b_min, b_max),
+            kind,
+            value,
+            inlet_temperature,
         )
 
     # ---- Compile ----

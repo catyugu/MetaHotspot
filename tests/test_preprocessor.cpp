@@ -1,7 +1,8 @@
-#include "common/model_definition.hpp"
 #include "compiler/model_compiler.hpp"
+#include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
@@ -149,6 +150,29 @@ TEST(PreprocessorTest, CellMappingsAreExactInverses)
         ASSERT_LT(grid, cells.grid_to_cell.size());
         EXPECT_EQ(cells.grid_to_cell[grid], cell);
     }
+}
+
+TEST(PreprocessorTest, CellFieldsContainIdentityNotMaterialSnapshots)
+{
+    auto definition = make_simple_io();
+    definition.materials[0].value.conductivity_x = "400 + T";
+    definition.materials[0].value.conductivity_y = "500 + T";
+    definition.materials[0].value.conductivity_z = "600 + T";
+    definition.materials[0].value.density = "8920 + T";
+    definition.materials[0].value.specific_heat = "385 + T";
+    const auto model = build_model(definition);
+    const auto& cells = model.cells;
+
+    ASSERT_FALSE(cells.material_id.empty());
+    ASSERT_EQ(cells.material_id.size(), cells.cell_to_grid.size());
+    EXPECT_TRUE(std::all_of(cells.material_id.begin(), cells.material_id.end(), [](auto id) { return id == 0; }));
+
+    const mhs::core::FieldContext at_initial {0.0, 0.0, 0.0, model.initial_temperature, 0.0};
+    const mhs::core::FieldContext at_later {0.0, 0.0, 0.0, model.initial_temperature + 10.0, 2.0};
+    EXPECT_DOUBLE_EQ(model.material_table[0].kx.eval(at_initial), 700.0);
+    EXPECT_DOUBLE_EQ(model.material_table[0].kx.eval(at_later), 710.0);
+    EXPECT_DOUBLE_EQ(model.material_table[0].rho.eval(at_initial), 9220.0);
+    EXPECT_DOUBLE_EQ(model.material_table[0].c.eval(at_later), 695.0);
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)

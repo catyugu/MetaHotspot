@@ -21,7 +21,7 @@ namespace mhs::sim {
     /// translation units compiled with the project's strict warning flags.
     /// Uses the same SolverConfig knobs (tolerance, max_iterations) as the
     /// other backends and warm-starts from the supplied initial guess.
-    class AmgCgSolver : public IterativeSolver {
+    class AmgCgSolver : public LinearSolver {
     public:
         AmgCgSolver();
         ~AmgCgSolver() override;

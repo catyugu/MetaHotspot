@@ -1,6 +1,6 @@
 #include "solver/nonlinear_solver.hpp"
 
-#include "common/types.hpp"
+#include "core/types.hpp"
 #include "logging/logger.hpp"
 #include <Eigen/QR>
 
@@ -19,7 +19,7 @@ namespace mhs::sim {
             double max_growth = 1.5; // divergence guard (infinity-norm ratio)
             int reset_on_growth = 1; // reset history when guard trips
 
-            // History of size `depth`. Index 0 is most recent, stored as a
+            // History of depth `depth`. Index 0 is most recent, stored as a
             // deque so that push_front is O(1) — insert(begin()) on vector
             // would be O(N) and we call push() every nonlinear iteration.
             std::deque<Eigen::VectorXd> G_hist;
@@ -98,7 +98,7 @@ namespace mhs::sim {
     } // namespace
 
     NonLinearResult nonlinear_solve(
-        LinearSystemProvider ls_provider, std::vector<double>& state, SolverHandle& solver, const NonLinearConfig& cfg)
+        LinearSystemProvider ls_provider, std::vector<double>& state, SolverPtr& solver, const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
@@ -109,16 +109,11 @@ namespace mhs::sim {
         Eigen::Map<Eigen::VectorXd> state_map(state.data(), eigen_N);
 
         AndersonMixer mixer;
-        // Warm start for the iterative backend: iteration 0 seeds from the
+        // Warm start for iterative backends: iteration 0 seeds from the
         // current iterate, later iterations from the previous linear solution
         // (the linear systems change slowly across a fixed-point loop). Direct
-        // backends ignore the guess, so the buffer stays empty for them and no
-        // per-iteration copy is paid on the default (direct) path.
-        const bool iterative = std::holds_alternative<IterativeSolverPtr>(solver);
-        Eigen::VectorXd warm_start;
-        if (iterative) {
-            warm_start = state_map;
-        }
+        // backends ignore the guess, so the copy is harmless.
+        Eigen::VectorXd warm_start = state_map;
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
 
             LinearSystem linear_system = ls_provider(state);
@@ -134,12 +129,10 @@ namespace mhs::sim {
                 return {true, iter};
             }
 
-            solver_compute(solver, linear_system.A);
-            const Eigen::VectorXd G_k = solver_solve(solver, linear_system.b, warm_start);
-            if (iterative) {
-                warm_start = G_k;
-            }
-            if (!solver_success(solver)) {
+            solver->compute(linear_system.A);
+            const Eigen::VectorXd G_k = solver->solve(linear_system.b, warm_start);
+            warm_start = G_k;
+            if (!solver->success()) {
                 throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
             }
             const Eigen::VectorXd x_k = state_map; // capture pre-update state

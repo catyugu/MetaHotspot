@@ -1,6 +1,6 @@
 add_subdirectory(numerics)
 add_subdirectory(logging)
-add_subdirectory(common)
+add_subdirectory(core)
 add_subdirectory(compiler)
 add_subdirectory(solver)
 add_subdirectory(io)

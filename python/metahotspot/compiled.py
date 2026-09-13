@@ -3,50 +3,215 @@
 from __future__ import annotations
 
 import ctypes
-from dataclasses import dataclass
-from typing import NamedTuple
+from dataclasses import dataclass, fields
+from functools import cached_property
 
 import numpy as np
 
+from metahotspot._compiled_data import CellFields, Operators
 from metahotspot._error import check
-from metahotspot._dll_interface import copy_array
 from metahotspot._handle import OwnedHandle
+from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
 from metahotspot.types import (
+    MhsCellFields,
     MhsCompiled,
     MhsCompiledInfo,
+    MhsMaterialValues,
     MhsOperators,
     MhsOperatorsInfo,
 )
 
 
-class Operators(NamedTuple):
-    """K, C, f of the linearised system: C * dx/dt + K * x = f."""
+# ---- SolveOptions --------------------------------------------------------
 
-    K: object
-    C: object
-    f: np.ndarray
+_SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}
+_INTEGRATOR_VALUES = {"Bdf1": IntegratorKind.BDF1, "Bdf2": IntegratorKind.BDF2}
+_STEP_STRATEGY_VALUES = {"Adaptive": StepStrategy.ADAPTIVE, "Fixed": StepStrategy.FIXED}
+
+# SolveOptions dataclass field -> C struct field name, with an enum coercer for
+# the three enum-typed fields.
+_ENUM_FIELDS = {
+    "linear_solver": (SolverType, _SOLVER_VALUES, "solver_type"),
+    "integrator": (IntegratorKind, _INTEGRATOR_VALUES, "integrator"),
+    "step_strategy": (StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"),
+}
+
+
+def _enum_value(value, enum_type, string_values, field_name: str) -> int:
+    if isinstance(value, enum_type):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(string_values[value])
+        except KeyError as exc:
+            raise ValueError(f"unknown {field_name}: {value!r}") from exc
+    raise TypeError(f"{field_name} must be {enum_type.__name__} or str")
+
+
+@dataclass
+class SolveOptions:
+    """Solver configuration options.
+
+    ``None`` fields fall back to the C++ defaults (via ``mhs_solve_options_default``).
+    """
+
+    linear_solver: SolverType | str | None = None
+    linear_tolerance: float | None = None
+    linear_max_iterations: int | None = None
+    underrelaxation: float | None = None
+    nonlinear_max_iterations: int | None = None
+    nonlinear_relative_tolerance: float | None = None
+    nonlinear_absolute_tolerance: float | None = None
+    integrator: IntegratorKind | str | None = None
+    step_strategy: StepStrategy | str | None = None
+    error_rel_tol: float | None = None
+    error_safety: float | None = None
+    min_dt: float | None = None
+    max_dt: float | None = None
+    fixed_dt: float | None = None
+
+    def _overrides(self) -> dict:
+        """Present non-``None`` values as C solve-options struct field overrides."""
+        overrides = {}
+        for f in fields(self):
+            value = getattr(self, f.name)
+            if value is None:
+                continue
+            if f.name in _ENUM_FIELDS:
+                enum_type, string_values, c_name = _ENUM_FIELDS[f.name]
+                overrides[c_name] = _enum_value(value, enum_type, string_values, f.name)
+            else:
+                overrides[f.name] = value
+        return overrides
+
+
+# ---- compiled metadata / snapshot helpers --------------------------------
 
 
 @dataclass(frozen=True)
-class _CompiledMetadata:
+class MaterialValues:
+    conductivity_x: np.ndarray
+    conductivity_y: np.ndarray
+    conductivity_z: np.ndarray
+    density: np.ndarray
+    specific_heat: np.ndarray
+
+
+@dataclass(frozen=True)
+class CompiledMetadata:
     cell_count: int
+    grid_count: int
     study_type: int
     initial_temperature: float
     nx: int
     ny: int
     nz: int
-    grid_to_cell: np.ndarray
-    layer_ids: np.ndarray
-    block_ids: np.ndarray
+    cell_fields: CellFields
 
 
-def _operators_from_handle(dll, handle) -> Operators:
-    """Copy a native operator handle into Python-owned SciPy/NumPy storage."""
+def _double_ptr(array: np.ndarray):
+    return array.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+
+
+def _int32_ptr(array: np.ndarray):
+    return array.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+
+
+# (field name, ctypes element type, numpy dtype, count source on MhsCompiledInfo)
+_CELL_FIELD_SPECS: tuple[tuple[str, type, type, str], ...] = (
+    ("grid_to_cell", ctypes.c_size_t, np.intp, "grid_count"),
+    ("cell_to_grid", ctypes.c_size_t, np.intp, "cell_count"),
+    ("dx", ctypes.c_double, np.float64, "nx"),
+    ("dy", ctypes.c_double, np.float64, "ny"),
+    ("dz", ctypes.c_double, np.float64, "nz"),
+    ("cx", ctypes.c_double, np.float64, "nx"),
+    ("cy", ctypes.c_double, np.float64, "ny"),
+    ("cz", ctypes.c_double, np.float64, "nz"),
+    ("layer_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("block_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("material_id", ctypes.c_uint32, np.uint32, "cell_count"),
+    ("heat_source_idx", ctypes.c_uint32, np.uint32, "cell_count"),
+)
+
+
+def _compile_model(dll, model_handle):
+    handle = ctypes.POINTER(MhsCompiled)()
+    check(dll.mhs_model_compile(model_handle, ctypes.byref(handle)), "compile")
+    return handle
+
+
+def _compiled_metadata(dll, handle) -> CompiledMetadata:
+    info = MhsCompiledInfo()
+    check(dll.mhs_compiled_get_info(handle, ctypes.byref(info)), "compiled_info")
+
+    arrays = {
+        name: np.empty(int(getattr(info, count)), dtype=dtype)
+        for name, _, dtype, count in _CELL_FIELD_SPECS
+    }
+    native = MhsCellFields(
+        **{
+            name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
+            for name, ctype, _, _ in _CELL_FIELD_SPECS
+        },
+        **{count: arrays[name].size for name, _, _, count in _CELL_FIELD_SPECS},
+    )
+    check(
+        dll.mhs_compiled_copy_cell_fields(handle, ctypes.byref(native)), "cell_fields"
+    )
+
+    return CompiledMetadata(
+        cell_count=int(info.cell_count),
+        grid_count=int(info.grid_count),
+        study_type=int(info.study_type),
+        initial_temperature=float(info.initial_temperature),
+        nx=int(info.nx),
+        ny=int(info.ny),
+        nz=int(info.nz),
+        cell_fields=CellFields(**arrays),
+    )
+
+
+def _eval_materials(dll, handle, state: np.ndarray, time: float) -> MaterialValues:
+    values = {
+        name: np.empty(state.size, dtype=np.float64)
+        for name in (
+            "conductivity_x",
+            "conductivity_y",
+            "conductivity_z",
+            "density",
+            "specific_heat",
+        )
+    }
+    native = MhsMaterialValues(
+        **{
+            name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            for name in values
+        },
+        count=state.size,
+    )
+    check(
+        dll.mhs_compiled_eval_materials(
+            handle, _double_ptr(state), state.size, time, ctypes.byref(native)
+        ),
+        "eval_materials",
+    )
+    return MaterialValues(**values)
+
+
+def _assembled_operators(dll, handle, state: np.ndarray, time: float):
+    """Assemble and copy ``K, C, f`` at ``state``/``time`` into SciPy/NumPy."""
     import scipy.sparse
 
+    out = ctypes.POINTER(MhsOperators)()
+    check(
+        dll.mhs_compiled_assemble(
+            handle, _double_ptr(state), state.size, time, ctypes.byref(out)
+        ),
+        "assemble",
+    )
     try:
         info = MhsOperatorsInfo()
-        check(dll.mhs_operators_get_info(handle, ctypes.byref(info)), "operators_info")
+        check(dll.mhs_operators_get_info(out, ctypes.byref(info)), "operators_info")
         n = int(info.state_count)
 
         def copy_matrix(function, nnz: int):
@@ -55,12 +220,12 @@ def _operators_from_handle(dll, handle) -> Operators:
             values = np.empty(nnz, dtype=np.float64)
             check(
                 function(
-                    handle,
-                    outer.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+                    out,
+                    _int32_ptr(outer),
                     outer.size,
-                    inner.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)),
+                    _int32_ptr(inner),
                     inner.size,
-                    values.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                    _double_ptr(values),
                     values.size,
                 ),
                 "operators_copy",
@@ -69,181 +234,60 @@ def _operators_from_handle(dll, handle) -> Operators:
 
         rhs = np.empty(n, dtype=np.float64)
         check(
-            dll.mhs_operators_copy_rhs(
-                handle,
-                rhs.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                rhs.size,
-            ),
+            dll.mhs_operators_copy_rhs(out, _double_ptr(rhs), rhs.size),
             "operators_copy_rhs",
         )
-        return Operators(
+        return (
             copy_matrix(dll.mhs_operators_copy_k, int(info.k_nnz)),
             copy_matrix(dll.mhs_operators_copy_c, int(info.c_nnz)),
             rhs,
         )
     finally:
-        dll.mhs_operators_destroy(handle)
+        dll.mhs_operators_destroy(out)
 
 
-@dataclass
-class SolveOptions:
-    """Solver configuration options."""
-
-    linear_solver: str = "AmgCg"
-    linear_tolerance: float = 1e-8
-    linear_max_iterations: int = 1000
-    underrelaxation: float = 1.0
-    nonlinear_max_iterations: int = 200
-    nonlinear_relative_tolerance: float = 1e-6
-    nonlinear_absolute_tolerance: float = 1e-12
-    integrator: str = "Bdf1"
-    step_strategy: str = "Adaptive"
-    error_rel_tol: float = 1e-4
-    error_safety: float = 0.9
-    min_dt: float = 1e-12
-    max_dt: float = 1.0
-    fixed_dt: float = 1.0
-
-    @staticmethod
-    def default() -> SolveOptions:
-        return SolveOptions()
-
-    def _to_c_struct(self, dll):
-        from metahotspot.types import _SolveOptionsCStruct
-
-        c_opts = _SolveOptionsCStruct()
-        dll.mhs_solve_options_default(ctypes.byref(c_opts))
-        c_opts.solver_type = {
-            "Pardiso": 0,
-            "AmgCg": 1,
-        }.get(self.linear_solver, 1)
-        c_opts.linear_tolerance = self.linear_tolerance
-        c_opts.linear_max_iterations = self.linear_max_iterations
-        c_opts.underrelaxation = self.underrelaxation
-        c_opts.nonlinear_max_iterations = self.nonlinear_max_iterations
-        c_opts.nonlinear_relative_tolerance = self.nonlinear_relative_tolerance
-        c_opts.nonlinear_absolute_tolerance = self.nonlinear_absolute_tolerance
-        c_opts.integrator = {"Bdf1": 0, "Bdf2": 1}.get(self.integrator, 0)
-        c_opts.step_strategy = {"Adaptive": 0, "Fixed": 1}.get(self.step_strategy, 0)
-        c_opts.error_rel_tol = self.error_rel_tol
-        c_opts.error_safety = self.error_safety
-        c_opts.min_dt = self.min_dt
-        c_opts.max_dt = self.max_dt
-        c_opts.fixed_dt = self.fixed_dt
-        return c_opts
+# ---- public wrapper ------------------------------------------------------
 
 
 class Compiled(OwnedHandle):
     """Read-only compiled runtime model. Use ``Model.compile()``."""
 
-    def __init__(self) -> None:
-        super().__init__(None, None)
-        self._metadata_cache = None
+    def __init__(self, dll, handle) -> None:
+        super().__init__(dll, handle, dll.mhs_compiled_destroy)
 
     @classmethod
     def _from_model(cls, dll, model_handle) -> Compiled:
-        self = cls()
-        self._dll = dll
-        self._destroy_fn = dll.mhs_compiled_destroy
-        handle = ctypes.POINTER(MhsCompiled)()
-        check(dll.mhs_model_compile(model_handle, ctypes.byref(handle)), "compile")
-        self._handle = handle
-        self._fetch_metadata()
-        return self
+        handle = _compile_model(dll, model_handle)
+        return cls(dll, handle)
 
-    def _fetch_metadata(self) -> _CompiledMetadata:
-        if self._metadata_cache is None:
-            info = MhsCompiledInfo()
-            check(
-                self._dll.mhs_compiled_get_info(self._handle, ctypes.byref(info)),
-                "compiled_info",
-            )
-            grid = np.empty(info.grid_count, dtype=np.intp)
-            layers = np.empty(info.cell_count, dtype=np.uint32)
-            blocks = np.empty(info.cell_count, dtype=np.uint32)
-            for function, array, c_type in (
-                (self._dll.mhs_compiled_copy_grid_to_cell, grid, ctypes.c_size_t),
-                (self._dll.mhs_compiled_copy_layer_ids, layers, ctypes.c_uint32),
-                (self._dll.mhs_compiled_copy_block_ids, blocks, ctypes.c_uint32),
-            ):
-                copy_array(
-                    function, self._handle, array, c_type, "compiled_metadata_copy"
-                )
-            self._metadata_cache = _CompiledMetadata(
-                int(info.cell_count),
-                int(info.study_type),
-                float(info.initial_temperature),
-                int(info.nx),
-                int(info.ny),
-                int(info.nz),
-                grid,
-                layers,
-                blocks,
-            )
-        return self._metadata_cache
+    @cached_property
+    def metadata(self) -> CompiledMetadata:
+        return _compiled_metadata(self._dll, self._handle)
 
     @property
     def cell_count(self) -> int:
-        return self._fetch_metadata().cell_count
+        return self.metadata.cell_count
 
     @property
-    def study_type(self) -> int:
-        return self._fetch_metadata().study_type
+    def cells(self) -> CellFields:
+        return self.metadata.cell_fields
 
-    @property
-    def initial_temperature(self) -> float:
-        return self._fetch_metadata().initial_temperature
-
-    @property
-    def nx(self) -> int:
-        return self._fetch_metadata().nx
-
-    @property
-    def ny(self) -> int:
-        return self._fetch_metadata().ny
-
-    @property
-    def nz(self) -> int:
-        return self._fetch_metadata().nz
-
-    @property
-    def grid_to_cell(self) -> np.ndarray:
-        return self._fetch_metadata().grid_to_cell
-
-    @property
-    def layer_ids(self) -> np.ndarray:
-        return self._fetch_metadata().layer_ids
-
-    @property
-    def block_ids(self) -> np.ndarray:
-        return self._fetch_metadata().block_ids
+    def eval_materials(self, state: np.ndarray | None = None, time: float = 0.0):
+        """Evaluate material laws for every compact cell at ``state`` and ``time``."""
+        if state is None:
+            state = self.default_state()
+        return _eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
-        return np.full(self.cell_count, self.initial_temperature, dtype=np.float64)
+        return np.full(
+            self.cell_count, self.metadata.initial_temperature, dtype=np.float64
+        )
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""
         if state is None:
             state = self.default_state()
-        state = np.ascontiguousarray(state, dtype=np.float64)
-        if state.size != self.cell_count:
-            raise ValueError(
-                f"state size ({state.size}) != cell_count ({self.cell_count})"
-            )
-
-        handle = ctypes.POINTER(MhsOperators)()
-        check(
-            self._dll.mhs_compiled_assemble(
-                self._handle,
-                state.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                state.size,
-                time,
-                ctypes.byref(handle),
-            ),
-            "assemble",
-        )
-
-        return _operators_from_handle(self._dll, handle)
+        return Operators(*_assembled_operators(self._dll, self._handle, state, time))
 
     def solve(
         self,
