@@ -29,6 +29,11 @@ jobs:
             --nxy 89 --nz 53 --probe-rounds 20 --tolerance 0.001 \
             --cases paper_fig2 paper_fig4 range_low range_high paper_fig3_extrapolation \
             --validation-shifts 0 0.1 10
+      - name: Diagnose contour reduction
+        run: |
+          python playground/connecting_mor_models/experiments/diagnose_contour.py \
+            --out playground/connecting_mor_models/results/pop_baseline \
+            --nxy 89 --nz 53
           rm playground/connecting_mor_models/results/pop_baseline/basis_whole_pop.npy
       - name: Syntax, solver, and whitespace checks
         run: |
