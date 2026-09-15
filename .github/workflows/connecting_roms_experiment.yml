@@ -1,0 +1,44 @@
+name: connecting-roms-experiment
+
+on:
+  push:
+    branches:
+      - work/connecting-roms-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install -e ./python
+      - name: Verify contour-element basis
+        run: python playground/connecting_mor_models/experiments/test_contour_elements.py
+      - name: Run whole-PoP baseline
+        run: |
+          python playground/connecting_mor_models/experiments/pop.py \
+            --out playground/connecting_mor_models/results/pop_baseline \
+            --nxy 89 --nz 53 --probe-rounds 20 --tolerance 0.001 \
+            --cases paper_fig2 paper_fig4 range_low range_high paper_fig3_extrapolation \
+            --validation-shifts 0 0.1 10
+          rm playground/connecting_mor_models/results/pop_baseline/basis_whole_pop.npy
+      - name: Syntax, solver, and whitespace checks
+        run: |
+          python -m compileall python/metahotspot/macromodel playground/connecting_mor_models/experiments
+          if grep -R -n -E 'spla\.(splu|spsolve)' python/metahotspot/macromodel/embeddable.py playground/connecting_mor_models/experiments; then
+            echo "direct sparse solve found in corrected ROM paths"
+            exit 1
+          fi
+          git diff --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connecting-roms-baseline-results
+          path: playground/connecting_mor_models/results/pop_baseline
