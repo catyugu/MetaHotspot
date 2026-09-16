@@ -2,26 +2,27 @@
 
 ## 非共形接口连接
 
-两个热模型连接时不要求两侧原始 face 一一对应，而是在两侧界面网格的并集上构造 **common patches**。对任一侧 $S$，原始边界 face $j$ 到物理界面的半单元热导为
+- 两个热模型连接时，不要求两侧原始 face 一一对应，而是在两侧界面网格的并集上构造 **common patches**。
+- 对任一侧 $S$，原始边界 face $j$ 到物理界面的半单元热导为
 
 $$
 g_{S,j}=\frac{k_{S,j}A_{S,j}}{d_{S,j}}.
 $$
 
-若公共面片 $i$ 落在原始 face $j(i)$ 内，面积为 $A_{if,i}$，按面积比例 $\xi_{S,i}=A_{if,i}/A_{S,j(i)}$ 分配后，有
+- 若公共面片 $i$ 落在原始 face $j(i)$ 内，面积为 $A_{if,i}$，按面积比例 $\xi_{S,i}=A_{if,i}/A_{S,j(i)}$ 分配，则
 
 $$
 h_{S,i}=\xi_{S,i}(E_Sg_S)_i
        =\frac{k_{S,j(i)}A_{if,i}}{d_{S,j(i)}}.
 $$
 
-若 ROM 一侧温度场写成 $T_S\approx V_Sq_S$，令 $R_S=E_SV_S$、$H_S=\operatorname{diag}(h_S)$。公共面温度 $T_\Gamma$ 只满足代数热流平衡，因此可以精确消去。定义
+- 若 ROM 一侧温度场写成 $T_S\approx V_Sq_S$，令 $R_S=E_SV_S$、$H_S=\operatorname{diag}(h_S)$。公共面温度只满足代数热流平衡，因此可以消去。定义
 
 $$
 H_\Gamma=(H_L^{-1}+H_R^{-1})^{-1},
 $$
 
-最终连接只需加入
+则连接项为
 
 $$
 \boxed{
@@ -31,78 +32,104 @@ R_L^TH_\Gamma R_L & -R_L^TH_\Gamma R_R\\
 \end{bmatrix}}
 $$
 
-即可。common patches 只负责非共形积分，不作为额外全局自由度；连接矩阵保持对称、守恒。
+- common patches 只负责非共形积分，不作为额外全局自由度，因此连接矩阵仍保持对称和守恒。
 
-## Extended-FANTASTIC：冻结 closing SVD 与容差
+## FANTASTIC / BCI CTM 路线校正
 
-本周继续核对 FANTASTIC / BCI CTM 文献与当前代码，并明确区分“文献方法探索”和“已经反复验证的项目算法基线”。相关文献包括：
+- 本周继续核对 FANTASTIC、可连接 BCI CTM、Extended FANTASTIC 和 contour elements 相关工作。主要参考包括 2014/2015 FANTASTIC、2017/2018 可连接 BCI CTM、2021 Extended FANTASTIC，以及 2023 contour elements。
+- 之前尝试过把 closing SVD 改成 projection-space columns 的解释，这会明显改变 ROM order，也没有足够依据把它当成现有方法的直接替代。本周回到之前已经反复验证的做法：对 accepted exact-response snapshots 逐列归一化后做 closing SVD，并显式保留无 HTC 系统的 uniform-temperature mode。
+- simple EROM 继续使用 $10^{-3}$ tolerance。whole-PoP 则把项目验证基线收紧到 $10^{-3}$；需要强调的是，2023 论文报告的是 $10^{-2}$，这里的 $10^{-3}$ 是为了当前 surrogate 上的精度而采用的项目基线，并不是说论文使用了这个值。
+- 全阶响应求解继续使用 AMG-preconditioned CG。
 
-- Codecasa et al., **“FAst Novel Thermal Analysis Simulation Tool for Integrated Circuits (FANTASTIC),”** THERMINIC 2014；
-- Codecasa et al., **“Matrix Reduction Tool for Creating Boundary Condition Independent Dynamic Compact Thermal Models,”** THERMINIC 2015；
-- Codecasa et al., **“Connecting MOR-based Boundary Condition Independent Compact Thermal Models,”** THERMINIC 2017；
-- Codecasa et al., **“Versatile MOR-based Boundary Condition Independent Compact Thermal Models with Multiple Heat Sources,”** *Microelectronics Reliability* 87 (2018), 194–205；
-- Codecasa, d’Alessandro, Bornoff, **“Galerkin’s Projection Framework for BCI CTMs—Part I: Extended FANTASTIC Approach,”** *IEEE TCPMT* 11(11), 1792–1803, 2021；
-- Codecasa et al., **“Boundary Condition Independent Compact Thermal Models Enhanced by Contour Elements,”** THERMINIC 2023。
+## 2023 whole-PoP
 
-此前为研究 2021 Algorithm 1 的另一种实现解释，引入了 `build_parametric_basis_literature()`，把 closing SVD 从项目原有的 normalized exact-response snapshots 改成了 source projection-space columns。该改动同时显著改变了最终 ROM order，因此它不能作为对现有算法的无条件“修正”。项目的 closing SVD 与 extraction tolerance 已经过反复验证，本轮把它们作为**硬约束冻结**：删除 `build_parametric_basis_literature()`，所有实验重新使用 `metahotspot.macromodel.utils.build_parametric_basis()`，并恢复 simple EROM 的固定容差 $10^{-3}$。whole-PoP 继续使用论文对齐的固定容差 $10^{-2}$；两处均不再通过调容差或 closing SVD 来追求更低阶数。
+- 仍然把整个 PoP 作为一个 BCI ROM 提取对象，而不是把某一个表面或局部区域单独降阶。
+- surrogate 为 **562,176 DoF**，含两个独立 die heat sources，外边界为四个 side、bottom、top 共六个表面；四个 side 共用一个 HTC 参数，bottom 和 top 各自独立，因此共有三个 HTC 参数。
+- HTC 范围仍与论文公开范围一致：side 0.1–200、bottom 0.1–1000、top 0.1–10000 W/(m²K)。
+- 在 $10^{-3}$ tolerance、20 次 residual probe 下，共得到 105 个 exact responses；closing SVD 保留 23 个 modes，再加 uniform mode，最终 ROM order 为 **24**。最大 accepted residual 为 $9.58\times10^{-4}$。
 
-项目标准 closing SVD 的行为保持不变：收集 residual test 失败后得到的 exact response snapshots，对每列归一化后做 SVD，以既定 relative singular-value cutoff 截断，再显式保留 h-free BCI 系统的 uniform-temperature null mode。全阶精确响应继续使用 AMG-preconditioned CG 求解。
+当前 extraction baseline 的 full boundary trace 稳态结果为：
 
-### 标准 contour-element 实现
+| 工况 | global $L_\infty$ | volume $L_2$ | die1 junction | die2 junction |
+| --- | ---: | ---: | ---: | ---: |
+| paper Fig.2 BC | 0.350% | 0.309% | 0.0063% | 0.0114% |
+| paper Fig.4 BC | 0.418% | 0.528% | 0.0247% | 0.0330% |
+| range low corner | 0.031% | 0.0057% | 0.0027% | 0.0027% |
+| range high corner | 0.533% | 0.757% | 0.0175% | 0.0196% |
+| paper Fig.3 extrapolation | 0.949% | 1.136% | 0.0719% | 0.0916% |
 
-2023 contour elements 的标准顺序仍保持为：**先提取 BCI CTM，再压缩 boundary temperature / heat-flux representation**，不把 contour polynomial 当成额外内部 ROM state。一个矩形面上使用总次数不超过 $p$ 的二维 $L^2$ 正交多项式，系数数目为
+- 训练范围内最坏稳态 global $L_\infty$ error 为 **0.533%**，出现在 range-high corner。
+- 对两个 source 分别在 $s=0,0.1,10\;\mathrm{s}^{-1}$ 做独立 transfer holdout，训练范围内最坏 global $L_\infty$ error 为 **0.513%**。
+- 对比之前 $10^{-2}$ 的试验，ROM order 从 14 增加到 24，训练范围内最坏稳态误差从 3.266% 降到 0.533%，transfer holdout 从 5.471% 降到 0.513%。
+- 这些结果说明 24 阶 response space 对目前测试的内部 source、HTC 参数范围和若干频移响应已经足够准确，但这并不等价于它已经覆盖了模型连接后可能出现的大部分边界驱动响应。后者仍然是需要单独验证的提取问题。
+
+## contour elements
+
+- contour elements 仍按论文的定义处理：先提取 BCI CTM，再压缩 boundary temperature / heat-flux representation，不把 contour polynomial 当作额外内部 ROM state。
+- 一个矩形面上使用总次数不超过 $p$ 的二维多项式，系数数目为
 
 $$
 \frac{(p+1)(p+2)}{2}.
 $$
 
-对 FVM 上分片常数的 modal boundary trace $v(r)$，论文式 (15) 为
+- 按论文给出的四个 side $p=2$、bottom $p=4$、top $p=10$，系数总数为
 
 $$
-\widehat V_b=\int_\Gamma\psi_b^T(r)v(r)\,dA,
+4\times 6+15+66=105.
 $$
 
-并由式 (16) 恢复边界温度、式 (17) 的转置映射传递热流。实现使用 Legendre product basis 和解析矩形积分。本轮独立 Gauss quadrature 检查得到积分最大差异 $7.63\times10^{-17}$，连续 $L^2$ Gram 最大误差 $1.33\times10^{-15}$。
+论文正文写成 $110\times42$，但没有给出额外 5 个系数的来源，因此这里仍按明确给出的阶数和计数公式处理。
 
-按 2023 论文给出的四个 side $p=2$、bottom $p=4$、top $p=10$，系数总数按其公式为 $4\times6+15+66=105$；论文正文报告 $110\times42$，但没有给出额外 5 个系数的来源，因此当前实现仍遵循公式和明确给出的阶数。
+### 边界离散复核
 
-## 2023 whole-PoP：按冻结算法重新实验
+- 原 whole-PoP 试验把 Robin 项按 $hA$ 直接作用在 boundary cell trace 上。进一步按有限体积半单元热导和零质量 boundary node 消元重新计算后，固定同一个 24-state interior basis，full boundary trace 的训练范围内最坏稳态误差为 **0.503%**，transfer holdout 最坏为 **0.481%**。
+- 同样采用半单元 / boundary-node formulation 后，论文固定 contour degrees 的最坏稳态误差仍为 **23.735%**，transfer holdout 最坏为 **24.552%**。因此此前约 24% 的异常并不是由 $hA$ 边界离散方式造成的。
+- 之前报告的逐面 boundary-trace projection error 只能作为表示空间的诊断量，不能直接当成系统误差指标。例如 side trace 的投影误差并不小，但在实际系统响应中单独压缩 side 几乎不改变误差。因此后续应以 connected response / transfer error 为主要判据。
 
-实验仍直接把**整个 PoP**作为一个 BCI ROM 提取对象。由于论文没有公开足够的商业模型几何和材料数据，不能逐单元复刻其 561,408-DoF FloTHERM 模型；当前使用 562,176-DoF structured-FVM surrogate，对齐论文公开的降阶问题：两个独立 die sources、四个侧面 + bottom + top 共六个外表面、side/bottom/top 三个独立 HTC 参数，以及相同 HTC 范围和 contour polynomial degrees。
+### 划分与阶数敏感性
 
-固定论文容差 $10^{-2}$、20 residual-probe rounds 下，`build_parametric_basis()` 共接受 63 个 exact responses；closing SVD 保留 13 个 snapshot modes，再加入 uniform null mode，最终得到 **14 阶** whole-PoP ROM。最大 accepted residual 为 $8.606\times10^{-3}$，满足固定 extraction tolerance。该 14 阶结果来自完整 562,176-DoF whole-PoP，而不是此前的 bottom-only 12-state 问题。
+保持同一个 24-state interior basis，并采用半单元 / boundary-node formulation，只改变 bottom 的表示方式；side 仍用 $p=2$，top 仍用 $p=10$：
 
-full boundary trace 的稳态结果为：
+| boundary representation | 表示规模 | in-range steady max | transfer max |
+| --- | ---: | ---: | ---: |
+| full boundary trace | 41,856 | **0.503%** | **0.481%** |
+| 论文固定 degrees：bottom 单块 $p=4$ | 105 | 23.735% | 24.552% |
+| bottom 单块 $p=16$ | 243 | 0.710% | 0.720% |
+| bottom 单块 $p=24$ | 415 | 0.671% | 0.689% |
+| bottom $5\times5$ 几何对齐分区，每块 $p=1$ | 165 | 0.824% | 0.897% |
+| bottom $5\times5$ 几何对齐分区，每块 $p=2$ | 240 | 0.669% | 0.689% |
 
-| case | order | global $L_\infty$ | volume $L_2$ | die1 junction | die2 junction |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| paper Fig.2 BC | 14 | 1.401% | 2.064% | 0.105% | 0.357% |
-| paper Fig.4 BC | 14 | 2.015% | 2.428% | 0.352% | 0.462% |
-| range low corner | 14 | 0.081% | 0.021% | 0.008% | 0.009% |
-| range high corner | 14 | 3.266% | 3.616% | 0.816% | 0.979% |
+- bottom 单块 polynomial 随阶数提高会平滑收敛到 full-trace 结果，说明 contour 投影、积分和温度 / 热流映射本身没有表现出明显的基础实现错误。
+- 根据 surrogate 内部 $\pm4.5$ mm、$\pm8$ mm 几何特征对 bottom 做分区后，局部低阶 polynomial 也能把系统误差恢复到约 0.7–0.9%。
+- 但这反过来说明当前 contour-element 方案依赖于模型特定的先验：不同模型可能需要不同的 surface partition 和 polynomial degree。虽然它可以有效压缩边界表示，但如果需要人工根据几何和响应特征调节划分与阶数，就不是一个令人满意的通用 BCI boundary representation 方案。
 
-独立 source/shift transfer validation 在 $s=0,0.1,10\;\mathrm{s}^{-1}$ 上分别激励两个 source；in-range 最大 global $L_\infty$ 误差为 **5.471%**，发生在 `range_high`、source 2、$s=0$。因此当前最重要的事实不是“14 阶非常小”，而是：在不改变 closing SVD 和 tolerance 的约束下，residual acceptance 已满足，但一些 full-field holdout error 仍明显高于 1%。下一步优化应针对训练覆盖、参数采样或接口表示等允许改变的部分，而不是改 closing SVD/tolerance。
+## simple EROM
 
-论文固定 contour degrees 在该 surrogate 上仍不足。四个 side 的 boundary-trace projection error 约 13.75%，bottom 为 61.43%，top 为 16.28%；in-range contour steady error 最大 **16.464%**，source/shift transfer 最大 **17.951%**。bottom surface 是当前最明显的 boundary representation bottleneck。后续如果研究 contour elements，应在冻结 interior extraction 算法的前提下，单独研究 per-surface adaptive degree / subdivision，并把 boundary projection error 与系统误差作为独立指标。
+- simple EROM 继续遵守“提取一次，所有外接工况复用同一个 ROM”的原则。
+- 训练空间包含一个内部 physical source，以及一个 constant interface heat-flux direction，用来覆盖外接模型向 ROM 反向注热的响应；后者只参与 basis training，不作为物理 source 使用。
+- tolerance 固定为 $10^{-3}$。共得到 19 个 exact responses，closing SVD 保留 10 个 modes，再加 uniform mode，最终 order 为 **11**，和 FloTHERM EROM 的 11 阶相同。
 
-## simple EROM：固定 $10^{-3}$、同一 closing SVD 重新实验
-
-`simple_erom_case1` 继续执行“extract once, reuse everywhere”。同一个 copper cube 只提取一次，所有 attachment cases 复用完全相同的 ROM。训练空间包含一个内部 physical source，以及一个训练用的 `z-` **constant interface heat-flux direction**，用于覆盖附件模型向 ROM 反向注热；该 interface direction 只参与 basis training，不作为物理 source 导出。
-
-本轮取消把 tolerance 当作压阶参数。固定项目基线容差 $10^{-3}$ 时，共得到 19 个 exact response snapshots；closing SVD 保留 10 个 modes，加 uniform null mode 后最终 ROM order 为 **11**。五个 attachment cases 都复用同一个 11-state ROM，恰好与冻结 FloTHERM EROM baseline 的 11 阶相同。
-
-| case | FloTHERM / MHS order | steady global: FloTHERM / MHS | transient global: FloTHERM / MHS | MHS junction |
+| 工况 | FloTHERM / MHS order | steady global: FloTHERM / MHS | transient global: FloTHERM / MHS | MHS junction |
 | --- | ---: | ---: | ---: | ---: |
-| baseline_copper | 11 / 11 | **0.742%** / 0.778% | 1.777% / **0.563%** | 0.080% |
-| bottom_htc_strong | 11 / 11 | 2.765% / **0.835%** | 4.022% / **0.787%** | 0.037% |
-| external_source_200w | 11 / 11 | 4.151% / **0.646%** | 2.426% / **0.411%** | 0.086% |
-| all_stress | 11 / 11 | 3.542% / **0.611%** | 2.276% / **0.473%** | 0.074% |
-| layered_extreme_source | 11 / 11 | 3.231% / **0.718%** | 2.089% / **0.590%** | 0.079% |
+| baseline copper | 11 / 11 | **0.742%** / 0.778% | 1.777% / **0.563%** | 0.080% |
+| strong bottom HTC | 11 / 11 | 2.765% / **0.835%** | 4.022% / **0.787%** | 0.037% |
+| 200 W external source | 11 / 11 | 4.151% / **0.646%** | 2.426% / **0.411%** | 0.086% |
+| combined stress | 11 / 11 | 3.542% / **0.611%** | 2.276% / **0.473%** | 0.074% |
+| layered extreme + source | 11 / 11 | 3.231% / **0.718%** | 2.089% / **0.590%** | 0.079% |
 
-因此修正后的可比结论是：**在相同 11 阶下**，MetaHotspot 的 steady global error 在 `baseline_copper` 略高于 FloTHERM（0.778% vs 0.742%），但在其余四个 stress cases 明显更低；transient global error 在五个 case 中均更低，且 MHS junction error 全部低于 0.086%。这比此前通过改 closing SVD / tolerance 得到的 18-state 对比更符合当前算法约束。
+- 在相同 11 阶下，MHS 的 baseline-copper steady global error 略高于 FloTHERM，其余四个 stress cases 均更低。
+- transient global error 在五个工况中均低于 FloTHERM，MHS junction error 全部低于 0.086%。
+- constant interface heat-flux direction 的训练说明，可以在提取阶段主动加入边界激励来扩大 response space 对外接工况的覆盖；但单一常数方向只适用于这个简单例子，尚不能解决一般三维边界响应的覆盖问题。
 
-## 求解器与验证
+## 求解器
 
-本轮没有回退已经确认的求解器修正。full-order thermal solves、whole-PoP validation solves，以及连接后的 simple EROM steady/BDF1 solves 继续使用 **AMG-preconditioned CG**；连接系统的固定矩阵复用 Ruge-Stüben AMG hierarchy/V-cycle preconditioner，瞬态每一步用前一步作为 CG warm start。修正路径不使用 `spla.splu` / `spla.spsolve`。
+- full-order response、whole-PoP validation、连接后的 steady system 和 BDF1 transient system 均使用 **AMG-preconditioned CG**。
+- steady 问题复用同一个 AMG hierarchy；固定时间步的 transient 问题复用 $K+C/\Delta t$ 的 AMG hierarchy，并用前一步解作为 CG warm start。
+- 目前没有观察到需要回退到稀疏直接法的理由。
 
-最终 GitHub Actions run `34993111326` 在 Ubuntu 24.04 / Python 3.12 上完成。验证 commit 为 `54b0860ce29aeab517005af8b45489a581746ca4`，artifact 为 `10406776457`。rollback/reference check、contour quadrature test、562,176-DoF whole-PoP、Release/Ninja build、93/93 repository tests、五个 reusable simple-EROM cases、Python `compileall`、direct-sparse-solver rejection check 与 `git diff --check` 均通过。精简结果同步到 `playground/connecting_mor_models/baseline/metahotspot/`。
+## 当前结论
+
+- whole-PoP 在 $10^{-3}$ 项目基线下得到 24 阶 ROM；对目前测试的内部 source、HTC 参数范围和 transfer holdout，full-trace error 约为 0.5%，说明当前 interior response space 在这些工况下已经比较稳定。
+- contour elements 的大误差已经确认主要来自 boundary partition / polynomial order 与当前模型不匹配，而不是 contour 公式或边界离散的基础错误。几何对齐分区可以把误差降回 1% 以下，但它依赖特定模型的几何与响应先验，因此并不是理想的通用方案。
+- 更关键的问题转移到了**提取阶段的 boundary-response coverage**：需要设法让内部 response basis 在不依赖具体外接模型的前提下，覆盖大部分常规连接工况可能激发的边界温度 / 热流响应。
+- 后续应优先调研如何在 FANTASTIC / BCI CTM 提取过程中加入代表性的边界激励、port response 或自适应 enrichment，并用 connected-system / transfer error 判断覆盖是否充分；在此基础上再研究紧凑、自动的 boundary representation，而不是继续手工调 contour partition 和 degree。
