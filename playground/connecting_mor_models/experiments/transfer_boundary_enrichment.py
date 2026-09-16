@@ -8,12 +8,12 @@ boundary heat-flow-density training direction. The user-facing
 nonuniform directions; there is no residual-based stopping rule and no cluster
 completion.
 
-Two deterministic holdout ensembles are reported:
-
-* ``transfer_weighted``: random combinations of the uniform direction and the
-  computed extra transfer directions, weighted by their transfer gains.
-* ``isotropic``: random vectors in the full conductance-normalized boundary
-  space. This is deliberately harsh and remains only a stress diagnostic.
+A deterministic ``transfer_weighted`` standalone transfer-response ensemble is
+reported as a response-space diagnostic only.  Its probes are random
+combinations of the uniform direction and the computed extra transfer
+directions, weighted by their transfer gains.  The relative C-norm below is
+*not* a physical connected-system field-error metric; true temperature-field
+accuracy must be measured after ``connect()`` against the monolithic FOM.
 
 No surface coordinates, contour modes, polynomial basis, or attachment geometry
 is used to choose a training direction. Euclidean residual is intentionally not
@@ -89,7 +89,7 @@ def extract_fantastic(domain, top, interface, boundary_rhs, *, seed: int):
 
 
 def holdout_samples(domain, top, *, count: int, seed: int):
-    """Matrix-parameter holdouts with the exported interface left unclosed."""
+    """Standalone transfer-operator samples, not connected physical cases."""
     del domain, top
     rng = np.random.default_rng(seed)
     shifts = np.r_[0.0, 10.0 ** rng.uniform(-3.0, 2.0, max(1, count - 1))]
@@ -97,19 +97,14 @@ def holdout_samples(domain, top, *, count: int, seed: int):
     result = []
     for i in range(count):
         top_h = float(10.0 ** rng.uniform(0.0, 4.0))
-        # interface_h=0 is the exported/embedded condition: the artificial
-        # Robin training term is absent and an external model supplies flux.
+        # h=0 removes the artificial interface Robin term for this operator-level
+        # probe.  It must not be interpreted as the actual connect() coupling.
         result.append(TransferSample(top_h, 0.0, float(shifts[i])))
     return tuple(result)
 
 
 def make_probe_vectors(transfer, *, count: int, seed: int):
     rng = np.random.default_rng(seed)
-    m = transfer.uniform_normalized_mode.size
-
-    isotropic = rng.standard_normal((m, count))
-    isotropic /= np.linalg.norm(isotropic, axis=0)
-
     directions = np.column_stack(
         (transfer.uniform_normalized_mode, transfer.extra_normalized_modes)
     )
@@ -119,7 +114,7 @@ def make_probe_vectors(transfer, *, count: int, seed: int):
     coeff *= weights[:, None]
     weighted = directions @ coeff
     weighted /= np.linalg.norm(weighted, axis=0)
-    return {"transfer_weighted": weighted, "isotropic": isotropic}
+    return {"transfer_weighted": weighted}
 
 
 def precompute_references(domain, top, interface, transfer, *, count: int, seed: int):
@@ -138,6 +133,7 @@ def precompute_references(domain, top, interface, transfer, *, count: int, seed:
 
 
 def basis_metrics(domain, basis, references):
+    """Secondary transfer-response diagnostic; not a physical field error."""
     C = domain.C.tocsr()
     state_errors = []
     for A, b, x in references:
@@ -200,7 +196,7 @@ def run(max_extra_modes: int, probe_count: int, seed: int) -> dict:
                 "max_accepted_fantastic_residual": float(
                     summary["max_accepted_residual"]
                 ),
-                "holdout": {
+                "transfer_response_diagnostic": {
                     name: basis_metrics(domain, basis, refs)
                     for name, refs in references.items()
                 },
