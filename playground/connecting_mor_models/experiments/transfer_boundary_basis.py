@@ -2,7 +2,7 @@
 """Matrix-only transfer-optimal boundary basis diagnostic.
 
 This experiment intentionally separates *which boundary inputs should enrich the
-state basis* from *how an exported boundary trace is represented*.  No contour
+state basis* from *how an exported boundary trace is represented*. No contour
 basis, polynomial surface basis, partition, or coordinate-dependent boundary
 mode enters the transfer calculation.
 
@@ -11,21 +11,20 @@ For a full-order thermal system
     A_mu x = B_gamma q,       A_mu = K + sum_j p_j H_j + s C,
 
 we measure boundary heat-flow inputs in the natural half-cell conductance norm
-``q.T @ G_gamma^{-1} @ q``.  With ``q = G_gamma**1/2 z`` the normalized input
-operator is ``B = P_gamma.T @ G_gamma**1/2``.  The C-weighted transfer Gramian is
+``q.T @ G_gamma^{-1} @ q``. With ``q = G_gamma**1/2 z`` the normalized input
+operator is ``B = P_gamma.T @ G_gamma**1/2``. The C-weighted transfer Gramian is
 
     T = sum_mu w_mu B.T A_mu^{-1} C A_mu^{-1} B.
 
-Its dominant eigenvectors are the boundary input directions that produce the
-largest bulk thermal response per unit boundary-input norm.  They are intended
-as *training-only* source directions for Extended FANTASTIC; they are not an
-exported boundary representation.
+Every embeddable ROM is trained with one explicit uniform boundary heat-flow
+*density* direction: integrated face heat flow is proportional to face area.
+The user-facing ``extra_boundary_modes`` count then selects dominant transfer
+modes from the orthogonal complement of that uniform direction. Therefore
+``extra_boundary_modes=0`` means "uniform boundary heat flow only", never an
+adiabatic/source-only training policy.
 
-Running this file builds the same 100 mm copper-cube discretization used by
-``playground/simple_erom_case1`` with the repository's pure-Python FVM helper,
-then reports the transfer spectrum and the overlap of the first transfer mode
-with the hand-written uniform-flux direction used by the current simple EROM
-experiment.
+The transfer modes are training-only source directions for Extended FANTASTIC;
+they are not an exported boundary representation.
 """
 from __future__ import annotations
 
@@ -58,12 +57,16 @@ class TransferSample:
 
 @dataclass(frozen=True)
 class TransferBasis:
-    """Dominant normalized and physical boundary directions."""
+    """Uniform baseline plus dominant transfer-optimal extra boundary directions."""
 
-    eigenvalues: np.ndarray
-    normalized_modes: np.ndarray
-    heat_flow_modes: np.ndarray
-    rhs_modes: np.ndarray
+    uniform_gain: float
+    uniform_normalized_mode: np.ndarray
+    uniform_heat_flow_mode: np.ndarray
+    uniform_rhs_mode: np.ndarray
+    extra_eigenvalues: np.ndarray
+    extra_normalized_modes: np.ndarray
+    extra_heat_flow_modes: np.ndarray
+    extra_rhs_modes: np.ndarray
 
 
 def cube_axis_m() -> np.ndarray:
@@ -119,7 +122,7 @@ def normalized_boundary_injection(n_cells: int, port) -> sp.csc_matrix:
     """Return ``P_gamma.T @ G_gamma**1/2`` for heat-flow input coordinates.
 
     A physical face heat-flow vector ``q`` is measured in the dual interface
-    norm ``q.T @ G_gamma^{-1} @ q``.  Writing ``q = G_gamma**1/2 z`` makes the
+    norm ``q.T @ G_gamma^{-1} @ q``. Writing ``q = G_gamma**1/2 z`` makes the
     normalized coordinate ``z`` Euclidean, hence the injection below.
     """
     g = np.asarray(port.half_conductance, dtype=float)
@@ -128,6 +131,24 @@ def normalized_boundary_injection(n_cells: int, port) -> sp.csc_matrix:
         (np.sqrt(g), (np.asarray(port.ids, dtype=np.int64), np.arange(m))),
         shape=(n_cells, m),
     )
+
+
+def uniform_boundary_mode(port) -> tuple[np.ndarray, np.ndarray]:
+    """Normalized constant-flux-density boundary heat-flow direction.
+
+    ``q_face`` is integrated heat flow, so a spatially uniform heat-flow density
+    has ``q_face proportional to face area``. The returned normalized coordinate
+    has unit Euclidean norm after ``q = G_gamma**1/2 z``.
+    """
+    g = np.asarray(port.half_conductance, dtype=float)
+    area = np.asarray(port.area, dtype=float)
+    z = area / np.sqrt(g)
+    norm = float(np.linalg.norm(z))
+    if norm <= np.finfo(float).tiny:
+        raise ValueError("uniform boundary heat-flow direction has zero norm")
+    z /= norm
+    q = np.sqrt(g) * z
+    return z, q
 
 
 def affine_operator(domain, top_port, interface_port, sample: TransferSample):
@@ -147,9 +168,9 @@ def affine_operator(domain, top_port, interface_port, sample: TransferSample):
 def default_samples() -> tuple[TransferSample, ...]:
     """Small deterministic affine/frequency cover for the diagnostic.
 
-    The values are not boundary basis functions.  They merely evaluate the
+    The values are not boundary basis functions. They merely evaluate the
     matrix transfer operator at low/mid/high thermal time scales and at two
-    crossed Robin corners.  The boundary modes themselves depend only on the
+    crossed Robin corners. The boundary modes themselves depend only on the
     assembled matrices.
     """
     return (
@@ -167,17 +188,24 @@ def transfer_boundary_basis(
     interface_port,
     *,
     samples: tuple[TransferSample, ...],
-    max_modes: int = 8,
+    max_extra_modes: int = 8,
     eig_tol: float = 1.0e-7,
 ) -> TransferBasis:
-    """Compute dominant C-weighted boundary transfer directions matrix-free."""
+    """Compute the uniform baseline plus C-weighted transfer-optimal extra modes.
+
+    Extra eigenvectors are computed in the Euclidean orthogonal complement of
+    the normalized uniform boundary direction. Thus they are optimal *given
+    that the uniform heat-flow mode is always already part of training*.
+    """
     if not samples:
         raise ValueError("at least one transfer sample is required")
     B = normalized_boundary_injection(domain.n_cells, interface_port).tocsr()
     m = B.shape[1]
-    if not 1 <= max_modes < m:
-        raise ValueError(f"max_modes must satisfy 1 <= max_modes < {m}")
+    if not 0 <= max_extra_modes < m:
+        raise ValueError(f"max_extra_modes must satisfy 0 <= value < {m}")
 
+    uniform_z, uniform_q = uniform_boundary_mode(interface_port)
+    uniform_rhs = np.asarray(B @ uniform_z).ravel()
     solvers = [
         AMGPCGSolver(affine_operator(domain, top_port, interface_port, sample))
         for sample in samples
@@ -196,42 +224,81 @@ def transfer_boundary_basis(
             result += weight * np.asarray(B.T @ y).ravel()
         return result
 
-    gramian = spla.LinearOperator((m, m), matvec=gramian_matvec, dtype=float)
+    uniform_gain = float(uniform_z @ gramian_matvec(uniform_z))
+    if max_extra_modes == 0:
+        empty_modes = np.empty((m, 0), dtype=float)
+        empty_rhs = np.empty((domain.n_cells, 0), dtype=float)
+        return TransferBasis(
+            uniform_gain,
+            uniform_z,
+            uniform_q,
+            uniform_rhs,
+            np.empty(0, dtype=float),
+            empty_modes,
+            empty_modes.copy(),
+            empty_rhs,
+        )
+
+    def project(z):
+        z = np.asarray(z, dtype=float)
+        return z - uniform_z * float(uniform_z @ z)
+
+    def projected_gramian_matvec(z):
+        z_perp = project(z)
+        return project(gramian_matvec(z_perp))
+
+    gramian = spla.LinearOperator(
+        (m, m), matvec=projected_gramian_matvec, dtype=float
+    )
+    rng = np.random.default_rng(20260916)
+    v0 = project(rng.standard_normal(m))
+    v0 /= np.linalg.norm(v0)
     values, modes = spla.eigsh(
         gramian,
-        k=max_modes,
+        k=max_extra_modes,
         which="LA",
         tol=eig_tol,
-        v0=np.ones(m, dtype=float) / np.sqrt(m),
+        v0=v0,
     )
     order = np.argsort(values)[::-1]
     values = np.maximum(np.asarray(values[order], dtype=float), 0.0)
     modes = np.asarray(modes[:, order], dtype=float)
+    modes -= uniform_z[:, None] * (uniform_z @ modes)[None, :]
+    modes /= np.linalg.norm(modes, axis=0)[None, :]
 
     g_sqrt = np.sqrt(np.asarray(interface_port.half_conductance, dtype=float))
     heat_flow_modes = g_sqrt[:, None] * modes
     rhs_modes = np.asarray(B @ modes, dtype=float)
-    return TransferBasis(values, modes, heat_flow_modes, rhs_modes)
+    return TransferBasis(
+        uniform_gain,
+        uniform_z,
+        uniform_q,
+        uniform_rhs,
+        values,
+        modes,
+        heat_flow_modes,
+        rhs_modes,
+    )
 
 
-def eigen_clusters(values: np.ndarray, relative_gap: float = 5.0e-3) -> list[list[int]]:
-    """Group nearly degenerate adjacent transfer eigenvalues.
-
-    Keeping an entire cluster avoids an orientation-dependent truncation inside
-    a repeated or nearly repeated eigenspace.
-    """
-    values = np.asarray(values, dtype=float)
-    if values.ndim != 1 or not values.size:
-        return []
-    clusters = [[0]]
-    for i in range(1, values.size):
-        scale = max(abs(values[i - 1]), abs(values[i]), np.finfo(float).tiny)
-        gap = abs(values[i - 1] - values[i]) / scale
-        if gap <= relative_gap:
-            clusters[-1].append(i)
-        else:
-            clusters.append([i])
-    return clusters
+def boundary_training_rhs(
+    transfer: TransferBasis, extra_boundary_modes: int
+) -> np.ndarray:
+    """Return uniform boundary training plus the requested number of extras."""
+    available = transfer.extra_rhs_modes.shape[1]
+    if not 0 <= extra_boundary_modes <= available:
+        raise ValueError(
+            "extra_boundary_modes must satisfy "
+            f"0 <= value <= {available}; got {extra_boundary_modes}"
+        )
+    uniform = transfer.uniform_rhs_mode[:, None]
+    if extra_boundary_modes == 0:
+        return np.ascontiguousarray(uniform)
+    return np.ascontiguousarray(
+        np.column_stack(
+            (uniform, transfer.extra_rhs_modes[:, :extra_boundary_modes])
+        )
+    )
 
 
 def normalized_overlap(a, b) -> float:
@@ -240,7 +307,7 @@ def normalized_overlap(a, b) -> float:
     return float(abs(np.dot(a, b)) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-def diagnostic(max_modes: int) -> dict:
+def diagnostic(max_extra_modes: int) -> dict:
     domain = build_simple_cube()
     top = boundary_port(domain, "top")
     interface = boundary_port(domain, "bottom")
@@ -249,35 +316,47 @@ def diagnostic(max_modes: int) -> dict:
         top,
         interface,
         samples=default_samples(),
-        max_modes=max_modes,
+        max_extra_modes=max_extra_modes,
     )
-    ratios = transfer.eigenvalues / transfer.eigenvalues[0]
-    captured = np.cumsum(transfer.eigenvalues) / transfer.eigenvalues.sum()
 
-    # Constant heat-flux density gives per-face heat flow proportional to area.
     uniform_flux = np.asarray(interface.area, dtype=float)
-    first_overlap = normalized_overlap(transfer.heat_flow_modes[:, 0], uniform_flux)
-    clusters = eigen_clusters(transfer.eigenvalues)
+    uniform_overlap = normalized_overlap(transfer.uniform_heat_flow_mode, uniform_flux)
+    if transfer.extra_eigenvalues.size:
+        extra_ratios = transfer.extra_eigenvalues / max(
+            transfer.uniform_gain, np.finfo(float).tiny
+        )
+        extra_uniform_overlaps = [
+            normalized_overlap(
+                transfer.extra_normalized_modes[:, i],
+                transfer.uniform_normalized_mode,
+            )
+            for i in range(transfer.extra_normalized_modes.shape[1])
+        ]
+    else:
+        extra_ratios = np.empty(0, dtype=float)
+        extra_uniform_overlaps = []
 
     return {
         "full_order_dofs": int(domain.n_cells),
         "interface_dofs": int(interface.ids.size),
         "sample_count": len(default_samples()),
-        "eigenvalues": transfer.eigenvalues.tolist(),
-        "eigenvalue_ratios": ratios.tolist(),
-        "captured_energy_over_computed_modes": captured.tolist(),
-        "clusters": clusters,
-        "first_mode_uniform_flux_overlap": first_overlap,
+        "default_extra_boundary_modes": 0,
+        "default_boundary_training_modes": 1,
+        "uniform_transfer_gain": transfer.uniform_gain,
+        "uniform_mode_uniform_flux_overlap": uniform_overlap,
+        "extra_eigenvalues": transfer.extra_eigenvalues.tolist(),
+        "extra_eigenvalue_ratios_to_uniform_gain": extra_ratios.tolist(),
+        "extra_mode_uniform_coordinate_overlaps": extra_uniform_overlaps,
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--max-modes", type=int, default=8)
+    parser.add_argument("--max-extra-modes", type=int, default=8)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
-    result = diagnostic(args.max_modes)
+    result = diagnostic(args.max_extra_modes)
     print(json.dumps(result, indent=2))
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
