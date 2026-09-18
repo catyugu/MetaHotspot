@@ -1,0 +1,74 @@
+name: Hotspot interval experiments
+
+on:
+  push:
+    branches: [agent/hotspot-bounds-20260918]
+    paths:
+      - playground/hotspot_bounds/**
+      - .github/workflows/hotspot-bounds.yml
+      - '!playground/hotspot_bounds/RESULTS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  baseline-and-experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Reuse previously validated dependency versions in a fresh runner
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/hotspot-audit"
+          python -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0 pytest==9.1.1
+          python -m pip install -e python
+          python -m pip freeze > "${{ runner.temp }}/hotspot-audit/freeze.txt"
+          git rev-parse HEAD > "${{ runner.temp }}/hotspot-audit/head-sha.txt"
+          git archive HEAD | gzip > "${{ runner.temp }}/hotspot-audit/source.tar.gz"
+          lscpu > "${{ runner.temp }}/hotspot-audit/cpu.txt"
+      - name: Unchanged production build and regression suite
+        shell: bash
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "${{ runner.temp }}/hotspot-audit/configure.log"
+          cmake --build build --parallel 2 2>&1 | tee "${{ runner.temp }}/hotspot-audit/build.log"
+          python run_tests.py 2>&1 | tee "${{ runner.temp }}/hotspot-audit/native-tests.log"
+          python run_cases.py 2>&1 | tee "${{ runner.temp }}/hotspot-audit/cases.log"
+          python -m pytest python/tests -v 2>&1 | tee "${{ runner.temp }}/hotspot-audit/python-tests.log"
+      - name: Hotspot experiments when added after baseline verification
+        shell: bash
+        run: |
+          if test -f playground/hotspot_bounds/run.py; then
+            python -m unittest discover -s playground/hotspot_bounds -p 'test_*.py' -v 2>&1 | tee "${{ runner.temp }}/hotspot-audit/interval-tests.log"
+            python playground/hotspot_bounds/run.py --output-dir "${{ runner.temp }}/hotspot-audit/results" 2>&1 | tee "${{ runner.temp }}/hotspot-audit/experiment.log"
+          else
+            echo 'Baseline-only run: interval implementation not added yet.'
+          fi
+      - name: Inspect scope and worktree
+        shell: bash
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code 0b4e5874d27571488d62568d12b7a68df7656aca HEAD -- src python tests cmake CMakeLists.txt
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/hotspot-audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git diff --stat 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD > "${{ runner.temp }}/hotspot-audit/git-diff-stat.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: hotspot-interval-audit
+          path: ${{ runner.temp }}/hotspot-audit/
+          retention-days: 30
