@@ -170,3 +170,51 @@ jobs:
           name: defect-blend-${{ matrix.seed }}
           path: ${{ runner.temp }}/blend/
           retention-days: 30
+
+  coherent-screen:
+    needs: native-baseline
+    if: needs.native-baseline.outputs.study == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [20261021, 20261022, 20261023]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated unchanged dependencies
+        shell: bash
+        run: |
+          python -m venv "${{ runner.temp }}/venv"
+          echo "${{ runner.temp }}/venv/bin" >> "$GITHUB_PATH"
+          "${{ runner.temp }}/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1
+      - name: Coherent factor representation on new seeds
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/coherent"
+          python -m pip freeze > "${{ runner.temp }}/coherent/freeze.txt"
+          lscpu > "${{ runner.temp }}/coherent/cpu.txt"
+          git rev-parse HEAD > "${{ runner.temp }}/coherent/head-sha.txt"
+          python playground/defect_operator/coherent.py --seed ${{ matrix.seed }} --output-dir "${{ runner.temp }}/coherent/results" 2>&1 | tee "${{ runner.temp }}/coherent/run.log"
+      - name: Audit and archive unchanged original experiment
+        if: always()
+        shell: bash
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code f1b72bc506855b3901d4c7e61ee1363f3e41bc66 HEAD -- src python tests cmake CMakeLists.txt playground/defect_operator/operators.py playground/defect_operator/compression.py playground/defect_operator/run.py playground/defect_operator/test_operator.py playground/defect_operator/test_numeric_types.py playground/defect_operator/README.md
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/coherent/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git archive HEAD | gzip > "${{ runner.temp }}/coherent/source.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: defect-coherent-${{ matrix.seed }}
+          path: ${{ runner.temp }}/coherent/
+          retention-days: 30
