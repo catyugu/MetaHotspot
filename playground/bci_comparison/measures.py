@@ -24,7 +24,7 @@ def split_ports(G, power, centers):
     return B,p
 
 
-def errors(reference, approximation, G, capacity, steady_reference):
+def errors(reference, approximation, G, capacity, steady_reference, *, trajectory_normalization=False):
     """Inputs (time,cell,independent_experiment), no ambient offset.
 
     Normalize each source experiment by its own steady maximum rise, then
@@ -36,7 +36,7 @@ def errors(reference, approximation, G, capacity, steady_reference):
     field=float(np.max(np.max(np.abs(delta),axis=(0,1))/denom))
     ports=np.einsum('np,tnm->tpm',G,ref)
     portdiff=np.einsum('np,tnm->tpm',G,delta)
-    portden=np.maximum(np.max(np.abs(G.T@steady_reference),axis=0),1e-14)
+    portden=np.maximum(np.max(np.abs(ports),axis=(0,1)) if trajectory_normalization else np.max(np.abs(G.T@steady_reference),axis=0),1e-14)
     junction=float(np.max(np.max(np.abs(portdiff),axis=(0,1))/portden))
     pe=np.abs(app.max(axis=1)-ref.max(axis=1))
     c=np.asarray(capacity)[None,:,None]

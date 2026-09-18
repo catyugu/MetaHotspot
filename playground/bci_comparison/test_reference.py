@@ -24,4 +24,12 @@ class ReferenceTests(unittest.TestCase):
         X,stats=cg_solve(A,B,M,x0=np.ones((3,1))*123.)
         np.testing.assert_allclose(X[:,0],[1.,.5,1/3],rtol=1e-9)
 
+class MetricTimingTests(unittest.TestCase):
+    def test_mixed_junction_uses_peak_of_average_not_average_of_peaks(self):
+        from measures import errors
+        X=np.array([[[2.],[0.]],[[0.],[2.]]]); G=np.ones((2,1))/2
+        Y=X+1.
+        result=errors(X,Y,G,np.ones(2),X.max(axis=0),trajectory_normalization=True)
+        self.assertAlmostEqual(result['junction_relative'],1.)
+
 if __name__=='__main__': unittest.main()

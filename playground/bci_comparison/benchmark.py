@@ -157,7 +157,7 @@ def main():
                          'h_id':hi,'physical_h':h.tolist(),'effective_h':p.tolist(),'profile':profile,
                          'assembly_seconds':assembly_s,'reduced_solve_seconds':solve_s,
                          'reduced_ports_seconds':reduced_ports_s,'recovery_seconds':recovery_s,
-                         'peak_scan_seconds':peak_s,**errors(Xref,Xapp,G,C.diagonal(),denominator)}
+                         'peak_scan_seconds':peak_s,**errors(Xref,Xapp,G,C.diagonal(),denominator,trajectory_normalization=P is not None)}
                     if profile=='unit_steps':
                         zss=la.solve(Kr,f,assume_a='pos',check_finite=False); appss=V@zss
                         row['steady_errors']=errors(Xss[None],appss[None],G,C.diagonal(),Xss)
