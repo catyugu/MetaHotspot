@@ -12,6 +12,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as sla
 from algorithms import extract, dense_be
 from measures import effective_h, split_ports, errors
+from reference_backend import LinearSolver
 
 METHODS=('stock_fantastic','shared_column','shared_tangent','shared_tangent_cached','krylov_tangent')
 TOLS=(1e-2,1e-3,1e-4)
@@ -40,27 +41,28 @@ def recover(V,Z):
 
 
 def reference(K,C,G,dt,steps,powers=None):
-    t=time.perf_counter(); L=(K+C/dt).tocsc(); factor=sla.splu(L)
+    t=time.perf_counter(); L=(K+C/dt).tocsc(); factor=LinearSolver(L)
     prep=time.perf_counter()-t; c=C.diagonal()
     m=G.shape[1] if powers is None else 1
     X=np.zeros((steps+1,K.shape[0],m)); residual=0.
     t=time.perf_counter()
     for i in range(1,steps+1):
         rhs=c[:,None]*X[i-1]/dt+(G if powers is None else (G@powers[i])[:,None])
-        X[i]=factor.solve(rhs)
+        X[i]=factor.solve(rhs,x0=X[i-1])
     solve=time.perf_counter()-t
     # Reference audit is excluded from its solve time, never from ROM costs.
     for i in (1,steps//2,steps):
         rhs=c[:,None]*X[i-1]/dt+(G if powers is None else (G@powers[i])[:,None])
         residual=max(residual,float(la.norm(L@X[i]-rhs)/max(la.norm(rhs),1e-30)))
     if residual>1e-9: raise RuntimeError(f'reference residual {residual}')
-    return X,{'setup_seconds':prep,'solve_seconds':solve,'max_checked_residual':residual}
+    return X,{'setup_seconds':prep,'solve_seconds':solve,'max_checked_residual':max(residual,factor.residual),'backend':factor.backend,'iterations':factor.iterations}
 
 
 def main():
     from metahotspot.macromodel import utils as stock
     ap=argparse.ArgumentParser(); ap.add_argument('--data',type=Path,required=True)
     ap.add_argument('--output',type=Path,required=True); ap.add_argument('--seed',type=int,required=True)
+    ap.add_argument('--port-counts',type=int,nargs='+',default=[4,16]); ap.add_argument('--extra-h',type=int,default=5)
     args=ap.parse_args(); args.output.mkdir(exist_ok=True,parents=True)
     K=sp.load_npz(args.data/'K.npz'); C=sp.load_npz(args.data/'C.npz')
     H=[sp.load_npz(args.data/f'H{i}.npz') for i in range(2)]
@@ -69,17 +71,17 @@ def main():
     np.testing.assert_allclose(effective_h(np.array([1.,1.]),half),ranges[:,0],rtol=1e-12)
     np.testing.assert_allclose(effective_h(np.array([1e4,1e4]),half),ranges[:,1],rtol=1e-12)
     rng=np.random.default_rng(args.seed+700000)
-    hcases=np.vstack((np.array([[1.,1.],[1.,1e4],[1e4,1.],[1e4,1e4],[50.,1000.]]),10**rng.uniform(0,4,(5,2))))
+    hcases=np.vstack((np.array([[1.,1.],[1.,1e4],[1e4,1.],[1e4,1e4],[50.,1000.]]),10**rng.uniform(0,4,(args.extra_h,2))))
     meta={'seed':args.seed,'n':K.shape[0],'methods':METHODS,'tolerances':TOLS,
-          'probe_rounds':10,'physical_HTC_cases':hcases.tolist(),
+          'probe_rounds':10,'port_counts':args.port_counts,'physical_HTC_cases':hcases.tolist(),
           'physical_HTC_range':[[1.,1e4],[1.,1e4]],'effective_ranges':ranges.tolist(),
           'data_hashes':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in args.data.iterdir()},
           'stock_source_sha256':hashlib.sha256(Path(stock.__file__).read_bytes()).hexdigest(),
           'native_case_path':'playground/bci_rom_testcase1/model_case1.py',
-          'notes':'Coarsened same native geometry; stock reproduction script uses 1 mm. No commercial ROM used as truth.'}
+          'notes':'Same native Case1 geometry; 1 mm dataset matches the stock reproduction mesh. No commercial ROM used as truth.'}
     (args.output/'protocol.json').write_text(json.dumps(meta,indent=2))
     summaries=[]; metrics=[]; references=[]; compatibility=[]
-    for port_count in (4,16):
+    for port_count in args.port_counts:
         G,power=(G4,power4) if port_count==4 else split_ports(G4,power4,data['centers'])
         core=stock.normalized_operators(K,C,G@power)
         np.testing.assert_allclose(G.sum(axis=0),1.,rtol=1e-12)
@@ -118,11 +120,12 @@ def main():
                          'full_solves':s['full_solves'],'pre_compression_order':s.get('pre_compression_order',s.get('pre_svd_order')),
                          'krylov_cycles':s.get('krylov_cycles',0),'preconditioners':s.get('preconditioners',s['full_solves'])}
                 summaries.append(summary)
-                np.savez_compressed(args.output/f'rom_p{port_count}_{method}_{tol}.npz',V=model['V'],C=model['C'],K0=model['K0'].toarray(),F=model['F'],fb=model['fb'],ab=np.stack(model['ab']))
+                basis_data={'V':model['V']} if K.shape[0]<=50000 else {'basis_sha256':hashlib.sha256(model['V'].tobytes()).hexdigest(),'basis_shape':model['V'].shape}
+                np.savez_compressed(args.output/f'rom_p{port_count}_{method}_{tol}.npz',**basis_data,C=model['C'],K0=model['K0'].toarray(),F=model['F'],fb=model['fb'],ab=np.stack(model['ab']))
         # All methods and tolerances see the same held-out references.
         for hi,h in enumerate(hcases):
             p=effective_h(h,half); Kh=K+sum(x*M for x,M in zip(p,H))
-            t=time.perf_counter(); lu=sla.splu(Kh.tocsc()); Xss=lu.solve(G)
+            t=time.perf_counter(); lu=LinearSolver(Kh); Xss=lu.solve(G)
             ss_time=time.perf_counter()-t
             residual=la.norm(Kh@Xss-G)/la.norm(G)
             if residual>1e-9: raise RuntimeError('steady reference not converged')

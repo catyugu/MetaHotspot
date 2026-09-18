@@ -56,7 +56,7 @@ jobs:
           from model_case1 import Case1Model, Case1Config
           from metahotspot.macromodel import utils as u
           out=Path(os.environ['RUNNER_TEMP'])/'audit'
-          for mesh in (5.0, 2.5):
+          for mesh in (5.0, 2.5, 1.0):
               model=Case1Model(Case1Config(max_xy_cell_mm=mesh,max_z_cell_mm=mesh))
               K,C,G=model.core.K,model.core.C,model.source_shape
               H=model.boundary_terms
@@ -122,8 +122,21 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mesh: ['5.0','2.5']
-        seed: [20260931,20260932,20260933]
+        include:
+          - mesh: '1.0'
+            seed: 20260805
+          - mesh: '5.0'
+            seed: 20260931
+          - mesh: '2.5'
+            seed: 20260931
+          - mesh: '5.0'
+            seed: 20260932
+          - mesh: '2.5'
+            seed: 20260932
+          - mesh: '5.0'
+            seed: 20260933
+          - mesh: '2.5'
+            seed: 20260933
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -148,7 +161,9 @@ jobs:
           lscpu > "$RUNNER_TEMP/study/cpu.txt"
           git rev-parse HEAD > "$RUNNER_TEMP/study/head-sha.txt"
           git archive HEAD | gzip > "$RUNNER_TEMP/study/source.tar.gz"
-          python playground/bci_comparison/benchmark.py --data "$RUNNER_TEMP/native/case1_${{ matrix.mesh }}" --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/study" 2>&1 | tee "$RUNNER_TEMP/study/run.log"
+          EXTRA=()
+          if test '${{ matrix.mesh }}' = '1.0'; then EXTRA=(--port-counts 4 --extra-h 2); fi
+          python playground/bci_comparison/benchmark.py --data "$RUNNER_TEMP/native/case1_${{ matrix.mesh }}" --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/study" "${EXTRA[@]}" 2>&1 | tee "$RUNNER_TEMP/study/run.log"
           git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
           git diff --exit-code
           git status --short > "$RUNNER_TEMP/study/git-status.txt"
