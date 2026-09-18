@@ -84,16 +84,38 @@ def positive_greedy(a,b,budget):
     return np.asarray(ids,dtype=int),w
 
 
-def minimax_weights(a):
+def minimax_weights(a, *, audit=None):
+    """Solve the same feasible LP, retrying numerical failure once with IPM.
+
+    w=0,t=1 is always feasible. A solver status alone is not accepted without
+    a finite, nonnegative primal solution satisfying the original constraints.
+    Retry time is included in the caller's offline timer.
+    """
+    a=np.asarray(a,dtype=float)
+    if a.ndim != 2 or min(a.shape) == 0 or not np.all(np.isfinite(a)):
+        raise ValueError('finite nonempty constraint matrix required')
     rows,cols=a.shape
     objective=np.r_[np.zeros(cols),1.]
     constraints=np.vstack((np.column_stack((a,-np.ones(rows))),np.column_stack((-a,-np.ones(rows)))))
     rhs=np.r_[np.ones(rows),-np.ones(rows)]
-    result=linprog(objective,A_ub=constraints,b_ub=rhs,bounds=(0.,None),method='highs',
-                   options={'primal_feasibility_tolerance':1e-9,'dual_feasibility_tolerance':1e-9})
-    if not result.success:
-        raise RuntimeError('minimax weight fit failed: '+result.message)
-    return result.x[:-1],float(result.x[-1])
+    messages=[]
+    for attempt,method in enumerate(('highs','highs-ipm')):
+        options={'primal_feasibility_tolerance':1e-9,'dual_feasibility_tolerance':1e-9}
+        if attempt:
+            options['presolve']=False
+            print('LP numerical retry: same constraints, highs-ipm, presolve disabled',flush=True)
+        if audit is not None:
+            audit['lp_calls']=audit.get('lp_calls',0)+1
+            audit['lp_retries']=audit.get('lp_retries',0)+int(attempt > 0)
+        result=linprog(objective,A_ub=constraints,b_ub=rhs,bounds=(0.,None),method=method,options=options)
+        if result.success and np.all(np.isfinite(result.x)):
+            w=result.x[:-1]; t=float(result.x[-1])
+            violation=float(np.max(np.abs(a@w-1.)))
+            if np.min(result.x) >= -5e-8 and violation <= t+5e-8:
+                w=np.maximum(w,0.)
+                return w,max(t,float(np.max(np.abs(a@w-1.))))
+        messages.append(method+': '+str(result.message))
+    raise RuntimeError('minimax weight fit failed primal validation: '+'; '.join(messages))
 
 
 def pool_data(family,pool):
@@ -121,14 +143,14 @@ def evaluate_pool(family,g,k,ids,w):
 
 def spectral_exchange(family,pool,budget,rounds=10,fixed_ids=None,precomputed=None):
     g,k=pool_data(family,pool) if precomputed is None else precomputed
-    cuts=initial_cuts(family,g,k); best=None
+    cuts=initial_cuts(family,g,k); best=None; lp_audit={}
     for iteration in range(rounds):
         f=np.asarray(cuts)
         if fixed_ids is None:
             ids,_=positive_greedy(f,np.ones(len(f)),budget)
         else:
             ids=np.asarray(fixed_ids,dtype=int)
-        w,t=minimax_weights(f[:,ids])
+        w,t=minimax_weights(f[:,ids],audit=lp_audit)
         errors=evaluate_pool(family,g,k,ids,w)
         worst=np.argsort([z[0] for z in errors])[-2:]
         value=float(errors[worst[-1]][0])
@@ -138,7 +160,7 @@ def spectral_exchange(family,pool,budget,rounds=10,fixed_ids=None,precomputed=No
             cuts.append(cut_row(family,g[i],k[i],errors[i][1]))
     return best[1],best[2],{'pool_states':len(pool),'rounds_run':iteration+1,
                            'selected_round':best[3],'training_spectral_max':best[0],
-                           'constraint_rows':len(cuts),'fixed_support':fixed_ids is not None}
+                           'constraint_rows':len(cuts),'fixed_support':fixed_ids is not None,**lp_audit}
 
 
 def matrix_features(family,g,k):

@@ -169,6 +169,24 @@ class SpectralTests(unittest.TestCase):
         self.assertLessEqual(np.max(np.abs(a@w-1.)), np.max(np.abs(a@old-1.))+1e-8)
         self.assertLessEqual(np.max(np.abs(a@w-1.)), t+1e-7)
 
+    def test_minimax_retries_numerical_failure_without_changing_problem(self):
+        import spectral
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        original = spectral.linprog
+        calls = []
+        def failing_first(*args, **kwargs):
+            calls.append(kwargs['method'])
+            if len(calls) == 1:
+                return SimpleNamespace(success=False, message='forced numerical failure')
+            return original(*args, **kwargs)
+        a = np.array([[1., .2], [.3, 1.], [.7, .8]])
+        with patch('spectral.linprog', side_effect=failing_first):
+            w, t = spectral.minimax_weights(a)
+        self.assertEqual(calls, ['highs', 'highs-ipm'])
+        self.assertTrue(np.all(w >= 0.))
+        self.assertLessEqual(np.max(np.abs(a@w-1.)), t+1e-8)
+
     def test_exchange_preserves_budget_and_positive_definiteness(self):
         from spectral import EdgeFamily, spectral_exchange
         fam = EdgeFamily(6, 3, 42, 'mild')
