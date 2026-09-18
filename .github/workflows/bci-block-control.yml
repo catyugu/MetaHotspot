@@ -1,0 +1,71 @@
+name: BCI block matched-code control
+on:
+  push:
+    branches: [agent/bci-block-screen-20260919]
+    paths:
+      - playground/bci_block_control/**
+      - .github/workflows/bci-block-control.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+env:
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  attribution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [20261101, 20261102, 20261103]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: bci-block-native
+          run-id: 35382733713
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/native
+      - name: Isolated existing dependencies
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -e python
+      - name: Identical-kernel attribution
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit"
+          python -m pip freeze > "$RUNNER_TEMP/audit/freeze.txt"
+          lscpu > "$RUNNER_TEMP/audit/cpu.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/audit/head-sha.txt"
+          git archive HEAD | gzip > "$RUNNER_TEMP/audit/source.tar.gz"
+          python -m unittest discover -s playground/bci_block -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/audit/tests.log"
+          python playground/bci_block_control/run.py --data "$RUNNER_TEMP/native/case1_2.5" --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/audit" 2>&1 | tee "$RUNNER_TEMP/audit/run.log"
+      - name: Preserve original experiment and production
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit"
+          git diff --check d29bb6d3ecb15bc547bd689c4e219a74b7ca05ea...HEAD
+          git diff --exit-code d29bb6d3ecb15bc547bd689c4e219a74b7ca05ea HEAD -- src include python tests cmake CMakeLists.txt playground/bci_block playground/bci_comparison playground/bci_rom_testcase1
+          git diff --exit-code
+          git status --short > "$RUNNER_TEMP/audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bci-block-control-${{ matrix.seed }}
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
