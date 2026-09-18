@@ -1,0 +1,123 @@
+name: Algorithm feasibility studies
+
+on:
+  push:
+    branches: [agent/algorithm-spikes-20260918]
+    paths:
+      - playground/algorithm_spikes/**
+      - .github/workflows/algorithm-spikes.yml
+      - '!playground/algorithm_spikes/RESULTS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  native-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      ready: ${{ steps.stage.outputs.ready }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated environment with existing validated versions
+        run: |
+          mkdir -p "${{ runner.temp }}/audit"
+          python -m venv "${{ runner.temp }}/venv"
+          echo "${{ runner.temp }}/venv/bin" >> "$GITHUB_PATH"
+          "${{ runner.temp }}/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0 pytest==9.1.1
+          "${{ runner.temp }}/venv/bin/python" -m pip install -e python
+      - name: Documented unchanged production build and regression commands
+        run: |
+          python -m pip freeze > "${{ runner.temp }}/audit/freeze.txt"
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "${{ runner.temp }}/audit/configure.log"
+          cmake --build build --parallel 2 2>&1 | tee "${{ runner.temp }}/audit/build.log"
+          python run_tests.py 2>&1 | tee "${{ runner.temp }}/audit/native-tests.log"
+          python run_cases.py 2>&1 | tee "${{ runner.temp }}/audit/cases.log"
+          python -m pytest python/tests -v 2>&1 | tee "${{ runner.temp }}/audit/python-tests.log"
+      - name: New algebraic regression tests, if present
+        id: stage
+        run: |
+          if test -f playground/algorithm_spikes/run.py; then
+            python -m unittest discover -s playground/algorithm_spikes -p 'test_*.py' -v 2>&1 | tee "${{ runner.temp }}/audit/algorithm-tests.log"
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Baseline only: no algorithm implementation yet.'
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Source and scope audit
+        run: |
+          git rev-parse HEAD > "${{ runner.temp }}/audit/head-sha.txt"
+          git archive HEAD | gzip > "${{ runner.temp }}/audit/source.tar.gz"
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code 0b4e5874d27571488d62568d12b7a68df7656aca HEAD -- src python tests cmake CMakeLists.txt
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git diff --stat 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD > "${{ runner.temp }}/audit/diff-stat.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: algorithm-native-baseline
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
+
+  experiment:
+    needs: native-baseline
+    if: needs.native-baseline.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        direction: [commutator, gram, spectral]
+        seed: [20260921, 20260922, 20260923]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated numerical environment, no new dependencies
+        run: |
+          python -m venv "${{ runner.temp }}/venv"
+          echo "${{ runner.temp }}/venv/bin" >> "$GITHUB_PATH"
+          "${{ runner.temp }}/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1
+      - name: Run predeclared experiment
+        run: |
+          mkdir -p "${{ runner.temp }}/study"
+          python -m pip freeze > "${{ runner.temp }}/study/freeze.txt"
+          lscpu > "${{ runner.temp }}/study/cpu.txt"
+          git rev-parse HEAD > "${{ runner.temp }}/study/head-sha.txt"
+          python playground/algorithm_spikes/run.py --direction ${{ matrix.direction }} --seed ${{ matrix.seed }} --output-dir "${{ runner.temp }}/study/results" 2>&1 | tee "${{ runner.temp }}/study/run.log"
+      - name: Verify unchanged worktree and archive source
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/study/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git archive HEAD | gzip > "${{ runner.temp }}/study/source.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: algorithm-${{ matrix.direction }}-${{ matrix.seed }}
+          path: ${{ runner.temp }}/study/
+          retention-days: 30
