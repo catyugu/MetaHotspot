@@ -1,0 +1,124 @@
+name: Source-independent operator studies
+
+on:
+  push:
+    branches: [agent/defect-operator-20260918]
+    paths:
+      - playground/defect_operator/**
+      - .github/workflows/defect-operator.yml
+      - '!playground/defect_operator/RESULTS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  native-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      study: ${{ steps.detect.outputs.study }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated existing dependency versions
+        shell: bash
+        run: |
+          python -m venv "${{ runner.temp }}/venv"
+          echo "${{ runner.temp }}/venv/bin" >> "$GITHUB_PATH"
+          "${{ runner.temp }}/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0 pytest==9.1.1
+          "${{ runner.temp }}/venv/bin/python" -m pip install -e python
+      - name: Unmodified documented regression baseline
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/audit"
+          python -m pip freeze > "${{ runner.temp }}/audit/freeze.txt"
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "${{ runner.temp }}/audit/configure.log"
+          cmake --build build --parallel 2 2>&1 | tee "${{ runner.temp }}/audit/build.log"
+          python run_tests.py 2>&1 | tee "${{ runner.temp }}/audit/native-tests.log"
+          python run_cases.py 2>&1 | tee "${{ runner.temp }}/audit/cases.log"
+          python -m pytest python/tests -v 2>&1 | tee "${{ runner.temp }}/audit/python-tests.log"
+      - id: detect
+        name: Detect and test scientific code
+        shell: bash
+        run: |
+          if test -f playground/defect_operator/run.py; then
+            python -m unittest discover -s playground/defect_operator -p 'test_*.py' -v 2>&1 | tee "${{ runner.temp }}/audit/new-tests.log"
+            echo 'study=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'study=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Audit scope and worktree
+        shell: bash
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code 0b4e5874d27571488d62568d12b7a68df7656aca HEAD -- src python tests cmake CMakeLists.txt
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD > "${{ runner.temp }}/audit/head-sha.txt"
+          git archive HEAD | gzip > "${{ runner.temp }}/audit/source.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: defect-native-baseline
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
+
+  experiment:
+    needs: native-baseline
+    if: needs.native-baseline.outputs.study == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [20261001, 20261002, 20261003]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated existing numerical dependencies
+        shell: bash
+        run: |
+          python -m venv "${{ runner.temp }}/venv"
+          echo "${{ runner.temp }}/venv/bin" >> "$GITHUB_PATH"
+          "${{ runner.temp }}/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0
+      - name: Predeclared numerical study
+        shell: bash
+        run: |
+          mkdir -p "${{ runner.temp }}/study"
+          python -m pip freeze > "${{ runner.temp }}/study/freeze.txt"
+          lscpu > "${{ runner.temp }}/study/cpu.txt"
+          git rev-parse HEAD > "${{ runner.temp }}/study/head-sha.txt"
+          python playground/defect_operator/run.py --seed ${{ matrix.seed }} --output-dir "${{ runner.temp }}/study/results" 2>&1 | tee "${{ runner.temp }}/study/run.log"
+      - name: Audit and archive source
+        if: always()
+        shell: bash
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code
+          git status --short | tee "${{ runner.temp }}/study/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git archive HEAD | gzip > "${{ runner.temp }}/study/source.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: defect-operator-${{ matrix.seed }}
+          path: ${{ runner.temp }}/study/
+          retention-days: 30
