@@ -136,5 +136,52 @@ class BoundsTests(unittest.TestCase):
         self.assertGreater(iterations, 0)
 
 
+class TransportBoundsTests(unittest.TestCase):
+    def test_arbitrary_inverse_action_does_not_need_positivity_or_accuracy(self):
+        from transport import TransportCertificate
+        A, D, W = problem()
+        rng = np.random.default_rng(712)
+        inverse = np.linalg.inv(A.toarray())
+        actions = [lambda q: q * 0., lambda q: -2. * q,
+                   lambda q: q / A.diagonal(), lambda q: inverse @ q]
+        for action in actions:
+            cert = TransportCertificate(A, D, W, action)
+            for _ in range(10):
+                previous = rng.normal(size=len(D))
+                prior = rng.uniform(0., .3, len(D))
+                true_previous = previous + rng.uniform(-1., 1., len(D)) * prior
+                f, estimate = rng.normal(size=(2, len(D)))
+                exact = inverse @ (D * true_previous + f)
+                b = cert.bound(estimate, previous, prior, f)
+                self.assertTrue(np.all(np.abs(exact - estimate) <= b + 1e-11))
+
+    def test_transport_is_no_looser_than_original_bound(self):
+        from transport import TransportCertificate
+        A, D, W = problem()
+        rng = np.random.default_rng(82)
+        values = (rng.normal(size=len(D)), rng.normal(size=len(D)),
+                  rng.uniform(0., 1., len(D)), rng.normal(size=len(D)))
+        original = Certificate(A, D, W).bound(*values)
+        cert = TransportCertificate(A, D, W, lambda q: q / A.diagonal(), cycles=2)
+        improved = cert.bound(*values)
+        self.assertTrue(np.all(improved <= original + 1e-11))
+        self.assertEqual(cert.inverse_calls, 2)
+
+    def test_spatial_error_propagation_preserves_time_history(self):
+        from transport import TransportCertificate
+        A, D, W = problem()
+        inverse = np.linalg.inv(A.toarray())
+        cert = TransportCertificate(A, D, W, lambda q: inverse @ q)
+        rng = np.random.default_rng(79)
+        previous, true, prior = np.zeros((3, len(D)))
+        for _ in range(20):
+            f = rng.normal(size=len(D))
+            true = inverse @ (D * true + f)
+            estimate = inverse @ (D * previous + f) + rng.normal(0., .01, len(D))
+            prior = cert.bound(estimate, previous, prior, f)
+            self.assertTrue(np.all(np.abs(true - estimate) <= prior + 1e-11))
+            previous = estimate
+
+
 if __name__ == "__main__":
     unittest.main()

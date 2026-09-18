@@ -53,7 +53,7 @@ jobs:
         run: |
           if test -f playground/hotspot_bounds/run.py; then
             python -m unittest discover -s playground/hotspot_bounds -p 'test_*.py' -v 2>&1 | tee "${{ runner.temp }}/hotspot-audit/interval-tests.log"
-            python playground/hotspot_bounds/run.py --output-dir "${{ runner.temp }}/hotspot-audit/results" 2>&1 | tee "${{ runner.temp }}/hotspot-audit/experiment.log"
+            python playground/hotspot_bounds/followup.py --output-dir "${{ runner.temp }}/hotspot-audit/followup" 2>&1 | tee "${{ runner.temp }}/hotspot-audit/experiment.log"
           else
             echo 'Baseline-only run: interval implementation not added yet.'
           fi

@@ -108,3 +108,35 @@ CSV traces contain every interval, reference peak, refinement count and replay
 length. JSON summaries include enclosure violations, false decisions,
 uncertainty widths, timing samples, setup cost and solver work. Empirical
 coverage is necessary testing, not a proof of continuous or physical safety.
+
+## Follow-up: spatial majorant transport and controls
+
+CI run 35303895189 completed the original four-case comparison. Its results
+showed that the decision-only policy can save current-step corrections yet
+lose overall time to history replay. The next controlled experiment retains
+the 98,304-DoF model, both workloads, predictor, time step, seed and threshold:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  python playground/hotspot_bounds/followup.py --output-dir /tmp/hotspot-followup
+```
+
+`transport.py` computes one or two AMG V-cycle approximations z to A^-1 q,
+where q is the nonnegative temporal error drive. It repairs the remaining
+componentwise defect using the checked positive comparison vectors, so no
+positivity or contraction assumption about AMG is required. The repaired
+spatial upper bound is intersected with the original bound. This tests a
+stronger majorant, not a new predictor. All certificate AMG cycles, including
+those during PCG checks and history replay, are counted and timed. They are
+base certification cost; only additional state corrections/replays remain
+decision-driven. The floating-point and discrete-model limitations above
+are unchanged.
+
+The follow-up also compares a predictor that merely copies the preceding
+state (zero ROM extraction cost) and a fixed-rtol=1e-3 FOM. The latter has no
+certified maximum-temperature interval, but its measured error is reported to
+check whether the apparent speedup is only against unnecessarily tight solves.
+The original width and decision policies are remeasured on the same runner
+as controls. The workflow now runs this follow-up; the original experiment
+remains reproducible using run.py. Three added tests verify repaired majorants
+for inaccurate, negative and exact approximate inverses and over time.
