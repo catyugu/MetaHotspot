@@ -15,7 +15,7 @@ def assemble(k: np.ndarray, shift: float) -> sp.csr_matrix:
         raise ValueError('k must be square, with at least two cells per axis')
     if not np.all(np.isfinite(k)) or np.any(k <= 0) or not np.isfinite(shift) or shift < 0:
         raise ValueError('positive finite conductivities and nonnegative finite shift required')
-    n=k.shape[0]; indices=np.arange(n*n).reshape(n,n); diag=np.full(n*n,shift)
+    n=k.shape[0]; indices=np.arange(n*n).reshape(n,n); diag=np.full(n*n,shift,dtype=float)
     rows=[]; cols=[]; data=[]
     for axis in (0,1):
         s0=[slice(None),slice(None)]; s1=s0.copy()
