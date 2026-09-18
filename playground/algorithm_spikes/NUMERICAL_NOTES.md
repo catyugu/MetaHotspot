@@ -13,3 +13,16 @@ constraints. No seeds, states, budgets, weights objective or other numerical
 method were tuned. All retry work is charged to offline time; lp_calls and
 lp_retries are included in the selection audit. All nine research jobs are
 rerun on the fixed source version, without examining holdouts for tuning.
+
+The first retry patch (run 35327920151) exposed additional solver epigraph
+residuals even when both methods reported success. Those failures are also
+retained. The final patch column-equilibrates the same LP (an invertible positive
+variable scaling), projects returned roundoff-negative weights onto nonnegative
+weights and recomputes the epigraph on the ORIGINAL constraints. Maximum
+lp_max_epigraph_repair and lp_max_bound_projection are explicitly recorded.
+This is a feasible numerical weight fit, not a formally certified optimal LP.
+Two additional regressions cover extreme column scaling and rounded epigraphs;
+both failed before this patch. All 22 tests then pass locally. A training-only
+reproduction of the failed seed/configuration was attempted locally after the
+failure; local SciPy 1.17 did not reproduce the CI 1.18 residual condition.
+No held-out results were used to tune the algorithm or this numerical guard.

@@ -85,37 +85,48 @@ def positive_greedy(a,b,budget):
 
 
 def minimax_weights(a, *, audit=None):
-    """Solve the same feasible LP, retrying numerical failure once with IPM.
+    """Column-equilibrated LP with explicit feasible epigraph reconstruction.
 
-    w=0,t=1 is always feasible. A solver status alone is not accepted without
-    a finite, nonnegative primal solution satisfying the original constraints.
-    Retry time is included in the caller's offline timer.
+    Scaling uses z_j=max_i|a_ij|*w_j and does not change the LP. Returned
+    nonnegative weights are checked on the ORIGINAL coefficients. The actual
+    epigraph is recomputed rather than trusting a solver-reported t; any repair
+    is recorded. Optimality remains numerical, not a certified LP theorem.
     """
     a=np.asarray(a,dtype=float)
     if a.ndim != 2 or min(a.shape) == 0 or not np.all(np.isfinite(a)):
         raise ValueError('finite nonempty constraint matrix required')
     rows,cols=a.shape
+    scale=np.max(np.abs(a),axis=0)
+    scale=np.where(scale>0.,scale,1.)
+    scaled=a/scale
     objective=np.r_[np.zeros(cols),1.]
-    constraints=np.vstack((np.column_stack((a,-np.ones(rows))),np.column_stack((-a,-np.ones(rows)))))
+    constraints=np.vstack((np.column_stack((scaled,-np.ones(rows))),
+                           np.column_stack((-scaled,-np.ones(rows)))))
     rhs=np.r_[np.ones(rows),-np.ones(rows)]
     messages=[]
     for attempt,method in enumerate(('highs','highs-ipm')):
         options={'primal_feasibility_tolerance':1e-9,'dual_feasibility_tolerance':1e-9}
         if attempt:
             options['presolve']=False
-            print('LP numerical retry: same constraints, highs-ipm, presolve disabled',flush=True)
+            print('LP numerical retry: same equilibrated problem, highs-ipm',flush=True)
         if audit is not None:
             audit['lp_calls']=audit.get('lp_calls',0)+1
             audit['lp_retries']=audit.get('lp_retries',0)+int(attempt > 0)
         result=linprog(objective,A_ub=constraints,b_ub=rhs,bounds=(0.,None),method=method,options=options)
         if result.success and np.all(np.isfinite(result.x)):
-            w=result.x[:-1]; t=float(result.x[-1])
-            violation=float(np.max(np.abs(a@w-1.)))
-            if np.min(result.x) >= -5e-8 and violation <= t+5e-8:
-                w=np.maximum(w,0.)
-                return w,max(t,float(np.max(np.abs(a@w-1.))))
+            # Projection of roundoff-negative z preserves feasible nonnegative w.
+            w=np.maximum(result.x[:-1],0.)/scale
+            actual=float(np.max(np.abs(a@w-1.)))
+            t=max(0.,float(result.x[-1]),actual)
+            if np.all(np.isfinite(w)) and np.isfinite(t):
+                if audit is not None:
+                    audit['lp_max_epigraph_repair']=max(audit.get('lp_max_epigraph_repair',0.),
+                                                       max(0.,actual-float(result.x[-1])))
+                    audit['lp_max_bound_projection']=max(audit.get('lp_max_bound_projection',0.),
+                                                        max(0.,-float(np.min(result.x[:-1]))))
+                return w,t
         messages.append(method+': '+str(result.message))
-    raise RuntimeError('minimax weight fit failed primal validation: '+'; '.join(messages))
+    raise RuntimeError('minimax weight fit failed: '+'; '.join(messages))
 
 
 def pool_data(family,pool):

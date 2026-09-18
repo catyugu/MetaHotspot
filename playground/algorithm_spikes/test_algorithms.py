@@ -187,6 +187,28 @@ class SpectralTests(unittest.TestCase):
         self.assertTrue(np.all(w >= 0.))
         self.assertLessEqual(np.max(np.abs(a@w-1.)), t+1e-8)
 
+    def test_minimax_column_scaling_preserves_small_coefficients(self):
+        from spectral import minimax_weights
+        a = np.diag([1e-12, 1e12])
+        w, t = minimax_weights(a)
+        assert_allclose(a @ w, np.ones(2), atol=1e-7)
+        self.assertLess(t, 1e-7)
+
+    def test_minimax_repairs_and_records_reported_epigraph_roundoff(self):
+        import spectral
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        a = np.array([[1.], [1.+2e-7]])
+        audit = {}
+        # The solver variables are column-scaled; return z=column max, w=1.
+        def rounded_solution(*args, **kwargs):
+            return SimpleNamespace(success=True, x=np.array([a.max(), 0.]),
+                                   message='mock rounded epigraph')
+        with patch('spectral.linprog', side_effect=rounded_solution):
+            w, t = spectral.minimax_weights(a, audit=audit)
+        self.assertGreater(audit['lp_max_epigraph_repair'], 0.)
+        self.assertLessEqual(float(np.max(np.abs(a @ w-1.))), t)
+
     def test_exchange_preserves_budget_and_positive_definiteness(self):
         from spectral import EdgeFamily, spectral_exchange
         fam = EdgeFamily(6, 3, 42, 'mild')
