@@ -112,3 +112,58 @@ jobs:
           name: bci-state-native
           path: ${{ runner.temp }}/audit/
           retention-days: 30
+  experiment:
+    needs: baseline
+    if: needs.baseline.outputs.scientific == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        seed: [20261201, 20261202, 20261203]
+        ports: [4, 16]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: bci-state-native
+          path: ${{ runner.temp }}/native
+      - name: Isolated existing numerical dependencies
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -e python
+      - name: Matched BCI research experiment
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit"
+          git rev-parse HEAD > "$RUNNER_TEMP/audit/head-sha.txt"
+          git archive HEAD | gzip > "$RUNNER_TEMP/audit/source.tar.gz"
+          python -m pip freeze > "$RUNNER_TEMP/audit/freeze.txt"
+          lscpu > "$RUNNER_TEMP/audit/cpu.txt"
+          python playground/bci_state_geometry/run.py --data "$RUNNER_TEMP/native/case1_2.5" --ports ${{ matrix.ports }} --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/audit/results" 2>&1 | tee "$RUNNER_TEMP/audit/run.log"
+      - name: Audit unchanged production and worktree
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit"
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code 0b4e5874d27571488d62568d12b7a68df7656aca HEAD -- src include python tests cmake CMakeLists.txt playground/bci_rom_testcase1 playground/connecting_mor_models
+          git diff --exit-code
+          git status --short > "$RUNNER_TEMP/audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bci-state-${{ matrix.ports }}-${{ matrix.seed }}
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
