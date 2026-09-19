@@ -1,0 +1,147 @@
+name: BCI energy residual certificate
+
+on:
+  push:
+    branches: [agent/bci-energy-residual-20260919]
+    paths:
+      - playground/bci_energy_residual/**
+      - .github/workflows/bci-energy-residual.yml
+      - '!playground/bci_energy_residual/RESULTS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Isolated previously validated dependencies
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0 pytest==9.1.1
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -e python
+      - name: Native build and existing regressions
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit"
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "$RUNNER_TEMP/audit/configure.log"
+          cmake --build build --parallel 2 2>&1 | tee "$RUNNER_TEMP/audit/build.log"
+          python run_tests.py 2>&1 | tee "$RUNNER_TEMP/audit/native-tests.log"
+          python run_cases.py 2>&1 | tee "$RUNNER_TEMP/audit/cases.log"
+          python -m pytest python/tests -v 2>&1 | tee "$RUNNER_TEMP/audit/python-tests.log"
+      - name: Energy-certificate unit tests
+        shell: bash
+        run: |
+          python -m unittest discover -s playground/bci_energy_residual -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/audit/energy-tests.log"
+      - name: Export unchanged Case1 operators
+        shell: bash
+        run: |
+          python - <<'PY' 2>&1 | tee "$RUNNER_TEMP/audit/export.log"
+          import os, sys
+          from pathlib import Path
+          import numpy as np
+          import scipy.sparse as sp
+          sys.path.insert(0, 'playground/bci_rom_testcase1')
+          from model_case1 import Case1Model, Case1Config
+          out=Path(os.environ['RUNNER_TEMP'])/'audit'
+          for mesh in (5.0, 2.5):
+              model=Case1Model(Case1Config(max_xy_cell_mm=mesh,max_z_cell_mm=mesh))
+              K,C,G=model.core.K,model.core.C,model.source_shape
+              H=model.boundary_terms
+              stem=out/('case1_'+str(mesh))
+              stem.mkdir()
+              sp.save_npz(stem/'K.npz',K)
+              sp.save_npz(stem/'C.npz',C)
+              for j,h in enumerate(H):
+                  sp.save_npz(stem/f'H{j}.npz',h)
+              np.savez(stem/'data.npz',G=G,power=model.nominal_power(),ranges=model.h_ranges(),physical_ranges=np.array([g.h_range for g in model.boundary_groups()]))
+              print(mesh, K.shape, K.nnz, flush=True)
+          PY
+      - name: Audit untouched production and source
+        shell: bash
+        run: |
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code 0b4e5874d27571488d62568d12b7a68df7656aca HEAD -- src include python tests cmake CMakeLists.txt playground/bci_rom_testcase1 playground/connecting_mor_models
+          git diff --exit-code
+          git status --short > "$RUNNER_TEMP/audit/git-status.txt"
+          test -z "$(git status --porcelain)"
+          git rev-parse HEAD > "$RUNNER_TEMP/audit/head-sha.txt"
+          git archive HEAD | gzip > "$RUNNER_TEMP/audit/source.tar.gz"
+          python -m pip freeze > "$RUNNER_TEMP/audit/freeze.txt"
+          lscpu > "$RUNNER_TEMP/audit/cpu.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bci-energy-native
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
+
+  study:
+    needs: baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - mesh: '5.0'
+            seed: 20260805
+          - mesh: '5.0'
+            seed: 20260931
+          - mesh: '2.5'
+            seed: 20260805
+          - mesh: '2.5'
+            seed: 20260931
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: bci-energy-native
+          path: ${{ runner.temp }}/native
+      - name: Run matched stock-versus-certified extraction
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          source "$RUNNER_TEMP/venv/bin/activate"
+          python -m pip install numpy==2.5.3 scipy==1.18.1 pyamg==5.3.0
+          python -m pip install -e python
+          mkdir -p "$RUNNER_TEMP/study"
+          python playground/bci_energy_residual/benchmark.py --data "$RUNNER_TEMP/native/case1_${{ matrix.mesh }}" --mesh '${{ matrix.mesh }}' --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/study" 2>&1 | tee "$RUNNER_TEMP/study/run.log"
+          python -m pip freeze > "$RUNNER_TEMP/study/freeze.txt"
+          lscpu > "$RUNNER_TEMP/study/cpu.txt"
+          git rev-parse HEAD > "$RUNNER_TEMP/study/head-sha.txt"
+          git archive HEAD | gzip > "$RUNNER_TEMP/study/source.tar.gz"
+          git diff --check 0b4e5874d27571488d62568d12b7a68df7656aca...HEAD
+          git diff --exit-code
+          git status --short > "$RUNNER_TEMP/study/git-status.txt"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: bci-energy-${{ matrix.mesh }}-${{ matrix.seed }}
+          path: ${{ runner.temp }}/study/
+          retention-days: 30
