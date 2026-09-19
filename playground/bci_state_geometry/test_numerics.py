@@ -37,4 +37,9 @@ class NumericsTests(unittest.TestCase):
         Z=dense_be(C,K,F,P,.1)
         np.testing.assert_array_equal(Z[0],np.zeros(2))
 
+    def test_stricter_stock_control_preserves_original_grid(self):
+        from run import TOLS
+        self.assertTrue(all(t in TOLS for t in (.01,.001,.0001)))
+        self.assertIn(.00001,TOLS)
+
 if __name__=='__main__': unittest.main()

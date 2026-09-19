@@ -19,7 +19,7 @@ from geometry import whiten, make_bank, pod_basis, loss_gradient, optimize_space
 from numerics import timed, dense_be, modal_be, recover, output, reference, effective_h, split_ports, errors
 from reference_backend import LinearSolver
 
-TOLS=(1e-2,1e-3,1e-4)
+TOLS=(1e-2,1e-3,1e-4,1e-5)
 FRACTIONS=(.35,.5,.7)
 
 
