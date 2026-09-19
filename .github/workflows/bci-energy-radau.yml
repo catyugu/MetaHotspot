@@ -58,7 +58,7 @@ jobs:
           sys.path.insert(0, 'playground/bci_rom_testcase1')
           from model_case1 import Case1Model, Case1Config
           out=Path(os.environ['RUNNER_TEMP'])/'audit'
-          for mesh in (5.0, 2.5):
+          for mesh in (5.0, 2.5, 1.0):
               model=Case1Model(Case1Config(max_xy_cell_mm=mesh,max_z_cell_mm=mesh))
               K,C,G=model.core.K,model.core.C,model.source_shape
               H=model.boundary_terms
@@ -107,6 +107,8 @@ jobs:
             seed: 20260805
           - mesh: '2.5'
             seed: 20260931
+          - mesh: '1.0'
+            seed: 20260805
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
