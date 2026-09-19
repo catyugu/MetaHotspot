@@ -1,4 +1,4 @@
-"""Gauss-Radau certificate for the exact Extended-FANTASTIC energy residual."""
+"""Streaming Gauss-Radau certificate for the exact FANTASTIC energy residual."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from energy_residual import CertificateResult, residual_and_base_energy
 
 
 def _solve_symmetric_tridiagonal(diagonal, off_diagonal, rhs):
-    """Solve a symmetric tridiagonal system in O(n) work."""
     diagonal = np.asarray(diagonal, dtype=np.float64)
     off_diagonal = np.asarray(off_diagonal, dtype=np.float64)
     rhs = np.asarray(rhs, dtype=np.float64)
@@ -33,20 +32,13 @@ def certify_energy_ratio_radau(
     *,
     max_iterations=None,
 ):
-    """Certify the exact squared relative A-energy error.
+    """Certify q/(g+q) <= tolerance without solving A^{-1}r.
 
-    anchor_diag defines a positive diagonal P satisfying A >= P.
-    In the thermal experiment,
-
-        P = shift*C + sum_j h_j H_j
-
-    and the remaining h-free conductance K is positive semidefinite.
-    Hence B=P^{-1/2} A P^{-1/2} >= I.
-
-    Gauss quadrature gives a lower bound for z^T B^{-1}z and left
-    Gauss-Radau, with the known lower spectral endpoint 1, gives an
-    upper bound. The inverse quadratic form is never explicitly solved
-    merely to classify an accepted probe.
+    P=diag(anchor_diag) must satisfy A >= P > 0.  Then
+    B=P^{-1/2}AP^{-1/2} >= I. Gauss and left Gauss-Radau
+    quadrature bracket q=r^T A^{-1}r. Only the two current
+    Lanczos vectors are stored; rejected probes fall back to the
+    ordinary ROM warm start instead of retaining a Krylov correction.
     """
     if not (0.0 < tolerance < 1.0):
         raise ValueError("tolerance must lie in (0,1)")
@@ -72,19 +64,15 @@ def certify_energy_ratio_radau(
     inv_sqrt = 1.0 / np.sqrt(anchor_diag)
     z = inv_sqrt * residual
     beta0_sq = float(np.dot(z, z))
+    zero = np.zeros_like(estimate)
 
     if beta0_sq <= threshold:
         return CertificateResult(
-            "accept",
-            0,
-            0.0,
-            beta0_sq,
-            threshold,
-            np.zeros_like(estimate),
+            "accept", 0, 0.0, beta0_sq, threshold, zero
         )
     if beta0_sq == 0.0:
         return CertificateResult(
-            "accept", 0, 0.0, 0.0, threshold, np.zeros_like(estimate)
+            "accept", 0, 0.0, 0.0, threshold, zero
         )
 
     n = b.size
@@ -97,11 +85,9 @@ def certify_energy_ratio_radau(
     beta_previous = 0.0
     diagonal = []
     off_diagonal = []
-    vectors = []
     endpoint = np.nextafter(1.0, 0.0)
 
     for iteration in range(1, int(max_iterations) + 1):
-        vectors.append(vector.copy())
         original_vector = inv_sqrt * vector
         work = inv_sqrt * np.asarray(A @ original_vector).ravel()
         if iteration > 1:
@@ -132,7 +118,6 @@ def certify_energy_ratio_radau(
                 diag - endpoint, off, endpoint_rhs
             )
             final_diagonal = endpoint + float(endpoint_solution[-1])
-
             radau_diag = np.concatenate((diag, [final_diagonal]))
             radau_off = np.concatenate((off, [beta_next]))
             radau_rhs = np.zeros(iteration + 1, dtype=np.float64)
@@ -143,36 +128,18 @@ def certify_energy_ratio_radau(
             upper = beta0_sq * float(radau_coeff[0])
             upper = np.nextafter(upper, np.inf)
 
-        decided = (
-            upper <= threshold
-            or lower > threshold
-            or upper == lower
-        )
-        if decided:
-            if upper == lower:
-                decision = (
-                    "accept" if lower <= threshold else "reject"
-                )
-            else:
-                decision = (
-                    "accept" if upper <= threshold else "reject"
-                )
-
-            correction_scaled = np.zeros_like(z)
-            for coefficient, lanczos_vector in zip(
-                gauss_coeff, vectors
-            ):
-                correction_scaled += coefficient * lanczos_vector
-            correction = inv_sqrt * (
-                beta0 * correction_scaled
-            )
+        if upper <= threshold:
             return CertificateResult(
-                decision,
-                iteration,
-                lower,
-                upper,
-                threshold,
-                correction,
+                "accept", iteration, lower, upper, threshold, zero
+            )
+        if lower > threshold:
+            return CertificateResult(
+                "reject", iteration, lower, upper, threshold, zero
+            )
+        if upper == lower:
+            decision = "accept" if lower <= threshold else "reject"
+            return CertificateResult(
+                decision, iteration, lower, upper, threshold, zero
             )
 
         previous = vector
@@ -180,14 +147,11 @@ def certify_energy_ratio_radau(
         beta_previous = beta_next
         off_diagonal.append(beta_next)
 
-    correction_scaled = np.zeros_like(z)
-    for coefficient, lanczos_vector in zip(gauss_coeff, vectors):
-        correction_scaled += coefficient * lanczos_vector
     return CertificateResult(
         "undecided",
         int(max_iterations),
         lower,
         upper,
         threshold,
-        inv_sqrt * (beta0 * correction_scaled),
+        zero,
     )
