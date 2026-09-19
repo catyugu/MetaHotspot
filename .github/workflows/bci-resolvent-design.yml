@@ -144,7 +144,7 @@ jobs:
           lscpu > "$RUNNER_TEMP/study/cpu.txt"
           git rev-parse HEAD > "$RUNNER_TEMP/study/head-sha.txt"
           git archive HEAD | gzip > "$RUNNER_TEMP/study/source.tar.gz"
-          python playground/bci_resolvent_design/run.py --native "$RUNNER_TEMP/native" --seed ${{ matrix.seed }} --output "$RUNNER_TEMP/study" 2>&1 | tee "$RUNNER_TEMP/study/run.log"
+          python playground/bci_resolvent_design/run.py --native "$RUNNER_TEMP/native" --seed ${{ matrix.seed }} --followup --output "$RUNNER_TEMP/study" 2>&1 | tee "$RUNNER_TEMP/study/run.log"
       - name: Final worktree checks
         if: always()
         shell: bash

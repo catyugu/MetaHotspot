@@ -32,6 +32,13 @@ CLOSE_TOLS=(1e-3,1e-4)
 METHODS=('coarse_qr','defect_qr','random','jet','secant')
 
 
+def study_settings(followup):
+    initial=(1e-2,1e-3,1e-4,1e-5)
+    methods=('coarse_qr','defect_qr','random','jet','secant')
+    if not followup: return initial,methods
+    return (1e-2,5e-3,3e-3,1e-3,3e-4,1e-4,8e-5,6e-5,3e-5,1e-5),methods+('quota_jet','quota_secant')
+
+
 def dump(path,data):
     path.write_text(json.dumps(data,indent=2,allow_nan=False))
 
@@ -57,7 +64,7 @@ def prepare(coarse,fine,method,seed,max_budget):
     if method=='random':
         actions=random_agenda(len(pool),max_budget,initial,seed)
     else:
-        jets=method in ('jet','secant')
+        jets=method in ('jet','secant','quota_jet','quota_secant')
         X,D,details['coarse_work']=coarse_bank(coarse,pool,jets)
         F,scale=weighted_features(X,coarse.C.diagonal())
         if method=='defect_qr':
@@ -66,7 +73,7 @@ def prepare(coarse,fine,method,seed,max_budget):
         features=None
         if jets:
             features=np.array([weighted_features(d,coarse.C.diagonal(),scale)[0] for d in D])
-        actions=select_agenda(F,features,max_budget,initial)
+        actions=select_agenda(F,features,max_budget,initial,derivative_fraction=.25 if method.startswith('quota_') else 0.)
     details['seconds']=time.perf_counter()-started
     details['agenda']=[asdict(a) for a in actions]
     details['agenda_sha256']=hashlib.sha256(json.dumps(details['agenda'],sort_keys=True).encode()).hexdigest()
@@ -122,7 +129,7 @@ def extract_candidate(coarse,fine,method,seed,utils,budgets=BUDGETS,tolerances=C
             rhs=fine.G[:,sample.port]
         else:
             if a.sample not in response: raise ValueError('unpaid derivative parent')
-            if method=='secant':
+            if method.endswith('secant'):
                 perturbed,delta=bump_parameter(h,a.derivative)
                 A=fine.operator(perturbed,sample.shift); rhs=fine.G[:,sample.port]
             else:
@@ -132,7 +139,7 @@ def extract_candidate(coarse,fine,method,seed,utils,budgets=BUDGETS,tolerances=C
         else: estimate=np.zeros(len(rhs))
         x=solver.solve(A,rhs,anchor,key,estimate)
         if a.derivative<0: response[a.sample]=x.copy()
-        elif method=='secant': x=(x-response[a.sample])/delta
+        elif method.endswith('secant'): x=(x-response[a.sample])/delta
         snapshots.append(x)
         block=utils.orthonormalize_block(Q,x[:,None])
         if block.shape[1]: Q=np.column_stack((Q,block))
@@ -149,6 +156,7 @@ def extract_candidate(coarse,fine,method,seed,utils,budgets=BUDGETS,tolerances=C
                                 'offline_seconds':plan['seconds']+work_time+closing,
                                 'planning_seconds':plan['seconds'],'fine_seconds':work_time,
                                 'closing_and_projection_seconds':closing,'full_solves':solver.solves,
+                                'derivative_actions':sum(a.derivative>=0 for a in actions[:step]),
                                 'fine_iterations':solver.iterations,'fine_amg_setups':solver.setups,
                                 'max_fine_relative_residual':solver.max_residual,
                                 'basis_sha256':hashlib.sha256(V.tobytes()).hexdigest()})
@@ -237,7 +245,7 @@ def summarize(records,metrics,timings):
             best=min(good,key=lambda r:r['offline_seconds'])
             ratio=stock_off['offline_seconds']/best['offline_seconds']
             ports_speed=fastest_ports/best['ports_seconds']; full_speed=fastest_full/best['full_seconds']
-            control='coarse_qr' if method=='defect_qr' else 'secant' if method=='jet' else None
+            control={'defect_qr':'coarse_qr','jet':'secant','quota_jet':'quota_secant'}.get(method)
             control_ratio=None
             if control:
                 key=f"{control}_b{best['budget']}_t{best['tolerance']:g}"
@@ -255,9 +263,12 @@ def summarize(records,metrics,timings):
 
 
 def main():
+    global STOCK_TOLS,METHODS
     parser=argparse.ArgumentParser(); parser.add_argument('--native',type=Path,required=True)
     parser.add_argument('--seed',type=int,required=True); parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--followup',action='store_true')
     args=parser.parse_args(); args.output.mkdir(parents=True,exist_ok=True)
+    STOCK_TOLS,METHODS=study_settings(args.followup)
     from metahotspot.macromodel import utils as u
     path=Path(u.__file__)
     if hashlib.sha256(path.read_bytes()).hexdigest()!=UTILS_SHA256: raise RuntimeError('stock library changed')
@@ -294,7 +305,9 @@ def main():
                     gap=la.norm(W-V@(V.T@W))/max(la.norm(W),1e-30)
                     if gap>1e-7: raise RuntimeError(f'nondeterministic subspace {row["id"]}: {gap}')
             dump(args.output/'builds.json',records)
-    if plans['jet_0']['agenda']!=plans['secant_0']['agenda']: raise RuntimeError('unmatched jet/secant agendas')
+    for prefix in (('', 'quota_') if args.followup else ('',)):
+        if plans[prefix+'jet_0']['agenda']!=plans[prefix+'secant_0']['agenda']:
+            raise RuntimeError('unmatched jet/secant agendas')
     htests=[(1.,1.),(1.,1e4),(1e4,1.),(1e4,1e4),(50.,1000.)]
     htests.extend(tuple(h) for h in 10**np.random.default_rng(args.seed+1717).uniform(0,4,(5,2)))
     metrics=[]; refs=[]; times=[]; compat=[]
@@ -341,7 +354,7 @@ def main():
         dump(args.output/'metrics.json',metrics); dump(args.output/'timings.json',times)
     result=summarize(records,metrics,times)
     result.update({'completed':True,'base':BASE_SHA,'stock_utils_sha256':UTILS_SHA256,
-                   'seed':args.seed,'fine_n':fine.K.shape[0],'coarse_n':coarse.K.shape[0],
+                   'followup':args.followup,'seed':args.seed,'fine_n':fine.K.shape[0],'coarse_n':coarse.K.shape[0],
                    'independent_sources':fine.G.shape[1],'htc_settings':htests,
                    'reference_audits':refs,'stock_backend_checks':compat,
                    'peak_rss_MiB':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024,

@@ -155,12 +155,14 @@ def discrepancy_features(coarse,fine,pool,X,seed,sketch_rows=128):
                    'sketch_rows':sketch_rows,'interpolation_nnz':P.nnz}
 
 
-def select_agenda(values,jets,max_solves,initial):
+def select_agenda(values,jets,max_solves,initial,derivative_fraction=0.):
     """Greedy residual feature pivot per required fine RHS solve.
 
     A derivative requires its own base response. Both are appended to the agenda
     and both count; a prefix may finish immediately after that base response.
     """
+    if not 0.<=derivative_fraction<1. or (derivative_fraction and jets is None):
+        raise ValueError('invalid derivative quota')
     F=np.asarray(values,dtype=float); count=F.shape[1]
     blocks=[F]+([] if jets is None else [np.asarray(j) for j in jets])
     Z=np.ascontiguousarray(np.column_stack(blocks)); total=Z.shape[1]
@@ -184,7 +186,18 @@ def select_agenda(values,jets,max_solves,initial):
         if jets is not None:
             missing=np.array([i not in base_seen for i in range(count)],dtype=float)
             score[count:]/=np.tile(1+missing,len(blocks)-1)
-        score[~available]=-1.; col=int(np.argmax(score)); sample=col%count
+        score[~available]=-1.
+        if derivative_fraction:
+            used=sum(a.derivative>=0 for a in agenda)
+            require=used<int(np.floor((len(agenda)+1)*derivative_fraction))
+            if require:
+                score[:count]=-1.
+                unpaid=np.tile([i not in base_seen for i in range(count)],len(blocks)-1)
+                score[count:][unpaid]=-1.
+            else:
+                score[count:]=-1.
+            if np.max(score)<0: raise ValueError('quota has no available paid-parent action')
+        col=int(np.argmax(score)); sample=col%count
         if col>=count and sample not in base_seen:
             append(sample)
             if len(agenda)>=max_solves: break
