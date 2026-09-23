@@ -1,0 +1,5 @@
+# Generated experiment outputs. Keep the procedures and conclusions in Git.
+/*.json
+/*.csv
+/*.npy
+/*.npz
