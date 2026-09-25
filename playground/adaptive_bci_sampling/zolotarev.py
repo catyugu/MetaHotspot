@@ -226,11 +226,14 @@ def coordinate_spectral_enclosures(
             rmatvec=inverse_action,
             dtype=np.float64,
         )
+        # A fixed start vector keeps the Lanczos estimate reproducible; the
+        # outward safety factor below covers its convergence error.
         theta, theta_vector = spla.eigsh(
             inverse_boundary,
             k=1,
             which="LA",
             tol=eigensolver_tolerance,
+            v0=np.ones(active.size, dtype=np.float64),
         )
         theta_value = float(theta[0])
         theta_residual = float(
@@ -249,6 +252,7 @@ def coordinate_spectral_enclosures(
             k=1,
             which="LA",
             tol=eigensolver_tolerance,
+            v0=np.ones(active.size, dtype=np.float64),
         )
         upper_value = float(upper_value[0])
         vector = upper_vector[:, 0]
