@@ -27,7 +27,12 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from certified_box import BoxCertificate, logarithmic_edges  # noqa: E402
-from deterministic_design import build_basis, certified_greedy_points, full_operator  # noqa: E402
+from deterministic_design import (  # noqa: E402
+    build_basis,
+    certified_greedy_points,
+    full_operator,
+    shared_frequency_plan,
+)
 from model_case1 import Case1Config, Case1Model  # noqa: E402
 from metahotspot.macromodel.utils import build_parametric_basis  # noqa: E402
 
@@ -192,6 +197,11 @@ def main():
               "duration": args.duration, "cutoff": args.cutoff,
               "h_ranges": ranges.tolist()}
 
+    plan = shared_frequency_plan(kernel, mass, source, args.cutoff)
+    report["frequency_plan"] = {k: plan[k] for k in ("lower", "upper", "count")}
+    print(f"frequency plan: count={plan['count']} "
+          f"lambda=[{plan['lower']:.6g}, {plan['upper']:.6g}]", flush=True)
+
     started = time.perf_counter()
     response_cache = {}
     points, selection_certificate, selection = certified_greedy_points(
@@ -203,7 +213,7 @@ def main():
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
           f"t={time.perf_counter()-started:.1f}s", flush=True)
     design_basis, design_snapshots, design_info = build_basis(
-        kernel, mass, terms, source, points,
+        kernel, mass, terms, source, points, plan=plan,
         tolerance=args.cutoff, low_shift_threshold=1.0 / args.dt, include_dc=True,
         cache=response_cache,
     )

@@ -17,9 +17,11 @@ This module replaces the random loop by three deterministic stages.
    The certificate is the A(h_min)-Riesz residual product of
    :mod:`residual_certificate`; every score is an upper bound of the transfer error
    at that candidate, so the stopping statement is deterministic.
-3. ``build_basis``: the production elliptic frequency plan per port, with every
-   selected parameter at the low shifts, the seed at the high shifts, and the
-   steady (DC) endpoint, followed by the unchanged normalized-snapshot SVD.
+3. ``build_basis``: one shared elliptic frequency plan for every port (the union
+   of the ports' spectral intervals, so a single plan is valid for all of them
+   and each operator is factorized once), every selected parameter at the low
+   shifts, the seed at the high shifts, and the steady (DC) endpoint, followed
+   by the unchanged normalized-snapshot SVD.
 
 Every full-order solve is counted; no random number is drawn anywhere.  One
 sparse factorization serves every source port that asks for it, and one cache
@@ -215,10 +217,37 @@ def certified_greedy_points(
             "tolerance": float(tolerance),
             "factorizations": int(len(response_cache) - cached_before),
             "fresh_rhs_solves": int(len(response_cache) - cached_before)
- * source.shape[1],
+            * source.shape[1],
             "seconds": time.perf_counter() - started,
         },
     )
+
+
+def shared_frequency_plan(kernel, mass, source, tolerance):
+    """One MPMM elliptic plan that is valid for every source port.
+
+    The elliptic rule only needs an interval containing the port's generalized
+    spectrum of ``(K, C)``; the union of the ports' intervals contains all of
+    them, so a single plan serves every port with the same closed-form bound.
+    Without it, ports whose eigenvalue estimators agree to fifteen digits still
+    get eleven of twelve shifts split by the last bit, and the same operator is
+    factorized two or three times.
+    """
+    source = np.asarray(source, dtype=np.float64)
+    intervals = [
+        port_eigenvalue_bounds(kernel, mass, source[:, port])
+        for port in range(source.shape[1])
+    ]
+    lower = min(interval[0] for interval in intervals)
+    upper = max(interval[1] for interval in intervals)
+    count = mpmm_elliptic_shift_count(tolerance, lower, upper)
+    return {
+        "lower": float(lower),
+        "upper": float(upper),
+        "count": int(count),
+        "shifts": [float(value) for value in mpmm_elliptic_shifts(count, upper, upper / lower)],
+        "per_port_intervals": [[float(a), float(b)] for a, b in intervals],
+    }
 
 
 def build_basis(
@@ -228,6 +257,7 @@ def build_basis(
     source,
     points,
     *,
+    plan,
     tolerance=1e-3,
     low_shift_threshold=None,
     include_dc=True,
@@ -235,14 +265,15 @@ def build_basis(
     constant=True,
     cache=None,
 ):
-    """Assemble snapshots on the production elliptic plan and compress them.
+    """Assemble snapshots on one shared elliptic plan and compress them.
 
-    ``points`` are the selected effective HTC parameters.  Every port uses the
-    stock elliptic shift plan.  Shifts at or below ``low_shift_threshold`` use
-    ``low_shift_points`` (default: all selected points); higher shifts use the
-    first selected point (the Zolotarev seed) alone.  The steady endpoint is
-    sampled at the low-shift points when ``include_dc`` is set.  The closing
-    compression is the production unit-column-normalized SVD.
+    ``plan`` is the shared frequency plan of :func:`shared_frequency_plan`.
+    ``points`` are the selected effective HTC parameters.  Shifts at or below
+    ``low_shift_threshold`` use ``low_shift_points`` (default: all selected
+    points); higher shifts use the first selected point (the Zolotarev seed)
+    alone.  The steady endpoint is sampled at the low-shift points when
+    ``include_dc`` is set.  The closing compression is the production
+    unit-column-normalized SVD.
 
     One factorization per distinct ``(shift, parameter)`` operator serves every
     port that asks for it, and a ``cache`` shared with
@@ -260,30 +291,22 @@ def build_basis(
         raise ValueError("points must be a two-dimensional array")
 
     cache = {} if cache is None else cache
-    started = time.perf_counter()
-    plan = []
-    requests = []
-    for port in range(source.shape[1]):
-        response = source[:, port]
-        lower, upper = port_eigenvalue_bounds(kernel, mass, response)
-        count = mpmm_elliptic_shift_count(tolerance, lower, upper)
-        shifts = mpmm_elliptic_shifts(count, upper, upper / lower)
-        threshold = 1.0 if low_shift_threshold is None else float(low_shift_threshold)
-        low_shifts = [float(shift) for shift in shifts if shift <= threshold]
-        plan.append({"port": port, "shift_count": int(count), "low_shifts": low_shifts})
-        entries = [
-            (float(shift), point)
-            for shift in shifts
-            for point in (points if float(shift) <= threshold else points[:1])
-        ]
-        if include_dc:
-            entries.extend((0.0, point) for point in low_shift_points)
-        requests.append(entries)
+    threshold = 1.0 if low_shift_threshold is None else float(low_shift_threshold)
+    shifts = [float(value) for value in plan["shifts"]]
+    low_shifts = [shift for shift in shifts if shift <= threshold]
+    entries = [
+        (shift, point)
+        for shift in shifts
+        for point in (points if shift <= threshold else points[:1])
+    ]
+    if include_dc:
+        entries.extend((0.0, point) for point in low_shift_points)
 
     known = len(cache)
+    started = time.perf_counter()
     snapshots = [
         response_block(cache, kernel, mass, terms, source, point, shift)[:, port]
-        for port, entries in enumerate(requests)
+        for port in range(source.shape[1])
         for shift, point in entries
     ]
     factorizations = len(cache) - known
@@ -304,8 +327,14 @@ def build_basis(
         "svd_kept_order": int(np.count_nonzero(singular_values >= tolerance * singular_values[0])),
         "basis_order": int(basis.shape[1]),
         "low_shift_threshold": float(threshold),
+        "low_shifts": low_shifts,
         "include_dc": bool(include_dc),
-        "per_port_plan": plan,
+        "frequency_plan": {
+            "lower": float(plan["lower"]),
+            "upper": float(plan["upper"]),
+            "count": int(plan["count"]),
+            "per_port_intervals": plan["per_port_intervals"],
+        },
         "seconds": time.perf_counter() - started,
     }
     return np.ascontiguousarray(basis), matrix, info

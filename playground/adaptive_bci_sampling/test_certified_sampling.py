@@ -20,6 +20,7 @@ from deterministic_design import (
     build_basis,
     certified_greedy_points,
     logarithmic_tensor_grid,
+    shared_frequency_plan,
     zolotarev_seed,
 )
 from residual_certificate import prepare_residual_certificate
@@ -321,29 +322,27 @@ class DesignTests(unittest.TestCase):
             tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
             cache=cache,
         )
+        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
-            self.kernel, self.mass, self.terms, self.source, points,
+            self.kernel, self.mass, self.terms, self.source, points, plan=plan,
             tolerance=1e-6, low_shift_threshold=0.5, include_dc=True,
             cache=cache,
         )
-        expected = 0
-        for plan in info["per_port_plan"]:
-            expected += plan["shift_count"] - len(plan["low_shifts"])
-            expected += len(plan["low_shifts"]) * len(points)
-        expected += self.source.shape[1] * len(points)
+        count = info["frequency_plan"]["count"]
+        low = len(info["low_shifts"])
+        expected = self.source.shape[1] * (
+            (count - low) + low * len(points) + len(points)
+        )
         self.assertEqual(info["full_rhs_solves"], expected)
         self.assertEqual(snapshots.shape[1], expected)
         self.assertEqual(basis.shape[0], self.kernel.shape[0])
-        # The steady endpoint snapshots are exactly the blocks the greedy
-        # scorer already solved, so sharing one cache makes them free.
-        steady = self.source.shape[1] * len(points)
-        self.assertEqual(selection["fresh_rhs_solves"], steady)
-        # Every steady endpoint request is a hit; ports whose shift plans
-        # coincide contribute further hits.
-        self.assertGreaterEqual(info["cached_blocks"], steady)
+        # One plan for every port: each low shift is factorized exactly once,
+        # and the steady endpoints are the blocks the greedy already solved.
+        self.assertEqual(info["factorizations"], count - low + low * len(points))
         self.assertEqual(
             info["cached_blocks"] + info["factorizations"], info["full_rhs_solves"]
         )
+        self.assertEqual(selection["fresh_rhs_solves"], self.source.shape[1] * len(points))
 
     def test_candidate_grid_is_deterministic_and_logarithmic(self):
         first = logarithmic_tensor_grid(self.ranges, 5)
