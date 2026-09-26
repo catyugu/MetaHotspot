@@ -298,12 +298,65 @@ Model Order Reduction for Thermal Modeling of Power Electronics*，IEEE TPEL 35(
 **本目录用到的边界结构在 BCI 文献里查不到。** 用 Woodbury 恒等式、边界 Schur 补
 `Phi = B^T A_ref^-1 B`、或极点 `t = 1/mu_j(Psi)`（`Psi = B^{1/2} Phi B^{1/2}`）的
 分式展开来生成 HTC 族，以及"一个参考参数下 `m_b + n_src` 次求解给出整族"这一陈述，
-在检索到的一手材料中均未出现。§3.5 的精确映射建立在同一组恒等式上，因此它同时是
-方法上的新构造。
+在 BCI 侧的检索材料中均未出现（降阶文献里最接近的是 §3.6.2 的 Beattie 等，用途不同）。
+§3.5 的精确映射建立在同一组恒等式上，因此它同时是方法上的新构造。
 
 **唯一给出对任意 HTC 成立的 a priori 界的工作不是 BCI 论文。** Hernández-Becerro,
-Spescha, Wegener，*Comput. Mech.* 67:167--184 (2021)，用双线性参数化 MOR 给出
-相对频响的 a priori 界（SISO、对角、对称情形）；它与这里的多端口共址传递问题不同构。
+Spescha, Wegener，*Comput. Mech.* 67:167--184 (2021)，DOI `10.1007/s00466-020-01926-x`，
+用双线性参数化 MOR 给出相对频响的 a priori 界，对任意 HTC 成立；但只覆盖 SISO、对角
+频响（`i = j`）、对称算子，与这里的多端口共址传递矩阵不同构。
+
+### 3.6.1 支撑本方法的定理
+
+**参数方向：局部支集把 n-width 从 `e^{-c n^{1/d}}` 换成本质一维的 `e^{-c n}`。**
+Bachmayr 与 Cohen，*Math. Comp.* (2017)，arXiv:1502.03117：对 `A(y) = A_bar + sum_i y_i A_i`
+的仿射族，Corollary 4.2 给出分段常数（即支集局部）系数情形下
+`d_n <= exp(-(|ln theta|/8) n)`，`n(k) = 8k+5`，`theta` 是 `sum_i A_i = theta A_bar` 的
+不动点压缩因子。这解释了 5.2 节实测的参数族尾部（rank 15 到 `2.4e-05`、rank 20 到
+`1.2e-06`）：本问题的 `H_i` 正是支集互不相交的对角矩阵，所以维度灾难在参数方向上
+不出现，参数点个数由该指数率控制，而不是由参数区间宽度。
+
+**贪心是准最优的，但常数是 `2/gamma`。** DeVore, Petrova, Wojtaszczyk，*Constr. Approx.*
+37(3):455--466 (2013)，arXiv:1204.2290，Thm 3.2 与 Cor. 3.3：`eps_{2n}(F) <= 2 gamma^{-1}
+d_n(F)`，即弱贪心以常数 `2/gamma` 继承 n-width 速率；Binev 等，*SIAM J. Math. Anal.*
+43(3):1457--1472 (2011)，DOI `10.1137/100795772` 给出同一结论并附常数。**同文 Theorem 4.1
+指出：由样本元素张成的子空间一般不可能达到 n-width 的速率**，所以不存在 `eps_n <= C d_n`
+形式的结论——本目录的贪心同样只在这种准最优意义下成立，不是最优选点。
+
+**证书的松紧有理论解释，而且它直接削弱保证。** Buffa, Maday, Patera, Prud'homme,
+Turinici，*ESAIM M2AN* 46(3):595--603 (2012)，DOI `10.1051/m2an/2011056`，Thm 3.1：估计量
+驱动的贪心达到指数速率要求 n-width 衰减率 `beta > log(1 + M/alpha_coer)`——**coercivity
+下界越差，要求的衰减率越高**。这正是把固定的 `A(h_min)`-Riesz 换成参数相关 Riesz 的
+理论动机，而不是经验改进。
+
+**自然能量范数下界是恒等式，没有常数。** Prud'homme 等，*ESAIM M2AN* 36(5):747--771
+(2002) 与 Yano，*SIAM J. Sci. Comput.* 40(1):A388--A420 (2018) 给出
+`||u - u_N||_{A(p)} = ||r||_{A(p)^{-1}}`；3.5 节的精确映射算的正是右端，因此它的
+effectivity 是 1 而不是某个待定常数。同族方法（Yano 的最小残差 + 扩展 SCM）在热传导
+分块问题上报出 effectivity `~~2` 与 `~~3`；Prud'homme 等 2002 的正问题界在热翅片上
+实测 `2.53`--`2.85`。
+
+**频率方向有一个真正的一参数定理可依。** `Y(s) = g^T (K + sC)^{-1} g` 是 `(K,C)` 的
+Cauchy--Stieltjes 函数，Massei 与 Robol，*BIT Numer. Math.* 61 (2021)，DOI
+`10.1007/s10543-020-00826-z`，Corollary 3.18 给出 `||f(A)v - x_l||_2 <= 8 f(a) ||v||_2
+rho_{[a,4b]}^l`，极点集与嵌套规则同文给出。椭圆频移计划正是这条定理的实现；与之
+相对的是本目录 §4 第 11 条记录的**两参数**锚定 Riesz 尝试，那一条没有定理可依。
+
+### 3.6.2 最近的相关工作
+
+**Beattie, Gugercin, Tomljanović**，arXiv:1912.11382 (2019)，*Adv. Comput. Math.* 46:17
+(2020)，用 Sherman--Morrison--Woodbury 把结构化传递函数 `C(sE - A_0 - U diag(p) V^T)^{-1}B`
+**精确拆成四个非参数子系统**分别降阶，Proposition 1 给出拆分、Theorem 1 给出误差界，
+在线求值不需要任何参数采样，算例正是芯片热传导。这是 3.5 节所依赖恒等式最接近的
+先行工作，必须并列引用：它把恒等式用于**构造**无采样降阶模型（要求 `k x k` 子系统
+可降阶），本目录把同一恒等式用于**精确评估**已交付基底的整盒误差（不要求可降阶，
+代价是 `m_b + Q` 次回代）。两者在检索到的一手材料中都没有把该恒等式放进采样循环内
+去评估认证界——Beattie 等不含认证，认证文献不含该恒等式。
+
+同一恒等式在结构动力学里是成熟工具：Akgün, Garcelon, Haftka，*IJNME* 50(7):1587--1607
+(2001)，DOI `10.1002/nme.87`（精确重分析），以及 Kirsch 的 Combined Approximations
+（*AIAA J* 29(5):820--825, 1991）——后者用一次分解生成近似基，不认证。
+
 
 **尚未被批评过的两处。** 检索不到任何文献批评 FANTASTIC 的随机探针停止规则，也检索
 不到对 `1e-3` 列归一化 SVD 截断的批评或改进；`records/POST_SVD_EFFECT.md` 与 §4 第 12 条
