@@ -27,6 +27,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from certified_box import BoxCertificate, logarithmic_edges  # noqa: E402
+from exact_error import AffineErrorMap  # noqa: E402
 from deterministic_design import (  # noqa: E402
     build_basis,
     certified_greedy_points,
@@ -178,6 +179,10 @@ def main():
     parser.add_argument("--steady-cells", type=int, default=32)
     parser.add_argument("--steady-order", type=int, default=2)
     parser.add_argument("--certificate-blocks", type=int, default=4)
+    parser.add_argument("--exact-grid", type=int, default=21,
+                        help="cells per axis of the exact error grid")
+    parser.add_argument("--exact-cells", type=int, default=8,
+                        help="cells per axis of the rigorous exact bracket")
     parser.add_argument("--skip-stock", action="store_true")
     parser.add_argument("--audit-cells", type=int, default=0,
                         help="cells per axis of the full-order audit partition")
@@ -263,6 +268,18 @@ def main():
               f"denominators={steady['denominator_points']} t={steady['seconds']:.1f}s", flush=True)
         certificates[name] = {"steady": steady}
     report["certificates"] = certificates
+
+    exact = {}
+    for name, basis in bases.items():
+        mapping = AffineErrorMap(kernel, terms, source, ranges, basis)
+        grid = mapping.worst_on_grid(args.exact_grid)
+        bracket = mapping.sweep(args.exact_cells)
+        exact[name] = {"grid": grid, "bracket": bracket}
+        print(f"exact[{name}]: grid={grid['worst_absolute_error']:.3e} at "
+              f"{grid['location']} cell_bound={bracket['cell_bound']:.3e} "
+              f"prep={bracket['preparation_seconds']:.1f}s "
+              f"t={bracket['seconds']:.1f}s", flush=True)
+    report["exact"] = exact
 
     if args.audit_cells:
         audit_certificate_for = BoxCertificate(

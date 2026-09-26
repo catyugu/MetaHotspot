@@ -16,6 +16,7 @@ from certified_box import (
     bernstein_operator,
     multi_indices,
 )
+from exact_error import AffineErrorMap
 from deterministic_design import (
     build_basis,
     certified_greedy_points,
@@ -285,6 +286,97 @@ class CertificateTests(unittest.TestCase):
             approximate = np.ascontiguousarray(self.source.T @ (self.basis @ coefficients))
             worst = max(worst, float(np.max(np.abs(exact - approximate))))
         self.assertLessEqual(worst, report["steady_absolute_bound"])
+
+
+class ExactErrorMapTests(unittest.TestCase):
+    def setUp(self):
+        self.kernel, self.mass, self.terms, self.source = toy_family()
+        self.ranges = np.array([[0.5, 20.0], [0.5, 20.0]])
+        rng = np.random.default_rng(11)
+        self.basis = la.qr(
+            rng.normal(size=(self.kernel.shape[0], 6)), mode="economic"
+        )[0]
+
+    def direct_error(self, parameter, shift=0.0):
+        operator = self.kernel
+        if shift:
+            operator = operator + shift * self.mass
+        for value, term in zip(parameter, self.terms):
+            operator = operator + float(value) * term
+        exact = np.ascontiguousarray(
+            self.source.T @ la.solve(operator.toarray(), self.source)
+        )
+        reduced = self.basis.T @ (operator @ self.basis)
+        coefficients = la.solve(
+            reduced, self.basis.T @ self.source, assume_a="pos"
+        )
+        approximate = np.ascontiguousarray(
+            self.source.T @ (self.basis @ coefficients)
+        )
+        return exact - approximate
+
+    def test_error_matrix_is_the_direct_galerkin_error(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        rng = np.random.default_rng(5)
+        for _ in range(6):
+            parameter = np.exp(
+                rng.uniform(np.log(self.ranges[:, 0]), np.log(self.ranges[:, 1]))
+            )
+            self.assertTrue(
+                np.allclose(
+                    mapping.error_matrix(parameter),
+                    self.direct_error(parameter),
+                    rtol=1e-7,
+                    atol=1e-10,
+                )
+            )
+
+    def test_error_matrix_covers_the_shifted_family(self):
+        shift = 0.75
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis,
+            shift=shift, mass=self.mass,
+        )
+        rng = np.random.default_rng(23)
+        for _ in range(4):
+            parameter = np.exp(
+                rng.uniform(np.log(self.ranges[:, 0]), np.log(self.ranges[:, 1]))
+            )
+            self.assertTrue(
+                np.allclose(
+                    mapping.error_matrix(parameter),
+                    self.direct_error(parameter, shift),
+                    rtol=1e-7,
+                    atol=1e-10,
+                )
+            )
+
+    def test_cell_bound_covers_every_point_of_the_cell(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        low = np.array([0.6, 3.0])
+        high = np.array([2.0, 9.0])
+        bound = mapping.cell_bound(low, high)
+        rng = np.random.default_rng(19)
+        for _ in range(25):
+            parameter = np.exp(rng.uniform(np.log(low), np.log(high)))
+            actual = np.abs(mapping.error_matrix(parameter))
+            self.assertTrue(
+                np.all(actual <= bound + 1e-12),
+                msg=f"measured {np.max(actual):.3e} exceeds {np.max(bound):.3e}",
+            )
+
+    def test_grid_maximum_is_attained_inside_the_box(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        report = mapping.worst_on_grid(9)
+        self.assertEqual(report["points"], 81)
+        self.assertGreater(report["worst_absolute_error"], 0.0)
+        self.assertIsNotNone(report["location"])
 
 
 class DesignTests(unittest.TestCase):
