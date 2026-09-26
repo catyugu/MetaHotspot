@@ -280,6 +280,39 @@ Sigma   = B^T A_ref^-1 B,
 逐点选点证书仍然保留：它的任务是**有限候选集**上的确定性停止陈述，不是交付基底的
 全盒界；精确映射负责后者。
 
+### 3.6 文献定位
+
+调研结论按可信度分三层。
+
+**FANTASTIC 系从未给出连续 HTC 盒上的证明界。** Extended-FANTASTIC 及其后续只发表
+采样**流程**（MPMM 椭圆频移 + HTC 随机对数均匀抽取 + 残差探针 + 列归一化 SVD）与
+有限验证集上的相对误差百分比；厂商文档用"精度由数学保证"这类表述，但没有可核对的
+盒上常数与归一化。因此本目录的整盒（以及 §3.5 的精确）陈述在这一文献线上是新的。
+
+**我们这个结构上已发表的确定性做法不是采样。** Dong, Griffo, Wang，*Multiparameter
+Model Order Reduction for Thermal Modeling of Power Electronics*，IEEE TPEL 35(8):8550--8558
+(2020)，DOI `10.1109/TPEL.2020.2965248`，处理的是与这里相同的 `C T' + (K + sum_i h_i K_i) T
+= F Q`，`K_i` 对角且支集互不相交，采用**确定性、无采样**的均值参数 Krylov 展开。它给出
+准确度比较，但不给出 HTC 盒上的界。
+
+**本目录用到的边界结构在 BCI 文献里查不到。** 用 Woodbury 恒等式、边界 Schur 补
+`Phi = B^T A_ref^-1 B`、或极点 `t = 1/mu_j(Psi)`（`Psi = B^{1/2} Phi B^{1/2}`）的
+分式展开来生成 HTC 族，以及"一个参考参数下 `m_b + n_src` 次求解给出整族"这一陈述，
+在检索到的一手材料中均未出现。§3.5 的精确映射建立在同一组恒等式上，因此它同时是
+方法上的新构造。
+
+**唯一给出对任意 HTC 成立的 a priori 界的工作不是 BCI 论文。** Hernández-Becerro,
+Spescha, Wegener，*Comput. Mech.* 67:167--184 (2021)，用双线性参数化 MOR 给出
+相对频响的 a priori 界（SISO、对角、对称情形）；它与这里的多端口共址传递问题不同构。
+
+**尚未被批评过的两处。** 检索不到任何文献批评 FANTASTIC 的随机探针停止规则，也检索
+不到对 `1e-3` 列归一化 SVD 截断的批评或改进；`records/POST_SVD_EFFECT.md` 与 §4 第 12 条
+记录的是本目录自己的实测结论。
+
+调研覆盖范围与取证限制：IEEE TCPMT 2021、THERMINIC/SPI/SEMI-THERM 会议论文集、
+Springer LNCSE 第 17 章、Siemens 的 BCI-ROM 验证/最佳实践 PDF 均为付费或授权受限，
+上述涉及它们的判断只依据摘要与元数据。
+
 ## 4. 已验证无效的方案及其原因
 
 以下每一条都在本仓库真实运行过，细节与数字见 `records/`（部分脚本已按本次清理删除，
