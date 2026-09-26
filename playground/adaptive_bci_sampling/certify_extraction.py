@@ -170,7 +170,8 @@ def audit_certificate(certificate, kernel, terms, source, basis, cells, order, s
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mesh_mm", nargs="?", type=float, default=5.0)
-    parser.add_argument("--dt", type=float, default=50.0)
+    parser.add_argument("--validate-dt", type=float, nargs="+",
+                        default=[5.0, 50.0, 500.0])
     parser.add_argument("--duration", type=float, default=2000.0)
     parser.add_argument("--greedy-tolerance", type=float, default=1e-5)
     parser.add_argument("--greedy-maximum", type=int, default=8)
@@ -198,7 +199,8 @@ def main():
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
     power = np.asarray(model.nominal_power(), dtype=np.float64)
-    report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]), "dt": args.dt,
+    report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]),
+              "validate_dt": args.validate_dt,
               "duration": args.duration, "cutoff": args.cutoff,
               "h_ranges": ranges.tolist()}
 
@@ -218,10 +220,13 @@ def main():
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
           f"t={time.perf_counter()-started:.1f}s", flush=True)
     design_basis, design_snapshots, design_info = build_basis(
-        kernel, mass, terms, source, points, plan=plan,
-        tolerance=args.cutoff, low_shift_threshold=1.0 / args.dt, include_dc=True,
+        kernel, mass, terms, source, points, plan=plan, ranges=ranges,
+        tolerance=args.cutoff, include_dc=True,
         cache=response_cache,
     )
+    print(f"design low_shift_threshold={design_info['low_shift_threshold']:.6g} "
+          f"low_shifts={len(design_info['low_shifts'])}/"
+          f"{report['frequency_plan']['count']}", flush=True)
     design_info["selection_certificate"] = selection_certificate
     design_info["selection"] = selection
     design_info["selection_factorizations"] = int(selection["factorizations"])
@@ -295,14 +300,21 @@ def main():
 
     parameters = validation_parameters(ranges)
     clock = time.perf_counter()
-    validation = validate(
-        kernel, mass, source, terms, bases, parameters, dt=args.dt, duration=args.duration
-    )
-    report["validation"] = {"parameters": len(parameters), "worst": validation,
+    validation = {}
+    for dt in args.validate_dt:
+        validation[dt] = validate(
+            kernel, mass, source, terms, bases, parameters, dt=dt, duration=args.duration
+        )
+        for name in bases:
+            print(
+                f"validation[{name}][dt={dt:g}]: "
+                f"worst_step={validation[dt][name]['worst_step_entry']:.3e} "
+                f"worst_steady={validation[dt][name]['worst_steady_entry']:.3e}",
+                flush=True,
+            )
+    report["validation"] = {"parameters": len(parameters), "dt": args.validate_dt,
+                            "worst": validation,
                             "seconds": time.perf_counter() - clock}
-    for name in bases:
-        print(f"validation[{name}]: worst_step={validation[name]['worst_step_entry']:.3e} "
-              f"worst_steady={validation[name]['worst_steady_entry']:.3e}", flush=True)
 
     if args.output:
         args.output.write_text(json.dumps(report, indent=2) + "\n")

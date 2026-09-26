@@ -250,6 +250,33 @@ def shared_frequency_plan(kernel, mass, source, tolerance):
     }
 
 
+def htc_capacitance_crossover(kernel, mass, terms, ranges):
+    """Shift above which every boundary HTC perturbation is storage dominated.
+
+    The family's perturbation is ``sum_i (p_i - p_low,i) H_i``, whose diagonal
+    entry on a boundary cell is ``sum_i dp_i a_i`` [W/K] against that cell's
+    capacitance ``c`` [J/K], so ``sum_i dp_i a_i / c`` is the reciprocal of the
+    cell's own perturbation time constant.  Above that shift the cell's
+    capacitive admittance exceeds its HTC perturbation, which is the regime
+    where the HTC design stops changing the response; the maximum over the
+    boundary cells keeps the statement true on every one of them.
+
+    Nothing here refers to a time step, so the delivered ROM is the same for
+    every caller.  The alternative -- splitting the plan at ``1/dt``, the BDF1
+    shift a particular time step visits -- makes the extraction a function of
+    the caller's temporal resolution, which a boundary-condition-independent
+    model must not be.
+    """
+    ranges = np.asarray(ranges, dtype=np.float64)
+    weight = np.stack(
+        [np.asarray(term.diagonal()).ravel() for term in terms]
+    )
+    support = weight.sum(axis=0) > 0.0
+    capacity = np.asarray(mass.diagonal()).ravel()[support]
+    perturbation = (ranges[:, 1] - ranges[:, 0]) @ weight[:, support]
+    return float(np.max(perturbation / capacity))
+
+
 def build_basis(
     kernel,
     mass,
@@ -258,6 +285,7 @@ def build_basis(
     points,
     *,
     plan,
+    ranges,
     tolerance=1e-3,
     low_shift_threshold=None,
     include_dc=True,
@@ -271,7 +299,10 @@ def build_basis(
     ``points`` are the selected effective HTC parameters.  Shifts at or below
     ``low_shift_threshold`` use ``low_shift_points`` (default: all selected
     points); higher shifts use the first selected point (the Zolotarev seed)
-    alone.  The steady endpoint is sampled at the low-shift points when
+    alone.  A ``None`` threshold takes the time-step-free
+    :func:`htc_capacitance_crossover` instead, so the extraction never depends
+    on the temporal resolution of whoever evaluates the model.  The steady
+    endpoint is sampled at the low-shift points when
     ``include_dc`` is set.  The closing compression is the production
     unit-column-normalized SVD.
 
@@ -291,7 +322,10 @@ def build_basis(
         raise ValueError("points must be a two-dimensional array")
 
     cache = {} if cache is None else cache
-    threshold = 1.0 if low_shift_threshold is None else float(low_shift_threshold)
+    if low_shift_threshold is None:
+        threshold = htc_capacitance_crossover(kernel, mass, terms, ranges)
+    else:
+        threshold = float(low_shift_threshold)
     shifts = [float(value) for value in plan["shifts"]]
     low_shifts = [shift for shift in shifts if shift <= threshold]
     entries = [

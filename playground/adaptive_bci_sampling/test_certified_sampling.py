@@ -18,6 +18,7 @@ from certified_box import (
 )
 from exact_error import AffineErrorMap
 from deterministic_design import (
+    htc_capacitance_crossover,
     build_basis,
     certified_greedy_points,
     logarithmic_tensor_grid,
@@ -407,6 +408,25 @@ class DesignTests(unittest.TestCase):
         self.assertTrue(np.all(first[0] >= self.ranges[:, 0]))
         self.assertTrue(np.all(first <= self.ranges[:, 1] + 1e-12))
 
+    def test_crossover_is_a_property_of_the_operator_only(self):
+        # The extraction must not depend on the caller's time resolution: the
+        # split threshold is built from (K, C, H_i, ranges) and nothing else.
+        weight = np.stack([np.asarray(t.diagonal()).ravel() for t in self.terms])
+        support = weight.sum(axis=0) > 0.0
+        expected = np.max(
+            ((self.ranges[:, 1] - self.ranges[:, 0]) @ weight[:, support])
+            / np.asarray(self.mass.diagonal()).ravel()[support]
+        )
+        self.assertAlmostEqual(
+            htc_capacitance_crossover(self.kernel, self.mass, self.terms, self.ranges),
+            float(expected),
+            places=12,
+        )
+        self.assertEqual(
+            htc_capacitance_crossover.__code__.co_varnames[:4],
+            ("kernel", "mass", "terms", "ranges"),
+        )
+
     def test_design_counts_every_full_order_solve(self):
         cache = {}
         points, _score, selection = certified_greedy_points(
@@ -417,7 +437,8 @@ class DesignTests(unittest.TestCase):
         plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points, plan=plan,
-            tolerance=1e-6, low_shift_threshold=0.5, include_dc=True,
+            ranges=self.ranges, tolerance=1e-6, low_shift_threshold=0.5,
+            include_dc=True,
             cache=cache,
         )
         count = info["frequency_plan"]["count"]
