@@ -193,21 +193,32 @@ def main():
               "h_ranges": ranges.tolist()}
 
     started = time.perf_counter()
+    response_cache = {}
     points, selection_certificate, selection = certified_greedy_points(
         kernel, terms, source, ranges, None,
         tolerance=args.greedy_tolerance, maximum_points=args.greedy_maximum,
         grid=args.greedy_grid, power=power, metric="entrywise", progress=True,
+        cache=response_cache,
     )
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
           f"t={time.perf_counter()-started:.1f}s", flush=True)
     design_basis, design_snapshots, design_info = build_basis(
         kernel, mass, terms, source, points,
         tolerance=args.cutoff, low_shift_threshold=1.0 / args.dt, include_dc=True,
+        cache=response_cache,
     )
     design_info["selection_certificate"] = selection_certificate
     design_info["selection"] = selection
+    design_info["selection_factorizations"] = int(selection["factorizations"])
+    design_info["selection_rhs_solves"] = int(selection["fresh_rhs_solves"])
+    design_info["total_factorizations"] = int(
+        selection["factorizations"] + design_info["factorizations"]
+    )
     report["design"] = design_info
-    print(f"design solves={design_info['full_rhs_solves']} order={design_info['basis_order']} "
+    print(f"design solves={design_info['full_rhs_solves']} "
+          f"factorizations={design_info['total_factorizations']} "
+          f"(selection {design_info['selection_factorizations']}) "
+          f"order={design_info['basis_order']} "
           f"t={design_info['seconds']:.1f}s", flush=True)
 
     bases = {"deterministic": design_basis}

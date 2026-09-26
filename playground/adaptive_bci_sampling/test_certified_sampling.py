@@ -315,13 +315,16 @@ class DesignTests(unittest.TestCase):
         self.assertTrue(np.all(first <= self.ranges[:, 1] + 1e-12))
 
     def test_design_counts_every_full_order_solve(self):
-        points, _score, _info = certified_greedy_points(
+        cache = {}
+        points, _score, selection = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
             tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
+            cache=cache,
         )
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points,
             tolerance=1e-6, low_shift_threshold=0.5, include_dc=True,
+            cache=cache,
         )
         expected = 0
         for plan in info["per_port_plan"]:
@@ -331,6 +334,16 @@ class DesignTests(unittest.TestCase):
         self.assertEqual(info["full_rhs_solves"], expected)
         self.assertEqual(snapshots.shape[1], expected)
         self.assertEqual(basis.shape[0], self.kernel.shape[0])
+        # The steady endpoint snapshots are exactly the blocks the greedy
+        # scorer already solved, so sharing one cache makes them free.
+        steady = self.source.shape[1] * len(points)
+        self.assertEqual(selection["fresh_rhs_solves"], steady)
+        # Every steady endpoint request is a hit; ports whose shift plans
+        # coincide contribute further hits.
+        self.assertGreaterEqual(info["cached_blocks"], steady)
+        self.assertEqual(
+            info["cached_blocks"] + info["factorizations"], info["full_rhs_solves"]
+        )
 
     def test_candidate_grid_is_deterministic_and_logarithmic(self):
         first = logarithmic_tensor_grid(self.ranges, 5)

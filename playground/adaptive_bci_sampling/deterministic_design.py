@@ -21,7 +21,10 @@ This module replaces the random loop by three deterministic stages.
    selected parameter at the low shifts, the seed at the high shifts, and the
    steady (DC) endpoint, followed by the unchanged normalized-snapshot SVD.
 
-Every full-order solve is counted; no random number is drawn anywhere.
+Every full-order solve is counted; no random number is drawn anywhere.  One
+sparse factorization serves every source port that asks for it, and one cache
+shared between the greedy scorer and ``build_basis`` makes the steady
+endpoints cache hits instead of a second solve.
 """
 
 from __future__ import annotations
@@ -78,10 +81,26 @@ def full_operator(kernel, terms, parameter):
     return operator.tocsc()
 
 
-def responses(kernel, terms, source, parameter):
-    """All source responses at one parameter (one sparse factorization)."""
-    factor = spla.splu(full_operator(kernel, terms, parameter), permc_spec="MMD_AT_PLUS_A")
-    return np.asarray(factor.solve(source), dtype=np.float64)
+def response_block(cache, kernel, mass, terms, source, point, shift=0.0):
+    """Get-or-solve ``(K + shift*C + sum_i p_i H_i) x = source``, all ports.
+
+    One sparse factorization serves every source port, and one cache serves
+    the greedy scorer (``shift = 0``), the steady endpoint and every frequency
+    shift of :func:`build_basis`, so a stationary block solved while selecting
+    parameters becomes a cache hit instead of a second solve.
+    """
+    key = (float(f"{shift:.14e}"),) + tuple(
+        float(f"{value:.14e}") for value in np.asarray(point, float)
+    )
+    block = cache.get(key)
+    if block is None:
+        operator = kernel if not shift else kernel + float(shift) * mass
+        factor = spla.splu(
+            full_operator(operator, terms, point), permc_spec="MMD_AT_PLUS_A"
+        )
+        block = np.asarray(factor.solve(source), dtype=np.float64)
+        cache[key] = block
+    return block
 
 
 def zolotarev_seed(kernel, terms, ranges):
@@ -126,6 +145,7 @@ def certified_greedy_points(
     candidates = logarithmic_tensor_grid(ranges, grid)
     selected = [np.asarray(zolotarev_seed(kernel, terms, ranges)[0], dtype=np.float64)]
     response_cache = {} if cache is None else cache
+    cached_before = len(response_cache)
 
     minimum_operator = sp.csc_matrix(kernel)
     for value, term in zip(ranges[:, 0], terms):
@@ -137,14 +157,10 @@ def certified_greedy_points(
     score = np.inf
     history = []
     while True:
-        blocks = []
-        for point in selected:
-            key = tuple(float(f"{value:.14e}") for value in point)
-            block = response_cache.get(key)
-            if block is None:
-                block = responses(kernel, terms, source, point)
-                response_cache[key] = block
-            blocks.append(block)
+        blocks = [
+            response_block(response_cache, kernel, None, terms, source, point)
+            for point in selected
+        ]
         basis = np.empty((kernel.shape[0], 0))
         for block in blocks:
             addition = orthonormalize_block(basis, block)
@@ -197,6 +213,9 @@ def certified_greedy_points(
             "history": history,
             "candidate_grid": int(grid),
             "tolerance": float(tolerance),
+            "factorizations": int(len(response_cache) - cached_before),
+            "fresh_rhs_solves": int(len(response_cache) - cached_before)
+ * source.shape[1],
             "seconds": time.perf_counter() - started,
         },
     )
@@ -214,6 +233,7 @@ def build_basis(
     include_dc=True,
     low_shift_points=None,
     constant=True,
+    cache=None,
 ):
     """Assemble snapshots on the production elliptic plan and compress them.
 
@@ -223,6 +243,13 @@ def build_basis(
     first selected point (the Zolotarev seed) alone.  The steady endpoint is
     sampled at the low-shift points when ``include_dc`` is set.  The closing
     compression is the production unit-column-normalized SVD.
+
+    One factorization per distinct ``(shift, parameter)`` operator serves every
+    port that asks for it, and a ``cache`` shared with
+    :func:`certified_greedy_points` turns the steady endpoints into cache hits:
+    they are exactly the blocks the greedy scorer already solved.
+    ``factorizations`` counts the sparse factorizations this call performed and
+    ``cached_blocks`` the snapshot requests it answered without one.
     """
     kernel = sp.csc_matrix(kernel)
     mass = sp.csc_matrix(mass)
@@ -232,9 +259,10 @@ def build_basis(
     if points.ndim != 2:
         raise ValueError("points must be a two-dimensional array")
 
-    snapshots = []
-    plan = []
+    cache = {} if cache is None else cache
     started = time.perf_counter()
+    plan = []
+    requests = []
     for port in range(source.shape[1]):
         response = source[:, port]
         lower, upper = port_eigenvalue_bounds(kernel, mass, response)
@@ -243,25 +271,22 @@ def build_basis(
         threshold = 1.0 if low_shift_threshold is None else float(low_shift_threshold)
         low_shifts = [float(shift) for shift in shifts if shift <= threshold]
         plan.append({"port": port, "shift_count": int(count), "low_shifts": low_shifts})
-        for shift in shifts:
-            shifted = kernel + float(shift) * mass
-            used = points if float(shift) <= threshold else points[:1]
-            for point in used:
-                snapshots.append(
-                    np.asarray(
-                        spla.splu(full_operator(shifted, terms, point)).solve(response),
-                        dtype=np.float64,
-                    )
-                )
+        entries = [
+            (float(shift), point)
+            for shift in shifts
+            for point in (points if float(shift) <= threshold else points[:1])
+        ]
         if include_dc:
-            for point in low_shift_points:
-                snapshots.append(
-                    np.asarray(
-                        spla.splu(full_operator(kernel, terms, point)).solve(response),
-                        dtype=np.float64,
-                    )
-                )
+            entries.extend((0.0, point) for point in low_shift_points)
+        requests.append(entries)
 
+    known = len(cache)
+    snapshots = [
+        response_block(cache, kernel, mass, terms, source, point, shift)[:, port]
+        for port, entries in enumerate(requests)
+        for shift, point in entries
+    ]
+    factorizations = len(cache) - known
     matrix = np.column_stack(snapshots)
     basis, singular_values = _snapshot_svd_basis(matrix, tolerance)
     if constant:
@@ -272,6 +297,8 @@ def build_basis(
     info = {
         "points": points.tolist(),
         "full_rhs_solves": int(matrix.shape[1]),
+        "factorizations": int(factorizations),
+        "cached_blocks": int(matrix.shape[1] - factorizations),
         "snapshot_columns": int(matrix.shape[1]),
         "svd_cutoff": float(tolerance),
         "svd_kept_order": int(np.count_nonzero(singular_values >= tolerance * singular_values[0])),
