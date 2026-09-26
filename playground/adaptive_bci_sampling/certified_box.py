@@ -40,11 +40,12 @@ The right-hand side is computable without any further full-order solve:
   which form a convex combination, so the Gram quadratic form is bounded by the
   largest coefficient-wise value, pointwise on the whole cell.
 
-Relative statements need the exact same-parameter rise.  ``sweep`` bounds it
-from below as ``|Y_V(cell centre)|`` minus a proved variation bound of the
-reduced transfer minus the error bound itself; that quantity is a lower bound
-of ``|Y(p)|`` for every ``p`` of the cell, and it costs small dense algebra
-only.  No full-order solve is needed for any normalization.
+Relative statements need the exact same-parameter rise.  The family is an
+entrywise nonnegative M-matrix family and ``dY_ab/dp_k = -x_a^T H_k x_b`` is
+entrywise nonpositive, so the *exact* transfer at a cell's upper HTC corner is
+a positive lower bound of ``Y(p)`` at every point of that cell.  ``sweep``
+normalizes by that corner, which costs one direct solve per cell and no
+fraction of the reduced transfer.
 
 Any fixed real shift is covered.  The BDF1 step recursion solves with
 ``A(p) + C/dt``, which is another member of the same affine family, so
@@ -52,11 +53,13 @@ Any fixed real shift is covered.  The BDF1 step recursion solves with
 
 Cost
 
-Preparation is one factorization plus ``span_columns`` sparse solves per
-anchor; no full-order solve beyond that is needed.  Every cell evaluation is
-small dense algebra in the delivered reduced order, so refining the box
-partition or the jet order costs no additional
-full-order work.
+Preparation is one Riesz Gram per anchor: one factorization plus
+``span_columns`` sparse solves each.  Every cell then needs the exact transfer
+at its upper corner for the normalization, i.e. one further factorization and
+``source_count`` solves.  Nothing here is an AMG-CG extraction solve, and all
+remaining cell evaluation is small dense algebra in the delivered reduced
+order: refining the jet order is free, and refining the partition costs only
+those corner denominators while tightening the bound.
 
 Limits, stated explicitly
 
