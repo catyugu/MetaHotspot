@@ -493,6 +493,67 @@ Springer LNCSE 第 17 章、Siemens 的 BCI-ROM 验证/最佳实践 PDF 均为�
 三个 `dt`、两项指标上全部优于两个随机种子**：步进低 1.3--2.9 倍，稳态低 6.4--12.6 倍。
 稳态误差与 `dt` 无关；步进误差随 `dt` 变化是激励的性质，不是设计的性质。
 
+### 5.1 1 mm 计时（AMG-CG，n = 122400，nnz(K) = 838080，m_b = 6520，14 条频移）
+
+单线程（`OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1`），预热一轮后取三次中位数。
+
+单算子成本（四个右端共用一次 setup；scipy 的 CG 只收向量右端，所以四右端是一次 setup
+加四次 CG）：
+
+```text
+算子             AMG setup   CG(4 右端)   单右端 CG   LU 分解     LU 解(4 右端)
+稳态 s=0          152 ms      733 ms       183 ms     9461 ms      130 ms
+中频 s=0.368      169 ms      305 ms        76 ms     9899 ms      135 ms
+高频 s=731        157 ms      128 ms        32 ms    17273 ms      137 ms
+```
+
+CG 与 LU 的解一致到 `3.9e-08`--`2.0e-07`。**setup 并不主导**：它稳定在 152--169 ms 且
+几乎与频移无关，而单右端 CG 是 32--183 ms——高频移上 setup 是 CG 的 5 倍，最慢的低频移上
+只有 0.8 倍，按整条计划平均大致 1:1。LU 分解在 1 mm 上是 AMG setup 的 60--110 倍，
+因此直接法在该规模不可用，我们的 AMG 变体才是这一档的正确选择。
+
+端到端（同一网格、同一求解器、同一台机器、单线程）：
+
+```text
+                墙钟        稀疏求解预算                   ROM 阶
+确定性          119.2 s     45 setup + 180 右端 = 24.0 s    53
+stock 20260805   62.6 s     159 次（每次自带 setup）        52
+stock 7          67.5 s     165 次（每次自带 setup）        50
+```
+
+**稀疏求解预算上快 2.6--2.8 倍**（24.0 s 对 62.6/67.5 s，setup 7.2 s 对 159/165 次），
+但**端到端慢 1.9 倍**，因为 119.2 s 里只有 24.0 s 是求解：
+
+```text
+plan 4.8 s  +  selection 90.1 s  +  build 24.3 s  =  119.2 s
+```
+
+`build` 几乎全是求解（45 setup 7.2 s + CG 16.7 s），**瓶颈在 selection**：认证贪心的
+候选打分与残差证书的稠密代数，加一次 minimum 算子的 LU（约 9.5 s）。这与 AMG 无关，
+也是 1 mm 上唯一值得优化的地方。2.5 mm 上 selection 占比很小，所以 §2 的算子计数结论
+需要按这个比例读：**算子共享在稀疏求解预算上成立（1 mm 上 2.6--2.8 倍），但要在 1 mm
+上变成端到端优势，必须先削掉 selection 的稠密开销。**
+
+同一套单算子计时在 5 mm（n = 1320）上给出 AMG setup `2.5`--`3.0` ms、LU 分解
+`2.8`--`3.0` ms，即**两者在 5 mm 上相当**；到 1 mm 变成 152--169 ms 对 9461--17273 ms，
+**LU 差 60--110 倍**。所以 `n ~~ 10^4`（约 2.5 mm）是这套流水线里 LU 与 AMG 的交叉点：
+§2 的 39 次分解正是 LU 还勉强可用的最后一段，1 mm 上必须走 AMG，而走 AMG 之后
+分解次数的优势就退回到"稀疏求解预算 2.6--2.8 倍"这个量级。
+
+复现：
+
+```text
+# 单算子成本（两种求解器，指定网格与重复次数）
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_solver_cost.py 1.0 3
+# 确定性流水线的分阶段墙钟（AMG 变体，缓存与 build_basis 共享）
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_extraction_time.py 1.0 3
+# stock 抽取器墙钟（driver 的 probe_rounds=10 设置）
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_stock_time.py 1.0
+```
+
+1 mm 上不能直接跑 `certify_extraction.py`：它的整盒证书在 2.5 mm 上就要 1024 次单元角点
+分解，1 mm 上一次分解已是 10 s 量级。
+
 * 全盒审计复核（5 mm，256 单元、三阶 jet、每单元 25 个随机内点 = 6400 个全阶参照
   解，`--greedy-maximum 3`）：**零违反**；最大实测绝对误差 `6.629e-03` 与所在单元的
   证书 `6.778e-03` 相差 2.2%，精确映射的网格最大值 `6.716e-03` 落在两者之间——
