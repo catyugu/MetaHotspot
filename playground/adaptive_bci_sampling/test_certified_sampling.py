@@ -18,7 +18,6 @@ from certified_box import (
 )
 from exact_error import AffineErrorMap
 from deterministic_design import (
-    htc_capacitance_crossover,
     build_basis,
     certified_greedy_points,
     logarithmic_tensor_grid,
@@ -408,24 +407,31 @@ class DesignTests(unittest.TestCase):
         self.assertTrue(np.all(first[0] >= self.ranges[:, 0]))
         self.assertTrue(np.all(first <= self.ranges[:, 1] + 1e-12))
 
-    def test_crossover_is_a_property_of_the_operator_only(self):
-        # The extraction must not depend on the caller's time resolution: the
-        # split threshold is built from (K, C, H_i, ranges) and nothing else.
-        weight = np.stack([np.asarray(t.diagonal()).ravel() for t in self.terms])
-        support = weight.sum(axis=0) > 0.0
-        expected = np.max(
-            ((self.ranges[:, 1] - self.ranges[:, 0]) @ weight[:, support])
-            / np.asarray(self.mass.diagonal()).ravel()[support]
+    def test_design_is_the_full_shift_by_point_tensor(self):
+        # No shift is treated differently: the snapshot count is exactly
+        # (elliptic shifts + steady endpoint) * points * ports, so neither a
+        # threshold nor the caller's time step can change the design.
+        points, _score, _selection = certified_greedy_points(
+            self.kernel, self.terms, self.source, self.ranges, None,
+            tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
         )
-        self.assertAlmostEqual(
-            htc_capacitance_crossover(self.kernel, self.mass, self.terms, self.ranges),
-            float(expected),
-            places=12,
+        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
+        basis, snapshots, info = build_basis(
+            self.kernel, self.mass, self.terms, self.source, points,
+            plan=plan, tolerance=1e-6, include_dc=True,
         )
+        operators = plan["count"] + 1
+        expected = self.source.shape[1] * operators * len(points)
+        self.assertEqual(info["operators"], operators * len(points))
+        self.assertEqual(info["full_rhs_solves"], expected)
+        self.assertEqual(snapshots.shape[1], expected)
+        self.assertEqual(info["factorizations"], operators * len(points))
+        # every operator serves both ports, so the later port is a cache hit
         self.assertEqual(
-            htc_capacitance_crossover.__code__.co_varnames[:4],
-            ("kernel", "mass", "terms", "ranges"),
+            info["cached_blocks"],
+            (self.source.shape[1] - 1) * operators * len(points),
         )
+        self.assertEqual(basis.shape[0], self.kernel.shape[0])
 
     def test_design_counts_every_full_order_solve(self):
         cache = {}
@@ -437,21 +443,17 @@ class DesignTests(unittest.TestCase):
         plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points, plan=plan,
-            ranges=self.ranges, tolerance=1e-6, low_shift_threshold=0.5,
-            include_dc=True,
+            tolerance=1e-6, include_dc=True,
             cache=cache,
         )
-        count = info["frequency_plan"]["count"]
-        low = len(info["low_shifts"])
-        expected = self.source.shape[1] * (
-            (count - low) + low * len(points) + len(points)
-        )
+        operators = info["frequency_plan"]["count"] + 1
+        expected = self.source.shape[1] * operators * len(points)
         self.assertEqual(info["full_rhs_solves"], expected)
         self.assertEqual(snapshots.shape[1], expected)
         self.assertEqual(basis.shape[0], self.kernel.shape[0])
-        # One plan for every port: each low shift is factorized exactly once,
-        # and the steady endpoints are the blocks the greedy already solved.
-        self.assertEqual(info["factorizations"], count - low + low * len(points))
+        # One plan for every port: each (shift, point) operator is factorized
+        # exactly once, and the steady blocks come from the greedy's cache.
+        self.assertEqual(info["factorizations"], operators * len(points) - len(points))
         self.assertEqual(
             info["cached_blocks"] + info["factorizations"], info["full_rhs_solves"]
         )

@@ -250,33 +250,6 @@ def shared_frequency_plan(kernel, mass, source, tolerance):
     }
 
 
-def htc_capacitance_crossover(kernel, mass, terms, ranges):
-    """Shift above which every boundary HTC perturbation is storage dominated.
-
-    The family's perturbation is ``sum_i (p_i - p_low,i) H_i``, whose diagonal
-    entry on a boundary cell is ``sum_i dp_i a_i`` [W/K] against that cell's
-    capacitance ``c`` [J/K], so ``sum_i dp_i a_i / c`` is the reciprocal of the
-    cell's own perturbation time constant.  Above that shift the cell's
-    capacitive admittance exceeds its HTC perturbation, which is the regime
-    where the HTC design stops changing the response; the maximum over the
-    boundary cells keeps the statement true on every one of them.
-
-    Nothing here refers to a time step, so the delivered ROM is the same for
-    every caller.  The alternative -- splitting the plan at ``1/dt``, the BDF1
-    shift a particular time step visits -- makes the extraction a function of
-    the caller's temporal resolution, which a boundary-condition-independent
-    model must not be.
-    """
-    ranges = np.asarray(ranges, dtype=np.float64)
-    weight = np.stack(
-        [np.asarray(term.diagonal()).ravel() for term in terms]
-    )
-    support = weight.sum(axis=0) > 0.0
-    capacity = np.asarray(mass.diagonal()).ravel()[support]
-    perturbation = (ranges[:, 1] - ranges[:, 0]) @ weight[:, support]
-    return float(np.max(perturbation / capacity))
-
-
 def build_basis(
     kernel,
     mass,
@@ -285,26 +258,21 @@ def build_basis(
     points,
     *,
     plan,
-    ranges,
     tolerance=1e-3,
-    low_shift_threshold=None,
     include_dc=True,
-    low_shift_points=None,
     constant=True,
     cache=None,
 ):
     """Assemble snapshots on one shared elliptic plan and compress them.
 
-    ``plan`` is the shared frequency plan of :func:`shared_frequency_plan`.
-    ``points`` are the selected effective HTC parameters.  Shifts at or below
-    ``low_shift_threshold`` use ``low_shift_points`` (default: all selected
-    points); higher shifts use the first selected point (the Zolotarev seed)
-    alone.  A ``None`` threshold takes the time-step-free
-    :func:`htc_capacitance_crossover` instead, so the extraction never depends
-    on the temporal resolution of whoever evaluates the model.  The steady
-    endpoint is sampled at the low-shift points when
-    ``include_dc`` is set.  The closing compression is the production
-    unit-column-normalized SVD.
+    ``plan`` is the shared frequency plan of :func:`shared_frequency_plan` and
+    ``points`` the selected effective HTC parameters.  The design is the plain
+    tensor of the two: **every** shift is solved at **every** selected point,
+    and the steady endpoint ``s = 0`` joins the shift set when ``include_dc``
+    is set.  Nothing distinguishes low from high shifts, so no threshold, no
+    time step and no caller-chosen scale enters the extraction -- the snapshot
+    set is fixed by (plan, points) alone.  The closing compression is the
+    production unit-column-normalized SVD.
 
     One factorization per distinct ``(shift, parameter)`` operator serves every
     port that asks for it, and a ``cache`` shared with
@@ -317,24 +285,14 @@ def build_basis(
     mass = sp.csc_matrix(mass)
     source = np.asarray(source, dtype=np.float64)
     points = np.asarray(points, dtype=np.float64)
-    low_shift_points = points if low_shift_points is None else np.asarray(low_shift_points, float)
     if points.ndim != 2:
         raise ValueError("points must be a two-dimensional array")
 
     cache = {} if cache is None else cache
-    if low_shift_threshold is None:
-        threshold = htc_capacitance_crossover(kernel, mass, terms, ranges)
-    else:
-        threshold = float(low_shift_threshold)
     shifts = [float(value) for value in plan["shifts"]]
-    low_shifts = [shift for shift in shifts if shift <= threshold]
-    entries = [
-        (shift, point)
-        for shift in shifts
-        for point in (points if shift <= threshold else points[:1])
-    ]
     if include_dc:
-        entries.extend((0.0, point) for point in low_shift_points)
+        shifts = shifts + [0.0]
+    entries = [(shift, point) for shift in shifts for point in points]
 
     known = len(cache)
     started = time.perf_counter()
@@ -360,9 +318,9 @@ def build_basis(
         "svd_cutoff": float(tolerance),
         "svd_kept_order": int(np.count_nonzero(singular_values >= tolerance * singular_values[0])),
         "basis_order": int(basis.shape[1]),
-        "low_shift_threshold": float(threshold),
-        "low_shifts": low_shifts,
         "include_dc": bool(include_dc),
+        "operators": len(entries),
+        "include_constant": bool(constant),
         "frequency_plan": {
             "lower": float(plan["lower"]),
             "upper": float(plan["upper"]),

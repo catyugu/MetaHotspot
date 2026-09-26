@@ -220,13 +220,12 @@ def main():
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
           f"t={time.perf_counter()-started:.1f}s", flush=True)
     design_basis, design_snapshots, design_info = build_basis(
-        kernel, mass, terms, source, points, plan=plan, ranges=ranges,
+        kernel, mass, terms, source, points, plan=plan,
         tolerance=args.cutoff, include_dc=True,
         cache=response_cache,
     )
-    print(f"design low_shift_threshold={design_info['low_shift_threshold']:.6g} "
-          f"low_shifts={len(design_info['low_shifts'])}/"
-          f"{report['frequency_plan']['count']}", flush=True)
+    print(f"design operators={design_info['operators']} "
+          f"shifts={len(plan['shifts']) + 1} points={len(points)}", flush=True)
     design_info["selection_certificate"] = selection_certificate
     design_info["selection"] = selection
     design_info["selection_factorizations"] = int(selection["factorizations"])
