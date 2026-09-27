@@ -27,9 +27,19 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from certified_box import BoxCertificate, logarithmic_edges  # noqa: E402
-from deterministic_design import build_basis, certified_greedy_points, full_operator  # noqa: E402
+from exact_error import AffineErrorMap  # noqa: E402
+from deterministic_design import (  # noqa: E402
+    box_frequency_plan,
+    build_basis,
+    certified_greedy_points,
+    full_operator,
+)
 from model_case1 import Case1Config, Case1Model  # noqa: E402
-from metahotspot.macromodel.utils import build_parametric_basis  # noqa: E402
+from metahotspot.macromodel.utils import (  # noqa: E402
+    box_spectral_interval,
+    build_parametric_basis,
+    port_eigenvalue_bounds,
+)
 
 
 def step_transfer(kernel, mass, source, *, dt, duration):
@@ -164,7 +174,8 @@ def audit_certificate(certificate, kernel, terms, source, basis, cells, order, s
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mesh_mm", nargs="?", type=float, default=5.0)
-    parser.add_argument("--dt", type=float, default=50.0)
+    parser.add_argument("--validate-dt", type=float, nargs="+",
+                        default=[5.0, 50.0, 500.0])
     parser.add_argument("--duration", type=float, default=2000.0)
     parser.add_argument("--greedy-tolerance", type=float, default=1e-5)
     parser.add_argument("--greedy-maximum", type=int, default=8)
@@ -173,6 +184,10 @@ def main():
     parser.add_argument("--steady-cells", type=int, default=32)
     parser.add_argument("--steady-order", type=int, default=2)
     parser.add_argument("--certificate-blocks", type=int, default=4)
+    parser.add_argument("--exact-grid", type=int, default=21,
+                        help="cells per axis of the exact error grid")
+    parser.add_argument("--exact-cells", type=int, default=8,
+                        help="cells per axis of the rigorous exact bracket")
     parser.add_argument("--skip-stock", action="store_true")
     parser.add_argument("--audit-cells", type=int, default=0,
                         help="cells per axis of the full-order audit partition")
@@ -188,48 +203,90 @@ def main():
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
     power = np.asarray(model.nominal_power(), dtype=np.float64)
-    report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]), "dt": args.dt,
+    report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]),
+              "validate_dt": args.validate_dt,
               "duration": args.duration, "cutoff": args.cutoff,
               "h_ranges": ranges.tolist()}
 
+    plan = box_frequency_plan(kernel, mass, terms, ranges, args.cutoff)
+    report["frequency_plan"] = {k: plan[k] for k in ("kind", "lower", "upper", "count")}
+    print(f"frequency plan: kind={plan['kind']} count={plan['count']} "
+          f"lambda=[{plan['lower']:.6g}, {plan['upper']:.6g}]", flush=True)
+
     started = time.perf_counter()
+    response_cache = {}
     points, selection_certificate, selection = certified_greedy_points(
         kernel, terms, source, ranges, None,
         tolerance=args.greedy_tolerance, maximum_points=args.greedy_maximum,
         grid=args.greedy_grid, power=power, metric="entrywise", progress=True,
+        cache=response_cache,
     )
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
           f"t={time.perf_counter()-started:.1f}s", flush=True)
     design_basis, design_snapshots, design_info = build_basis(
-        kernel, mass, terms, source, points,
-        tolerance=args.cutoff, low_shift_threshold=1.0 / args.dt, include_dc=True,
+        kernel, mass, terms, source, points, plan=plan,
+        tolerance=args.cutoff, include_dc=True,
+        cache=response_cache,
     )
+    print(f"design operators={design_info['operators']} "
+          f"shifts={len(plan['shifts']) + 1} points={len(points)}", flush=True)
     design_info["selection_certificate"] = selection_certificate
     design_info["selection"] = selection
+    design_info["selection_factorizations"] = int(selection["factorizations"])
+    design_info["selection_rhs_solves"] = int(selection["fresh_rhs_solves"])
+    design_info["total_factorizations"] = int(
+        selection["factorizations"] + design_info["factorizations"]
+    )
     report["design"] = design_info
-    print(f"design solves={design_info['full_rhs_solves']} order={design_info['basis_order']} "
+    print(f"design solves={design_info['full_rhs_solves']} "
+          f"factorizations={design_info['total_factorizations']} "
+          f"(selection {design_info['selection_factorizations']}) "
+          f"order={design_info['basis_order']} "
           f"t={design_info['seconds']:.1f}s", flush=True)
 
     bases = {"deterministic": design_basis}
     if not args.skip_stock:
+        legacy_intervals = [
+            port_eigenvalue_bounds(kernel, mass, source[:, port])
+            for port in range(source.shape[1])
+        ]
+        legacy_plan = (
+            min(low for low, _ in legacy_intervals),
+            max(high for _, high in legacy_intervals),
+        )
+        box_plan = box_spectral_interval(kernel, mass, terms, ranges)
+        report["plan_intervals"] = {
+            "box": [float(box_plan[0]), float(box_plan[1])],
+            "legacy": [float(legacy_plan[0]), float(legacy_plan[1])],
+        }
+        print(f"plan intervals: box=[{box_plan[0]:.6e}, {box_plan[1]:.6e}] "
+              f"legacy=[{legacy_plan[0]:.6e}, {legacy_plan[1]:.6e}]", flush=True)
         for stock_seed in (20260805, 7):
-            clock = time.perf_counter()
-            stock, stats = build_parametric_basis(
-                model.core, source, terms, ranges,
-                tolerance=args.cutoff, max_order=4096, probe_rounds=10, seed=stock_seed,
-            )
-            clock = time.perf_counter() - clock
-            bases[f"stock_{stock_seed}"] = stock
-            report[f"stock_{stock_seed}"] = {
-                "full_rhs_solves": int(stats["pre_svd_order"]),
-                "basis_order": int(stock.shape[1]),
-                "candidate_count": int(stats["candidate_count"]),
-                "validation_count": int(stats["validation_count"]),
-                "seconds": clock,
-            }
-            print(f"stock_{stock_seed} solves={stats['pre_svd_order']} "
-                  f"candidates={stats['candidate_count']} order={stock.shape[1]} "
-                  f"t={clock:.1f}s", flush=True)
+            for label, interval in (("stock", None), ("stock_legacy", legacy_plan)):
+                clock = time.perf_counter()
+                stock, stats = build_parametric_basis(
+                    model.core, source, terms, ranges,
+                    tolerance=args.cutoff, max_order=4096, probe_rounds=10,
+                    seed=stock_seed, spectral_interval=interval,
+                )
+                clock = time.perf_counter() - clock
+                bases[f"{label}_{stock_seed}"] = stock
+                report[f"{label}_{stock_seed}"] = {
+                    "full_rhs_solves": int(stats["pre_svd_order"]),
+                    "basis_order": int(stock.shape[1]),
+                    "candidate_count": int(stats["candidate_count"]),
+                    "validation_count": int(stats["validation_count"]),
+                    "shift_count": int(stats["frequency_plan"]["shift_count"]),
+                    "plan_interval": [
+                        float(stats["frequency_plan"]["lambda_min"]),
+                        float(stats["frequency_plan"]["lambda_max"]),
+                    ],
+                    "seconds": clock,
+                }
+                print(f"{label}_{stock_seed} solves={stats['pre_svd_order']} "
+                      f"shifts={stats['frequency_plan']['shift_count']} "
+                      f"candidates={stats['candidate_count']} order={stock.shape[1]} "
+                      f"t={clock:.1f}s", flush=True)
 
     certificates = {}
     for name, basis in bases.items():
@@ -242,6 +299,18 @@ def main():
               f"denominators={steady['denominator_points']} t={steady['seconds']:.1f}s", flush=True)
         certificates[name] = {"steady": steady}
     report["certificates"] = certificates
+
+    exact = {}
+    for name, basis in bases.items():
+        mapping = AffineErrorMap(kernel, terms, source, ranges, basis)
+        grid = mapping.worst_on_grid(args.exact_grid)
+        bracket = mapping.sweep(args.exact_cells)
+        exact[name] = {"grid": grid, "bracket": bracket}
+        print(f"exact[{name}]: grid={grid['worst_absolute_error']:.3e} at "
+              f"{grid['location']} cell_bound={bracket['cell_bound']:.3e} "
+              f"prep={bracket['preparation_seconds']:.1f}s "
+              f"t={bracket['seconds']:.1f}s", flush=True)
+    report["exact"] = exact
 
     if args.audit_cells:
         audit_certificate_for = BoxCertificate(
@@ -257,14 +326,21 @@ def main():
 
     parameters = validation_parameters(ranges)
     clock = time.perf_counter()
-    validation = validate(
-        kernel, mass, source, terms, bases, parameters, dt=args.dt, duration=args.duration
-    )
-    report["validation"] = {"parameters": len(parameters), "worst": validation,
+    validation = {}
+    for dt in args.validate_dt:
+        validation[dt] = validate(
+            kernel, mass, source, terms, bases, parameters, dt=dt, duration=args.duration
+        )
+        for name in bases:
+            print(
+                f"validation[{name}][dt={dt:g}]: "
+                f"worst_step={validation[dt][name]['worst_step_entry']:.3e} "
+                f"worst_steady={validation[dt][name]['worst_steady_entry']:.3e}",
+                flush=True,
+            )
+    report["validation"] = {"parameters": len(parameters), "dt": args.validate_dt,
+                            "worst": validation,
                             "seconds": time.perf_counter() - clock}
-    for name in bases:
-        print(f"validation[{name}]: worst_step={validation[name]['worst_step_entry']:.3e} "
-              f"worst_steady={validation[name]['worst_steady_entry']:.3e}", flush=True)
 
     if args.output:
         args.output.write_text(json.dumps(report, indent=2) + "\n")

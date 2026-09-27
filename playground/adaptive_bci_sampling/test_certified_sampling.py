@@ -16,10 +16,12 @@ from certified_box import (
     bernstein_operator,
     multi_indices,
 )
+from exact_error import AffineErrorMap
 from deterministic_design import (
     build_basis,
     certified_greedy_points,
     logarithmic_tensor_grid,
+    shared_frequency_plan,
     zolotarev_seed,
 )
 from residual_certificate import prepare_residual_certificate
@@ -286,6 +288,97 @@ class CertificateTests(unittest.TestCase):
         self.assertLessEqual(worst, report["steady_absolute_bound"])
 
 
+class ExactErrorMapTests(unittest.TestCase):
+    def setUp(self):
+        self.kernel, self.mass, self.terms, self.source = toy_family()
+        self.ranges = np.array([[0.5, 20.0], [0.5, 20.0]])
+        rng = np.random.default_rng(11)
+        self.basis = la.qr(
+            rng.normal(size=(self.kernel.shape[0], 6)), mode="economic"
+        )[0]
+
+    def direct_error(self, parameter, shift=0.0):
+        operator = self.kernel
+        if shift:
+            operator = operator + shift * self.mass
+        for value, term in zip(parameter, self.terms):
+            operator = operator + float(value) * term
+        exact = np.ascontiguousarray(
+            self.source.T @ la.solve(operator.toarray(), self.source)
+        )
+        reduced = self.basis.T @ (operator @ self.basis)
+        coefficients = la.solve(
+            reduced, self.basis.T @ self.source, assume_a="pos"
+        )
+        approximate = np.ascontiguousarray(
+            self.source.T @ (self.basis @ coefficients)
+        )
+        return exact - approximate
+
+    def test_error_matrix_is_the_direct_galerkin_error(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        rng = np.random.default_rng(5)
+        for _ in range(6):
+            parameter = np.exp(
+                rng.uniform(np.log(self.ranges[:, 0]), np.log(self.ranges[:, 1]))
+            )
+            self.assertTrue(
+                np.allclose(
+                    mapping.error_matrix(parameter),
+                    self.direct_error(parameter),
+                    rtol=1e-7,
+                    atol=1e-10,
+                )
+            )
+
+    def test_error_matrix_covers_the_shifted_family(self):
+        shift = 0.75
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis,
+            shift=shift, mass=self.mass,
+        )
+        rng = np.random.default_rng(23)
+        for _ in range(4):
+            parameter = np.exp(
+                rng.uniform(np.log(self.ranges[:, 0]), np.log(self.ranges[:, 1]))
+            )
+            self.assertTrue(
+                np.allclose(
+                    mapping.error_matrix(parameter),
+                    self.direct_error(parameter, shift),
+                    rtol=1e-7,
+                    atol=1e-10,
+                )
+            )
+
+    def test_cell_bound_covers_every_point_of_the_cell(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        low = np.array([0.6, 3.0])
+        high = np.array([2.0, 9.0])
+        bound = mapping.cell_bound(low, high)
+        rng = np.random.default_rng(19)
+        for _ in range(25):
+            parameter = np.exp(rng.uniform(np.log(low), np.log(high)))
+            actual = np.abs(mapping.error_matrix(parameter))
+            self.assertTrue(
+                np.all(actual <= bound + 1e-12),
+                msg=f"measured {np.max(actual):.3e} exceeds {np.max(bound):.3e}",
+            )
+
+    def test_grid_maximum_is_attained_inside_the_box(self):
+        mapping = AffineErrorMap(
+            self.kernel, self.terms, self.source, self.ranges, self.basis
+        )
+        report = mapping.worst_on_grid(9)
+        self.assertEqual(report["points"], 81)
+        self.assertGreater(report["worst_absolute_error"], 0.0)
+        self.assertIsNotNone(report["location"])
+
+
 class DesignTests(unittest.TestCase):
     def setUp(self):
         self.kernel, self.mass, self.terms, self.source = toy_family()
@@ -314,23 +407,57 @@ class DesignTests(unittest.TestCase):
         self.assertTrue(np.all(first[0] >= self.ranges[:, 0]))
         self.assertTrue(np.all(first <= self.ranges[:, 1] + 1e-12))
 
-    def test_design_counts_every_full_order_solve(self):
-        points, _score, _info = certified_greedy_points(
+    def test_design_is_the_full_shift_by_point_tensor(self):
+        # No shift is treated differently: the snapshot count is exactly
+        # (elliptic shifts + steady endpoint) * points * ports, so neither a
+        # threshold nor the caller's time step can change the design.
+        points, _score, _selection = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
             tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
         )
+        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points,
-            tolerance=1e-6, low_shift_threshold=0.5, include_dc=True,
+            plan=plan, tolerance=1e-6, include_dc=True,
         )
-        expected = 0
-        for plan in info["per_port_plan"]:
-            expected += plan["shift_count"] - len(plan["low_shifts"])
-            expected += len(plan["low_shifts"]) * len(points)
-        expected += self.source.shape[1] * len(points)
+        operators = plan["count"] + 1
+        expected = self.source.shape[1] * operators * len(points)
+        self.assertEqual(info["operators"], operators * len(points))
+        self.assertEqual(info["full_rhs_solves"], expected)
+        self.assertEqual(snapshots.shape[1], expected)
+        self.assertEqual(info["factorizations"], operators * len(points))
+        # every operator serves both ports, so the later port is a cache hit
+        self.assertEqual(
+            info["cached_blocks"],
+            (self.source.shape[1] - 1) * operators * len(points),
+        )
+        self.assertEqual(basis.shape[0], self.kernel.shape[0])
+
+    def test_design_counts_every_full_order_solve(self):
+        cache = {}
+        points, _score, selection = certified_greedy_points(
+            self.kernel, self.terms, self.source, self.ranges, None,
+            tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
+            cache=cache,
+        )
+        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
+        basis, snapshots, info = build_basis(
+            self.kernel, self.mass, self.terms, self.source, points, plan=plan,
+            tolerance=1e-6, include_dc=True,
+            cache=cache,
+        )
+        operators = info["frequency_plan"]["count"] + 1
+        expected = self.source.shape[1] * operators * len(points)
         self.assertEqual(info["full_rhs_solves"], expected)
         self.assertEqual(snapshots.shape[1], expected)
         self.assertEqual(basis.shape[0], self.kernel.shape[0])
+        # One plan for every port: each (shift, point) operator is factorized
+        # exactly once, and the steady blocks come from the greedy's cache.
+        self.assertEqual(info["factorizations"], operators * len(points) - len(points))
+        self.assertEqual(
+            info["cached_blocks"] + info["factorizations"], info["full_rhs_solves"]
+        )
+        self.assertEqual(selection["fresh_rhs_solves"], self.source.shape[1] * len(points))
 
     def test_candidate_grid_is_deterministic_and_logarithmic(self):
         first = logarithmic_tensor_grid(self.ranges, 5)
