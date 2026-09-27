@@ -215,3 +215,70 @@ def test_coupled_system_is_symmetric_psd():
     eig = np.linalg.eigvalsh(Kd)
     assert eig.min() >= -1.0e-9
     assert Cc.shape == Kc.shape
+
+
+def _neumann_chain(n):
+    """Pure-Neumann conduction chain plus one non-negative boundary term."""
+    differences = sp.diags([-1.0, 1.0], [0, 1], shape=(n - 1, n), format="csc")
+    kernel = (differences.T @ differences).tocsc()
+    mass = sp.diags(np.full(n, 0.5), format="csc")
+    mask = np.zeros(n)
+    mask[[0, n // 2, n - 1]] = 1.0
+    return kernel, mass, sp.diags(mask, format="csc")
+
+
+def _smallest_generalized(operator, mass):
+    return float(
+        sp.linalg.eigsh(operator, k=1, M=mass, sigma=0.0, which="LM",
+                        return_eigenvectors=False)[0]
+    )
+
+
+def _largest_generalized(operator, mass):
+    return float(
+        sp.linalg.eigsh(operator, k=1, M=mass, which="LM",
+                        return_eigenvectors=False)[0]
+    )
+
+
+def test_box_spectral_interval_encloses_the_robin_family():
+    kernel, mass, term = _neumann_chain(24)
+    ranges = np.array([[0.02, 500.0]])
+    low, high = mm.utils.box_spectral_interval(kernel, mass, [term], ranges)
+
+    for h in (0.02, 1.0, 50.0, 500.0):
+        operator = kernel + h * term
+        assert _smallest_generalized(operator, mass) >= low * (1.0 - 1.0e-9)
+        assert _largest_generalized(operator, mass) <= high * (1.0 + 1.0e-9)
+
+    shift = float(np.median(np.asarray(mass.diagonal()))) * 1.0e-6
+    positive = sp.linalg.eigsh(kernel + shift * mass, k=6, M=mass, sigma=0.0,
+                               which="LM", return_eigenvectors=False) - shift
+    positive = np.sort(positive[positive > 1.0e-9])
+    assert low < float(positive[0])
+
+
+def test_parametric_basis_plan_covers_the_htc_box():
+    """The shipped plan must contain the spectrum of the family it inverts."""
+    kernel, mass, term = _neumann_chain(24)
+    ranges = np.array([[0.02, 500.0]])
+    forcing = np.ones((kernel.shape[0], 1))
+    operators = mm.utils.normalized_operators(kernel, mass, forcing)
+
+    basis, summary = mm.utils.build_parametric_basis(
+        operators, forcing, [term], ranges,
+        tolerance=1.0e-2, probe_rounds=1, max_order=64,
+    )
+    assert basis.shape[1] > 0
+
+    shift = float(np.median(np.asarray(mass.diagonal()))) * 1.0e-6
+    positive = sp.linalg.eigsh(kernel + shift * mass, k=6, M=mass, sigma=0.0,
+                               which="LM", return_eigenvectors=False) - shift
+    positive = np.sort(positive[positive > 1.0e-9])
+
+    plan = summary["frequency_plan"]
+    assert plan["lambda_min"] <= _smallest_generalized(kernel + 0.02 * term, mass) * (1.0 + 1.0e-9)
+    assert plan["lambda_max"] >= _largest_generalized(kernel + 500.0 * term, mass) * (1.0 - 1.0e-9)
+    assert plan["lambda_min"] < float(positive[0])
+    assert np.all(np.asarray(plan["shifts_per_s"]) > 0.0)
+

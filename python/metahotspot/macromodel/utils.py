@@ -130,7 +130,7 @@ def normalized_operators(K, C, f) -> Operators:
 
 
 # ---------------------------------------------------------------------------
-# per-port spectral bounds
+# spectral bounds for the HTC family
 # ---------------------------------------------------------------------------
 
 EIGENBOUND_SUBSPACE_CAP = 64
@@ -145,7 +145,16 @@ def port_eigenvalue_bounds(
     shift=1.0e-6,
     cap=EIGENBOUND_SUBSPACE_CAP,
 ) -> tuple[float, float]:
-    """Estimate the generalized spectral interval used for one source port."""
+    """Estimate the generalized spectral interval of the bare conduction kernel.
+
+    This is the pre-audit estimator: it sees only ``(K, C)`` and takes the first
+    *positive* eigenvalue of ``K`` as its lower endpoint, so the Neumann
+    constant mode is skipped.  The operator a ROM inverts on an affine HTC box
+    is the Robin family ``K + sum_i h_i H_i``, whose smallest eigenvalue is that
+    lifted constant mode, so plan the family with
+    :func:`box_spectral_interval` and keep this function only as the legacy
+    reference.
+    """
     K = K.tocsc()
     C = C.tocsc()
     c_diag = np.asarray(C.diagonal()).ravel()
@@ -184,6 +193,43 @@ def port_eigenvalue_bounds(
     if not positive.size:
         raise RuntimeError("port_eigenvalue_bounds resolved no positive eigenvalue")
     return float(positive.min()), lambda_max
+
+
+def box_spectral_interval(K, C, boundary_terms, h_ranges) -> tuple[float, float]:
+    """Enclose the generalized spectrum of the whole affine HTC family.
+
+    With ``A(h) = K + sum_i h_i H_i`` and every ``H_i`` positive semidefinite,
+    Loewner monotonicity gives
+
+        K- = K + sum_i h_i^- H_i  <=  A(h)  <=  K+ = K + sum_i h_i^+ H_i
+
+    for every admissible ``h``, hence ``lambda_min(K-, C) <= lambda(A(h), C) <=
+    lambda_max(K+, C)``.  Two eigenproblems, no sampling, no randomness: the
+    returned interval is the spectral plan's admissible range for the family,
+    not for the bare kernel.
+    """
+    K = sp.csc_matrix(K)
+    C = sp.csc_matrix(C)
+    h_ranges = np.asarray(h_ranges, dtype=np.float64)
+    lower = K.copy()
+    upper = K.copy()
+    for term, (h_low, h_high) in zip(boundary_terms, h_ranges):
+        term = sp.csc_matrix(term)
+        lower = lower + float(h_low) * term
+        upper = upper + float(h_high) * term
+    lambda_min = float(
+        spla.eigsh(
+            lower.tocsc(), k=1, M=C, sigma=0.0, which="LM",
+            tol=EIGENBOUND_RTOL, return_eigenvectors=False,
+        )[0]
+    )
+    lambda_max = float(
+        spla.eigsh(
+            upper.tocsc(), k=1, M=C, which="LM",
+            tol=EIGENBOUND_RTOL, return_eigenvectors=False,
+        )[0]
+    )
+    return lambda_min, lambda_max
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +402,7 @@ def build_parametric_basis(
     max_order=MAX_ORDER,
     probe_rounds=PROBE_ROUNDS,
     seed=RANDOM_SEED,
+    spectral_interval=None,
 ):
     """Extract an Extended-FANTASTIC basis for an affine HTC family.
 
@@ -366,6 +413,16 @@ def build_parametric_basis(
     All exact responses are collected in one snapshot matrix for the closing
     SVD.  ``probe_rounds`` repeats the paper's random acceptance test before
     advancing to the next matching point.
+
+    The elliptic matching points come from ONE plan that is valid on the whole
+    HTC box (:func:`box_spectral_interval`), shared by every source: the
+    interval encloses the generalized spectrum of ``K + sum_i h_i H_i`` for
+    every admissible ``h``, which is the family the ROM inverts.
+
+    ``spectral_interval`` replaces that box plan with an explicit
+    ``(lambda_min, lambda_max)`` pair; the pre-audit per-port plan is
+    reproduced by passing the union of :func:`port_eigenvalue_bounds`
+    intervals, which is how the legacy stock baseline is measured.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
@@ -375,10 +432,25 @@ def build_parametric_basis(
     rng = np.random.default_rng(seed)
 
     snapshots = []
-    plans = []
     history = []
     validation_count = 0
     max_accepted_residual = 0.0
+
+    lambda_min, lambda_max = (
+        box_spectral_interval(K, C, boundary_terms, h_ranges)
+        if spectral_interval is None
+        else (float(spectral_interval[0]), float(spectral_interval[1]))
+    )
+    kappa = lambda_max / lambda_min
+    shift_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
+    shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
+    frequency_plan = {
+        "lambda_min": float(lambda_min),
+        "lambda_max": float(lambda_max),
+        "kappa": float(kappa),
+        "shift_count": int(shift_count),
+        "shifts_per_s": shifts.tolist(),
+    }
 
     def full_operator(h_vec, shift):
         A = K + shift * C
@@ -391,24 +463,6 @@ def build_parametric_basis(
         g_norm = np.linalg.norm(g)
         local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
         projected = None
-        lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
-        kappa = lambda_max / lambda_min
-        shift_count = mpmm_elliptic_shift_count(
-            tolerance,
-            lambda_min,
-            lambda_max,
-        )
-        shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
-        plans.append(
-            {
-                "port": int(port),
-                "lambda_min": float(lambda_min),
-                "lambda_max": float(lambda_max),
-                "kappa": float(kappa),
-                "shift_count": int(shift_count),
-                "shifts_per_s": shifts.tolist(),
-            }
-        )
 
         for shift in shifts:
             full_solves = 0
@@ -491,7 +545,7 @@ def build_parametric_basis(
     )
 
     return np.ascontiguousarray(basis), {
-        "per_port_plans": plans,
+        "frequency_plan": frequency_plan,
         "tolerance": float(tolerance),
         "probe_rounds": int(probe_rounds),
         "candidate_count": int(len(snapshots) + validation_count),
