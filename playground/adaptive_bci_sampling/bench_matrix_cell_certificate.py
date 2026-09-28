@@ -3,12 +3,15 @@
 
 After the cheap ``C``-metric scalar was rejected, the surviving statement is the
 matrix one: for every HTC vector ``h`` in the box and every input combination
-``w``, the delivered basis must reproduce the exact A-energy solution, i.e.
+``w``, the delivered basis must reproduce the exact collocated port transfer,
+i.e.
 
     E(h) = R(h)^T A(h)^-1 R(h),   Y(h) = G^T A(h)^-1 G,
-    sup_h lambda_max(E(h), Y(h)) = sup_h sup_w ||x - x_V||_A(h)^2 / ||x||_A(h)^2
+    sup_h lambda_max(E(h), Y(h)) = sup_h sup_w w^T (Y(h) - Y_V(h)) w / w^T Y(h) w
 
-must be small.  On one HTC cell ``Q`` with lower corner ``a`` and upper corner
+must be small.  No square root is taken anywhere: this is the port quantity
+itself.  The equal ``A``-energy state error is a lemma-level reinterpretation of
+the same number and is not reported.  On one HTC cell ``Q`` with lower corner ``a`` and upper corner
 ``b`` the certificate claims, from ``H_i >= 0`` plus Galerkin optimality plus
 matrix convexity of the Bernstein enclosure,
 

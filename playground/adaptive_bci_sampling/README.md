@@ -16,13 +16,9 @@ certify_extraction.py              驱动：设计 + stock 基线 + 证书 + 全
 bench_matrix_cell_certificate.py   单元矩阵证书的对照检查（违反/细化/紧度）
 bench_box_branch_and_bound.py      无富化的盒分支定界与叶细化成本
 bench_pareto_budget.py             (参数点数, SVD cutoff) 的提取预算与认证缺陷
-bench_dynamic_bridge_toy.py        动态桥的人工问题否证
-bench_solver_cost.py               全阶求解成本（算子规模、端口数、库）
-bench_extraction_time.py           提取计时与 AMG-CG 逆作用对比
-bench_stock_time.py                stock 提取器的时间基线
+bench_dynamic_bridge_toy.py        动态桥的人工问题否证（H2/Hankel 一阶反例）
 test_certified_sampling.py         语义测试（证书、Zolotarev、谱区间、计数）
 test_box_frequency_plan.py         盒合法频率计划的回归测试
-test_inexact_moment_theory.py      inexact-moment 桥的语义测试（人工小系统）
 records/                           正面结论 4 份 + 失败路线总表 NEGATIVE_RESULTS.md
 ```
 
@@ -40,6 +36,30 @@ python playground/adaptive_bci_sampling/certify_extraction.py 2.5 \
 cd playground/adaptive_bci_sampling
 PYTHONPATH=<repo>/python:. python -m unittest test_certified_sampling -v
 ```
+
+---
+
+## 0. 术语口径（强制）
+
+研究目标是**端口传递族** `Z(s; mu) = B^T (s M + K + sum_j mu_j H_j)^-1 B` 在**系统范数**
+（FANTASTIC 式冲激响应 / `H2`、Hankel）下的逼近，主代价指标是最小化 `N_FOM := N_RHS`
+（全阶逆作用次数）。全场温度保真不是研究目标，只是证明过程的辅助工具。报告里禁止单独写
+“误差”，至少区分：
+
+```text
+certified whole-box all-input fixed-shift port defect   [PORT-FIXED-S]   lambda_max(Z - Z_V, Z) 的整盒上界
+measured sampled entrywise port step error              [PORT-STEP]      采样 step 响应的实测诊断
+certified whole-box port Hankel error                   [PORT-SYSTEM]    目前不存在，是 P0 的目标
+full-field / A-energy state error                       [STATE-AUX]      仅证明装置与诊断
+N_FOM / N_op / wall time / memory                       [COST]           N_FOM 是主目标，其余单独报告
+```
+
+每个数字还要标注 `port/state`、`fixed-s / system / step`、`entrywise / all-input`、
+`certified / measured`，以及 `absolute / relative`、`pointwise-mu / whole-box`。上面前三个量
+绝不能再出现在同一张表里都叫“误差”。**fixed-real-shift 证书与 system-norm 证书也绝不能混称
+“动态证书”**：本目录的整盒证书只覆盖单个固定实频移（`[PORT-FIXED-S]`），频率轴与 Hankel 的
+整盒保证目前不存在（`[PORT-SYSTEM]`，见第 6 节第 1 条与 `THEORY.md` 的 P0）。完整作用域定义
+与判定标签见 `THEORY.md` 第 0.1 节与 `records/NEGATIVE_RESULTS.md` 的表头。
 
 ---
 
@@ -93,13 +113,15 @@ stock, seed 7（旧计划）        118     36     2.337e-04   1.513e-01   2.449
 
 结论：
 
-1. **在该验证协议下最坏误差更低**：这里的“最坏”指 40 点验证集上、`dt = 5 / 50 / 500`、
-   40 步 BDF1 协议内**观测到的最大值**，不是整个 HTC 盒的最坏情形，也不是 vendor 的
-   Hankel / 时空能量指标。按此口径，确定性 3 点的最坏步进项是 stock 两个种子的
-   1/2 与 1/2.6（2.5 mm）、1/3.1 与 1/2.4（5 mm），最坏稳态项为 1/1.8 与 1/2.8
-   （2.5 mm）、1/3.7 与 1/2.6（5 mm）。证书列同向更紧或持平。
+1. **在该验证协议下最坏实测更低**：表中的 `step` 列是
+   **measured sampled entrywise port step error** `[PORT-STEP]`，即在 40 点验证集上、
+   `dt = 5 / 50 / 500`、40 步 BDF1 协议内**观测到的最大值**，按同一参数的精确稳态结温传递
+   逐项归一。它不是整个 HTC 盒的最坏情形，也不是 vendor 的 port-Hankel / 冲激响应系统范数
+   `[PORT-SYSTEM]`（后者目前只有未决的 P0，见第 6 节第 1 条）。按此口径，确定性 3 点的最坏
+   步进项是 stock 两个种子的 1/2 与 1/2.6（2.5 mm）、1/3.1 与 1/2.4（5 mm），最坏稳态项为
+   1/1.8 与 1/2.8（2.5 mm）、1/3.7 与 1/2.6（5 mm）。证书列同向更紧或持平。
    **本表不支持“达标”**：2.5 mm 确定性设计的步进项 `1.201e-03` 仍高于 1e-3，表中没有任何
-   一行达到 1e-3 动态目标；结论只是“优于这两个 stock 种子”。
+   一行达到 1e-3；结论只是“优于这两个 stock 种子”。
 2. **全阶 RHS 求解数（full-order RHS solves）不再更少**：当前设计对每条频移都用全部已选参数（`plan x points` 的完整
    张量），2.5 mm 需 180 次对 stock 的 152 / 161，5 mm 需 168 对 137 / 138。这里比较的是
    RHS 求解除数（full-order RHS solves）；分解/setup、缓存复用与 RHS 求解是三个不同的
@@ -141,7 +163,7 @@ stock, seed 7（旧计划）        118     36     2.337e-04   1.513e-01   2.449
    2.5 mm 每端口 14 条频移加 DC，故 `4 端口 x 15 x 3 点 = 180` 次全阶求解（5 mm 是
    `4 x 14 x 3 = 168`）。
 
-### 3.2 整盒证书：命题
+### 3.2 整盒证书：命题（`[PORT-FIXED-S]`，单个固定实频移）
 
 固定实频移 `s >= 0`、交付基底 `V`（列正交，来源不限）、盒 `[p_low, p_high]`。记
 
@@ -194,8 +216,9 @@ D_a  = max over Bernstein nodes of  [ block^T Gram(anchor) block ]_aa
   任何 `证书 < 实测` 都会直接报错。
 * **细化与紧度**（`records/MATRIX_CELL_CERTIFICATE.md`，5 mm、设计基底、`s = 0`；
   该记录用的是旧计划）：16 单元/轴、3 阶 jet、块锚下界为 `1.8396e-04`，650 点精确盒
-  最大值 `1.8248e-04`，只高 0.8%；本证书的量是平方量，换算到状态即认证的最坏相对
-  A-能量状态误差 `1.356e-02` 对真实 `1.351e-02`。同一套证书在 2/4/8/16 单元/轴下
+  最大值 `1.8248e-04`，只高 0.8%。这就是端口量本身，**不开平方**：认证的是整盒最坏相对
+  all-input fixed-shift port defect `sup_w w^T (Y - Y_V) w / w^T Y w`，A-能量状态误差不再
+  作为 headline 报告（`[STATE-AUX]`）。同一套证书在 2/4/8/16 单元/轴下
   逐级收紧（局部锚 2 阶：`7.435e+01 -> 2.817e+00 -> 5.860e-02`），且**所有配置的
   Loewner 违反数为 0**。细化两个方向不可互换：固定分割升阶每阶约省 4 倍（8 单元/轴），
   细化分割收益更大，但每个自建锚的单元要付一次 Riesz Gram（5 mm 上 130 次稀疏求解）。
@@ -225,15 +248,18 @@ D_a  = max over Bernstein nodes of  [ block^T Gram(anchor) block ]_aa
 * **测量更正**（原数字撤回，不是方法失败）：`2.61e-2` first-term failure（LU cache 键只
   按 shift 值）、`semigroup_box_bounds`、“一个 Gramian 同时给出两个 all-input 指标”。
 * **仍开放、不是被否证**：先验闭式采样的方案选择（见第 6 节第 7 条），以及频率轴
-  （Hankel、脉冲能量）的整盒证书。
+  `[PORT-SYSTEM]`（port-Hankel、冲激响应）的整盒证书 —— 它是 P0 动态传递定理的对象，
+  不是本目录现有 `[PORT-FIXED-S]` 证书的延伸。
 
 ## 5. 复现与验证
 
-* **31 个语义测试全部通过（0.49 s）**，分三个模块：
+* **26 个语义测试全部通过（0.57 s）**，分两个模块：
   `test_certified_sampling.py`（Bernstein 包络、Zolotarev 闭式界与节点、每群谱区间外包、
   逐点残差证书、单元界上控实测误差、分母单调下界、细化收敛、平移算子族覆盖、贪心可
   复现、求解计数）、`test_box_frequency_plan.py`（盒合法计划的 Loewner 包围与 5 mm
-  回归）、`test_inexact_moment_theory.py`（人工小系统上的 inexact-moment 恒等式）。
+  回归）。已退役的 `test_inexact_moment_theory.py` 服务的路线在 `THEORY.md` 中明确关闭，
+  它里面仍有效的一般事实（Galerkin 端口恒等式、nested space 不保证 H2 单调）分别由
+  `test_certified_sampling.py` 与 `records/DYNAMIC_BRIDGE_TOY.md` 覆盖。
 * **本次两次驱动运行**（第 2 节的数字来源）：
 
 ```text
@@ -263,8 +289,12 @@ PYTHONPATH=<repo>/python:. python -m unittest discover -s . -p "test_*.py"
 
 ## 6. 局限与未决问题
 
-1. **未认证的量**：40 步 BDF1 轨迹误差与频率轴（Hankel、脉冲能量）只有实测；
-   证书覆盖的是给定实频移（`s = 0`，以及 `s = 1/dt` 的算子族）的稳态传递。
+1. **未认证的量**：`measured sampled entrywise port step error` `[PORT-STEP]`（40 步
+   BDF1 协议内的实测 step 响应）与频率轴 `[PORT-SYSTEM]`（port-Hankel、冲激响应）都只有
+   实测。证书覆盖的是**给定实频移**（`s = 0`，以及 `s = 1/dt` 的算子族）的整盒端口传递
+   `[PORT-FIXED-S]`。两者不能混称“动态证书”：前者是采样诊断，后者是单个实移上的整盒陈述，
+   从 fixed-`s` 的平方关系推出动态系统范数误差也平方是**错的**（`records/DYNAMIC_BRIDGE_TOY.md`
+   的一阶反例）。
 2. **浮点**：所有不等式在实数域精确成立；稀疏分解、Gram 与稠密求解是普通浮点，
    报告中显式给出 `floating_point_certified=False`。要做成计算机辅助证明需要
    外向舍入的区间线性代数。
@@ -296,5 +326,6 @@ PYTHONPATH=<repo>/python:. python -m unittest discover -s . -p "test_*.py"
    的，而且是被检查过而不是被假设的）；极点级数对全阶解 `6.84e-07`。未达成的是**采样方案本身**：
    在结温向量上计数无用（只有 `n_src` 行，任何容差下都饱和）；只用从参考点出发的对角射线张成的
    span 会停在约 2% 结温误差上不再下降；未加权的 Gram 会随网格细化抬高计数（要用求和为一的正交
-   权重，加权后 15/25/35 点每轴的计数才一致）。缺口的数学形式见 `THEORY.md` 的 P1「Robin 解流形
-   的 n-width 衰减」。
+   权重，加权后 15/25/35 点每轴的计数才一致）。缺口现在是**采样规模的最优性**：要回答
+   “达到端口系统范数 `[PORT-SYSTEM]` 要求所需的最小 `N_FOM` 是多少”，而不是 state-space
+   的 n-width 速率 —— 后者已按作用域从 `THEORY.md` 的主理论线删除（原 P1）。

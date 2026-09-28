@@ -11,7 +11,11 @@ from the *same* cached snapshots - lowering the cutoff therefore costs no furthe
 full-order solve - and certified on the delivered, box-corrected frequency plan
 shift by shift over the whole box:
 
-    delta_cert(V) = sqrt( max_j max_Q U_{Q,j}(V) ),      sqrt(L*) = sampled exact.
+    delta_cert(V) = max_j max_Q U_{Q,j}(V),             L* = sampled exact.
+
+Both are the relative all-input collocated port defect itself (``[PORT-FIXED-S]``);
+no square root is taken, since the square root is the state-amplitude quantity
+that is no longer reported (``[STATE-AUX]``).
 
 Counting convention, shared with the rest of the repository: one *operator block* is
 one factorization of ``A(h, s)``, and every block serves one right-hand side per
@@ -73,12 +77,12 @@ def certify(kernel, terms, source, ranges, basis, shifts, arguments, mass):
         )
         sweep = certificate.sweep_matrix(arguments.cells, order=arguments.order,
                                          trial=arguments.trial)
-        bound = float(np.sqrt(sweep["worst_relative_energy_bound"]))
+        bound = float(sweep["worst_relative_port_defect"])
         entry = {"bound": bound, "anchors": int(sweep["anchors"]),
                  "cells": int(sweep["cells"]), "seconds": float(sweep["seconds"])}
         if arguments.witness:
-            entry["witness"] = float(np.sqrt(witness_max(certificate, ranges,
-                                                         arguments.witness_cells)))
+            entry["witness"] = float(witness_max(certificate, ranges,
+                                                 arguments.witness_cells))
             worst_witness = max(worst_witness, entry["witness"])
         per_shift[f"{shift:.6e}"] = entry
         worst_bound = max(worst_bound, bound)

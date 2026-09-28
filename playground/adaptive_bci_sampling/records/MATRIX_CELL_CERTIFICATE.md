@@ -24,14 +24,14 @@ For one shift `s`, `A(h) = K + s C + sum_i h_i H_i`, residual
 E(h) = R(h)^T A(h)^-1 R(h),      Y(h) = G^T A(h)^-1 G,
 ```
 
-the exact relative energy defect of the delivered space is
+the exact relative collocated port defect of the delivered space is
 
 ```text
-sup_h lambda_max(E(h), Y(h)) = sup_h sup_w ||x - x_V||_A(h)^2 / ||x||_A(h)^2,
+sup_h lambda_max(E(h), Y(h)) = sup_h sup_w w^T (Y(h) - Y_V(h)) w / w^T Y(h) w,
 ```
 
-and its square root is the relative A-energy error of the worst state, with the
-worst input `w` a 4x4 generalized eigenvector of `(E, Y)`.  On a cell `Q` with
+(its square root is the equal `A`-energy state error, `[STATE-AUX]` and not
+reported), with the worst input `w` a 4x4 generalized eigenvector of `(E, Y)`.  On a cell `Q` with
 lower corner `a` and upper corner `b`, the certificate is
 
 ```text
@@ -77,11 +77,13 @@ cells/axis  anchor  order   bound        bound/exact  median  violations
 
 The last row is the headline: at 16 cells per axis with jet order 3 the bound is
 `1.8396e-04` against the exact `1.8248e-04`, i.e. 0.8 % above the true box
-maximum, and the median cell is 17 % above its own exact value.  In the units of
-the state the quantity is squared, so the certified statement is: the worst
-relative A-energy state error of the delivered basis anywhere in the box at this
-shift is `1.356e-02`, against a true `1.351e-02` (the square root of the two
-numbers above).  The pre-registered gate was "after refinement the cells that
+maximum, and the median cell is 17 % above its own exact value.  In port terms
+the certified statement is: over the whole box at this shift the worst relative
+all-input collocated port defect `sup_w w^T (Y - Y_V) w / w^T Y w` of the
+delivered basis is `1.8396e-04`, against a true `1.8248e-04`.  No square root is
+taken: this is a port quantity, and the A-energy state error is *not* reported
+anywhere (`[STATE-AUX]`, see records/NEGATIVE_RESULTS.md).  The pre-registered
+gate was "after refinement the cells that
 dominate the maximum must be within 10x": the dominating cells are at `1.06x`
 (local anchor) and `1.06x`-`1.62x` (block anchor, order 2/3), so the gate is
 passed with margin.

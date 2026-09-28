@@ -23,6 +23,31 @@
 测量更正        结论来自实测 bug 或定义错位，原数字撤回，不是方法失败
 ```
 
+**每条条目还必须带一个判定作用域标签**，说明它的失败证据是在哪个误差度量下取得的：
+
+```text
+PORT-SYSTEM     H2 / Hankel / 冲激响应系统范数
+PORT-FIXED-S    单个实频移上的 Z(s;mu)
+PORT-STEP       采样 step-response 度量（BDF1 步进 / 观测步响应）
+STATE-AUX       仅全场 / A-能量 / 状态范数
+COST            N_RHS / setup / 墙钟 / 内存
+CORRECTION      实测 bug 或定义错位
+```
+
+**作用域标签的结论上限（本文件最重要的纪律）.** 标着 `PORT-FIXED-S` 或 `PORT-STEP` 的条目
+只证明“该方案在这个固定实移 / 采样步进诊断下失败”。它们**不**证明该方案不可能满足
+port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、同一套基底构造思想在系统范数目标下
+重新采用。把前者读成后者是本文件历史上最需要纠正的逻辑跨越，依据是
+`records/DYNAMIC_BRIDGE_TOY.md` 的一阶反例：fixed-`s` 的同址平方关系**不**推出动态系统范数
+误差也平方。反过来，标着 `PORT-SYSTEM` 的条目（A1、A10、C1、C2、C4）是直接对动态系统范数
+成立的判决。
+
+**STATE-AUX 的从属地位.** 仅凭全场 / A-能量 / 状态范数判据、而没有独立的 port 传递、系统范数
+或成本失败的条目，不能再作为当前目标下的负结果，最多算 `STATE-AUX` 历史结果。本次重审
+（2026-09）逐条核对后，第 1--3 节没有这种条目：每条都含独立的 port 传递、系统范数或成本
+失败。`THEORY.md` 的 state-energy 接受目标与 Robin 解流形 n-width 复杂度命题属于这一类，
+已按作用域从主理论线删除，见 `THEORY.md` 第 0 节。
+
 **两条边界（沿用 GPT 审计确定的规则）**：
 
 * **正文撤回**：原文档陈述不准确、定义写错、范围写大了，但方法本身没有被失败证据否定。这种条目留在 `README.md` / `THEORY.md` 的正文里，写明“旧说法撤回”，**不进本文件**。
@@ -53,13 +78,15 @@
   （引文未写归一化、2019 年误差界论文无法完整核对），在 `THEORY.md` 的 P0 动态传递定理下作为开放缺口跟踪。需要撤回的是文档层面的错误说法：“一个 Gramian 同时给出两个 all-input 指标”为**错**
   （`tr(D^T T D P)` 只给 `tr(E)`），先前的 `sqrt(tr(E)/tr(E0))` 只测四个脉冲能量之和、会掩盖同时激励下的坏组合。参数单元树 + 精确中心解 + 半群 Lipschitz 常数 + Gramian 余项界这一整套机制
   （`semigroup_box_bounds`）因大单元常数按 `1/alpha^2` 放大且未认证整个 Case 1 盒而被移除。
-* **C10 先验闭式参数采样（原编号 C10）**：开放候选，见 `README.md` 第 6 节第 7 条与 `THEORY.md` 的 P1「Robin 解流形的 n-width 衰减」。
+* **C10 先验闭式参数采样（原编号 C10）**：开放候选，见 `README.md` 第 6 节第 7 条。旧记录把它挂在 `THEORY.md` 的 P1「Robin 解流形的 n-width 衰减」上，该命题已按作用域从主理论线删除（state-space 逼近复杂度不再是研究目标）。
 
 ---
 
 ## 1. 认证与误差界路线
 
 ### A1  全局 matrix-fractional Bernstein 残差证书 + 均匀 Neumann 界
+
+**判定作用域.** `PORT-SYSTEM + PORT-FIXED-S + COST`
 
 主张：不细分参数域，用同一张量 Bernstein 基的系数级 Schur 不等式与均匀 Neumann
 余项，在整个 HTC 域证明最终 1e-3 SVD ROM 的 impedance Hankel 与 impulse-energy
@@ -74,6 +101,8 @@
 复现：`probe_uniform_certificate.py --mesh-mm 5 --half-width 0.01 --stock` 等（脚本已退役）。
 
 ### A2  全盒 Taylor jet 参数盒证书（旧成本结构）
+
+**判定作用域.** `PORT-STEP + COST`
 
 **作用域.** 本条只否掉当时那种“每个盒都要全阶中心轨迹与灵敏度、每盒 2.6--16.4 s”的
 **全盒**实现，以及“全局多项式-矩阵分式不等式能给出可用界”的期望。当前路线用的
@@ -93,6 +122,8 @@
 
 ### A3  单元 Neumann/Chebyshev 逆多项式 + 张量 Bernstein 盒（旧加权与旧实现）
 
+**判定作用域.** `COST`
+
 **作用域.** 否掉的是当时的**代价结构**：每个单元的全阶中心求值、旧的 Neumann 加权、旧的
 tensor 实现。这不否定“单元上的多项式 trial + Bernstein 包络”本身 —— 现行的矩阵型单元
 证书仍然使用它。
@@ -111,6 +142,8 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 
 ### A4  Reduced Neumann--Bernstein 残差盒原型
 
+**判定作用域.** `PORT-FIXED-S + COST`
+
 主张：用约化 Neumann 多项式 + 张量 Bernstein 系数 + 解析尾界，在连续二维 HTC 盒上
 认证仓库式欧氏相对残差不超过 1e-3，且每次调用零额外全阶求解、成本低于亚秒门限。
 决定性测量：三阶时 seed 20260805 在秩 49/60/63 上 `11/11` 个频移全部闭合，单元数
@@ -125,6 +158,8 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 
 ### A5  单一全局谱标量的廉价盒残差界
 
+**判定作用域.** `PORT-FIXED-S`
+
 主张：用 `(lambda_min(K-,C) + s)^-1 * R^T C^-1 R`（只需一次稀疏乘法、不需任何逆作用）
 作为联合 (HTC, frequency, input) greedy 的停止证书，认证 1e-3 甚至 1e-4。
 决定性测量：恒等式与包围本身被确认（3 个基底 x 1053 点，Loewner 违反 `0`、逐元违反
@@ -138,6 +173,8 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 
 ### A6  BDF1 输出残差证书（K_min^-1 全局 Gram + 见证空间）
 
+**判定作用域.** `PORT-STEP`
+
 主张：用步进增量作暂态伴随、单次 `K_min^-1` Gram 收缩，给出 SVD 压缩后每个 BDF1 步、
 每个通道的输出误差上界，并据此选点与停止以认证 1e-3。
 恒等式本身成立（`|Y - Yhat| <= sqrt(sum r K(p)^-1 r) * sqrt(sum d K(p)^-1 d)`），但界
@@ -149,6 +186,8 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 复现：记录未给出命令。
 
 ### A7  post-SVD 压缩效应诊断：raw majorant 不能认证交付 ROM
+
+**判定作用域.** `PORT-FIXED-S + PORT-STEP`
 
 原以为可以在 SVD 之前的 raw 快照张成空间上用凸角点二次 majorant 认证最终 ROM。
 决定性测量：同一快照矩阵下 raw 对 post-SVD，2.5 mm 为 92 列 / raw 93 阶 / final 47 阶，
@@ -163,6 +202,8 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 复现：`probe_post_svd.py --mesh-mm 2.5`、`--mesh-mm 1`（脚本已退役）。
 
 ### A8  频率计划谱区间缺陷（已修复）
+
+**判定作用域.** `PORT-FIXED-S + CORRECTION`
 
 生产频率计划曾用裸传导核 K 的广义谱区间，而 ROM 需要在 HTC 盒上求逆的算子谱包含
 被 Robin 提升抬回的 Neumann 常数模。决定性测量：低 HTC 角 `(1.000, 0.992)` 的 SISO
@@ -180,6 +221,8 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 
 ### A10  频率轴（Hankel）整盒证书
 
+**判定作用域.** `PORT-SYSTEM`
+
 把 README 第 3.2 节的锚定 Riesz 论证搬到 `W(p,omega) = A(p) + omega*C` 上。实测
 （5 mm）传递误差上确界 `5.81e2`，而整模型 Hankel 下界只有 `0.185`，相对界 `3.1e3`。
 原因是锚点 Riesz 算子必须同时上控整个 HTC 范围（四个数量级）与频率单元，Loewner 比率
@@ -194,6 +237,8 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 
 ### B1  先验闭式点集（tensor Chebyshev、二维 Padua、嵌套 Clenshaw--Curtis Smolyak）
 
+**判定作用域.** `PORT-STEP + PORT-FIXED-S`
+
 主张：参数样本可先验、确定性地选取，且张量 Chebyshev 插值对全纯响应的指数衰减界经
 未截断快照空间继承，从而给出无随机种子的可认证提取器。
 决定性测量：完整闭式 coercivity 界需要张量 63 阶（4096 个参数点）才能认证 0.1% 相对
@@ -206,6 +251,8 @@ alone does neither）。
 
 ### B2  tensor corners（只用四个 HTC 角点）
 
+**判定作用域.** `PORT-STEP`
+
 主张：覆盖参数箱的四个角点即可代表整个箱内的响应。
 决定性测量：4 点 / 16 个 source RHS / 阶 9，最坏 junction 误差 `0.17265%`，而三个点的
 log-Padua degree 1 只有 `0.00553%`；角点响应张成更低秩的空间并漏掉重要的混合方向。
@@ -213,6 +260,8 @@ log-Padua degree 1 只有 `0.00553%`；角点响应张成更低秩的空间并�
 复现：同 B1。
 
 ### B3  log-Padua degree 2 与嵌套 level-3 Smolyak（加密确定性采样应带来单调改善）
+
+**判定作用域.** `PORT-STEP`
 
 决定性测量：全 12 个位移下 degree 2 的 `0.19403%` **差于** degree 1 的 `0.09239%`，
 SVD 保留 45 而非 47 个模态；只把 closing cutoff 收紧到 1e-4 后阶数升到 67--68、误差
@@ -223,6 +272,8 @@ not the cause），失效环节是 closing SVD 压缩。
 复现：同 B1。
 
 ### B4  raw tensor Zolotarev 计数作为采样规模规则
+
+**判定作用域.** `PORT-FIXED-S`
 
 主张：有限区间 Zolotarev 理论的闭式点位与先验 resolvent 计数（8 x 7 = 56）可直接作为
 提取器的采样规模与放置规则。
@@ -236,6 +287,8 @@ not the cause），失效环节是 closing SVD 压缩。
 
 ### B5  Zolotarev-seeded weak greedy 的停止规则（有限候选网格证书）
 
+**判定作用域.** `PORT-FIXED-S`
+
 最强结果：2.5 mm 用 5 个参数点 / 20 个 source RHS / 阶 21，41x41 候选网格最坏相对证书
 `3.882e-6`；1 mm（122400 单元）同样 5 点 / 阶 21，候选网格证书 `3.523e-5`，场规模从
 9072 涨到 122400 单元都不增加选点数，全阶解从约 150 降到 20。
@@ -248,6 +301,8 @@ not the cause），失效环节是 closing SVD 压缩。
 
 ### B6  seed + 排名最高的单个切角（2 个 HTC 点）
 
+**判定作用域.** `PORT-STEP`
+
 决定性测量：96 个 dynamic RHS、阶 45，12 点与 70 点 holdout 最坏 step transfer 均为
 `2.704e-3`，比 stock 差（seed 20260805 `1.757e-3` / 126 RHS，seed 7 `1.924e-3` /
 127 RHS）；被 seed + 前两个切角（144 RHS、阶 48、`6.189e-4`）取代。
@@ -256,6 +311,8 @@ not the cause），失效环节是 closing SVD 压缩。
 （脚本已退役）。
 
 ### B7  seed + 三个切角（4 个 HTC 点）
+
+**判定作用域.** `PORT-STEP`
 
 决定性测量：4 点 / 阶 48，12 点 holdout 最坏 step `7.302e-4`，比三点（三点预算的
 `6.189e-4`）更差；两个最终空间都是阶 48，但三点基投影到四点空间之外的 Frobenius 范数
@@ -266,6 +323,8 @@ individual transient errors are not guaranteed to improve as snapshots are added
 
 ### B8  BDF1 输出残差界 greedy
 
+**判定作用域.** `PORT-STEP + COST`
+
 决定性测量：4 个 HTC 点 / 192 个 dynamic RHS，12 点 holdout `7.302e-4`；选择 + 提取
 共 `44.32 s`（对比三点顶点规则的端到端 `10..11 s`），而第四阶段的误差界仍为 `1.738e-2`，
 远高于 1e-3，无法停止。
@@ -273,6 +332,8 @@ individual transient errors are not guaranteed to improve as snapshots are added
 复现：记录未给出命令。
 
 ### B9  conditional Zolotarev 暴露边规则
+
+**判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
 主张：按 Massei--Robol 定理在暴露边 `p1 = p1_max` 上最小化一维场 resolvent 比。
 决定性测量：三点预算 / 144 个 dynamic RHS / 阶 46，12 点 holdout 最坏 step
@@ -284,6 +345,8 @@ resolvent 比会把快照推离主导归一化输出的角点。
 
 ### B10  四顶点凸二次 majorant 作为选择规则/误差量
 
+**判定作用域.** `PORT-FIXED-S`
+
 决定性测量：全局 majorant 极悲观 —— 单端口二维二次的特征值约 `8.55e4 / 2.09e2`，
 而种子处精确局部 Ritz Hessian 只有 `7.73e1 / 1.86e-3`，主方向相反。它只对含 `X(p0)`
 的**未压缩**稳态快照空间成立，而动态提取器采样正频移并施加 1e-3 全局 SVD，交付空间
@@ -294,6 +357,8 @@ resolvent 比会把快照推离主导归一化输出的角点。
 复现：`probe_tangent_corners.py 2.5 --tolerance 1e-3 --maximum-points 3`（脚本已退役）。
 
 ### B11  场残差 greedy（1x1 Zolotarev 种子 + 9x9 候选网格）
+
+**判定作用域.** `PORT-FIXED-S + PORT-STEP`
 
 决定性测量：tol 1e-3 用 140 RHS / 阶 44 / `11.25 s`，完成残差 `8.04e-4`、step
 `4.83e-5`、transfer `1.44e-3`（对 stock 的 `1.76e-3` 改善约 18%）；tol 1e-4 用
@@ -308,6 +373,8 @@ entrywise 失败直接否掉）＋ 界太松（预 SVD 残差界本身合法，�
 
 ### B12  Zolotarev 2x2 种子 + 同样的场残差 greedy
 
+**判定作用域.** `PORT-FIXED-S + PORT-STEP`
+
 决定性测量：tol 1e-3 为 227 RHS / 阶 45 / `15.60 s`、transfer `1.83e-3`；tol 1e-4 为
 330 RHS / 阶 64 / `24.59 s`、`2.79e-4`。两轮的 transfer 都劣于 1x1 臂（`1.44e-3`、
 `1.26e-4`），RHS 与时间更高。
@@ -315,6 +382,8 @@ entrywise 失败直接否掉）＋ 界太松（预 SVD 残差界本身合法，�
 复现：同 B11。
 
 ### B13  固定 Zolotarev 4x4 张量替代随机 HTC 循环
+
+**判定作用域.** `COST`
 
 决定性测量：2.5 mm @1e-3 为 768 个 full source RHS / 阶 45 / `37.37 s`，worst transfer
 `1.59e-3`，对 stock 的 `1.76e-3` 只改善约 11%，却用 6.1 倍 RHS 与 4.4 倍提取时间；
@@ -327,6 +396,8 @@ are claimed。
 
 ### B14  候选网格 17x17
 
+**判定作用域.** `PORT-STEP`
+
 决定性测量：选出 128 RHS（比 9x9 的 140 少）/ 阶 44 / 完成残差 `9.45e-4` / `14.89 s`，
 但 holdout transfer `1.58e-3` **劣于** 9x9 的 `1.44e-3`；更密的网格改变贪心路径，
 两种情况的最坏 transfer 参数都是物理角点 `(10000,1)`。
@@ -335,6 +406,8 @@ are claimed。
 （脚本已退役）。
 
 ### B15  场残差 greedy + 收紧 closing SVD cutoff
+
+**判定作用域.** `PORT-STEP + COST`
 
 决定性测量：tol 1e-3 + cutoff 1e-5 得到 140 RHS / 阶 84 / `11.14 s` / step `3.45e-7` /
 transfer `5.49e-6`；tol 1e-4 + cutoff 1e-5 为 222 RHS / 阶 92 / `18.66 s` / `2.38e-6`，
@@ -346,6 +419,8 @@ decisive for the final error。
 一族运行（脚本已退役）。
 
 ### B16  稳态输出 greedy 直接用于动态四端口频移压缩 ROM
+
+**判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
 决定性测量：1e-3 臂选 5 点 / 260 RHS / 阶 47 / `18.95 s`，是那次 9x9 运行中唯一在全
 cutoff 下通过全部 step transfer 的臂（`9.719e-4`），但最坏 steady transfer
@@ -361,6 +436,8 @@ compressed frequency-shifted ROM）；稳态界也不界定整个瞬态，有限
 
 ### B17  稳态输出 greedy + 17x17 候选网格
 
+**判定作用域.** `PORT-STEP`
+
 决定性测量：仍选 5 点 / 260 RHS / 阶 47，选点证书 `3.81e-6`，但最坏观测 step
 `1.003e-3` **略高于** 1e-3（9x9 为 `9.719e-4`），最终稳态网格证书 `5.36e-3`，
 289 个候选中 183 个未解决。
@@ -370,6 +447,8 @@ changing the candidate grid。
 
 ### B18  稳态输出 greedy + 收紧 closing cutoff
 
+**判定作用域.** `PORT-STEP + COST`
+
 决定性测量：目标 1e-3 + cutoff 1e-4 得到 260 RHS / 阶 70 / `20.10 s`、稳态网格证书
 `1.64e-4`；目标 1e-4 + cutoff 1e-5 为 320 RHS / 阶 96 / `23.59 s`、`5.06e-6`。阶数从
 47 升到 70 再升到 96，且这些行改变了 closing 阈值，不构成与 stock 的等 cutoff 对比。
@@ -378,6 +457,8 @@ guaranteed dynamic ROM。
 复现：对应的 `bridge_transient_svd_1e4.json` / `_svd_1e5.json`（脚本已退役）。
 
 ### B19  八组 HTC 的 17 点低频面设计
+
+**判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
 决定性测量：304 个 full RHS / 阶 56 / `8.01 s`，最坏 step entry `8.2647e-4`（通过
 1e-3 有限时间目标），比 seed 20260805（466 RHS / 阶 51 / `28.98 s` / `2.2577e-3`）
@@ -389,6 +470,8 @@ guaranteed dynamic ROM。
 
 ### B20  八组 HTC：仅在单个 Zolotarev 种子处加 DC
 
+**判定作用域.** `PORT-STEP + PORT-FIXED-S`
+
 决定性测量：308 次求解 / 阶 56 / `8.22 s`，292 个验证参数上最坏 step `6.2203e-4`、
 最坏 steady `4.5643e-3`（未过 1e-3）；三种设计中只有把 DC 铺满 bottom 面（372 RHS /
 阶 60 / `9.36 s`，step `6.2230e-4`、steady `5.6313e-4`）才把稳态压到 1e-3 以下。
@@ -396,6 +479,8 @@ guaranteed dynamic ROM。
 复现：`explore_frequency_faces.py --include-dc --compare-seed-dc`（脚本已退役）。
 
 ### B21  多组数早期探索：全局稳态切向风险排名的 5 点，与欠分辨暴露面加密
+
+**判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
 决定性测量：5 点排名在 4 组最坏瞬态 `8.255e-4`、6 组 `9.805e-4`，到 8 组升到
 `8.662e-3` 而失效；8 组的欠分辨七点面为 `7.681e-2`，加两个棋盘格点后仍只有
@@ -406,6 +491,8 @@ workspace 重置中丢失”是证据质量注释，不是分类。
 复现：记录未给出这些初步运行的命令。
 
 ### B22  两组 Case 1：低频段三点面（80 解）与三切点铺满全部频移（144 解）
+
+**判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
 决定性测量：80 解版为 70 参数上最坏 step `7.9102e-4`（通过），但最坏 steady
 `3.4789e-3`（70 参数）/ `4.3345e-3`（359 评估，最坏点 `(10000, 17.7828)`）未过 1e-3；
@@ -418,6 +505,8 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 
 ### B23  两组 Case 1：三低频点面 + 仅种子处 DC（84 解）
 
+**判定作用域.** `PORT-STEP + PORT-FIXED-S`
+
 决定性测量：70 点验证集上看似达标（最坏 step `8.2083e-4`），但在 70 点 + 17x17 网格
 共 359 个评估上实际为 `1.0378e-3`（最坏点 `(10000, 17.7828)`）；65 点/边的高 HTC 边
 审计 200 个评估上更达 `1.0454e-3`。三处全 DC 的 92 解版在同样集合上是
@@ -427,6 +516,8 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 复现：`explore_two_group_frequency_faces.py --grid 17`、`--edge-grid 65`（脚本已退役）。
 
 ### B24  1 mm 上用稀疏直接 LU 做谱准备与验证参考
+
+**判定作用域.** `COST`
 
 决定性测量：直接 LU 版谱准备 `101.03 s`（峰值约 `4.37 GB`），总提取 `138.29 s`，
 比 stock 的 `67.95 s` 更慢（尽管解更少）；单次 1 mm 稀疏 LU 分解约 `47 s` / `4 GB`。
@@ -443,6 +534,8 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 ## 3. 压缩、缺陷传播与 inexact-moment 路线
 
 ### C1  inexact-moment 动态桥
+
+**判定作用域.** `PORT-SYSTEM`
 
 主张：把 inexact Galerkin moments 经“最小对称邻近 SPD 系统 -> 局部精确 Hermite moments
 -> 三项 H2 界”接到 FANCTASTIC 动态误差定理，相对 H2 误差不超过
@@ -461,6 +554,8 @@ QR 之后的小稠密 SVD。
 
 ### C2  在交付基上实测桥量裕度（判决实验）
 
+**判定作用域.** `PORT-SYSTEM`
+
 决定性测量：`sup_h delta(h)` 在管线列数下无法便宜地变小 —— `delta / norm(B)` 达
 `8.1 .. 5.1e1`（stock）与 `5.2e4 .. 2.0e5`（design），`delta / lambda_min` 达
 `2.5e5 .. 9.3e6` 甚至 `1.3e9 .. 1.3e11`；`sup_h d_WV(h)` 在交付基上恒零、在 pre-SVD span
@@ -474,6 +569,8 @@ QR 之后的小稠密 SVD。
 
 ### C3  LU cache 测量 bug（INEXACT_RK_DEFECT_CASE1.md 的更正段）
 
+**判定作用域.** `CORRECTION`
+
 原报告：ideal local exact-moment 空间 U 在 `(0.99999, 118.58)` 的相对 H2 误差
 `2.61e-2`，据此判定缺陷传播桥“第一项就失败”。更正后：同一角上 U 的真实误差是
 `2.8e-6`（比交付 ROM 好 117 倍），全网格 U 最差 `3.8e-4`，四个共享同一频率计划的基底上
@@ -486,6 +583,8 @@ HTC 点之后的所有点都在用别的点的分解。
 
 ### C4  逐 shift 加性 defect 预算
 
+**判定作用域.** `PORT-SYSTEM`
+
 更正后仍然成立的判决：该加性预算被否，不是因为第一项失败，而是因为**太松** ——
 `sum_k c_k` 稳定高估联合缺陷 gap `1.3..25` 倍、高估它本要界的交付误差 `1.2..22` 倍；
 在固定 h 下唯一既适定又占主导的项是 pre-SVD -> delivered 的压缩（四角 `38..368` 倍，
@@ -496,6 +595,8 @@ HTC 点之后的所有点都在用别的点的分解。
 复现：同 C3。
 
 ### C5  active-set 原型：合成先行 + 真实 Case 1 验证
+
+**判定作用域.** `COST`
 
 **合成先行（20/40/80 未知数人工模型）.** 最终上界在全部 12 个 shift/size 组合上都超过独立
 21x21 稠密探针的观测绝对误差；新算子 `5..6` 个、RHS 解 `10..12` 次，而同一组参数的全张量
@@ -515,6 +616,8 @@ exact-map oracle 每次迭代、每个 shift 都重建 shift 相关的稀疏 LU 
 
 ### C7  在未改动的 stock 最终基上对连续 HTC 箱做残差认证（零新增快照）
 
+**判定作用域.** `PORT-FIXED-S`
+
 决定性测量：两个种子的四个端口在低 HTC 角全部超过 1e-3（最差 `1.5582e-2`，
 seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.3135e-3`），
 而直接范数与 Gram 表达在同一批点上一致到 `5.0e-9` 与 `6.6e-11`，所以违反不是约化求值的
@@ -525,6 +628,8 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 复现：`bench_reduced_residual_stock.py --mesh 5 --grid 1`（及 `--grid 9`）
 
 ### C9  低秩跨边界耦合（参数无关截断 SVD + 轴流形）
+
+**判定作用域.** `PORT-FIXED-S + COST`
 
 最强结果：轴张成的精确恒等式在真实模型上被数值确认（相对差 `3.8e-16` 与 `1.3e-15`）；
 只把 `Phi_12` 换成 rank-4 近似时，五个参数点上的最大相对 DC 传递差为 `3.01e-5` (5 mm) /
@@ -543,8 +648,9 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 
 该路线是**开放候选，不是失败路线**，因此不再作为条目留在本文件。已被验证的部分
 （Woodbury 在 ONE 参数处精确给出整个参数族、射线极点快速求值器、已知的三个计数陷阱）
-连同实测数字记在 `README.md` 第 6 节第 7 条；缺口的数学形式记在 `THEORY.md` 的
-P1「Robin 解流形的 n-width 衰减」。
+连同实测数字记在 `README.md` 第 6 节第 7 条。它原先挂在 `THEORY.md` 的 P1「Robin 解
+流形的 n-width 衰减」上，该命题已按作用域从主理论线删除：采样规模的最优性现在应由
+`N_FOM` 与端口系统范数的代价结构回答，而不是由 state-space n-width 速率回答。
 
 ---
 
@@ -579,9 +685,8 @@ exact_error.py              精确参数映射与误差见证（全阶对照）
 zolotarev.py                有限区间 Zolotarev 规则与每群谱区间
 certify_extraction.py       驱动：设计 + stock 基线 + 证书 + 全阶验证
 bench_box_branch_and_bound.py / bench_matrix_cell_certificate.py /
-bench_pareto_budget.py / bench_dynamic_bridge_toy.py / bench_solver_cost.py /
-bench_extraction_time.py / bench_stock_time.py
-test_certified_sampling.py / test_box_frequency_plan.py / test_inexact_moment_theory.py
+bench_pareto_budget.py / bench_dynamic_bridge_toy.py
+test_certified_sampling.py / test_box_frequency_plan.py
 records/BOX_BRANCH_AND_BOUND.md / MATRIX_CELL_CERTIFICATE.md / PARETO_BUDGET.md /
 DYNAMIC_BRIDGE_TOY.md
 ```

@@ -4,7 +4,7 @@
 
 * **已证**：下面给出完整证明，只依赖标出的假设。
 * **已引用**：依赖外部定理，给出出处与本文件用到的形式。
-* **未证**：真实缺口，第 3 节列出并说明缺在哪一步。
+* **未证**：真实缺口，第 2 节列出并说明缺在哪一步。
 
 本文件证明的是**数学陈述**；代码是否实现这些陈述，靠 `certify_extraction.py` 的整盒审计与
 单元测试核对，那是数值核验，不构成证明。两者不可互相替代。
@@ -54,6 +54,41 @@ K_ij <= 0 (i != j),   H_i = diag(a_i) 且 a_i >= 0 逐元,   G >= 0 逐元.
 这三条对 Galerkin 恒等式与 Loewner 阶论证都不是必需的。注意一般 FEM 的边界质量阵只保证
 `H_i >= 0`，其非对角元可以非零：那足以支撑 Loewner 单调性，但**不足以**支撑命题 3 的逐元
 传递单调性，所以前者不能替后者作保。
+
+### 0.1 研究作用域与误差口径（先读）
+
+**研究目标是端口传递族** `Z(s; mu) = B^T (s M + K + sum_j mu_j H_j)^-1 B` 在**系统范数**下的
+逼近 —— 即 FANTASTIC 式的输入-输出保证（冲激响应 / `H2`、Hankel）—— 代价指标是最小化
+`N_FOM := N_RHS`（全阶逆作用次数）。**全场温度保真不是研究目标**，只是证明过程中的辅助工具。
+
+同址恒等式
+
+```text
+Z - Z_V = E^T A E = R^T A^-1 R >= 0
+```
+
+说明端口认证可以比状态认证宽松得多：`lambda_max(Z - Z_V, Z)` 同时等于某个状态 A-能量相对
+误差的**平方**。这个状态解释只作为 lemma / 证明装置保留，**不得**当作 headline 指标、接受
+判据或问题难度度量。
+
+作用域标签（本文件与 `records/NEGATIVE_RESULTS.md` 共用）：
+
+```text
+PORT-SYSTEM   H2 / Hankel / 冲激响应系统范数     研究目标
+PORT-FIXED-S  单个实频移上的 Z(s; mu)            当前整盒证书的对象
+PORT-STEP     采样 step-response 度量             实测诊断，未认证
+STATE-AUX     全场 / A-能量 / 状态范数            仅证明装置与诊断
+COST          N_FOM / N_op / 墙钟 / 内存          代价指标
+```
+
+`N_FOM := N_RHS`（全阶逆作用次数）是主优化目标；`N_op`（不同全阶算子 / setup 次数）、墙钟与
+内存单独报告，不要用一个“求解次数”笼统概括三者。**fixed-real-shift 证书与 system-norm 证书
+绝不能混称“动态证书”**：前者是本文件的命题 1/5/5M，后者是本节的 P0，两者之间目前没有定理。
+
+按这个作用域，两个旧主理论对象已删除：**state-energy 作为共同接受目标**（原 P0 的第二条
+定理）与 **Robin 解流形 n-width 逼近复杂度**（原 P1）。前者不是研究目标；后者研究的是状态
+Hilbert 空间中的逼近复杂度 `d_n(M)`、`M = {A(p,s)^-1 G w}`，已经不是本问题需要的复杂度对象
+（现在需要的是“达到端口系统范数要求所需的信息量”，见 P0 与 P1 BCI 端口嵌入定理）。
 
 ---
 
@@ -182,7 +217,12 @@ K + sC + sum_i p_i H_i <= Gamma K + Gamma sC + Gamma sum_i p_i^- H_i = Gamma A_-
 
 ---
 
-### 命题 4b（代理贪心 ⇒ 固定 Hilbert 空间弱贪心）—— 缺前提
+### 命题 4b（代理贪心 ⇒ 固定 Hilbert 空间弱贪心）—— 缺前提 `[STATE-AUX]`
+
+**作用域.** 本命题的逼近误差 `d_-` 是 `A_-`-能量范数下的**状态**逼近误差，它的消费者是
+state-space 复杂度（速率）问题；该问题已按 0.1 的作用域退出主理论线。命题本身仍然正确，
+保留为设计依据（它给出的“单元局部锚点才让速率常数非空”正是 B&B 用单元局部 Riesz 锚点的
+理由），但**不得**用它为端口系统范数的接受判据作保。
 
 **陈述.** 对单个响应向量 `x(p) = A(p,s)^-1 g`，记固定空间 `V` 在 `A_-` 范数下的最佳逼近误差
 
@@ -377,7 +417,7 @@ A(p^(i))^-1 - A(p^(i-1))^-1 = -(p_i - q_i) A(p^(i))^-1 H_i A(p^(i-1))^-1,
 ## 2. 未证的数学缺口
 
 七项旧清单里的其余项目或者已闭合、或者属于工程实现、或者已是负结果，都不要放进本节（见
-第 3 节）。真正剩下的缺口是四个。
+第 3 节）。真正剩下的缺口是三个。
 
 ### P0 动态传递定理（Dynamic transference theorem）
 
@@ -388,15 +428,21 @@ matching 频移上 positive-real resolvent 的缺陷
 delta_j(h)   (对 (B(h) + sigma_j I)^-1 b),      delta_star = max_j sup_h delta_j(h).
 ```
 
-需要**两条独立**的定理：
+需要一条**端口系统范数**定理：
 
 ```text
 Hankel:      E_Hankel(V) <= gamma_H(Sigma) + C_H(Sigma) delta_star,
-state-energy: E_state(V) <= gamma_S(Sigma) + C_S(Sigma) delta_star.
 ```
 
-两者都要满足 vendor 目标，故最终可接受的 matching 容差是
-`delta_req = min(delta_req,H, delta_req,S)`。**不要合并成一个 `Phi_Sigma`。**
+它必须满足 vendor 的 `||Delta Z||_Hankel < 2 eps` 目标，故可接受的 matching 容差是
+`delta_req = delta_req,H`。**不要把它合并成一个 `Phi_Sigma`。**
+
+`[STATE-AUX]` 历史上这里并列了第二条定理
+`E_state(V) <= gamma_S(Sigma) + C_S(Sigma) delta_star`。它已按 0.1 的作用域删除：全场温度
+保真不是研究目标，状态半群只作为**证明中间量**出现（
+`(B + t I)^-1 -> functional calculus / Laplace--Stieltjes -> exp(-B tau) ->` 冲激响应与
+Hankel 核），不进入接受判据，也不再是 `delta_req` 的第二项。**“状态逼近不够好”绝不能作为
+端口 ROM 的否决理由。**
 
 **当前已知的部分.** 精确 matching 点骨架已经给出一个 positive-real 逼近项 `rho_Sigma`
 （向量重构分析另给出稳定因子 `K_vec`），存活的结构是
@@ -408,8 +454,8 @@ delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_star,     sup_t gamma_Sigma(t) = 
 玩具反例证明“只依赖 matching 缺陷的一般二次桥”是错的，存活路线是**对 `delta_star` 线性**。
 
 **缺的那一步.** `rho_Sigma` 与 `K_vec` 控制的是 positive-real resolvent 逼近，它们还不是
-`C_H / C_S / gamma_H / gamma_S`。缺的是一个从 positive-real resolvent 控制到两条时域算子范数
-的传递定理。自然路线是
+`C_H / gamma_H`。缺的是一个从 positive-real resolvent 控制到**端口**时域系统范数（冲激响应
+矩阵的 `H2` / Hankel）的传递定理。自然路线是
 
 ```text
 (B + t I)^-1  ->  functional calculus / Laplace--Stieltjes 表示  ->  exp(-B tau)
@@ -419,7 +465,7 @@ delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_star,     sup_t gamma_Sigma(t) = 
 它保留 SPD、自伴、共址、Stieltjes 结构。虚轴不是首选路线：`B + i omega I` 非 SPD，matching
 点证书用的 Galerkin 能量极小化论证在虚轴上不直接成立，那里只作 diagnostic。
 
-**判据.** 只有给出显式可算常数、并在整个 HTC 盒上一致地满足两条 vendor 不等式才算闭合。
+**判据.** 只有给出显式可算常数、并在整个 HTC 盒上一致地满足端口 vendor 不等式（`||Delta Z||_Hankel < 2 eps`）才算闭合。
 
 ### P0/P1 B&B 证书一致性与有限终止
 
@@ -442,26 +488,6 @@ diam(Q) -> 0  =>  U_Q(V) - sup_{p in Q} delta(p; V)^2 -> 0.
 锚点”的策略无法证明有限终止。
 
 **判据.** 在给定的细分策略下，严格真余量蕴含有限步认证终止。
-
-### P1 Robin 解流形的 n-width 衰减
-
-**要证的陈述.** 对 Robin 参数流形
-
-```text
-M = { A(p,s)^-1 G w : p in P, norm(w) = 1 }
-```
-
-给出 Kolmogorov `n`-width 的定量衰减估计（例如 `d_n(M) <= C exp(-c n^alpha)`）或任何足以
-约束样本/基规模的显式速率。
-
-**当前已知的部分.** 命题 4b 一旦满足其算法前提，就能把已知的 n-width 速率传递到弱贪心收敛
-速率。分段常数 **diffusion** 系数的强指数结果不自动适用于 Robin **边界**算子。
-
-**缺的那一步.** 需要 Robin 特定的逼近定理；可行路线是分析 `A_ref^-1 B_boundary` 一类算子的
-紧性与奇异值衰减，即不相交 Robin patches 的椭圆边值到体量的低秩结构。
-
-**判据.** 在与仓库模型一致的假设下证明显式 n-width 衰减，并能翻译成样本数或全阶求解数的
-定量界。**这是速率/复杂度定理，不是正确性缺口。**
 
 ### P1 BCI 边界端口嵌入定理
 
@@ -524,7 +550,9 @@ F^T A^-1 F - F^T X_V = R_F^T A^-1 R_F >= 0,
   `eps_{2n}(F) <= 2 gamma^-1 d_n(F)`；Binev 等, *SIAM J. Math. Anal.* 43(3):1457--1472
   (2011), DOI `10.1137/100795772` 给出同一结论并附常数。同文 Theorem 4.1 指出：**由样本
   元素张成的子空间一般不可能达到 n-width 速率**，所以不存在 `eps_n <= C d_n` 形式的结论。
-  调用前必须核对命题 4b 的算法前提（连续流形、取极大方式）。
+  调用前必须核对命题 4b 的算法前提（连续流形、取极大方式）。`[STATE-AUX]` 这条速率传递
+  服务的是 state-space 复杂度问题，已按 0.1 的作用域退出主理论线；保留为设计依据，不作为
+  端口系统范数的接受判据。
 * **估计量驱动的贪心的速率条件**：Buffa, Maday, Patera, Prud'homme, Turinici,
   *ESAIM M2AN* 46(3):595--603 (2012), DOI `10.1051/m2an/2011056`, Thm 3.1：达到指数速率要求
   n-width 衰减率 `beta > log(1 + M / alpha_coer)`——**coercivity 下界越差，要求的衰减率越高**。

@@ -20,11 +20,11 @@ Two modes:
              complement Q.  Report the matching defects delta_* of V_theta and the
              relative dynamics perturbation between the two ROMs,
 
-                 e_H2    = || H_U - H_{V_theta} ||_H2 / || H ||_H2,
-                 e_state = || U e^{-B_U t} f_U - V_theta e^{-B_V t} f_{V_theta}
-                             ||_L2(0, inf; B) / || e^{-B t} f ||_L2(0, inf; B).
+                 e_H2     = || H_U - H_{V_theta} ||_H2 / || H ||_H2,
+                 e_Hankel = || H_U - H_{V_theta} ||_Hankel / || H ||_Hankel.
 
-             Both are exact (Lyapunov), never a frequency grid.  The verdict is
+             Both are exact (Lyapunov), never a frequency grid, and both are
+             port-level system-norm quantities.  The verdict is
              the local exponent of e_H2 against delta_*: one means the quadratic
              Phi_Sigma is refuted on this instance, two means it survives.
 
@@ -174,26 +174,6 @@ def difference_hankel(left_generator, left_source, right_generator, right_source
                        np.concatenate([left_source, -right_source]))
 
 
-def state_impulse_energy(b_matrix, f_vector, space, other) -> float:
-    """||W e^{-B_W t} f_W - W' e^{-B_W' t} f_W'||_L2(0, inf; B) over ||e^{-B t}f||.
-
-    The numerator is one Lyapunov solve on the block system that carries both
-    semigroups; the denominator is the same quantity for the full model.
-    """
-    left = -(space.T @ b_matrix @ space)
-    right = -(other.T @ b_matrix @ other)
-    left_source, right_source = space.T @ f_vector, other.T @ f_vector
-    embedding = np.hstack([space, -other])
-    weight = embedding.T @ b_matrix @ embedding
-    joint = block_diag(left, right)
-    gramian = solve_lyapunov(joint.T, -weight)
-    generator = np.concatenate([left_source, right_source])
-    numerator = float(generator @ gramian @ generator)
-    reference = solve_lyapunov(-b_matrix.T, -b_matrix)
-    denominator = float(f_vector @ reference @ f_vector)
-    return math.sqrt(max(numerator, 0.0) / denominator)
-
-
 def polynomial_order(delta, error, floor=1e-12) -> float:
     """Local exponent of error against delta over the smallest rotations.
 
@@ -254,7 +234,6 @@ def rotation_rows(arguments) -> list[dict]:
                         hankel = difference_hankel(-reduced_b, reduced_f, -exact_b, exact_f) / reference_hankel
                         total = difference_h2(-reduced_b, reduced_f, -b_matrix, f_vector) / reference_h2
                         delta = float(matching_defects(b_matrix, f_vector, shifts, space).max())
-                        error_state = float(state_impulse_energy(b_matrix, f_vector, exact, space))
                         totals[branch] = total
                         branch_rows[branch] = {
                             "mode": "rotation",
@@ -269,7 +248,6 @@ def rotation_rows(arguments) -> list[dict]:
                             "branch": branch,
                             "delta_star": delta,
                             "rel_h2_UV": float(error_h2),
-                            "rel_state_UV": error_state,
                             "rel_hankel_UV": float(hankel),
                             "rel_h2_to_true": float(total),
                             "rel_h2_of_U": float(baseline_h2),
@@ -277,7 +255,6 @@ def rotation_rows(arguments) -> list[dict]:
                             "h2_over_delta2": float(error_h2 / delta**2),
                             "hankel_over_delta": float(hankel / delta),
                             "hankel_over_delta2": float(hankel / delta**2),
-                            "state_over_delta": float(error_state / delta),
                             "K_sample": None,
                             "K_vec": None,
                             "rho": None,
@@ -289,8 +266,8 @@ def rotation_rows(arguments) -> list[dict]:
                         row["excess_over_delta"] = float(excess / row["delta_star"])
                     block.extend(branch_rows.values())
                 orders = {}
-                for name, key in (("h2", "rel_h2_UV"), ("state", "rel_state_UV"),
-                                  ("hankel", "rel_hankel_UV"), ("excess", "total_excess")):
+                for name, key in (("h2", "rel_h2_UV"), ("hankel", "rel_hankel_UV"),
+                                  ("excess", "total_excess")):
                     orders[name] = polynomial_order([row["delta_star"] for row in block],
                                                     [row[key] for row in block])
                 for row in block:
@@ -302,9 +279,9 @@ def rotation_rows(arguments) -> list[dict]:
                       f"size={arguments.size} rank={rank}/{len(shifts)} "
                       f"delta_*={block[0]['delta_star']:.3e}..{block[-1]['delta_star']:.3e} "
                       f"order h2={orders['h2']:.3f} hankel={orders['hankel']:.3f} "
-                      f"state={orders['state']:.3f} excess={orders['excess']:.3f} "
+                      f"excess={orders['excess']:.3f} "
                       f"h2/δ*={best['h2_over_delta']:.3e} hankel/δ*={best['hankel_over_delta']:.3e} "
-                      f"st/δ*={best['state_over_delta']:.3e} exc/δ*={best['excess_over_delta']:.3e} "
+                      f"exc/δ*={best['excess_over_delta']:.3e} "
                       f"e_U={baseline_h2:.3e}", flush=True)
                 rows.extend(block)
     return rows

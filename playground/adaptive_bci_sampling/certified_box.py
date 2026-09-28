@@ -432,13 +432,16 @@ class BoxCertificate:
         return [self._gram_form(gram, bernstein[node]) for node in np.ndindex(shape)]
 
     def cell_matrix_bound(self, gram, low, high, denominator, order=2, trial="taylor"):
-        """Relative matrix bound ``sup_h lambda_max(E(h), Y(h))`` on one cell.
+        """Relative collocated port-transfer defect ``sup_h lambda_max(E(h), Y(h))``.
 
-        ``denominator`` must be a matrix that is below the exact transfer
+        ``E(h) = Y(h) - Y_V(h) = R_V(h)^T A(h)^-1 R_V(h) >= 0`` is the collocated
+        port defect and ``denominator`` must be a matrix below the exact transfer
         ``Y(h)`` at every point of the cell (the upper corner serves, since the
-        family is entrywise decreasing in the HTC vector); then the returned
-        value is an upper bound on the worst relative all-input energy error
-        ``sup_w ||x - x_V||_A(h)^2 / ||x||_A(h)^2`` over the same cell.
+        family is entrywise decreasing in the HTC vector); then the returned value
+        is an upper bound on the worst relative all-input port defect
+        ``sup_w w^T (Y(h) - Y_V(h)) w / w^T Y(h) w`` over the same cell.  No square
+        root is taken anywhere: this is the port quantity itself, not a state
+        amplitude.
         """
         kinds = (trial,) if isinstance(trial, str) else tuple(trial)
         best = None
@@ -489,7 +492,7 @@ class BoxCertificate:
         return transfer
 
     def defect(self, parameter, omega=0.0):
-        """Exact relative energy defect at one parameter, one full-order solve.
+        """Exact relative collocated port defect at one parameter, one solve.
 
         Returns ``(defect, transfer)`` with ``defect = lambda_max(E(h), Y(h))``
         and the exact transfer matrix used as its denominator, so a caller can
@@ -844,9 +847,9 @@ class BoxCertificate:
 
         This is the quantity that survives the falsification of the cheap
         ``C``-metric scalar: at one fixed shift it is exactly the worst relative
-        ``A``-energy error of the delivered basis over all inputs ``w`` and all
-        admissible HTC vectors, i.e. ``sup_h sup_w ||x - x_V||_A(h)^2 /
-        ||x||_A(h)^2``.
+        all-input collocated port defect of the delivered basis over all
+        admissible HTC vectors, i.e. ``sup_h sup_w w^T (Y(h) - Y_V(h)) w /
+        w^T Y(h) w``.  It is a port quantity, so no square root is taken.
 
         ``local_anchor`` uses the lower corner of the cell itself as the Riesz
         anchor, which is the tightest anchor valid on that cell but costs one
@@ -904,7 +907,7 @@ class BoxCertificate:
             "span_columns": self.span_columns,
             "basis_order": self.order,
             "shift": self.shift,
-            "worst_relative_energy_bound": float(worst),
+            "worst_relative_port_defect": float(worst),
             "worst_location": location,
             "denominator_points": len(self._denominators),
             "denominator_fallbacks": int(fallbacks),

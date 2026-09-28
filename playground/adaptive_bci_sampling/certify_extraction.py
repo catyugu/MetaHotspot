@@ -6,6 +6,16 @@ Extended-FANTASTIC extractor, the whole-box certificate of
 :mod:`certified_box` for both, and the same full-order validation for both.
 Generated JSON belongs outside the repository.
 
+Two different metrics are reported and they must not be confused:
+
+* ``steady_*`` is the certified whole-box fixed-shift port defect of the
+  delivered basis (``[PORT-FIXED-S]``), an upper bound over every HTC vector of
+  the box and every input combination;
+* ``worst_step_entry`` / ``worst_steady_entry`` are the **sampled** entrywise
+  port step-response error of a 40-step BDF1 run, normalized by the exact
+  steady transfer of the same parameter (``[PORT-STEP]``, measured, not
+  certified, and only on the sampled parameter set).
+
     PYTHONPATH=python python playground/adaptive_bci_sampling/certify_extraction.py 5
 """
 
@@ -43,7 +53,11 @@ from metahotspot.macromodel.utils import (  # noqa: E402
 
 
 def step_transfer(kernel, mass, source, *, dt, duration):
-    """BDF1 response to independent unit power steps, zero initial rise."""
+    """Sampled port step response: BDF1 unit power steps, zero initial rise.
+
+    Only ``source.T @ state`` is recorded, so the observable is the port
+    transfer ``[PORT-STEP]``; the state trajectory itself is never compared.
+    """
     steps = round(duration / dt)
     factor = spla.splu(sp.csc_matrix(kernel + mass / dt).tocsc())
     state = np.zeros_like(source)
