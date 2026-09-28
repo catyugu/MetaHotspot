@@ -20,12 +20,12 @@ sys.path.insert(0, str(_ROOT))
 
 from model_case1 import Case1Config, Case1Model  # noqa: E402
 from metahotspot.macromodel.utils import (  # noqa: E402
-    accuracy_summary,
     assemble_reduced_k,
     build_parametric_basis,
     project_bci,
     solve_rom_steady,
     solve_rom_transient,
+    spd_solve,
 )
 
 AMB = 308.15
@@ -44,6 +44,24 @@ MAX_ORDER = 1024
 SEED = 20260805
 
 OUT = _ROOT / "results" / "reproduce_case1"
+
+
+def relative_port_error(reference, approximation, steady_reference):
+    """Largest entrywise port error, scaled by each exact steady transfer entry.
+
+    The leading dimension, if present, indexes time. The caller passes rises,
+    never absolute temperatures; this diagnostic is not a Hankel norm.
+    """
+    reference = np.asarray(reference)
+    approximation = np.asarray(approximation)
+    steady_reference = np.asarray(steady_reference)
+    if (
+        reference.shape != approximation.shape
+        or reference.shape[-2:] != steady_reference.shape
+    ):
+        raise ValueError("incompatible port transfer shapes")
+    scale = np.maximum(np.abs(steady_reference), np.finfo(float).tiny)
+    return float(np.max(np.abs(approximation - reference) / scale))
 
 
 def load_flotherm():
@@ -120,7 +138,7 @@ def run():
         f"  basis order = {basis.shape[1]}  ({t_basis:.1f}s)  "
         f"snapshots={summary['pre_svd_order']}  "
         f"svd modes={summary['svd_kept_order']}  "
-        f"accepted residual={summary['max_accepted_residual']:.2e}"
+        f"accepted equation residual={summary['max_accepted_residual']:.2e}"
     )
 
     C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(core, G, terms, basis)
@@ -129,7 +147,22 @@ def run():
 
     theta_ss = solve_rom_steady(K_hat, F_hat, SOURCES)
     junc_rom_ss = AMB + F_hat.T @ theta_ss
-    rec_ss = AMB + basis @ theta_ss
+
+    # Test the final, compressed basis on every collocated source/temperature
+    # port pair. A nominal power vector can hide cancellation between columns.
+    K_full = core.K.tocsc()
+    for value, term in zip(p_vec, terms):
+        K_full = K_full + float(value) * term
+    K_full = K_full.tocsc()
+    exact_transfer = G.T @ np.column_stack(
+        [spd_solve(K_full, G[:, j], rtol=1e-8) for j in range(G.shape[1])]
+    )
+    reduced_transfer = F_hat.T @ np.linalg.solve(K_hat.toarray(), F_hat)
+    if not np.allclose(exact_transfer @ SOURCES, junc_full_ss - AMB, rtol=1e-4):
+        raise RuntimeError("all-port and nominal full-order references disagree")
+    steady_transfer_error = relative_port_error(
+        exact_transfer, reduced_transfer, exact_transfer
+    )
 
     r_times, theta_hist = solve_rom_transient(
         C_hat,
@@ -140,7 +173,6 @@ def run():
         DURATION_S,
     )
     junc_rom_hist = AMB + theta_hist @ F_hat
-    rec_hist = AMB + theta_hist @ basis.T
 
     Kf, Mf, g, dH0, dH1 = load_flotherm()
     K_eff_fl = Kf + H_FR4 * dH0 + H_CROWN * dH1
@@ -164,9 +196,10 @@ def run():
             f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i]-junc_full_ss[i]:>+10.3f}"
             f"{junc_fl_ss[i]-junc_full_ss[i]:>+10.3f}"
         )
-    print(f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K")
-
-    rec_acc = accuracy_summary(Tf_ss, rec_ss, full.history, rec_hist, AMB)
+    print(
+        "\nsteady all-port transfer error (entrywise / exact entry) "
+        f"= {100 * steady_transfer_error:.5f}%"
+    )
 
     def pct_err(a, b):
         denom = np.abs(junc_full_ss - AMB)
@@ -253,18 +286,15 @@ def run():
                 f"{name},{junc_full_ss[i]:.4f},{junc_rom_ss[i]:.4f},"
                 f"{junc_fl_ss[i]:.4f}\n"
             )
-        f.write(f"steady full-field peak: {Tf_ss.max():.4f}\n")
+        f.write(f"steady all-port transfer error: {steady_transfer_error:.8g}\n")
         f.write("transient max junction error (% of steady rise):\n")
         f.write("port,our_rom,flotherm\n")
         for i, name in enumerate(DIE_NAMES):
             f.write(f"{name},{err_rom[i]:.4f},{err_fl[i]:.4f}\n")
-        f.write("full-field recovery (our ROM vs full FVM):\n")
-        for key in (
-            "steady_max_absolute_rise_error_K",
-            "steady_max_relative_rise_error",
-            "transient_final_max_absolute_rise_error_K",
-        ):
-            f.write(f"  {key} = {rec_acc[key]:.6g}\n")
+        f.write(
+            "metrics: fixed HTC; finite-time nominal step and steady all-port "
+            "transfer; no continuous-box or Hankel certificate\n"
+        )
 
     return dict(
         junc_full_ss=junc_full_ss,
@@ -276,6 +306,7 @@ def run():
         times=full.times,
         basis=basis,
         summary=summary,
+        steady_transfer_error=steady_transfer_error,
     )
 
 
