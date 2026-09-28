@@ -21,7 +21,7 @@ from deterministic_design import (
     build_basis,
     certified_greedy_points,
     logarithmic_tensor_grid,
-    shared_frequency_plan,
+    frequency_plan,
     zolotarev_seed,
 )
 from residual_certificate import prepare_residual_certificate
@@ -440,7 +440,7 @@ class DesignTests(unittest.TestCase):
             self.kernel, self.terms, self.source, self.ranges, None,
             tolerance=1e-9, maximum_points=2, grid=5,
         )
-        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
+        plan = frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points,
             plan=plan, tolerance=1e-6, include_dc=True,
@@ -465,7 +465,7 @@ class DesignTests(unittest.TestCase):
             tolerance=1e-9, maximum_points=2, grid=5,
             cache=cache,
         )
-        plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
+        plan = frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
             self.kernel, self.mass, self.terms, self.source, points, plan=plan,
             tolerance=1e-6, include_dc=True,

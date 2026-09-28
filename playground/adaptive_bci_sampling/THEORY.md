@@ -355,8 +355,7 @@ theta X^T S_a X + (1-theta) Y^T S_a Y - (theta X + (1-theta) Y)^T S_a (theta X +
 **结论.** `coordinate_spectral_enclosures` 只应称为 *spectral estimate for seed
 placement*，不能称为 “certified spectral enclosure”：`eigsh` 的 Ritz 值配合人为 safety
 factor 不构成一侧特征值界。就当前用途（只定位种子）而言，降格为启发式即可，正确性由命题 6
-兜底。频移计划则**不**受本命题保护：它必须真正覆盖 `K + sum_i h_i H_i` 的谱（见第 3 节
-已关闭项）。
+  兜底。频移计划则**不**受本命题保护：当前裸 `K` 谱区间不保证覆盖整个 Robin 族。
 
 ---
 
@@ -415,6 +414,12 @@ A(p^(i))^-1 - A(p^(i-1))^-1 = -(p_i - q_i) A(p^(i))^-1 H_i A(p^(i-1))^-1,
 ---
 
 ## 2. 未证的数学缺口
+
+**频移计划的适用谱区间。** 当前 stock 与确定性实验使用裸 `K` 的
+`port_eigenvalue_bounds` 估计频移。它可能跳过 Robin 项抬升的常数模态，
+不保证涵盖 `K + Σ h_j H_j` 的整个参数族。即使数学上可用 Robin 盒角点的
+Loewner 序夹住谱，当前实现也没有相应的严格单侧特征值认证。
+因此本目录的固定频移端口证书不能直接推成动态系统范数保证。
 
 七项旧清单里的其余项目或者已闭合、或者属于工程实现、或者已是负结果，都不要放进本节（见
 第 3 节）。真正剩下的缺口是三个。
@@ -523,12 +528,6 @@ F^T A^-1 F - F^T X_V = R_F^T A^-1 R_F >= 0,
   它取决于 P0 动态传递定理，不能写成“vendor 保证已解决”。
 * **`d >= 3`**：不是数学正确性缺口。本文件的命题对有限 `d` 与维数无关，问题只是
   tensor-product 候选网格与 Bernstein 复杂度（`41^3 = 68921`，`41^4` 约 `2.8e6`）。
-* **频移计划的谱区间**：数学结构与工程缺陷部分已闭合。Robin 盒谱包围 `lambda_min(K_-)`、
-  `lambda_max(K_+)` 由 Loewner 序给出（`K_- <= K(h) <= K_+` 把全盒谱覆盖归约为两个端点
-  广义特征问题），已进生产路径（`box_spectral_interval`），并有回归测试固化。
-  **未闭合**的是浮点下的一侧特征值**严格**包围：生产路径用迭代特征求解器取端点，返回的是
-  数值近似而不是带余项的严格单侧界，因此“浮点实现也严格 certified”还缺一个 residual /
-  inertia 辅助的一侧谱认证。这个缺口很小但不是零，不要把它写成已经解决。
 * **inexact-moment 后向误差桥**：作为交付 ROM 的路线已关闭；兼容条件 `R = R X^+ X` 在交付
   基底上严重失败，pre-SVD 情形又因 `delta / lambda_min >> 1` 使扰动论证失效。证据见
   `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`。

@@ -40,16 +40,14 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 from certified_box import BoxCertificate, logarithmic_edges  # noqa: E402
 from exact_error import AffineErrorMap  # noqa: E402
 from deterministic_design import (  # noqa: E402
-    box_frequency_plan,
+    frequency_plan,
     build_basis,
     certified_greedy_points,
     full_operator,
 )
 from model_case1 import Case1Config, Case1Model  # noqa: E402
 from metahotspot.macromodel.utils import (  # noqa: E402
-    box_spectral_interval,
     build_parametric_basis,
-    port_eigenvalue_bounds,
 )
 
 
@@ -146,9 +144,9 @@ def main():
     report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]),
               "cutoff": args.cutoff, "h_ranges": ranges.tolist()}
 
-    plan = box_frequency_plan(kernel, mass, terms, ranges, args.cutoff)
-    report["frequency_plan"] = {k: plan[k] for k in ("kind", "lower", "upper", "count")}
-    print(f"frequency plan: kind={plan['kind']} count={plan['count']} "
+    plan = frequency_plan(kernel, mass, source, args.cutoff)
+    report["frequency_plan"] = {k: plan[k] for k in ("lower", "upper", "count")}
+    print(f"frequency plan: count={plan['count']} "
           f"lambda=[{plan['lower']:.6g}, {plan['upper']:.6g}]", flush=True)
 
     started = time.perf_counter()
@@ -184,47 +182,27 @@ def main():
 
     bases = {"deterministic": design_basis}
     if not args.skip_stock:
-        legacy_intervals = [
-            port_eigenvalue_bounds(kernel, mass, source[:, port])
-            for port in range(source.shape[1])
-        ]
-        legacy_plan = (
-            min(low for low, _ in legacy_intervals),
-            max(high for _, high in legacy_intervals),
-        )
-        box_plan = box_spectral_interval(kernel, mass, terms, ranges)
-        report["plan_intervals"] = {
-            "box": [float(box_plan[0]), float(box_plan[1])],
-            "legacy": [float(legacy_plan[0]), float(legacy_plan[1])],
-        }
-        print(f"plan intervals: box=[{box_plan[0]:.6e}, {box_plan[1]:.6e}] "
-              f"legacy=[{legacy_plan[0]:.6e}, {legacy_plan[1]:.6e}]", flush=True)
         for stock_seed in (20260805, 7):
-            for label, interval in (("stock", None), ("stock_legacy", legacy_plan)):
-                clock = time.perf_counter()
-                stock, stats = build_parametric_basis(
-                    model.core, source, terms, ranges,
-                    tolerance=args.cutoff, max_order=4096, probe_rounds=10,
-                    seed=stock_seed, spectral_interval=interval,
-                )
-                clock = time.perf_counter() - clock
-                bases[f"{label}_{stock_seed}"] = stock
-                report[f"{label}_{stock_seed}"] = {
-                    "full_rhs_solves": int(stats["pre_svd_order"]),
-                    "basis_order": int(stock.shape[1]),
-                    "candidate_count": int(stats["candidate_count"]),
-                    "validation_count": int(stats["validation_count"]),
-                    "shift_count": int(stats["frequency_plan"]["shift_count"]),
-                    "plan_interval": [
-                        float(stats["frequency_plan"]["lambda_min"]),
-                        float(stats["frequency_plan"]["lambda_max"]),
-                    ],
-                    "seconds": clock,
-                }
-                print(f"{label}_{stock_seed} solves={stats['pre_svd_order']} "
-                      f"shifts={stats['frequency_plan']['shift_count']} "
-                      f"candidates={stats['candidate_count']} order={stock.shape[1]} "
-                      f"t={clock:.1f}s", flush=True)
+            clock = time.perf_counter()
+            stock, stats = build_parametric_basis(
+                model.core, source, terms, ranges,
+                tolerance=args.cutoff, max_order=4096, probe_rounds=10,
+                seed=stock_seed,
+            )
+            clock = time.perf_counter() - clock
+            label = f"stock_{stock_seed}"
+            bases[label] = stock
+            report[label] = {
+                "full_rhs_solves": int(stats["pre_svd_order"]),
+                "basis_order": int(stock.shape[1]),
+                "candidate_count": int(stats["candidate_count"]),
+                "validation_count": int(stats["validation_count"]),
+                "per_port_plans": stats["per_port_plans"],
+                "seconds": clock,
+            }
+            print(f"{label} solves={stats['pre_svd_order']} "
+                  f"candidates={stats['candidate_count']} order={stock.shape[1]} "
+                  f"t={clock:.1f}s", flush=True)
 
     certificates = {}
     for name, basis in bases.items():

@@ -763,7 +763,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=("rotation", "skeleton", "linear"), default="rotation")
     parser.add_argument("--size", type=int, choices=(4, 8, 26), default=4)
     parser.add_argument("--kappas", default=None,
-                        help="comma separated; default 1e2,1e4,1e6 and the 5 mm box plan's kappa")
+                        help="comma separated; default 1e2,1e4,1e6 and a historical 5 mm kappa")
     parser.add_argument("--families", default="log-uniform,endpoint-cluster,low-cluster,repeated")
     parser.add_argument("--sources", default="flat,h2-balanced")
     parser.add_argument("--seed", type=int, default=20260805)

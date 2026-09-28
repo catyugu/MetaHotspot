@@ -1,5 +1,9 @@
 # System-norm gap and failure archive
 
+> Historical record: claims below that a Robin-box frequency plan is installed
+> in the production extractor refer to a reverted implementation. The current
+> extractor uses the original per-port bare-kernel frequency estimator.
+
 This record answers two questions: **what is still missing** between the
 fixed-shift certificate and the port system norm the research target asks for
 (**Part A**), and **which routes are already closed** (**Part B**).  The
@@ -664,7 +668,7 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 “认证最终交付 V 本身”替代（见 `THEORY.md`）。
 复现：`probe_post_svd.py --mesh-mm 2.5`、`--mesh-mm 1`（脚本已退役）。
 
-#### A8  频率计划谱区间缺陷（已修复）
+#### A8  频率计划谱区间缺陷（修复已撤回）
 
 **判定作用域.** `PORT-FIXED-S + CORRECTION`
 
@@ -673,14 +677,14 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 误差 `6.07e-03`（容差的 6 倍），盒合法计划在同一点为 `1.89e-05`（改善 320 倍）；
 裸 K 的 `lambda_min = 4.4716e-04` 对盒包围 `4.2795e-05`，计划下端点高 10.45 倍。
 判定：被反例证伪（“旧裸 K 计划的谱区间覆盖整个 Robin 盒”这一假设是错的，低 HTC 角实测
-6 倍超差）＋ 已修复的实现缺陷（`box_spectral_interval` 已进生产路径并有回归测试）。其中
+6 倍超差）＋ 后来曾修复、现已按要求撤回的实现变更。其中
 撤回旧的 `2.61e-2` first-term failure 那部分才属于测量更正 —— 那是 bench 的 LU 缓存 bug
 （键只按 shift 值，第一个点之后复用了别的点的分解），纠正后为 `6.07e-03` (SISO) /
 `3.78e-04` (MIMO)。FANTASTIC 精确矩参考本身未被证伪。
 代价：盒合法计划 +18% RHS（116 -> 137）与两个额外频移；步误差不随计划同向改善
 （5 mm seed 20260805 `1.262e-03 -> 1.785e-03` 变差，seed 7 `1.680e-03 -> 1.410e-03`
-变好）。当前实测见 `README.md` 第 2 节。
-复现：`test_box_frequency_plan.py`（仍在维护，5 项测试）。
+变好）。以上仅为历史测量，不代表当前生产路径。
+原 `test_box_frequency_plan.py` 已随实现撤回。
 
 #### A10  频率轴（Hankel）整盒证书
 
@@ -1148,12 +1152,11 @@ exact_error.py              精确参数映射与误差见证（全阶对照）
 zolotarev.py                有限区间 Zolotarev 规则与每群谱区间
 certify_extraction.py       驱动：设计 + stock 基线 + 证书 + 全阶验证
 bench_certificate.py （tightness / bandb 两个 mode）/ bench_pareto_budget.py /
-bench_dynamic_bridge_toy.py / test_certified_sampling.py / test_box_frequency_plan.py
+bench_dynamic_bridge_toy.py / test_certified_sampling.py
 records/PORT_CERTIFICATE_AND_BUDGET.md
 ```
 
 `records/PORT_CERTIFICATE_AND_BUDGET.md` 是**当前仍在使用的正面结论**（证书的有效性、
-盒分支定界、盒合法频率计划、提取预算计数约定），因此保留在本目录而不是并入本文；
+盒分支定界、提取预算计数约定），因此保留在本目录而不是并入本文；
 动态桥在人工问题上的一阶否证已经并入本文 Part A。
-另外两份内容不属于本文件：开放候选路线（先验闭式采样 handoff）见 `README.md` 第 6 节，
-尚未证明的目标保证（vendor 的 `2*eps` / `2*sqrt(eps)`）见 `THEORY.md` 的 P0 动态传递定理。
+尚未证明的端口系统范数保证见 `THEORY.md` 的 P0 动态传递定理。

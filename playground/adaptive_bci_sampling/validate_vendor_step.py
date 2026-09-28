@@ -34,7 +34,7 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from sparse_solve import AmgSolver  # noqa: E402
 from deterministic_design import (  # noqa: E402
-    box_frequency_plan,
+    frequency_plan,
     build_basis,
     certified_greedy_points,
     full_operator,
@@ -143,7 +143,7 @@ def main():
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
 
-    plan = box_frequency_plan(kernel, mass, terms, ranges, args.cutoff)
+    plan = frequency_plan(kernel, mass, source, args.cutoff)
     response_cache = {}
     started = time.perf_counter()
     points, selection_certificate, _selection = certified_greedy_points(

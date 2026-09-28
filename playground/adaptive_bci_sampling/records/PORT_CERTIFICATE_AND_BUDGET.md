@@ -1,5 +1,10 @@
 # The fixed-shift port certificate, its refinement, and the extraction budget
 
+> Historical record: references below to a delivered Robin-box frequency plan
+> and its performance describe a reverted implementation. The current extractor
+> uses the original bare-kernel frequency estimator. Fixed-shift certificates
+> for a given final basis remain independent of how its shifts were selected.
+
 One record for the three positive statements about the certificate machinery,
 each a part of this file:
 
@@ -385,9 +390,8 @@ uniform 16 cells/axis, order 4 local    256     256    1.8396e-04  1.008   23.5
 
 Every number in Part B's table was produced with the **legacy bare-`K` plan**
 (`shared_frequency_plan` encloses the generalized spectrum of `K` per source
-port).  The delivered basis and `build_parametric_basis` use the **box-corrected
-plan** instead (`box_spectral_interval` encloses the whole affine family by
-Loewner monotonicity).  At 5 mm and tolerance `1e-3`:
+port).  A later, now-reverted implementation used the **box-corrected plan**
+instead. At 5 mm and tolerance `1e-3`, the historical plans were:
 
 ```text
 plan     shifts  lambda_min   lambda_max

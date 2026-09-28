@@ -165,8 +165,6 @@ def add_common_arguments(parser):
     parser.add_argument("--seed", type=int, default=20260805)
     parser.add_argument("--cutoff", type=float, default=1e-3)
     parser.add_argument("--blocks", type=int, default=4, help="blocks per axis")
-    parser.add_argument("--plan", choices=("box", "legacy"), default="box",
-                        help="frequency plan provenance; box is the delivered route")
     parser.add_argument("--reference-cells", type=int, default=24,
                         help="cells per axis of the box-wide exact reference")
     parser.add_argument("--output", type=Path)
@@ -178,8 +176,7 @@ def add_common_arguments(parser):
 
 def run_tightness(arguments):
     model, kernel, mass, terms, ranges, source = build_model(arguments.mesh_mm)
-    plan = frequency_plan(kernel, mass, terms, source, ranges, arguments.cutoff,
-                          arguments.plan)
+    plan = frequency_plan(kernel, mass, source, arguments.cutoff)
     shift = 0.0 if arguments.shift_index is None else float(plan["shifts"][arguments.shift_index])
     report = {
         "mode": "tightness",
@@ -192,7 +189,7 @@ def run_tightness(arguments):
         "trials": [value.strip() for value in arguments.trials.split(",")],
         "denominators": [value.strip() for value in arguments.denominators.split(",")],
         "samples": arguments.samples,
-        "plan": {"kind": plan["kind"], "lower": plan["lower"],
+        "plan": {"lower": plan["lower"],
                  "upper": plan["upper"], "count": int(plan["count"])},
     }
     print(f"mesh={arguments.mesh_mm} dofs={kernel.shape[0]} shift={shift:.6g} "
@@ -358,10 +355,9 @@ def contains(cell, point):
 
 def run_bandb(arguments):
     model, kernel, mass, terms, ranges, source = build_model(arguments.mesh_mm)
-    plan = frequency_plan(kernel, mass, terms, source, ranges, arguments.cutoff,
-                          arguments.plan)
+    plan = frequency_plan(kernel, mass, source, arguments.cutoff)
     print(f"mesh={arguments.mesh_mm} dofs={kernel.shape[0]} shift=0 "
-          f"plan={plan['kind']} shifts={plan['count']} "
+          f"shifts={plan['count']} "
           f"lambda=[{plan['lower']:.6g}, {plan['upper']:.6g}]", flush=True)
 
     basis, basis_record = build_delivered_basis(
@@ -397,7 +393,7 @@ def run_bandb(arguments):
         "trial": arguments.trial,
         "samples": arguments.samples,
         "span": arguments.span,
-        "plan": {"kind": plan["kind"], "lower": plan["lower"],
+        "plan": {"lower": plan["lower"],
                  "upper": plan["upper"], "count": int(plan["count"])},
         "exact_reference": {"worst": reference_max,
                             "worst_point": [float(value) for value in reference_point],

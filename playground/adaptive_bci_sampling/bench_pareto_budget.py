@@ -8,7 +8,7 @@ exists; what can be stated now is a Pareto table.  For every combination of
 
 the delivered basis ``V`` of :func:`deterministic_design.build_basis` is rebuilt
 from the *same* cached snapshots - lowering the cutoff therefore costs no further
-full-order solve - and certified on the delivered, box-corrected frequency plan
+full-order solve - and certified on the historical bare-kernel frequency plan
 shift by shift over the whole box:
 
     delta_cert(V) = max_j max_Q U_{Q,j}(V),             L* = sampled exact.
@@ -46,7 +46,7 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from certified_box import BoxCertificate  # noqa: E402
-from deterministic_design import box_frequency_plan, build_basis, certified_greedy_points  # noqa: E402
+from deterministic_design import frequency_plan, build_basis, certified_greedy_points  # noqa: E402
 from model_case1 import Case1Config, Case1Model  # noqa: E402
 from metahotspot.macromodel.utils import build_parametric_basis  # noqa: E402
 
@@ -121,15 +121,15 @@ def main() -> None:
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
     ports = int(source.shape[1])
 
-    plan = box_frequency_plan(kernel, mass, terms, ranges, 1e-3)
+    plan = frequency_plan(kernel, mass, source, 1e-3)
     shifts = [float(value) for value in plan["shifts"]] + [0.0]
-    print(f"mesh={arguments.mesh_mm}mm cells={kernel.shape[0]} plan={plan['kind']} "
+    print(f"mesh={arguments.mesh_mm}mm cells={kernel.shape[0]} "
           f"shifts={len(shifts)} ports={ports} "
           f"kappa={plan['upper'] / plan['lower']:.4e}", flush=True)
 
     cache: dict = {}
     report = {"mesh_mm": arguments.mesh_mm, "cells": int(kernel.shape[0]), "ports": ports,
-              "plan": {k: plan[k] for k in ("kind", "lower", "upper", "count")},
+              "plan": {k: plan[k] for k in ("lower", "upper", "count")},
               "shifts": shifts, "runs": [], "stock": []}
     cumulative_blocks = 0
     cumulative_rhs = 0
@@ -197,9 +197,7 @@ def main() -> None:
         row = {"seed": int(seed), "rom_order": int(basis.shape[1]),
                "rhs_solves": int(stats["pre_svd_order"]),
                "candidate_count": int(stats["candidate_count"]),
-               "shift_count": int(stats["frequency_plan"]["shift_count"]),
-               "plan_interval": [float(stats["frequency_plan"]["lambda_min"]),
-                                 float(stats["frequency_plan"]["lambda_max"])]}
+               "per_port_plans": stats["per_port_plans"]}
         row.update(certify(kernel, terms, source, ranges, basis, shifts,
                            arguments, mass))
         report["stock"].append(row)

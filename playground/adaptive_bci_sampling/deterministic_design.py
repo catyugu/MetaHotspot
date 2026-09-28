@@ -44,7 +44,6 @@ from sparse_solve import AmgSolver
 from residual_certificate import prepare_residual_certificate, select_worst_certificate
 from metahotspot.macromodel.utils import (
     _snapshot_svd_basis,
-    box_spectral_interval,
     mpmm_elliptic_shift_count,
     mpmm_elliptic_shifts,
     orthonormalize_block,
@@ -220,7 +219,7 @@ def certified_greedy_points(
     )
 
 
-def shared_frequency_plan(kernel, mass, source, tolerance):
+def frequency_plan(kernel, mass, source, tolerance):
     """One MPMM elliptic plan that is valid for every source port.
 
     The elliptic rule only needs an interval containing the port's generalized
@@ -239,51 +238,12 @@ def shared_frequency_plan(kernel, mass, source, tolerance):
     upper = max(interval[1] for interval in intervals)
     count = mpmm_elliptic_shift_count(tolerance, lower, upper)
     return {
-        "kind": "legacy",
         "lower": float(lower),
         "upper": float(upper),
         "count": int(count),
         "shifts": [float(value) for value in mpmm_elliptic_shifts(count, upper, upper / lower)],
         "per_port_intervals": [[float(a), float(b)] for a, b in intervals],
     }
-
-
-def box_frequency_plan(kernel, mass, terms, ranges, tolerance):
-    """The same single elliptic plan, on the box-corrected HTC interval.
-
-    :func:`shared_frequency_plan` encloses the generalized spectrum of the *bare*
-    kernel, one interval per source port.  The affine HTC family violates that:
-    ``A(h) = K + sum_i h_i H_i`` with ``H_i >= 0`` exceeds ``K`` as soon as some
-    ``h_i`` is above its nominal point, so a plan built on the bare-kernel
-    interval can miss eigenvalues the plan is supposed to cover.  The production
-    basis already uses the Loewner enclosure of the whole family (see
-    ``box_spectral_interval``); this function is the plan that matches it, and it
-    is the one the delivered basis uses.
-    """
-    lower, upper = box_spectral_interval(kernel, mass, terms, ranges)
-    count = mpmm_elliptic_shift_count(tolerance, lower, upper)
-    return {
-        "kind": "box",
-        "lower": float(lower),
-        "upper": float(upper),
-        "count": int(count),
-        "shifts": [float(value) for value in mpmm_elliptic_shifts(count, upper, upper / lower)],
-    }
-
-
-def frequency_plan(kernel, mass, terms, source, ranges, tolerance, kind="box"):
-    """The elliptic plan of the requested provenance.
-
-    ``box`` is the corrected route, the only one the delivered basis and the
-    final certificate chain use.  ``legacy`` is the bare-kernel plan kept so the
-    earlier reproducible baselines still run, and it must be labelled as such
-    wherever it appears - certifying it says nothing about the delivered plan.
-    """
-    if kind == "legacy":
-        return shared_frequency_plan(kernel, mass, source, tolerance)
-    if kind == "box":
-        return box_frequency_plan(kernel, mass, terms, ranges, tolerance)
-    raise ValueError(f"unknown plan kind {kind!r}")
 
 
 def build_basis(
@@ -301,7 +261,7 @@ def build_basis(
 ):
     """Assemble snapshots on one shared elliptic plan and compress them.
 
-    ``plan`` is the shared frequency plan of :func:`shared_frequency_plan` and
+    ``plan`` is the shared frequency plan of :func:`frequency_plan` and
     ``points`` the selected effective HTC parameters.  The design is the plain
     tensor of the two: **every** shift is solved at **every** selected point,
     and the steady endpoint ``s = 0`` joins the shift set when ``include_dc``
@@ -358,7 +318,6 @@ def build_basis(
         "operators": len(entries),
         "include_constant": bool(constant),
         "frequency_plan": {
-            "kind": plan["kind"],
             "lower": float(plan["lower"]),
             "upper": float(plan["upper"]),
             "count": int(plan["count"]),
