@@ -1,4 +1,467 @@
-# 负结果与测量更正（失败路线总表）
+# System-norm gap and failure archive
+
+This record answers two questions: **what is still missing** between the
+fixed-shift certificate and the port system norm the research target asks for
+(**Part A**), and **which routes are already closed** (**Part B**).  The
+positive statements about the certificate itself live in
+`records/PORT_CERTIFICATE_AND_BUDGET.md`; the theory lives in `THEORY.md`.
+Both parts are the original per-topic records, moved here unchanged so that no
+measured number was lost in the merge; only the heading levels were adjusted.
+
+Scope labels used throughout, and the limit each one puts on what a negative
+entry may conclude:
+
+```text
+PORT-SYSTEM     H2 / Hankel / impulse-response system norm     the research target
+PORT-FIXED-S    Z(s; mu) at one real shift                     what the box certificate covers
+PORT-STEP       sampled step-response metric                   measured diagnostic only
+STATE-AUX       full-field / A-energy / state norm             proof device and diagnostic
+COST            N_FOM / N_op / wall time / memory
+CORRECTION      measurement bug or mis-defined quantity
+```
+
+**Conclusion limit of a scope label.**  An entry labelled `PORT-FIXED-S` or
+`PORT-STEP` proves only that *that scheme fails under that diagnostic*.  It does
+**not** prove the scheme cannot meet the port-Hankel / impulse-response system
+norm, and it does **not** veto reusing the same parameter points or the same basis
+construction under the new objective.  Reading the former as the latter is the
+logical leap this file exists to prevent, and Part A is the measured reason it
+is a leap: the fixed-`s` collocated square identity does **not** transfer
+quadratically to dynamic port norms.
+
+**STATE-AUX subordination.**  An entry whose only decisive criterion is a
+full-field / A-energy / state norm, with no independent port-transfer, system-norm
+or cost failure, is not a negative result under the current target; it is at most
+a `STATE-AUX` historical result.  The 2026-09 re-review checked every entry in
+Part B against this rule: each one carries an independent port-transfer,
+system-norm or cost failure, so none had to be demoted.  The state-energy
+acceptance target and the Robin solution-manifold n-width complexity proposition
+were of that class and were removed from the main theory line (`THEORY.md` 0.1).
+
+Verdicts are only these four, and every entry names exactly one (or a pair):
+
+```text
+被反例证伪       mathematically wrong, or its premise fails on the measured data
+界太松           the inequality holds but cannot drive a 1e-3 decision
+成本不可行       correct, but the cost structure (solves, setups, wall time, memory) is unacceptable
+测量更正         the conclusion came from a measurement bug or a mis-defined quantity
+```
+
+---
+
+## Part A - the measured gap: a matching port defect does not transfer quadratically
+
+Negative result on the quadratic bridge, from the artificial problem the bridge
+has to survive before any of the heavier machinery is justified.  Scope: every
+quantity below is a **port system-norm** quantity `[PORT-SYSTEM]` (`H2` and
+Hankel of the port transfer), not a state or full-field error.
+
+### A1. What is asked
+
+The only open P0 item is the dynamic bridge: the certificate controls matching
+resolvent defects `delta_j`, and the vendor guarantee is stated for the impedance
+(port-Hankel) channel.  The exact MPMM space has a Hermite
+structure at the matching shifts, so the *value* defect there is `O(delta^2)`.
+The question is whether the *dynamics* inherit that square, or degrade to first
+order.  Gates, all evaluated on a fixed problem along one controlled family
+`V_theta -> U` with `delta_*(V_theta) -> 0`:
+
+```text
+quadratic bridge refuted       e_H2 / delta_* -> c > 0      (e_H2 / delta_*^2 -> inf)
+sharp-baseline form refuted    excess / delta_* -> c > 0,
+                               excess = max over both signs of
+                                        ||H - H_V|| / ||H|| - ||H - H_U|| / ||H||
+vendor impedance channel hit   e_Hankel / delta_* -> c > 0
+```
+
+`[STATE-AUX]` the run also measured the state impulse energy `e_state`; that column has
+been removed together with the state-energy acceptance target (see `THEORY.md` 0.1).
+The port-level counterexample below is what matters and it does not depend on it.
+
+The excess is taken over *both* rotation signs because the first-order Frechet
+derivative flips sign with `Q -> -Q`: if it is nonzero, at least one branch must
+raise the total error above the exact-MPMM baseline.
+
+### A2. Model and definitions
+
+Mass-whitened so the pencil has one symmetric parameter matrix,
+
+```text
+B = B^T > 0,   H(s) = f^T (s I + B)^-1 f,   x(sigma) = (B + sigma I)^-1 f,
+```
+
+with `C = I`, eigenvalues `lambda_i = kappa^u_i` for `u` from the preregistered
+families, and the delivered elliptic plan's shifts for `[1, kappa]` at
+`epsilon = 1e-3` (`mpmm_elliptic_shift_count` / `mpmm_elliptic_shifts`, the same
+generator the box plan uses).  The 4x4 problem takes the plan's highest and
+lowest shift, the 8x8 problem four shifts spread over the band.
+
+```text
+delta_j^2(V) = ||x_j - x_V,j||^2_(B + sigma_j I) / ||x_j||^2_(B + sigma_j I),
+delta_*      = max_j delta_j,
+U            = orth[x(sigma_j)],       V_pm(theta) = U cos theta +/- Q sin theta,
+e_H2         = ||H_U - H_V||_H2 / ||H||_H2,
+e_Hankel     = ||H_U - H_V||_Hankel / ||H||_Hankel.
+```
+
+`Q` is a fixed orthonormal basis of the orthogonal complement of `U` (2 columns
+for 4x4, 4 for 8x8, so `V_pm` has the same dimension as `U`); `theta` runs over
+`1e-1 ... 1e-6`.  The moment space itself comes from a truncated SVD of the
+snapshot matrix, not a bare QR, so a rank-deficient snapshot set (repeated
+eigenvalues) does not silently contribute padding directions.
+
+All dynamic quantities are exact and port-level: the `H2` distance from a Lyapunov
+solve on the block system that carries both semigroups, the Hankel norm from the
+largest Hankel singular value of the difference realization (controllability and
+observability Lyapunov equations).  No frequency grid and no time stepping enters
+any verdict.
+
+Spectrum families (`u_i`, `lambda_i = kappa^u_i`): log-uniform, endpoint-cluster,
+low-cluster, repeated.  Sources: `f` flat, and `f_i ~ lambda_i^(1/4)`, which
+balances the per-mode `f_i^4 / (2 lambda_i)` H2 contribution.
+
+### A3. Results at the delivered box condition number
+
+Actual 5 mm box plan: `kappa = 4.1400e+01 / 4.2795e-05 = 9.674e+05`.  Orders are
+the fitted local exponents over the smallest rotations above the double-precision
+floor, for the `+` branch (the `-` branch behaves the same); the ratio columns are
+the smallest-`theta` values of the sharp-baseline excess.
+
+| size | spectrum | source | rank | delta_* range | order e_H2 | order e_Hankel | order excess | e_H2/delta_* | e_Hankel/delta_* | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4x4 | endpoint-cluster | flat | 2/2 | 3.30e-05 .. 9.58e-01 | 1.96 | 0.33 | 1.41 | 5.361e-05 | 2.572e-02 | 3.633e-05 |
+| 4x4 | endpoint-cluster | h2-balanced | 2/2 | 3.25e-05 .. 9.54e-01 | 1.72 | 2.14 | 1.57 | 1.844e-04 | 1.210e-02 | 1.640e-05 |
+| 4x4 | log-uniform | flat | 2/2 | 3.94e-05 .. 9.71e-01 | 1.00 | 0.83 | 1.01 | 1.336e-02 | 6.598e-02 | 4.330e-04 |
+| 4x4 | log-uniform | h2-balanced | 2/2 | 5.64e-06 .. 4.18e-01 | 1.00 | 1.00 | 1.00 | 4.516e-01 | 1.384e+00 | 2.166e-02 |
+| 4x4 | low-cluster | flat | 2/2 | 9.90e-07 .. 9.88e-02 | 0.36 | 1.34 | 1.00 | 1.595e-02 | 1.093e-02 | 5.166e-04 |
+| 4x4 | low-cluster | h2-balanced | 2/2 | 9.89e-07 .. 9.87e-02 | 0.72 | 1.36 | 1.00 | 1.193e-02 | 9.101e-01 | 3.473e-04 |
+| 4x4 | repeated | flat | 2/2 | 3.24e-05 .. 9.55e-01 | 1.00 | 0.72 | 2.53 | 4.955e-04 | 7.343e-03 | -3.237e-04 |
+| 4x4 | repeated | h2-balanced | 2/2 | 3.23e-05 .. 9.53e-01 | 0.79 | 0.26 | 2.26 | 6.170e-04 | 2.575e-02 | -6.348e-05 |
+| 8x8 | endpoint-cluster | flat | 4/4 | 4.44e-04 .. 9.99e-01 | 2.00 | 1.68 | 2.02 | 6.874e-04 | 7.121e-03 | 6.534e-04 |
+| 8x8 | endpoint-cluster | h2-balanced | 4/4 | 4.43e-04 .. 9.96e-01 | 2.00 | 1.72 | 2.00 | 4.854e-04 | 8.607e-04 | 4.862e-04 |
+| 8x8 | log-uniform | flat | 4/4 | 2.31e-04 .. 8.96e-01 | 1.00 | 0.99 | 0.92 | 3.383e-02 | 6.429e-02 | 6.826e-04 |
+| 8x8 | log-uniform | h2-balanced | 4/4 | 1.44e-04 .. 8.22e-01 | 1.00 | 1.01 | 0.99 | 3.276e-02 | 1.248e-01 | 6.462e-03 |
+| 8x8 | low-cluster | flat | 4/4 | 1.05e-06 .. 1.06e-01 | 1.00 | 1.21 | 1.00 | 1.487e-01 | 1.909e-01 | 1.019e-02 |
+| 8x8 | low-cluster | h2-balanced | 4/4 | 9.17e-07 .. 9.18e-02 | 0.98 | 0.94 | 1.00 | 3.995e-02 | 6.000e-02 | 1.198e-03 |
+| 8x8 | repeated | flat | 2/4 | 5.73e-04 .. 1.00e+00 | 2.00 | 1.48 | 2.00 | 8.805e-04 | 4.963e-03 | 8.812e-04 |
+| 8x8 | repeated | h2-balanced | 2/4 | 5.72e-04 .. 9.98e-01 | 2.00 | 2.14 | 2.00 | 4.538e-04 | 1.080e-03 | 4.516e-04 |
+
+Two full series, to show that the plateaus are asymptotic and not a single lucky
+point:
+
+4x4 log-uniform flat
+
+| theta | delta_* | e_H2 | e_H2/delta_* | e_Hankel | e_Hankel/delta_* | excess | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1e-01 | 9.712e-01 | 9.550e-01 | 9.834e-01 | 9.942e-01 | 1.024e+00 | 8.506e-01 | 8.758e-01 |
+| 3e-02 | 7.836e-01 | 6.946e-01 | 8.864e-01 | 8.738e-01 | 1.115e+00 | 5.952e-01 | 7.596e-01 |
+| 1e-02 | 3.681e-01 | 1.904e-01 | 5.172e-01 | 3.044e-01 | 8.271e-01 | 1.168e-01 | 3.173e-01 |
+| 3e-03 | 1.239e-01 | 2.392e-02 | 1.931e-01 | 4.105e-02 | 3.313e-01 | 3.337e-03 | 2.693e-02 |
+| 1e-03 | 3.942e-02 | 2.732e-03 | 6.930e-02 | 4.808e-03 | 1.220e-01 | 9.861e-05 | 2.501e-03 |
+| 3e-04 | 1.247e-02 | 3.736e-04 | 2.996e-02 | 6.691e-04 | 5.365e-02 | 1.047e-05 | 8.399e-04 |
+| 1e-04 | 3.944e-03 | 7.185e-05 | 1.822e-02 | 1.266e-04 | 3.210e-02 | 2.167e-06 | 5.496e-04 |
+| 3e-05 | 1.247e-03 | 1.851e-05 | 1.485e-02 | 3.160e-05 | 2.534e-02 | 5.841e-07 | 4.684e-04 |
+| 1e-05 | 3.944e-04 | 5.462e-06 | 1.385e-02 | 9.432e-06 | 2.392e-02 | 1.748e-07 | 4.433e-04 |
+| 3e-06 | 1.247e-04 | 1.689e-06 | 1.355e-02 | 2.865e-06 | 2.297e-02 | 5.430e-08 | 4.354e-04 |
+| 1e-06 | 3.944e-05 | 5.306e-07 | 1.346e-02 | 6.623e-07 | 1.679e-02 | 1.707e-08 | 4.330e-04 |
+
+8x8 low-cluster flat
+
+| theta | delta_* | e_H2 | e_H2/delta_* | e_Hankel | e_Hankel/delta_* | excess | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1e-01 | 1.065e-01 | 1.885e-02 | 1.770e-01 | 1.909e-02 | 1.793e-01 | 6.124e-03 | 5.752e-02 |
+| 3e-02 | 3.335e-02 | 4.990e-03 | 1.496e-01 | 7.568e-03 | 2.270e-01 | 7.381e-04 | 2.213e-02 |
+| 1e-02 | 1.051e-02 | 1.544e-03 | 1.469e-01 | 2.547e-03 | 2.424e-01 | 1.459e-04 | 1.388e-02 |
+| 3e-03 | 3.320e-03 | 4.870e-04 | 1.467e-01 | 8.208e-04 | 2.472e-01 | 3.770e-05 | 1.136e-02 |
+| 1e-03 | 1.050e-03 | 1.539e-04 | 1.467e-01 | 2.611e-04 | 2.488e-01 | 1.108e-05 | 1.056e-02 |
+| 3e-04 | 3.319e-04 | 4.868e-05 | 1.467e-01 | 8.272e-05 | 2.493e-01 | 3.420e-06 | 1.031e-02 |
+| 1e-04 | 1.049e-04 | 1.539e-05 | 1.467e-01 | 2.620e-05 | 2.497e-01 | 1.073e-06 | 1.023e-02 |
+| 3e-05 | 3.319e-05 | 4.868e-06 | 1.467e-01 | 8.485e-06 | 2.557e-01 | 3.385e-07 | 1.020e-02 |
+| 1e-05 | 1.049e-05 | 1.540e-06 | 1.467e-01 | 5.203e-06 | 4.958e-01 | 1.070e-07 | 1.019e-02 |
+| 3e-06 | 3.319e-06 | 4.877e-07 | 1.470e-01 | 3.582e-06 | 1.079e+00 | 3.382e-08 | 1.019e-02 |
+| 1e-06 | 1.049e-06 | 1.542e-07 | 1.469e-01 | 2.005e-07 | 1.911e-01 | 1.069e-08 | 1.019e-02 |
+
+### A4. Other condition numbers
+
+The same run covers `kappa = 1e2, 1e4, 1e6`; the order of `e_H2` does not depend
+on `kappa` for the two non-degenerate families:
+
+`kappa = 1e2`
+
+| size | spectrum | source | rank | delta_* range | order e_H2 | order e_Hankel | order excess | e_H2/delta_* | e_Hankel/delta_* | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4x4 | endpoint-cluster | flat | 2/2 | 1.04e-06 .. 1.04e-01 | 0.12 | 0.14 | 1.10 | 1.368e-02 | 1.764e-02 | -2.220e-05 |
+| 4x4 | endpoint-cluster | h2-balanced | 2/2 | 9.65e-07 .. 9.63e-02 | 0.22 | 1.00 | 0.86 | 2.460e-02 | 8.231e-01 | 3.530e-04 |
+| 4x4 | log-uniform | flat | 2/2 | 1.60e-06 .. 1.59e-01 | 1.00 | 1.09 | 1.00 | 3.769e-01 | 5.500e-01 | 2.412e-02 |
+| 4x4 | log-uniform | h2-balanced | 2/2 | 1.15e-06 .. 1.09e-01 | 1.00 | 0.58 | 1.00 | 5.097e-01 | 2.522e+00 | 2.170e-01 |
+| 4x4 | low-cluster | flat | 2/2 | 9.93e-07 .. 9.91e-02 | 0.31 | 1.51 | 1.01 | 1.615e-02 | 1.479e-01 | 1.230e-04 |
+| 4x4 | low-cluster | h2-balanced | 2/2 | 9.64e-07 .. 9.62e-02 | 0.65 | 0.96 | 1.00 | 1.935e-02 | 1.381e-01 | 1.151e-04 |
+| 4x4 | repeated | flat | 2/2 | 1.04e-06 .. 1.04e-01 | 0.05 | 0.69 | -0.04 | 1.234e-02 | 6.290e-03 | 1.619e-02 |
+| 4x4 | repeated | h2-balanced | 2/2 | 9.65e-07 .. 9.63e-02 | 2.01 | -0.01 | 0.09 | 3.331e-04 | 6.009e-03 | 3.377e-04 |
+| 8x8 | endpoint-cluster | flat | 4/4 | 4.64e-06 .. 4.18e-01 | 0.18 | 1.68 | 0.24 | 2.636e-03 | 2.232e-03 | 0.000e+00 |
+| 8x8 | endpoint-cluster | h2-balanced | 4/4 | 4.31e-06 .. 3.86e-01 | 0.51 | -0.35 | 0.10 | 2.865e-03 | 4.396e-03 | 2.933e-03 |
+| 8x8 | log-uniform | flat | 4/4 | 2.94e-06 .. 2.81e-01 | 0.99 | 0.15 | 1.00 | 3.074e-02 | 5.810e-01 | 1.783e-03 |
+| 8x8 | log-uniform | h2-balanced | 4/4 | 2.26e-06 .. 2.24e-01 | 0.99 | 0.73 | 1.00 | 4.783e-02 | 2.031e-01 | 2.946e-03 |
+| 8x8 | low-cluster | flat | 4/4 | 9.72e-07 .. 9.70e-02 | 1.16 | 0.76 | 1.00 | 1.775e-03 | 4.294e-01 | 1.357e-03 |
+| 8x8 | low-cluster | h2-balanced | 4/4 | 8.95e-07 .. 8.95e-02 | 0.98 | 0.22 | 1.00 | 4.797e-03 | 4.083e-02 | 2.044e-03 |
+| 8x8 | repeated | flat | 2/4 | 5.84e-06 .. 5.04e-01 | 2.00 | 2.62 | 0.24 | 2.741e-04 | 3.503e-04 | 2.729e-04 |
+| 8x8 | repeated | h2-balanced | 2/4 | 5.12e-06 .. 4.43e-01 | 0.67 | 0.79 | 0.51 | 1.634e-03 | 6.123e-02 | 4.222e-04 |
+
+`kappa = 1e4`
+
+| size | spectrum | source | rank | delta_* range | order e_H2 | order e_Hankel | order excess | e_H2/delta_* | e_Hankel/delta_* | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4x4 | endpoint-cluster | flat | 2/2 | 3.47e-06 .. 3.30e-01 | 0.47 | -1.00 | 1.02 | 6.477e-03 | 1.166e-01 | 1.979e-04 |
+| 4x4 | endpoint-cluster | h2-balanced | 2/2 | 3.41e-06 .. 3.21e-01 | 1.02 | 1.59 | 1.00 | 1.168e-03 | 7.039e-04 | 1.625e-04 |
+| 4x4 | log-uniform | flat | 2/2 | 7.33e-06 .. 6.12e-01 | 1.00 | 1.12 | 1.00 | 1.132e-01 | 1.384e-01 | 7.708e-03 |
+| 4x4 | log-uniform | h2-balanced | 2/2 | 2.51e-06 .. 2.35e-01 | 1.00 | 0.93 | 1.00 | 5.045e-01 | 2.002e+00 | 4.512e-02 |
+| 4x4 | low-cluster | flat | 2/2 | 9.93e-07 .. 9.91e-02 | 1.03 | -0.05 | 1.00 | 2.470e-03 | 4.694e-03 | 3.634e-04 |
+| 4x4 | low-cluster | h2-balanced | 2/2 | 9.89e-07 .. 9.88e-02 | 0.54 | -0.50 | 1.00 | 1.860e-02 | 7.530e-01 | 2.808e-04 |
+| 4x4 | repeated | flat | 2/2 | 3.44e-06 .. 3.24e-01 | 1.09 | 1.81 | 2.05 | 4.164e-04 | 3.671e-04 | -4.359e-04 |
+| 4x4 | repeated | h2-balanced | 2/2 | 3.40e-06 .. 3.20e-01 | -0.18 | 1.72 | 2.39 | 4.459e-03 | 4.319e-03 | -1.664e-03 |
+| 8x8 | endpoint-cluster | flat | 4/4 | 4.52e-05 .. 8.52e-01 | 2.03 | -0.38 | 2.11 | 1.984e-04 | 7.743e-03 | 1.714e-04 |
+| 8x8 | endpoint-cluster | h2-balanced | 4/4 | 4.47e-05 .. 9.64e-01 | 2.08 | 0.25 | 1.22 | 1.224e-04 | 1.399e-02 | 1.658e-04 |
+| 8x8 | log-uniform | flat | 4/4 | 2.71e-05 .. 7.62e-01 | 1.00 | 0.97 | 1.00 | 5.386e-02 | 9.238e-02 | 1.354e-03 |
+| 8x8 | log-uniform | h2-balanced | 4/4 | 1.87e-05 .. 6.57e-01 | 1.00 | 0.92 | 1.00 | 5.559e-02 | 2.798e-01 | 1.027e-02 |
+| 8x8 | low-cluster | flat | 4/4 | 9.81e-07 .. 9.82e-02 | 0.98 | 1.00 | 1.00 | 6.050e-02 | 7.890e-02 | 1.317e-03 |
+| 8x8 | low-cluster | h2-balanced | 4/4 | 9.06e-07 .. 9.04e-02 | 0.85 | 1.77 | 1.00 | 2.833e-02 | 8.335e-02 | 3.174e-03 |
+| 8x8 | repeated | flat | 2/4 | 5.82e-05 .. 9.85e-01 | 1.88 | 0.72 | 2.06 | 1.466e-04 | 9.673e-03 | -9.599e-05 |
+| 8x8 | repeated | h2-balanced | 2/4 | 5.72e-05 .. 9.69e-01 | 2.27 | 1.73 | 2.01 | 7.168e-05 | 6.422e-03 | 1.442e-04 |
+
+`kappa = 1e6`
+
+| size | spectrum | source | rank | delta_* range | order e_H2 | order e_Hankel | order excess | e_H2/delta_* | e_Hankel/delta_* | excess/delta_* |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 4x4 | endpoint-cluster | flat | 2/2 | 3.35e-05 .. 9.59e-01 | 2.05 | 1.90 | 1.41 | 3.451e-04 | 4.516e-04 | 4.893e-05 |
+| 4x4 | endpoint-cluster | h2-balanced | 2/2 | 3.31e-05 .. 9.55e-01 | 1.89 | 0.73 | 1.58 | 4.816e-05 | 1.555e-02 | 9.860e-06 |
+| 4x4 | log-uniform | flat | 2/2 | 3.99e-05 .. 9.72e-01 | 1.00 | 0.47 | 1.01 | 1.315e-02 | 6.947e-02 | 4.261e-04 |
+| 4x4 | log-uniform | h2-balanced | 2/2 | 5.68e-06 .. 4.20e-01 | 1.00 | 1.01 | 1.00 | 4.512e-01 | 1.164e+00 | 2.131e-02 |
+| 4x4 | low-cluster | flat | 2/2 | 9.90e-07 .. 9.88e-02 | 0.86 | 1.01 | 1.00 | 1.079e-02 | 7.350e-03 | 5.259e-04 |
+| 4x4 | low-cluster | h2-balanced | 2/2 | 9.89e-07 .. 9.87e-02 | 0.55 | 0.56 | 1.00 | 5.556e-03 | 1.204e-02 | 3.491e-04 |
+| 4x4 | repeated | flat | 2/2 | 3.29e-05 .. 9.57e-01 | 1.14 | -0.05 | 1.44 | 3.648e-04 | 6.945e-03 | 1.705e-04 |
+| 4x4 | repeated | h2-balanced | 2/2 | 3.29e-05 .. 9.54e-01 | 1.72 | 3.21 | 1.97 | 2.147e-04 | 1.291e-02 | 1.208e-04 |
+| 8x8 | endpoint-cluster | flat | 4/4 | 4.51e-04 .. 9.99e-01 | 2.00 | 1.38 | 2.00 | 6.995e-04 | 5.347e-03 | 6.995e-04 |
+| 8x8 | endpoint-cluster | h2-balanced | 4/4 | 4.50e-04 .. 9.96e-01 | 2.00 | 1.73 | 2.00 | 4.926e-04 | 5.828e-03 | 4.943e-04 |
+| 8x8 | log-uniform | flat | 4/4 | 2.35e-04 .. 8.97e-01 | 1.00 | 0.99 | 0.92 | 3.368e-02 | 6.241e-02 | 6.946e-04 |
+| 8x8 | log-uniform | h2-balanced | 4/4 | 1.47e-04 .. 8.23e-01 | 1.00 | 1.01 | 0.99 | 3.261e-02 | 1.245e-01 | 6.420e-03 |
+| 8x8 | low-cluster | flat | 4/4 | 1.05e-06 .. 1.07e-01 | 1.00 | 0.10 | 1.00 | 1.456e-01 | 2.254e+00 | 1.026e-02 |
+| 8x8 | low-cluster | h2-balanced | 4/4 | 9.17e-07 .. 9.18e-02 | 0.95 | 1.34 | 1.00 | 4.287e-02 | 6.216e-02 | 1.185e-03 |
+| 8x8 | repeated | flat | 2/4 | 5.82e-04 .. 1.00e+00 | 2.00 | 2.14 | 2.00 | 8.956e-04 | 1.097e-03 | 8.953e-04 |
+| 8x8 | repeated | h2-balanced | 2/4 | 5.81e-04 .. 9.98e-01 | 2.00 | 2.14 | 2.02 | 4.611e-04 | 1.098e-03 | 4.372e-04 |
+
+### A5. What this does and does not refute
+
+Refuted, on a fixed problem along one controlled family with `delta_* -> 0`:
+
+* `||H_U - H_V||_H2 <= C delta_*^2` with a constant that may depend on the fixed
+  `(B, f, Sigma)`: the transfer exponent is 1 and `e_H2 / delta_*` plateaus at a
+  positive constant (`1.34e-02` for 4x4 log-uniform flat, `1.49e-01` for 8x8
+  low-cluster flat) while `e_H2 / delta_*^2` grows by orders of magnitude.
+* the sharp-baseline form `Err(V) <= Err(U) + C delta_*^2`: the excess over the
+  exact-MPMM baseline also has exponent 1 with a positive constant ratio.
+* the vendor impedance channel: `e_Hankel / delta_*` plateaus at a positive
+  constant as well, so a Hankel-norm guarantee does not fare better than H2 here.
+* any quadratic dynamic statement assembled from matching-defect information
+  alone by triangle inequality.
+
+Not refuted:
+
+* quadratic statements that use structure beyond the matching defects (Hermite /
+  derivative / cross-shift information).  The experiment shows such structure
+  cannot be *recovered* from the defects; it does not show that no theorem using
+  that structure exists.
+* a **linear** port bridge: the surviving candidate
+  `delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_*` of A7 is linear in
+  `delta_*` and is exactly the shape the counterexample leaves standing.
+* a cancellation between `H - H_U` and `H_U - H_V`: measured and excluded by the
+  excess columns above.
+
+Mechanism, consistent with the numbers: at a matching shift the value error is
+`||x - x_V||^2_(B + sigma I) = O(delta^2)`, but the derivative is
+`H'(sigma) = -x^T x` and Galerkin only gives `x_V^T (B + sigma I) e = 0`, not
+`x_V^T e = 0`, so the derivative mismatch is generically `O(delta)`.
+
+### A6. Limits
+
+* One controlled perturbation family (`V_theta` rotating out of `U`).  It settles
+  the order question for the general defect-only statement, by counterexample; it
+  is not a sweep over inexact moment spaces, and the plateau constants are
+  problem specific (`B`, `f`, `Sigma` fixed) rather than universal.
+* `delta_* -> 0` is driven by `theta -> 0` at fixed `[a, b]` and fixed shifts.
+* 4x4 uses two shifts and 8x8 four, not the full 13-shift plan.
+* `rank` in the tables is the numerical rank of the snapshot matrix; for the
+  `repeated` family at 8x8 it is `2` out of 4 shifts, so those rows measure a
+  2-dimensional moment space and cannot be read as "degeneracy restores the
+  square" in the same sense as a full-rank clustered spectrum.  `endpoint-cluster`
+  is likewise not uniformly second order (`kappa = 1e2` gives exponent 0.1 - 0.2).
+* The vendor material also states a whole-space-time temperature energy as
+  `< 2 sqrt(epsilon)`, but does not define that norm in the retrieved pages.  It is
+  `[STATE-AUX]` and is **not** an acceptance target here, so no number in this
+  record is claimed against it.  The port-side statement `< 2 epsilon` for the
+  impedance Hankel error is the one this record speaks to.
+* Only relative ROM-to-ROM differences are reported; how large `delta_*` actually
+  is in the real model stays the certificate's job.
+
+### A7. The skeleton layer: invariants, rho_Sigma, K_sample and K_vec
+
+Second mode of the same bench (`--mode skeleton`), on the delivered 13-shift box
+plan.  The cardinal functions are the symmetric skeleton choice `lambda_j = t_j =
+sigma_j`,
+
+```text
+ell_j(s) = 2 sigma_j/(s + sigma_j) prod_{k != j} (s - sigma_k)/(s + sigma_k)
+           * (sigma_j + sigma_k)/(sigma_j - sigma_k),
+r_Sigma(z) = prod_k (z - sigma_k)/(z + sigma_k),
+```
+
+so that the Massei--Robol identity holds: `1 - (s + lambda) I_Sigma[(. + lambda)^-1](s)
+= r_Sigma(lambda)/r_Sigma(-s)`.  The four implementation invariants, checked before
+anything is measured (mixed relative tolerance, and an 80-digit mpmath reference for
+the cardinal values themselves):
+
+```text
+kappa                        100 | 1e+04 | 9.674e+05 | 1e+06
+ell_j(sigma_k) = delta_jk    4.4e-16 | 4.4e-16 | 8.9e-16 | 6.7e-16
+skeleton identity            6.7e-16 | 8.9e-16 | 9.1e-16 | 9.7e-16
+|r_Sigma(-i omega)| = 1      6.7e-16 | 1.1e-15 | 1.1e-15 | 8.9e-16
+mpmath 80-digit reference    1.3e-16 | 1.9e-16 | 1.5e-16 | 3.0e-16
+partial fractions rebuild    1.6e-12 | 2.3e-12 | 1.0e-11 | 1.5e-11
+min eigenvalue of Q          1.4e+00 | 1.7e+00 | 1.7e+00 | 1.7e+00
+```
+
+All six hold at machine precision, so the plan geometry below is that of the
+documented construction and not of a private convention.  The partial fractions have
+both signs with magnitudes around `2e+07` and cancel, which is why the rebuild test
+matters: with mixed relative error `1e-11` the double-precision residues are
+usable.
+
+| kappa | shifts | rho_Sigma | rho_Sigma^2 | q_m | K_vec = sup_t K_vec(t) | gamma_Sigma | K_sample range |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 100 | 6 | 1.428271e-02 | 2.039957e-04 | 2.040041e-04 | 8.886572e+01 | 1.4283e-02 | 14.679 .. 18.650 |
+| 1e+04 | 9 | 3.025451e-02 | 9.153356e-04 | 9.153357e-04 | 9.059954e+01 | 3.0255e-02 | 6.966 .. 10.330 |
+| 9.674e+05 | 13 | 2.912612e-02 | 8.483307e-04 | 8.483203e-04 | 1.440550e+02 | 2.9126e-02 | 7.210 .. 10.691 |
+| 1e+06 | 13 | 2.940478e-02 | 8.646413e-04 | 8.641083e-04 | 1.430984e+02 | 2.9405e-02 | 7.146 .. 10.593 |
+
+`rho_Sigma^2` and the elliptic construction `q_m = 4 exp(-m pi^2/log(4 kappa))` agree
+to four or five digits at every condition number, which is the expected relation
+(`8.483307e-04` against `8.483189e-04` at the delivered `kappa = 9.674e+05`) - checked
+as a relation, not as an equality to roundoff.
+
+The two constants that decide whether a linear dynamic bridge can be attempted:
+
+* `K_sample`, the exact SISO worst-case amplification of matching-value errors
+  (`D_j <= delta_*^2 h_j`) through the skeleton cardinal functions, from the
+  partial-fraction Gram `Q_ij = sum_{k,l} a_ik a_jl/(sigma_k + sigma_l)` with all
+  `2^13` box vertices enumerated: **6.97 .. 18.65** over all
+  condition numbers, families and sources, i.e. mild.  So sample-value
+  propagation does not explain the first-order transfer error of A3.
+* `K_vec(t) = sum_j |ell_j(t)| c_j(t)` with `c_j(t) = max_{lambda in [a,b]}
+  (lambda + t)/(lambda + sigma_j)` and `[a, b]` the **box spectral interval**
+  `[1, kappa]` (not the extreme shifts), the constant of the linear candidate
+  `delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_*`.  It is reported at its
+  supremum: `|ell_j|` and the branch of `c_j` only break at the shifts, so each
+  open interval of `t` carries a smooth rational `K_vec`, and the maximum is
+  located per interval and cross-checked at 80 digits, as is the analytic tail.  The
+  value reported is therefore a **numerically resolved** supremum, not a
+  computer-certified one: the 80-digit pass verifies the candidate value, not the
+  absence of another stationary point, and `rho_Sigma` is likewise a grid maximum.
+  Should it enter a theorem constant, the extremum needs root isolation or a proof
+  that it sits at `t -> 0`.  **88.87 (kappa=1e2) ->
+  90.60 (1e4) -> 144.06 (9.674e5) -> 143.10 (1e6)**, i.e. bounded by a few hundred,
+  not growing with the condition number, and attained at `t -> 0` on the delivered
+  plan.  `sup_{t >= 0} gamma_Sigma(t) = rho_Sigma` holds in closed form because
+  `|r_Sigma(-t)| = prod_j (t + sigma_j)/|t - sigma_j| >= 1`, so the purely skeleton
+  part needs no sampling either (`2.9e-02` on the delivered plan).
+
+Consequence: the linear route is not killed by an exploding constant, which is what
+the RHS budget question needs; the responsibility for the first-order transfer error
+is localized to the subspace perturbation destroying the Hermite structure, not to
+cardinal-function amplification.
+
+Reproduce:
+
+```text
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_toy.py \\
+  --mode skeleton --size 4 --output <path>.json
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_toy.py \\
+  --mode skeleton --size 8 --output <path>.json
+```
+
+### A8. The linear candidate survives the real axis
+
+Layer 3 of the same bench (`--mode linear`) tests the derived inequality
+
+```text
+delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_*,        t >= 0,
+```
+
+on the **whole** 13-shift plan rather than on a two- or four-shift subset: the toy
+dimension is raised to 26 so that `U` (spanned by the 13 exact snapshots) keeps rank
+13 and a 13-dimensional `Q` complement exists, and the rotated space is still
+`V = U cos theta + Q sin theta`, so `delta_* = max_{j=1..13} delta_j` is the maximum
+matching defect of the complete plan.  The time grid is not a scan: it contains
+`t = 0`, every shift `sigma_j`, the geometric midpoint of each neighbouring pair, 40
+logarithmic points across `[1e-6, 1e6 kappa]` and the far tail `1e9 kappa`.  Both
+terms of the bound are also measured separately, against their own bounds:
+
+```text
+skeleton piece  ||e_skel(t)||_(A_t) / ||x(t)||_(A_t)  against  gamma_Sigma(t),
+sample piece    sum_j |ell_j(t)| ||x_j - x_V,j||_(A_t) / ||x(t)||_(A_t)
+                                                      against  K_vec(t) delta_*.
+```
+
+402 rows (two spectrum families, `theta = 1e-4, 1e-6, 1e-8`, 67 time arguments
+each) give **no violation** of the total inequality and no violation of either
+piece.  The maximum of `R(t) = delta(t;V) / U_vec(t)` is exactly `1.000000`, and it
+sits at `t = sigma_min`: there the skeleton is exact (`gamma_Sigma = 0`,
+`e_skel = 0`) and `K_vec(sigma_min) = 1`, so `delta(t;V) = delta_* = U_vec(t)` by
+construction - the bound is attained at the worst matching point, as it must be.
+A strict `>` comparison had reported this equality as a violation; the test now
+carries a `1e-12` relative tolerance.
+
+Tightness of the bound away from that point, as `U_vec / delta`:
+
+```text
+family        theta     delta_*      median     max      max location
+log-uniform   1e-8      1.781e-06    2.22       1.77e+02  t = 1.0e+09 kappa
+low-cluster   1e-8      1.528e-06    2.63       1.45e+02  t = 1.0e+09 kappa
+log-uniform   1e-6      1.781e-04    4.14       1.77e+02  t = 1.0e+09 kappa
+low-cluster   1e-6      1.528e-04    5.00       1.45e+02  t = 1.0e+09 kappa
+log-uniform   1e-4      1.781e-02    87.82      2.76e+02  t = 1.0e+09 kappa
+low-cluster   1e-4      1.528e-02    93.45      4.94e+02  t = 1.0e+09 kappa
+```
+
+In the asymptotic regime a median factor of `2.2 .. 5.0` separates the bound from
+the measured defect; the largest ratios occur in the far tail, where
+`gamma_Sigma = rho_Sigma` alone dominates and the measured `delta(t;V)` has already
+decayed below the exact-skeleton baseline - that is the baseline being conservative,
+not the sample term being slack.
+
+The imaginary axis is deliberately **not** part of this test: the derivation uses
+`A_t = B + tI > 0` and the `A_t`-energy Galerkin optimality, neither of which
+survives at `t = i omega`.  Frequency-response error on `t = i omega` remains a
+separate diagnostic.
+
+Reproduce:
+
+```text
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_toy.py \\
+  --mode linear --size 26 --kappas 9.674e5 --families log-uniform,low-cluster \\
+  --sources flat --thetas 1e-4,1e-6,1e-8 --output <path>.json
+```
+
+Reproduce (layer 1, JSON outside the repository):
+
+```text
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_toy.py \
+  --mode rotation --size 4 --output <path>.json
+PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_toy.py \
+  --mode rotation --size 8 --output <path>.json
+```
+
+---
+
+## Part B - closed routes and measurement corrections
 
 本文件是本目录**唯一**的失败路线档案。此前的 27 份逐条记录（`RESULTS.md`、
 `ZOLOTAREV_RESULTS.md`、`TANGENT_CORNER_SAMPLING.md`、`TRANSIENT_COMPARISON.md`、
@@ -38,7 +501,7 @@ CORRECTION      实测 bug 或定义错位
 只证明“该方案在这个固定实移 / 采样步进诊断下失败”。它们**不**证明该方案不可能满足
 port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、同一套基底构造思想在系统范数目标下
 重新采用。把前者读成后者是本文件历史上最需要纠正的逻辑跨越，依据是
-`records/DYNAMIC_BRIDGE_TOY.md` 的一阶反例：fixed-`s` 的同址平方关系**不**推出动态系统范数
+`records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 的一阶反例：fixed-`s` 的同址平方关系**不**推出动态系统范数
 误差也平方。反过来，标着 `PORT-SYSTEM` 的条目（A1、A10、C1、C2、C4）是直接对动态系统范数
 成立的判决。
 
@@ -70,7 +533,7 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
 
 ---
 
-## 0. 撤回声明与理论交叉引用（不是失败路线）
+### B0. 撤回声明与理论交叉引用（不是失败路线）
 
 以下条目曾经以“负结果”的形式出现在旧记录里，但按上面的边界它们属于**正文撤回**或**未证明的目标**，因此不占用负结果编号：
 
@@ -82,9 +545,9 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
 
 ---
 
-## 1. 认证与误差界路线
+### B1. 认证与误差界路线
 
-### A1  全局 matrix-fractional Bernstein 残差证书 + 均匀 Neumann 界
+#### A1  全局 matrix-fractional Bernstein 残差证书 + 均匀 Neumann 界
 
 **判定作用域.** `PORT-SYSTEM + PORT-FIXED-S + COST`
 
@@ -100,7 +563,7 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
 判定：界太松（系数级不等式正确，数值无用）；局部路线另有成本不可行。
 复现：`probe_uniform_certificate.py --mesh-mm 5 --half-width 0.01 --stock` 等（脚本已退役）。
 
-### A2  全盒 Taylor jet 参数盒证书（旧成本结构）
+#### A2  全盒 Taylor jet 参数盒证书（旧成本结构）
 
 **判定作用域.** `PORT-STEP + COST`
 
@@ -120,7 +583,7 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
 复现：`probe_taylor_box.py --mesh-mm 2.5 --steps 40 --fractions ...`、`--order 7
 --center-h 5000 2`（脚本已退役）。
 
-### A3  单元 Neumann/Chebyshev 逆多项式 + 张量 Bernstein 盒（旧加权与旧实现）
+#### A3  单元 Neumann/Chebyshev 逆多项式 + 张量 Bernstein 盒（旧加权与旧实现）
 
 **判定作用域.** `COST`
 
@@ -140,7 +603,7 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 复现：`bench_polynomial_anatomy_case1.py --output .../polynomial_anatomy_seed20260805_rank63.json`
 （脚本已退役）。
 
-### A4  Reduced Neumann--Bernstein 残差盒原型
+#### A4  Reduced Neumann--Bernstein 残差盒原型
 
 **判定作用域.** `PORT-FIXED-S + COST`
 
@@ -156,7 +619,7 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 `bench_neumann_bernstein_case1.py --ranks 49 60 63 --orders 3 --max-cells 512 --audit-grid 41`
 （脚本已退役）。
 
-### A5  单一全局谱标量的廉价盒残差界
+#### A5  单一全局谱标量的廉价盒残差界
 
 **判定作用域.** `PORT-FIXED-S`
 
@@ -171,7 +634,7 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 判定：界太松（且属结构性：见上句）。
 复现：`bench_cheap_residual_bound.py 5 --grid 9 --local`（脚本已退役）。
 
-### A6  BDF1 输出残差证书（K_min^-1 全局 Gram + 见证空间）
+#### A6  BDF1 输出残差证书（K_min^-1 全局 Gram + 见证空间）
 
 **判定作用域.** `PORT-STEP`
 
@@ -185,7 +648,7 @@ R 就超过阈值）；把 Neumann 升到 12 阶闭合 `0` 个；真实 Chebyshe
 判定：界太松（记录原文 valid algebraically but too loose to retire a candidate）。
 复现：记录未给出命令。
 
-### A7  post-SVD 压缩效应诊断：raw majorant 不能认证交付 ROM
+#### A7  post-SVD 压缩效应诊断：raw majorant 不能认证交付 ROM
 
 **判定作用域.** `PORT-FIXED-S + PORT-STEP`
 
@@ -201,7 +664,7 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 “认证最终交付 V 本身”替代（见 `THEORY.md`）。
 复现：`probe_post_svd.py --mesh-mm 2.5`、`--mesh-mm 1`（脚本已退役）。
 
-### A8  频率计划谱区间缺陷（已修复）
+#### A8  频率计划谱区间缺陷（已修复）
 
 **判定作用域.** `PORT-FIXED-S + CORRECTION`
 
@@ -219,7 +682,7 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 变好）。当前实测见 `README.md` 第 2 节。
 复现：`test_box_frequency_plan.py`（仍在维护，5 项测试）。
 
-### A10  频率轴（Hankel）整盒证书
+#### A10  频率轴（Hankel）整盒证书
 
 **判定作用域.** `PORT-SYSTEM`
 
@@ -233,9 +696,9 @@ raw 最坏步 `3.7455e-6` 对 final `5.5055e-4`；1 mm 为 100 列 / 101 阶 / 5
 
 ---
 
-## 2. 采样、选点与富集路线
+### B2. 采样、选点与富集路线
 
-### B1  先验闭式点集（tensor Chebyshev、二维 Padua、嵌套 Clenshaw--Curtis Smolyak）
+#### B1  先验闭式点集（tensor Chebyshev、二维 Padua、嵌套 Clenshaw--Curtis Smolyak）
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
@@ -249,7 +712,7 @@ alone does neither）。
 复现：`compare_sampling.py 2.5 1 2 3 --validation-grid 21 --random-holdout 128`、
 `compare_extractors.py 2.5 --degrees 1 2 --random-seeds 5`（脚本已退役）。
 
-### B2  tensor corners（只用四个 HTC 角点）
+#### B2  tensor corners（只用四个 HTC 角点）
 
 **判定作用域.** `PORT-STEP`
 
@@ -259,7 +722,7 @@ log-Padua degree 1 只有 `0.00553%`；角点响应张成更低秩的空间并�
 判定：被反例证伪。
 复现：同 B1。
 
-### B3  log-Padua degree 2 与嵌套 level-3 Smolyak（加密确定性采样应带来单调改善）
+#### B3  log-Padua degree 2 与嵌套 level-3 Smolyak（加密确定性采样应带来单调改善）
 
 **判定作用域.** `PORT-STEP`
 
@@ -271,7 +734,7 @@ SVD 保留 45 而非 47 个模态；只把 closing cutoff 收紧到 1e-4 后阶�
 not the cause），失效环节是 closing SVD 压缩。
 复现：同 B1。
 
-### B4  raw tensor Zolotarev 计数作为采样规模规则
+#### B4  raw tensor Zolotarev 计数作为采样规模规则
 
 **判定作用域.** `PORT-FIXED-S`
 
@@ -285,7 +748,7 @@ not the cause），失效环节是 closing SVD 压缩。
 复现：`compare_zolotarev.py 2.5 --junction-tolerances --count-pairs 2x2 3x3 4x4 5x5 6x6 ...`
 （脚本已退役；同族的 `test_zolotarev.py` 逻辑已并入 `test_certified_sampling.py`）。
 
-### B5  Zolotarev-seeded weak greedy 的停止规则（有限候选网格证书）
+#### B5  Zolotarev-seeded weak greedy 的停止规则（有限候选网格证书）
 
 **判定作用域.** `PORT-FIXED-S`
 
@@ -299,7 +762,7 @@ not the cause），失效环节是 closing SVD 压缩。
 这一说法（逻辑作用域不够，不是数值 effectivity 差）；在有限候选集上取最大化本身仍然正确。
 复现：同 B4。
 
-### B6  seed + 排名最高的单个切角（2 个 HTC 点）
+#### B6  seed + 排名最高的单个切角（2 个 HTC 点）
 
 **判定作用域.** `PORT-STEP`
 
@@ -310,7 +773,7 @@ not the cause），失效环节是 closing SVD 压缩。
 复现：`probe_tangent_corners.py 2.5 --tolerance 1e-3 --maximum-points 3 --random-holdout 64`
 （脚本已退役）。
 
-### B7  seed + 三个切角（4 个 HTC 点）
+#### B7  seed + 三个切角（4 个 HTC 点）
 
 **判定作用域.** `PORT-STEP`
 
@@ -321,7 +784,7 @@ not the cause），失效环节是 closing SVD 压缩。
 individual transient errors are not guaranteed to improve as snapshots are added）。
 复现：同 B6。
 
-### B8  BDF1 输出残差界 greedy
+#### B8  BDF1 输出残差界 greedy
 
 **判定作用域.** `PORT-STEP + COST`
 
@@ -331,7 +794,7 @@ individual transient errors are not guaranteed to improve as snapshots are added
 判定：界太松（记录原文 too loose to stop at 1e-3）。
 复现：记录未给出命令。
 
-### B9  conditional Zolotarev 暴露边规则
+#### B9  conditional Zolotarev 暴露边规则
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
@@ -343,7 +806,7 @@ resolvent 比会把快照推离主导归一化输出的角点。
 判定：被反例证伪（以实际目标衡量；一维放置原理本身成立）。
 复现：`probe_conditional_zolotarev.py 2.5 --random-holdout 64`（脚本已退役）。
 
-### B10  四顶点凸二次 majorant 作为选择规则/误差量
+#### B10  四顶点凸二次 majorant 作为选择规则/误差量
 
 **判定作用域.** `PORT-FIXED-S`
 
@@ -356,7 +819,7 @@ resolvent 比会把快照推离主导归一化输出的角点。
 共三点，12 点 holdout `6.189e-4`。
 复现：`probe_tangent_corners.py 2.5 --tolerance 1e-3 --maximum-points 3`（脚本已退役）。
 
-### B11  场残差 greedy（1x1 Zolotarev 种子 + 9x9 候选网格）
+#### B11  场残差 greedy（1x1 Zolotarev 种子 + 9x9 候选网格）
 
 **判定作用域.** `PORT-FIXED-S + PORT-STEP`
 
@@ -371,7 +834,7 @@ entrywise 失败直接否掉）＋ 界太松（预 SVD 残差界本身合法，�
 复现：`compare_transient.py 2.5 --tolerances 1e-3 1e-4 --counts --seeds 20260805
 --greedy-seed-counts 1 2 --greedy-grid 9 --max-extra-per-shift 12 --random-holdout 6`（脚本已退役）。
 
-### B12  Zolotarev 2x2 种子 + 同样的场残差 greedy
+#### B12  Zolotarev 2x2 种子 + 同样的场残差 greedy
 
 **判定作用域.** `PORT-FIXED-S + PORT-STEP`
 
@@ -381,7 +844,7 @@ entrywise 失败直接否掉）＋ 界太松（预 SVD 残差界本身合法，�
 判定：被反例证伪（记录原文 The 2x2 seed is dominated in these runs）。
 复现：同 B11。
 
-### B13  固定 Zolotarev 4x4 张量替代随机 HTC 循环
+#### B13  固定 Zolotarev 4x4 张量替代随机 HTC 循环
 
 **判定作用域.** `COST`
 
@@ -394,7 +857,7 @@ are claimed。
 复现：`compare_transient.py 2.5 --tolerances 1e-3 --counts 2 3 4 --seeds 20260805 7
 --random-holdout 6 --dt 50 --duration 2000`（脚本已退役）。
 
-### B14  候选网格 17x17
+#### B14  候选网格 17x17
 
 **判定作用域.** `PORT-STEP`
 
@@ -405,7 +868,7 @@ are claimed。
 复现：`compare_transient.py 2.5 --tolerances 1e-3 --greedy-seed-counts 1 --greedy-grid 17 ...`
 （脚本已退役）。
 
-### B15  场残差 greedy + 收紧 closing SVD cutoff
+#### B15  场残差 greedy + 收紧 closing SVD cutoff
 
 **判定作用域.** `PORT-STEP + COST`
 
@@ -418,7 +881,7 @@ decisive for the final error。
 复现：对应的 `greedy_transient_svd_1e4.json` / `_svd_1e5.json` / `_tol1e4_svd_1e5.json`
 一族运行（脚本已退役）。
 
-### B16  稳态输出 greedy 直接用于动态四端口频移压缩 ROM
+#### B16  稳态输出 greedy 直接用于动态四端口频移压缩 ROM
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
@@ -434,7 +897,7 @@ compressed frequency-shifted ROM）；稳态界也不界定整个瞬态，有限
 复现：`compare_transient.py 2.5 --tolerances 1e-3 1e-4 --output-greedy-grid 9
 --output-max-points 12 ...`（脚本已退役）。
 
-### B17  稳态输出 greedy + 17x17 候选网格
+#### B17  稳态输出 greedy + 17x17 候选网格
 
 **判定作用域.** `PORT-STEP`
 
@@ -445,7 +908,7 @@ compressed frequency-shifted ROM）；稳态界也不界定整个瞬态，有限
 changing the candidate grid。
 复现：`compare_transient.py 2.5 --tolerances 1e-3 --output-greedy-grid 17 ...`（脚本已退役）。
 
-### B18  稳态输出 greedy + 收紧 closing cutoff
+#### B18  稳态输出 greedy + 收紧 closing cutoff
 
 **判定作用域.** `PORT-STEP + COST`
 
@@ -456,7 +919,7 @@ changing the candidate grid。
 guaranteed dynamic ROM。
 复现：对应的 `bridge_transient_svd_1e4.json` / `_svd_1e5.json`（脚本已退役）。
 
-### B19  八组 HTC 的 17 点低频面设计
+#### B19  八组 HTC 的 17 点低频面设计
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
@@ -468,7 +931,7 @@ guaranteed dynamic ROM。
 判定：被反例证伪（该设计未达到它自己的 1e-3 稳态判据：最坏 steady entry `4.5775e-3`）。
 复现：`explore_frequency_faces.py --include-stock`（脚本已退役）。
 
-### B20  八组 HTC：仅在单个 Zolotarev 种子处加 DC
+#### B20  八组 HTC：仅在单个 Zolotarev 种子处加 DC
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
@@ -478,7 +941,7 @@ guaranteed dynamic ROM。
 判定：被反例证伪。
 复现：`explore_frequency_faces.py --include-dc --compare-seed-dc`（脚本已退役）。
 
-### B21  多组数早期探索：全局稳态切向风险排名的 5 点，与欠分辨暴露面加密
+#### B21  多组数早期探索：全局稳态切向风险排名的 5 点，与欠分辨暴露面加密
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
@@ -490,7 +953,7 @@ guaranteed dynamic ROM。
 workspace 重置中丢失”是证据质量注释，不是分类。
 复现：记录未给出这些初步运行的命令。
 
-### B22  两组 Case 1：低频段三点面（80 解）与三切点铺满全部频移（144 解）
+#### B22  两组 Case 1：低频段三点面（80 解）与三切点铺满全部频移（144 解）
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S + COST`
 
@@ -503,7 +966,7 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 三切点全频移版 `3.9497e-3`，均超 1e-3）。
 复现：`explore_two_group_frequency_faces.py`（脚本已退役）。
 
-### B23  两组 Case 1：三低频点面 + 仅种子处 DC（84 解）
+#### B23  两组 Case 1：三低频点面 + 仅种子处 DC（84 解）
 
 **判定作用域.** `PORT-STEP + PORT-FIXED-S`
 
@@ -515,7 +978,7 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 保证。
 复现：`explore_two_group_frequency_faces.py --grid 17`、`--edge-grid 65`（脚本已退役）。
 
-### B24  1 mm 上用稀疏直接 LU 做谱准备与验证参考
+#### B24  1 mm 上用稀疏直接 LU 做谱准备与验证参考
 
 **判定作用域.** `COST`
 
@@ -531,9 +994,9 @@ rule, not an established two-dimensional minimax Zolotarev rule。
 
 ---
 
-## 3. 压缩、缺陷传播与 inexact-moment 路线
+### B3. 压缩、缺陷传播与 inexact-moment 路线
 
-### C1  inexact-moment 动态桥
+#### C1  inexact-moment 动态桥
 
 **判定作用域.** `PORT-SYSTEM`
 
@@ -552,7 +1015,7 @@ QR 之后的小稠密 SVD。
 复现：`bench_inexact_moment_margins.py --mesh 5 --grid 9 --full-h2 --subset-sizes 4 13 26 44`
 （bench 已退役；同族的 `test_inexact_moment_theory.py` 仍在维护）。
 
-### C2  在交付基上实测桥量裕度（判决实验）
+#### C2  在交付基上实测桥量裕度（判决实验）
 
 **判定作用域.** `PORT-SYSTEM`
 
@@ -567,7 +1030,7 @@ QR 之后的小稠密 SVD。
 之前否掉该路线。
 复现：同 C1。
 
-### C3  LU cache 测量 bug（INEXACT_RK_DEFECT_CASE1.md 的更正段）
+#### C3  LU cache 测量 bug（INEXACT_RK_DEFECT_CASE1.md 的更正段）
 
 **判定作用域.** `CORRECTION`
 
@@ -581,7 +1044,7 @@ HTC 点之后的所有点都在用别的点的分解。
 判定：测量更正 —— `2.61e-2` 与“第一项失败”的读法全部撤回。
 复现：`bench_inexact_rk_defect_case1.py --mesh 5 --grid 5 --linearity`（脚本已退役）。
 
-### C4  逐 shift 加性 defect 预算
+#### C4  逐 shift 加性 defect 预算
 
 **判定作用域.** `PORT-SYSTEM`
 
@@ -594,7 +1057,7 @@ HTC 点之后的所有点都在用别的点的分解。
 判定：界太松。被否掉的只是“逐 shift 加性聚合”，不是 defect-aware 桥本身。
 复现：同 C3。
 
-### C5  active-set 原型：合成先行 + 真实 Case 1 验证
+#### C5  active-set 原型：合成先行 + 真实 Case 1 验证
 
 **判定作用域.** `COST`
 
@@ -614,7 +1077,7 @@ exact-map oracle 每次迭代、每个 shift 都重建 shift 相关的稀疏 LU 
 复现：`bench_active_set_case1.py --max-solves 20 --max-cells 128 --probe-grid 5`
 （脚本已退役）。
 
-### C7  在未改动的 stock 最终基上对连续 HTC 箱做残差认证（零新增快照）
+#### C7  在未改动的 stock 最终基上对连续 HTC 箱做残差认证（零新增快照）
 
 **判定作用域.** `PORT-FIXED-S`
 
@@ -627,7 +1090,7 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 能成立。
 复现：`bench_reduced_residual_stock.py --mesh 5 --grid 1`（及 `--grid 9`）
 
-### C9  低秩跨边界耦合（参数无关截断 SVD + 轴流形）
+#### C9  低秩跨边界耦合（参数无关截断 SVD + 轴流形）
 
 **判定作用域.** `PORT-FIXED-S + COST`
 
@@ -644,7 +1107,7 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 阻抗的 `2e5` 倍。
 复现：`probe_cross_coupling.py 5`（及 `2.5`）（脚本已退役）。
 
-### C10  已移出：先验闭式采样的 handoff
+#### C10  已移出：先验闭式采样的 handoff
 
 该路线是**开放候选，不是失败路线**，因此不再作为条目留在本文件。已被验证的部分
 （Woodbury 在 ONE 参数处精确给出整个参数族、射线极点快速求值器、已知的三个计数陷阱）
@@ -654,12 +1117,12 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 
 ---
 
-## 4. 支撑诊断（不是失败路线）
+### B4. 支撑诊断（不是失败路线）
 
 以下内容曾被当作候选交付准则，测量结果**支持**其技术部分，但都不构成交付准则，
 因此按上面的规则不属于四类负结果，单独留档。
 
-### D1  span 内残差感知压缩 + 稳定的正交余量残差表示
+#### D1  span 内残差感知压缩 + 稳定的正交余量残差表示
 
 正面部分：残差贪心在两个种子上都在阶 49 通过（`9.5627e-4 / 9.5764e-4`），而 leading-SVD
 要到 67 / 66 才首次通过；投影 QR 把与直接全向量残差的最大绝对偏差从原始 Gram 的
@@ -673,7 +1136,7 @@ Hankel/冲激误差定理。更强的方程残差判据**并不证明**会改善
 
 ---
 
-## 5. 仍然在维护的对象
+### B5. 仍然在维护的对象
 
 被否掉的是一次性实验，不是这套工具。当前保留并在 `README.md` 中登记的有：
 
@@ -684,15 +1147,13 @@ residual_certificate.py     A(h_min)-Riesz 逐点残差证书
 exact_error.py              精确参数映射与误差见证（全阶对照）
 zolotarev.py                有限区间 Zolotarev 规则与每群谱区间
 certify_extraction.py       驱动：设计 + stock 基线 + 证书 + 全阶验证
-bench_box_branch_and_bound.py / bench_matrix_cell_certificate.py /
-bench_pareto_budget.py / bench_dynamic_bridge_toy.py
-test_certified_sampling.py / test_box_frequency_plan.py
-records/BOX_BRANCH_AND_BOUND.md / MATRIX_CELL_CERTIFICATE.md / PARETO_BUDGET.md /
-DYNAMIC_BRIDGE_TOY.md
+bench_certificate.py （tightness / bandb 两个 mode）/ bench_pareto_budget.py /
+bench_dynamic_bridge_toy.py / test_certified_sampling.py / test_box_frequency_plan.py
+records/PORT_CERTIFICATE_AND_BUDGET.md
 ```
 
-`records/BOX_BRANCH_AND_BOUND.md`、`MATRIX_CELL_CERTIFICATE.md`、`PARETO_BUDGET.md`、
-`DYNAMIC_BRIDGE_TOY.md` 是**当前仍在使用的正面结论**（证书的有效性、盒合法频率计划、
-提取预算计数约定、以及动态桥在人工问题上的一阶否证），因此保留在本目录而不是并入本文。
+`records/PORT_CERTIFICATE_AND_BUDGET.md` 是**当前仍在使用的正面结论**（证书的有效性、
+盒分支定界、盒合法频率计划、提取预算计数约定），因此保留在本目录而不是并入本文；
+动态桥在人工问题上的一阶否证已经并入本文 Part A。
 另外两份内容不属于本文件：开放候选路线（先验闭式采样 handoff）见 `README.md` 第 6 节，
 尚未证明的目标保证（vendor 的 `2*eps` / `2*sqrt(eps)`）见 `THEORY.md` 的 P0 动态传递定理。

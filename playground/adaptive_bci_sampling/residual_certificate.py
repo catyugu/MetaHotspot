@@ -9,6 +9,8 @@ import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from sparse_solve import AmgSolver
+
 
 def select_worst_certificate(relative_scores, absolute_scores) -> int:
     """Select the worst candidate without ordering-dependent infinite ties."""
@@ -34,6 +36,7 @@ class ResidualCertificate:
     basis_order: int
 
     def _solve(self, parameter):
+        """Reduced coefficients and the residual coefficients in the Riesz span."""
         parameter = np.asarray(parameter, dtype=np.float64).ravel()
         reduced_operator = self.projected_base.copy()
         for value, term in zip(parameter, self.projected_terms):
@@ -49,52 +52,41 @@ class ResidualCertificate:
         residual_coefficients.extend(
             -float(value) * coefficients for value in parameter
         )
-        residual_coefficients = np.vstack(residual_coefficients)
-        gram_action = self.riesz_gram @ residual_coefficients
-        residual_squared = np.einsum(
-            "ij,ij->j", residual_coefficients, gram_action
-        )
-        residual_norms = np.sqrt(np.maximum(residual_squared, 0.0))
-        return coefficients, residual_coefficients, residual_norms
+        return coefficients, np.vstack(residual_coefficients)
 
-    def evaluate(
-        self, parameter, power
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return ROM junctions and componentwise absolute/relative bounds."""
-        power = np.asarray(power, dtype=np.float64).ravel()
-        coefficients, residual_coefficients, residual_norms = self._solve(parameter)
-        junction = np.asarray(
-            self.projected_source.T @ (coefficients @ power)
-        ).ravel()
+    def port_defect_bound(self, parameter) -> tuple[float, float]:
+        """Cheap all-input majorant of the relative port defect at one parameter.
 
-        primal_coefficients = residual_coefficients @ power
-        primal_squared = float(
-            primal_coefficients @ (self.riesz_gram @ primal_coefficients)
-        )
-        absolute_bound = np.sqrt(
-            residual_norms * residual_norms * max(primal_squared, 0.0)
-        )
+        The exact port defect of the fixed basis is
 
-        denominator = np.abs(junction) - absolute_bound
-        relative_bound = np.full_like(absolute_bound, np.inf)
-        valid = denominator > 0.0
-        relative_bound[valid] = absolute_bound[valid] / denominator[valid]
-        return junction, absolute_bound, relative_bound
+        ``E(p) = R(p)^T A(p)^-1 R(p) = Y(p) - Y_V(p) >= 0``,
 
-    def evaluate_entrywise(
-        self, parameter
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return the full junction transfer and entrywise error bounds."""
-        coefficients, _residual_coefficients, residual_norms = self._solve(
-            parameter
-        )
+        with ``R(p) = G - A(p) V Q(p)``.  Every affine boundary term is positive
+        semidefinite, so ``A(p) >= A(h_min)`` and the fixed-anchor Riesz Gram
+        gives the matrix majorant
+
+        ``U(p) := R(p)^T A(h_min)^-1 R(p) >= E(p)``.
+
+        Since ``Y_V(p) <= Y(p)``, the same majorant normalized by the *reduced*
+        transfer is a cheap all-input score,
+
+        ``lambda_max(E(p), Y(p)) <= lambda_max(U(p), Y_V(p))``.
+
+        Returns ``(bound, absolute)``: the majorant above, and
+        ``lambda_max(U(p))`` as the tie-breaker used when ``Y_V`` is not positive
+        definite and the relative majorant is infinite.  Both are small dense
+        quantities, so scoring a whole candidate grid costs no full-order solve.
+        """
+        coefficients, residual_coefficients = self._solve(parameter)
+        majorant = residual_coefficients.T @ (self.riesz_gram @ residual_coefficients)
+        majorant = 0.5 * (majorant + majorant.T)
+        absolute = float(np.max(np.linalg.eigvalsh(majorant)))
         transfer = np.ascontiguousarray(self.projected_source.T @ coefficients)
-        absolute_bound = np.outer(residual_norms, residual_norms)
-        denominator = np.abs(transfer) - absolute_bound
-        relative_bound = np.full_like(absolute_bound, np.inf)
-        valid = denominator > 0.0
-        relative_bound[valid] = absolute_bound[valid] / denominator[valid]
-        return transfer, absolute_bound, relative_bound
+        transfer = 0.5 * (transfer + transfer.T)
+        if float(np.min(np.linalg.eigvalsh(transfer))) <= 0.0:
+            return float("inf"), absolute
+        bound = scipy.linalg.eigvalsh(majorant, transfer, check_finite=False)
+        return float(np.max(bound)), absolute
 
 
 def prepare_residual_certificate(
@@ -130,7 +122,7 @@ def prepare_residual_certificate(
     minimum_operator = K.copy()
     for value, term in zip(ranges[:, 0], terms):
         minimum_operator = minimum_operator + float(value) * term
-    factor = minimum_factor or spla.splu(minimum_operator.tocsc())
+    factor = minimum_factor or AmgSolver(minimum_operator)
 
     operator_blocks = [K @ basis]
     operator_blocks.extend(term @ basis for term in terms)

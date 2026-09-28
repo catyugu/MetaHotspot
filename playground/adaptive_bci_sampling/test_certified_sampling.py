@@ -157,7 +157,8 @@ class ZolotarevTests(unittest.TestCase):
 
 
 class ResidualCertificateTests(unittest.TestCase):
-    def test_pointwise_residual_certificate_bounds_the_transfer_error(self):
+    def test_matrix_residual_majorant_bounds_the_port_defect(self):
+        """`lambda_max(U, Y_V) >= lambda_max(E, Y)` over the whole parameter box."""
         kernel, _mass, terms, source = toy_family()
         ranges = np.asarray([[0.5, 20.0], [0.5, 20.0]])
         sampled = np.array([2.0, 6.0])
@@ -168,12 +169,15 @@ class ResidualCertificateTests(unittest.TestCase):
         for _ in range(20):
             parameter = np.exp(rng.uniform(np.log(ranges[:, 0]), np.log(ranges[:, 1])))
             exact_operator = kernel + sum(float(v) * t for v, t in zip(parameter, terms))
-            exact = np.ascontiguousarray(source.T @ la.solve(exact_operator.toarray(), source))
-            _transfer, absolute, _relative = certificate.evaluate_entrywise(parameter)
-            reduced = basis.T @ (exact_operator @ basis)
+            dense = exact_operator.toarray()
+            transfer = np.ascontiguousarray(source.T @ la.solve(dense, source))
+            reduced = basis.T @ (dense @ basis)
             coefficients = la.solve(reduced, basis.T @ source, assume_a="pos")
-            approximate = np.ascontiguousarray(source.T @ (basis @ coefficients))
-            self.assertTrue(np.all(np.abs(approximate - exact) <= absolute + 1e-12))
+            residual = source - dense @ (basis @ coefficients)
+            defect = np.ascontiguousarray(residual.T @ la.solve(dense, residual))
+            exact = float(np.max(la.eigvalsh(0.5 * (defect + defect.T), transfer)))
+            bound, _absolute = certificate.port_defect_bound(parameter)
+            self.assertLessEqual(exact, bound * (1.0 + 1e-9))
 
 
 class CertificateTests(unittest.TestCase):
@@ -197,7 +201,20 @@ class CertificateTests(unittest.TestCase):
         coefficients = la.solve(reduced, self.basis.T @ self.source, assume_a="pos")
         return np.ascontiguousarray(self.source.T @ (self.basis @ coefficients))
 
-    def test_cell_bound_upper_bounds_the_measured_error(self):
+    def exact_port_defect(self, point):
+        """`lambda_max(Y - Y_V, Y)` from exact dense solves at one parameter."""
+        operator = self.kernel
+        for value, term in zip(point, self.terms):
+            operator = operator + float(value) * term
+        dense = operator.toarray()
+        exact = np.ascontiguousarray(self.source.T @ la.solve(dense, self.source))
+        reduced = self.basis.T @ (dense @ self.basis)
+        coefficients = la.solve(reduced, self.basis.T @ self.source, assume_a="pos")
+        residual = self.source - dense @ (self.basis @ coefficients)
+        defect = np.ascontiguousarray(residual.T @ la.solve(dense, residual))
+        return float(np.max(la.eigvalsh(0.5 * (defect + defect.T), exact)))
+
+    def test_cell_bound_upper_bounds_the_measured_port_defect(self):
         from certified_box import BoxCertificate
 
         certificate = BoxCertificate(
@@ -206,14 +223,15 @@ class CertificateTests(unittest.TestCase):
         low = np.array([1.0, 1.0])
         high = np.array([4.0, 4.0])
         gram = certificate.anchor_gram(certificate.block_lower(certificate.block_index(low)))
-        bound = certificate.cell_bound(gram, low, high, order=2)
+        weight, _fallback = certificate.cell_weight(high, "reduced")
+        bound = certificate.cell_bound(gram, low, high, weight, order=2)
         rng = np.random.default_rng(7)
         for _ in range(25):
             point = np.exp(rng.uniform(np.log(low), np.log(high)))
-            actual = np.abs(self.exact_transfer(point) - self.reduced_transfer(point))
-            self.assertTrue(
-                np.all(actual <= bound + 1e-12),
-                msg=f"measured error {np.max(actual):.3e} exceeds bound {np.max(bound):.3e}",
+            actual = self.exact_port_defect(point)
+            self.assertLessEqual(
+                actual, bound * (1.0 + 1e-9),
+                msg=f"measured defect {actual:.3e} exceeds bound {bound:.3e}",
             )
 
     def test_denominator_is_a_lower_bound_inside_a_cell(self):
@@ -238,9 +256,10 @@ class CertificateTests(unittest.TestCase):
         )
         point = np.array([1.5, 8.0])
         gram = certificate.anchor_gram(certificate.block_lower(certificate.block_index(point)))
-        bound = certificate.cell_bound(gram, point, point, order=0)
-        actual = np.abs(self.exact_transfer(point) - self.reduced_transfer(point))
-        self.assertLess(float(np.max(bound)) / max(float(np.max(actual)), 1e-300), 50.0)
+        weight, _fallback = certificate.cell_weight(point, "reduced")
+        bound = certificate.cell_bound(gram, point, point, weight, order=0)
+        actual = self.exact_port_defect(point)
+        self.assertLess(bound / max(actual, 1e-300), 50.0)
 
     def test_sweep_refines_and_stays_an_upper_bound(self):
         from certified_box import BoxCertificate
@@ -250,16 +269,17 @@ class CertificateTests(unittest.TestCase):
         )
         coarse = certificate.sweep(4, order=2)
         fine = certificate.sweep(12, order=2)
-        self.assertLess(fine["steady_relative_bound"], coarse["steady_relative_bound"])
+        self.assertLess(
+            fine["worst_relative_port_defect"], coarse["worst_relative_port_defect"]
+        )
         rng = np.random.default_rng(13)
         worst = 0.0
         for _ in range(60):
             point = np.exp(
                 rng.uniform(np.log(self.ranges[:, 0]), np.log(self.ranges[:, 1]))
             )
-            actual = np.abs(self.exact_transfer(point) - self.reduced_transfer(point))
-            worst = max(worst, float(np.max(actual)))
-        self.assertLessEqual(worst, fine["steady_absolute_bound"])
+            worst = max(worst, self.exact_port_defect(point))
+        self.assertLessEqual(worst, fine["worst_relative_port_defect"] * (1.0 + 1e-9))
 
     def test_shift_certificate_covers_the_shifted_family(self):
         from certified_box import BoxCertificate
@@ -280,12 +300,16 @@ class CertificateTests(unittest.TestCase):
                 self.kernel + shift * self.mass
                 + sum(float(v) * t for v, t in zip(parameter, self.terms))
             )
-            exact = np.ascontiguousarray(self.source.T @ la.solve(operator.toarray(), self.source))
-            reduced = self.basis.T @ (operator @ self.basis)
+            dense = operator.toarray()
+            transfer = np.ascontiguousarray(self.source.T @ la.solve(dense, self.source))
+            reduced = self.basis.T @ (dense @ self.basis)
             coefficients = la.solve(reduced, self.basis.T @ self.source, assume_a="pos")
-            approximate = np.ascontiguousarray(self.source.T @ (self.basis @ coefficients))
-            worst = max(worst, float(np.max(np.abs(exact - approximate))))
-        self.assertLessEqual(worst, report["steady_absolute_bound"])
+            residual = self.source - dense @ (self.basis @ coefficients)
+            defect = np.ascontiguousarray(residual.T @ la.solve(dense, residual))
+            worst = max(worst, float(np.max(la.eigvalsh(
+                0.5 * (defect + defect.T), transfer
+            ))))
+        self.assertLessEqual(worst, report["worst_relative_port_defect"] * (1.0 + 1e-9))
 
 
 class ExactErrorMapTests(unittest.TestCase):
@@ -359,23 +383,24 @@ class ExactErrorMapTests(unittest.TestCase):
         )
         low = np.array([0.6, 3.0])
         high = np.array([2.0, 9.0])
-        bound = mapping.cell_bound(low, high)
+        weight = mapping.certificate.cell_denominator(high)
+        bound = mapping.cell_bound(low, high, weight)
         rng = np.random.default_rng(19)
         for _ in range(25):
             parameter = np.exp(rng.uniform(np.log(low), np.log(high)))
-            actual = np.abs(mapping.error_matrix(parameter))
-            self.assertTrue(
-                np.all(actual <= bound + 1e-12),
-                msg=f"measured {np.max(actual):.3e} exceeds {np.max(bound):.3e}",
+            actual = mapping.relative_port_defect(parameter)
+            self.assertLessEqual(
+                actual, bound * (1.0 + 1e-9),
+                msg=f"measured defect {actual:.3e} exceeds bound {bound:.3e}",
             )
 
     def test_grid_maximum_is_attained_inside_the_box(self):
         mapping = AffineErrorMap(
             self.kernel, self.terms, self.source, self.ranges, self.basis
         )
-        report = mapping.worst_on_grid(9)
+        report = mapping.worst_port_defect_on_grid(9)
         self.assertEqual(report["points"], 81)
-        self.assertGreater(report["worst_absolute_error"], 0.0)
+        self.assertGreater(report["worst_relative_port_defect"], 0.0)
         self.assertIsNotNone(report["location"])
 
 
@@ -396,11 +421,11 @@ class DesignTests(unittest.TestCase):
     def test_greedy_selection_is_reproducible(self):
         first, score_a, _ = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
-            tolerance=1e-6, maximum_points=3, grid=9, metric="entrywise",
+            tolerance=1e-6, maximum_points=3, grid=9,
         )
         second, score_b, _ = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
-            tolerance=1e-6, maximum_points=3, grid=9, metric="entrywise",
+            tolerance=1e-6, maximum_points=3, grid=9,
         )
         self.assertTrue(np.array_equal(first, second))
         self.assertEqual(score_a, score_b)
@@ -413,7 +438,7 @@ class DesignTests(unittest.TestCase):
         # threshold nor the caller's time step can change the design.
         points, _score, _selection = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
-            tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
+            tolerance=1e-9, maximum_points=2, grid=5,
         )
         plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)
         basis, snapshots, info = build_basis(
@@ -437,7 +462,7 @@ class DesignTests(unittest.TestCase):
         cache = {}
         points, _score, selection = certified_greedy_points(
             self.kernel, self.terms, self.source, self.ranges, None,
-            tolerance=1e-9, maximum_points=2, grid=5, metric="entrywise",
+            tolerance=1e-9, maximum_points=2, grid=5,
             cache=cache,
         )
         plan = shared_frequency_plan(self.kernel, self.mass, self.source, 1e-6)

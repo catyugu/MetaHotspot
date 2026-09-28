@@ -8,13 +8,14 @@ Generated JSON belongs outside the repository.
 
 Two different metrics are reported and they must not be confused:
 
-* ``steady_*`` is the certified whole-box fixed-shift port defect of the
-  delivered basis (``[PORT-FIXED-S]``), an upper bound over every HTC vector of
-  the box and every input combination;
-* ``worst_step_entry`` / ``worst_steady_entry`` are the **sampled** entrywise
-  port step-response error of a 40-step BDF1 run, normalized by the exact
-  steady transfer of the same parameter (``[PORT-STEP]``, measured, not
-  certified, and only on the sampled parameter set).
+* ``worst_relative_port_defect`` (``sweep``) is the certified whole-box
+  fixed-shift port defect of the delivered basis (``[PORT-FIXED-S]``), an upper
+  bound over every HTC vector of the box and every input combination;
+* the ``exact`` block is the same quantity evaluated by the Woodbury exact map,
+  used as an oracle to check tightness.
+
+The sampled entrywise port step-response comparison (``[PORT-STEP]``, measured
+and not certified) lives in the separate, optional ``validate_vendor_step.py``.
 
     PYTHONPATH=python python playground/adaptive_bci_sampling/certify_extraction.py 5
 """
@@ -30,8 +31,8 @@ from pathlib import Path
 
 import numpy as np
 import scipy.linalg as la
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
+
+from sparse_solve import AmgSolver
 
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
@@ -52,90 +53,14 @@ from metahotspot.macromodel.utils import (  # noqa: E402
 )
 
 
-def step_transfer(kernel, mass, source, *, dt, duration):
-    """Sampled port step response: BDF1 unit power steps, zero initial rise.
-
-    Only ``source.T @ state`` is recorded, so the observable is the port
-    transfer ``[PORT-STEP]``; the state trajectory itself is never compared.
-    """
-    steps = round(duration / dt)
-    factor = spla.splu(sp.csc_matrix(kernel + mass / dt).tocsc())
-    state = np.zeros_like(source)
-    outputs = np.zeros((steps + 1, source.shape[1], source.shape[1]))
-    for index in range(1, outputs.shape[0]):
-        state = factor.solve(source + mass @ state / dt)
-        outputs[index] = source.T @ state
-    return outputs
-
-
-def reduced_step(reduced_kernel, reduced_mass, projected_source, *, dt, duration):
-    steps = round(duration / dt)
-    matrix = reduced_kernel + reduced_mass / dt
-    factor = la.cho_factor(matrix, check_finite=False)
-    state = np.zeros_like(projected_source)
-    outputs = np.zeros((steps + 1, projected_source.shape[1], projected_source.shape[1]))
-    for index in range(1, outputs.shape[0]):
-        state = la.cho_solve(
-            factor, projected_source + reduced_mass @ state / dt, check_finite=False
-        )
-        outputs[index] = projected_source.T @ state
-    return outputs
-
-
-def validate(kernel, mass, source, terms, bases, parameters, *, dt, duration):
-    """Full-order validation of every basis on the same parameter set."""
-    records = {name: {} for name in bases}
-    tiny = np.finfo(float).tiny
-    for parameter in parameters:
-        operator = full_operator(kernel, terms, parameter)
-        factor = spla.splu(operator.tocsc())
-        exact_steady = np.ascontiguousarray(source.T @ factor.solve(source))
-        exact_step = step_transfer(operator, mass, source, dt=dt, duration=duration)
-        for name, basis in bases.items():
-            reduced_kernel = basis.T @ (kernel @ basis)
-            reduced_mass = basis.T @ (mass @ basis)
-            projected_source = basis.T @ source
-            reduced_operator = basis.T @ (operator @ basis)
-            coefficients = la.solve(
-                reduced_operator, projected_source, assume_a="pos", check_finite=False
-            )
-            approximate_steady = np.ascontiguousarray(projected_source.T @ coefficients)
-            approximate_step = reduced_step(
-                reduced_operator, reduced_mass, projected_source, dt=dt, duration=duration
-            )
-            records[name]["worst_step_entry"] = max(
-                records[name].get("worst_step_entry", 0.0),
-                float(np.max(np.abs(approximate_step - exact_step) / np.maximum(np.abs(exact_steady), tiny))),
-            )
-            records[name]["worst_steady_entry"] = max(
-                records[name].get("worst_steady_entry", 0.0),
-                float(np.max(np.abs(approximate_steady - exact_steady) / np.maximum(np.abs(exact_steady), tiny))),
-            )
-    return records
-
-
-def validation_parameters(ranges, *, corners=True, correlated=12, random=24, seed=20260926):
-    ranges = np.asarray(ranges, dtype=np.float64)
-    blocks = []
-    if corners:
-        blocks.append(np.asarray(list(itertools.product(*ranges))))
-    rng = np.random.default_rng(seed)
-    paired = np.exp(
-        rng.uniform(np.log(ranges[:, 0]), np.log(ranges[:, 1]), size=(correlated, ranges.shape[0]))
-    )
-    blocks.append(paired)
-    blocks.append(
-        np.exp(rng.uniform(np.log(ranges[:, 0]), np.log(ranges[:, 1]), size=(random, ranges.shape[0])))
-    )
-    return np.vstack(blocks)
-
-
 def audit_certificate(certificate, kernel, terms, source, basis, cells, order, samples, seed=20260926):
     """Check the certified cell bound against full-order solves inside cells.
 
     Every cell of a uniform log partition is sampled at ``samples**d`` random
-    interior points.  The audit fails loudly if any measured error exceeds the
-    cell bound; otherwise it reports the worst ratio and the largest values.
+    interior points and the *exact* relative port defect
+    ``lambda_max(Y - Y_V, Y)`` is computed from a full-order transfer solve.  The
+    audit fails loudly if the measured defect exceeds the cell bound; otherwise it
+    reports the worst ratio and the largest values.
     """
     ranges = certificate.ranges
     edges = [
@@ -153,21 +78,26 @@ def audit_certificate(certificate, kernel, terms, source, basis, cells, order, s
         gram = certificate.anchor_gram(
             certificate.block_lower(certificate.block_index(low))
         )
-        bound = certificate.cell_bound(gram, low, high, order)
+        weight, _fallback = certificate.cell_weight(high, "reduced")
+        bound = certificate.cell_bound(gram, low, high, weight, order)
         measured = 0.0
         for _ in range(samples ** ranges.shape[0]):
             parameter = np.exp(rng.uniform(np.log(low), np.log(high)))
             operator = full_operator(kernel, terms, parameter)
-            factor = spla.splu(operator.tocsc())
-            exact = np.ascontiguousarray(source.T @ factor.solve(source))
+            factor = AmgSolver(operator)
+            transfer = np.ascontiguousarray(source.T @ factor.solve(source))
             reduced = basis.T @ (operator @ basis)
             coefficients = la.solve(
                 reduced, basis.T @ source, assume_a="pos", check_finite=False
             )
-            approximate = np.ascontiguousarray(source.T @ (basis @ coefficients))
-            measured = max(measured, float(np.max(np.abs(approximate - exact))))
+            residual = source - operator @ (basis @ coefficients)
+            defect = np.ascontiguousarray(residual.T @ factor.solve(residual))
+            measured = max(measured, float(np.max(la.eigvalsh(
+                0.5 * (defect + defect.T), 0.5 * (transfer + transfer.T),
+                check_finite=False,
+            ))))
             sampled += 1
-        certified = float(np.max(bound))
+        certified = float(bound)
         if certified < measured - 1e-12:
             raise RuntimeError(f"certificate violated on cell {choice}")
         largest_measured = max(largest_measured, measured)
@@ -188,9 +118,6 @@ def audit_certificate(certificate, kernel, terms, source, basis, cells, order, s
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mesh_mm", nargs="?", type=float, default=5.0)
-    parser.add_argument("--validate-dt", type=float, nargs="+",
-                        default=[5.0, 50.0, 500.0])
-    parser.add_argument("--duration", type=float, default=2000.0)
     parser.add_argument("--greedy-tolerance", type=float, default=1e-5)
     parser.add_argument("--greedy-maximum", type=int, default=8)
     parser.add_argument("--greedy-grid", type=int, default=41)
@@ -216,11 +143,8 @@ def main():
     source = np.asarray(model.source_shape, dtype=np.float64)
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
-    power = np.asarray(model.nominal_power(), dtype=np.float64)
     report = {"mesh_mm": args.mesh_mm, "cells": int(kernel.shape[0]),
-              "validate_dt": args.validate_dt,
-              "duration": args.duration, "cutoff": args.cutoff,
-              "h_ranges": ranges.tolist()}
+              "cutoff": args.cutoff, "h_ranges": ranges.tolist()}
 
     plan = box_frequency_plan(kernel, mass, terms, ranges, args.cutoff)
     report["frequency_plan"] = {k: plan[k] for k in ("kind", "lower", "upper", "count")}
@@ -232,7 +156,7 @@ def main():
     points, selection_certificate, selection = certified_greedy_points(
         kernel, terms, source, ranges, None,
         tolerance=args.greedy_tolerance, maximum_points=args.greedy_maximum,
-        grid=args.greedy_grid, power=power, metric="entrywise", progress=True,
+        grid=args.greedy_grid, progress=True,
         cache=response_cache,
     )
     print(f"design points={len(points)} selection_certificate={selection_certificate:.3e} "
@@ -308,8 +232,8 @@ def main():
             kernel, terms, source, ranges, basis, blocks=(args.certificate_blocks,) * 2
         )
         steady = certificate.sweep(args.steady_cells, order=args.steady_order)
-        print(f"steady[{name}]: cells={steady['cells']} bound={steady['steady_relative_bound']:.3e} "
-              f"diagonal={steady['steady_diagonal_bound']:.3e} "
+        print(f"steady[{name}]: cells={steady['cells']} "
+              f"port_defect={steady['worst_relative_port_defect']:.3e} "
               f"denominators={steady['denominator_points']} t={steady['seconds']:.1f}s", flush=True)
         certificates[name] = {"steady": steady}
     report["certificates"] = certificates
@@ -317,10 +241,10 @@ def main():
     exact = {}
     for name, basis in bases.items():
         mapping = AffineErrorMap(kernel, terms, source, ranges, basis)
-        grid = mapping.worst_on_grid(args.exact_grid)
+        grid = mapping.worst_port_defect_on_grid(args.exact_grid)
         bracket = mapping.sweep(args.exact_cells)
         exact[name] = {"grid": grid, "bracket": bracket}
-        print(f"exact[{name}]: grid={grid['worst_absolute_error']:.3e} at "
+        print(f"exact[{name}]: grid={grid['worst_relative_port_defect']:.3e} at "
               f"{grid['location']} cell_bound={bracket['cell_bound']:.3e} "
               f"prep={bracket['preparation_seconds']:.1f}s "
               f"t={bracket['seconds']:.1f}s", flush=True)
@@ -337,24 +261,6 @@ def main():
         )
         report["audit"] = audit
         print(f"audit: {audit}", flush=True)
-
-    parameters = validation_parameters(ranges)
-    clock = time.perf_counter()
-    validation = {}
-    for dt in args.validate_dt:
-        validation[dt] = validate(
-            kernel, mass, source, terms, bases, parameters, dt=dt, duration=args.duration
-        )
-        for name in bases:
-            print(
-                f"validation[{name}][dt={dt:g}]: "
-                f"worst_step={validation[dt][name]['worst_step_entry']:.3e} "
-                f"worst_steady={validation[dt][name]['worst_steady_entry']:.3e}",
-                flush=True,
-            )
-    report["validation"] = {"parameters": len(parameters), "dt": args.validate_dt,
-                            "worst": validation,
-                            "seconds": time.perf_counter() - clock}
 
     if args.output:
         args.output.write_text(json.dumps(report, indent=2) + "\n")

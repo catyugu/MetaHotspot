@@ -83,6 +83,8 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+
+from sparse_solve import AmgSolver
 from scipy.special import comb
 
 
@@ -131,10 +133,6 @@ def bernstein_coefficients(values, degree, dimension):
 
 def logarithmic_edges(low, high, blocks):
     return 10.0 ** np.linspace(np.log10(low), np.log10(high), int(blocks) + 1)
-
-
-def sparse_factor(operator):
-    return spla.splu(sp.csc_matrix(operator).tocsc(), permc_spec="MMD_AT_PLUS_A")
 
 
 def generalized_max(matrix, denominator, floor=1e-14):
@@ -318,7 +316,7 @@ class BoxCertificate:
         gram = self._grams.get(key)
         if gram is None:
             anchor_shift = 0.0 if self.span_kind == "common" else None
-            factor = sparse_factor(self.operator(parameter, omega, shift=anchor_shift))
+            factor = AmgSolver(self.operator(parameter, omega, shift=anchor_shift))
             gram = self.span.T @ factor.solve(self.span)
             gram = np.ascontiguousarray(0.5 * (gram + gram.T))
             self._grams[key] = gram
@@ -326,7 +324,7 @@ class BoxCertificate:
 
     def transfer(self, parameter):
         """Exact full-order transfer at one parameter (reference only)."""
-        return np.ascontiguousarray(self.source.T @ sparse_factor(
+        return np.ascontiguousarray(self.source.T @ AmgSolver(
             self.operator(np.asarray(parameter, float))
         ).solve(self.source))
 
@@ -385,19 +383,6 @@ class BoxCertificate:
 
     # ---------------------------------------------------------- cell bound
 
-    def cell_bound(self, gram, low, high, order=2, trial="taylor"):
-        """Absolute entrywise bound of the transfer error on one box cell."""
-        kinds = (trial,) if isinstance(trial, str) else tuple(trial)
-        best = None
-        for kind in kinds:
-            worst = np.full((self.source_count, self.source_count), -np.inf)
-            for form in self._cell_forms(gram, low, high, order, kind):
-                np.maximum(worst, form, out=worst)
-            np.maximum(worst, 0.0, out=worst)
-            value = np.sqrt(np.outer(np.diag(worst), np.diag(worst)))
-            best = value if best is None else np.minimum(best, value)
-        return best
-
     def _cell_forms(self, gram, low, high, order=2, trial="taylor"):
         """Bernstein coefficient matrices ``Xi_nu^T S_a Xi_nu`` of one cell.
 
@@ -431,7 +416,7 @@ class BoxCertificate:
         bernstein = bernstein_coefficients(values, degree, dimension)
         return [self._gram_form(gram, bernstein[node]) for node in np.ndindex(shape)]
 
-    def cell_matrix_bound(self, gram, low, high, denominator, order=2, trial="taylor"):
+    def cell_bound(self, gram, low, high, denominator, order=2, trial="taylor"):
         """Relative collocated port-transfer defect ``sup_h lambda_max(E(h), Y(h))``.
 
         ``E(h) = Y(h) - Y_V(h) = R_V(h)^T A(h)^-1 R_V(h) >= 0`` is the collocated
@@ -500,7 +485,7 @@ class BoxCertificate:
         """
         point = np.asarray(parameter, dtype=np.float64)
         operator = self.operator(point, omega)
-        factor = sparse_factor(operator)
+        factor = AmgSolver(operator)
         reduced = np.asarray(self.basis.T @ (operator @ self.basis))
         coefficients = self._reduced_solve(reduced, self.projected_source)
         residual = self.source - np.asarray(operator @ (self.basis @ coefficients))
@@ -553,7 +538,7 @@ class BoxCertificate:
             weight, _ = self.cell_weight(high, "reduced")
             bound, order_used = None, orders[-1]
             for order in orders:
-                value = self.cell_matrix_bound(gram, low, high, weight, order, explore)
+                value = self.cell_bound(gram, low, high, weight, order, explore)
                 if bound is None or value < bound:
                     bound, order_used = value, order
                 if value <= threshold:
@@ -776,73 +761,8 @@ class BoxCertificate:
 
     # --------------------------------------------------------------- sweeps
 
-    def sweep(self, cells_per_axis, order=2, blocks=None):
-        """Bound the entrywise relative steady transfer error on the box.
-
-        Every cell of a uniform log partition is compared with the exact
-        transfer at its own upper corner, which is the tightest corner-based
-        lower bound available for the same-parameter normalization.
-        """
-        if blocks is not None:
-            self._prepare_blocks(blocks)
-        if np.isscalar(cells_per_axis):
-            cells_per_axis = (int(cells_per_axis),) * self.dimension
-        cells_per_axis = tuple(int(count) for count in cells_per_axis)
-        edges = [
-            logarithmic_edges(low, high, count)
-            for (low, high), count in zip(self.ranges, cells_per_axis)
-        ]
-        grams = {}
-        worst_relative = 0.0
-        worst_absolute = 0.0
-        worst_diagonal = 0.0
-        location = None
-        started = time.perf_counter()
-        cells = 0
-        for choice in itertools.product(*[range(count) for count in cells_per_axis]):
-            low = np.array([edges[axis][index] for axis, index in enumerate(choice)])
-            high = np.array([edges[axis][index + 1] for axis, index in enumerate(choice)])
-            index = self.block_index(low)
-            gram = grams.get(index)
-            if gram is None:
-                gram = self.anchor_gram(self.block_lower(index))
-                grams[index] = gram
-            bound = self.cell_bound(gram, low, high, order)
-            denominator = self.cell_denominator(high)
-            relative = bound / denominator
-            diagonal = np.outer(np.diag(denominator), np.diag(denominator)) ** 0.5
-            cells += 1
-            value = float(np.max(relative))
-            if value > worst_relative:
-                worst_relative = value
-                worst_absolute = float(np.max(bound))
-                worst_diagonal = float(np.max(bound / diagonal))
-                entry = np.unravel_index(int(np.argmax(relative)), relative.shape)
-                location = {
-                    "cell_low": low.tolist(),
-                    "cell_high": high.tolist(),
-                    "anchor": int(index),
-                    "entry": [int(entry[0]), int(entry[1])],
-                }
-        return {
-            "cells": int(cells),
-            "order": int(order),
-            "blocks": list(self.blocks),
-            "anchors": int(np.prod(self.blocks)),
-            "span_columns": self.span_columns,
-            "basis_order": self.order,
-            "shift": self.shift,
-            "steady_relative_bound": worst_relative,
-            "steady_diagonal_bound": worst_diagonal,
-            "steady_absolute_bound": worst_absolute,
-            "worst_location": location,
-            "denominator_points": len(self._denominators),
-            "seconds": time.perf_counter() - started,
-            "floating_point_certified": False,
-        }
-
-    def sweep_matrix(self, cells_per_axis, order=2, local_anchor=True,
-                     trial="taylor", denominator="reduced"):
+    def sweep(self, cells_per_axis, order=2, local_anchor=True,
+              trial="taylor", denominator="reduced"):
         """Bound ``sup_h lambda_max(E(h), Y(h))`` over the whole box.
 
         This is the quantity that survives the falsification of the cheap
@@ -854,7 +774,7 @@ class BoxCertificate:
         ``local_anchor`` uses the lower corner of the cell itself as the Riesz
         anchor, which is the tightest anchor valid on that cell but costs one
         Gram per cell; otherwise the enclosing log block anchor of ``blocks`` is
-        reused, which is what ``sweep`` does.  ``trial`` is one polynomial trial
+        reused for every cell of the block.  ``trial`` is one polynomial trial
         or a tuple whose statements are combined by taking the minimum.
         ``denominator`` selects the exact transfer at the cell's upper corner or
         the reduced transfer, which needs no full-order solve.
@@ -888,7 +808,7 @@ class BoxCertificate:
                 grams[key] = gram
             weight, fallback = self.cell_weight(high, denominator)
             fallbacks += fallback
-            value = self.cell_matrix_bound(gram, low, high, weight, order, trial)
+            value = self.cell_bound(gram, low, high, weight, order, trial)
             cells += 1
             if value > worst:
                 worst = value

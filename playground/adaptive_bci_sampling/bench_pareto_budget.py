@@ -25,7 +25,7 @@ port, so
 
 Only ``N_RHS`` may be compared with the stock extractor's RHS counter.  The
 selection's residual certificate and the box certificate itself are certification
-overhead: reported separately, never added to ``N_RHS``.  ``tau_moment`` stays
+overhead: reported separately, never added to ``N_RHS``.  ``tau_port`` stays
 symbolic throughout; there is no threshold in this script.
 
     PYTHONPATH=python python playground/adaptive_bci_sampling/bench_pareto_budget.py 5 \\
@@ -75,8 +75,8 @@ def certify(kernel, terms, source, ranges, basis, shifts, arguments, mass):
             kernel, terms, source, ranges, basis,
             shift=shift, mass=mass, blocks=(arguments.blocks,) * 2,
         )
-        sweep = certificate.sweep_matrix(arguments.cells, order=arguments.order,
-                                         trial=arguments.trial)
+        sweep = certificate.sweep(arguments.cells, order=arguments.order,
+                                  trial=arguments.trial)
         bound = float(sweep["worst_relative_port_defect"])
         entry = {"bound": bound, "anchors": int(sweep["anchors"]),
                  "cells": int(sweep["cells"]), "seconds": float(sweep["seconds"])}
@@ -119,7 +119,6 @@ def main() -> None:
     source = np.asarray(model.source_shape, dtype=np.float64)
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(model.h_ranges(), dtype=np.float64)
-    power = np.asarray(model.nominal_power(), dtype=np.float64)
     ports = int(source.shape[1])
 
     plan = box_frequency_plan(kernel, mass, terms, ranges, 1e-3)
@@ -140,7 +139,7 @@ def main() -> None:
         points, selection_certificate, selection = certified_greedy_points(
             kernel, terms, source, ranges, None,
             tolerance=arguments.greedy_tolerance, maximum_points=count,
-            grid=arguments.greedy_grid, power=power, metric="entrywise", cache=cache,
+            grid=arguments.greedy_grid, cache=cache,
         )
         selection_seconds = time.perf_counter() - selection_started
         selection_blocks = int(selection["factorizations"])

@@ -71,7 +71,7 @@ Z - Z_V = E^T A E = R^T A^-1 R >= 0
 误差的**平方**。这个状态解释只作为 lemma / 证明装置保留，**不得**当作 headline 指标、接受
 判据或问题难度度量。
 
-作用域标签（本文件与 `records/NEGATIVE_RESULTS.md` 共用）：
+作用域标签（本文件与 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 共用）：
 
 ```text
 PORT-SYSTEM   H2 / Hankel / 冲激响应系统范数     研究目标
@@ -339,7 +339,7 @@ theta X^T S_a X + (1-theta) Y^T S_a Y - (theta X + (1-theta) Y)^T S_a (theta X +
 分母部分是参数 Loewner 单调性与命题 1 的直接推论。证毕。
 
 **这是连续停止语句的实现对象.** branch-and-bound 的严格停止语句是
-`forall Q: U_Q(V) <= tau_moment^2`；`U_Q` 的正确性只依赖本推论，不需要在每个叶子上做全阶
+`forall leaf Q: u_Q <= tau_port`；`U_Q` 的正确性只依赖本推论，不需要在每个叶子上做全阶
 求解（逐叶子全阶求解会把证书自己变成大量 full-order inverse action）。
 
 ---
@@ -519,7 +519,7 @@ F^T A^-1 F - F^T X_V = R_F^T A^-1 R_F >= 0,
   上界本身没有自动单调性，把上一轮 trial 作为候选一直 carry forward 即可恢复
   `U_Q^{n+1} <= U_Q^n`（纯 reduced algebra，目前未实现）。
   **关闭的作用域**：关闭的是**压缩-传递的理论迁移问题** —— 不需要从 raw 空间证书推导压缩
-  误差定理，直接对最终交付的 `V` 重跑证书即可。**未闭合**的是动态接受阈值 `tau_moment`，
+  误差定理，直接对最终交付的 `V` 重跑证书即可。**未闭合**的是动态接受阈值 `tau_port`，
   它取决于 P0 动态传递定理，不能写成“vendor 保证已解决”。
 * **`d >= 3`**：不是数学正确性缺口。本文件的命题对有限 `d` 与维数无关，问题只是
   tensor-product 候选网格与 Bernstein 复杂度（`41^3 = 68921`，`41^4` 约 `2.8e6`）。
@@ -531,12 +531,12 @@ F^T A^-1 F - F^T X_V = R_F^T A^-1 R_F >= 0,
   inertia 辅助的一侧谱认证。这个缺口很小但不是零，不要把它写成已经解决。
 * **inexact-moment 后向误差桥**：作为交付 ROM 的路线已关闭；兼容条件 `R = R X^+ X` 在交付
   基底上严重失败，pre-SVD 情形又因 `delta / lambda_min >> 1` 使扰动论证失效。证据见
-  `records/NEGATIVE_RESULTS.md`。
+  `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`。
 * **逐 shift 加性 defect 传播**：已关闭；修正 LU cache 测量 bug 之后，该界仍只是松的上估
   （`sum_k c_k / g_defect` 落在 1.3..25，稳定高估而非双向漂移），不能驱动停止。
 * **单一全局谱标量的廉价盒残差界**：已关闭；不等式成立但对决定误差的点 effectivity 达
   `2.6e4 .. 2.1e5`，量级上不可能驱动贪心接受。
-* 失败路线的完整证据、测量更正与被取代的实验都属于 `records/NEGATIVE_RESULTS.md`，不属于
+* 失败路线的完整证据、测量更正与被取代的实验都属于 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`，不属于
   本文件的未证清单。
 
 ---

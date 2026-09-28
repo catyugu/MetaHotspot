@@ -13,13 +13,14 @@ certified_box.py                   连续参数盒证书（本目录的核心工
 deterministic_design.py            确定性选点、快照组装、盒合法频率计划
 exact_error.py                     精确参数映射与误差见证（全阶对照）
 certify_extraction.py              驱动：设计 + stock 基线 + 证书 + 全阶验证
-bench_matrix_cell_certificate.py   单元矩阵证书的对照检查（违反/细化/紧度）
-bench_box_branch_and_bound.py      无富化的盒分支定界与叶细化成本
+bench_certificate.py               两种 mode：tightness（单元矩阵证书对照检查）与
+                                   bandb（无富化的盒分支定界与叶细化成本）
 bench_pareto_budget.py             (参数点数, SVD cutoff) 的提取预算与认证缺陷
 bench_dynamic_bridge_toy.py        动态桥的人工问题否证（H2/Hankel 一阶反例）
 test_certified_sampling.py         语义测试（证书、Zolotarev、谱区间、计数）
 test_box_frequency_plan.py         盒合法频率计划的回归测试
-records/                           正面结论 4 份 + 失败路线总表 NEGATIVE_RESULTS.md
+records/PORT_CERTIFICATE_AND_BUDGET.md      证书本身：成立、紧度、细化、提取预算
+records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md   系统范数缺口实测 + 全部失败路线与更正
 ```
 
 复现（仓库根目录，2.5 mm 两组 Case 1）。`--steady-cells 32` 意味着 1024 个证书单元、
@@ -59,7 +60,7 @@ N_FOM / N_op / wall time / memory                       [COST]           N_FOM �
 绝不能再出现在同一张表里都叫“误差”。**fixed-real-shift 证书与 system-norm 证书也绝不能混称
 “动态证书”**：本目录的整盒证书只覆盖单个固定实频移（`[PORT-FIXED-S]`），频率轴与 Hankel 的
 整盒保证目前不存在（`[PORT-SYSTEM]`，见第 6 节第 1 条与 `THEORY.md` 的 P0）。完整作用域定义
-与判定标签见 `THEORY.md` 第 0.1 节与 `records/NEGATIVE_RESULTS.md` 的表头。
+与判定标签见 `THEORY.md` 第 0.1 节与 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 的表头。
 
 ---
 
@@ -107,7 +108,7 @@ stock, seed 20260805（旧计划） 116     35     2.362e-04   1.524e-01   2.475
 stock, seed 7（旧计划）        118     36     2.337e-04   1.513e-01   2.449e-04   1.680e-03   4.697e-03
 ```
 
-（“旧计划”= 修复前的裸 K 谱区间计划，见 `records/NEGATIVE_RESULTS.md` 的 A8。它的
+（“旧计划”= 修复前的裸 K 谱区间计划，见 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 的 A8。它的
 稳态列因此比盒合法计划差约一个数量级，这正是不修计划时随机提取器在低 HTC 角上的
 实际表现。）
 
@@ -127,7 +128,7 @@ stock, seed 7（旧计划）        118     36     2.337e-04   1.513e-01   2.449
    RHS 求解除数（full-order RHS solves）；分解/setup、缓存复用与 RHS 求解是三个不同的
    成本对象，不要用“求解次数”笼统概括。
    早先“少 27% 求解”的结论属于旧计划加“只对低频移铺开全部点”的旧设计，已在本次收束
-   中作废（见 3.1 与 `records/NEGATIVE_RESULTS.md` 的 B19--B23）。要省求解数必须回到
+   中作废（见 3.1 与 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 的 B19--B23）。要省求解数必须回到
    那条已被否掉的低频面规则。
 3. **首次给出连续参数盒保证**：对**盒内每一点**，交付基底的稳态结温传递误差不超过表中
    数值；同一套证书套在基线基底上也成立。基线本身无法给出任何这类结论。
@@ -214,7 +215,7 @@ D_a  = max over Bernstein nodes of  [ block^T Gram(anchor) block ]_aa
   （该单元自身误差极小），逐点比值则只有 1.1--5.7（2.5 mm，10 余个分布点）。
   同一检查的轻量版本是 `certify_extraction.py --audit-cells 8 --audit-samples 2`；
   任何 `证书 < 实测` 都会直接报错。
-* **细化与紧度**（`records/MATRIX_CELL_CERTIFICATE.md`，5 mm、设计基底、`s = 0`；
+* **细化与紧度**（`records/PORT_CERTIFICATE_AND_BUDGET.md`，5 mm、设计基底、`s = 0`；
   该记录用的是旧计划）：16 单元/轴、3 阶 jet、块锚下界为 `1.8396e-04`，650 点精确盒
   最大值 `1.8248e-04`，只高 0.8%。这就是端口量本身，**不开平方**：认证的是整盒最坏相对
   all-input fixed-shift port defect `sup_w w^T (Y - Y_V) w / w^T Y w`，A-能量状态误差不再
@@ -222,17 +223,21 @@ D_a  = max over Bernstein nodes of  [ block^T Gram(anchor) block ]_aa
   逐级收紧（局部锚 2 阶：`7.435e+01 -> 2.817e+00 -> 5.860e-02`），且**所有配置的
   Loewner 违反数为 0**。细化两个方向不可互换：固定分割升阶每阶约省 4 倍（8 单元/轴），
   细化分割收益更大，但每个自建锚的单元要付一次 Riesz Gram（5 mm 上 130 次稀疏求解）。
-* 证书对基底有区分力，但幅度不大：本次两次运行里确定性基底的对角界只比 stock 紧
-  2--30%（5 mm `2.278e-04` 对 `2.322e-04 / 2.292e-04`；2.5 mm `1.430e-05` 对
-  `1.480e-05 / 2.034e-05`）。早先“基线松 2.5--3.3 倍”的说法来自旧计划与不同的
-  单元/锚配置，已作废。
+* 证书对基底有区分力，**但只在可分辨的分割下**。8 单元/轴的运行是包络受限的：五个不同
+  基底（order 35--41，精确盒最坏值跨 `1.09e-04 .. 1.31e-03`）全部报同一个 `1.5566e-02`，
+  只反映单元内 Bernstein 包络的松度，与 ROM 无关。升到 16 单元/轴、同阶 3、单元本地锚后
+  证书才可分辨，并且结论与先前“幅度不大”的说法相反：**确定性设计基底在稳态 shift 上比
+  stock seed 20260805 差约 3 倍**（`3.347e-04` 对 `1.086e-04`；证书 `1.006x` 紧），而两条
+  旧计划基底又差一个数量级（`9.84e-04`、`1.31e-03`）。设计买的是连续盒证书，不是稳态精度
+  （见 `records/PORT_CERTIFICATE_AND_BUDGET.md` A2e）。早先“基线松 2.5--3.3 倍”的说法
+  来自旧计划与不同的单元/锚配置，已作废。
 * `shift = 1/dt` 时同一套证书覆盖 BDF1 递推所用的算子族（`test_shift_certificate_
   covers_the_shifted_family` 在玩具族上验证 `bound >= 实测`）。
 
 ## 4. 已验证无效的方案
 
 30 余条失败路线（每条含判据式数字、判定类别与复现命令）收束在
-`records/NEGATIVE_RESULTS.md`，不在本文件重复。按判定分类，历史上被否掉的是：
+`records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`，不在本文件重复。按判定分类，历史上被否掉的是：
 
 * **界太松**（不等式成立，数值不可能驱动 1e-3 判断）：全局矩阵分式 Bernstein 与均匀
   Neumann 残差证书、单一全局谱标量的廉价盒残差界、BDF1 输出残差界（`K_min^-1` 全局
@@ -259,7 +264,7 @@ D_a  = max over Bernstein nodes of  [ block^T Gram(anchor) block ]_aa
   复现、求解计数）、`test_box_frequency_plan.py`（盒合法计划的 Loewner 包围与 5 mm
   回归）。已退役的 `test_inexact_moment_theory.py` 服务的路线在 `THEORY.md` 中明确关闭，
   它里面仍有效的一般事实（Galerkin 端口恒等式、nested space 不保证 H2 单调）分别由
-  `test_certified_sampling.py` 与 `records/DYNAMIC_BRIDGE_TOY.md` 覆盖。
+  `test_certified_sampling.py` 与 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` 覆盖。
 * **本次两次驱动运行**（第 2 节的数字来源）：
 
 ```text
@@ -293,7 +298,7 @@ PYTHONPATH=<repo>/python:. python -m unittest discover -s . -p "test_*.py"
    BDF1 协议内的实测 step 响应）与频率轴 `[PORT-SYSTEM]`（port-Hankel、冲激响应）都只有
    实测。证书覆盖的是**给定实频移**（`s = 0`，以及 `s = 1/dt` 的算子族）的整盒端口传递
    `[PORT-FIXED-S]`。两者不能混称“动态证书”：前者是采样诊断，后者是单个实移上的整盒陈述，
-   从 fixed-`s` 的平方关系推出动态系统范数误差也平方是**错的**（`records/DYNAMIC_BRIDGE_TOY.md`
+   从 fixed-`s` 的平方关系推出动态系统范数误差也平方是**错的**（`records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`
    的一阶反例）。
 2. **浮点**：所有不等式在实数域精确成立；稀疏分解、Gram 与稠密求解是普通浮点，
    报告中显式给出 `floating_point_certified=False`。要做成计算机辅助证明需要
@@ -310,7 +315,7 @@ PYTHONPATH=<repo>/python:. python -m unittest discover -s . -p "test_*.py"
    （`rtol = 1e-10`；算子 `K + s*C + sum_i p_i H_i` 对称正定，因此不需要 GMRES）。
    1 mm 上的对照说明这条路线的必要性：同一份谱准备，稀疏直接 LU 要 `101.03 s` /
    `4.37 GB`，AMG-CG 只要 `18.91 s` / `668 MB`，两种方法的节点相对差 `1.2e-13` /
-   `1.6e-13`、代表点上的误差差最大 `9.4e-12`（`records/NEGATIVE_RESULTS.md` B24）。
+   `1.6e-13`、代表点上的误差差最大 `9.4e-12`（`records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md` B24）。
    但以下路径仍在用稀疏直接分解：`certified_box.py` 的每角点分母、
    `exact_error` 的参数映射、`deterministic_design` 的选点与最小算子。
    5 mm 上直接分解其实更便宜（每点约 `4 ms` 对 CG 的 `16 ms`，实测），

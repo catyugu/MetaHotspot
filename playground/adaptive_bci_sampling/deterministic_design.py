@@ -39,6 +39,8 @@ import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from sparse_solve import AmgSolver
+
 from residual_certificate import prepare_residual_certificate, select_worst_certificate
 from metahotspot.macromodel.utils import (
     _snapshot_svd_basis,
@@ -98,9 +100,7 @@ def response_block(cache, kernel, mass, terms, source, point, shift=0.0):
     block = cache.get(key)
     if block is None:
         operator = kernel if not shift else kernel + float(shift) * mass
-        factor = spla.splu(
-            full_operator(operator, terms, point), permc_spec="MMD_AT_PLUS_A"
-        )
+        factor = AmgSolver(full_operator(operator, terms, point))
         block = np.asarray(factor.solve(source), dtype=np.float64)
         cache[key] = block
     return block
@@ -130,21 +130,20 @@ def certified_greedy_points(
     tolerance=1e-5,
     maximum_points=8,
     grid=41,
-    power=None,
-    metric="entrywise",
     cache=None,
     progress=False,
 ):
-    """Append parameters by the largest certified output residual.
+    """Append parameters by the largest certified port defect majorant.
 
     The candidate set is the deterministic ``grid`` x ``grid`` log tensor grid,
     the seed is the Zolotarev product, and the score of a candidate is the
-    ``A(h_min)``-Riesz residual bound of the *raw* snapshot span built from the
-    parameters selected so far.  The result is reproducible bit for bit.
+    ``A(h_min)``-Riesz majorant of the *raw* snapshot span built from the
+    parameters selected so far, normalized by the reduced transfer of that same
+    candidate: ``lambda_max(U(p), Y_V(p)) >= lambda_max(E(p), Y(p))``.  The
+    result is reproducible bit for bit.
     """
     ranges = np.asarray(ranges, dtype=np.float64)
     source = np.asarray(source, dtype=np.float64)
-    power = np.ones(source.shape[1]) if power is None else np.asarray(power, float)
     candidates = logarithmic_tensor_grid(ranges, grid)
     selected = [np.asarray(zolotarev_seed(kernel, terms, ranges)[0], dtype=np.float64)]
     response_cache = {} if cache is None else cache
@@ -153,7 +152,7 @@ def certified_greedy_points(
     minimum_operator = sp.csc_matrix(kernel)
     for value, term in zip(ranges[:, 0], terms):
         minimum_operator = minimum_operator + float(value) * term
-    minimum_factor = spla.splu(minimum_operator.tocsc())
+    minimum_factor = AmgSolver(minimum_operator)
     started = time.perf_counter()
 
     basis = None
@@ -180,12 +179,9 @@ def certified_greedy_points(
         relative_scores = np.empty(candidates.shape[0])
         absolute_scores = np.empty(candidates.shape[0])
         for index, point in enumerate(candidates):
-            if metric == "entrywise":
-                _transfer, absolute, relative = certificate.evaluate_entrywise(point)
-            else:
-                _junction, absolute, relative = certificate.evaluate(point, power)
-            relative_scores[index] = float(np.max(relative))
-            absolute_scores[index] = float(np.max(absolute))
+            relative, absolute = certificate.port_defect_bound(point)
+            relative_scores[index] = relative
+            absolute_scores[index] = absolute
         worst = select_worst_certificate(relative_scores, absolute_scores)
         score = float(relative_scores[worst])
         history.append(

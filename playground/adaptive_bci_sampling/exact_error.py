@@ -49,7 +49,8 @@ import numpy as np
 import scipy.linalg as la
 import scipy.sparse as sp
 
-from certified_box import BoxCertificate, logarithmic_edges, sparse_factor
+from certified_box import BoxCertificate, logarithmic_edges
+from sparse_solve import AmgSolver
 
 
 class AffineErrorMap:
@@ -101,7 +102,7 @@ class AffineErrorMap:
         reference = sp.csc_matrix(self.base)
         for lower, term in zip(self.ranges[:, 0], self.terms):
             reference = reference + float(lower) * term
-        self.factor = sparse_factor(reference)
+        self.factor = AmgSolver(reference)
 
         blocks = [self.source, self.base @ self.basis]
         blocks.extend(term @ self.basis for term in self.terms)
@@ -185,18 +186,24 @@ class AffineErrorMap:
         zeta, _coefficients = self.residual_coefficients(parameter)
         return np.ascontiguousarray(zeta.T @ (self.augmented_gram(parameter) @ zeta))
 
-    def absolute_error(self, parameter):
-        """Exact entrywise absolute error at one parameter."""
-        return np.abs(self.error_matrix(parameter))
+    def relative_port_defect(self, parameter):
+        """Exact relative all-input port defect at one parameter.
+
+        ``lambda_max(Y(p) - Y_V(p), Y(p))``, the quantity the whole-box
+        certificate bounds; one full-order transfer solve per call.
+        """
+        defect = 0.5 * (self.error_matrix(parameter) + self.error_matrix(parameter).T)
+        transfer = 0.5 * (self.transfer(parameter) + self.transfer(parameter).T)
+        return float(np.max(la.eigvalsh(defect, transfer, check_finite=False)))
 
     def transfer(self, parameter):
         """Exact full-order transfer at one parameter (reference only)."""
         return np.ascontiguousarray(
-            self.source.T @ sparse_factor(self.operator(parameter)).solve(self.source)
+            self.source.T @ AmgSolver(self.operator(parameter)).solve(self.source)
         )
 
-    def worst_on_grid(self, cells_per_axis=41):
-        """Exact worst entrywise error over a uniform log grid of the box."""
+    def worst_port_defect_on_grid(self, cells_per_axis=41):
+        """Exact worst relative port defect over a uniform log grid of the box."""
         if np.isscalar(cells_per_axis):
             cells_per_axis = (int(cells_per_axis),) * self.dimension
         axes = [np.linspace(0.0, 1.0, int(count)) for count in cells_per_axis]
@@ -210,19 +217,19 @@ class AffineErrorMap:
         worst = 0.0
         location = None
         for parameter in grid:
-            value = float(np.max(self.absolute_error(parameter)))
+            value = self.relative_port_defect(parameter)
             if value > worst:
                 worst = value
                 location = parameter.copy()
         return {
             "points": int(grid.shape[0]),
-            "worst_absolute_error": worst,
+            "worst_relative_port_defect": worst,
             "location": None if location is None else location.tolist(),
             "seconds": time.perf_counter() - started,
         }
 
-    def cell_bound(self, low, high, order=2):
-        """Rigorous entrywise bound of the error on one HTC cell.
+    def cell_bound(self, low, high, denominator, order=2):
+        """Rigorous all-input port-defect bound on one HTC cell.
 
         The residual is enclosed by a tensor Bernstein polynomial in the cell's
         *own* Riesz map ``Z^T A(low)^-1 Z``: Galerkin optimality admits any
@@ -234,10 +241,10 @@ class AffineErrorMap:
         low = np.asarray(low, dtype=np.float64)
         high = np.asarray(high, dtype=np.float64)
         return self.certificate.cell_bound(
-            self.augmented_gram(low), low, high, order
+            self.augmented_gram(low), low, high, denominator, order
         )
 
-    def sweep(self, cells_per_axis=8, order=2):
+    def sweep(self, cells_per_axis=8, order=2, denominator="reduced"):
         """Bracket the box: exact at centres, rigorous per cell."""
         if np.isscalar(cells_per_axis):
             cells_per_axis = (int(cells_per_axis),) * self.dimension
@@ -254,8 +261,9 @@ class AffineErrorMap:
             low = np.array([edges[axis][index] for axis, index in enumerate(choice)])
             high = np.array([edges[axis][index + 1] for axis, index in enumerate(choice)])
             centre = 0.5 * (low + high)
-            exact = float(np.max(self.absolute_error(centre)))
-            bound = float(np.max(self.cell_bound(low, high, order)))
+            exact = self.relative_port_defect(centre)
+            weight, _fallback = self.certificate.cell_weight(high, denominator)
+            bound = self.cell_bound(low, high, weight, order)
             if exact > worst_exact:
                 worst_exact = exact
                 location = centre.tolist()
@@ -263,6 +271,7 @@ class AffineErrorMap:
         return {
             "cells": int(np.prod(cells_per_axis)),
             "order": int(order),
+            "denominator": denominator,
             "exact_at_centres": worst_exact,
             "cell_bound": worst_bound,
             "worst_centre": location,

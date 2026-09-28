@@ -23,6 +23,8 @@ import time
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+
+from sparse_solve import AmgSolver
 from scipy import special
 
 
@@ -211,7 +213,7 @@ def coordinate_spectral_enclosures(
             lower_corner = lower_corner + ranges[other, 0] * other_term
             upper_corner = upper_corner + ranges[other, 1] * other_term
 
-        factor = spla.splu(lower_corner.tocsc())
+        factor = AmgSolver(lower_corner)
         full_size = K.shape[0]
 
         def inverse_action(vector):
