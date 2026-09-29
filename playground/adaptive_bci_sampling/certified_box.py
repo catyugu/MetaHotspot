@@ -1,8 +1,11 @@
 """Rigorous whole-box certificate for one delivered BCI basis.
 
 The certificate answers a question that a validation run cannot: how large can
-the junction transfer error of a *fixed* reduced basis become at *any* heat
-transfer coefficient vector of the continuous box?
+the error of a *fixed* reduced basis become at *any* heat transfer coefficient
+vector of the continuous box?  The certified object is the full-field
+(state-level) transfer operator ``X(p) = A(p)^-1 G``: the reported quantity is
+the collocated defect below, which by the Galerkin identity equals the *squared*
+relative ``A(p)``-energy error of ``X`` over all input directions.
 
 Statement proved (exact arithmetic)
 
@@ -12,7 +15,14 @@ box ``[p_low, p_high]``, write
     A(p)   = K + s*C + sum_i p_i H_i          (symmetric positive definite)
     X(p)   = A(p)^-1 G
     X_V(p) = V (V^T A(p) V)^-1 V^T G          (Galerkin projection, V delivered)
-    Y(p)   = G^T X(p),  Y_V(p) = G^T X_V(p)   (co-located junction transfer)
+    Y(p)   = G^T X(p),  Y_V(p) = G^T X_V(p)   (collocated port transfer)
+
+Since ``Y - Y_V = R^T A(p)^-1 R = E^T A(p) E`` with ``E = X - X_V``, the
+generalized eigenvalue ``lambda_max(Y - Y_V, Y)`` is also the worst relative
+``A(p)``-energy error of the field, squared:
+``lambda_max(Y - Y_V, Y) = max_w (E w)^T A(p) (E w) / (X w)^T A(p) (X w)``.
+The certificate below bounds that quantity, so it certifies the field-level
+transfer-operator target at this shift.
 
 Two standard facts give an exact, computable bound.
 
