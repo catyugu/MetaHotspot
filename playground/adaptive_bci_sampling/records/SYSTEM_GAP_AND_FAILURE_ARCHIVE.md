@@ -5,7 +5,8 @@
 > extractor uses the original per-port bare-kernel frequency estimator.
 
 This record answers two questions: **what is still missing** between the
-fixed-shift certificate and the port system norm the research target asks for
+fixed-shift certificate and the full-field transfer operator the research
+target asks for
 (**Part A**), and **which routes are already closed** (**Part B**).  The
 positive statements about the certificate itself live in
 `records/PORT_CERTIFICATE_AND_BUDGET.md`; the theory lives in `THEORY.md`.
@@ -16,10 +17,10 @@ Scope labels used throughout, and the limit each one puts on what a negative
 entry may conclude:
 
 ```text
-PORT-SYSTEM     H2 / Hankel / impulse-response system norm     the research target
+STATE           full-field / A-energy / state transfer norm    the research target
+PORT-SYSTEM     H2 / Hankel / impulse-response system norm     the dynamic channel, still open
 PORT-FIXED-S    Z(s; mu) at one real shift                     what the box certificate covers
 PORT-STEP       sampled step-response metric                   measured diagnostic only
-STATE-AUX       full-field / A-energy / state norm             proof device and diagnostic
 COST            N_FOM / N_op / wall time / memory
 CORRECTION      measurement bug or mis-defined quantity
 ```
@@ -33,14 +34,19 @@ logical leap this file exists to prevent, and Part A is the measured reason it
 is a leap: the fixed-`s` collocated square identity does **not** transfer
 quadratically to dynamic port norms.
 
-**STATE-AUX subordination.**  An entry whose only decisive criterion is a
-full-field / A-energy / state norm, with no independent port-transfer, system-norm
-or cost failure, is not a negative result under the current target; it is at most
-a `STATE-AUX` historical result.  The 2026-09 re-review checked every entry in
-Part B against this rule: each one carries an independent port-transfer,
-system-norm or cost failure, so none had to be demoted.  The state-energy
-acceptance target and the Robin solution-manifold n-width complexity proposition
-were of that class and were removed from the main theory line (`THEORY.md` 0.1).
+**Target restoration.**  The research target is the full-field transfer operator
+`X(p, s) = A(p, s)^-1 G`, so a full-field / A-energy / state-norm failure is a
+failure of the acceptance criterion itself; its fixed-shift implementation is the
+collocated port defect of `THEORY.md` proposition 1.  The 2026-09 narrowing that
+demoted the state-level channel to a proof device is reverted (`THEORY.md` 0.1).
+No entry needs re-labelling for it: the re-review had already checked every entry
+in Part B and each carries an independent port-transfer, system-norm or cost
+failure, so restoring the state-level criterion can only strengthen a verdict.
+Two routes stay excluded and are **not** reopened by it: the Robin
+solution-manifold n-width rate proposition (sampling-size optimality is still
+answered by `N_FOM` and the cost structure) and the dynamic semi-group
+state-energy vendor channel (its norm is undefined in the retrieved pages, entry
+A6).
 
 Verdicts are only these four, and every entry names exactly one (or a pair):
 
@@ -78,9 +84,11 @@ sharp-baseline form refuted    excess / delta_* -> c > 0,
 vendor impedance channel hit   e_Hankel / delta_* -> c > 0
 ```
 
-`[STATE-AUX]` the run also measured the state impulse energy `e_state`; that column has
-been removed together with the state-energy acceptance target (see `THEORY.md` 0.1).
-The port-level counterexample below is what matters and it does not depend on it.
+`[STATE]` the run also measured the state impulse energy `e_state`; that column was
+dropped in the 2026-09 scope narrowing and is not in the current output.  The
+field-level fixed-shift criterion is an acceptance target again (see `THEORY.md`
+0.1), but this dynamic column is not one, so it is not restored here; the verdict
+below rests on the port-level counterexample, which does not depend on it.
 
 The excess is taken over *both* rotation signs because the first-order Frechet
 derivative flips sign with `Q -> -Q`: if it is nonzero, at least one branch must
@@ -300,9 +308,12 @@ Mechanism, consistent with the numbers: at a matching shift the value error is
   is likewise not uniformly second order (`kappa = 1e2` gives exponent 0.1 - 0.2).
 * The vendor material also states a whole-space-time temperature energy as
   `< 2 sqrt(epsilon)`, but does not define that norm in the retrieved pages.  It is
-  `[STATE-AUX]` and is **not** an acceptance target here, so no number in this
-  record is claimed against it.  The port-side statement `< 2 epsilon` for the
-  impedance Hankel error is the one this record speaks to.
+  `[STATE-DYN]` and is **not** an acceptance target: a norm that is undefined in the
+  retrieved pages cannot be a testable criterion (see `THEORY.md` 0.1).  The
+  field-level criterion that *is* an acceptance target is the fixed-shift one, and
+  no number in this record is claimed against the dynamic channel; the decisive
+  evidence here stays on the port side (the `< 2 epsilon` impedance Hankel
+  statement).
 * Only relative ROM-to-ROM differences are reported; how large `delta_*` actually
   is in the real model stays the certificate's job.
 
@@ -493,10 +504,10 @@ PYTHONPATH=python python playground/adaptive_bci_sampling/bench_dynamic_bridge_t
 **每条条目还必须带一个判定作用域标签**，说明它的失败证据是在哪个误差度量下取得的：
 
 ```text
-PORT-SYSTEM     H2 / Hankel / 冲激响应系统范数
+STATE           全场 / A-能量 / 状态传递算子范数
+PORT-SYSTEM     H2 / Hankel / 冲激响应系统范数（动态口径，P0 未闭合）
 PORT-FIXED-S    单个实频移上的 Z(s;mu)
 PORT-STEP       采样 step-response 度量（BDF1 步进 / 观测步响应）
-STATE-AUX       仅全场 / A-能量 / 状态范数
 COST            N_RHS / setup / 墙钟 / 内存
 CORRECTION      实测 bug 或定义错位
 ```
@@ -509,11 +520,15 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
 误差也平方。反过来，标着 `PORT-SYSTEM` 的条目（A1、A10、C1、C2、C4）是直接对动态系统范数
 成立的判决。
 
-**STATE-AUX 的从属地位.** 仅凭全场 / A-能量 / 状态范数判据、而没有独立的 port 传递、系统范数
-或成本失败的条目，不能再作为当前目标下的负结果，最多算 `STATE-AUX` 历史结果。本次重审
-（2026-09）逐条核对后，第 1--3 节没有这种条目：每条都含独立的 port 传递、系统范数或成本
-失败。`THEORY.md` 的 state-energy 接受目标与 Robin 解流形 n-width 复杂度命题属于这一类，
-已按作用域从主理论线删除，见 `THEORY.md` 第 0 节。
+**目标恢复（2026-09 重新定位）.** 研究目标是全场传递算子 `X(p,s) = A(p,s)^-1 G`，因此仅凭
+全场 / A-能量 / 状态范数判据的失败条目**同样是**当前目标下的负结果；它在定频上的实现就是
+`THEORY.md` 命题 1 的共址端口缺陷。此前把 state 级通道降级为“仅证明装置”的作用域收紧已撤回，
+见 `THEORY.md` 第 0 节。第 1--3 节原有条目无需重新标注：它们各自都含独立的 port 传递、系统
+范数或成本失败，加上场级判据只会让结论更强。
+
+**同时保持排除的两条路线.** 本次重定位**不**重开：Robin 解流形 n-width 速率命题（采样规模
+最优性仍由 `N_FOM` 与成本结构回答）与动态半群 state-energy 的 vendor 通道（其范数在可取得
+材料中未定义，见 A6）。
 
 **两条边界（沿用 GPT 审计确定的规则）**：
 
@@ -545,7 +560,7 @@ port-Hankel / 冲激响应系统范数，也**不**否定同一套参数点、�
   （引文未写归一化、2019 年误差界论文无法完整核对），在 `THEORY.md` 的 P0 动态传递定理下作为开放缺口跟踪。需要撤回的是文档层面的错误说法：“一个 Gramian 同时给出两个 all-input 指标”为**错**
   （`tr(D^T T D P)` 只给 `tr(E)`），先前的 `sqrt(tr(E)/tr(E0))` 只测四个脉冲能量之和、会掩盖同时激励下的坏组合。参数单元树 + 精确中心解 + 半群 Lipschitz 常数 + Gramian 余项界这一整套机制
   （`semigroup_box_bounds`）因大单元常数按 `1/alpha^2` 放大且未认证整个 Case 1 盒而被移除。
-* **C10 先验闭式参数采样（原编号 C10）**：开放候选，见 `README.md` 第 6 节第 7 条。旧记录把它挂在 `THEORY.md` 的 P1「Robin 解流形的 n-width 衰减」上，该命题已按作用域从主理论线删除（state-space 逼近复杂度不再是研究目标）。
+* **C10 先验闭式参数采样（原编号 C10）**：开放候选，见 `README.md` 第 6 节第 7 条。旧记录把它挂在 `THEORY.md` 的 P1「Robin 解流形的 n-width 衰减」上，该命题仍是排除项，不在主理论线上（state-space 复杂度问题由 `N_FOM` 与成本结构回答）。
 
 ---
 
@@ -1116,8 +1131,8 @@ seed 20260805 port 3 shift `5.2453e-4`；`8.9471e-3`，seed 7 port 1 shift `1.31
 该路线是**开放候选，不是失败路线**，因此不再作为条目留在本文件。已被验证的部分
 （Woodbury 在 ONE 参数处精确给出整个参数族、射线极点快速求值器、已知的三个计数陷阱）
 连同实测数字记在 `README.md` 第 6 节第 7 条。它原先挂在 `THEORY.md` 的 P1「Robin 解
-流形的 n-width 衰减」上，该命题已按作用域从主理论线删除：采样规模的最优性现在应由
-`N_FOM` 与端口系统范数的代价结构回答，而不是由 state-space n-width 速率回答。
+流形的 n-width 衰减」上，该命题仍是排除项，不在主理论线上：采样规模的最优性应由
+`N_FOM` 与成本结构回答，而不是由 state-space n-width 速率回答。
 
 ---
 

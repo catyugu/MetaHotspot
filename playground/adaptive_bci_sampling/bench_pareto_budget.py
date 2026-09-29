@@ -14,8 +14,9 @@ shift by shift over the whole box:
     delta_cert(V) = max_j max_Q U_{Q,j}(V),             L* = sampled exact.
 
 Both are the relative all-input collocated port defect itself (``[PORT-FIXED-S]``);
-no square root is taken, since the square root is the state-amplitude quantity
-that is no longer reported (``[STATE-AUX]``).
+no square root is taken here, since the square root is the equal ``A``-energy state
+quantity, which is a ``[STATE]`` acceptance target reported by the field-level
+metrics rather than by this port bench.
 
 Counting convention, shared with the rest of the repository: one *operator block* is
 one factorization of ``A(h, s)``, and every block serves one right-hand side per

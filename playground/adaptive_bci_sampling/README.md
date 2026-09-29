@@ -1,7 +1,9 @@
-# BCI 端口传递采样实验
+# 全场传递算子采样实验
 
-目标是功率端口到结温端口的传递族
-`Z(s,h) = G^T(sC + K + Σ h_j H_j)^-1 G`。全场温度精度不是验收目标。
+目标是全场传递算子族 `X(p,s) = A(p,s)^-1 G`，即功率端口到**整场**温度分布的状态级传递
+算子；验收判据是整场温度对真解的误差。端口传递族
+`Z(s,h) = G^T(sC + K + Σ h_j H_j)^-1 G` 的共址认证是它的一个特例，两者都必须报告
+（作用域标签见 [THEORY.md](THEORY.md) 0.1）。
 固定实频移下，`Z-Z_V = R^T A^-1 R` 可用于构造最终压缩基底的端口误差上界；
 `certified_box.py` 实现连续 HTC 盒的后验证书。它**不**是 Hankel 或冲激响应
 系统范数的保证。相关数学命题与未证的动态桥见 [THEORY.md](THEORY.md)。
@@ -26,9 +28,11 @@
 | `bench_dynamic_bridge_toy.py` | 动态桥的玩具反例 |
 
 原始 `playground/bci_rom_testcase1/reproduce_case1.py` 在固定物理 HTC
-`(50, 1000)` 上运行 stock 基线，并在最终 SVD 后报告 4×4 稳态端口传递的
-逐项相对误差。它的 2000 s 瞬态只测名义功率组合。稳态单点测量、采样
-step 响应与整盒固定频移证书必须分别报告；它们都不构成系统范数证书。
+`(50, 1000)` 上运行 stock 基线，并报告**全场**恢复误差
+（`steady_max_absolute_rise_error_K`、`steady_max_relative_rise_error`、
+`transient_final_max_absolute_rise_error_K`）以及 4×4 结温端口对照。它的
+2000 s 瞬态只测名义功率组合。稳态单点测量、采样 step 响应与整盒固定频移
+证书必须分别报告；它们都不构成系统范数证书。
 
 历史测量与盒谱频率计划的探索存放于 `records/`。其中盒计划的数值表格属于
 **已撤回实现的历史结果**，不能当作当前生产路径的性能或正确性声明。

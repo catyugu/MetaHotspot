@@ -24,7 +24,7 @@ measured number was lost in the merge; only the heading levels were adjusted.
 Everything here is `[PORT-FIXED-S]`: the certified quantity is
 `lambda_max(Z(h) - Z_V(h), Z(h))`, the relative all-input collocated port defect at
 one real shift.  No square root is taken anywhere, and the equal `A`-energy state
-error is `[STATE-AUX]` and is not reported.  The step from a fixed shift to the
+error is `[STATE]`; this record reports the port quantity only.  The step from a fixed shift to the
 port system norm is the open `[PORT-SYSTEM]` gap, which lives in
 `records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md`, not here.
 
@@ -62,8 +62,8 @@ the exact relative collocated port defect of the delivered space is
 sup_h lambda_max(E(h), Y(h)) = sup_h sup_w w^T (Y(h) - Y_V(h)) w / w^T Y(h) w,
 ```
 
-(its square root is the equal `A`-energy state error, `[STATE-AUX]` and not
-reported), with the worst input `w` a 4x4 generalized eigenvector of `(E, Y)`.  On a cell `Q` with
+(its square root is the equal `A`-energy state error, `[STATE]`, which this
+record does not report), with the worst input `w` a 4x4 generalized eigenvector of `(E, Y)`.  On a cell `Q` with
 lower corner `a` and upper corner `b`, the certificate is
 
 ```text
@@ -113,8 +113,9 @@ maximum, and the median cell is 17 % above its own exact value.  In port terms
 the certified statement is: over the whole box at this shift the worst relative
 all-input collocated port defect `sup_w w^T (Y - Y_V) w / w^T Y w` of the
 delivered basis is `1.8396e-04`, against a true `1.8248e-04`.  No square root is
-taken: this is a port quantity, and the A-energy state error is *not* reported
-anywhere (`[STATE-AUX]`, see records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md).  The pre-registered
+taken: this is the port quantity, and the A-energy state error (`[STATE]`, see
+records/SYSTEM_GAP_AND_FAILURE_ARCHIVE.md) is reported separately by the
+field-level metrics.  The pre-registered
 gate was "after refinement the cells that
 dominate the maximum must be within 10x": the dominating cells are at `1.06x`
 (local anchor) and `1.06x`-`1.62x` (block anchor, order 2/3), so the gate is
