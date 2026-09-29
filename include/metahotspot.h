@@ -63,7 +63,7 @@ typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
-enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE = 1, MHS_FLUID_MASS_FLOW = 2, MHS_FLUID_VELOCITY = 3 };
+enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
 
 typedef int32_t mhs_integrator_t;
 enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };

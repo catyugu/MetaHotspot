@@ -15,8 +15,6 @@ namespace mhs::cli {
            << "  --input <file>          Input XML describing the simulation (required).\n"
            << "  --output-vtu <file>     Output VTU path (default: ./output.vtu).\n"
            << "  --output-xml <file>     Output XML path (default: ./output.xml).\n"
-           << "  --fluid-overlay <file>  Explicit fluid-overlay XML; only when this flag is given will fluid-related "
-              "logic run.\n"
            << "  --log-file <file>       Log file path (default: metahotspot.log).\n"
            << "  --no-console-log        Disable console logging.\n"
            << "  --help                  Print this help and exit 0.\n"
@@ -99,15 +97,6 @@ namespace mhs::cli {
                     return result;
                 }
                 opts.output_xml = std::move(v);
-            }
-            else if (arg == "--fluid-overlay") {
-                std::string v;
-                if (!read_value(i, argc, argv, cur, v, err)) {
-                    result.status = ParseStatus::Error;
-                    result.message = err;
-                    return result;
-                }
-                opts.fluid_overlay = std::move(v);
             }
             else if (arg == "--log-file") {
                 std::string v;

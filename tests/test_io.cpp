@@ -109,7 +109,7 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
             <Blocks>
                 <Block>
                     <MaterialName>background</MaterialName>
-                    <TiReyuan>1</TiReyuan>
+                    <VolumetricHeatSource>1</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <AllRects>
@@ -119,7 +119,7 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
                 </Block>
                 <Block>
                     <MaterialName>foreground</MaterialName>
-                    <TiReyuan>2</TiReyuan>
+                    <VolumetricHeatSource>2</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <AllRects>
@@ -253,8 +253,8 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 }
 
 // Build a minimal in-memory XML that contains one material with the given
-// DaoreXishu text. Used to exercise mhs::io::read_xml's DaoreXishu parser.
-static std::string make_xml_with_daore_xishu(const std::string& daore_text)
+// ThermalConductivity text.
+static std::string make_xml_with_thermal_conductivity(const std::string& conductivity_text)
 {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
@@ -268,11 +268,12 @@ static std::string make_xml_with_daore_xishu(const std::string& daore_text)
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>mat</a:Key>
             <a:Value>
-                <BiRerong>385</BiRerong>
-                <DaoreXishu>)";
-    body += daore_text;
-    body += R"(</DaoreXishu>
-                <Midu>8920</Midu>
+                <SpecificHeatCapacity>385</SpecificHeatCapacity>
+                <ThermalConductivity>)";
+    body += conductivity_text;
+    body += R"(</ThermalConductivity>
+                <Density>8920</Density>
+                <FluidMaterial>false</FluidMaterial>
             </a:Value>
         </a:KeyValueOfstringMaterialGyu7GfTz>
     </Materials>
@@ -281,9 +282,9 @@ static std::string make_xml_with_daore_xishu(const std::string& daore_text)
     return body;
 }
 
-TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
+TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
 {
-    auto path = write_tmp_xml("io_daore_trim.xml", make_xml_with_daore_xishu("  5  "));
+    auto path = write_tmp_xml("io_thermal_conductivity_trim.xml", make_xml_with_thermal_conductivity("  5  "));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
@@ -293,9 +294,10 @@ TEST(IoTest, ReadXmlDaoreXishuSingleExpressionTrimsWhitespace)
     std::filesystem::remove(path);
 }
 
-TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
+TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 {
-    auto path = write_tmp_xml("io_daore_3trim.xml", make_xml_with_daore_xishu("  1.5e2 , 2.5 , 0 "));
+    auto path = write_tmp_xml("io_thermal_conductivity_3trim.xml",
+        make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
@@ -303,78 +305,4 @@ TEST(IoTest, ReadXmlDaoreXishuThreeExpressionsWithTrim)
     EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "2.5");
     EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "0");
     std::filesystem::remove(path);
-}
-
-// Helper: write overlay XML to a temp file and return its path.
-static std::filesystem::path write_tmp_overlay(const std::string& content)
-{
-    auto path = std::filesystem::temp_directory_path() / "fluid_overlay_test.xml";
-    std::ofstream ofs(path);
-    ofs << content;
-    return path;
-}
-
-TEST(IoTest, MergeFluidXmlAddsMaterialsAndBoundariesToDefinition)
-{
-    std::string xml = R"(<?xml version="1.0" encoding="UTF-8"?>
-<FluidOverlay xmlns="http://schemas.datacontract.org/2004/07/ThermalSim.Models">
-    <FluidMaterial name="water">
-        <DynamicViscosity>0.00089</DynamicViscosity>
-    </FluidMaterial>
-    <Boundary>
-        <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>inlet</Name>
-        <FaceKeys>
-            <string>X|E|0|0.5|1.5|0.3|0.5</string>
-        </FaceKeys>
-        <Pressure>500</Pressure>
-    </Boundary>
-    <Boundary>
-        <BoundaryCategory>Fluidic</BoundaryCategory>
-        <Name>outlet</Name>
-        <FaceKeys>
-            <string>X|E|8|0.5|1.5|0.3|0.5</string>
-        </FaceKeys>
-        <Pressure>0</Pressure>
-    </Boundary>
-</FluidOverlay>)";
-
-    mhs::model::ModelDefinition definition;
-    definition.materials.push_back({"water", mhs::model::MaterialSpec {}});
-
-    auto path = write_tmp_overlay(xml);
-    ASSERT_NO_THROW(mhs::io::merge_fluid_xml(path.string(), definition));
-    std::filesystem::remove(path);
-
-    ASSERT_EQ(definition.materials.size(), 1u);
-    EXPECT_EQ(definition.materials[0].value.dynamic_viscosity, "0.00089");
-    ASSERT_EQ(definition.fluid_boundaries.size(), 2u);
-    EXPECT_EQ(definition.fluid_boundaries[0].kind, mhs::model::FluidBoundaryKind::Pressure);
-    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[0].value, 500.0);
-    ASSERT_EQ(definition.fluid_boundaries[0].regions.size(), 1u);
-    EXPECT_EQ(definition.fluid_boundaries[0].regions[0].axis, mhs::model::Axis::X);
-    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[0].regions[0].coordinate, 0.0);
-    EXPECT_EQ(definition.fluid_boundaries[1].kind, mhs::model::FluidBoundaryKind::Pressure);
-    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[1].value, 0.0);
-    ASSERT_EQ(definition.fluid_boundaries[1].regions.size(), 1u);
-    EXPECT_EQ(definition.fluid_boundaries[1].regions[0].axis, mhs::model::Axis::X);
-    EXPECT_DOUBLE_EQ(definition.fluid_boundaries[1].regions[0].coordinate, 8.0);
-}
-
-TEST(IoTest, MergeFluidXmlMissingElementThrows)
-{
-    std::string xml = "<?xml version=\"1.0\"?><Root/>";
-    mhs::model::ModelDefinition definition;
-    auto path = write_tmp_overlay(xml);
-    EXPECT_THROW(mhs::io::merge_fluid_xml(path.string(), definition), std::runtime_error);
-    std::filesystem::remove(path);
-
-    EXPECT_TRUE(definition.materials.empty());
-    EXPECT_TRUE(definition.fluid_boundaries.empty());
-}
-
-TEST(IoTest, MergeFluidXmlNonexistentFileThrows)
-{
-    mhs::model::ModelDefinition definition;
-    EXPECT_THROW(mhs::io::merge_fluid_xml("nonexistent_overlay.xml", definition), std::runtime_error);
 }

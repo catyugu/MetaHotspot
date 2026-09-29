@@ -3,8 +3,25 @@
 #include <tinyxml2.h>
 
 #include <string>
+#include <string_view>
 
 namespace mhs::io::detail {
+
+    inline const tinyxml2::XMLElement* child_by_local_name(const tinyxml2::XMLElement* parent, std::string_view name)
+    {
+        if (!parent)
+            return nullptr;
+        for (const tinyxml2::XMLElement* child = parent->FirstChildElement(); child;
+            child = child->NextSiblingElement()) {
+            std::string_view child_name(child->Name());
+            const size_t separator = child_name.rfind(':');
+            if (separator != std::string_view::npos)
+                child_name.remove_prefix(separator + 1);
+            if (child_name == name)
+                return child;
+        }
+        return nullptr;
+    }
 
     inline std::string trim(const std::string& value)
     {

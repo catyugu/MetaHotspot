@@ -139,12 +139,12 @@ static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k)
     switch (k) {
     case MHS_FLUID_NONE:
         return mhs::model::FluidBoundaryKind::None;
-    case MHS_FLUID_PRESSURE:
-        return mhs::model::FluidBoundaryKind::Pressure;
-    case MHS_FLUID_MASS_FLOW:
-        return mhs::model::FluidBoundaryKind::MassFlowRate;
-    case MHS_FLUID_VELOCITY:
-        return mhs::model::FluidBoundaryKind::Velocity;
+    case MHS_FLUID_PRESSURE_INLET:
+        return mhs::model::FluidBoundaryKind::PressureInlet;
+    case MHS_FLUID_MASS_FLOW_INLET:
+        return mhs::model::FluidBoundaryKind::MassFlowInlet;
+    case MHS_FLUID_OUTLET:
+        return mhs::model::FluidBoundaryKind::Outlet;
     }
     throw std::invalid_argument("invalid fluid boundary kind: " + std::to_string(k));
 }
@@ -279,8 +279,10 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
             spec.density = rho;
         if (c)
             spec.specific_heat = c;
-        if (dynamic_viscosity)
+        if (dynamic_viscosity && dynamic_viscosity[0] != '\0') {
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
+            spec.is_fluid = true;
+        }
         m->def.materials.push_back({name, std::move(spec)});
     });
 }
