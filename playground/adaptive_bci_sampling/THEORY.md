@@ -1,536 +1,183 @@
-# 理论：命题与证明
+# 全场传递算子的目标、恒等式与未证问题
 
-本文件写出 `adaptive_bci_sampling` 依赖的数学陈述，并区分三类状态：**已证**（下面给出完整
-证明，只依赖标出的假设）、**已引用**（依赖外部定理，给出出处与本文件用到的形式）、**未证**
-（真实缺口，第 2 节说明缺在哪一步）。本文件证明的是数学陈述；代码是否实现它们靠
-`certify_extraction.py` 的整盒审计核对，那是数值核验，不构成证明，两者不可互相替代。
+本文件区分已证的固定实移代数、明确定义的全场动态目标与尚未建立的动态保证。
+本次数学核对见 [MetaHotspot 项目对话](https://chatgpt.com/g/g-p-6aa80d54d2608191adb78637c1211232/c/6abcaa95-3260-83ee-a2f5-3efec6022d6a)。
+历史端口测量与旧 vendor 常数只留在 `records/FAILURE_ARCHIVE.md`。
 
----
-
-## 0. 记号与假设
-
-单体热传导 + Robin 边界，有限体积离散后
+## 0. 假设与验收对象
 
 ```text
-A(p, s) = K + s C + sum_{i=1..d} p_i H_i,   p in P = prod_i [p_i^-, p_i^+],   s >= 0.
+K(h) = K + sum_i h_i H_i,       h in P = product_i [h_i^-, h_i^+],
+A(h,s) = K(h) + s C,           s >= 0,
+K = K^T >= 0, C = C^T > 0, H_i = H_i^T >= 0, K(h^-) > 0.
 ```
 
-全程假设
+`V` 满列秩，`G` 是固定功率输入矩阵。`G` 有冗余列时，以下广义特征值均在输入空间对
+`ker(G)` 取商后理解；数值审计假设输入列独立，不用任意分母 regularization 掩盖秩亏。
+目标是 `X(h,s)=A(h,s)^-1G` 到**全部温度自由度**的映射，不是某个读出量。
+
+### 固定实移：STATE-FIXED-S
 
 ```text
-K = K^T >= 0,   C = C^T > 0,   H_i = H_i^T >= 0,   A(p^-, 0) > 0,
+X_V = V (V^T A V)^-1 V^T G,    E = X - X_V,
+epsilon_fix(h,s;V) = sup_{w: Xw != 0} ||Ew||_A / ||Xw||_A,
+epsilon_fix(P,Sigma;V) = max_{s in Sigma} sup_{h in P} epsilon_fix(h,s;V).
 ```
 
-于是对每个 `p in P`、`s >= 0` 有 `A(p, s) >= A(p^-, 0) > 0`，因此 `A(p,s)` 与 `V^T A(p,s) V`
-（`V` 满列秩）都正定，后文所有逆与 Galerkin 约化算子都合法。
+`||z||_A^2=z^TAz`。有限实移集合 `Sigma` 上通过不等于整个 `s>=0` 轴通过。
+`D_fix=epsilon_fix^2` 是代码中平方缺陷的含义。场容差 `tau` 必须与 `sqrt(D_fix)` 比较。
+节点最大误差、普通 L2、热流和非共址读出要另行定义与验证，不能自动替换该范数。
+
+### 全场动态：STATE-IMPULSE
+
+对 `C x'(t)+K(h)x(t)=G u(t)`，零初值、`u(t)=w delta_0(t)`，定义
 
 ```text
-A_-   = A(p^-, s)
-X     = A(p,s)^-1 G                    全场（状态级）传递算子
-Q     = (V^T A(p,s) V)^-1 V^T G
-X_V   = V Q
-Y     = G^T A(p,s)^-1 G                共址端口传递
-Y_V   = G^T X_V
-R     = G - A(p,s) X_V
-e     = X - X_V
-Delta = Y - Y_V
+T_h(t) = exp(-C^-1 K(h) t) C^-1 G,
+C_V = V^T C V, K_V(h) = V^T K(h) V, G_V = V^T G,
+T_h,V(t) = V exp(-C_V^-1 K_V(h) t) C_V^-1 G_V,
+||z||_{L2_C}^2 = integral_0^infinity z(t)^T C z(t) dt,
+epsilon_imp(h;V) = sup_{w: T_h(.)w != 0}
+                  ||(T_h-T_h,V)w||_{L2_C} / ||T_h w||_{L2_C},
+epsilon_imp(P;V) = sup_{h in P} epsilon_imp(h;V).
 ```
 
-只有用到**逐元正性**或**互端口单调性**时才额外假设（下称 M-matrix 假设）：
+这是独立定义的全场动态范数，不宣称等于未取得精确定义的厂商 energy norm。
+它覆盖所有固定 impulse 输入组合；任意时变输入下的诱导误差还需要独立的卷积/系统范数论证。
+同一个用户容差可以分别要求 `epsilon_fix<=tau` 和 `epsilon_imp<=tau`；二者之间没有已证换算。
+结温、端口 H2/Hankel、名义功率 step 与有限时刻场恢复均是补充诊断。
+
+## 1. 固定实移恒等式与证书（已证）
+
+### 命题 1：全输入场能量误差的精确读数
+
+令 `Y=G^T X`、`Y_V=G^T X_V`、`R=G-A X_V`。Galerkin 正交性给出 `V^T A E=0`，故
 
 ```text
-K_ij <= 0 (i != j),   H_i = diag(a_i) 且 a_i >= 0 逐元,   G >= 0 逐元.
+Delta = Y-Y_V = G^T E = (X_V+E)^T A E = E^T A E = R^T A^-1 R >= 0.
 ```
 
-这三条对 Galerkin 恒等式与 Loewner 阶论证都不是必需的。注意一般 FEM 的边界质量阵只保证
-`H_i >= 0`，其非对角元可以非零：那足以支撑 Loewner 单调性，但**不足以**支撑命题 3 的逐元
-传递单调性，所以前者不能替后者作保。
+对任意 `w`，`||Ew||_A^2=w^T Delta w`，`||Xw||_A^2=w^T Yw`，于是
+`D_fix=lambda_max(Delta,Y)`。这是全场、全输入组合的相对能量误差平方；共址输出只是读出它的
+小矩阵。`|Delta_ab|<=sqrt(Delta_aa Delta_bb)` 来自半正定性，残差矩阵本身不必非负。
 
-### 0.1 研究作用域与误差口径
+该推导对复频率非 SPD 算子、非共址读出或时间递推的变化 RHS 不直接适用。
 
-**研究目标是全场传递算子族** `X(p, s) = A(p, s)^-1 G` 的逼近 —— 功率端口到**整场**温度分布
-的状态级传递算子，等价地说就是真解流形
+### 命题 2：对角 Robin 族的 Woodbury 映射
+
+额外假设 `H_i=diag(a_i)`、`a_i>=0`。固定 `s`，令 `A_ref=A(h^-,s)`，活动对角增量为 `D_J>0`，
+对应坐标选择矩阵为 `B_J`，则
 
 ```text
-M = { A(p,s)^-1 G w : p in P, norm(w) = 1 }
+A(h,s)^-1 = A_ref^-1
+            - A_ref^-1 B_J (D_J^-1+B_J^T A_ref^-1 B_J)^-1 B_J^T A_ref^-1.
+Z = [G, (K+sC)V, H_1 V, ..., H_d V],
+R = Z Xi(h), Xi(h) = [I; -Q; -h_1 Q; ...; -h_d Q], Q=(V^TAV)^-1V^TG.
+Delta(h,s)=Xi(h)^T [Z^T A(h,s)^-1 Z] Xi(h).
 ```
 
-的逼近；验收判据是整场温度对真解的误差（`A(p,s)`-能量范数或其网格可观测形式）。代价指标是
-最小化 `N_FOM := N_RHS`（全阶逆作用次数）。
+第一式是 Woodbury 恒等式，第二式由展开 `A(h,s)V` 得到。需要**三张**表：
+`Z^T A_ref^-1 Z`、`Z^T A_ref^-1 B_J`、`B_J^T A_ref^-1 B_J`。
+精确代数不等于廉价提取：全活动边界表需要边界列数级的逆作用与稠密存储。
 
-端口传递族 `Z(s; mu) = G^T (s C + K + sum_j mu_j H_j)^-1 G` 上还有两个动态口径：FANSTIC 式的
-输入-输出系统范数保证（冲激响应 / `H2` / Hankel）与采样的 step 响应诊断。它们与场级定频判据
-必须分别报告，不能互相替代。
+### 命题 4/4b：锚定残差与固定 Hilbert 空间距离
 
-同址恒等式
+HTC 下界严格为正时，令 `Gamma=max_i h_i^+/h_i^-`、`A_-=A(h^-,s)`。
+由半正定项逐项比较得 `A_-<=A<=Gamma A_-`，逆序为 `A^-1<=A_-^-1<=Gamma A^-1`。
+对单列误差 `e` 和残差 `r=Ae`，定义 `eta^2=r^T A_-^-1 r`，则
 
 ```text
-Z - Z_V = E^T A E = R^T A^-1 R >= 0
+||e||_A <= eta <= sqrt(Gamma) ||e||_A.
 ```
 
-说明定频共址的端口口径与场级口径是同一个量的两种读数：`lambda_max(Z - Z_V, Z)` 同时等于某个
-状态 `A`-能量相对误差的**平方**（差一个平方根），所以场级目标不需要新定理，它的定频实现就是
-这条恒等式；两个口径都必须按各自定义报告。
-
-作用域标签（本文件与 `records/FAILURE_ARCHIVE.md` 共用）：
+设 `d_-=inf_{v in range(V)}||x-v||_{A_-}`，正确证明是
 
 ```text
-STATE         全场 / A-能量 / 状态传递算子范数    研究目标
-PORT-FIXED-S  单个实频移上的共址端口缺陷          场级目标的定频实现，整盒证书的对象
-PORT-SYSTEM   H2 / Hankel / 冲激响应系统范数      动态口径，P0 未闭合
-PORT-STEP     采样 step-response 度量             实测诊断，未认证
-COST          N_FOM / N_op / 墙钟 / 内存          代价指标
+d_- <= ||e||_{A_-} <= ||e||_A <= eta,
+eta <= sqrt(Gamma)||e||_A
+    = sqrt(Gamma) inf_v ||x-v||_A
+    <= Gamma inf_v ||x-v||_{A_-} = Gamma d_-.
 ```
 
-`N_FOM := N_RHS`（全阶逆作用次数）是主优化目标；`N_op`（不同全阶算子 / setup 次数）、墙钟与
-内存单独报告，不要用一个“求解次数”笼统概括三者。**fixed-real-shift 证书与 system-norm 证书
-绝不能混称“动态证书”**：前者是命题 1/5/5M，后者是本节的 P0，两者之间目前没有定理。
+最后一步使用 **`A<=Gamma A_-`**；旧版本从 `A_-<=A` 推出相反方向的不等式是错误的。
+常数 `Gamma` 在这些假设下不能改善：`A_-=I`、`A=diag(1,Gamma)`、`V=span(e_1)`、
+`x=e_2` 给出 `d_-=1`、`eta=Gamma`。精确极大化绝对 `eta` 可给弱贪心常数 `1/Gamma`；
+有限候选网格、相对矩阵评分与近似极大化需要额外前提，不能直接宣称 n-width 速率或采样最优。
 
-**保持排除的路线.** Robin 解流形 n-width 复杂度（原 P1）：采样规模的最优性仍由 `N_FOM` 与
-成本结构回答，不由 `d_n(M)` 的速率回答。P0 的动态 state-energy 通道：vendor 材料的全空间-时间
-温度能量范数在可取得的材料中没有定义，没有范数就没有可检验的判据（见
-`records/FAILURE_ARCHIVE.md` A6），它不作为 `delta_req` 的第二项。第 3 节列出的已关闭项全部
-保持关闭。
+### 命题 5/5M：Riesz–Bernstein 单元界
 
----
-
-## 1. 命题
-
-### 命题 1（Galerkin 输出误差恒等式）—— 已证
-
-**陈述.** 对任意 `A = A^T > 0`、任意满列秩 `V`、任意 `G`，
+设 HTC 单元 `[a,b]`、锚点 `a`，任意多项式约化试验 `q(h)` 的残差为 `R_q=Z Xi(h)`。
+以足够阶数**精确表示**残差系数：`Xi(xi)=sum_nu B_nu(xi) C_nu`，其中 Bernstein 基函数非负、
+和为 1，令 `S_a=Z^T A(a,s)^-1 Z`。Galerkin 最优性、逆的 Loewner 序与矩阵凸性依次给出
 
 ```text
-Y - Y_V = R^T A^-1 R = e^T A e >= 0          (Loewner 阶),
-(Y - Y_V)_ab = R_a^T A^-1 R_b = e_a^T A e_b,
-abs((Y - Y_V)_ab) <= sqrt( (Y - Y_V)_aa (Y - Y_V)_bb ).
+Delta(h,s) <= R_q^T A(h,s)^-1 R_q
+           <= Xi(h)^T S_a Xi(h)
+           <= sum_nu B_nu(xi) C_nu^T S_a C_nu.
 ```
 
-**证明.** Galerkin 正交性给出 `V^T R = 0`。展开
+矩阵凸性由 `theta(1-theta)(X-Y)^T S_a(X-Y)>=0` 得证。控制极值的是 Bernstein 控制矩阵，
+不能以插值节点值替代；也不能把各矩阵逐元取最大当作 Loewner 上界。
+在任意 SPD 分母 `D_b=Y_V(b)` 下，定义
 
 ```text
-R^T A^-1 R = G^T A^-1 G - G^T X_V - X_V^T G + X_V^T A X_V,
-X_V^T A X_V = G^T V (V^T A V)^-1 V^T G = G^T X_V = Y_V,
+u_Q = max_nu lambda_max(C_nu^T S_a C_nu, D_b).
 ```
 
-故 `R^T A^-1 R = Y - Y_V`。又 `e = A^-1 R`，故 `e^T A e = R^T A^-1 R`。半正定矩阵的逐元
-Cauchy--Schwarz 给出最后一式。证毕。
+每个控制矩阵均 `<=u_Q D_b`；又 `Y(h)>=Y(b)>=Y_V(b)=D_b`，故
+`D_fix(h,s)<=u_Q`。`u_Q<=tau^2` 才认证该单元的场容差。分母秩亏时必须拒绝有限相对界或另取
+合法分母。此矩阵证明无需 M-matrix 逐元正性；逐项端口相对界则另需其读出与正性条件。
 
-**推论.** `Delta` 是半正定矩阵，`Delta_aa` 单独就是端口 `a` 的精确输出误差；这是矩阵恒等式，
-命题 5M 直接引用它，不需重新逐元讨论。
+接受正确性对任意最终交付 `V` 成立，与选点方法无关。压缩后须重新认证最终基，不能继承 raw
+快照空间的证书。多项式升阶、单元细分与 Gram 重建都需计费；上界不保证随每轮新 trial 单调。
 
----
+## 2. 全场动态范数的 Gram 表达（已证定义关系）
 
-### 命题 2（Woodbury 精确参数映射）—— 已证
-
-**陈述.** 额外假设每个 `H_i` 对角：`H_i = diag(a_i)`、`a_i >= 0`。固定 `s`，记
-`A_ref = A(p^-, s)`，并定义逐元增量与**选择子**
+白化 `B=C^-1/2 K(h) C^-1/2>0`、`b=C^-1/2 G`，则 `C^1/2 T_h(t)=exp(-Bt)b`。因此
 
 ```text
-delta_j = sum_i (p_i - p_i^-) (a_i)_j,     J = { j : delta_j > 0 },
-E_J     = [ e_j ]_{j in J}   (单位坐标列),  D_J = diag(delta_j, j in J).
+Q(h) = integral_0^infinity T_h(t)^T C T_h(t) dt
+     = b^T (2B)^-1 b = (1/2) G^T K(h)^-1 G,
+J(h;V) = integral_0^infinity (T_h-T_h,V)^T C (T_h-T_h,V) dt,
+epsilon_imp(h;V)^2 = lambda_max(J(h;V), Q(h)).
 ```
 
-则 `A(p,s) = A_ref + E_J D_J E_J^T`，且
+指数稳定性保证积分收敛。最后一式由时间-空间范数定义的 Rayleigh 商得出。
+`trace(J)/trace(Q)` 只测输入列的总能量比，不能代替所有线性组合的最坏广义特征值。
+`(1/2)G^T C^-1G` 不是这里的动态分母；计算 `J` 的有效方法和连续 HTC 盒证书尚未采用。
+
+## 3. 尚未证明的主问题
+
+**P0：固定实移全场误差到全场 impulse 的传递。** 需要可计算、连续 HTC 盒一致的保证，并且
+包含有限有理骨架本身的逼近误差，不能只有 matching defect。二维反例已经足够：
+`C=I`、`B=diag(1,2)`、`b=(1,1)^T`、`V=span((B+sigma I)^-1b)`，则该实移误差为零，
+但 `exp(-Bt)b=(exp(-t),exp(-2t))^T` 不可能始终在同一条直线上，所以动态场误差非零。
+旧端口二次桥反例属于历史端口范数，不能当成本文件新定义的全场 impulse 反例。
+
+**谱包围。** 裸 `K` 的源驱动谱估计不是整个 Robin 族的认证谱区间。若 P0 使用统一
+`alpha I<=C^-1/2K(h)C^-1/2<=beta I`，需认证盒角点的一侧谱界；普通 Ritz 值或人为 safety
+factor 不够。固定实移后验界本身不依赖选移规则，动态定理则可能依赖。
+
+**连续动态认证与有限终止。** 当前只有固定实移上界，没有 `epsilon_imp(P;V)` 的连续盒证书。
+即使真实误差有严格余量，还需证明实际细分/升阶/锚点升级策略的上界一致收敛。
+永久共享 `s=0` Gram 可能在大 `s` 存在不消失的地板，故仅细分 HTC 不足。
+
+**边界耦合与任意功率。** 当前 `G` 的响应保证不覆盖未训练的附接热流输入。
+完整 MOR 方法论须明确附接所需输入空间、场读出与热流验收；状态 impulse 误差也不自动给出
+任意功率历程的相对系统范数保证。
+
+## 4. 成本与研究纪律
+
+新提取方法仅以容差与 HTC 范围为控制参数；不采用独立 cutoff、候选网格大小、种子数、
+人为频段分割或富化轮数来调成绩。线性解精度等数值误差预算须从容差与分析推导。
 
 ```text
-A(p,s)^-1 = A_ref^-1 - A_ref^-1 E_J (D_J^-1 + E_J^T A_ref^-1 E_J)^-1 E_J^T A_ref^-1.
+N_FOM = N_snapshot + N_selection_inverse + N_stopping/certificate_inverse,
+N_total_audit = N_FOM + N_external_reference.
 ```
 
-残差落在**与 `p` 无关**的张成空间 `Z = [G, (K + sC)V, H_1 V, ..., H_d V]` 中：设 `u_a` 为
-`R^k` 第 `a` 个坐标向量、`q_a` 为 `Q` 第 `a` 列，则
-
-```text
-R_a = Z zeta_a(p),   zeta_a(p) = [ u_a ; -q_a ; -p_1 q_a ; ... ; -p_d q_a ],
-Delta_ab(p,s) = zeta_a(p)^T [ Z^T A(p,s)^-1 Z ] zeta_b(p).
-```
-
-方括号由**三张锚点预算表** `Z^T A_ref^-1 Z`、`Z^T A_ref^-1 E_J`、`E_J^T A_ref^-1 E_J` 经稠密
-代数得到（Woodbury 修正项需要第三张表，仅前两张不够）。
-
-**证明.** `H_i` 对角给出 `A(p,s) - A_ref = diag(delta) = E_J D_J E_J^T`；逆公式即
-Sherman--Morrison--Woodbury（`D_J` 在活动集上正、可逆）。又
-`A(p,s) V = (K + sC)V + sum_i p_i H_i V`，故 `R_a = G u_a - A(p,s) V q_a = Z zeta_a(p)`。
-代回命题 1 即得精确（非近似）公式：`p_i = p_i^-` 的非活动列不扰动，其贡献已含在 `A_ref` 里。
-证毕。
-
----
-
-### 命题 3（对称 M-matrix 族与传递单调性）—— 已证
-
-**陈述.** 在 M-matrix 假设下，对每个 `p in P`、`s >= 0`：
-
-```text
-1. A(p,s) 是非奇异对称 M-matrix，因而 A(p,s)^-1 >= 0 逐元；
-2. x_a = A(p,s)^-1 G_a >= 0 逐元；
-3. d Y_ab / d p_k = -x_a^T H_k x_b <= 0 逐元（全部端口对）。
-```
-
-对角项 `Y_aa` 的单调性只需要 `H_k >= 0`，不需要 M-matrix 假设。
-
-**证明.** 由全局假设 `A(p,s)` 对称正定；其非对角元等于 `K` 的对应元，故非正，即 `A(p,s)` 是
-对称正定 Z-matrix，从而是非奇异 M-matrix，其逆逐元非负（非奇异 M-matrix 的特征刻画）。由
-`G_a >= 0` 得 `x_a = A^-1 G_a >= 0`。对 `A x_b = G_b` 求导得 `d x_b / d p_k = -A^-1 H_k x_b`，
-而 `G_b` 与 `p` 无关，故 `d Y_ab / d p_k = d (G_a^T x_b) / d p_k = -x_a^T H_k x_b`。由
-`H_k = diag(a_k)`、`a_k >= 0` 与 `x_a, x_b` 逐元非负得 `x_a^T H_k x_b >= 0`；`a = b` 时仅用
-`H_k >= 0` 即得。证毕。
-
-**为什么必须写清这一步.** 只用 `H_k >= 0` 只能得到自项的 `x_a^T H_k x_a >= 0`，**推不出**
-`a != b` 的 `x_a^T H_k x_b >= 0`：后者完全依赖第 1 条给出的逆的逐元非负性。所以 M-matrix
-假设与“数值上观察到 `A^-1 G >= 0`”必须分开写：数值观察不是逆正性的证明。
-
-**在本仓库模型上的核对（FVM 对角 Robin 情形）.** `K` 非对角元非正、`H_i` 对角非负、`G` 非负，
-三条都成立；`A(p^-)^-1 G` 的最小元为正。对一般 FEM 边界质量阵，`H_i` 的非对角元可以非零，
-此时 `A` 不再是 Z-matrix，第 1、3 条必须重新验证或放弃。
-
----
-
-### 命题 4（锚定残差估计量与 Galerkin 误差的等价性）—— 已证
-
-**陈述.** 记 `Gamma = max_i p_i^+ / p_i^- >= 1`。对每个 `p in P`、`s >= 0`，
-
-```text
-A_- <= A(p,s) <= Gamma A_-,      A(p,s)^-1 <= A_-^-1 <= Gamma A(p,s)^-1,
-```
-
-于是以 `eta^2 = R^T A_-^-1 R` 为代理量，
-
-```text
-norm(e)_{A(p)} <= eta <= sqrt(Gamma) norm(e)_{A(p)},
-norm(e)_{A_-}  <= eta <= Gamma norm(e)_{A_-}.
-```
-
-**证明.** 由 `p_i <= Gamma p_i^-`、`Gamma >= 1`、`K >= 0` 与 `C > 0`：
-
-```text
-K + sC + sum_i p_i H_i <= Gamma K + Gamma sC + Gamma sum_i p_i^- H_i = Gamma A_-,
-```
-
-另一侧 `A_- <= A(p,s)` 由 `p >= p^-`。取逆并用 Loewner 单调性得第一式。由 `R = A(p,s) e` 有
-`R^T A(p,s)^-1 R = norm(e)_{A(p)}^2`，代入即得第二式；第三式由
-`norm(e)_{A_-} <= norm(e)_{A(p)} <= sqrt(Gamma) norm(e)_{A_-}` 与第二式复合得到。证毕。
-
----
-
-### 命题 4b（代理贪心 ⇒ 固定 Hilbert 空间弱贪心）—— 缺前提
-
-**作用域.** 本命题的逼近误差 `d_-` 是 `A_-`-能量范数下的**状态**逼近误差，即 0.1 的 `[STATE]`
-场级判据所要求的逼近量。它给出的“单元局部锚点才让速率常数非空”正是 B&B 用单元局部 Riesz
-锚点的理由。
-
-**陈述.** 对单个响应向量 `x(p) = A(p,s)^-1 g`，记固定空间 `V` 在 `A_-` 范数下的最佳逼近误差
-`d_-(p, V) = inf_{v in V} norm(x(p) - v)_{A_-}`。则对每个 `p`
-
-```text
-d_-(p, V) <= eta(p, V) <= Gamma d_-(p, V).
-```
-
-于是若参数点由精确极大化选出（`eta(p_n, V_n) = sup_{p in P} eta(p, V_n)`），则该步满足固定
-Hilbert 空间中的弱贪心条件，weakness constant 至少为 `gamma = 1 / Gamma = min_i p_i^- / p_i^+`。
-
-**证明.** 下界：`x_V(p) in V` 是 `d_-` 的合法竞争者，故 `d_- <= norm(x - x_V)_{A_-} <= eta`
-（末步用命题 4 第三式）。上界：由命题 4 第三式 `eta <= Gamma norm(e)_{A_-}`，而 `A_- <= A(p)`
-与 `A(p)`-Galerkin 最优性给出
-
-```text
-norm(e)_{A_-}^2 = e^T A_- e <= e^T A(p) e <= inf_{v in V} norm(x - v)_{A(p)}^2
-               <= inf_{v in V} norm(x - v)_{A_-}^2 = d_-^2,
-```
-
-故 `eta <= Gamma d_-`。证毕。（此式已在随机 SPD 族上数值核对：`Gamma = 100` 时 24 个
-`(端口, 参数)` 样本上 `d_- <= eta <= Gamma d_-` 全部成立，实测 `eta / d_-` 落在
-`1.77 .. 40.7`。）
-
-**尚未具备的前提.** 要把外部 weak-greedy 速率定理用到本仓库算法上，还缺以下**算法性**前提，
-它们不是代数步骤：
-
-* 连续解流形（含矩阵值评分时 MIMO 的方向变量 `w`）必须先精确定义；
-* 实际选点过程必须在该流形上取极大，否则要给出显式的近似极大化因子；
-* 有限 `41^d` 候选网格不等于 `P` 上的连续极大化。
-
-**这条定理在本问题上是空的，原因必须写明.** 本模型的 `Gamma = max_i p_i^+ / p_i^- = 9285.79`，
-故 `gamma = 1.08e-4`，速率常数 `2 / gamma` 约 `1.9e4`，在 `1e-3` 目标上不构成任何有用陈述；
-而实测的两侧等价常数只有约 1--3。**要让速率定理非空，必须把全局锚点换成单元局部锚点**：按
-对数划分把 `P` 分成每轴 `k` 份，单元内 `Gamma_alpha = 10^((log10 p^+ - log10 p^-) / k)`，
-`k = 8` 时 `Gamma_alpha = 3.16`、`2 / gamma_alpha = 6.3`；`k = 16` 时 `Gamma_alpha = 1.78`。
-所以 **branch-and-bound 与单元局部证书不是实现细节，而是让速率定理非空的前提**。
-
----
-
-### 命题 5（锚定 Riesz--Bernstein 单元证书）—— 已证
-
-**陈述.** 设单元 `Q = [a, b]`、锚点 `a`。取任意**多项式**约化系数 `q(p)`，记
-`R_q(p) = G - A(p,s) V q(p)`，并设所选张量 Bernstein 阶数足以**精确表示**该多项式（写成
-`R_q(p) = Z zeta(p)` 后，即该阶数足以精确表示向量/矩阵多项式 `zeta`，不足时用升阶补齐）。记
-`S_a = Z^T A(a,s)^-1 Z >= 0`，`zeta(xi) = sum_nu B_nu(xi) c_nu` 为其精确张量 Bernstein 表示，
-`B_nu(xi) >= 0`、`sum_nu B_nu(xi) = 1`，`c_nu` 是 Bernstein **系数（控制点）**。则对每个
-`p in Q`
-
-```text
-Delta(p) = Y(p) - Y_V(p) <= zeta(p)^T S_a zeta(p) <= max_nu c_nu^T S_a c_nu,
-```
-
-右端可算，且 `abs((Y - Y_V)_ab(p)) <= sqrt(Delta_aa(p) Delta_bb(p))`。
-
-**证明.** 第一步是 Galerkin 最优性：真系数使残差能量最小，故对任意多项式试验 `q`，
-`Delta(p) <= R_q(p)^T A(p,s)^-1 R_q(p)`。第二步是 Loewner：`p >= a` 逐分量给出
-`A(p,s) >= A(a,s)`、`A(p,s)^-1 <= A(a,s)^-1`，代入得 `Delta(p) <= zeta(p)^T S_a zeta(p)`。
-第三步是凸性：`zeta(xi)` 是其 Bernstein **控制点**的凸组合，而 `z -> z^T S_a z` 在 `S_a >= 0`
-时凸，故
-
-```text
-zeta(xi)^T S_a zeta(xi) <= sum_nu B_nu(xi) c_nu^T S_a c_nu <= max_nu c_nu^T S_a c_nu.
-```
-
-**注意这一步控制极值的是 Bernstein 系数，不是多项式在插值节点上的取值**；把节点值当作上界是
-错的。最后一步是命题 1 的 Cauchy--Schwarz。证毕。
-
-**推论（为什么审计比较的是绝对量）.** 逐项相对界需要除以 `abs(Y_V,ab)`，而弱耦合项自身分母
-可以任意小，所以逐项相对界必然松；`steady_absolute_bound` 与 `steady_relative_bound` 是两个
-不同的量，**不可互相比较**。
-
----
-
-### 推论 5M（矩阵型单元证书）—— 已证
-
-**陈述.** 设多项式残差试验的矩阵系数表示为 `R_q(p) = Z Xi(p)`、
-`Xi(xi) = sum_nu B_nu(xi) C_nu`（精确张量 Bernstein 表示）。则
-
-```text
-E(p) = Y(p) - Y_V(p) <= Xi(p)^T S_a Xi(p) <= sum_nu B_nu(xi) C_nu^T S_a C_nu   (Loewner 阶),
-```
-
-因此任何逐个控制矩阵 `C_nu^T S_a C_nu` 的 `U_Q` 都给出有效界：`E(p) <= U_Q`。
-
-分母可以只用 reduced-size 量：设 `b` 为 `Q` 的上角点。由 Loewner 单调性 `Y(p) >= Y(b)`，由
-命题 1 `Y(b) - Y_V(b) >= 0`，故 `Y(p) >= Y(b) >= Y_V(b)`，于是
-
-```text
-lambda_max(E(p), Y(p)) <= lambda_max(U_Q, Y_V(b)).
-```
-
-若另有独立的角点缺陷界 `E(b) <= delta_b^2 Y(b)`、`delta_b < 1`，则
-`Y_V(b) = Y(b) - E(b) >= (1 - delta_b^2) Y(b)`，故把精确分母 `Y(b)` 换成 `Y_V(b)` 最多把
-广义特征值界放大 `1 / (1 - delta_b^2)`。
-
-**证明.** 第一式是命题 5 的矩阵版。`X -> X^T S_a X` 的矩阵凸性来自
-
-```text
-theta X^T S_a X + (1-theta) Y^T S_a Y - (theta X + (1-theta) Y)^T S_a (theta X + (1-theta) Y)
-= theta (1-theta) (X - Y)^T S_a (X - Y) >= 0.
-```
-
-分母部分是参数 Loewner 单调性与命题 1 的直接推论。证毕。
-
-**这是连续停止语句的实现对象.** branch-and-bound 的严格停止语句是
-`forall leaf Q: u_Q <= tau_port`；`U_Q` 的正确性只依赖本推论，不需要在每个叶子上做全阶求解
-（逐叶子全阶求解会把证书自己变成大量 full-order inverse action）。
-
----
-
-### 命题 6（仅用于种子的启发式不影响后验认证）—— 已证
-
-**陈述.** 设某个谱估计只用于选取种子参数点，不出现在：频移计划、任何证书常数、任何声称的谱
-区间、任何动态误差定理中。则把它换成任何别的规则只改变**产出哪个** `V`；命题 1 与命题 5 的
-后验证书对最终 `V` 依然成立，与 `V` 如何得到无关。
-
-**证明.** 命题 1 与命题 5 对任意满列秩 `V` 成立，不使用 `V` 的构造历史。证毕。
-
-**结论.** `coordinate_spectral_enclosures` 只应称为 *spectral estimate for seed placement*，
-不能称为 “certified spectral enclosure”：`eigsh` 的 Ritz 值配合人为 safety factor 不构成一侧
-特征值界。就当前用途（只定位种子）而言，降格为启发式即可，正确性由本命题兜底。频移计划则
-**不**受本命题保护：当前裸 `K` 谱区间不保证覆盖整个 Robin 族。
-
----
-
-### 命题 7（二项求解成本模型的精确盈亏条件）—— 已证
-
-**陈述.** 设单次算子 setup/分解成本 `T_s`、单次右端增量成本 `T_i`，成本模型
-`T = N_op T_s + N_rhs T_i`。记 `A = N_s N_p`（频移数乘参数点数）、`N_g` 为源端口数、`S` 为
-stock 的求解次数。本方法 `N_op = A`、`N_rhs = A N_g`；stock 每个 `(端口, 频移, 探针)` 都换
-一个算子，故 `N_op = N_rhs = S`。记 `r = T_s / T_i > 0`，则
-
-```text
-T_ours < T_stock   <=>   (A - S) r < S - A N_g,
-```
-
-这个形式不需要除法，对 `A - S` 的任何符号都成立。（除以 `T_i` 的写法只在分母不为零且符号已知
-时等价，不能直接写成单个分式。）若只有本方法存在非求解开销 `T_other`，则精确条件改为
-`A (T_s + N_g T_i) + T_other < S (T_s + T_i)`。
-
-**证明.** 直接代入 `A T_s + A N_g T_i < S T_s + S T_i`；两边除以正数 `T_i` 并整理即得。带
-`T_other` 的版本只多一项。证毕。
-
-**这条模型不含非求解开销，而 1 mm 上它恰好占主导.** `T_other` 全部来自 selection（候选打分
-与残差证书的稠密代数，外加一次 minimum 算子的分解）；因此“成本命题是否成立”由 `T_other`
-决定，实测数字见 `records/PORT_CERTIFICATE_AND_BUDGET.md`。
-
----
-
-### 引理 8（resolvent 坐标伸缩恒等式）—— 已证
-
-**陈述.** 令 `p^(0) = q`、`p^(i) = (p_1, ..., p_i, q_{i+1}, ..., q_d)`、`p^(d) = p`。则
-
-```text
-A(p)^-1 - A(q)^-1 = - sum_{i=1..d} (p_i - q_i) A(p^(i-1))^-1 H_i A(p^(i))^-1.
-```
-
-**证明.** 每一步 `A(p^(i)) - A(p^(i-1)) = (p_i - q_i) H_i`；用
-`X^-1 - Y^-1 = X^-1 (Y - X) Y^-1`（取 `X = A(p^(i))`、`Y = A(p^(i-1))`）得
-`A(p^(i))^-1 - A(p^(i-1))^-1 = -(p_i - q_i) A(p^(i))^-1 H_i A(p^(i-1))^-1`，对称性允许交换两个
-因子的次序。对 `i` 求和后左端从 `A(q)^-1` 伸缩到 `A(p)^-1`，故右端带负号。证毕。
-
-**用途与边界.** 该式把多参数误差精确拆成坐标分解，可作为坐标方向误差的起点，但它**不**给出
-任何张成的秩界，因此不能据此声称“Zolotarev 种子在多参数下最优”：种子目前只能定位为
-*coordinatewise minimax deterministic initialization*。
-
----
-
-## 2. 未证的数学缺口
-
-**频移计划的适用谱区间.** 当前 stock 与确定性实验使用裸 `K` 的 `port_eigenvalue_bounds` 估计
-频移。它可能跳过 Robin 项抬升的常数模态，不保证涵盖 `K + sum_j h_j H_j` 的整个参数族。即使
-数学上可用 Robin 盒角点的 Loewner 序夹住谱，当前实现也没有相应的严格单侧特征值认证；因此本
-目录的固定频移共址证书不能直接推成动态系统范数保证。
-
-### P0 动态传递定理（Dynamic transference theorem）
-
-**要证的陈述.** 记 `B(h) = C^-1/2 K(h) C^-1/2`、`b = C^-1/2 G`。连续盒证书控制的是若干
-matching 频移上 positive-real resolvent 的缺陷
-
-```text
-delta_j(h)   (对 (B(h) + sigma_j I)^-1 b),      delta_star = max_j sup_h delta_j(h).
-```
-
-需要一条**端口系统范数**定理 `E_Hankel(V) <= gamma_H(Sigma) + C_H(Sigma) delta_star`，它必须
-满足 vendor 的 `norm(Delta Z)_Hankel < 2 eps` 目标，故可接受的 matching 容差是
-`delta_req = delta_req,H`。**不要把它合并成一个 `Phi_Sigma`。**
-
-**这里要的是一条定理，不是两条.** 同一 vendor 材料还给出一个全空间-时间的温度能量通道
-`E_state(V) <= gamma_S(Sigma) + C_S(Sigma) delta_star`，它**不**回到本线：该范数在可取得的
-材料中没有定义（`records/FAILURE_ARCHIVE.md` A6），没有范数就没有可检验的判据。这与 0.1 的
-场级目标不冲突：场级的**定频**判据由命题 1 恒等式给出，不需要这条动态定理；状态半群只作为
-证明中间量出现（`(B + t I)^-1 -> functional calculus / Laplace--Stieltjes -> exp(-B tau) ->`
-冲激响应与 Hankel 核）。
-
-**当前已知的部分（一阶判决）.** 只依赖 matching 缺陷的一般**二次**动态桥已被反例证伪
-（`PORT-SYSTEM`；人工问题上的受控扰动族，见 `records/FAILURE_ARCHIVE.md`）；存活路线是**对
-`delta_star` 线性**的
-
-```text
-delta(t; V) <= gamma_Sigma(t) + K_vec(t) delta_star,     sup_t gamma_Sigma(t) = rho_Sigma,
-```
-
-在交付的 13 频移计划上 `rho_Sigma = 2.9e-2`，`K_vec` 的上确界约 `1.4e2`（不随条件数增长，
-在 `t -> 0` 取到），且在 `t >= 0` 上实测无违反。精确 matching 点骨架给出的 positive-real
-逼近项正是 `rho_Sigma`（向量重构分析另给出稳定因子 `K_vec`）。
-
-**缺的那一步.** `rho_Sigma` 与 `K_vec` 控制的是 positive-real resolvent 逼近，它们还不是
-`C_H / gamma_H`。缺的是一个从 positive-real resolvent 控制到**端口**时域系统范数（冲激响应
-矩阵的 `H2` / Hankel）的传递定理，自然路线是
-`(B + t I)^-1 -> functional calculus / Laplace--Stieltjes 表示 -> exp(-B tau) -> 冲激响应与
-Hankel 核`，它保留 SPD、自伴、共址、Stieltjes 结构。虚轴不是首选路线：`B + i omega I` 非 SPD，
-matching 点证书用的 Galerkin 能量极小化论证在虚轴上不直接成立，那里只作 diagnostic。
-
-**判据.** 只有给出显式可算常数、并在整个 HTC 盒上一致地满足端口 vendor 不等式才算闭合。
-
-### P0/P1 B&B 证书一致性与有限终止
-
-**要证的陈述.** 设 `U_Q(V)` 是叶子 `Q` 上的严格矩阵证书。若真实被认证量有**严格余量**
-`sup_{p in P} delta(p; V) < tau`，则给定的自适应细分策略必须在有限步后终止于
-`forall Q: U_Q(V) <= tau^2`。
-
-**当前已知的部分.** 接受正确性已闭合：只要每个叶子满足 `U_Q <= tau^2`，整盒就满足同一容差，
-所以现有实现给出的停止条件在它停止时是可靠的。
-
-**缺的那一步.** 缺一致性定理，例如在实际的“局部参数细分 + 多项式升阶 + block 锚点细化
-* 必要时按 shift 升级 Gram”组合下证明
-
-```text
-diam(Q) -> 0  =>  U_Q(V) - sup_{p in Q} delta(p; V)^2 -> 0.
-```
-
-一个永久共享的 shift-free 公共 Gram 会有不随划分消失的大 shift 锚点地板，因此对“永不升级该
-锚点”的策略无法证明有限终止。**判据.** 在给定的细分策略下，严格真余量蕴含有限步认证终止。
-
-### P1 BCI 边界端口嵌入定理
-
-**要证的陈述.** 证明已交付 CTM 所需的全部对外读出量（源区的场加权读出、耦合面温度、边界热流
-自由度）可表示为一个**固定、与参数无关的共址**端口算子 `F`，使得所需 BCI 误差陈述由
-`F^T A(p,s)^-1 F` 的认证推出。
-
-**当前已知的部分.** 对任意固定的共址端口矩阵 `F`，命题 1 原样适用：
-
-```text
-F^T A^-1 F - F^T X_V = R_F^T A^-1 R_F >= 0,
-```
-
-即共址对称端口族的 Galerkin 误差恒等式**已经闭合**，这里不缺新的 Galerkin 定理。
-
-**缺的那一步.** 缺的是建模/嵌入陈述：确认 BCI 耦合实际需要哪些边界端口变量；证明它们承认所
-需的固定共址实现；证明该实现的认证蕴含所要求的边界温度与热流精度。**判据.** BCI 耦合变量被
-映射为一个与参数无关的已认证端口系统，且该认证对交付的边界误差度量有精确蕴含。
-
----
-
-## 3. 已关闭项（不要再写进未证清单）
-
-* **前置 SVD 回退**：作为 certified post-processing 已闭合。对 `W_n` 做压缩得 `V_r`，对 `V_r`
-  重跑同一证书，不通过就增大 `r`（必要时对 rank 二分）直到通过；满秩仍不通过才回到富集。
-  单调的是**真误差**；每轮用**新生成** trial 算出的 Bernstein/Riesz 上界本身没有自动单调性，
-  把上一轮 trial 作为候选一直 carry forward 即可恢复 `U_Q^{n+1} <= U_Q^n`（纯 reduced
-  algebra，目前未实现）。关闭的作用域是**压缩-传递的理论迁移问题**——不需要从 raw 空间证书
-  推导压缩误差定理，直接对最终交付的 `V` 重跑证书即可。**未闭合**的是动态接受阈值
-  `tau_port`，它取决于 P0 动态传递定理，不能写成“vendor 保证已解决”。
-* **`d >= 3`**：不是数学正确性缺口。本文件的命题对有限 `d` 与维数无关，问题只是 tensor-product
-  候选网格与 Bernstein 复杂度（`41^3 = 68921`，`41^4` 约 `2.8e6`）。
-* **inexact-moment 后向误差桥**：作为交付 ROM 的路线已关闭；兼容条件 `R = R X^+ X` 在交付基底
-  上严重失败，pre-SVD 情形又因 `delta / lambda_min >> 1` 使扰动论证失效。
-* **逐 shift 加性 defect 传播**：已关闭；修正 LU cache 测量 bug 之后，该界仍只是松的上估
-  （`sum_k c_k / g_defect` 落在 1.3..25，稳定高估而非双向漂移），不能驱动停止。
-* **单一全局谱标量的廉价盒残差界**：已关闭；不等式成立但对决定误差的点 effectivity 达
-  `2.6e4 .. 2.1e5`，量级上不可能驱动贪心接受。
-* 失败路线的完整证据、测量更正与被取代的实验都属于 `records/FAILURE_ARCHIVE.md`，不属于本
-  文件的未证清单。
-
----
-
-## 4. 引用的外部定理与文献定位
-
-**外部定理（已引用）**
-
-* **weak greedy 的速率传递**：DeVore, Petrova, Wojtaszczyk, *Constr. Approx.* 37(3):455--466
-  (2013), Thm 3.2 与 Cor. 3.3（arXiv:1204.2290）：`eps_{2n}(F) <= 2 gamma^-1 d_n(F)`；Binev 等,
-  *SIAM J. Math. Anal.* 43(3):1457--1472 (2011), DOI `10.1137/100795772` 给出同一结论并附常数。
-  同文 Theorem 4.1 指出：**由样本元素张成的子空间一般不可能达到 n-width 速率**，所以不存在
-  `eps_n <= C d_n` 形式的结论。调用前必须核对命题 4b 的算法前提。
-* **估计量驱动的贪心的速率条件**：Buffa, Maday, Patera, Prud'homme, Turinici, *ESAIM M2AN*
-  46(3):595--603 (2012), DOI `10.1051/m2an/2011056`, Thm 3.1：达到指数速率要求 n-width 衰减率
-  `beta > log(1 + M / alpha_coer)`——**coercivity 下界越差，要求的衰减率越高**。这是把固定
-  `A(h_min)`-Riesz 换成参数相关 Riesz 的理论动机，而不是经验改进。
-* **能量范数下界是恒等式**：Prud'homme 等, *ESAIM M2AN* 36(5):747--771 (2002) 与 Yano,
-  *SIAM J. Sci. Comput.* 40(1):A388--A420 (2018) 给出
-  `norm(u - u_N)_{A(p)} = norm(r)_{A(p)^-1}`；命题 2 的精确映射算的正是右端，故其 effectivity
-  是 1，不是待定常数。
-* **频率方向的一参数定理**：Massei, Robol, *BIT Numer. Math.* 61 (2021), DOI
-  `10.1007/s10543-020-00826-z`, Corollary 3.18 对 `(K, C)` 的 Cauchy--Stieltjes 函数给出
-  `norm(f(A)v - x_l)_2 <= 8 f(a) norm(v)_2 rho_{[a,4b]}^l`。椭圆频移计划正是这条定理的实现。
-
-**文献定位（三层，按可信度）**
-
-* FANSTIC 系**从未给出连续 HTC 盒上的证明界**：已发表的是采样流程（MPMM 椭圆频移 + HTC 随机
-  对数均匀抽取 + 残差探针 + 列归一化 SVD）与有限验证集上的相对误差百分比。因此本目录的整盒
-  陈述是新的。
-* 与这里结构上最接近的已发表确定性做法不是采样：Dong, Griffo, Wang, *IEEE TPEL*
-  35(8):8550--8558 (2020), DOI `10.1109/TPEL.2020.2965248`，处理同样的
-  `C T' + (K + sum_i h_i K_i) T = F Q`（`K_i` 对角、支集互不相交），用确定性均值参数 Krylov
-  展开，给出准确度比较但**不给** HTC 盒上的界。
-* 命题 2 所依赖的 Woodbury 恒等式最接近的先行工作是 Beattie, Gugercin, Tomljanović,
-  arXiv:1912.11382 (2019), *Adv. Comput. Math.* 46:17 (2020)：它把同一恒等式用于**构造**无采样
-  降阶模型（要求 `k x k` 子系统可降阶），本目录把同一恒等式用于**精确评估**已交付基底的整盒
-  误差（不要求可降阶，代价是 `m_b + Q` 次回代）。检索到的一手材料里，两边都没有把该恒等式
-  放进采样循环内去评估认证界。
-
-**取证限制.** IEEE TCPMT 2021、THERMINIC/SPI/SEMI-THERM 论文集、Springer LNCSE 第 17 章、
-Siemens 的 BCI-ROM 验证/最佳实践 PDF 均为付费或授权受限，上述涉及它们的判断只依据摘要与
-元数据。
+一次完整右端逆作用计一次，源列、边界列与 Riesz 列均须计费；谱 matvec、AMG setup、CG 迭代、
+墙钟和内存分别记录。认证不是免费开销；降低快照数不等于提取性能改善。
+比较应使用同一场目标、物理 HTC 盒、独立 holdout 与数值误差预算，并报告最终阶数。
+只有满足全场误差约束且端到端性能优于 Extended BCI FANTASTIC，才可采用候选方法。
+当前目录完成目标清理和审计，没有宣称已经得到该方法。

@@ -1,12 +1,9 @@
-"""Exact parameter-dependent Galerkin output error for the affine HTC family.
+"""Woodbury evaluation of the full-field Galerkin energy error Gram.
 
-The whole-box certificate of :mod:`certified_box` evaluates the residual of the
-delivered basis in the fixed Riesz map ``A(h_min)^-1`` and transfers the result
-to ``A(p)^-1`` by Loewner monotonicity.  That one substitution is the entire
-source of the gap between its bound and the measured error: on Case 1 it costs
-a factor of about ``2.3e1`` in the absolute bound and ``2.9e6`` in the
-entrywise-relative bound, and the certificate pays 1024 factorisations for it
-(one per cell corner, for the same-parameter denominator).
+The residual Gram ``R^T A(p)^-1 R`` equals ``(X-X_V)^T A(p) (X-X_V)``.
+It measures all input directions at one real shift, not a dynamic norm.
+The anchor weighting, polynomial enclosure and denominator choice can all
+affect the gap of the separate :mod:`certified_box` upper bound.
 
 The substitution is unnecessary.  Every boundary term is a nonnegative
 diagonal, so about the lower HTC corner
@@ -22,22 +19,24 @@ and the residual of any trial space ``V`` lies in the fixed span
     (Y(p) - Y_V(p))_ij = r_i(p)^T A(p)^-1 r_j(p)
                        = zeta_i(p)^T [ Z^T A(p)^-1 Z ] zeta_j(p),
 
-and the bracket follows from the two precomputed tables ``Z^T A_ref^-1 Z`` and
-``Z^T A_ref^-1 B`` by dense algebra.  This is the exact Galerkin output error at
-every ``p``, not an upper bound of it, and no term in it is an extraction solve.
+and the bracket follows from three precomputed tables ``Z^T A_ref^-1 Z``,
+``Z^T A_ref^-1 B`` and ``B^T A_ref^-1 B`` by dense algebra. This identity is
+exact in real arithmetic; floating-point AMG-CG does not provide a rigorous
+roundoff enclosure. Its full-order inverse actions are not free overhead.
 
 Rigour over the continuous box comes from the same tables.  For a cell
 ``[low, high]`` and *any* trial ``q``, ``A(p) >= A(low)`` gives
 
-    |Y(p) - Y_V(p)| <= r_q(p)^T A(low)^-1 r_q(p),
+    Y(p) - Y_V(p) <= r_q(p)^T A(low)^-1 r_q(p)   (Loewner order),
 
 and with a constant trial the right-hand side is a convex quadratic in ``p``,
 so its maximum over the cell is attained at a vertex.  ``cell_bound`` evaluates
 exactly those vertices, so a grid maximum is bracketed by a cell-wide bound
 that uses no additional full-order solve either.
 
-Cost: one factorisation plus ``m_b + span_columns`` back-substitutions, once
-per fixed shift.
+Cost: one AMG hierarchy and ``m_b + span_columns`` CG inverse actions per
+fixed shift. This boundary-sized dense table is a diagnostic, not a proven
+efficient extraction method for large boundary meshes.
 """
 
 from __future__ import annotations

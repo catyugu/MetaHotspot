@@ -13,7 +13,7 @@
 
 ```text
 STATE           全场 / A-能量 / 状态传递算子范数        研究目标
-PORT-SYSTEM     H2 / Hankel / 冲激响应系统范数          动态口径，P0 未闭合
+PORT-SYSTEM     H2 / Hankel / 冲激响应端口范数          历史动态口径
 PORT-FIXED-S    单个实频移上的共址端口缺陷              场级目标的定频实现
 PORT-STEP       采样 step-response 度量                 实测诊断
 COST            N_RHS / setup / 墙钟 / 内存
@@ -23,14 +23,14 @@ CORRECTION      实测 bug 或定义错位
 **作用域标签的结论上限（本文件最重要的纪律）.** 标着 `PORT-FIXED-S` 或 `PORT-STEP` 的条目
 只证明“该方案在这个固定实移 / 采样步进诊断下失败”，**不**证明它不可能满足 port-Hankel /
 冲激响应系统范数，也**不**否定同一套参数点或同一套基底构造思想在系统范数目标下重新采用；
-依据是 P0 的一阶反例（fixed-`s` 的同址平方关系不推出动态系统范数误差也平方）。反过来，标着
+依据是历史端口桥的一阶反例（fixed-`s` 的同址平方关系不推出动态系统范数误差也平方）。反过来，标着
 `PORT-SYSTEM` 的条目是直接对动态系统范数成立的判决。
 
 **目标边界.** 研究目标是全场传递算子 `X(p,s) = A(p,s)^-1 G`，因此仅凭全场 / A-能量 / 状态
 范数判据的失败条目**同样是**当前目标下的负结果；它在定频上的实现就是 `THEORY.md` 命题 1 的
-共址缺陷。**同时保持排除的两条路线**：Robin 解流形 n-width 速率命题（采样规模最优性仍由
-`N_FOM` 与成本结构回答）与动态半群 state-energy 的 vendor 通道（其范数在可取得材料中未定义，
-见 A6）。**两条边界**：正文撤回（陈述不准、定义写错、范围写大，方法本身未被否定）留在
+共址缺陷。**历史排除的边界**：未经算法前提核验的 n-width 最优性宣称与未定义范数的 vendor
+常数仍不使用；全场动态误差本身是当前目标，不能因为旧 vendor 范数未定义就排除。
+其独立定义见 `THEORY.md`。**两条边界**：正文撤回（陈述不准、定义写错、范围写大，方法本身未被否定）留在
 `README.md` / `THEORY.md` 正文，不进本文件；开放候选路线也不进本文件——**“某条路线关闭”绝不
 等于“它所属的上位问题关闭”**。
 
@@ -40,7 +40,7 @@ CORRECTION      实测 bug 或定义错位
 
 ---
 
-## P0 动态桥：一阶反例（`PORT-SYSTEM`，被反例证伪）
+## 历史端口动态桥：一阶反例（`PORT-SYSTEM`，被反例证伪）
 
 主张：只依赖 matching resolvent 缺陷 `delta_star` 的**二次**动态桥可以把连续盒证书接到端口
 FANSTIC 式动态保证上。决定性测量：在人造质量白化问题 `H(s) = f^T (s I + B)^-1 f` 上，取精确
@@ -57,7 +57,8 @@ moment 空间 `U = orth[x(sigma_j)]` 与受控旋转族 `V_pm(theta) = U cos(the
 **对 `delta_star` 线性**的候选 `delta(t;V) <= gamma_Sigma(t) + K_vec(t) delta_star`（骨架常数
 `rho_Sigma = 2.9e-2`、`K_vec` 上确界约 `1.4e2`，在 13 频移计划、`t >= 0`、402 行上无违反，
 中位紧度因子 2.2..5.0；`K_vec` 与 `rho_Sigma` 是数值解析的上确界，不是计算机认证的包络），
-见 `THEORY.md` P0。出处脚本 `bench_dynamic_bridge_toy.py` 已退役，完整表格在 git 历史中。
+此判决不等于当前 `THEORY.md` P0 的全场 impulse 判决。出处脚本
+`bench_dynamic_bridge_toy.py` 已退役，完整表格在 Git 历史中。
 
 ---
 
@@ -136,14 +137,50 @@ moment 空间 `U = orth[x(sigma_j)]` 与受控旋转族 `V_pm(theta) = U cos(the
 ## 正文撤回（不是失败路线）
 
 * **A9 误差目标的重估.** all-input 定义 `eta_E(p) = sqrt(lambda_max(E(p), E0))`、
-  `E0 = (1/2) G^T C^-1 G` 已确立；厂商的 `2*eps` / `2*sqrt(eps)` 常数属于**尚未证明的目标
-  保证**（引文未写归一化、2019 年误差界论文无法完整核对），在 `THEORY.md` 的 P0 下作为开放
-  缺口跟踪。撤回的文档说法有两处：其一是“一个 Gramian 同时给出两个 all-input 指标”
+  `E0 = (1/2) G^T C^-1 G` 是历史所用的归一化，不能无条件代入当前 `C` 加权动态范数；厂商的
+  `2*eps` / `2*sqrt(eps)` 常数未核验原范数与归一化，当前不沿用。撤回的文档说法有两处：
+  其一是“一个 Gramian 同时给出两个 all-input 指标”
   （`tr(D^T T D P)` 只给 `tr(E)`；先前的 `sqrt(tr(E)/tr(E0))` 只测四个脉冲能量之和、会掩盖
   同时激励下的坏组合）；其二是参数单元树 + 精确中心解 + 半群 Lipschitz 常数 + Gramian 余项界
   这一整套机制（`semigroup_box_bounds`），因大单元常数按 `1/alpha^2` 放大且未认证整个 Case 1
   盒而被移除。
-* **先验闭式参数采样（原 C10）** 是**开放候选**，不是失败路线：已被验证的部分（Woodbury 在
-  一个参数处精确给出整个参数族、射线极点快速求值器、已知的三个计数陷阱）记在 `README.md`。
-  它原先挂在 `THEORY.md` 的 P1「Robin 解流形的 n-width 衰减」上，该命题仍是排除项，不在主
-  理论线上：采样规模的最优性应由 `N_FOM` 与成本结构回答。
+* **先验闭式参数采样（原 C10）** 是开放候选，未作为可靠方法采用。Woodbury 恒等式保留在
+  `THEORY.md` 与 `exact_error.py`；它的精确性不等于采样复杂度最优性，边界块逆作用必须计费。
+
+## 旧证书与提取预算（从第二份记录收束）
+
+以下是旧 `PORT_CERTIFICATE_AND_BUDGET.md` 的决定性证据，保留当时的定义和条件；不是本次重测。
+`D = lambda_max(Y-Y_V,Y)` 是固定实移场能量误差的平方，应取 `sqrt(D)` 后与场容差比较。
+旧表未把 Gram 求解计入核心 RHS，不能据此声称端到端优于 stock。
+
+| 旧方案与条件 | 结果 | 限制 |
+| --- | --- | --- |
+| 5 mm，16 单元/轴，3 阶，design 41 阶 | 精确网格 D=3.3471e-4，证书 3.3671e-4 | stock 36 阶为 1.0861e-4 / 1.1252e-4；确定性方案更差 |
+| 同一基，8 单元/轴 | 良好基均给约 1.5566e-2 | 松包络会掩盖基底差异，不能当真实误差平台 |
+| 5 mm，固定 DC、共同 span、4x4 锚点 | 自适应 88 叶达到 2.4543e-4，uniform 256 叶为 1.8396e-4 | 只减少单元数；额外 Gram 成本依然存在 |
+| 5 mm，共同 span 的 13 频移审计 | 16 Grams x 172 列 = 2752 次 RHS | 这些是全阶逆作用，不能排除在 N_FOM 之外 |
+| 2.5 mm，共同 span，大频移 s=43.517 | 界地板约 3.802611e-4，per-shift span 约 3.35815e-7 | 只细分参数不会消除错配锚点地板 |
+| design 两点，cutoff 1e-3，5 mm | 核心 112 RHS，39 阶，见证 D=3.8930e-3 | 独立 cutoff 是旧调参实验，不满足新方法输入约束 |
+| design 三点，同 cutoff | 核心 168 RHS，42 阶，见证 D=1.7631e-4 | 超过当时 box-corrected stock 的 137 RHS；当前 stock 裸 K 计划不同 |
+| design 五点，同 cutoff | 核心 280 RHS，42 阶，见证 D=1.5733e-4 | 对三点改善有限，成本更高 |
+
+旧脚本 `deterministic_design.py`、`zolotarev.py`、`residual_certificate.py`、
+`bench_certificate.py`、`bench_pareto_budget.py`、`validate_vendor_step.py` 已退役。
+原因是旧组合没有形成无额外控制参数、全场动态达标且端到端胜出的提取方法；这不否定
+Zolotarev、有理逼近、后验误差估计或矩阵恒等式这些数学工具。旧实现可从清理前 Git 历史取得。
+
+## 本次清理验证（2026-09-30）
+
+新驱动只审计原样 stock 基，不构造候选算法；5 mm、tau=1e-3、DC，分辨率为 8 单元/轴、
+3 阶 trial、4 锚点块/轴，每单元两个角点及两个独立内部点。
+
+| stock seed | 阶数 | 提取 RHS | 认证 RHS | 参考 RHS | 总 RHS | 采样全场能量误差 | 全盒能量上界 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 20260805 | 36 | 105 | 1792 | 1024 | 2921 | 3.44508e-2 | 2.19817e-1 |
+| 7 | 37 | 103 | 1840 | 1024 | 2967 | 4.23100e-2 | 2.19814e-1 |
+
+256 个检查点/seed 未发现违反上界；直接场误差 Gram 与共址恒等式的相对偏差不超过 2.91e-11。
+这些是浮点测量，尚未达到 1e-3 全场容差，粗包络也很松，不构成新方法优于基线的证据。
+裸 K 计划与历史 box-corrected 数据不同；不可跨表比较提取收益。
+确切命令：设置 `PYTHONPATH=python`、`OMP_NUM_THREADS=1`、`OPENBLAS_NUM_THREADS=1` 后运行
+`E:/env/miniconda3/envs/numerical/python.exe playground/adaptive_bci_sampling/certify_extraction.py 5 --output $env:TEMP/metahotspot-cleanup-field-audit.json`。

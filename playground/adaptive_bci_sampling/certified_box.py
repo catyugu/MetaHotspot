@@ -31,7 +31,9 @@ Two standard facts give an exact, computable bound.
    ``q(p)`` (a polynomial here) with residual ``r_q(p) = G - A(p) V q(p)``,
 
        Y(p) - Y_V(p) = r(p)^T A(p)^-1 r(p) <= r_q(p)^T A(p)^-1 r_q(p),
-       r(p) = G - A(p) V (V^T A(p) V)^-1 V^T G  >= 0   (Loewner order).
+       r(p) = G - A(p) V (V^T A(p) V)^-1 V^T G.
+
+   The error Gram is positive semidefinite; the residual itself is not.
 
    Positive semidefiniteness gives ``|entry_ab| <= sqrt(diag_a diag_b)``.
 
@@ -50,37 +52,32 @@ The right-hand side is computable without any further full-order solve:
   which form a convex combination, so the Gram quadratic form is bounded by the
   largest coefficient-wise value, pointwise on the whole cell.
 
-Relative statements need the exact same-parameter rise.  The family is an
-entrywise nonnegative M-matrix family and ``dY_ab/dp_k = -x_a^T H_k x_b`` is
-entrywise nonpositive, so the *exact* transfer at a cell's upper HTC corner is
-a positive lower bound of ``Y(p)`` at every point of that cell.  ``sweep``
-normalizes by that corner, which costs one direct solve per cell and no
-fraction of the reduced transfer.
+The matrix path normally uses the reduced transfer at the upper HTC corner:
+``Y(p) >= Y(high) >= Y_V(high)`` in Loewner order. It uses full-order corner
+responses only for an explicit exact denominator or a singular reduced one.
+This matrix bound needs positive semidefinite boundary terms, not entrywise
+M-matrix assumptions. Entrywise bounds have additional positivity assumptions.
 
-Any fixed real shift is covered.  The BDF1 step recursion solves with
-``A(p) + C/dt``, which is another member of the same affine family, so
-``shift = 1/dt`` certifies that operator family as well.
+Any fixed real shift is covered. A BDF1 recursion uses that operator with
+``shift = 1/dt``, but its changing right-hand side and accumulated error are
+not certified by a fixed-source resolvent statement.
 
 Cost
 
-Preparation is one Riesz Gram per anchor: one factorization plus
-``span_columns`` sparse solves each.  Every cell then needs the exact transfer
-at its upper corner for the normalization, i.e. one further factorization and
-``source_count`` solves.  Nothing here is an AMG-CG extraction solve, and all
-remaining cell evaluation is small dense algebra in the delivered reduced
-order: refining the jet order is free, and refining the partition costs only
-those corner denominators while tightening the bound.
+Preparation is one AMG setup and ``span_columns`` CG inverse actions per
+anchor. Reduced denominators require no full solve; exact/fallback denominators
+cost ``source_count`` more inverse actions per uncached corner. Gram work is
+full-order cost and must be included when the certificate controls extraction.
+Trial refinement costs reduced algebra; it is not free in wall time or memory.
 
 Limits, stated explicitly
 
-* Inequalities hold in exact real arithmetic; sparse factorizations, Gram
+* Inequalities hold in exact real arithmetic; iterative sparse solves, Gram
   matrices and small dense solves are ordinary floating point
   (``floating_point_certified=False`` in every report).
 * The bound is an upper bound and is not claimed to be tight.
-* ``sweep`` covers one fixed real shift.  The frequency axis is deliberately
-  absent: an anchored Riesz operator has to overestimate the whole HTC range,
-  and the measured loss of that weighting is about six orders of magnitude
-  (see the playground report).
+* ``sweep`` covers one fixed real shift. It gives no dynamic system-norm
+  guarantee; a shift-free shared Gram may have a nonvanishing enclosure floor.
 """
 
 from __future__ import annotations
@@ -150,9 +147,9 @@ def generalized_max(matrix, denominator, floor=1e-14):
 
     The quantity is the sharpest scalar ``c`` with ``W <= c*D`` in the Loewner
     order, i.e. the relative error a symmetric matrix statement should report.
-    A jitter proportional to the denominator trace is added only if the
-    Cholesky factorization of ``D`` fails, which makes the result larger and
-    therefore keeps it a valid upper bound.
+    The code retries with a nonnegative numerator perturbation after a dense
+    eigensolve failure; it never regularizes a singular denominator downward
+    into an apparent finite bound. Persistent failure returns infinity.
     """
     form = np.ascontiguousarray(0.5 * (matrix + matrix.T))
     weight = np.ascontiguousarray(0.5 * (denominator + denominator.T))
