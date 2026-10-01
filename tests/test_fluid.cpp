@@ -15,13 +15,8 @@ namespace {
     {
         const std::string root = PROJECT_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
-        const std::string overlay = root + "/cases/microfluid_cases/steady_case1_additional.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
-        EXPECT_TRUE(std::filesystem::exists(overlay));
-
-        auto definition = mhs::io::read_xml(input);
-        EXPECT_NO_THROW(mhs::io::merge_fluid_xml(overlay, definition));
-        return mhs::sim::build_model(definition);
+        return mhs::sim::build_model(mhs::io::read_xml(input));
     }
 
     /// Build the default (uniform initial_temperature) state vector.

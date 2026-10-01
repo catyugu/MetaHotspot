@@ -1,0 +1,14 @@
+case,flotherm_order,steady_global_pct,transient_global_pct
+baseline_copper,11,0.742,1.777
+lowk_insulator,11,0.950,0.731
+highk_aluminum,11,0.775,1.332
+bottom_htc_weak,11,1.692,2.284
+bottom_htc_strong,11,2.765,4.022
+external_source_50w,11,2.354,1.243
+external_source_200w,11,4.151,2.426
+lowk_source,11,3.709,2.098
+all_stress,11,3.542,2.276
+layered_soft,11,0.809,0.772
+layered_soft_source,11,3.631,2.187
+layered_extreme,11,0.741,1.025
+layered_extreme_source,11,3.231,2.089

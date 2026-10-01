@@ -15,7 +15,7 @@ namespace mhs::model {
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
     enum class Axis : uint8_t { X, Y, Z };
-    enum class FluidBoundaryKind : uint8_t { None, Pressure, MassFlowRate, Velocity };
+    enum class FluidBoundaryKind : uint8_t { None, PressureInlet, MassFlowInlet, Outlet };
 
     struct ModelSettings {
         StudyType study_type = StudyType::Steady;
@@ -104,6 +104,7 @@ namespace mhs::model {
         Expression density = "0.0";
         Expression specific_heat = "0.0";
         std::optional<Expression> dynamic_viscosity;
+        bool is_fluid = false;
     };
 
     struct NamedMaterial {

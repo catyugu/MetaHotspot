@@ -1,6 +1,5 @@
 add_library(mhs_io STATIC
     xml_model_reader.cpp
-    xml_fluid_reader.cpp
     xml_writer.cpp
     vtu_writer.cpp
     face_region_parser.cpp

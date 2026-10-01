@@ -33,6 +33,31 @@
                 <a:EnvironmentTemperature>320</a:EnvironmentTemperature>
             </ThermalBoundary>
         </Boundary>
+        <Boundary>
+            <BoundaryCategory>Fluidic</BoundaryCategory>
+            <FaceIds />
+            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                <a:string>X|E|0|0.5|1.5|0.2|0.4</a:string>
+                <a:string>X|E|0|2.5|3.5|0.2|0.4</a:string>
+            </FaceKeys>
+            <Name>fluid_inlet_mdot</Name>
+            <ThermalBoundary i:type="a:MassFlowInletBoundary" xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
+                <a:InletTemperature>298.15</a:InletTemperature>
+                <a:MassFlowRate>1e-4</a:MassFlowRate>
+            </ThermalBoundary>
+        </Boundary>
+        <Boundary>
+            <BoundaryCategory>Fluidic</BoundaryCategory>
+            <FaceIds />
+            <FaceKeys xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+                <a:string>X|E|8|0.5|1.5|0.2|0.4</a:string>
+                <a:string>X|E|8|2.5|3.5|0.2|0.4</a:string>
+            </FaceKeys>
+            <Name>fluid_outlet</Name>
+            <ThermalBoundary i:type="a:OutletBoundary" xmlns:a="http://schemas.datacontract.org/2004/07/ThermalSim.Models.BoundaryConditions">
+                <a:Pressure>0</a:Pressure>
+            </ThermalBoundary>
+        </Boundary>
     </Boundaries>
     <DieLayerNum>0</DieLayerNum>
     <DieLayerSizeX>0</DieLayerSizeX>
@@ -101,7 +126,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>0.3</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -200,7 +225,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>0.2</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -274,7 +299,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>0.2</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -332,7 +357,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>0.2</ThicknessExpression>
-                    <TiReyuan>2e9</TiReyuan>
+                    <VolumetricHeatSource>2e9</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -415,7 +440,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>0.2</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -449,10 +474,10 @@
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>silicon</a:Key>
             <a:Value>
-                <BiRerong>0.71</BiRerong>
+                <SpecificHeatCapacity>700</SpecificHeatCapacity>
                 <Chi0 i:nil="true" />
                 <CouplingMatrixForSaw i:nil="true" />
-                <DaoreXishu>130</DaoreXishu>
+                <ThermalConductivity>130</ThermalConductivity>
                 <DielectricLossFactorForSaw i:nil="true" />
                 <Eg0 i:nil="true" />
                 <ElasticMatrixForSaw i:nil="true" />
@@ -461,7 +486,8 @@
                 <EpsilonVectorForSaw i:nil="true" />
                 <MaterialKindForSaw>压电材料</MaterialKindForSaw>
                 <MechanicalDampingFactorForSaw i:nil="true" />
-                <Midu>2330</Midu>
+                <Density>2330</Density>
+                <FluidMaterial>false</FluidMaterial>
                 <MiduForSaw i:nil="true" />
                 <MuN i:nil="true" />
                 <MuP i:nil="true" />
@@ -475,10 +501,10 @@
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>water</a:Key>
             <a:Value>
-                <BiRerong>4200</BiRerong>
+                <SpecificHeatCapacity>4200</SpecificHeatCapacity>
                 <Chi0 i:nil="true" />
                 <CouplingMatrixForSaw i:nil="true" />
-                <DaoreXishu>0.6</DaoreXishu>
+                <ThermalConductivity>0.6</ThermalConductivity>
                 <DielectricLossFactorForSaw i:nil="true" />
                 <Eg0 i:nil="true" />
                 <ElasticMatrixForSaw i:nil="true" />
@@ -487,7 +513,9 @@
                 <EpsilonVectorForSaw i:nil="true" />
                 <MaterialKindForSaw>压电材料</MaterialKindForSaw>
                 <MechanicalDampingFactorForSaw i:nil="true" />
-                <Midu>1000</Midu>
+                <Density>1000</Density>
+                <DynamicViscosity>0.00089</DynamicViscosity>
+                <FluidMaterial>true</FluidMaterial>
                 <MiduForSaw i:nil="true" />
                 <MuN i:nil="true" />
                 <MuP i:nil="true" />

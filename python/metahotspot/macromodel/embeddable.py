@@ -55,6 +55,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+import pyamg
 import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -659,14 +660,49 @@ def connect(
     return K, C, rhs, ldof, rdof, n_patch
 
 
+COUPLED_SOLVE_RTOL = 1.0e-10
+COUPLED_SOLVE_MAXITER = 2000
+
+
+class _AMGPCGSolver:
+    """Reusable AMG-preconditioned CG solver for one fixed SPD matrix."""
+
+    def __init__(self, A, *, rtol=COUPLED_SOLVE_RTOL):
+        self.A = sp.csr_matrix(A)
+        self.rtol = float(rtol)
+        hierarchy = pyamg.ruge_stuben_solver(self.A, interpolation="direct")
+        self.M = hierarchy.aspreconditioner(cycle="V")
+
+    def solve(self, rhs, *, x0=None, label="solve"):
+        x, info = spla.cg(
+            self.A,
+            np.asarray(rhs, dtype=np.float64).ravel(),
+            x0=None if x0 is None else np.asarray(x0, dtype=np.float64).ravel(),
+            rtol=self.rtol,
+            atol=0.0,
+            maxiter=COUPLED_SOLVE_MAXITER,
+            M=self.M,
+        )
+        if info != 0:
+            raise RuntimeError(f"AMG-PCG failed for {label}: info={info}")
+        return np.asarray(x, dtype=np.float64).ravel()
+
+
 def solve_system(K, C, rhs, dt: float, duration: float):
-    """Steady + fixed-step BDF1 transient of a coupled system (coordinates)."""
-    steady = np.asarray(spla.spsolve(K.tocsc(), rhs)).ravel()
-    lhs = (K.tocsc() + C.tocsc() / dt).tocsc()
-    solver = spla.splu(lhs)
+    """Steady + BDF1 transient solved by reusable AMG-preconditioned CG."""
+    steady_solver = _AMGPCGSolver(K)
+    steady = steady_solver.solve(rhs, label="steady solve")
+
+    lhs = (K.tocsc() + C.tocsc() / dt).tocsr()
+    transient_solver = _AMGPCGSolver(lhs)
     state = np.zeros(K.shape[0])
     history = [state.copy()]
-    for _ in range(round(duration / dt)):
-        state = solver.solve(C @ state / dt + rhs)
+    for step in range(1, round(duration / dt) + 1):
+        transient_rhs = C @ state / dt + rhs
+        state = transient_solver.solve(
+            transient_rhs,
+            x0=state,
+            label=f"transient step {step}",
+        )
         history.append(state.copy())
     return steady, np.asarray(history)
