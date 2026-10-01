@@ -931,7 +931,7 @@
                         <SelectedPMLType />
                         <TerminalVoltage>0</TerminalVoltage>
                         <ThicknessExpression>50</ThicknessExpression>
-                        <TiReyuan>0</TiReyuan>
+                        <VolumetricHeatSource>0</VolumetricHeatSource>
                         <XOffsetExpression>0</XOffsetExpression>
                         <YOffsetExpression>0</YOffsetExpression>
                         <ZOffsetExpression>0</ZOffsetExpression>
@@ -939,7 +939,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>50</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1317,7 +1317,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>50</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1639,7 +1639,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>20</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1722,7 +1722,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>1</ThicknessExpression>
-                    <TiReyuan>0</TiReyuan>
+                    <VolumetricHeatSource>0</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1805,7 +1805,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>10</ThicknessExpression>
-                    <TiReyuan>1e7</TiReyuan>
+                    <VolumetricHeatSource>1e7</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1863,7 +1863,7 @@
                     <SelectedPMLType />
                     <TerminalVoltage>0</TerminalVoltage>
                     <ThicknessExpression>10</ThicknessExpression>
-                    <TiReyuan>2e7</TiReyuan>
+                    <VolumetricHeatSource>2e7</VolumetricHeatSource>
                     <XOffsetExpression>0</XOffsetExpression>
                     <YOffsetExpression>0</YOffsetExpression>
                     <ZOffsetExpression>0</ZOffsetExpression>
@@ -1897,10 +1897,10 @@
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>copper</a:Key>
             <a:Value>
-                <BiRerong>385</BiRerong>
+                <SpecificHeatCapacity>385</SpecificHeatCapacity>
                 <Chi0 i:nil="true" />
                 <CouplingMatrixForSaw i:nil="true" />
-                <DaoreXishu>400</DaoreXishu>
+                <ThermalConductivity>400</ThermalConductivity>
                 <DielectricLossFactorForSaw i:nil="true" />
                 <Eg0 i:nil="true" />
                 <ElasticMatrixForSaw i:nil="true" />
@@ -1909,7 +1909,7 @@
                 <EpsilonVectorForSaw i:nil="true" />
                 <MaterialKindForSaw>压电材料</MaterialKindForSaw>
                 <MechanicalDampingFactorForSaw i:nil="true" />
-                <Midu>8920</Midu>
+                <Density>8920</Density>
                 <MiduForSaw i:nil="true" />
                 <MuN i:nil="true" />
                 <MuP i:nil="true" />
@@ -1918,15 +1918,16 @@
                 <PoissonsRatioForSaw i:nil="true" />
                 <WaveSpeedForSaw i:nil="true" />
                 <YoungsModulusForSaw i:nil="true" />
+                <FluidMaterial>false</FluidMaterial>
             </a:Value>
         </a:KeyValueOfstringMaterialGyu7GfTz>
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>silicon</a:Key>
             <a:Value>
-                <BiRerong>0.71</BiRerong>
+                <SpecificHeatCapacity>0.71</SpecificHeatCapacity>
                 <Chi0 i:nil="true" />
                 <CouplingMatrixForSaw i:nil="true" />
-                <DaoreXishu>130</DaoreXishu>
+                <ThermalConductivity>130</ThermalConductivity>
                 <DielectricLossFactorForSaw i:nil="true" />
                 <Eg0 i:nil="true" />
                 <ElasticMatrixForSaw i:nil="true" />
@@ -1935,7 +1936,7 @@
                 <EpsilonVectorForSaw i:nil="true" />
                 <MaterialKindForSaw>压电材料</MaterialKindForSaw>
                 <MechanicalDampingFactorForSaw i:nil="true" />
-                <Midu>2330</Midu>
+                <Density>2330</Density>
                 <MiduForSaw i:nil="true" />
                 <MuN i:nil="true" />
                 <MuP i:nil="true" />
@@ -1944,15 +1945,16 @@
                 <PoissonsRatioForSaw i:nil="true" />
                 <WaveSpeedForSaw i:nil="true" />
                 <YoungsModulusForSaw i:nil="true" />
+                <FluidMaterial>false</FluidMaterial>
             </a:Value>
         </a:KeyValueOfstringMaterialGyu7GfTz>
         <a:KeyValueOfstringMaterialGyu7GfTz>
             <a:Key>TIM</a:Key>
             <a:Value>
-                <BiRerong>1000</BiRerong>
+                <SpecificHeatCapacity>1000</SpecificHeatCapacity>
                 <Chi0 i:nil="true" />
                 <CouplingMatrixForSaw i:nil="true" />
-                <DaoreXishu>10</DaoreXishu>
+                <ThermalConductivity>10</ThermalConductivity>
                 <DielectricLossFactorForSaw i:nil="true" />
                 <Eg0 i:nil="true" />
                 <ElasticMatrixForSaw i:nil="true" />
@@ -1961,7 +1963,7 @@
                 <EpsilonVectorForSaw i:nil="true" />
                 <MaterialKindForSaw>压电材料</MaterialKindForSaw>
                 <MechanicalDampingFactorForSaw i:nil="true" />
-                <Midu>2000</Midu>
+                <Density>2000</Density>
                 <MiduForSaw i:nil="true" />
                 <MuN i:nil="true" />
                 <MuP i:nil="true" />
@@ -1970,6 +1972,7 @@
                 <PoissonsRatioForSaw i:nil="true" />
                 <WaveSpeedForSaw i:nil="true" />
                 <YoungsModulusForSaw i:nil="true" />
+                <FluidMaterial>false</FluidMaterial>
             </a:Value>
         </a:KeyValueOfstringMaterialGyu7GfTz>
     </Materials>

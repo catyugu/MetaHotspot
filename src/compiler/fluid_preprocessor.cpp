@@ -28,7 +28,6 @@ namespace mhs::sim::fluid {
             std::vector<double> channel_width;
             std::vector<double> channel_height;
             std::vector<FluidCellBC> cell_bcs;
-            std::vector<double> boundary_face_area;
         };
 
         mhs::core::Index fluid_count(const mhs::core::Model& model)
@@ -109,25 +108,15 @@ namespace mhs::sim::fluid {
             });
         }
 
-        double face_area(const mhs::model::FaceRegion& region, const mhs::core::MeshGeometry& mesh, mhs::core::Index ix,
-            mhs::core::Index iy, mhs::core::Index iz)
-        {
-            const int axis = axis_index(region.axis);
-            const double a = axis == 0 ? mesh.dy[iy] : mesh.dx[ix];
-            const double b = axis == 2 ? mesh.dy[iy] : mesh.dz[iz];
-            return a * b;
-        }
-
         void apply_boundaries(mhs::core::Model& model, FluidPreprocessWorkspace& workspace,
             const std::vector<mhs::model::FluidBoundarySpec>& boundaries, double si_scale)
         {
             for (const auto& boundary : boundaries) {
+                std::vector<mhs::core::Index> matched;
                 for (const auto& region : boundary.regions) {
                     const int axis = axis_index(region.axis);
                     const double coordinate = region.coordinate * si_scale;
 
-                    std::vector<mhs::core::Index> matched;
-                    matched.reserve(64);
                     for (mhs::core::Index fi = 0; fi < fluid_count(model); ++fi) {
                         const mhs::core::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                         mhs::core::Index ix, iy, iz;
@@ -147,28 +136,21 @@ namespace mhs::sim::fluid {
                             matched.push_back(fi);
                         }
                     }
+                }
 
-                    if (matched.empty())
-                        continue;
+                if (matched.empty())
+                    continue;
 
-                    double value = boundary.value;
-                    if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowRate)
-                        value /= static_cast<double>(matched.size());
-                    for (mhs::core::Index fi : matched) {
-                        workspace.cell_bcs[fi] = {boundary.kind, value};
-                        if (!std::isnan(boundary.inlet_temperature))
-                            model.fluid.boundary_temperature[fi] = boundary.inlet_temperature;
+                double value = boundary.value;
+                if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowInlet)
+                    value /= static_cast<double>(matched.size());
+                for (const mhs::core::Index fi : matched) {
+                    workspace.cell_bcs[fi] = {boundary.kind, value};
+                    if (!std::isnan(boundary.inlet_temperature))
+                        model.fluid.boundary_temperature[fi] = boundary.inlet_temperature;
 
-                        if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowRate) {
-                            model.fluid.boundary_outflux[fi] = value;
-                        }
-                        else if (boundary.kind == mhs::model::FluidBoundaryKind::Velocity) {
-                            const mhs::core::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
-                            mhs::core::Index ix, iy, iz;
-                            mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-                            workspace.boundary_face_area[fi] = face_area(region, model.mesh, ix, iy, iz);
-                            model.fluid.boundary_outflux[fi] = value * workspace.boundary_face_area[fi];
-                        }
+                    if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowInlet) {
+                        model.fluid.boundary_outflux[fi] = value;
                     }
                 }
             }
@@ -212,6 +194,7 @@ namespace mhs::sim::fluid {
             triplets.reserve(static_cast<std::size_t>(count) * 7);
             Eigen::VectorXd rhs = Eigen::VectorXd::Zero(eigen_count);
 
+            bool has_pressure_reference = false;
             for (mhs::core::Index fi = 0; fi < count; ++fi) {
                 const mhs::core::Index old = model.cells.cell_to_grid[model.fluid.fluid_to_global[fi]];
                 mhs::core::Index ix, iy, iz;
@@ -233,23 +216,29 @@ namespace mhs::sim::fluid {
                     const auto& conductance = workspace.hydraulic_conductance[axis];
                     const double effective = mhs::utils::harmonicAverage(conductance[fi], conductance[fn]);
                     diagonal += effective;
-                    if (workspace.cell_bcs[fi].kind != mhs::model::FluidBoundaryKind::Pressure) {
+                    if (workspace.cell_bcs[fi].kind != mhs::model::FluidBoundaryKind::PressureInlet
+                        && workspace.cell_bcs[fi].kind != mhs::model::FluidBoundaryKind::Outlet) {
                         triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fn), -effective);
                     }
                 }
 
                 triplets.emplace_back(static_cast<int>(fi), static_cast<int>(fi), diagonal);
                 const auto& bc = workspace.cell_bcs[fi];
-                if (bc.kind == mhs::model::FluidBoundaryKind::Pressure) {
+                if (bc.kind == mhs::model::FluidBoundaryKind::PressureInlet
+                    || bc.kind == mhs::model::FluidBoundaryKind::Outlet) {
+                    has_pressure_reference = true;
                     rhs(static_cast<Eigen::Index>(fi)) = bc.value * diagonal;
                 }
-                else if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowRate) {
+                else if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet) {
                     const double density = evaluate_rho_at_initial_temperature(model, fi);
                     rhs(static_cast<Eigen::Index>(fi)) = density > mhs::core::zero_guard ? bc.value / density : 0.0;
                 }
-                else if (bc.kind == mhs::model::FluidBoundaryKind::Velocity) {
-                    rhs(static_cast<Eigen::Index>(fi)) = bc.value * workspace.boundary_face_area[fi];
-                }
+            }
+
+            if (!model.fluid.fluid_to_global.empty() && !has_pressure_reference) {
+                throw std::runtime_error(
+                    "fluid domain has no pressure reference; a pressure inlet or an outlet is required "
+                    "(a mass-flow inlet alone does not fix the pressure datum)");
             }
 
             Eigen::SparseMatrix<double> matrix(eigen_count, eigen_count);
@@ -324,7 +313,6 @@ namespace mhs::sim::fluid {
         workspace.channel_width.assign(count, 0.0);
         workspace.channel_height.assign(count, 0.0);
         workspace.cell_bcs.assign(count, {});
-        workspace.boundary_face_area.assign(count, 0.0);
 
         model.fluid.face_volume_flux.assign(count * mhs::core::FACE_COUNT, 0.0);
         model.fluid.interface_heat_transfer_factor.assign(count, 0.0);

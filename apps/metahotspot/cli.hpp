@@ -11,7 +11,6 @@ namespace mhs::cli {
         std::string input; // required
         std::string output_vtu = "./output.vtu";
         std::string output_xml = "./output.xml";
-        std::optional<std::string> fluid_overlay; // absent => skip fluid logic
         std::string log_file = "metahotspot.log";
         bool console_log = true; // --no-console-log flips this
     };

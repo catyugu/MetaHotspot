@@ -1,0 +1,7 @@
+results/
+__pycache__/
+*.py[cod]
+
+# Keep generated validation/baseline data local to this playground.
+baseline/metahotspot/*
+!baseline/metahotspot/README.md

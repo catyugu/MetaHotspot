@@ -87,11 +87,13 @@ def _snapshot_svd_basis(snapshot_matrix, tolerance):
 # SPD linear solve
 # ---------------------------------------------------------------------------
 
-ENRICH_RTOL = 1.0e-6
+ENRICH_RTOL = 1.0e-4
 
 
 def _rs_preconditioner(A):
-    ml = pyamg.ruge_stuben_solver(A, interpolation="direct")
+    ml = pyamg.ruge_stuben_solver(
+        A, interpolation="direct", coarse_solver="gauss_seidel"
+    )
     return ml.aspreconditioner(cycle="V")
 
 
@@ -442,7 +444,7 @@ def build_parametric_basis(
 
                 A = full_operator(h_vec, shift)
                 response = np.asarray(
-                    spd_solve(A, g, x0=initial_guess),
+                    spd_solve(A, g, x0=initial_guess, rtol=tolerance / 10.0),
                     dtype=np.float64,
                 ).ravel()
                 snapshots.append(response)
