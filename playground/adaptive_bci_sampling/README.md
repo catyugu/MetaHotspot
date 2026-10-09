@@ -1,90 +1,91 @@
-# 全场传递算子研究与审计
+# 连续 HTC 域的全场误差认证研究
 
-2026-10-07 归档入口：[方法与算法](METHODS_20261007.md)、
-[最新目标完整证明](STEADY_STEP_PROOF.md)、[复现说明](REPRODUCE_20261007.md)、
-[整理后的实验总览](records/EXPERIMENTS_20261007.md)。只提交源码、测试和结果文档；
-`results/` 中的矩阵、基底、JSON 和其他原始输出均由脚本重建，不纳入本次提交。
+具体实验数据及结果报告只保存在本地，不随 Git 分发；`records/` 和归档中的同名目录受忽略规则保护。仓库保留代码、证明、复现方法、文献核对及统一失败档案。历史记录中的提交号在历史压缩后可能不再可用。
 
-**冲激积分版本独立存档：** [基础有理时间推导](RATIONAL_DYNAMIC_PROOF.md)、
-[Poisson–Loewner 完整证明](SIGNED_POISSON_PROOF.md)、
-[数学判决实验](records/SIGNED_POISSON_EXPERIMENT_20261007.md) 与
-[进一步确认](records/SIGNED_POISSON_CONFIRMATION_20261007.md)。对应实现、测试和复现命令
-完整保留，不以最新阶跃目标替换这套证明。
+最新阶段是共同输入误差空间、正终端尾项与正式规模判决（本地记录：`records/POSITIVE_REACHABILITY_20261009.md`），
+[完整推导](POSITIVE_SOURCE_TAIL_PROOF.md)包含连续盒、全时间参数尾项的
+Poisson/Jensen 归一化，以及实际 Galerkin 空间遗漏的模态可达锥充分界。
+参数尾项在约 ±10% 的子域得到紧界；全盒慢模、空间留出方向及符号损失
+仍使新构造失败。**没有新的全域双认证提取器，也没有成本优势或新颖性结论。**
+各失败原型只作判决入口，不替换已有固定 285 阶候选或生产提取器。
 
-目标是 `X(h,s) = (K+sC+sum_i h_i H_i)^-1 G`：功率输入到**全部温度自由度**的传递算子。
-固定实移验收使用所有输入组合下的相对 `A(h,s)`-能量误差，容差 `tau` 对应平方缺陷阈值
-`tau^2`。最新验收为最终基稳态全场 K-energy 相对误差 `2 epsilon`、
-阶跃全场 C-energy 相对误差 `2 sqrt(epsilon)`，包括全部输入组合与所有时刻。
-历史全场 impulse 的 C 加权时间积分目标保留独立推导，不能替代阶跃验收，见
-[THEORY.md](THEORY.md)。结温、共址输出 H2/Hankel 与有限时刻 step 测量不自动给出上述保证。
+上一阶段是输出加权动态尾项重构（本地记录：`records/DYNAMIC_OUTPUT_20261009.md`），
+[完整推导](DYNAMIC_OUTPUT_TAIL_PROOF.md)与
+数值证据及成本（本地记录：`records/DYNAMIC_OUTPUT_DATA_20261009.json`）配套保存。
 
-生产 `python/metahotspot/macromodel/utils.py` 保持 stock Extended BCI FANTASTIC，实验算法
-留在 playground。新方法只能接受容差与 HTC 范围作为控制参数；网格、物理模型和审计分辨率
-属于验证条件，不能成为改善候选成绩的调参手段。固定 seed 是复现基线所需的历史设置，不能
-作为新方法输入。
+**尚未得到原始整个 HTC 域、全部时间的实用双认证提取算法。**
+47,085 / 122,400 自由度固定 285 阶基底在三个参数点、三个时刻的独立
+阶跃参考核查中通过。连续子域的一阶输出包络保持了真实输入耦合，
+但高阶诱导范数尾项仍严重松弛；这不是完整连续域阶跃验收。
+证明使用精确算术，数值为普通浮点，未做 outward rounding。
+Case1 使用矩阵重构，native_validated=false。
 
-当前目录保留固定实移基线审计、数学支撑和动态认证研究原型；不再运行已排除的选点配方。
+## 验收条件
 
-| 文件 | 用途 |
-| --- | --- |
-| `certify_extraction.py` | stock 最终基的 DC 连续盒上界与直接全场对照，输出原始 JSON |
-| `certified_box.py` | 固定实移的 Riesz–Bernstein 单元上界；升阶与分支定界是研究工具 |
-| `exact_error.py` | 对角 Robin 项的 Woodbury 误差映射，作为小模型独立核验工具 |
-| `sparse_solve.py` | 大型 SPD 系统的 AMG 预条件 CG |
-| `test_field_audit.py` | 全输入场误差、弱观测节点误差及完整空间的回归检查 |
-| `records/FAILURE_ARCHIVE.md` | 更早的负结果、测量更正、旧证书与预算证据 |
-| `rational_dynamic.py` | 正交有理时间系数、精确尾项及 Bernstein 连续动态单元上界的浮点原型 |
-| `run_rational_dynamic.py` | 固定 stock/raw 基的连续盒、局部收敛与成本判决实验 |
-| `test_rational_dynamic.py` | Parseval、独立时间积分、全部输入组合、坐标变换等核验 |
-| `RATIONAL_DYNAMIC_PROOF.md` | 原型的精确算术接受证明与有限覆盖存在性 |
-| `records/RATIONAL_DYNAMIC_EXPERIMENT_20261007.md` | 判决记录：小模型连续覆盖成功但成本不可接受；Case1 重建与耦合负结果 |
-| `records/RATIONAL_DYNAMIC_OPTIMIZATION_20261007.md` | 后续优化：联合创新能量界、参数包围细分与完整 RHS 成本对照 |
-| `matrix_innovation.py` | 保留带符号时间/空间/输入 Gram 的 Poisson–Loewner 连续谱包围 |
-| `SIGNED_POISSON_PROOF.md` | 新矩阵余量界、连续参数证明、无界结构增益例及 SVD 后 2 tau 预算 |
-| `svd_dynamic_guard.py` | 固定 stock 快照/SVD 方向，以连续动态证书验收最终截断阶数的研究原型 |
-| `verify_guarded_svd_cells.py` | 固定最终 SVD 基的旧/新数学界对照及独立正时间积分参考 |
-| `test_matrix_innovation.py` | Poisson 恒等式、连续谱支配、方向抵消、SVD 嵌套及输入组合核验 |
-| `records/SIGNED_POISSON_EXPERIMENT_20261007.md` | 最终 76 阶 SVD 基的 2 tau 局部通过与同设置旧拒绝/新接受判决 |
-| `confirm_signed_poisson.py` | 100 个稠密 SPD 系统、非正交坐标变换、最坏输入与正时间积分复验 |
-| `confirm_native_and_mesh.py` | C++ 原生装配核对与 1200 单元网格最终 SVD 基直接认证 |
-| `records/SIGNED_POISSON_CONFIRMATION_20261007.md` | 原生、多种子、更宽盒与细网格复验；区分直接证书与分预算失败 |
-| `steady_step_audit.py` | 最新稳态 2 epsilon / 阶跃 2 sqrt(epsilon) 目标复验及相同验收条件的 stock 成本对照 |
-| `records/STEADY_STEP_COST_20261007.md` | 48/48/53 阶、134/137/140 次逆作用；阶跃仍仅覆盖审计 HTC 点的全时刻 |
-| `STEADY_STEP_PROOF.md` | 最新目标定义、连续稳态证书、初始/区间/无穷尾的全时刻阶跃证明 |
-| `METHODS_20261007.md` | 三条认证路线的输入、输出、接受/拒绝条件、伪代码及成本口径 |
-| `REPRODUCE_20261007.md` | 无原始数据依赖的环境、测试、实验命令和结果文档对应表 |
+固定 HTC、零初值、原四个功率源的任意有符号常数组合，认证 SVD 前固定 V：
 
-最新用户验收是最终 SVD 基稳态相对误差 `2*epsilon`、阶跃相对误差
-`2*sqrt(epsilon)`，使用全场能量范数、全部输入组合和所有时刻。
-当前已完成局部连续 HTC 稳态证书，以及 7 个 HTC 点的全时刻阶跃证书；
-阶跃的连续 HTC 全盒覆盖尚未建立。不要将下面历史冲激范数结果当作新目标的保证。
+- 稳态全场 K-energy 相对误差 ≤ epsilon=0.001。
+- 每个 t>0 的阶跃全场 C-energy 相对误差 ≤ sqrt(epsilon)。
 
-此前冲激范数研究验收：提取 tolerance 为 tau，最终 SVD 基的动态误差接受阈值按用户指定为
-2 tau；嵌套三角路线给 raw 基分配 tau，直接认证最终基不要求这个充分条件。标准快照 SVD cutoff 本身不蕴含此动态保证；Case1 stock
-34 阶基仍超限，实验中通过的是受动态证书验收的另一个 76 阶 SVD 基。
+两项必须覆盖同一个连续参数域。固定实移位、有限时间采样、冲激积分或
+Hankel 范数各有用途，不能替代这个验收；也不使用 SVD 后二倍容差。
+生产提取器保持不变。候选快照仅构造 V，不能提供连续域尾项保证。
 
-删除旧的确定性种子/网格贪心提取配方及其预算 sweep、仅端口 step 驱动；它们没有建立满足
-当前全场动态目标且优于基线的方法。历史公式或负结果不等于所有上位数学方向被排除。
-历史脚本在 Git 中保留，档案中的旧命令仅标识当时实验。
+## 当前代码入口
 
-从根目录运行：
+| 文件 | 职责 |
+|---|---|
+| `prepare_output_dynamics.py` | 重建固定输入驱动八极点候选 V，记录全部构造成本 |
+| `audit_output_step.py` | BE 时间误差解析界 + 实际 AMG-CG 缺陷，核查指定 h、t |
+| `dynamic_observability_tail.py` | 连续子域共同储能对照、一阶输入耦合输出与 Neumann 积分余项 |
+| `audit_dynamic_identity.py` | 小模型抵消恒等式与全时间积分的独立数值核查 |
+| `case1_system.py` | 共享 Case1 矩阵装配，无实验驱动依赖 |
+| `numerics.py` | 共享 AMG-CG、衰减下界、C 正交化与输入 Gram 运算 |
+| `port_basis.py` | Robin 端口与输入驱动端口候选构造，无验收功能 |
 
-```powershell
-$env:PYTHONPATH = "$PWD/python"
-$env:OMP_NUM_THREADS = '1'
-$env:OPENBLAS_NUM_THREADS = '1'
-& E:/env/miniconda3/envs/numerical/python.exe playground/adaptive_bci_sampling/certify_extraction.py 5 --tolerance 1e-3 --output "$env:TEMP/metahotspot-field-audit.json"
-& E:/env/miniconda3/envs/numerical/python.exe -m pytest python/tests playground/adaptive_bci_sampling/test_field_audit.py -q -p no:cacheprovider
+当前代码不导入任何历史证书驱动。清理只提取原有共享函数，没有改变
+求解器容差、模型算子、候选构造或数学界。本目录不维护单元测试。
+
+新研究的四个独立判决入口是 `positive_source_tail.py`、
+`modal_reachable_tail.py`、`input_error_reachability.py`、
+`audit_positive_reachability.py`；其作用域、失败结论和复现命令统一放在
+阶段报告（本地记录：`records/POSITIVE_REACHABILITY_20261009.md`），不作为通过的默认算法。
+
+## 复现
+
+从仓库根目录运行，依赖 NumPy、SciPy、PyAMG。以小模型为例：
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+python playground/adaptive_bci_sampling/prepare_output_dynamics.py --mesh-mm 10 --rank 16 --output playground/adaptive_bci_sampling/results/output_small.npz
+python playground/adaptive_bci_sampling/audit_output_step.py --mesh-mm 10 --candidate playground/adaptive_bci_sampling/results/output_small.npz --output playground/adaptive_bci_sampling/results/output_step_small.json
+python playground/adaptive_bci_sampling/dynamic_observability_tail.py --mesh-mm 10 --candidate playground/adaptive_bci_sampling/results/output_small.npz --output playground/adaptive_bci_sampling/results/output_tail_small.json
+python playground/adaptive_bci_sampling/audit_dynamic_identity.py --candidate playground/adaptive_bci_sampling/results/output_small.npz --output playground/adaptive_bci_sampling/results/output_identity_small.json
 ```
 
-审计固定在 `s=0`、每轴 8 单元、三阶 trial、每轴 4 个 Gram 锚点块；每单元检查上下角及两个
-独立内部点。JSON 同时记录这些条件、基线原始设置、直接场误差和所有 RHS 计数。该分辨率上的
-上界可能很松，审计成功仅表示未发现违反上界，不表示达到给定容差。浮点 AMG-CG 与稠密代数
-未作区间误差包围，`floating_point_certified=False`。
+正式模型分别使用 `--mesh-mm 1.5` / `--mesh-mm 1`，候选名分别为
+`output_47k` / `output_122k`；动态尾项使用 `--widths .01 .1 -1`。
+独立恒等式核查仅用于小模型。正式 FOM 不作稠密谱分解或直接求解。
+`results/` 是忽略提交的可重建缓存；完整标量证据只在本地 records 中保留。
+重跑候选成本必须计入，不得把缓存复用当作免费提取。
 
-成本分别报告 `N_extract`、`N_certificate`、`N_reference` 与其总和。候选提取必须把为了选择、
-停止或认证而执行的全阶逆作用纳入 `N_FOM`；独立外部参考成本单列。AMG setup、谱 matvec、CG
-迭代、墙钟和内存另计，不能用快照数代替端到端成本。
+## 失败判决与历史对照
 
-Case 1 的 `playground/bci_rom_testcase1/reproduce_case1.py` 仍报告实际整场稳态与瞬态最终时刻
-恢复误差，以及热源区观测；其名义功率组合不能代替所有输入方向或整个时域的保证。
+- [失败档案](records/FAILURE_ARCHIVE.md)：集中记录精确失败命题、作用域与未被排除的方向。
+- [结构性文献核对](records/STRUCTURAL_LITERATURE_20261009.md)：反馈、端口尾项及辅助误差系统的先行工作。
+- [2026-10-08/09 研究归档](archive/research20261008_09/README.md)：标量余项、多项式轨迹、共同误差空间、辅助系统、Robin 反馈与耦合稳态方案。
+- [更早历史归档](archive/legacy20261007/README.md)：Poisson–Loewner、冲激积分、旧提取器与稠密桥；保留用户要求的独立存档。
+
+归档表示退出默认入口，不表示所有定理无效。历史材料中的“当前”“最新”
+只描述当时状态；局部通过的连续盒仍有其原有作用域。下一步研究应收紧
+整个输出加权反馈尾项的输入可达包络，而非提高阶数或优化 setup 数。
+
+正终端尾项及共同输入误差空间的小模型复现命令（从仓库根目录执行）：
+
+```bash
+python playground/adaptive_bci_sampling/modal_reachable_tail.py --mesh-mm 10 --build --candidate playground/adaptive_bci_sampling/results/source_small.npz --output playground/adaptive_bci_sampling/results/modal_small.json
+python playground/adaptive_bci_sampling/positive_source_tail.py --mesh-mm 10 --orders 2 4 8 --shifts 0 --widths .01 .1 -1 --output playground/adaptive_bci_sampling/results/positive_small_relative.json
+python playground/adaptive_bci_sampling/audit_positive_reachability.py --candidate playground/adaptive_bci_sampling/results/source_small.npz --output playground/adaptive_bci_sampling/results/positive_oracle.json
+python playground/adaptive_bci_sampling/input_error_reachability.py --mesh-mm 10 --candidate playground/adaptive_bci_sampling/results/source_small.npz --output playground/adaptive_bci_sampling/results/input_error_small.json
+python playground/adaptive_bci_sampling/audit_output_step.py --mesh-mm 10 --candidate playground/adaptive_bci_sampling/results/source_small.npz --output playground/adaptive_bci_sampling/results/source_step_small.json
+```

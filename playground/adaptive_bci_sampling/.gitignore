@@ -1,5 +1,20 @@
 # Generated experiment outputs. Keep the procedures and conclusions in Git.
-/*.json
-/*.csv
-/*.npy
-/*.npz
+*.json
+*.csv
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.png
+*.pdf
+
+# File-move metadata is documentation, not an experiment output.
+!MANIFEST.json
+
+# Concrete experiment reports and data stay local, including archived reports.
+/records/*
+!/records/FAILURE_ARCHIVE.md
+!/records/*LITERATURE*.md
+/archive/**/records/
