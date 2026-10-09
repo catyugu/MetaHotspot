@@ -1,5 +1,22 @@
 # 连续 HTC 域的全场误差认证研究
 
+概率认证研究入口是 [`probabilistic_extraction.py`](probabilistic_extraction.py)，
+其[完整证明与量词说明](PROBABILISTIC_PROOF.md)区分容差、连续 HTC 分布上的超限风险、
+以及证书失败概率。逐输入度量、共同逆像误差方向和独立联合随机尾项见证
+给出整个连续盒上同时有效的**稳态界函数**；随机 HTC 留出验收认证的是分布风险，
+不是整个盒处处满足容差。本阶段不替换生产提取器，也不宣称全时间阶跃概率验收。
+阶段数据只保存在忽略提交的 `results/`，证明和复现脚本随 Git 分发。
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+python playground/adaptive_bci_sampling/probabilistic_extraction.py --mesh-mm 10 --deflate 20 --training-tolerance .0003 --delta 1e-7 --output playground/adaptive_bci_sampling/results/prob_small.json
+# 正式模型改为 --mesh-mm 1.5 / 1；训练池使用 --pool 32。
+# 使用实际 utils.py 基线，不截断的候选按每个输入分别评估，允许最终共享空间。
+# 原始谱范数界失败对照：--deflate 0。
+# 独立逐输入尾项对照：--witness-mode separate --probes 8。
+# 整盒尝试：--cover-cells 64；未完成时返回 passed=false。
+```
+
 具体实验数据及结果报告只保存在本地，不随 Git 分发；`records/` 和归档中的同名目录受忽略规则保护。仓库保留代码、证明、复现方法、文献核对及统一失败档案。历史记录中的提交号在历史压缩后可能不再可用。
 
 最新阶段是共同输入误差空间、正终端尾项与正式规模判决（本地记录：`records/POSITIVE_REACHABILITY_20261009.md`），
