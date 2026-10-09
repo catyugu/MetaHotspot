@@ -165,6 +165,11 @@ N 次零失败概率最多为 $(1-\eta)^N\le\delta_v$。
 在算子证书事件上，真实误差超限集包含于界函数超限集。两次失败预算相加即可。
 有 k 个失败时用一侧 Clopper–Pearson 上界；不能因“多数通过”而宣称 eta 验收。
 
+`--validation-samples N` 可以在采样前明确指定更大的 N，并按实际失败数验收
+`risk_upper <= eta`。冻结配置的正式复核使用 N=5000、delta=1e-7；
+零失败给出一侧风险上界约 0.003356603。该样本数在抽取新的留出流前确定，
+不能使用看过的样本继续调参后沿用一次验证的置信度。
+
 默认预算各为 delta/2；例如 eta=0.01、delta=1e-6 需要 N=1444。
 置信度和 99% 参数覆盖是两回事。nu 是有效 Robin 参数的 log-uniform，
 不是原物理 HTC 分布，更不是随时间变化的 HTC。
@@ -264,6 +269,10 @@ $$r^TK(h)^{-1}r=(E^Tr)^T(E^TK(h)E)^{-1}(E^Tr)
   Sequential Probabilistic Validation 和样本复杂度。独立风险验证不是新理论。
 - [Lou–Weiland thermal pMOR](https://arxiv.org/abs/1803.05240)：热模型参数化 Krylov 与误差分析，
   是物理模型对照之一。
+- [Codecasa–D'Alessandro–Bornoff, Extended FANTASTIC](https://re.public.polimi.it/handle/11311/1204048)：
+  BCI Galerkin 热模型和多输入、动态建模，是 stock 算法的先行方法；本次新增的全场
+  K/C-energy 指标不能冒充其原本的传递函数精度指标。该机构页没有全文附件，
+  本阶段没有从摘要虚构原论文的逐项概率定理或算法细节。
 
 可继续研究的组合是：逐输入度量、共同逆像误差方向、一次联合未知尾项算子证书、
 不混淆连续分布风险和同时全域保证的完整提取验收流程。

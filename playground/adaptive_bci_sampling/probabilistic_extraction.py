@@ -63,8 +63,10 @@ def stock(K, C, G, H, ranges, seed):
     """Invoke actual utils.py; capture its pre-SVD snapshots without changing decisions."""
     original_svd = utils._snapshot_svd_basis
     original_solve = utils.spd_solve
+    original_plan = utils.port_eigenvalue_bounds
     capture = {}
     nsolve = 0
+    plan_seconds = 0.
 
     def svd(S, tolerance):
         capture['snapshots'] = S.copy()
@@ -75,15 +77,26 @@ def stock(K, C, G, H, ranges, seed):
         nsolve += 1
         return original_solve(*args, **kwargs)
 
+    def plan(*args, **kwargs):
+        nonlocal plan_seconds
+        start = time.perf_counter()
+        result = original_plan(*args, **kwargs)
+        plan_seconds += time.perf_counter()-start
+        return result
+
     utils._snapshot_svd_basis = svd
     utils.spd_solve = solve
+    utils.port_eigenvalue_bounds = plan
     try:
         post, info = utils.build_parametric_basis(Operators(K, C, G.sum(axis=1)), G, H, ranges, seed=seed)
     finally:
         utils._snapshot_svd_basis = original_svd
         utils.spd_solve = original_solve
+        utils.port_eigenvalue_bounds = original_plan
     V = c_basis(np.column_stack([capture['snapshots'], np.ones(len(G))]), C.diagonal())
-    info.update(full_rhs=nsolve, pre_svd_independent_order=V.shape[1], post_svd_order=post.shape[1])
+    info.update(full_rhs=nsolve, pre_svd_independent_order=V.shape[1], post_svd_order=post.shape[1],
+                common_spectral_plan_seconds=plan_seconds,
+                rhs_scope='enrichment RHS only; spectral interval preparation is common and reported separately')
     return V, post, info
 
 
@@ -420,7 +433,19 @@ def run(a):
             w.certify(witness_solver, alpha, rng, a.probes, a.delta/(2*G.shape[1]), E)
     witness_cost = witness_solver.counts().copy()
     oracle = [w.oracle(witness_solver) for w in witnesses] if len(G) <= 2000 else None
-    nvalidation = math.ceil(math.log(a.delta/2) / math.log1p(-a.risk))
+    joint_oracle = None
+    if len(G) <= 600 and a.witness_mode == 'joint':
+        # Independent dense energy factor, not the witness CG construction.
+        B = np.column_stack([np.sqrt(C.diagonal())[:, None]*(w.Q@w.W) for w in witnesses])
+        if E.shape[1]:
+            B -= (witness_solver.A@E)@(E.T@B)
+        chol = la.cholesky(witness_solver.A.toarray(), lower=True)
+        exact = la.solve_triangular(chol, B, lower=True)
+        opnorm = np.sqrt(max(0., la.eigvalsh(sym(exact@exact.T), subset_by_index=[len(G)-1, len(G)-1])[0]))
+        joint_oracle = dict(norm=float(opnorm), upper=witnesses[0].L,
+                            effectivity=float(witnesses[0].L/opnorm),
+                            bound_holds=bool(opnorm <= witnesses[0].L))
+    nvalidation = max(a.validation_samples, math.ceil(math.log(a.delta/2) / math.log1p(-a.risk)))
     # Frozen candidate/metric/witnesses: never use this stream for training.
     validation_h = parameters(ranges, np.random.default_rng(a.seed+3), nvalidation)
     bt = time.perf_counter()
@@ -430,20 +455,25 @@ def run(a):
                   if failures < nvalidation else 1.)
     validation = dict(samples=nvalidation, failures=failures, tolerance=a.tolerance, risk_requested=a.risk,
                       risk_upper=risk_upper, confidence_delta=a.delta, zero_failure_accept=failures == 0,
+                      risk_accepted=risk_upper <= a.risk,
                       bound_max=float(upper.max()), bound_median=float(np.median(upper)), seconds=time.perf_counter()-bt,
                       claim='continuous log-uniform HTC violation risk; NOT simultaneous safety of entire box')
     cover = cover_steady(K, H, G, V, witnesses, ranges, a.tolerance, a.cover_cells) if a.cover_cells else None
     audit = audit_steady(K, C, H, G, ranges, dict(stock_pre=stock_pre, stock_post=stock_post, pool_pre=V),
                          np.random.default_rng(a.seed+4), a.audit)
     out = dict(n=len(G), metadata=meta, seed=a.seed, ranges=ranges.tolist(), stock=baseline, pool=greedy,
-               witness=dict(alpha=alpha, costs=witness_cost, per_source=[w.info for w in witnesses], small_oracle=oracle),
+               witness=dict(alpha=alpha, costs=witness_cost, per_source=[w.info for w in witnesses], small_oracle=oracle,
+                            joint_operator_dense_oracle=joint_oracle),
                validation=validation, continuous_steady_cover=cover, steady_audit=audit, seconds=time.perf_counter()-started,
                total_pool_and_certificate_rhs=greedy['full_rhs']+witness_cost['rhs'],
+               configuration={key:str(value) if isinstance(value, Path) else value for key,value in vars(a).items()},
                scope='pre-SVD steady K-energy. No all-time transient acceptance. Ordinary floating point; no outward rounding.')
     a.output.parent.mkdir(parents=True, exist_ok=True)
     a.output.write_text(json.dumps(out, indent=2)+'\n')
     np.savez_compressed(a.output.with_suffix('.npz'), V=V, G=G, ranges=ranges,
-                        stock_pre=stock_pre, stock_post=stock_post, alpha=alpha)
+                        stock_pre=stock_pre, stock_post=stock_post, alpha=alpha,
+                        K0_reduced=sym(V.T@(K@V)), C_reduced=sym(V.T@(C@V)),
+                        H_reduced=np.asarray([sym(V.T@(J@V)) for J in H]), F_reduced=V.T@G)
     print(json.dumps(dict(stage='complete', n=len(G), stock_rhs=baseline['full_rhs'],
                          pool_rhs=greedy['full_rhs'], certificate_rhs=witness_cost['rhs'], validation=validation,
                          audit_max={name:max(row[name] for row in audit['rows']) for name in ['stock_pre','stock_post','pool_pre']},
@@ -466,6 +496,7 @@ if __name__ == '__main__':
     p.add_argument('--tolerance', type=float, default=.001)
     p.add_argument('--training-tolerance', type=float, default=.001)
     p.add_argument('--audit', type=int, default=8)
+    p.add_argument('--validation-samples', type=int, default=0)
     p.add_argument('--cover-cells', type=int, default=0)
     p.add_argument('--output', type=Path, required=True)
     args = p.parse_args()
@@ -473,4 +504,6 @@ if __name__ == '__main__':
         p.error('risk and delta must be in (0,1); probes and tolerances must be positive')
     if args.correction and args.cover_cells:
         p.error('the corrected-residual variant has no implemented continuous-box cover')
+    if min(args.pool, args.fit, args.deflate, args.audit, args.cover_cells, args.validation_samples) < 0:
+        p.error('pool, fit, deflate, audit, cover-cells and validation-samples must be nonnegative')
     run(args)

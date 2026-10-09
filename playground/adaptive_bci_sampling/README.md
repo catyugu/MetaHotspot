@@ -6,11 +6,17 @@
 给出整个连续盒上同时有效的**稳态界函数**；随机 HTC 留出验收认证的是分布风险，
 不是整个盒处处满足容差。本阶段不替换生产提取器，也不宣称全时间阶跃概率验收。
 阶段数据只保存在忽略提交的 `results/`，证明和复现脚本随 Git 分发。
+冻结配置的 364 / 47,085 / 122,400 DOF 稳态风险复核和五个小模型随机种子复核已完成。
+独立阶跃审计仍只覆盖指定 HTC、时刻及初始/稳态极限。
+已观察到认证在内的 RHS 数下降，但当前池搜索和 QR 的墙钟成本更高，不能宣称整体更快。
 
 ```bash
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
-python playground/adaptive_bci_sampling/probabilistic_extraction.py --mesh-mm 10 --deflate 20 --training-tolerance .0003 --delta 1e-7 --output playground/adaptive_bci_sampling/results/prob_small.json
-# 正式模型改为 --mesh-mm 1.5 / 1；训练池使用 --pool 32。
+python playground/adaptive_bci_sampling/probabilistic_extraction.py --mesh-mm 10 --seed 20261020 --pool 32 --deflate 20 --training-tolerance .0003 --delta 1e-7 --validation-samples 5000 --output playground/adaptive_bci_sampling/results/prob_small.json
+# 冻结配置正式模型：仅改为 --mesh-mm 1.5 / 1，输出分别为 prob_47k / prob_122k。
+python playground/adaptive_bci_sampling/audit_probabilistic.py --mesh-mm 10 --candidate playground/adaptive_bci_sampling/results/prob_small.npz --grid 5 --output playground/adaptive_bci_sampling/results/prob_small_step.json
+# 正式独立阶跃核查：--grid 2 --steps 64；4 个 HTC 角点、t=.01 / 1。
+# BE 的解析时间误差界和实际 CG 缺陷一并报告；通过这些点不代表全域全时间通过。
 # 使用实际 utils.py 基线，不截断的候选按每个输入分别评估，允许最终共享空间。
 # 原始谱范数界失败对照：--deflate 0。
 # 独立逐输入尾项对照：--witness-mode separate --probes 8。
@@ -19,7 +25,7 @@ python playground/adaptive_bci_sampling/probabilistic_extraction.py --mesh-mm 10
 
 具体实验数据及结果报告只保存在本地，不随 Git 分发；`records/` 和归档中的同名目录受忽略规则保护。仓库保留代码、证明、复现方法、文献核对及统一失败档案。历史记录中的提交号在历史压缩后可能不再可用。
 
-最新阶段是共同输入误差空间、正终端尾项与正式规模判决（本地记录：`records/POSITIVE_REACHABILITY_20261009.md`），
+此前的确定性阶段是共同输入误差空间、正终端尾项与正式规模判决（本地记录：`records/POSITIVE_REACHABILITY_20261009.md`），
 [完整推导](POSITIVE_SOURCE_TAIL_PROOF.md)包含连续盒、全时间参数尾项的
 Poisson/Jensen 归一化，以及实际 Galerkin 空间遗漏的模态可达锥充分界。
 参数尾项在约 ±10% 的子域得到紧界；全盒慢模、空间留出方向及符号损失
