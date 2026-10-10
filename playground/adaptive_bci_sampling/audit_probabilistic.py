@@ -30,7 +30,7 @@ def run(a):
                for name, V in bases.items()}
     hp = np.exp(np.log(ranges[:, 0])+np.asarray(list(itertools.product(np.linspace(0, 1, a.grid), repeat=len(ranges))))*
                 np.log(ranges[:, 1]/ranges[:, 0]))
-    alpha = metadata['witness']['alpha']
+    alpha = metadata['alpha'] if 'alpha' in metadata else metadata['witness']['alpha']
     rows, cost = [], []
     for h in hp:
         A = operator(K, H, h)

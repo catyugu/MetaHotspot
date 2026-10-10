@@ -1,10 +1,18 @@
 # 连续 HTC 域的全场误差认证研究
 
+2026-10-10 的新阶段是 [随机任务与同输入残差反馈判决](RANDOM_TASK_GATE_20261010.md)：
+一次共同辅助求解、解析全时间残差包围和循环内联合风险接受，
+在 364 DOF 三个种子上完成稳态与**全部时间**阶跃的连续 HTC 分布风险认证。
+[完整证明与算法](RANDOM_TASK_PROOF.md)给出任意有符号输入组合、初始极限和无穷尾段。
+总 RHS 为 89 / 83 / 93；原生产随机参照为 98 / 96 / 98。
+但认证墙钟仍远高于生产提取器，47k 正式模型预算内未接受且 RHS 增加，
+**尚未得到符合正式规模经济性要求的新算法**。不替换生产提取器。
+
 2026-10-10 的[单快照覆盖判决](ANCHOR_COVERAGE_GATE_20261010.md)已完成：
 逐输入 Robin 边界证书的单快照覆盖极小；同输入仿射见证在稳态改善覆盖，
 扩展原移位计划后提取 RHS 仍高于随机基线，尚无全时间证书，不作为新默认提取器。
 
-概率认证研究入口是 [`probabilistic_extraction.py`](probabilistic_extraction.py)，
+此前仅稳态的概率认证研究入口是 [`probabilistic_extraction.py`](probabilistic_extraction.py)，
 其[完整证明与量词说明](PROBABILISTIC_PROOF.md)区分容差、连续 HTC 分布上的超限风险、
 以及证书失败概率。逐输入度量、共同逆像误差方向和独立联合随机尾项见证
 给出整个连续盒上同时有效的**稳态界函数**；随机 HTC 留出验收认证的是分布风险，
@@ -62,6 +70,9 @@ Hankel 范数各有用途，不能替代这个验收；也不使用 SVD 后二�
 
 | 文件 | 职责 |
 |---|---|
+| `random_task_extraction.py` | 各源独立随机任务发现、稳态／时间残差校正与循环内联合风险接受 |
+| `diagonal_time_certificate.py` | 一次辅助求解的对角对偶界，零时刻到无穷的解析阶跃包围 |
+| `audit_random_task.py` | 小 FOM 完整谱独立核查，不作为全时间证明来源 |
 | `prepare_output_dynamics.py` | 重建固定输入驱动八极点候选 V，记录全部构造成本 |
 | `audit_output_step.py` | BE 时间误差解析界 + 实际 AMG-CG 缺陷，核查指定 h、t |
 | `dynamic_observability_tail.py` | 连续子域共同储能对照、一阶输入耦合输出与 Neumann 积分余项 |
