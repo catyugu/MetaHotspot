@@ -34,9 +34,16 @@ class DiagonalTimeCertificate:
         R0 = G-CV@self.F
         blocks = [R0] + [CV@ar-A@V for A,ar in zip([K]+H,self.Ar)]
         R = np.column_stack(blocks)
+        del blocks, CV
         # Weighted QR avoids squared-Gram cancellation near exact residuals.
         self.Tc = la.qr(R/np.sqrt(C.diagonal())[:,None],mode='economic',check_finite=False)[1]
         weighted=R/np.sqrt(D)[:,None] if inverse_lower is None else inverse_lower.whiten(R)
+        self.robin_lower=None
+        if inverse_lower is not None and inverse_lower.robin is not None:
+            Q=inverse_lower.robin['Q']
+            self.robin_projection=Q.T@weighted
+            weighted=weighted-Q@self.robin_projection
+            self.robin_lower=inverse_lower
         self.Td = la.qr(weighted,mode='economic',check_finite=False)[1]
         self.build_seconds = time.perf_counter()-started
 
@@ -47,6 +54,13 @@ class DiagonalTimeCertificate:
             J += x*T[:,p+(i+1)*self.r:p+(i+2)*self.r]
         return T[:,:p]@self.Z, J@U
 
+    def _dual_frame(self,h):
+        if self.robin_lower is None:
+            return self.Td
+        L=self.robin_lower.robin_cholesky(h)
+        low=la.solve_triangular(L,self.robin_projection,lower=True,check_finite=False)
+        return np.vstack([self.Td,low])
+
     def evaluate_matrix(self,h,epsilon=.001,early_reject=True):
         """PSD input-Gram propagation, avoiding independent numerator/denominator extrema."""
         start=time.perf_counter()
@@ -56,7 +70,7 @@ class DiagonalTimeCertificate:
         if lam[0]<=0:
             return dict(passed=False,reason='nonpositive reduced rate')
         Rc,Jc=self._coordinates(self.Tc,h,U)
-        Rd,Jd=self._coordinates(self.Td,h,U)
+        Rd,Jd=self._coordinates(self._dual_frame(h),h,U)
         rss=Rd+Jd@(F/lam[:,None]); q=sym(F.T@(F/lam[:,None]))
         steady2=max(0.,float(la.eigvalsh(sym(rss.T@rss),q)[-1]))
         steady=np.sqrt(steady2/(1+steady2))
@@ -146,7 +160,7 @@ class DiagonalTimeCertificate:
             return dict(passed=False,reason='nonpositive reduced rate')
         F=U.T@self.Fz
         Rc,Jc=self._coordinates(self.Tc,h,U)
-        Rd,Jd=self._coordinates(self.Td,h,U)
+        Rd,Jd=self._coordinates(self._dual_frame(h),h,U)
         # Steady certificate is Galerkin energy best-approximation, including
         # arbitrary signed input combinations and the reduced denominator.
         rss=Rd+Jd@(F/lam[:,None])

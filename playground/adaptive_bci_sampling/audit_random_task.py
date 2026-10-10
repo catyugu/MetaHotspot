@@ -15,6 +15,7 @@ from probabilistic_extraction import parameters,corners
 from diagonal_time_certificate import DiagonalTimeCertificate
 from affine_decay import AffineDecay
 from graph_inverse_lower import GraphInverseLower, column_partition
+from bipartite_inverse_lower import BipartiteInverseLower
 
 
 def run(a):
@@ -35,6 +36,11 @@ def run(a):
             decay.add(z,h)
     width=metadata.get('configuration',{}).get('graph_block_width',0)
     inverse_lower=GraphInverseLower(so.A,z,D,column_partition(meta['shape'],width)) if width else None
+    if metadata.get('configuration',{}).get('inverse_lower_kind')=='bipartite':
+        inverse_lower=BipartiteInverseLower(so.A,z,np.indices(meta['shape']).sum(axis=0).ravel()%2)
+    degree=metadata.get('configuration',{}).get('graph_robin_degree',-1)
+    if degree>=0:
+        inverse_lower.prepare_robin(H,G,ranges[:,0],meta['shape'],degree)
     cert=DiagonalTimeCertificate(K,C,H,G,V,D,alpha,decay=decay,inverse_lower=inverse_lower)
     evaluate=(cert.evaluate_matrix if metadata.get('configuration',{}).get('certificate_mode')=='matrix' else cert.evaluate)
     hp=np.vstack([corners(ranges),parameters(ranges,np.random.default_rng(a.seed),a.parameters)])

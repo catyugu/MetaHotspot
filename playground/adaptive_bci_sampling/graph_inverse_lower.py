@@ -44,13 +44,48 @@ class GraphInverseLower:
             block[1]=la.cholesky(block[1],lower=True,check_finite=False)
         self.statistics=dict(blocks=len(self.blocks),max_block=max(len(ids) for ids,_ in self.blocks),
                              retained_edges=len(i),factor_seconds=time.perf_counter()-start,
-                             whiten_calls=0,whiten_seconds=0.)
+                             whiten_calls=0,whiten_rhs_columns=0,whiten_seconds=0.)
+        self.robin=None
+
+    def prepare_robin(self,H,G,hmin,shape,degree):
+        """A projected positive Robin term is a LOWER operator, not a fitted tail."""
+        start=time.perf_counter()
+        ix,iy,iz=np.indices(shape)
+        x=(ix+.5)/shape[0];y=(iy+.5)/shape[1]
+        raw=[(np.cos(np.pi*k*x)*np.cos(np.pi*l*y)).ravel()
+             for k in range(degree+1) for l in range(degree+1)]
+        for g in G.T:
+            footprint=np.any(g.reshape(shape)!=0,axis=2)
+            raw.append(np.broadcast_to(footprint[:,:,None],shape).ravel())
+        raw=np.column_stack(raw)
+        factors=[];parameters=[]
+        for j,A in enumerate(H):
+            diag=A.diagonal();active=np.flatnonzero(diag>0)
+            if not len(active):
+                continue
+            Q,R,p=la.qr(raw[active],mode='economic',pivoting=True,check_finite=False)
+            rank=int(np.sum(np.abs(np.diag(R))>np.finfo(float).eps*max(raw[active].shape)*abs(R[0,0])))
+            F=np.zeros((len(diag),rank));F[active]=np.sqrt(diag[active])[:,None]*Q[:,:rank]
+            factors.append(F);parameters.extend([j]*rank)
+        F=np.column_stack(factors)
+        W=self.whiten(F)
+        Q,T=la.qr(W,mode='economic',check_finite=False)
+        self.robin=dict(Q=Q,T=T,parameters=np.asarray(parameters),hmin=np.asarray(hmin))
+        self.statistics.update(robin_rank=F.shape[1],robin_prepare_seconds=time.perf_counter()-start)
+
+    def robin_cholesky(self,h):
+        info=self.robin;delta=np.asarray(h)-info['hmin']
+        if np.any(delta<0):
+            raise ValueError('query outside the certified Robin lower endpoints')
+        T=info['T'];weights=delta[info['parameters']]
+        return la.cholesky(np.eye(len(T))+(T*weights)@T.T,lower=True,check_finite=False)
 
     def whiten(self,R):
         start=time.perf_counter(); output=np.empty_like(R)
         for ids,L in self.blocks:
             output[ids]=la.solve_triangular(L,R[ids],lower=True,check_finite=False)
         self.statistics['whiten_calls']+=1
+        self.statistics['whiten_rhs_columns']+=R.shape[1]
         self.statistics['whiten_seconds']+=time.perf_counter()-start
         return output
 

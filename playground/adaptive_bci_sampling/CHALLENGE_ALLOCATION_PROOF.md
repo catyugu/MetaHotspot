@@ -206,3 +206,76 @@ Case1 原型每块覆盖完整竖向柱，水平每边 2 个网格单元；这�
 Boman, Hendrickson (2003), https://doi.org/10.1137/S0895479801390637 。
 本原型将其用于全时间相对风险证书的残差对偶范数；不能将图比较
 本身命名为学术创新。必须看正式规模、同保证随机对照及完整墙钟。
+
+
+## 7. 正半定的粗 Robin 下更新
+
+只在原图下算子上增加能证明为下算子的 Robin 项。令 $Q_i$ 是边界
+自由度上的欧氏正交列，$F_i=H_i^{1/2}Q_i$，则
+$0\preceq F_iF_i^T\preceq H_i$。因此
+
+$$B(h)=B_0+\sum_i(h_i-a_i)F_iF_i^T\preceq A(h),\qquad B(h)\succ0.$$
+
+未保留的边界方向不是被忽略的误差尾项：$H_i-F_iF_i^T\succeq0$
+是显式算子不等式，原全秩 $B_0$ 仍控制这些方向。原型用有限个
+二维余弦模式及竖向投影的输入支撑掩码形成 $Q_i$，不求任何输入
+响应；这不是跨输入共享快照。每个参数的模式数固定，不形成参数网格。
+
+若 $B_0=L_0L_0^T$，将所有 $L_0^{-1}F_i$ 联合 QR 为 $QT$，
+$Q^TQ=I$，$\Delta(h)$ 是按参数重复的非负增量对角阵。对任意残差
+$R$，记 $Y=L_0^{-1}R$，则
+
+$$R^TB(h)^{-1}R=
+Y^T(I-QQ^T)Y+(Q^TY)^T(I+T\Delta(h)T^T)^{-1}(Q^TY).$$
+
+实现对白化残差正交余部作 QR，保留其全部 R 因子，再对小矩阵
+$I+T\Delta T^T$ 作 Cholesky；无需相减两个几乎相等的误差 Gram。
+每个 HTC 查询只更新一个小三角因子和原有约化动力学。
+该精确恒等式不是独立创新，相关低秩逆更新已有 Woodbury 理论。
+新增部件是否值得保留由正式成本判决决定，不能仅凭下界更紧宣布胜出。
+
+## 8. 具有完整空间保证的二部图 modified LDL 下算子
+
+图块下界丢掉块间的热传导方向，可能在细网格上变松。另一个原型
+保留全局稀疏三角结构，而不构造辅助响应空间。令
+$Z=diag(z_0)$，$S=ZA_-Z$；其非对角项非正且行和
+$\Gamma_i=z_i(A_-z)_i>0$。假设原图为二部图，Case1 的三维近邻网格满足它。
+
+第 $i$ 个消元步，pivot $d_i>0$，向后邻居列为 $a_j\le0$。
+精确 Schur 补生成邻居间的边，权重 $a_ja_k/d_i\ge0$。二部图保证
+原结构内没有这些邻居间边；原型丢弃每个**完整**新拉普拉斯边项，
+故近似 Schur 补低于精确 Schur 补。保留原稀疏非对角项，更新
+
+$$d_j\leftarrow d_j-a_j\sum_k a_k/d_i.$$
+
+更新后的行和为 $\Gamma_j-a_j\Gamma_i/d_i>0$，所以每一步仍是
+严格 grounded M-matrix；全部 pivot 为正，因子存在。以每一步精确
+消元的三角 congruence 归纳，得到
+
+$$A_-\succeq B_{MIC}:=Z^{-1}L\operatorname{diag}(d)L^TZ^{-1}\succ0.$$
+
+事实上 $B_{MIC}\succeq D_0$。对余下问题归纳假设其下因子覆盖
+对角行和。令 $w=-a\ge0$、$\sigma=\sum_jw_j$、$d_i=\Gamma_i+\sigma$。
+本步下因子与原对角行和之差的 Schur 补为
+
+$$\frac{\Gamma_i}{d_i}\left(diag(w)-ww^T/\sigma\right)\succeq0.$$
+
+它是加权方差矩阵；$\sigma=0$ 的孤点单独成立。逆序归纳完成
+$D_0\preceq B_{MIC}\preceq A_-\preceq A(h)$ 的证明。MIC 与分块图
+下界之间没有在此证明互相的序关系，但它们都不弱于原纯对角逆界。
+
+白化只需
+
+$$\operatorname{diag}(d)^{-1/2}L^{-1}ZR.$$
+
+这是完整状态尺寸的稀疏三角应用，不能当免费；账本记录应用的
+RHS 列数和耗时，与原始 $A(h)+sC$ 的 AMG-CG RHS 分开。复杂度
+约 $O(nnz(L)rp)$；初始因子对本二部图结构为线性规模，不要求完整
+模型稠密 Cholesky 或原系统逆像辅助库。可叠加第 7 节的正 Robin 下更新。
+
+modified incomplete Cholesky 及行和补偿已有先例，不是本项目发明：
+Gustafsson, A class of first order factorization methods, BIT 18 (1978), 142–156；
+Gustafsson, On modified incomplete cholesky factorization methods (1979),
+https://doi.org/10.1002/nme.1620140803 。本阶段证明的是这里实际实现的
+二部图、正向量缩放和丢弃完整边构造的下算子性质，并在完整时间风险
+循环中检验其效益，不把一般 IC 因子自动当作经过证明的逆上界。

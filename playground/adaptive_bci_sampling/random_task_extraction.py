@@ -18,6 +18,7 @@ from diagonal_time_certificate import DiagonalTimeCertificate
 from affine_decay import AffineDecay
 from risk_sequence import RiskEvidence
 from graph_inverse_lower import GraphInverseLower, column_partition
+from bipartite_inverse_lower import BipartiteInverseLower
 from metahotspot.macromodel import utils
 
 
@@ -82,10 +83,13 @@ def run(a):
     start=time.perf_counter()
     K,C,G,H,ranges,meta=case1_reconstruction(a.mesh_mm)
     baseline_start=time.perf_counter()
+    baseline_cpu_start=time.process_time()
     stock_pre,stock_post,baseline=stock(K,C,G,H,ranges,a.seed)
     baseline_seconds=time.perf_counter()-baseline_start
+    baseline_cpu_seconds=time.process_time()-baseline_cpu_start
     print(json.dumps(dict(stage='stock',n=len(G),rhs=baseline['full_rhs'],seconds=baseline_seconds)),flush=True)
     candidate_start=time.perf_counter()
+    candidate_cpu_start=time.process_time()
     plans=[np.r_[0.,p['shifts_per_s']] for p in baseline['per_port_plans']]
     local=[LocalTasks(K,C,H,G[:,j],ranges,plans[j]) for j in range(G.shape[1])]
     rng=np.random.default_rng(a.seed+1)
@@ -107,6 +111,11 @@ def run(a):
     decay.add(z,ranges[:,0])
     inverse_lower=(GraphInverseLower(solver.A,z,D,column_partition(meta['shape'],a.graph_block_width))
                    if a.graph_block_width else None)
+    if a.inverse_lower_kind=='bipartite':
+        colors=np.indices(meta['shape']).sum(axis=0).ravel()%2
+        inverse_lower=BipartiteInverseLower(solver.A,z,colors)
+    if a.graph_robin_degree>=0:
+        inverse_lower.prepare_robin(H,G,ranges[:,0],meta['shape'],a.graph_robin_degree)
     costs=[solver.counts()]
     refinement_history=[]
     cached_orders=None
@@ -289,10 +298,12 @@ def run(a):
     else:
         V=c_basis(np.column_stack([m.V for m in local]+[np.ones((len(G),1))]),C.diagonal())
     candidate_seconds=time.perf_counter()-candidate_start
+    candidate_cpu_seconds=time.process_time()-candidate_cpu_start
     audit=audit_steady(K,C,H,G,ranges,dict(stock_pre=stock_pre,stock_post=stock_post,task_pre=V),
                        np.random.default_rng(a.seed+100),a.audit)
     out=dict(n=len(G),metadata=meta,seed=a.seed,ranges=ranges.tolist(),stock=baseline,
              stock_wall_seconds=baseline_seconds,candidate_rhs=len(history),total_rhs=sum(c['rhs'] for c in costs),
+             stock_cpu_seconds=baseline_cpu_seconds,candidate_cpu_seconds=candidate_cpu_seconds,
              costs=counts(costs),candidate_seconds=candidate_seconds,
              common_spectral_plan_seconds=baseline['common_spectral_plan_seconds'],
              risk_accepted=risk_pass,risk=a.risk,delta=a.delta,alpha=alpha,
@@ -332,6 +343,9 @@ if __name__=='__main__':
                    help='maximum additional positive-witness RHS; zero reproduces the fixed-rate experiment')
     p.add_argument('--graph-block-width',type=int,default=0,
                    help='retain full vertical-column blocks of this horizontal cell width; zero uses diagonal inverse bound')
+    p.add_argument('--graph-robin-degree',type=int,default=-1,
+                   help='add a PSD coarse Robin lower operator using tensor cosine degree and port footprints')
+    p.add_argument('--inverse-lower-kind',choices=['block','bipartite'],default='block')
     p.add_argument('--risk',type=float,default=.01)
     p.add_argument('--risk-test',choices=['zero','mixture'],default='zero')
     p.add_argument('--risk-cap-factor',type=float,default=2.)
@@ -343,6 +357,8 @@ if __name__=='__main__':
     a=p.parse_args()
     if a.decay_budget and a.certificate_mode!='scalar':
         p.error('adaptive decay routing currently requires the monotone scalar certificate')
+    if a.graph_robin_degree>=0 and not a.graph_block_width and a.inverse_lower_kind=='block':
+        p.error('coarse Robin lower updates require a graph inverse lower operator')
     if not (0<a.risk<1 and 0<a.delta<1 and a.tournament>0 and a.checkpoint>0 and a.time_ratio>1
             and a.max_rhs>0 and a.feedback_batch>0 and a.training_tolerance>0 and a.tolerance>0 and a.audit>=0 and a.decay_budget>=0 and a.graph_block_width>=0 and a.risk_cap_factor>=1 and 0<=a.corner_mixture<1):
         p.error('invalid budget, probability or tolerance')
