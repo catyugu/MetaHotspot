@@ -19,6 +19,7 @@ from affine_decay import AffineDecay
 from risk_sequence import RiskEvidence
 from graph_inverse_lower import GraphInverseLower, column_partition
 from bipartite_inverse_lower import BipartiteInverseLower
+from signed_challenge_sampling import SignedChallengeSampler
 from metahotspot.macromodel import utils
 
 
@@ -93,6 +94,9 @@ def run(a):
     plans=[np.r_[0.,p['shifts_per_s']] for p in baseline['per_port_plans']]
     local=[LocalTasks(K,C,H,G[:,j],ranges,plans[j]) for j in range(G.shape[1])]
     rng=np.random.default_rng(a.seed+1)
+    signed_sampler=(SignedChallengeSampler(ranges,G,C.diagonal(),rng,
+                   exploration=a.signed_exploration,width=a.signed_width)
+                   if a.sampling_policy=='signed-challenge' else None)
     # Every task owns its own response space. Initial slopes cost no RHS.
     for j,m in enumerate(local):
         m.add(G[:,j]/C.diagonal())
@@ -150,11 +154,14 @@ def run(a):
                 for j,m in enumerate(local):
                     values=m.residual(np.repeat(h[None,:],len(plans[j]),axis=0),plans[j])
                     k=int(np.argmax(values)); candidates.append((float(values[k]),j,h,float(plans[j][k])))
+            if signed_sampler is not None and a.feedback=='residual':
+                signed_sampler.observe(h,[feedback_rhs[jj] for jj in range(len(local))],
+                                       D,inverse_lower,at_time=trigger_time)
             feedback_h=h.copy(); feedback_time=trigger_time
             trigger=None
         else:
             feedback_rhs={}; feedback_h=None; feedback_time=None
-            hp=parameters(ranges,rng,a.tournament)
+            hp=parameters(ranges,rng,a.tournament) if signed_sampler is None else []
             offset=int(rng.integers(len(local)))
             for ci,h in enumerate(hp):
                 if rng.random()<a.corner_mixture:
@@ -163,7 +170,13 @@ def run(a):
                 values=local[j].residual(np.repeat(h[None,:],len(plans[j]),axis=0),plans[j])
                 k=int(np.argmax(values))
                 candidates.append((float(values[k]),j,h,float(plans[j][k])))
-        value,j,h,s=max(candidates,key=lambda item:item[0])
+            if signed_sampler is not None:
+                hp1,j1,s1=signed_sampler.propose(local,plans)
+                score=float(local[j1].residual(hp1[None,:],[s1])[0])
+                candidates.append((score,j1,hp1,s1))
+        value,j,h,s=(signed_sampler.choose_feedback(candidates) if
+                     signed_sampler is not None and feedback_rhs else
+                     max(candidates,key=lambda item:item[0]))
         if force_check or (not feedback_rhs and value<=training) or (iteration and iteration%a.checkpoint==0):
             force_check=False
             # Snapshot spaces are frozen for this entire acceptance attempt.
@@ -311,6 +324,7 @@ def run(a):
              inverse_lower_statistics=None if inverse_lower is None else inverse_lower.statistics,
              epochs=epochs,history=history,local_orders=[m.V.shape[1] for m in local],order=V.shape[1],
              residual_queries=sum(m.queries for m in local),steady_audit=audit,
+             signed_sampler_counters=None if signed_sampler is None else signed_sampler.counters,
              configuration={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items()},
              seconds=time.perf_counter()-start,
              scope='joint continuous log-uniform HTC risk of steady and ALL-TIME step, arbitrary signed inputs; pre-SVD, exact-arithmetic theorem; no outward rounding')
@@ -329,6 +343,9 @@ if __name__=='__main__':
     p.add_argument('--mesh-mm',type=float,default=10)
     p.add_argument('--seed',type=int,default=20261030)
     p.add_argument('--tournament',type=int,default=4)
+    p.add_argument('--sampling-policy',choices=['tournament','signed-challenge'],default='tournament')
+    p.add_argument('--signed-exploration',type=float,default=.25)
+    p.add_argument('--signed-width',type=float,default=.15)
     p.add_argument('--corner-mixture',type=float,default=.5)
     p.add_argument('--checkpoint',type=int,default=32)
     p.add_argument('--feedback',choices=['residual','input'],default='residual')
@@ -360,6 +377,6 @@ if __name__=='__main__':
     if a.graph_robin_degree>=0 and not a.graph_block_width and a.inverse_lower_kind=='block':
         p.error('coarse Robin lower updates require a graph inverse lower operator')
     if not (0<a.risk<1 and 0<a.delta<1 and a.tournament>0 and a.checkpoint>0 and a.time_ratio>1
-            and a.max_rhs>0 and a.feedback_batch>0 and a.training_tolerance>0 and a.tolerance>0 and a.audit>=0 and a.decay_budget>=0 and a.graph_block_width>=0 and a.risk_cap_factor>=1 and 0<=a.corner_mixture<1):
+            and a.max_rhs>0 and 0<a.signed_exploration<=1 and a.signed_width>0 and a.feedback_batch>0 and a.training_tolerance>0 and a.tolerance>0 and a.audit>=0 and a.decay_budget>=0 and a.graph_block_width>=0 and a.risk_cap_factor>=1 and 0<=a.corner_mixture<1):
         p.error('invalid budget, probability or tolerance')
     run(a)
