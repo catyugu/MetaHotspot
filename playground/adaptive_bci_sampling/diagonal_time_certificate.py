@@ -45,6 +45,95 @@ class DiagonalTimeCertificate:
             J += x*T[:,p+(i+1)*self.r:p+(i+2)*self.r]
         return T[:,:p]@self.Z, J@U
 
+    def evaluate_matrix(self,h,epsilon=.001,early_reject=True):
+        """PSD input-Gram propagation, avoiding independent numerator/denominator extrema."""
+        start=time.perf_counter()
+        A=self.Ar[0]+np.einsum('i,ijk->jk',h,self.Ar[1:])
+        lam,U=la.eigh(sym(A)); F=U.T@self.Fz
+        if lam[0]<=0:
+            return dict(passed=False,reason='nonpositive reduced rate')
+        Rc,Jc=self._coordinates(self.Tc,h,U)
+        Rd,Jd=self._coordinates(self.Td,h,U)
+        rss=Rd+Jd@(F/lam[:,None]); q=sym(F.T@(F/lam[:,None]))
+        steady2=max(0.,float(la.eigvalsh(sym(rss.T@rss),q)[-1]))
+        steady=np.sqrt(steady2/(1+steady2))
+        if early_reject and steady>epsilon:
+            return dict(passed=False,steady_bound=float(steady),step_bound=None,
+                        reason='steady enclosure failed',seconds=time.perf_counter()-start)
+        nc=la.norm(Jc,axis=0)*la.norm(F,axis=1)
+        nd=la.norm(Jd,axis=0)*la.norm(F,axis=1)
+        t0=1e-7/lam[-1]; T=40/lam[0]
+        edge_count=math.ceil(math.log(T/t0)/math.log(self.ratio))
+        edges=np.r_[t0*self.ratio**np.arange(edge_count),T]
+        aa,bb=edges[:-1],edges[1:];mm=(aa+bb)/2; widths=bb-aa
+        rates=np.exp(-mm[:,None]*lam)
+        def fields(J,values):
+            coefficients=(values[:,:,None]*F[None,:,:]).transpose(1,0,2).reshape(len(lam),-1)
+            return (J@coefficients).reshape(J.shape[0],len(mm),F.shape[1]).transpose(1,0,2)
+        identity=np.eye(F.shape[1])
+        def gram(fields_):
+            return np.einsum('bki,bkj->bij',fields_,fields_)
+        def add_remainder(M,err):
+            scale=np.sqrt(np.maximum(np.trace(M,axis1=-2,axis2=-1),0.))
+            theta=np.divide(err,scale,out=np.zeros_like(scale),where=scale>0)
+            # Cross term bounded by matrix Young; handle zero Gram separately.
+            result=(1+theta[...,None,None])*M+(err*err+err*scale)[...,None,None]*identity
+            return np.where((scale==0)[...,None,None],(err*err)[...,None,None]*identity,result)
+        def enclosure(R0,J,norms):
+            derivatives=[fields(J,-np.expm1(-mm[:,None]*lam)/lam)+R0[None,:,:]]
+            derivatives += [fields(J,rates*((-lam)**(k-1))) for k in range(1,4)]
+            delta=widths[:,None,None]/2
+            r,r1,r2,r3=derivatives
+            controls=[r-delta*r1+delta**2*r2/2-delta**3*r3/6,
+                      r-delta*r1/3-delta**2*r2/6+delta**3*r3/6,
+                      r+delta*r1/3-delta**2*r2/6-delta**3*r3/6,
+                      r+delta*r1+delta**2*r2/2+delta**3*r3/6]
+            M=gram(controls[0])
+            for control in controls[1:]:
+                difference=gram(control)-M
+                l,Z=np.linalg.eigh((difference+difference.transpose(0,2,1))/2)
+                M += (Z*np.maximum(l,0.)[:,None,:])@Z.transpose(0,2,1)
+            remainder=(widths/2)**4/24*((np.exp(-aa[:,None]*lam)*lam**3)@norms)
+            return add_remainder(M,remainder)
+        Mc=enclosure(Rc,Jc,nc);Md=enclosure(Rd,Jd,nd)
+        response=(-np.expm1(-edges[:,None]*lam)/lam)[:,:,None]*F[None,:,:]
+        P=gram(response)
+        pl,pU=np.linalg.eigh(P)
+        if np.any(pl<=0):
+            return dict(passed=False,steady_bound=float(steady),step_bound=None,
+                        reason='nonpositive reduced input Gram',seconds=time.perf_counter()-start)
+        roots=(pU/np.sqrt(pl)[:,None,:])@pU.transpose(0,2,1)
+        def relative_gram(B,i):
+            value=roots[i]@B@roots[i]
+            return max(0.,float(la.eigvalsh(sym(value))[-1]))
+        initial=t0*la.norm(Rc,2)+t0*t0*sum(nc)/2
+        B=initial*initial*identity
+        worst=np.sqrt(relative_gram(B,0))
+        target=np.sqrt(epsilon)/(1+np.sqrt(epsilon))
+        for i,(dt,mc,md) in enumerate(zip(widths,Mc,Md)):
+            attenuation=np.exp(-self.alpha*dt)
+            integral=-np.expm1(-self.alpha*dt)/self.alpha
+            Bd=attenuation*B+integral*md
+            b0=np.sqrt(max(0.,la.eigvalsh(sym(B))[-1]))
+            b1=attenuation*b0+integral*np.sqrt(max(0.,la.eigvalsh(sym(mc))[-1]))
+            Bc=b1*b1*identity
+            matrix_eta=np.sqrt(max(relative_gram(B,i),relative_gram(Bd,i)))
+            scalar_eta=max(b0,b1)/np.sqrt(pl[i,0])
+            worst=max(worst,min(matrix_eta,scalar_eta))
+            B=Bd if relative_gram(Bd,i+1)<=relative_gram(Bc,i+1) else Bc
+            if early_reject and worst>target:
+                influence=widths[:i+1]*np.trace(Md[:i+1],axis1=1,axis2=2)*np.exp(-self.alpha*(bb[i]-bb[:i+1]))
+                return dict(passed=False,steady_bound=float(steady),step_bound=float(worst/(1-worst)) if worst<1 else None,
+                            reason='matrix time enclosure failed',intervals=i+1,failure_time=float(bb[i]),
+                            forcing_time=float(mm[int(np.argmax(influence))]),seconds=time.perf_counter()-start)
+        tailerr=sum(nd/lam*np.exp(-lam*T))
+        Mt=add_remainder(rss.T@rss,np.asarray(tailerr))
+        worst=max(worst,np.sqrt(max(relative_gram(B,len(mm)),relative_gram(Mt/self.alpha,len(mm)))))
+        step=float(worst/(1-worst)) if worst<1 else None
+        return dict(passed=bool(steady<=epsilon and worst<=target),steady_bound=float(steady),step_bound=step,
+                    intervals=len(mm),failure_time=float(T) if worst>target else None,
+                    seconds=time.perf_counter()-start,reason='matrix all-time enclosures evaluated')
+
     def evaluate(self,h,epsilon=.001,early_reject=True):
         start=time.perf_counter()
         A=self.Ar[0]+np.einsum('i,ijk->jk',h,self.Ar[1:])
@@ -105,8 +194,11 @@ class DiagonalTimeCertificate:
             worst=max(worst,max(ec,en)/lower)
             ec=en; intervals+=1
             if early_reject and worst > target:
+                influence=widths[:intervals]*rd[:intervals]**2*np.exp(-self.alpha*(b-bb[:intervals]))
+                forcing_time=float(mm[int(np.argmax(influence))])
                 return dict(passed=False,steady_bound=float(steady),step_bound=float(worst/(1-worst)) if worst<1 else None,
-                            reason='time enclosure failed',intervals=intervals,failure_time=float(b),seconds=time.perf_counter()-start)
+                            reason='time enclosure failed',intervals=intervals,failure_time=float(b),
+                            forcing_time=forcing_time,seconds=time.perf_counter()-start)
         tail=la.norm(rss,2)+sum(nd/lam*np.exp(-lam*tail_time))
         worst=max(worst,max(ec,tail/np.sqrt(self.alpha))/den(tail_time))
         step=float(worst/(1-worst)) if worst<1 else None

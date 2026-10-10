@@ -153,6 +153,7 @@ def run(a):
                 a.output.parent.mkdir(parents=True,exist_ok=True)
                 np.savez_compressed(a.output.with_name(a.output.stem+'_epoch'+str(len(epochs)+1)+'.npz'),V=V)
             certificate=DiagonalTimeCertificate(K,C,H,G,V,D,alpha,a.time_ratio)
+            evaluate=(certificate.evaluate_matrix if a.certificate_mode=='matrix' else certificate.evaluate)
             epoch=len(epochs)+1
             delta_epoch=a.delta/(epoch*(epoch+1))
             n=math.ceil(math.log(delta_epoch)/math.log1p(-a.risk))
@@ -160,17 +161,18 @@ def run(a):
             rejected=None; diagnostics=[]; certification_start=time.perf_counter()
             # Corner checks are extra deterministic rejection opportunities;
             # only the following fresh iid log-uniform stream gives risk mass.
-            corner_checks=(corners(ranges) if len(ranges)<=4 else
-                           np.asarray([ranges[np.arange(len(ranges)),rng.integers(0,2,len(ranges))] for _ in range(16)]))
+            corner_checks=((corners(ranges) if len(ranges)<=4 else
+                            np.asarray([ranges[np.arange(len(ranges)),rng.integers(0,2,len(ranges))] for _ in range(16)]))
+                           if a.accept_corners else [])
             for hp in corner_checks:
-                d=certificate.evaluate(hp,a.tolerance)
+                d=evaluate(hp,a.tolerance)
                 diagnostics.append(d)
                 if not d['passed']:
                     rejected=hp; break
             checked=0
             if rejected is None:
                 for hp in parameters(ranges,vrng,n):
-                    d=certificate.evaluate(hp,a.tolerance)
+                    d=evaluate(hp,a.tolerance)
                     diagnostics.append(d); checked+=1
                     if not d['passed']:
                         rejected=hp; break
@@ -188,7 +190,10 @@ def run(a):
             if rejected is None:
                 risk_pass=True; break
             trigger=rejected
-            failure_time=diagnostics[-1].get('failure_time')
+            failure_time=(diagnostics[-1].get('forcing_time') if a.time_feedback=='dominant' else
+                          diagnostics[-1].get('failure_time'))
+            if failure_time is None:
+                failure_time=diagnostics[-1].get('failure_time')
             trigger_time=failure_time
             if failure_time and a.feedback=='input':
                 # A temporal rejection proposes new real matching points. The
@@ -250,10 +255,13 @@ if __name__=='__main__':
     p.add_argument('--corner-mixture',type=float,default=.5)
     p.add_argument('--checkpoint',type=int,default=32)
     p.add_argument('--feedback',choices=['residual','input'],default='residual')
+    p.add_argument('--time-feedback',choices=['dominant','failure'],default='dominant')
+    p.add_argument('--accept-corners',action='store_true',help='additional box-style rejection checks; not required for distribution risk')
     p.add_argument('--feedback-batch',type=int,default=4)
     p.add_argument('--training-tolerance',type=float,default=.001)
     p.add_argument('--tolerance',type=float,default=.001)
     p.add_argument('--time-ratio',type=float,default=1.1)
+    p.add_argument('--certificate-mode',choices=['matrix','scalar'],default='matrix')
     p.add_argument('--risk',type=float,default=.01)
     p.add_argument('--delta',type=float,default=1e-6)
     p.add_argument('--max-rounds','--max-rhs',dest='max_rhs',type=int,default=180,

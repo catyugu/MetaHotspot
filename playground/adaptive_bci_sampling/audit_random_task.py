@@ -26,6 +26,8 @@ def run(a):
     D=(so.A@z)/z;alpha=float(min(D/C.diagonal()))
     diagonal_margin=float(la.eigvalsh(so.A.toarray()-np.diag(D))[0])
     cert=DiagonalTimeCertificate(K,C,H,G,V,D,alpha)
+    metadata=json.loads(a.candidate.with_suffix('.json').read_text())
+    evaluate=(cert.evaluate_matrix if metadata.get('configuration',{}).get('certificate_mode')=='matrix' else cert.evaluate)
     hp=np.vstack([corners(ranges),parameters(ranges,np.random.default_rng(a.seed),a.parameters)])
     rows=[]
     for h in hp:
@@ -46,7 +48,7 @@ def run(a):
             error=relative(S-Sr,S,C)
             if error>maxstep:
                 maxstep=error;argmax=float(t)
-        bound=cert.evaluate(h,early_reject=False)
+        bound=evaluate(h,early_reject=False)
         rows.append(dict(h=h.tolist(),initial=initial,steady=steady,sampled_step=maxstep,
                          argmax=argmax,bound=bound,
                          steady_bound_holds=steady<=bound['steady_bound']+1e-8,
