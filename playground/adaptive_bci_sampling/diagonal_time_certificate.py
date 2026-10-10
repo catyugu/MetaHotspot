@@ -11,11 +11,12 @@ from numerics import sym, f
 
 
 class DiagonalTimeCertificate:
-    def __init__(self, K, C, H, G, V, D, alpha, time_ratio=1.1):
+    def __init__(self, K, C, H, G, V, D, alpha, time_ratio=1.1, decay=None, inverse_lower=None):
         started = time.perf_counter()
         if np.any(D <= 0) or alpha <= 0 or time_ratio <= 1:
             raise ValueError('invalid diagonal certificate or time ratio')
         self.alpha, self.ratio = alpha, time_ratio
+        self.decay = decay
         self.r = V.shape[1]
         mass = sym(V.T @ (C @ V))
         # Caller uses a C-orthonormal basis; do not silently assume this.
@@ -35,7 +36,8 @@ class DiagonalTimeCertificate:
         R = np.column_stack(blocks)
         # Weighted QR avoids squared-Gram cancellation near exact residuals.
         self.Tc = la.qr(R/np.sqrt(C.diagonal())[:,None],mode='economic',check_finite=False)[1]
-        self.Td = la.qr(R/np.sqrt(D)[:,None],mode='economic',check_finite=False)[1]
+        weighted=R/np.sqrt(D)[:,None] if inverse_lower is None else inverse_lower.whiten(R)
+        self.Td = la.qr(weighted,mode='economic',check_finite=False)[1]
         self.build_seconds = time.perf_counter()-started
 
     def _coordinates(self,T,h,U):
@@ -48,6 +50,7 @@ class DiagonalTimeCertificate:
     def evaluate_matrix(self,h,epsilon=.001,early_reject=True):
         """PSD input-Gram propagation, avoiding independent numerator/denominator extrema."""
         start=time.perf_counter()
+        alpha = self.alpha if self.decay is None else self.decay(h)
         A=self.Ar[0]+np.einsum('i,ijk->jk',h,self.Ar[1:])
         lam,U=la.eigh(sym(A)); F=U.T@self.Fz
         if lam[0]<=0:
@@ -111,8 +114,8 @@ class DiagonalTimeCertificate:
         worst=np.sqrt(relative_gram(B,0))
         target=np.sqrt(epsilon)/(1+np.sqrt(epsilon))
         for i,(dt,mc,md) in enumerate(zip(widths,Mc,Md)):
-            attenuation=np.exp(-self.alpha*dt)
-            integral=-np.expm1(-self.alpha*dt)/self.alpha
+            attenuation=np.exp(-alpha*dt)
+            integral=-np.expm1(-alpha*dt)/alpha
             Bd=attenuation*B+integral*md
             b0=np.sqrt(max(0.,la.eigvalsh(sym(B))[-1]))
             b1=attenuation*b0+integral*np.sqrt(max(0.,la.eigvalsh(sym(mc))[-1]))
@@ -122,13 +125,13 @@ class DiagonalTimeCertificate:
             worst=max(worst,min(matrix_eta,scalar_eta))
             B=Bd if relative_gram(Bd,i+1)<=relative_gram(Bc,i+1) else Bc
             if early_reject and worst>target:
-                influence=widths[:i+1]*np.trace(Md[:i+1],axis1=1,axis2=2)*np.exp(-self.alpha*(bb[i]-bb[:i+1]))
+                influence=widths[:i+1]*np.trace(Md[:i+1],axis1=1,axis2=2)*np.exp(-alpha*(bb[i]-bb[:i+1]))
                 return dict(passed=False,steady_bound=float(steady),step_bound=float(worst/(1-worst)) if worst<1 else None,
                             reason='matrix time enclosure failed',intervals=i+1,failure_time=float(bb[i]),
                             forcing_time=float(mm[int(np.argmax(influence))]),seconds=time.perf_counter()-start)
         tailerr=sum(nd/lam*np.exp(-lam*T))
         Mt=add_remainder(rss.T@rss,np.asarray(tailerr))
-        worst=max(worst,np.sqrt(max(relative_gram(B,len(mm)),relative_gram(Mt/self.alpha,len(mm)))))
+        worst=max(worst,np.sqrt(max(relative_gram(B,len(mm)),relative_gram(Mt/alpha,len(mm)))))
         step=float(worst/(1-worst)) if worst<1 else None
         return dict(passed=bool(steady<=epsilon and worst<=target),steady_bound=float(steady),step_bound=step,
                     intervals=len(mm),failure_time=float(T) if worst>target else None,
@@ -136,6 +139,7 @@ class DiagonalTimeCertificate:
 
     def evaluate(self,h,epsilon=.001,early_reject=True):
         start=time.perf_counter()
+        alpha = self.alpha if self.decay is None else self.decay(h)
         A=self.Ar[0]+np.einsum('i,ijk->jk',h,self.Ar[1:])
         lam,U=la.eigh(sym(A))
         if lam[0] <= 0:
@@ -187,20 +191,20 @@ class DiagonalTimeCertificate:
         step_values=(-np.expm1(-aa[:,None]*lam)/lam)[:,:,None]*F[None,:,:]
         denominators=np.linalg.svd(step_values,compute_uv=False)[:,-1]
         for a,b,dt,rci,rdi,lower in zip(aa,bb,widths,rc,rd,denominators):
-            attenuation=np.exp(-self.alpha*dt)
-            integral=-np.expm1(-self.alpha*dt)/self.alpha
+            attenuation=np.exp(-alpha*dt)
+            integral=-np.expm1(-alpha*dt)/alpha
             en=min(attenuation*ec+integral*rci,
                    np.sqrt(attenuation*ec*ec+integral*rdi*rdi))
             worst=max(worst,max(ec,en)/lower)
             ec=en; intervals+=1
             if early_reject and worst > target:
-                influence=widths[:intervals]*rd[:intervals]**2*np.exp(-self.alpha*(b-bb[:intervals]))
+                influence=widths[:intervals]*rd[:intervals]**2*np.exp(-alpha*(b-bb[:intervals]))
                 forcing_time=float(mm[int(np.argmax(influence))])
                 return dict(passed=False,steady_bound=float(steady),step_bound=float(worst/(1-worst)) if worst<1 else None,
                             reason='time enclosure failed',intervals=intervals,failure_time=float(b),
                             forcing_time=forcing_time,seconds=time.perf_counter()-start)
         tail=la.norm(rss,2)+sum(nd/lam*np.exp(-lam*tail_time))
-        worst=max(worst,max(ec,tail/np.sqrt(self.alpha))/den(tail_time))
+        worst=max(worst,max(ec,tail/np.sqrt(alpha))/den(tail_time))
         step=float(worst/(1-worst)) if worst<1 else None
         return dict(passed=bool(steady<=epsilon and worst<=target),steady_bound=float(steady),
                     step_bound=step,intervals=intervals,seconds=time.perf_counter()-start,

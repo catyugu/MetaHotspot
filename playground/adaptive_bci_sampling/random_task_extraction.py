@@ -4,6 +4,7 @@ See RANDOM_TASK_PROOF.md. No shared response space during snapshot selection.
 Certificates concern steady K-energy and ALL-TIME step C-energy before SVD.
 """
 import argparse
+import copy
 import json
 import math
 import time
@@ -14,6 +15,9 @@ from case1_system import case1_reconstruction
 from numerics import Solver, operator, c_basis, sym, counts, f as f_local
 from probabilistic_extraction import stock, parameters, corners, audit_steady
 from diagonal_time_certificate import DiagonalTimeCertificate
+from affine_decay import AffineDecay
+from risk_sequence import RiskEvidence
+from graph_inverse_lower import GraphInverseLower, column_partition
 from metahotspot.macromodel import utils
 
 
@@ -99,7 +103,13 @@ def run(a):
     if np.any(D<=0):
         raise ValueError('positive diagonal certificate required')
     alpha=float(min(D/C.diagonal()))
+    decay=AffineDecay(K,C,H,alpha)
+    decay.add(z,ranges[:,0])
+    inverse_lower=(GraphInverseLower(solver.A,z,D,column_partition(meta['shape'],a.graph_block_width))
+                   if a.graph_block_width else None)
     costs=[solver.counts()]
+    refinement_history=[]
+    cached_orders=None
     history=[]; epochs=[]
     training=a.training_tolerance
     certificate=None; risk_pass=False; trigger=None; trigger_time=None; force_check=False
@@ -152,13 +162,21 @@ def run(a):
             if len(G)<=2000:
                 a.output.parent.mkdir(parents=True,exist_ok=True)
                 np.savez_compressed(a.output.with_name(a.output.stem+'_epoch'+str(len(epochs)+1)+'.npz'),V=V)
-            certificate=DiagonalTimeCertificate(K,C,H,G,V,D,alpha,a.time_ratio)
+            orders=tuple(m.V.shape[1] for m in local)
+            if certificate is None or orders!=cached_orders:
+                certificate=DiagonalTimeCertificate(K,C,H,G,V,D,alpha,a.time_ratio,
+                                                     decay if a.decay_budget else None,inverse_lower)
+                cached_orders=orders
+                certificate_build_seconds=certificate.build_seconds
+            else:
+                certificate_build_seconds=0.
             evaluate=(certificate.evaluate_matrix if a.certificate_mode=='matrix' else certificate.evaluate)
             epoch=len(epochs)+1
             delta_epoch=a.delta/(epoch*(epoch+1))
             n=math.ceil(math.log(delta_epoch)/math.log1p(-a.risk))
             vrng=np.random.default_rng(np.random.SeedSequence([a.seed,20261010,epoch]))
             rejected=None; diagnostics=[]; certification_start=time.perf_counter()
+            rejection_diagnostic=None
             # Corner checks are extra deterministic rejection opportunities;
             # only the following fresh iid log-uniform stream gives risk mass.
             corner_checks=((corners(ranges) if len(ranges)<=4 else
@@ -168,32 +186,77 @@ def run(a):
                 d=evaluate(hp,a.tolerance)
                 diagnostics.append(d)
                 if not d['passed']:
-                    rejected=hp; break
+                    rejected=hp; rejection_diagnostic=d; break
             checked=0
+            failures=0
+            evidence=None
             if rejected is None:
-                for hp in parameters(ranges,vrng,n):
+                cap=n if a.risk_test=='zero' else math.ceil(n*a.risk_cap_factor)
+                evidence=(RiskEvidence(a.risk,delta_epoch,cap) if a.risk_test=='mixture' else None)
+                first_failure=None
+                for hp in parameters(ranges,vrng,cap):
                     d=evaluate(hp,a.tolerance)
                     diagnostics.append(d); checked+=1
                     if not d['passed']:
-                        rejected=hp; break
+                        failures+=1
+                        if first_failure is None:
+                            first_failure=(hp.copy(),d)
+                        if evidence is None:
+                            rejected=hp; rejection_diagnostic=d; break
+                    if evidence is not None:
+                        verdict=evidence.update(not d['passed'])
+                        if verdict=='accept':
+                            break
+                        if verdict=='reject':
+                            rejected,rejection_diagnostic=first_failure
+                            break
             ep=dict(epoch=epoch,delta=delta_epoch,required=n,checked=checked,
+                    failures=failures,risk_test=a.risk_test,
+                    log_evidence=None if evidence is None else evidence.log_evidence,
                     accepted=rejected is None,rhs=len(history),order=V.shape[1],
-                    certificate_build_seconds=certificate.build_seconds,
+                    certificate_build_seconds=certificate_build_seconds,
                     check_seconds=time.perf_counter()-certification_start,
                     max_steady_bound=max(d.get('steady_bound',float('inf')) for d in diagnostics),
                     max_step_bound=(max(d['step_bound'] for d in diagnostics if d.get('step_bound') is not None)
                                     if any(d.get('step_bound') is not None for d in diagnostics) else None),
                     reject_h=None if rejected is None else rejected.tolist(),
-                    last_diagnostic=diagnostics[-1])
+                    last_diagnostic=rejection_diagnostic if rejected is not None else diagnostics[-1])
             epochs.append(ep)
             print(json.dumps(dict(stage='epoch',n=len(G),**ep)),flush=True)
             if rejected is None:
                 risk_pass=True; break
+            if (len(refinement_history)<a.decay_budget and
+                    ep['last_diagnostic'].get('reason')!='steady enclosure failed'):
+                # A Ritz rate is an UPPER bound. It is used only to decide
+                # whether to buy a positive witness, NEVER for acceptance.
+                optimistic=copy.copy(certificate)
+                upper=float(la.eigvalsh(sym(certificate.Ar[0]+np.einsum(
+                    'i,ijk->jk',rejected,certificate.Ar[1:])))[0])
+                optimistic.decay=lambda hp: upper
+                optimistic_evaluate=(optimistic.evaluate_matrix if a.certificate_mode=='matrix'
+                                     else optimistic.evaluate)
+                possible=optimistic_evaluate(rejected,a.tolerance)['passed']
+                if possible:
+                    before=decay(rejected)
+                    witness_solver=Solver(operator(K,H,rejected))
+                    witness=witness_solver.solve(C.diagonal())
+                    costs.append(witness_solver.counts())
+                    decay.add(witness,rejected)
+                    after=decay(rejected)
+                    refinement_history.append(dict(h=rejected.tolist(),before=before,
+                                                   after=after,ritz_upper=upper))
+                    print(json.dumps(dict(stage='decay_refinement',n=len(G),
+                                          **refinement_history[-1])),flush=True)
+                    # The witness depends on this failed challenge. Freeze the
+                    # new certificate, then RESTART an independent risk stream.
+                    # It must not retroactively validate already seen samples.
+                    force_check=True
+                    continue
             trigger=rejected
-            failure_time=(diagnostics[-1].get('forcing_time') if a.time_feedback=='dominant' else
-                          diagnostics[-1].get('failure_time'))
+            failure_time=(ep['last_diagnostic'].get('forcing_time') if a.time_feedback=='dominant' else
+                          ep['last_diagnostic'].get('failure_time'))
             if failure_time is None:
-                failure_time=diagnostics[-1].get('failure_time')
+                failure_time=ep['last_diagnostic'].get('failure_time')
             trigger_time=failure_time
             if failure_time and a.feedback=='input':
                 # A temporal rejection proposes new real matching points. The
@@ -233,6 +296,8 @@ def run(a):
              costs=counts(costs),candidate_seconds=candidate_seconds,
              common_spectral_plan_seconds=baseline['common_spectral_plan_seconds'],
              risk_accepted=risk_pass,risk=a.risk,delta=a.delta,alpha=alpha,
+             decay_refinements=refinement_history,
+             inverse_lower_statistics=None if inverse_lower is None else inverse_lower.statistics,
              epochs=epochs,history=history,local_orders=[m.V.shape[1] for m in local],order=V.shape[1],
              residual_queries=sum(m.queries for m in local),steady_audit=audit,
              configuration={k:str(v) if isinstance(v,Path) else v for k,v in vars(a).items()},
@@ -242,7 +307,8 @@ def run(a):
     a.output.write_text(json.dumps(out,indent=2)+'\n')
     np.savez_compressed(a.output.with_suffix('.npz'),V=V,G=G,ranges=ranges,stock_pre=stock_pre,stock_post=stock_post,alpha=alpha,
                         K0_reduced=sym(V.T@(K@V)),C_reduced=sym(V.T@(C@V)),
-                        H_reduced=np.asarray([sym(V.T@(A@V)) for A in H]),F_reduced=V.T@G)
+                        H_reduced=np.asarray([sym(V.T@(A@V)) for A in H]),F_reduced=V.T@G,
+                        decay_vectors=np.asarray(decay.vectors),decay_anchors=np.asarray(decay.anchors))
     print(json.dumps(dict(stage='complete',n=len(G),rhs=out['total_rhs'],accepted=risk_pass,
                          stock_rhs=baseline['full_rhs'],seconds=candidate_seconds,order=V.shape[1])),flush=True)
 
@@ -262,14 +328,22 @@ if __name__=='__main__':
     p.add_argument('--tolerance',type=float,default=.001)
     p.add_argument('--time-ratio',type=float,default=1.1)
     p.add_argument('--certificate-mode',choices=['matrix','scalar'],default='matrix')
+    p.add_argument('--decay-budget',type=int,default=0,
+                   help='maximum additional positive-witness RHS; zero reproduces the fixed-rate experiment')
+    p.add_argument('--graph-block-width',type=int,default=0,
+                   help='retain full vertical-column blocks of this horizontal cell width; zero uses diagonal inverse bound')
     p.add_argument('--risk',type=float,default=.01)
+    p.add_argument('--risk-test',choices=['zero','mixture'],default='zero')
+    p.add_argument('--risk-cap-factor',type=float,default=2.)
     p.add_argument('--delta',type=float,default=1e-6)
     p.add_argument('--max-rounds','--max-rhs',dest='max_rhs',type=int,default=180,
                    help='outer-loop round budget including certificate attempts; --max-rhs is a legacy alias')
     p.add_argument('--audit',type=int,default=4)
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
+    if a.decay_budget and a.certificate_mode!='scalar':
+        p.error('adaptive decay routing currently requires the monotone scalar certificate')
     if not (0<a.risk<1 and 0<a.delta<1 and a.tournament>0 and a.checkpoint>0 and a.time_ratio>1
-            and a.max_rhs>0 and a.feedback_batch>0 and a.training_tolerance>0 and a.tolerance>0 and a.audit>=0 and 0<=a.corner_mixture<1):
+            and a.max_rhs>0 and a.feedback_batch>0 and a.training_tolerance>0 and a.tolerance>0 and a.audit>=0 and a.decay_budget>=0 and a.graph_block_width>=0 and a.risk_cap_factor>=1 and 0<=a.corner_mixture<1):
         p.error('invalid budget, probability or tolerance')
     run(a)

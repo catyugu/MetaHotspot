@@ -13,6 +13,8 @@ from case1_system import case1_reconstruction
 from numerics import Solver,operator,sym,relative,f
 from probabilistic_extraction import parameters,corners
 from diagonal_time_certificate import DiagonalTimeCertificate
+from affine_decay import AffineDecay
+from graph_inverse_lower import GraphInverseLower, column_partition
 
 
 def run(a):
@@ -25,8 +27,15 @@ def run(a):
     so=Solver(operator(K,H,ranges[:,0]));z=so.solve(C.diagonal())
     D=(so.A@z)/z;alpha=float(min(D/C.diagonal()))
     diagonal_margin=float(la.eigvalsh(so.A.toarray()-np.diag(D))[0])
-    cert=DiagonalTimeCertificate(K,C,H,G,V,D,alpha)
     metadata=json.loads(a.candidate.with_suffix('.json').read_text())
+    decay=None
+    if metadata.get('configuration',{}).get('decay_budget',0):
+        decay=AffineDecay(K,C,H,alpha)
+        for z,h in zip(data['decay_vectors'],data['decay_anchors']):
+            decay.add(z,h)
+    width=metadata.get('configuration',{}).get('graph_block_width',0)
+    inverse_lower=GraphInverseLower(so.A,z,D,column_partition(meta['shape'],width)) if width else None
+    cert=DiagonalTimeCertificate(K,C,H,G,V,D,alpha,decay=decay,inverse_lower=inverse_lower)
     evaluate=(cert.evaluate_matrix if metadata.get('configuration',{}).get('certificate_mode')=='matrix' else cert.evaluate)
     hp=np.vstack([corners(ranges),parameters(ranges,np.random.default_rng(a.seed),a.parameters)])
     rows=[]
@@ -49,8 +58,10 @@ def run(a):
             if error>maxstep:
                 maxstep=error;argmax=float(t)
         bound=evaluate(h,early_reject=False)
+        rate=alpha if decay is None else decay(h)
         rows.append(dict(h=h.tolist(),initial=initial,steady=steady,sampled_step=maxstep,
-                         argmax=argmax,bound=bound,
+                         argmax=argmax,bound=bound,decay_lower=rate,
+                         decay_bound_holds=bool(rate<=lam[0]+1e-10),
                          steady_bound_holds=steady<=bound['steady_bound']+1e-8,
                          step_bound_holds=bound['step_bound'] is None or maxstep<=bound['step_bound']+1e-8))
     out=dict(n=len(G),metadata=meta,alpha=alpha,diagonal_ground_state_minimum_margin=diagonal_margin,
@@ -58,7 +69,7 @@ def run(a):
              scope='independent FOM spectrum at sampled HTC/time, including exact initial/steady limits; certificate itself encloses ALL time')
     a.output.write_text(json.dumps(out,indent=2)+'\n')
     print(json.dumps(dict(n=len(G),steady=max(r['steady'] for r in rows),step=max(r['sampled_step'] for r in rows),
-                          violations=sum(not(r['steady_bound_holds'] and r['step_bound_holds']) for r in rows),
+                          violations=sum(not(r['steady_bound_holds'] and r['step_bound_holds'] and r['decay_bound_holds']) for r in rows),
                           seconds=out['seconds'])),flush=True)
 
 
