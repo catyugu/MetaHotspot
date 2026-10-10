@@ -1,5 +1,9 @@
 # 连续 HTC 域的全场误差认证研究
 
+2026-10-10 的[单快照覆盖判决](ANCHOR_COVERAGE_GATE_20261010.md)已完成：
+逐输入 Robin 边界证书的单快照覆盖极小；同输入仿射见证在稳态改善覆盖，
+扩展原移位计划后提取 RHS 仍高于随机基线，尚无全时间证书，不作为新默认提取器。
+
 概率认证研究入口是 [`probabilistic_extraction.py`](probabilistic_extraction.py)，
 其[完整证明与量词说明](PROBABILISTIC_PROOF.md)区分容差、连续 HTC 分布上的超限风险、
 以及证书失败概率。逐输入度量、共同逆像误差方向和独立联合随机尾项见证
