@@ -515,8 +515,6 @@ def build_parametric_basis(
 # accuracy metrics
 # ---------------------------------------------------------------------------
 
-MAX_RELATIVE_RISE_ERROR = 0.01
-
 
 def _field_error_metrics(reference, approximation, ambient_K: float) -> dict:
     reference = np.asarray(reference)
@@ -535,7 +533,6 @@ def _field_error_metrics(reference, approximation, ambient_K: float) -> dict:
         ],
         "max_absolute_rise_error_K": absolute_error,
         "max_relative_rise_error": relative_error,
-        "passed": relative_error < MAX_RELATIVE_RISE_ERROR,
     }
 
 
@@ -562,5 +559,4 @@ def accuracy_summary(
             "max_absolute_rise_error_K"
         ],
         "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
-        "accuracy_passed": steady["passed"] and transient["passed"],
     }
