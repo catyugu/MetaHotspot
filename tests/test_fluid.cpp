@@ -35,7 +35,7 @@ TEST(FluidModuleTest, PreprocessorStoresOnlyAssemblyReadyFields)
 
     ASSERT_EQ(fluid.fluid_to_global.size(), 3200u);
     EXPECT_EQ(fluid.global_to_fluid.size(), model.cells.material_id.size());
-    EXPECT_EQ(fluid.face_volume_flux.size(), fluid.fluid_to_global.size() * mhs::core::FACE_COUNT);
+    EXPECT_EQ(fluid.face_volume_flux.size(), model.discrete.faces.size());
     EXPECT_EQ(fluid.interface_heat_transfer_factor.size(), fluid.fluid_to_global.size());
     EXPECT_EQ(fluid.boundary_outflux.size(), fluid.fluid_to_global.size());
     EXPECT_EQ(fluid.boundary_temperature.size(), fluid.fluid_to_global.size());
@@ -63,28 +63,25 @@ TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
 {
     auto model = load_microfluid_case();
 
-    for (mhs::core::Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
-        const mhs::core::Index cell = model.fluid.fluid_to_global[fi];
-        const mhs::core::Index old = model.cells.cell_to_grid[cell];
-        mhs::core::Index ix, iy, iz;
-        mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-
-        for (std::size_t face = 0; face < mhs::core::FACE_COUNT; ++face) {
-            const auto dir = mhs::core::FACE_DIRS[face];
-            const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-            if (neighbor_old == mhs::core::invalidIndex)
-                continue;
-            const mhs::core::Index neighbor = model.cells.grid_to_cell[neighbor_old];
-            const mhs::core::Index fn = model.fluid.global_to_fluid[neighbor];
-            if (fn == mhs::core::invalidIndex)
-                continue;
-
-            const std::size_t opposite = face ^ 1U;
-            EXPECT_NEAR(model.fluid.face_volume_flux[fi * mhs::core::FACE_COUNT + face],
-                -model.fluid.face_volume_flux[fn * mhs::core::FACE_COUNT + opposite], 1e-18);
+    ASSERT_EQ(model.fluid.face_volume_flux.size(), model.discrete.faces.size());
+    double global_flux=0;
+    bool nonzero=false;
+    for (mhs::core::Index fi=0;fi<model.fluid.fluid_to_global.size();++fi) {
+        const mhs::core::CellId cell{model.fluid.fluid_to_global[fi]};
+        double net=0;
+        bool exterior=false;
+        for(auto id:model.discrete.incident_faces(cell)) {
+            const auto& f=model.discrete.faces[id.value];
+            if(!f.neighbor.valid()) exterior=true;
+            const double q=model.fluid.face_volume_flux[id.value]*(f.owner==cell?1:-1);
+            nonzero=nonzero || std::abs(q)>1e-20;
+            net+=q;
         }
+        global_flux+=net;
+        if(!exterior) EXPECT_NEAR(net,0,1e-12);
     }
+    EXPECT_TRUE(nonzero);
+    EXPECT_NEAR(global_flux,0,1e-15);
 }
 
 TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)

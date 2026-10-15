@@ -64,6 +64,9 @@ namespace mhs::sim {
         const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
         std::vector<mhs::core::FaceBC>& face_bcs);
 
+    void project_boundary_patches(mhs::core::Model& model,
+        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& fallback);
+
     void compile_discrete_mesh(mhs::core::Model& model);
 
 } // namespace mhs::sim

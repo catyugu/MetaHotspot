@@ -255,6 +255,7 @@ namespace mhs::sim {
         resolve_boundary_patches(mesh, model.cells, compiled_boundaries, default_boundary, model.face_bcs);
 
         compile_discrete_mesh(model);
+        project_boundary_patches(model, compiled_boundaries, default_boundary);
 
         // Fluid coupling.
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),

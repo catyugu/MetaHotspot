@@ -273,4 +273,45 @@ namespace mhs::sim {
         mesh.build_incidence(); mesh.validate(); model.dofs.identity(mesh.cells.size());
     }
 
+
+    void project_boundary_patches(mhs::core::Model& model,
+        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& fallback)
+    {
+        using namespace mhs::core;
+        std::vector<FacePatch> faces;
+        std::vector<FaceBC> assignments;
+        for(const auto& face:model.discrete.faces) {
+            if(face.neighbor.valid()) { faces.push_back(face); assignments.push_back({}); continue; }
+            const int a=face.axis==0?1:0, b=face.axis==2?1:2;
+            std::vector<double> ca{face.min[a],face.max[a]},cb{face.min[b],face.max[b]};
+            for(const auto& region:boundaries) {
+                if(static_cast<int>(region.axis)!=face.axis || std::abs(region.coordinate-face.min[face.axis])>=EPS) continue;
+                for(const auto& r:region.rectangles) {
+                    if(r.a_max<=face.min[a] || r.a_min>=face.max[a] || r.b_max<=face.min[b] || r.b_min>=face.max[b]) continue;
+                    ca.push_back(std::clamp(r.a_min,face.min[a],face.max[a]));
+                    ca.push_back(std::clamp(r.a_max,face.min[a],face.max[a]));
+                    cb.push_back(std::clamp(r.b_min,face.min[b],face.max[b]));
+                    cb.push_back(std::clamp(r.b_max,face.min[b],face.max[b]));
+                }
+            }
+            auto unique=[](auto& cuts) { std::sort(cuts.begin(),cuts.end()); cuts.erase(std::unique(cuts.begin(),cuts.end()),cuts.end()); };
+            unique(ca); unique(cb);
+            for(Index i=1;i<ca.size();++i) for(Index j=1;j<cb.size();++j) {
+                auto patch=face;
+                patch.min[a]=ca[i-1]; patch.max[a]=ca[i]; patch.min[b]=cb[j-1]; patch.max[b]=cb[j];
+                patch.area=(ca[i]-ca[i-1])*(cb[j]-cb[j-1]);
+                const auto p=patch.center();
+                FaceBC bc{fallback.type,fallback.parameter_index};
+                for(auto it=boundaries.rbegin();it!=boundaries.rend();++it) {
+                    if(static_cast<int>(it->axis)==face.axis && std::abs(it->coordinate-p[face.axis])<EPS && point_in_region(*it,p[a],p[b])) {
+                        bc={it->type,it->parameter_index}; break;
+                    }
+                }
+                faces.push_back(patch); assignments.push_back(bc);
+            }
+        }
+        model.discrete.faces=std::move(faces); model.patch_bcs=std::move(assignments);
+        model.discrete.build_incidence(); model.discrete.validate();
+    }
+
 } // namespace mhs::sim

@@ -44,3 +44,19 @@ Commands and outcomes are recorded below as each round completes.
   oriented incidence, unique internal faces, invalid mesh and DOF permutations.
 - Round 1 case regression: `python run_cases.py` passed all existing thresholds;
   Python regression: 16 passed with the baseline command.
+
+### Round 2: conservative operators and boundary projection
+
+- Red: `build/tests/mhs_tests --gtest_filter=DiscreteMesh.ThermalOperatorsRespectIndependentDofOrdering`
+  failed with a nonuniform state and a permuted temperature DOF map.
+- Red: `build/tests/mhs_tests --gtest_filter=DiscreteMesh.PartialBoundaryIntegratesActualOverlap`
+  failed because a 0.01 m² patch missed the old face-center classifier.
+- Green: `cmake --build build --parallel 6`, `ctest --test-dir build --output-on-failure`:
+  94/94 passed. `python run_cases.py` passed all eight cases; Python regression:
+  16 passed using the baseline command.
+- Both microfluid models were assembled through Python before and after this
+  round. At 22,400 and 9,432 states, relative Frobenius differences in K were
+  1.56e-14 and 3.23e-15; C differed by 6.12e-15 and 5.82e-15. Maximum absolute RHS
+  changes were 1.69e-14 and 4.18e-14. These are floating-point summation changes.
+- The old structured data remains only for consumers awaiting round 3; thermal
+  and fluid assembly now consume explicit face topology and temperature DOF maps.

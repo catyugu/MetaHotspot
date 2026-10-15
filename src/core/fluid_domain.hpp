@@ -12,8 +12,8 @@ namespace mhs::core {
         std::vector<Index> fluid_to_global;
         std::vector<Index> global_to_fluid;
 
-        // Frozen hydraulic volume flux for every directed fluid-cell face.
-        // Layout: [fluid_index * FACE_COUNT + face].
+        // Frozen hydraulic volume flux by FaceId, positive out of the face owner.
+        // Non-fluid and exterior faces carry zero.
         std::vector<double> face_volume_flux;
 
         // Nu / hydraulic_diameter for each fluid cell. The thermal assembly
