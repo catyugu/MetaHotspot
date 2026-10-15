@@ -235,4 +235,42 @@ namespace mhs::sim {
         }
     }
 
+    void compile_discrete_mesh(mhs::core::Model& model)
+    {
+        using namespace mhs::core;
+        const auto& grid=model.mesh;
+        const auto& mapping=model.cells;
+        auto& mesh=model.discrete;
+        mesh.cells.resize(mapping.cell_to_grid.size());
+        for(Index c=0;c<mesh.cells.size();++c) {
+            Index x,y,z;
+            mhs::utils::decode_index(mapping.cell_to_grid[c],grid.ny,grid.nz,x,y,z);
+            mesh.cells[c]={{grid.cx[x]-grid.dx[x]/2,grid.cy[y]-grid.dy[y]/2,grid.cz[z]-grid.dz[z]/2},
+                {grid.cx[x]+grid.dx[x]/2,grid.cy[y]+grid.dy[y]/2,grid.cz[z]+grid.dz[z]/2}};
+        }
+        model.patch_bcs.clear();
+        for(Index c=0;c<mesh.cells.size();++c) {
+            Index x,y,z;
+            mhs::utils::decode_index(mapping.cell_to_grid[c],grid.ny,grid.nz,x,y,z);
+            for(Index dir=0;dir<FACE_COUNT;++dir) {
+                auto ng=mhs::utils::neighbor_grid_index(x,y,z,FACE_DIRS[dir],grid.nx,grid.ny,grid.nz,mapping.grid_to_cell);
+                auto n=ng==invalidIndex ? invalidIndex : mapping.grid_to_cell[ng];
+                if(n!=invalidIndex && n<c) continue;
+                auto axis=static_cast<int>(dir/2);
+                auto sign=dir%2==0 ? -1 : 1;
+                const auto& cell=mesh.cells[c];
+                FacePatch f;
+                f.owner={c}; f.neighbor={n}; f.axis=axis; f.sign=sign;
+                f.min=cell.min; f.max=cell.max;
+                f.min[axis]=f.max[axis]=sign<0 ? cell.min[axis] : cell.max[axis];
+                auto d=cell.size();
+                f.area=d[(axis+1)%3]*d[(axis+2)%3]; f.owner_distance=d[axis]/2;
+                f.neighbor_distance=n==invalidIndex ? 0 : mesh.cells[n].size()[axis]/2;
+                mesh.faces.push_back(f);
+                model.patch_bcs.push_back(n==invalidIndex ? model.face_bcs[c*FACE_COUNT+dir] : FaceBC{});
+            }
+        }
+        mesh.build_incidence(); mesh.validate(); model.dofs.identity(mesh.cells.size());
+    }
+
 } // namespace mhs::sim

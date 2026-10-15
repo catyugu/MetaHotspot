@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/fluid_domain.hpp"
+#include "core/discrete_mesh.hpp"
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
@@ -68,6 +69,9 @@ namespace mhs::core {
     // ── Top-level model ──────────────────────────────────────────────────
     struct Model {
         MeshGeometry mesh;
+        DiscreteMesh discrete;
+        DofMap dofs;
+        std::vector<FaceBC> patch_bcs;
         CellFields cells;
 
         std::vector<FaceBC> face_bcs;
