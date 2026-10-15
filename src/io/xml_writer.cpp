@@ -4,14 +4,14 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 
 namespace mhs::io {
 
     namespace {
 
-        std::string trim(const std::string& str)
-        {
+        std::string trim(const std::string &str) {
             const size_t first = str.find_first_not_of(" \t\r\n");
             if (first == std::string::npos)
                 return "";
@@ -19,26 +19,23 @@ namespace mhs::io {
             return str.substr(first, last - first + 1);
         }
 
-        std::string get_text(const tinyxml2::XMLElement* elem)
-        {
+        std::string get_text(const tinyxml2::XMLElement *elem) {
             if (!elem)
                 return "";
-            const char* text = elem->GetText();
+            const char *text = elem->GetText();
             return text ? trim(text) : "";
         }
 
-        void refill_double_list(
-            tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, std::span<const double> data, bool allow_nan)
-        {
+        void refill_double_list(tinyxml2::XMLDocument &doc, tinyxml2::XMLElement *parent, std::span<const double> data,
+                                bool allow_nan) {
             if (!parent)
                 return;
             parent->DeleteChildren();
             for (double v : data) {
-                auto* d = doc.NewElement("a:double");
+                auto *d = doc.NewElement("a:double");
                 if (allow_nan && std::isnan(v)) {
                     d->SetText("NaN");
-                }
-                else {
+                } else {
                     char buf[64];
                     std::snprintf(buf, sizeof(buf), "%.6f", v);
                     d->SetText(buf);
@@ -49,10 +46,16 @@ namespace mhs::io {
 
     } // namespace
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
-        std::span<const double> node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
-    {
+    void write_xml(const std::string &input_path, const std::string &output_path, const mhs::core::Model &model,
+                   std::span<const double> node_temperature,
+                   const std::vector<mhs::core::ProbeTrace> &observation_traces) {
         using namespace tinyxml2;
+
+        const auto shape = model.output.cartesian_shape;
+        if (shape[0] == 0 || shape[1] == 0 || shape[2] == 0)
+            throw std::invalid_argument("XML output requires a Cartesian sampling grid; use VTU for imported meshes");
+        if (node_temperature.size() != shape[0] * shape[1] * shape[2])
+            throw std::invalid_argument("XML node values do not match sampling-grid shape");
 
         XMLDocument doc;
         const XMLError err = doc.LoadFile(input_path.c_str());
@@ -60,27 +63,27 @@ namespace mhs::io {
             return;
         }
 
-        XMLElement* results_elem = doc.FirstChildElement("Structure")->FirstChildElement("Results");
+        XMLElement *results_elem = doc.FirstChildElement("Structure")->FirstChildElement("Results");
         if (!results_elem) {
             return;
         }
 
-        XMLElement* any_type = results_elem->FirstChildElement("a:anyType");
+        XMLElement *any_type = results_elem->FirstChildElement("a:anyType");
         if (!any_type) {
             return;
         }
 
-        XMLElement* values_elem = any_type->FirstChildElement("Values");
+        XMLElement *values_elem = any_type->FirstChildElement("Values");
         if (!values_elem) {
             return;
         }
 
-        XMLElement* data_elem = values_elem->FirstChildElement("Data");
+        XMLElement *data_elem = values_elem->FirstChildElement("Data");
         if (!data_elem) {
             return;
         }
 
-        while (XMLElement* child = data_elem->FirstChildElement("a:double")) {
+        while (XMLElement *child = data_elem->FirstChildElement("a:double")) {
             data_elem->DeleteChild(child);
         }
 
@@ -93,11 +96,10 @@ namespace mhs::io {
                 for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
                     const double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
 
-                    XMLElement* double_elem = doc.NewElement("a:double");
+                    XMLElement *double_elem = doc.NewElement("a:double");
                     if (std::isnan(val)) {
                         double_elem->SetText("NaN");
-                    }
-                    else {
+                    } else {
                         char buf[64];
                         std::snprintf(buf, sizeof(buf), "%.6f", val);
                         double_elem->SetText(buf);
@@ -107,24 +109,24 @@ namespace mhs::io {
             }
         }
 
-        XMLElement* sx = values_elem->FirstChildElement("SizeX");
+        XMLElement *sx = values_elem->FirstChildElement("SizeX");
         if (sx)
             sx->SetText(node_nx);
-        XMLElement* sy = values_elem->FirstChildElement("SizeY");
+        XMLElement *sy = values_elem->FirstChildElement("SizeY");
         if (sy)
             sy->SetText(node_ny);
-        XMLElement* sz = values_elem->FirstChildElement("SizeZ");
+        XMLElement *sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
             sz->SetText(node_nz);
 
-        for (const auto& trace : observation_traces) {
-            XMLElement* target = nullptr;
-            for (XMLElement* candidate = results_elem->FirstChildElement("a:anyType"); candidate;
-                candidate = candidate->NextSiblingElement("a:anyType")) {
-                const char* type = candidate->Attribute("i:type");
+        for (const auto &trace : observation_traces) {
+            XMLElement *target = nullptr;
+            for (XMLElement *candidate = results_elem->FirstChildElement("a:anyType"); candidate;
+                 candidate = candidate->NextSiblingElement("a:anyType")) {
+                const char *type = candidate->Attribute("i:type");
                 if (!type || std::string(type).find("Result0DTransient") == std::string::npos)
                     continue;
-                const XMLElement* point_name = candidate->FirstChildElement("PointName");
+                const XMLElement *point_name = candidate->FirstChildElement("PointName");
                 if (point_name && get_text(point_name) == trace.name) {
                     target = candidate;
                     break;
@@ -135,17 +137,17 @@ namespace mhs::io {
                 target = doc.NewElement("a:anyType");
                 target->SetAttribute("i:type", "Result0DTransient");
 
-                XMLElement* physics = doc.NewElement("PhysicsName");
+                XMLElement *physics = doc.NewElement("PhysicsName");
                 physics->SetText("温度");
                 target->InsertEndChild(physics);
-                XMLElement* point_name = doc.NewElement("PointName");
+                XMLElement *point_name = doc.NewElement("PointName");
                 point_name->SetText(trace.name.c_str());
                 target->InsertEndChild(point_name);
-                XMLElement* time_unit = doc.NewElement("TimeUnit");
+                XMLElement *time_unit = doc.NewElement("TimeUnit");
                 time_unit->SetText("S");
                 target->InsertEndChild(time_unit);
                 target->InsertEndChild(doc.NewElement("Times"));
-                XMLElement* unit_name = doc.NewElement("UnitName");
+                XMLElement *unit_name = doc.NewElement("UnitName");
                 unit_name->SetText("K");
                 target->InsertEndChild(unit_name);
                 target->InsertEndChild(doc.NewElement("Values"));

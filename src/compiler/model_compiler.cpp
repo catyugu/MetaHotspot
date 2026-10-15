@@ -217,9 +217,11 @@ namespace mhs::sim {
             model.discrete = *external;
             model.discrete.build_incidence();
             model.discrete.validate();
+            validate_external_cell_coverage(model.discrete);
             build_external_output_mesh(model);
         } else
             compile_cartesian_mesh(model, definition.mesh, si_scale, resolved_layers);
+        model.discrete.require_orthogonal_tpfa();
         project_cell_regions(model, resolved_layers);
         model.dofs.identity(model.discrete.cells.size());
         project_boundary_patches(model, compiled_boundaries, default_boundary);

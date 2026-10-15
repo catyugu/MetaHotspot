@@ -102,6 +102,8 @@ class CompiledMetadata:
     cell_count: int
     face_count: int
     state_count: int
+    projection_count: int
+    source_count: int
     study_type: int
     initial_temperature: float
     cell_fields: CellFields
@@ -124,7 +126,6 @@ _CELL_FIELD_SPECS = (
     ("layer_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("block_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
-    ("heat_source_idx", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("face_owner", ctypes.c_size_t, np.uintp, "face_count", 1),
     ("face_neighbor", ctypes.c_size_t, np.uintp, "face_count", 1),
     ("face_axis", ctypes.c_int32, np.int32, "face_count", 1),
@@ -134,6 +135,11 @@ _CELL_FIELD_SPECS = (
     ("face_area", ctypes.c_double, np.float64, "face_count", 1),
     ("owner_distance", ctypes.c_double, np.float64, "face_count", 1),
     ("neighbor_distance", ctypes.c_double, np.float64, "face_count", 1),
+    ("projection_cell", ctypes.c_size_t, np.uintp, "projection_count", 1),
+    ("projection_region", ctypes.c_size_t, np.uintp, "projection_count", 1),
+    ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
+    ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
+    ("projection_center", ctypes.c_double, np.float64, "projection_count", 3),
 )
 
 
@@ -157,6 +163,7 @@ def _compiled_metadata(dll, handle) -> CompiledMetadata:
     native = MhsCellFields(
         cell_count=info.cell_count,
         face_count=info.face_count,
+        projection_count=info.projection_count,
         **{
             name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
             for name, ctype, _, _, _ in _CELL_FIELD_SPECS
@@ -169,6 +176,8 @@ def _compiled_metadata(dll, handle) -> CompiledMetadata:
         cell_count=int(info.cell_count),
         face_count=int(info.face_count),
         state_count=int(info.state_count),
+        projection_count=int(info.projection_count),
+        source_count=int(info.source_count),
         study_type=int(info.study_type),
         initial_temperature=float(info.initial_temperature),
         cell_fields=CellFields(**arrays),
@@ -275,6 +284,40 @@ class Compiled(OwnedHandle):
     @property
     def cells(self) -> CellFields:
         return self.metadata.cell_fields
+
+    def source_operator(self, state=None, time=0.0):
+        """Per-source integrated powers in algebraic state order (sparse CSC).
+
+        Columns retain physical source identity even when regions share a cell.
+        """
+        import scipy.sparse as sp
+
+        if state is None:
+            state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
+        values = np.empty(self.metadata.projection_count, dtype=np.float64)
+        check(
+            self._dll.mhs_compiled_eval_source_terms(
+                self._handle,
+                _double_ptr(state),
+                state.size,
+                time,
+                _double_ptr(values),
+                values.size,
+            ),
+            "eval_source_terms",
+        )
+        fields = self.cells
+        result = sp.csc_matrix(
+            (
+                values,
+                (fields.cell_to_dof[fields.projection_cell], fields.projection_source),
+            ),
+            shape=(self.metadata.state_count, self.metadata.source_count),
+        )
+
+        result.eliminate_zeros()
+        return result
 
     def eval_materials(self, state: np.ndarray | None = None, time: float = 0.0):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""

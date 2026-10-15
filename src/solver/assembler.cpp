@@ -5,8 +5,7 @@
 #include <vector>
 
 namespace mhs::sim {
-    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time)
-    {
+    Operators assemble_thermal(const mhs::core::Model &model, std::span<const double> temperature, double time) {
         using namespace mhs::core;
         if (temperature.size() != model.dofs.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
@@ -17,20 +16,25 @@ namespace mhs::sim {
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
         std::vector<Vec3> conductivity(model.discrete.cells.size());
         for (Index c = 0; c < model.discrete.cells.size(); ++c) {
-            const auto row = model.dofs.temperature(CellId {c}).value;
+            const auto row = model.dofs.temperature(CellId{c}).value;
             const auto center = model.discrete.cells[c].center();
-            const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model.material_table[model.cells.material_id[c]];
+            const FieldContext ctx{center[0], center[1], center[2], temperature[row], time};
+            const auto &mat = model.material_table[model.cells.material_id[c]];
             conductivity[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             capacity.emplace_back(row, row, mat.rho.eval(ctx) * mat.c.eval(ctx) * volume);
-            rhs[row] += model.heat_source_table[model.cells.heat_source_idx[c]].eval(ctx) * volume;
+        }
+        for (const auto &term : model.volume_projection) {
+            const auto row = model.dofs.temperature(term.cell).value;
+            const auto &p = term.centroid;
+            rhs[row] +=
+                term.volume * model.heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
         }
         auto fluid_index = [&](CellId c) {
             return c.value < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c.value] : invalidIndex;
         };
         for (Index id = 0; id < model.discrete.faces.size(); ++id) {
-            const auto& f = model.discrete.faces[id];
+            const auto &f = model.discrete.faces[id];
             const auto i = f.owner.value;
             const auto row = model.dofs.temperature(f.owner).value;
             const auto ki = conductivity[i][f.axis];
@@ -53,11 +57,10 @@ namespace mhs::sim {
                 stiffness.emplace_back(row, col, -g);
                 stiffness.emplace_back(col, col, g);
                 stiffness.emplace_back(col, row, -g);
-            }
-            else {
-                const auto& bc = model.patch_bcs[id];
+            } else {
+                const auto &bc = model.patch_bcs[id];
                 const auto p = f.center();
-                const FieldContext ctx {p[0], p[1], p[2], temperature[row], time};
+                const FieldContext ctx{p[0], p[1], p[2], temperature[row], time};
                 double g = 0;
                 switch (bc.type) {
                 case BcType::FirstType:
@@ -88,4 +91,4 @@ namespace mhs::sim {
         C.setFromTriplets(capacity.begin(), capacity.end());
         return {std::move(K), std::move(C), std::move(rhs)};
     }
-}
+} // namespace mhs::sim

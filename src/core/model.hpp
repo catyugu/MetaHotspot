@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/fluid_domain.hpp"
 #include "core/discrete_mesh.hpp"
+#include "core/fluid_domain.hpp"
 #include "core/output_mesh.hpp"
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
@@ -39,10 +39,19 @@ namespace mhs::core {
         std::vector<RegionId> region_id;
 
         std::vector<TableIndex> material_id;
-        std::vector<TableIndex> heat_source_idx;
 
         std::vector<TableIndex> layer_id;
         std::vector<TableIndex> block_id;
+    };
+
+    // Exact geometric subvolume membership, independent of material and DOFs.
+    // Expressions are integrated by midpoint quadrature on each projected piece.
+    struct VolumeAssignment {
+        CellId cell;
+        RegionId region;
+        TableIndex source;
+        double volume;
+        Vec3 centroid;
     };
 
     // ── Probe / observation point ────────────────────────────────────────
@@ -60,6 +69,7 @@ namespace mhs::core {
         DofMap dofs;
         std::vector<FaceBC> patch_bcs;
         CellFields cells;
+        std::vector<VolumeAssignment> volume_projection;
 
         BCParamTable bc_params;
 

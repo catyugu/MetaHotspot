@@ -78,3 +78,101 @@ Commands and outcomes are recorded below as each round completes.
   Cartesian sampling shape is presentation metadata used only by XML output.
 - At shared-face probe coordinates, location selects the lexicographically
   greatest cell lower corner; this is independent of storage and DOF order.
+
+
+### Round 4: imported meshes, conservative source projections and final checks
+
+- Red tests reproduced missing C/Python external-mesh and DOF-order entry points,
+  acceptance of empty/duplicated closed shells and overlapping cells, and loss of
+  subcell source volumes. Mixed-material control volumes were also accepted by
+  the old center classifier.
+- Added `VolumeAssignment` records carrying independent cell/region/source IDs,
+  subvolume measures and quadrature centroids. Constant source densities conserve
+  integrated power over covered regions. General spatial expressions use midpoint
+  quadrature on each geometric piece. Unsupported domain/material cut cells are
+  rejected; material tensors are not arbitrarily averaged.
+- External import validates cell/face bounds, normal distances, per-side coverage,
+  patch intersections, incidence and cell-volume overlap. A bounding-volume
+  hierarchy checks overlaps without a global all-pairs search. TPFA rejects
+  nonorthogonal cell-center connections. No quadtree generation or refinement is
+  implemented.
+- CTM now uses native face normals and owner distances for Robin condensation.
+  Tests reproduced the previous implicit Z-normal assumption and a junction
+  observation using algebraic indices as physical cell indices. Repeated patch
+  contributions are accumulated in boundary and interface projections.
+- The historical test treating a cell center on a block edge as evidence of full
+  cell inclusion was replaced with explicit cut-cell rejection and an aligned
+  input-mesh success case.
+
+- Final verification: `cmake --build build --parallel 6` and
+  `ctest --test-dir build --output-on-failure`: 100/100 passed.
+  `PYTHONPATH=python OPENBLAS_NUM_THREADS=1 python -m pytest python/tests -q`:
+  27 passed. `python run_cases.py`: all eight registered cases passed unchanged
+  reference thresholds.
+- Additional red/green checks reproduced silent truncation of fractional Python
+  mesh/DOF IDs. Integer input validation now rejects fractional, nonfinite and
+  out-of-range values before native conversion; signed -1 remains accepted for
+  exterior neighbors. Focused Ruff checks and formatting checks passed for the
+  updated Python input wrapper and mesh contract tests.
+
+## Final interface conventions
+
+- `ModelDefinition` still describes physical entities and expressions. Cartesian
+  axes are one supplied mesh format, not a numerical-kernel topology.
+- C++: `build_model(definition, discrete_mesh)` consumes a fully specified mesh
+  in SI metres. C: `mhs_model_set_discrete_mesh`, `mhs_model_set_dof_order`.
+- Python: `Model.set_discrete_mesh(cell_min=..., cell_max=..., face_owner=...,
+  face_neighbor=..., face_axis=..., face_sign=..., face_min=..., face_max=...)`.
+  Bounds have shape `(count, 3)`, IDs/axes/signs have shape `(face_count,)`;
+  external neighbors are `np.iinfo(np.uintp).max` (signed -1 is accepted on input).
+  The caller supplies complete faces and connectivity; no neighbors are inferred.
+  Coordinates are SI regardless of the physical authoring model's length unit.
+- `set_dof_order(cell_to_dof)` selects a bijective temperature-state ordering;
+  selecting a new mesh or reading XML clears that ordering. Compiled handles
+  remain immutable and reusable.
+- `K`, `C`, `f`, `state`, and `state_history` use DOF order. Geometry and evaluated
+  material arrays use CellId order. `Solution.temperature` and
+  `temperature_history` return physical CellId order (views for identity ordering).
+- `Compiled.cells` contains explicit cell bounds, face incidence/geometry and
+  volume-projection arrays. Singular region/layer/block tags use their maximum
+  integer sentinel when a cell has mixed region membership; the projection rows
+  preserve all actual memberships. There is no scalar per-cell source index.
+- `Compiled.source_operator(state, time)` returns a sparse matrix of integrated
+  source powers, one column per physical source. `SourcePort(source_ids=...,
+  power_W=...)` preserves separate sources sharing a temperature DOF; explicit
+  physical `cells=` selections remain available. Exactly one selector is required.
+- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` retains actual
+  FaceIds and projected areas. Robin parameters still use the existing effective
+  affine approximation; this migration does not claim exact physical-HTC affinity.
+- `OutputMesh` is a presentation view with explicit vertices/connectivity.
+  VTU supports imported box meshes. Cartesian XML output requires its separate
+  sampling-grid shape; it is not an unstructured result format.
+
+## Reproduce the final regression
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_MKL=OFF
+cmake --build build --parallel 6
+ctest --test-dir build --output-on-failure
+PYTHONPATH=python OPENBLAS_NUM_THREADS=1 python -m pytest python/tests -q
+python run_cases.py
+```
+
+The Python suite includes imported, randomly reordered 22,400- and 9,432-state
+microfluid meshes. It restores the original algebraic ordering with an explicit
+DOF map, compares K/C/f and physical source columns, and solves both models.
+The pressure preprocessing uses the existing 1e-8 relative iterative tolerance;
+its permutation-dependent flux differences are checked at that tolerance rather
+than incorrectly requiring bitwise identity of iterative hydraulic solutions.
+The capacity and source projection comparisons retain 1e-13 checks.
+
+Measured relative K differences after permutation were 5.02e-11 and 1.89e-15;
+capacity differences were zero; maximum physical temperature differences were
+6.14e-7 K and 4.86e-11 K. Both microfluid CLI cases also solved and wrote VTU/XML.
+Against the pre-refactor operators without reordering, final K differences were
+4.77e-15 and 9.52e-16; final temperatures differed from SciPy direct solutions of
+those baseline operators by at most 1.57e-6 K and 4.57e-7 K.
+
+All eight registered cases passed unchanged reference thresholds. Seven final
+node fields matched the saved baseline at XML output precision; the remaining
+nonlinear case differed by at most 2.41e-4 K. No reference thresholds were relaxed.

@@ -436,7 +436,7 @@ def extract_rom(
     h_ranges = [list(r) for r in subdomain.ambient_ranges]
     interface_areas = np.zeros(cells.size, dtype=np.float64)
     for port in subdomain.ports:
-        interface_areas[np.asarray(port.cells, dtype=np.int64)] += port.areas
+        np.add.at(interface_areas, np.asarray(port.cells, dtype=np.int64), port.areas)
     if subdomain.ports:
         boundary_terms.append(sp.diags(interface_areas, format="csc"))
         h_ranges.append(list(interface_h_range))

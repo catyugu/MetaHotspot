@@ -9,8 +9,7 @@
 using namespace mhs::io;
 
 // Build a small in-memory XML string with/without ObservePoints3D block.
-static std::string make_xml_with_observe_points(const std::string& obs_block)
-{
+static std::string make_xml_with_observe_points(const std::string &obs_block) {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
     <mhs::core::StudyType>Transient</mhs::core::StudyType>
@@ -43,15 +42,13 @@ static std::string make_xml_with_observe_points(const std::string& obs_block)
     return body;
 }
 
-static std::filesystem::path tmp_dir()
-{
+static std::filesystem::path tmp_dir() {
     auto dir = std::filesystem::temp_directory_path() / "mhs_test_io";
     std::filesystem::create_directories(dir);
     return dir;
 }
 
-static std::filesystem::path write_tmp_xml(const std::string& name, const std::string& contents)
-{
+static std::filesystem::path write_tmp_xml(const std::string &name, const std::string &contents) {
     auto path = tmp_dir() / name;
     {
         std::ofstream out(path);
@@ -60,14 +57,12 @@ static std::filesystem::path write_tmp_xml(const std::string& name, const std::s
     return path;
 }
 
-static std::string read_file(const std::filesystem::path& path)
-{
+static std::string read_file(const std::filesystem::path &path) {
     std::ifstream f(path);
     return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 }
 
-TEST(IoTest, ReadXmlParsesObservationPoints3D)
-{
+TEST(IoTest, ReadXmlParsesObservationPoints3D) {
     std::string obs = R"(<ObservePoints3D>
         <ObservePoint3D><Name>p1</Name><X>1.5</X><Y>2.5</Y><Z>3.5</Z></ObservePoint3D>
         <ObservePoint3D><Name>p2</Name><X>0.1</X><Y>0.2</Y><Z>0.3</Z></ObservePoint3D>
@@ -86,16 +81,14 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     std::filesystem::remove(path);
 }
 
-TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
-{
+TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty) {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io_structure.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
 
-TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
-{
+TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly) {
     const std::string xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
     <StudyType>Steady</StudyType>
@@ -151,8 +144,7 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.boundaries[1].condition));
 }
 
-TEST(IoTest, WriteXmlEmitsResult0DTransient)
-{
+TEST(IoTest, WriteXmlEmitsResult0DTransient) {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
     <mhs::core::StudyType>Transient</mhs::core::StudyType>
@@ -207,8 +199,7 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     std::filesystem::remove(out_path);
 }
 
-TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
-{
+TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks) {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
     <mhs::core::StudyType>Steady</mhs::core::StudyType>
@@ -254,8 +245,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 
 // Build a minimal in-memory XML that contains one material with the given
 // ThermalConductivity text.
-static std::string make_xml_with_thermal_conductivity(const std::string& conductivity_text)
-{
+static std::string make_xml_with_thermal_conductivity(const std::string &conductivity_text) {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
     <mhs::core::StudyType>Steady</mhs::core::StudyType>
@@ -282,8 +272,7 @@ static std::string make_xml_with_thermal_conductivity(const std::string& conduct
     return body;
 }
 
-TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
-{
+TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace) {
     auto path = write_tmp_xml("io_thermal_conductivity_trim.xml", make_xml_with_thermal_conductivity("  5  "));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
@@ -294,10 +283,9 @@ TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
     std::filesystem::remove(path);
 }
 
-TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
-{
-    auto path = write_tmp_xml("io_thermal_conductivity_3trim.xml",
-        make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
+TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim) {
+    auto path =
+        write_tmp_xml("io_thermal_conductivity_3trim.xml", make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
@@ -305,4 +293,9 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
     EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "2.5");
     EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "0");
     std::filesystem::remove(path);
+}
+
+TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape) {
+    const mhs::core::Model model;
+    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model, {}, {}), std::invalid_argument);
 }

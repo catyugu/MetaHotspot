@@ -81,12 +81,13 @@ namespace mhs::core {
                     cell_face_ids[next[f.neighbor.value]++] = {i};
             }
         }
-        CellId locate(const Vec3& p) const {
+        CellId locate(const Vec3 &p) const {
             // Cache once per probe. Shared-face ties select the lexicographically
             // greatest lower corner, independent of cell storage/DOF ordering.
             CellId result;
-            for(Index i=0;i<cells.size();++i)
-                if(cells[i].contains(p) && (!result.valid() || cells[i].min>cells[result.value].min)) result={i};
+            for (Index i = 0; i < cells.size(); ++i)
+                if (cells[i].contains(p) && (!result.valid() || cells[i].min > cells[result.value].min))
+                    result = {i};
             return result;
         }
         void validate() const {
@@ -99,35 +100,90 @@ namespace mhs::core {
                         throw std::invalid_argument("invalid cell bounds");
             for (const auto &f : faces) {
                 if (f.owner.value >= cells.size() ||
-                    (f.neighbor.valid() && (f.neighbor.value >= cells.size() || f.owner == f.neighbor)) || f.axis < 0 ||
+                    (f.neighbor.valid() && (f.neighbor.value >= cells.size() || f.neighbor == f.owner)) || f.axis < 0 ||
                     f.axis > 2 || (f.sign != 1 && f.sign != -1) || !std::isfinite(f.area) || f.area <= 0 ||
                     !std::isfinite(f.owner_distance) || f.owner_distance <= 0 ||
                     (f.neighbor.valid() && (!std::isfinite(f.neighbor_distance) || f.neighbor_distance <= 0)))
                     throw std::invalid_argument("invalid face patch");
+                for (int a = 0; a < 3; ++a)
+                    if (!std::isfinite(f.min[a]) || !std::isfinite(f.max[a]))
+                        throw std::invalid_argument("nonfinite face bounds");
+                if (f.min[f.axis] != f.max[f.axis])
+                    throw std::invalid_argument("face patch is not planar");
+                const int a = (f.axis + 1) % 3, b = (f.axis + 2) % 3;
+                const double area = (f.max[a] - f.min[a]) * (f.max[b] - f.min[b]);
+                if (f.max[a] <= f.min[a] || f.max[b] <= f.min[b] || std::abs(area - f.area) > 1e-10 * f.area)
+                    throw std::invalid_argument("face area disagrees with bounds");
+                auto check_side = [&](CellId id, int sign, double distance) {
+                    const auto &c = cells[id.value];
+                    const auto size = c.size();
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const double tol = 64 * std::numeric_limits<double>::epsilon() *
+                                               std::max(std::abs(c.min[axis]), std::abs(c.max[axis])) +
+                                           1e-10 * size[axis];
+                        if (axis == f.axis) {
+                            const double plane = sign < 0 ? c.min[axis] : c.max[axis];
+                            if (std::abs(f.min[axis] - plane) > tol || std::abs(distance - size[axis] / 2) > tol)
+                                throw std::invalid_argument("face plane or distance disagrees with cell");
+                        } else if (f.min[axis] < c.min[axis] - tol || f.max[axis] > c.max[axis] + tol)
+                            throw std::invalid_argument("face extends beyond cell");
+                    }
+                };
+                check_side(f.owner, f.sign, f.owner_distance);
+                if (f.neighbor.valid())
+                    check_side(f.neighbor, -f.sign, f.neighbor_distance);
             }
             std::vector<Index> uses(faces.size(), 0);
             for (Index c = 0; c < cells.size(); ++c) {
                 if (cell_face_offsets[c] > cell_face_offsets[c + 1])
                     throw std::invalid_argument("nonmonotone CSR");
-                Vec3 closure{};
-                for (auto id : incident_faces(CellId{c})) {
+                std::array<double, 6> area{};
+                const auto incidence = incident_faces(CellId{c});
+                for (auto id : incidence) {
                     if (id.value >= faces.size())
                         throw std::invalid_argument("invalid face incidence");
                     const auto &f = faces[id.value];
                     if (f.owner.value != c && f.neighbor.value != c)
                         throw std::invalid_argument("unrelated face incidence");
-                    closure[f.axis] += (f.owner.value == c ? f.sign : -f.sign) * f.area;
+                    const int sign = f.owner.value == c ? f.sign : -f.sign;
+                    area[2 * f.axis + (sign > 0)] += f.area;
                     ++uses[id.value];
                 }
-                auto d = cells[c].size();
-                const double scale = 2 * (d[0] * d[1] + d[1] * d[2] + d[0] * d[2]);
-                for (auto x : closure)
-                    if (std::abs(x) > 1e-10 * scale)
-                        throw std::invalid_argument("cell surface is not closed");
+                const auto d = cells[c].size();
+                for (int axis = 0; axis < 3; ++axis)
+                    for (int sign = 0; sign < 2; ++sign) {
+                        const auto expected = d[(axis + 1) % 3] * d[(axis + 2) % 3];
+                        if (std::abs(area[2 * axis + sign] - expected) > 1e-10 * expected)
+                            throw std::invalid_argument("cell surface coverage is incomplete or duplicated");
+                    }
+                for (Index i = 0; i < incidence.size(); ++i)
+                    for (Index j = i + 1; j < incidence.size(); ++j) {
+                        const auto &f = faces[incidence[i].value];
+                        const auto &g = faces[incidence[j].value];
+                        if (f.axis != g.axis ||
+                            (f.owner.value == c ? f.sign : -f.sign) != (g.owner.value == c ? g.sign : -g.sign))
+                            continue;
+                        const int a = (f.axis + 1) % 3, b = (f.axis + 2) % 3;
+                        if (std::min(f.max[a], g.max[a]) - std::max(f.min[a], g.min[a]) > 1e-10 * d[a] &&
+                            std::min(f.max[b], g.max[b]) - std::max(f.min[b], g.min[b]) > 1e-10 * d[b])
+                            throw std::invalid_argument("overlapping face patches");
+                    }
             }
             for (Index f = 0; f < faces.size(); ++f)
                 if (uses[f] != (faces[f].neighbor.valid() ? 2u : 1u))
                     throw std::invalid_argument("duplicate or missing face incidence");
+        }
+        void require_orthogonal_tpfa() const {
+            for (const auto &f : faces)
+                if (f.neighbor.valid()) {
+                    const auto a = cells[f.owner.value].center(), b = cells[f.neighbor.value].center();
+                    for (int axis = 0; axis < 3; ++axis)
+                        if (axis != f.axis &&
+                            std::abs(a[axis] - b[axis]) > 1e-10 * std::max(cells[f.owner.value].size()[axis],
+                                                                           cells[f.neighbor.value].size()[axis]))
+                            throw std::invalid_argument("nonorthogonal mesh requires an unimplemented flux scheme; "
+                                                        "current TPFA supports aligned cell centers only");
+                }
         }
     };
     struct DofMap {

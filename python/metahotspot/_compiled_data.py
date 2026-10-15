@@ -27,7 +27,6 @@ class CellFields:
     layer_id: np.ndarray
     block_id: np.ndarray
     material_id: np.ndarray
-    heat_source_idx: np.ndarray
     face_owner: np.ndarray
     face_neighbor: np.ndarray
     face_axis: np.ndarray
@@ -37,3 +36,8 @@ class CellFields:
     face_area: np.ndarray
     owner_distance: np.ndarray
     neighbor_distance: np.ndarray
+    projection_cell: np.ndarray
+    projection_region: np.ndarray
+    projection_source: np.ndarray
+    projection_volume: np.ndarray
+    projection_center: np.ndarray

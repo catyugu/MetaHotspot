@@ -12,35 +12,40 @@ using namespace mhs::sim;
 
 /// Find a FaceBC on `cell_idx` with direction `dir`.
 /// Returns pointer or nullptr if that face has BcType::None.
-static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
-{
-    for(auto id:model.discrete.incident_faces(CellId{cell_idx})) {
-        const auto& f=model.discrete.faces[id.value];
-        if(!f.neighbor.valid() && f.axis==static_cast<int>(dir)/2 && f.sign==(static_cast<int>(dir)%2?1:-1)) {
-            const auto& bc=model.patch_bcs[id.value];
-            if(bc.type!=BcType::None) return &bc;
+static const mhs::core::FaceBC *find_face_bc(const Model &model, uint32_t cell_idx, FaceDir dir) {
+    for (auto id : model.discrete.incident_faces(CellId{cell_idx})) {
+        const auto &f = model.discrete.faces[id.value];
+        if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2 &&
+            f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
+            const auto &bc = model.patch_bcs[id.value];
+            if (bc.type != BcType::None)
+                return &bc;
         }
     }
     return nullptr;
 }
 
 /// Return the BcType on cell_idx for direction dir, or None if not found.
-static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
-{
-    auto* p = find_face_bc(model, cell_idx, dir);
+static BcType get_bc_type(const Model &model, uint32_t cell_idx, FaceDir dir) {
+    auto *p = find_face_bc(model, cell_idx, dir);
     return p ? p->type : BcType::None;
 }
 
 /// Return the param_idx on cell_idx for direction dir, or 0 if not found.
-static mhs::core::TableIndex get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
-{
-    auto* p = find_face_bc(model, cell_idx, dir);
+static mhs::core::TableIndex get_bc_param(const Model &model, uint32_t cell_idx, FaceDir dir) {
+    auto *p = find_face_bc(model, cell_idx, dir);
     return p ? p->param_idx : 0;
 }
 
+static TableIndex source_id(const Model &model, Index cell) {
+    for (const auto &term : model.volume_projection)
+        if (term.cell.value == cell)
+            return term.source;
+    throw std::logic_error("missing source projection");
+}
+
 // Helper: build a minimal mhs::model::ModelDefinition for testing
-static mhs::model::ModelDefinition make_simple_io()
-{
+static mhs::model::ModelDefinition make_simple_io() {
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -78,48 +83,46 @@ static mhs::model::ModelDefinition make_simple_io()
     io.materials.push_back({"test_material", mat});
 
     // No explicit boundaries: the default boundary applies.
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     return io;
 }
 
-TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
-{
-    const auto model=build_model(make_simple_io());
-    ASSERT_EQ(model.discrete.cells.size(),8u);
-    const auto& first=model.discrete.cells.front();
-    const auto& last=model.discrete.cells.back();
-    for(int a=0;a<3;++a) {
-        EXPECT_NEAR(first.min[a],0,1e-12);
-        EXPECT_NEAR(first.max[a],0.005,1e-12);
-        EXPECT_NEAR(last.center()[a],0.0075,1e-12);
+TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds) {
+    const auto model = build_model(make_simple_io());
+    ASSERT_EQ(model.discrete.cells.size(), 8u);
+    const auto &first = model.discrete.cells.front();
+    const auto &last = model.discrete.cells.back();
+    for (int a = 0; a < 3; ++a) {
+        EXPECT_NEAR(first.min[a], 0, 1e-12);
+        EXPECT_NEAR(first.max[a], 0.005, 1e-12);
+        EXPECT_NEAR(last.center()[a], 0.0075, 1e-12);
     }
 }
 
-TEST(PreprocessorTest, CutoutLeavesOnlyPhysicalControlVolumes)
-{
-    auto definition=make_simple_io();
-    definition.layers[0].blocks[0].geometry.push_back({mhs::model::GeometryOperation::Subtract,{"0","0","5","5"}});
-    const auto model=build_model(definition);
-    ASSERT_EQ(model.discrete.cells.size(),6u);
-    EXPECT_FALSE(model.discrete.locate({0.0025,0.0025,0.0025}).valid());
-    EXPECT_TRUE(model.discrete.locate({0.0075,0.0025,0.0025}).valid());
+TEST(PreprocessorTest, CutoutLeavesOnlyPhysicalControlVolumes) {
+    auto definition = make_simple_io();
+    definition.layers[0].blocks[0].geometry.push_back({mhs::model::GeometryOperation::Subtract, {"0", "0", "5", "5"}});
+    const auto model = build_model(definition);
+    ASSERT_EQ(model.discrete.cells.size(), 6u);
+    EXPECT_FALSE(model.discrete.locate({0.0025, 0.0025, 0.0025}).valid());
+    EXPECT_TRUE(model.discrete.locate({0.0075, 0.0025, 0.0025}).valid());
     EXPECT_NO_THROW(model.discrete.validate());
 }
 
 // Test-only conversion of a supplied Cartesian fixture index to a physical query.
 // Runtime consumers receive neither these indices nor these axes.
-static Index input_cell(const Model& model,const mhs::model::MeshSpec& input,Index flat)
-{
-    const auto ny=input.y_vertices.size()-1,nz=input.z_vertices.size()-1;
-    const auto x=flat/(ny*nz),y=(flat%(ny*nz))/nz,z=flat%nz;
-    return model.discrete.locate({(input.x_vertices[x]+input.x_vertices[x+1])*0.0005,
-        (input.y_vertices[y]+input.y_vertices[y+1])*0.0005,
-        (input.z_vertices[z]+input.z_vertices[z+1])*0.0005}).value;
+static Index input_cell(const Model &model, const mhs::model::MeshSpec &input, Index flat) {
+    const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
+    const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
+    return model.discrete
+        .locate({(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
+                 (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
+                 (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005})
+        .value;
 }
 
-TEST(PreprocessorTest, CellFieldsContainIdentityNotMaterialSnapshots)
-{
+TEST(PreprocessorTest, CellFieldsContainIdentityNotMaterialSnapshots) {
     auto definition = make_simple_io();
     definition.materials[0].value.conductivity_x = "400 + T";
     definition.materials[0].value.conductivity_y = "500 + T";
@@ -127,29 +130,28 @@ TEST(PreprocessorTest, CellFieldsContainIdentityNotMaterialSnapshots)
     definition.materials[0].value.density = "8920 + T";
     definition.materials[0].value.specific_heat = "385 + T";
     const auto model = build_model(definition);
-    const auto& cells = model.cells;
+    const auto &cells = model.cells;
 
     ASSERT_FALSE(cells.material_id.empty());
     ASSERT_EQ(cells.material_id.size(), model.discrete.cells.size());
     EXPECT_TRUE(std::all_of(cells.material_id.begin(), cells.material_id.end(), [](auto id) { return id == 0; }));
 
-    const mhs::core::FieldContext at_initial {0.0, 0.0, 0.0, model.initial_temperature, 0.0};
-    const mhs::core::FieldContext at_later {0.0, 0.0, 0.0, model.initial_temperature + 10.0, 2.0};
+    const mhs::core::FieldContext at_initial{0.0, 0.0, 0.0, model.initial_temperature, 0.0};
+    const mhs::core::FieldContext at_later{0.0, 0.0, 0.0, model.initial_temperature + 10.0, 2.0};
     EXPECT_DOUBLE_EQ(model.material_table[0].kx.eval(at_initial), 700.0);
     EXPECT_DOUBLE_EQ(model.material_table[0].kx.eval(at_later), 710.0);
     EXPECT_DOUBLE_EQ(model.material_table[0].rho.eval(at_initial), 9220.0);
     EXPECT_DOUBLE_EQ(model.material_table[0].c.eval(at_later), 695.0);
 }
 
-TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
-{
+TEST(PreprocessorTest, RectOperationsFollowAppendOrder) {
     auto definition = make_simple_io();
     definition.mesh.x_vertices = {0.0, 5.0, 10.0, 15.0};
     definition.mesh.y_vertices = {0.0, 5.0};
     definition.mesh.z_vertices = {0.0, 5.0};
     definition.layers[0].thickness = "5";
 
-    auto& rects = definition.layers[0].blocks[0].geometry;
+    auto &rects = definition.layers[0].blocks[0].geometry;
     rects[0].rect.width = "15";
     rects[0].rect.height = "5";
 
@@ -171,13 +173,15 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 
     const auto model = build_model(definition);
 
-    EXPECT_NE(input_cell(model,definition.mesh,0), mhs::core::invalidIndex) << "The initial Add must keep the first cell";
-    EXPECT_EQ(input_cell(model,definition.mesh,1), mhs::core::invalidIndex) << "The later Subtract must remove the middle cell";
-    EXPECT_NE(input_cell(model,definition.mesh,2), mhs::core::invalidIndex) << "The final Add must restore the last cell";
+    EXPECT_NE(input_cell(model, definition.mesh, 0), mhs::core::invalidIndex)
+        << "The initial Add must keep the first cell";
+    EXPECT_EQ(input_cell(model, definition.mesh, 1), mhs::core::invalidIndex)
+        << "The later Subtract must remove the middle cell";
+    EXPECT_NE(input_cell(model, definition.mesh, 2), mhs::core::invalidIndex)
+        << "The final Add must restore the last cell";
 }
 
-TEST(PreprocessorTest, MaterialAssignment)
-{
+TEST(PreprocessorTest, MaterialAssignment) {
     auto io = make_simple_io();
     auto model = build_model(io);
 
@@ -192,8 +196,7 @@ TEST(PreprocessorTest, MaterialAssignment)
     EXPECT_NEAR(model.material_table[0].kx.constant_value(), 400.0, 1e-10);
 }
 
-TEST(PreprocessorTest, VirtualCellsFromSubRect)
-{
+TEST(PreprocessorTest, VirtualCellsFromSubRect) {
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -268,13 +271,13 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     silicon.conductivity_x = silicon.conductivity_y = silicon.conductivity_z = "130";
     io.materials.push_back({"silicon", silicon});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     auto model = build_model(io);
 
-    int nx = (io.mesh.x_vertices.size()-1);
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
+    int nx = (io.mesh.x_vertices.size() - 1);
+    int ny = (io.mesh.y_vertices.size() - 1);
+    int nz = (io.mesh.z_vertices.size() - 1);
     EXPECT_EQ(nx, 2);
     EXPECT_EQ(ny, 2);
     EXPECT_EQ(nz, 9);
@@ -298,23 +301,22 @@ TEST(PreprocessorTest, VirtualCellsFromSubRect)
     // Check cell (ix=0, iy=1, iz=0) -> layer2, not subtracted, in (0,0,100,100) -> valid
     // Actually cell at cy=75e-3 is NOT in sub-rect (0,0,50,50), so it IS valid
     int idx_01_0 = 0 * ny * nz + 1 * nz + 0;
-    EXPECT_NE(input_cell(model,io.mesh,idx_01_0), mhs::core::invalidIndex); // valid in layer2
+    EXPECT_NE(input_cell(model, io.mesh, idx_01_0), mhs::core::invalidIndex); // valid in layer2
 
     // Check cell (ix=0, iy=0, iz=5) -> layer0 (top), (ix=0, iy=0) cx=25mm, cy=25mm in rect1 -> valid
     // iz=5 means cz=12.5mm, which is in top layer (z=10..30mm)
     int idx_00_5 = 0 * ny * nz + 0 * nz + 5;
-    EXPECT_NE(input_cell(model,io.mesh,idx_00_5), mhs::core::invalidIndex);
+    EXPECT_NE(input_cell(model, io.mesh, idx_00_5), mhs::core::invalidIndex);
 
     // Cell (ix=0, iy=0, iz=4) -> layer1 (substrate), cx=25mm cy=25mm -> subtracted -> virtual
     // iz=4 means cz=9mm, in substrate layer (z=0..10mm)
     int idx_00_4 = 0 * ny * nz + 0 * nz + 4;
-    EXPECT_EQ(input_cell(model,io.mesh,idx_00_4), mhs::core::invalidIndex);
+    EXPECT_EQ(input_cell(model, io.mesh, idx_00_4), mhs::core::invalidIndex);
 }
 
 // ---- Structured boundary-region tests ----
 
-TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
-{
+TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary) {
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -348,22 +350,22 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 
     // mhs::model::BoundaryPatch: Dirichlet 500K on Z bottom face
     mhs::model::BoundaryPatch boundary;
-    boundary.condition = mhs::model::DirichletBoundary {"500"};
+    boundary.condition = mhs::model::DirichletBoundary{"500"};
     boundary.regions.push_back(mhs::test::face_region(
         mhs::model::Axis::Z, 0.0, {{0.0, 50.0, 50.0, 100.0}, {50.0, 100.0, 0.0, 50.0}, {50.0, 100.0, 50.0, 100.0}}));
     io.boundaries.push_back(boundary);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     auto model = build_model(io);
 
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
     // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> FirstType on ZM
-    int ny_bc = (io.mesh.y_vertices.size()-1);
-    int nz_bc = (io.mesh.z_vertices.size()-1);
+    int ny_bc = (io.mesh.y_vertices.size() - 1);
+    int nz_bc = (io.mesh.z_vertices.size() - 1);
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    size_t compact = input_cell(model,io.mesh,idx_bc);
+    size_t compact = input_cell(model, io.mesh, idx_bc);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
@@ -374,8 +376,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     EXPECT_NEAR(model.bc_params.dirichlet_T[0].constant_value(), 500.0, 1e-10);
 }
 
-TEST(PreprocessorTest, DefaultBoundaryFallback)
-{
+TEST(PreprocessorTest, DefaultBoundaryFallback) {
     auto io = make_simple_io();
     auto model = build_model(io);
 
@@ -388,10 +389,10 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // YM (y=0 face): domain boundary -> SecondType
     // ZM (z=0 face): domain boundary -> SecondType
     // XP, YP, ZP: interior or domain boundary
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
+    int ny = (io.mesh.y_vertices.size() - 1);
+    int nz = (io.mesh.z_vertices.size() - 1);
     int idx = 0 * ny * nz + 0 * nz + 0;
-    size_t compact = input_cell(model,io.mesh,idx);
+    size_t compact = input_cell(model, io.mesh, idx);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
@@ -401,7 +402,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> None (no patch)
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
-    size_t compact_inner = input_cell(model,io.mesh,idx_inner);
+    size_t compact_inner = input_cell(model, io.mesh, idx_inner);
     ASSERT_NE(compact_inner, mhs::core::invalidIndex);
 
     EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
@@ -414,18 +415,8 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
 
 // ---- Full Case1 Integration Test ----
 
-TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
-{
-    // This test verifies that cells whose centers fall exactly on
-    // a block rect boundary edge (due to floating-point alignment)
-    // are correctly classified as valid, not incorrectly excluded.
-    //
-    // Setup: 100x100x30mm domain, 2x2x9 cells.
-    // mhs::model::BlockSpec rect: x=25, width=50, y=0, height=100 -> covers [25mm, 75mm] in X
-    // Cell ix=0: cx=25mm -> exactly at rx=25mm (lower bound inclusive)
-    // Cell ix=1: cx=75mm -> exactly at rx+rw=75mm (upper bound must be inclusive with epsilon)
-    // Without epsilon tolerance, strict `<` on upper bound excludes ix=1.
-
+TEST(PreprocessorTest, RejectsControlVolumesCutByPhysicalDomainBoundary) {
+    // Center inclusion is insufficient: both old cells extend outside [25,75].
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
@@ -457,25 +448,17 @@ TEST(PreprocessorTest, CellsOnExactBoundaryEdgeAreNotMisclassified)
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
     io.materials.push_back({"copper", copper});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
-    auto model = build_model(io);
-
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
-
-    // Cell (ix=0, iy=0, iz=0): cx=25mm >= rx=25mm, should be valid
-    int idx0 = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model,io.mesh,idx0), mhs::core::invalidIndex);
-
-    // Cell (ix=1, iy=0, iz=0): cx=75mm exactly equals rx+rw=75mm
-    // Without epsilon tolerance, this cell is incorrectly classified as virtual
-    int idx1 = 1 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model,io.mesh,idx1), mhs::core::invalidIndex);
+    EXPECT_THROW(build_model(io), std::invalid_argument);
+    io.mesh.x_vertices = {25, 50, 75};
+    const auto model = build_model(io);
+    ASSERT_EQ(model.discrete.cells.size(), 12u);
+    EXPECT_NEAR(model.discrete.cells.front().min[0], 0.025, 1e-12);
+    EXPECT_NEAR(model.discrete.cells.back().max[0], 0.075, 1e-12);
 }
 
-TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
-{
+TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap) {
     // In CAD semantics, later blocks override earlier blocks in overlapping
     // regions. A chip (block2, silicon) overlaying a substrate (block1, copper)
     // should assign silicon material to cells in the overlap area.
@@ -533,22 +516,22 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     silicon.conductivity_x = silicon.conductivity_y = silicon.conductivity_z = "130";
     io.materials.push_back({"silicon", silicon});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     auto model = build_model(io);
 
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
+    int ny = (io.mesh.y_vertices.size() - 1);
+    int nz = (io.mesh.z_vertices.size() - 1);
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model,io.mesh,idx_overlap), mhs::core::invalidIndex);
-    int c_overlap = (int)input_cell(model,io.mesh,idx_overlap);
+    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalidIndex);
+    int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
 
-    const mhs::core::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
+    const mhs::core::FieldContext ctx{0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cells.material_id[c_overlap];
-    const auto overlap_heat_source = model.cells.heat_source_idx[c_overlap];
+    const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
         << "Overlapping cell must get material from the later block";
     EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source].eval(ctx), 1e7)
@@ -556,44 +539,42 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    int c_only_block1 = (int)input_cell(model,io.mesh,idx_only_block1);
+    int c_only_block1 = (int)input_cell(model, io.mesh, idx_only_block1);
     const auto background_material = model.cells.material_id[c_only_block1];
-    const auto background_heat_source = model.cells.heat_source_idx[c_only_block1];
+    const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";
     EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 0.0)
         << "Cell outside the overlap must retain the earlier block heat source";
 }
 
-TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
-{
+TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary) {
     auto definition = make_simple_io();
 
     mhs::model::BoundaryPatch earlier;
     earlier.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    earlier.condition = mhs::model::DirichletBoundary {"310"};
+    earlier.condition = mhs::model::DirichletBoundary{"310"};
     definition.boundaries.push_back(earlier);
 
     mhs::model::BoundaryPatch later;
     later.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    later.condition = mhs::model::ConvectionBoundary {"42", "280"};
+    later.condition = mhs::model::ConvectionBoundary{"42", "280"};
     definition.boundaries.push_back(later);
 
     const auto model = build_model(definition);
-    const auto cell = input_cell(model,definition.mesh,0);
+    const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, mhs::core::invalidIndex);
     ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM), mhs::core::BcType::ThirdType);
 
     const mhs::core::TableIndex param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
-    const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
+    const mhs::core::FieldContext ctx{0.0025, 0.0025, 0.0, 300.0, 0.0};
     ASSERT_LT(param_idx, model.bc_params.cauchy_h.size());
     ASSERT_LT(param_idx, model.bc_params.cauchy_T_inf.size());
     EXPECT_DOUBLE_EQ(model.bc_params.cauchy_h[param_idx].eval(ctx), 42.0);
     EXPECT_DOUBLE_EQ(model.bc_params.cauchy_T_inf[param_idx].eval(ctx), 280.0);
 }
 
-TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
-{
+TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary) {
     // End-to-end: feed a structured Y region, assert the correct Y+ face
     // of a cell adjacent to vertex_y = 7.5mm gets the assigned BC.
     //
@@ -630,12 +611,12 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
 
     // Convection on the upper half of the y=10mm Y+ face
     mhs::model::BoundaryPatch boundary;
-    boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
+    boundary.condition = mhs::model::ConvectionBoundary{"10", "200"};
     boundary.regions.push_back(
         mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
     io.boundaries.push_back(boundary);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     auto model = build_model(io);
 
@@ -644,11 +625,11 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Cells with iz=0 (cz=2.5) are inside the rect and get ThirdType.
     // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
     // the default boundary (SecondType).
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
+    int ny = (io.mesh.y_vertices.size() - 1);
+    int nz = (io.mesh.z_vertices.size() - 1);
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
-        int compact = (int)input_cell(model,io.mesh,idx);
+        int compact = (int)input_cell(model, io.mesh, idx);
         EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
             << "Y region should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
@@ -656,13 +637,12 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the default boundary (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
-    int compact_out = (int)input_cell(model,io.mesh,idx_outside);
+    int compact_out = (int)input_cell(model, io.mesh, idx_outside);
     EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
 
-TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
-{
+TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch) {
     // A single boundary carrying many regions must apply each one.
     // Mirrors case1 mhs::model::BoundaryPatch 5: 4 X-keys + 2 Y-keys covering the side faces
     // of the top die. Without correct per-key iteration, some faces would
@@ -699,7 +679,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
 
     // One boundary, three regions targeting three different exposed faces
     mhs::model::BoundaryPatch boundary;
-    boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
+    boundary.condition = mhs::model::ConvectionBoundary{"10", "200"};
     boundary.regions.push_back(
         mhs::test::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
     boundary.regions.push_back(
@@ -708,19 +688,19 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
         mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
     io.boundaries.push_back(boundary);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_boundary = mhs::model::NeumannBoundary{};
 
     auto model = build_model(io);
 
-    int ny = (io.mesh.y_vertices.size()-1);
-    int nz = (io.mesh.z_vertices.size()-1);
-    int nx = (io.mesh.x_vertices.size()-1);
+    int ny = (io.mesh.y_vertices.size() - 1);
+    int nz = (io.mesh.z_vertices.size() - 1);
+    int nx = (io.mesh.x_vertices.size() - 1);
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
     // and specifically the three faces the keys target must be ThirdType.
     auto check_face = [&](int ix, int iy, int iz, mhs::core::FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
-        int compact = (int)input_cell(model,io.mesh,idx);
+        int compact = (int)input_cell(model, io.mesh, idx);
         EXPECT_EQ(get_bc_type(model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be ThirdType from one of the boundary regions";

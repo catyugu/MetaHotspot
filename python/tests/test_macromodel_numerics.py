@@ -30,7 +30,7 @@ def test_source_shape_preserves_signed_power():
         core = Operators(sp.eye(2), sp.eye(2), np.array([-2.0, -6.0]))
 
         def source_ports(self):
-            return [SourcePort(np.arange(2), power_W=-8.0)]
+            return [SourcePort(cells=np.arange(2), power_W=-8.0)]
 
     model = CoolingModel()
     assert_allclose(model.source_shape[:, 0], [0.25, 0.75])
@@ -117,13 +117,17 @@ def test_boundary_projection_accumulates_patches_and_maps_dofs():
 
 def test_source_projection_maps_physical_cells_to_state_order():
     class Model(AffineParametricModel):
+        ambient_K = 300.0
         cell_dofs = np.array([1, 0])
         core = Operators(sp.eye(2), sp.eye(2), np.array([-6.0, -2.0]))
 
         def source_ports(self):
             return [
-                SourcePort(np.array([0]), power_W=-2.0),
-                SourcePort(np.array([1]), power_W=-6.0),
+                SourcePort(cells=np.array([0]), power_W=-2.0),
+                SourcePort(cells=np.array([1]), power_W=-6.0),
             ]
 
     assert_allclose(Model().source_shape, [[0, 1], [1, 0]])
+    assert_allclose(
+        Model().junction_temperature(np.array([310.0, 320.0])), [310.0, 320.0]
+    )
