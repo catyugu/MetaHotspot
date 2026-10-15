@@ -57,34 +57,34 @@ class MhsFaceRegion(ctypes.Structure):
 class MhsCompiledInfo(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
-        ("grid_count", ctypes.c_size_t),
+        ("face_count", ctypes.c_size_t),
+        ("state_count", ctypes.c_size_t),
         ("study_type", ctypes.c_int32),
         ("initial_temperature", ctypes.c_double),
-        ("nx", ctypes.c_size_t),
-        ("ny", ctypes.c_size_t),
-        ("nz", ctypes.c_size_t),
     ]
 
 
 class MhsCellFields(ctypes.Structure):
     _fields_ = [
-        ("grid_to_cell", ctypes.POINTER(ctypes.c_size_t)),
-        ("grid_count", ctypes.c_size_t),
-        ("cell_to_grid", ctypes.POINTER(ctypes.c_size_t)),
         ("cell_count", ctypes.c_size_t),
-        ("dx", ctypes.POINTER(ctypes.c_double)),
-        ("nx", ctypes.c_size_t),
-        ("dy", ctypes.POINTER(ctypes.c_double)),
-        ("ny", ctypes.c_size_t),
-        ("dz", ctypes.POINTER(ctypes.c_double)),
-        ("nz", ctypes.c_size_t),
-        ("cx", ctypes.POINTER(ctypes.c_double)),
-        ("cy", ctypes.POINTER(ctypes.c_double)),
-        ("cz", ctypes.POINTER(ctypes.c_double)),
+        ("face_count", ctypes.c_size_t),
+        ("cell_min", ctypes.POINTER(ctypes.c_double)),
+        ("cell_max", ctypes.POINTER(ctypes.c_double)),
+        ("cell_to_dof", ctypes.POINTER(ctypes.c_size_t)),
+        ("region_id", ctypes.POINTER(ctypes.c_size_t)),
         ("layer_id", ctypes.POINTER(ctypes.c_uint32)),
         ("block_id", ctypes.POINTER(ctypes.c_uint32)),
         ("material_id", ctypes.POINTER(ctypes.c_uint32)),
         ("heat_source_idx", ctypes.POINTER(ctypes.c_uint32)),
+        ("face_owner", ctypes.POINTER(ctypes.c_size_t)),
+        ("face_neighbor", ctypes.POINTER(ctypes.c_size_t)),
+        ("face_axis", ctypes.POINTER(ctypes.c_int32)),
+        ("face_sign", ctypes.POINTER(ctypes.c_int32)),
+        ("face_min", ctypes.POINTER(ctypes.c_double)),
+        ("face_max", ctypes.POINTER(ctypes.c_double)),
+        ("face_area", ctypes.POINTER(ctypes.c_double)),
+        ("owner_distance", ctypes.POINTER(ctypes.c_double)),
+        ("neighbor_distance", ctypes.POINTER(ctypes.c_double)),
     ]
 
 

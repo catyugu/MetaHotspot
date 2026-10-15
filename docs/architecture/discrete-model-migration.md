@@ -60,3 +60,21 @@ Commands and outcomes are recorded below as each round completes.
   changes were 1.69e-14 and 4.18e-14. These are floating-point summation changes.
 - The old structured data remains only for consumers awaiting round 3; thermal
   and fluid assembly now consume explicit face topology and temperature DOF maps.
+
+### Round 3: consumers and public snapshot ABI
+
+- Red: the new external-mesh test did not compile (missing overload and output
+  connectivity). The Python mesh snapshot test failed on missing `face_count`.
+  Two numerical CTM tests failed on repeated face contributions and permuted DOFs.
+- Green: `ctest --test-dir build --output-on-failure`: 96/96 passed;
+  `python run_cases.py`: all eight cases passed; Python regression: 19 passed.
+- Removed runtime `MeshGeometry`, grid/cell maps, six-slot boundary arrays and
+  `core/mesh.hpp`. Only `compiler/cartesian_mesh.cpp` converts supplied Cartesian
+  axes into explicit geometry/connectivity. No old ABI adapter is retained.
+- The C/Python snapshot exports cell bounds, oriented faces, patch bounds/areas,
+  normal distances, region identities and cell-to-state maps. CTM boundary
+  groups now reference projected native surfaces, including face identity.
+- VTU and node interpolation consume an explicit output mesh. The optional
+  Cartesian sampling shape is presentation metadata used only by XML output.
+- At shared-face probe coordinates, location selects the lexicographically
+  greatest cell lower corner; this is independent of storage and DOF order.

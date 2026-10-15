@@ -183,9 +183,9 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto out_path = tmp_dir() / "io_write_output.xml";
 
     mhs::core::Model model;
-    model.mesh.nx = 1;
-    model.mesh.ny = 1;
-    model.mesh.nz = 1;
+    model.output.cartesian_shape[0] = 2;
+    model.output.cartesian_shape[1] = 2;
+    model.output.cartesian_shape[2] = 2;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<mhs::core::ProbeTrace> traces;
@@ -236,9 +236,9 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
     mhs::core::Model model;
-    model.mesh.nx = 1;
-    model.mesh.ny = 1;
-    model.mesh.nz = 1;
+    model.output.cartesian_shape[0] = 2;
+    model.output.cartesian_shape[1] = 2;
+    model.output.cartesian_shape[2] = 2;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<mhs::core::ProbeTrace> traces;

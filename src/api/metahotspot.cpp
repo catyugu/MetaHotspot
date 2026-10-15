@@ -3,7 +3,6 @@
 #include "api/internal.h"
 
 #include "compiler/model_compiler.hpp"
-#include "core/mesh.hpp"
 #include "core/model_definition.hpp"
 #include "core/solver.hpp"
 #include "io/model_io.hpp"
@@ -551,14 +550,12 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    out->cell_count = c->model->cells.cell_to_grid.size();
-    out->grid_count = c->model->cells.grid_to_cell.size();
+    out->cell_count = c->model->discrete.cells.size();
+    out->face_count = c->model->discrete.faces.size();
+    out->state_count = c->model->dofs.size();
     out->study_type = _from_core_study(c->model->study_type);
     out->initial_temperature = c->model->initial_temperature;
 
-    out->nx = c->model->mesh.nx;
-    out->ny = c->model->mesh.ny;
-    out->nz = c->model->mesh.nz;
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
@@ -605,50 +602,49 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
 {
     CHECK_NULL(c);
     CHECK_NULL(fields);
-    const auto& cells = c->model->cells;
-    const auto& mesh = c->model->mesh;
-    if (fields->grid_count != cells.grid_to_cell.size() || fields->cell_count != cells.cell_to_grid.size()
-        || fields->nx != mesh.nx || fields->ny != mesh.ny || fields->nz != mesh.nz) {
-        SET_ERR("CellFields buffer sizes do not match compiled model");
-        return MHS_ERROR;
+    const auto& model=*c->model;
+    const auto& mesh=model.discrete;
+    if(fields->cell_count!=mesh.cells.size() || fields->face_count!=mesh.faces.size()) {
+        SET_ERR("CellFields buffer sizes do not match compiled model"); return MHS_ERROR;
     }
-    auto status = copy_vector(cells.grid_to_cell, fields->grid_to_cell, fields->grid_count, "grid_to_cell");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.cell_to_grid, fields->cell_to_grid, fields->cell_count, "cell_to_grid");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dx, fields->dx, fields->nx, "dx");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dy, fields->dy, fields->ny, "dy");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.dz, fields->dz, fields->nz, "dz");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cx, fields->cx, fields->nx, "cx");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cy, fields->cy, fields->ny, "cy");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(mesh.cz, fields->cz, fields->nz, "cz");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.layer_id, fields->layer_id, fields->cell_count, "layer_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.block_id, fields->block_id, fields->cell_count, "block_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.material_id, fields->material_id, fields->cell_count, "material_id");
-    if (status != MHS_OK)
-        return status;
-    status = copy_vector(cells.heat_source_idx, fields->heat_source_idx, fields->cell_count, "heat_source_idx");
-    if (status != MHS_OK)
-        return status;
-    return MHS_OK;
+    if(fields->cell_count>0) { CHECK_NULL(fields->cell_min); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->cell_max); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->cell_to_dof); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->region_id); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->layer_id); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->block_id); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->material_id); }
+    if(fields->cell_count>0) { CHECK_NULL(fields->heat_source_idx); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_owner); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_neighbor); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_axis); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_sign); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_min); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_max); }
+    if(fields->face_count>0) { CHECK_NULL(fields->face_area); }
+    if(fields->face_count>0) { CHECK_NULL(fields->owner_distance); }
+    if(fields->face_count>0) { CHECK_NULL(fields->neighbor_distance); }
+
+    for(size_t cidx=0;cidx<mesh.cells.size();++cidx) {
+        for(size_t a=0;a<3;++a) {
+            fields->cell_min[3*cidx+a]=mesh.cells[cidx].min[a];
+            fields->cell_max[3*cidx+a]=mesh.cells[cidx].max[a];
+        }
+        fields->cell_to_dof[cidx]=model.dofs.temperature(mhs::core::CellId{cidx}).value;
+        fields->region_id[cidx]=model.cells.region_id[cidx].value;
+        fields->layer_id[cidx]=model.cells.layer_id[cidx];
+        fields->block_id[cidx]=model.cells.block_id[cidx];
+        fields->material_id[cidx]=model.cells.material_id[cidx];
+        fields->heat_source_idx[cidx]=model.cells.heat_source_idx[cidx];
+    }
+    for(size_t id=0;id<mesh.faces.size();++id) {
+        const auto& face=mesh.faces[id];
+        fields->face_owner[id]=face.owner.value; fields->face_neighbor[id]=face.neighbor.value;
+        fields->face_axis[id]=face.axis; fields->face_sign[id]=face.sign; fields->face_area[id]=face.area;
+        fields->owner_distance[id]=face.owner_distance; fields->neighbor_distance[id]=face.neighbor_distance;
+        for(size_t a=0;a<3;++a) { fields->face_min[3*id+a]=face.min[a]; fields->face_max[3*id+a]=face.max[a]; }
+    }
+    mhs_detail_clear_last_error(); return MHS_OK;
 }
 
 MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
@@ -659,8 +655,8 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     CHECK_NULL(values);
     const auto& model = *c->model;
     const auto& cells = model.cells;
-    const auto& mesh = model.mesh;
-    if (temperature_count != cells.cell_to_grid.size() || values->count != temperature_count) {
+    const auto& mesh = model.discrete;
+    if (temperature_count != model.dofs.size() || values->count != temperature_count) {
         SET_ERR("material evaluation buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -669,12 +665,11 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         SET_ERR("NULL material evaluation output buffer");
         return MHS_ERROR;
     }
-    for (mhs::core::Index cell = 0; cell < cells.cell_to_grid.size(); ++cell) {
-        const auto grid = cells.cell_to_grid[cell];
-        mhs::core::Index ix, iy, iz;
-        mhs::utils::decode_index(grid, mesh.ny, mesh.nz, ix, iy, iz);
-        const auto& props = model.material_table[cells.material_id[cell]];
-        const mhs::core::FieldContext context {mesh.cx[ix], mesh.cy[iy], mesh.cz[iz], temperature[cell], time};
+    for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
+        const auto p=mesh.cells[cell].center();
+        const auto& props=model.material_table[cells.material_id[cell]];
+        const auto dof=model.dofs.temperature(mhs::core::CellId{cell}).value;
+        const mhs::core::FieldContext context{p[0],p[1],p[2],temperature[dof],time};
         values->conductivity_x[cell] = props.kx.eval(context);
         values->conductivity_y[cell] = props.ky.eval(context);
         values->conductivity_z[cell] = props.kz.eval(context);
@@ -696,7 +691,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(temperature);
     CHECK_NULL(out);
     MHS_TRY({
-        const auto cell_count = c->model->cells.cell_to_grid.size();
+        const auto cell_count = c->model->discrete.cells.size();
         if (temperature_count != cell_count) {
             SET_ERR("temperature_count must equal cell_count");
             return MHS_ERROR;
@@ -827,7 +822,7 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char*
     MHS_TRY({
         if (!s->model)
             throw std::invalid_argument("solution does not own a compiled runtime model");
-        if (s->sol.fvm_count != s->model->cells.cell_to_grid.size())
+        if (s->sol.fvm_count != s->model->discrete.cells.size())
             throw std::invalid_argument("solution FVM state does not match its runtime model");
         mhs::io::write_vtu(path, *s->model, std::span<const double>(s->sol.state.data(), s->sol.fvm_count));
     });

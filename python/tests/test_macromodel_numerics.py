@@ -26,6 +26,7 @@ def test_shift_count_satisfies_bound_without_an_iteration_cap(epsilon, hi):
 
 def test_source_shape_preserves_signed_power():
     class CoolingModel(AffineParametricModel):
+        cell_dofs = np.arange(2)
         core = Operators(sp.eye(2), sp.eye(2), np.array([-2.0, -6.0]))
 
         def source_ports(self):
@@ -49,14 +50,28 @@ def test_extracted_modal_rom_preserves_projected_operators(extract):
     source = np.zeros((n, 1))
     source[n // 2] = 1.0
     port = FacePort(
-        label="z+", axis=2, direction=1, cells=np.array([n - 1]),
-        areas=np.ones(1), k=np.ones(1), half=np.ones(1), t1=0, t2=1,
+        label="z+",
+        axis=2,
+        direction=1,
+        cells=np.array([n - 1]),
+        areas=np.ones(1),
+        k=np.ones(1),
+        half=np.ones(1),
+        t1=0,
+        t2=1,
         rects=np.array([[0.0, 1.0, 0.0, 1.0]]),
     )
     domain = Subdomain(
-        name="chain", cells=np.arange(n), K=K, C=C, source=source,
-        ports=[port], boundary_ports=[port], ambient_terms=[H],
-        ambient_ranges=np.array([[1.0, 10.0]]), effective_p=np.array([2.0]),
+        name="chain",
+        cells=np.arange(n),
+        K=K,
+        C=C,
+        source=source,
+        ports=[port],
+        boundary_ports=[port],
+        ambient_terms=[H],
+        ambient_ranges=np.array([[1.0, 10.0]]),
+        effective_p=np.array([2.0]),
     )
     rom = extract(domain, tolerance=1e-2, max_order=64, probe_rounds=2, seed=7)
     V = rom.basis
@@ -66,7 +81,9 @@ def test_extracted_modal_rom_preserves_projected_operators(extract):
     assert_allclose(rom.ambient_hat[0].toarray(), V.T @ H @ V, atol=1e-12)
     assert_allclose(rom.boundary_trace("z+"), V[port.cells])
     assert_allclose(
-        rom.internal_operator().toarray(), V.T @ (K + 2 * H) @ V, atol=1e-12,
+        rom.internal_operator().toarray(),
+        V.T @ (K + 2 * H) @ V,
+        atol=1e-12,
     )
 
     clone = clone_embeddable_rom(rom)
@@ -76,3 +93,37 @@ def test_extracted_modal_rom_preserves_projected_operators(extract):
     assert_allclose(rom.F_hat, V.T @ source, atol=1e-12)
     assert_allclose(rom.ports[0].areas, 1)
     assert rom.summary["per_port_plans"][0]["shifts_per_s"][-1] > 0
+
+
+def test_boundary_projection_accumulates_patches_and_maps_dofs():
+    from metahotspot.macromodel.affine import BoundaryGroup
+    from metahotspot.macromodel.geometry import BoundarySurface
+
+    class Model(AffineParametricModel):
+        cell_dofs = np.array([1, 0])
+        core = Operators(sp.eye(2), sp.eye(2), np.zeros(2))
+
+        def boundary_groups(self):
+            return (
+                BoundaryGroup(
+                    BoundarySurface(
+                        np.array([0, 0, 1]), np.array([0.1, 0.2, 0.4]), np.arange(3)
+                    )
+                ),
+            )
+
+    assert_allclose(Model().boundary_terms[0].diagonal(), [0.4, 0.3])
+
+
+def test_source_projection_maps_physical_cells_to_state_order():
+    class Model(AffineParametricModel):
+        cell_dofs = np.array([1, 0])
+        core = Operators(sp.eye(2), sp.eye(2), np.array([-6.0, -2.0]))
+
+        def source_ports(self):
+            return [
+                SourcePort(np.array([0]), power_W=-2.0),
+                SourcePort(np.array([1]), power_W=-6.0),
+            ]
+
+    assert_allclose(Model().source_shape, [[0, 1], [1, 0]])

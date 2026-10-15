@@ -84,9 +84,9 @@ namespace mhs::io {
             data_elem->DeleteChild(child);
         }
 
-        const mhs::core::Index node_nx = model.mesh.nx + 1;
-        const mhs::core::Index node_ny = model.mesh.ny + 1;
-        const mhs::core::Index node_nz = model.mesh.nz + 1;
+        const mhs::core::Index node_nx = model.output.cartesian_shape[0];
+        const mhs::core::Index node_ny = model.output.cartesian_shape[1];
+        const mhs::core::Index node_nz = model.output.cartesian_shape[2];
 
         for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
             for (mhs::core::Index vy = 0; vy < node_ny; vy++) {

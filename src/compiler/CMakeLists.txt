@@ -1,4 +1,5 @@
 add_library(mhs_compiler STATIC
+    cartesian_mesh.cpp
     fluid_preprocessor.cpp
     geometry_compiler.cpp
     model_compiler.cpp

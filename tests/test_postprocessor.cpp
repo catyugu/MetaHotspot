@@ -66,8 +66,8 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     // is shared by all 8 cells. The node is at the geometric center
     // of the 8 cell centers, so all distances are equal,
     // and weighted average equals arithmetic mean.
-    int node_ny = model.mesh.ny + 1;
-    int node_nz = model.mesh.nz + 1;
+    int node_ny = (model.output.cartesian_shape[1]-1) + 1;
+    int node_nz = (model.output.cartesian_shape[2]-1) + 1;
     int interior_node = 1 * node_ny * node_nz + 1 * node_nz + 1;
 
     // The 8 cells are at (0,0,0),(1,0,0),(0,1,0),(1,1,0),
@@ -140,8 +140,8 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
 
-    int node_ny = model.mesh.ny + 1;
-    int node_nz = model.mesh.nz + 1;
+    int node_ny = (model.output.cartesian_shape[1]-1) + 1;
+    int node_nz = (model.output.cartesian_shape[2]-1) + 1;
 
     // Corner node (vx=0, vy=0, vz=0) touches Dirichlet Z-bottom AND
     // Neumann Y-bottom AND Neumann X-bottom. Dirichlet must win.
@@ -150,8 +150,8 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
         << "Corner node touching Dirichlet must have exactly 500K, not an average";
 
     // All nodes on Z=0 face should be 500K (they all touch Dirichlet)
-    for (int vx = 0; vx < model.mesh.nx + 1; vx++) {
-        for (int vy = 0; vy < model.mesh.ny + 1; vy++) {
+    for (int vx = 0; vx < (model.output.cartesian_shape[0]-1) + 1; vx++) {
+        for (int vy = 0; vy < (model.output.cartesian_shape[1]-1) + 1; vy++) {
             int idx = vx * node_ny * node_nz + vy * node_nz + 0;
             EXPECT_NEAR(node_T[idx], 500.0, 1e-6) << "Z=0 node at (vx=" << vx << ", vy=" << vy << ") must be 500K";
         }
@@ -208,8 +208,8 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     int N = static_cast<int>(model.cells.material_id.size());
     std::vector<double> cell_T(N, 400.0);
 
-    int node_ny = model.mesh.ny + 1;
-    int node_nz = model.mesh.nz + 1;
+    int node_ny = (model.output.cartesian_shape[1]-1) + 1;
+    int node_nz = (model.output.cartesian_shape[2]-1) + 1;
     // z=0 面的中心节点 (vx=1, vy=1, vz=0)
     int node_idx = 1 * node_ny * node_nz + 1 * node_nz + 0;
 

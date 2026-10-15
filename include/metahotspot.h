@@ -119,34 +119,35 @@ typedef struct {
     double fixed_dt;
 } mhs_solve_options_t;
 
-/** Scalar compiled-model metadata. Array data is retrieved with copy functions. */
+/** Explicit compiled geometry sizes. State order is independent of cell order. */
 typedef struct {
-    size_t cell_count;
-    size_t grid_count;
+    size_t cell_count, face_count, state_count;
     mhs_study_t study_type;
     double initial_temperature;
-    size_t nx, ny, nz;
 } mhs_compiled_info_t;
 
-/** Caller-owned buffers for compiled cell topology and identities. */
+/** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
+ * face_neighbor == SIZE_MAX denotes exterior; signs are outward from owner.
+ * This is a breaking replacement of the structured-grid ABI. */
 typedef struct {
-    size_t* grid_to_cell;
-    size_t grid_count;
-    size_t* cell_to_grid;
-    size_t cell_count;
-    double* dx;
-    size_t nx;
-    double* dy;
-    size_t ny;
-    double* dz;
-    size_t nz;
-    double* cx;
-    double* cy;
-    double* cz;
+    size_t cell_count, face_count;
+    double* cell_min;
+    double* cell_max;
+    size_t* cell_to_dof;
+    size_t* region_id;
     uint32_t* layer_id;
     uint32_t* block_id;
     uint32_t* material_id;
     uint32_t* heat_source_idx;
+    size_t* face_owner;
+    size_t* face_neighbor;
+    int32_t* face_axis;
+    int32_t* face_sign;
+    double* face_min;
+    double* face_max;
+    double* face_area;
+    double* owner_distance;
+    double* neighbor_distance;
 } mhs_cell_fields_t;
 
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */

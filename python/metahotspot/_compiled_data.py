@@ -18,17 +18,22 @@ class Operators(NamedTuple):
 
 @dataclass(frozen=True)
 class CellFields:
-    """Compiled cell and structured-grid arrays in their native order."""
+    """Explicit cell and face geometry; cell_to_dof maps into algebraic state order."""
 
-    grid_to_cell: np.ndarray
-    cell_to_grid: np.ndarray
-    dx: np.ndarray
-    dy: np.ndarray
-    dz: np.ndarray
-    cx: np.ndarray
-    cy: np.ndarray
-    cz: np.ndarray
+    cell_min: np.ndarray
+    cell_max: np.ndarray
+    cell_to_dof: np.ndarray
+    region_id: np.ndarray
     layer_id: np.ndarray
     block_id: np.ndarray
     material_id: np.ndarray
     heat_source_idx: np.ndarray
+    face_owner: np.ndarray
+    face_neighbor: np.ndarray
+    face_axis: np.ndarray
+    face_sign: np.ndarray
+    face_min: np.ndarray
+    face_max: np.ndarray
+    face_area: np.ndarray
+    owner_distance: np.ndarray
+    neighbor_distance: np.ndarray

@@ -2,6 +2,7 @@
 
 #include "core/fluid_domain.hpp"
 #include "core/discrete_mesh.hpp"
+#include "core/output_mesh.hpp"
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
@@ -14,19 +15,6 @@ namespace mhs::core {
     struct FaceBC {
         BcType type = BcType::None;
         TableIndex param_idx = 0;
-    };
-
-    // ── Structured mesh geometry ─────────────────────────────────────────
-    struct MeshGeometry {
-        Index nx = 0, ny = 0, nz = 0;
-
-        std::vector<double> dx;
-        std::vector<double> dy;
-        std::vector<double> dz;
-
-        std::vector<double> cx;
-        std::vector<double> cy;
-        std::vector<double> cz;
     };
 
     // ── Material properties ──────────────────────────────────────────────
@@ -48,8 +36,7 @@ namespace mhs::core {
 
     // ── Cell topology and compact per-active-cell fields ────────────────
     struct CellFields {
-        std::vector<Index> grid_to_cell;
-        std::vector<Index> cell_to_grid;
+        std::vector<RegionId> region_id;
 
         std::vector<TableIndex> material_id;
         std::vector<TableIndex> heat_source_idx;
@@ -68,13 +55,12 @@ namespace mhs::core {
 
     // ── Top-level model ──────────────────────────────────────────────────
     struct Model {
-        MeshGeometry mesh;
         DiscreteMesh discrete;
+        OutputMesh output;
         DofMap dofs;
         std::vector<FaceBC> patch_bcs;
         CellFields cells;
 
-        std::vector<FaceBC> face_bcs;
         BCParamTable bc_params;
 
         std::vector<MaterialProps> material_table;

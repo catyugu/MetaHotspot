@@ -47,6 +47,7 @@ def _cell_split(cells, half_z):
 class _FakePortsModel:
     def __init__(self, compiled, ops):
         self._full = compiled
+        self.cell_dofs = compiled.cells.cell_to_dof.astype(np.intp)
         self.geometry = CellGeometry(compiled.cells)
         self._ops = ops
         self.cell_layout = mm.CellLayout(
@@ -112,16 +113,12 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
     for p in ports:
         assert np.all(p.g > 0.0)
 
-    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.metadata.nz - 1
-    top_cells = np.flatnonzero(top)
-    top_areas = np.full(top_cells.size, 1.0e-6)
-    model.boundary_groups = lambda: (
-        mm.BoundaryGroup(cells=top_cells, areas=top_areas),
-    )
+    model.boundary_groups = lambda: (mm.BoundaryGroup(model.geometry.surface(Face.ZP)),)
     ports = mm.enumerate_interface_ports(model, np.arange(compiled.cell_count))
     labels = {p.normal for p in ports}
     assert "z+" not in labels
     assert "z-" in labels
+    assert {"x-", "x+", "y-", "y+"} <= labels
 
 
 def _rect_port(n, lo, hi, axis=2, direction=1):

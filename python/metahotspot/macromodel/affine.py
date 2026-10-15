@@ -40,7 +40,7 @@ import scipy.sparse as sp
 
 from metahotspot._compiled_data import Operators
 from metahotspot.enums import Study
-from metahotspot.macromodel.geometry import CellGeometry
+from metahotspot.macromodel.geometry import CellGeometry, BoundarySurface
 
 from metahotspot.macromodel.utils import (
     normalized_operators,
@@ -54,7 +54,7 @@ class BoundaryGroup:
     """
     One affine parameter: the boundary data a single ``h`` controls.
 
-    ``cells`` are 0-based indices into the full-domain FVM order; ``areas`` the
+    ``cells`` are physical CellId values projected onto the selected surface; ``areas`` the
     SI exposed face area (m²) of each of those cells on this group's boundary
     surface.  Together with a scalar ``h`` they define the linear affine Robin
     term ``H_k = diag(areas)`` (BCI 2015 eq. 7).  ``h_range`` is the admissible
@@ -67,9 +67,20 @@ class BoundaryGroup:
     geometry.
     """
 
-    cells: np.ndarray  # int64, boundary cells in the full-domain FVM order
-    areas: np.ndarray  # float64, SI exposed face area of each cell (m^2)
-    h_range: tuple[float, float] = (1.0, 1.0e6)  # admissible physical range
+    surface: BoundarySurface
+    h_range: tuple[float, float] = (1.0, 1.0e6)
+
+    @property
+    def cells(self):
+        return self.surface.cell_ids
+
+    @property
+    def areas(self):
+        return self.surface.areas
+
+    @property
+    def face_ids(self):
+        return self.surface.face_ids
 
 
 @dataclass(frozen=True)
@@ -100,7 +111,7 @@ class SourcePort:
     power input is ``P_k(t) = power_W * activity(t)``.
     """
 
-    cells: np.ndarray  # int64, source-region cells in the full-domain order
+    cells: np.ndarray  # physical CellIds; mapped through cell_dofs before projection
     power_W: float  # nominal total power (W)
     activity: Callable[[float], float] | None = None  # t -> dimensionless factor
 
@@ -212,6 +223,11 @@ class AffineParametricModel:
         return normalized_operators(*self._full.assemble())
 
     @cached_property
+    def cell_dofs(self) -> np.ndarray:
+        """Explicit projection from physical CellId order to algebraic state order."""
+        return self._full.cells.cell_to_dof.astype(np.intp)
+
+    @cached_property
     def source_shape(self) -> np.ndarray:
         """Unit-power source-shape matrix ``G_src`` (N, n_src).
 
@@ -225,7 +241,8 @@ class AffineParametricModel:
         G = np.zeros((f.size, len(ports)), dtype=np.float64)
         for k, port in enumerate(ports):
             cells = np.asarray(port.cells, dtype=np.int64)
-            G[cells, k] = f[cells] / port.power_W
+            dofs = self.cell_dofs[cells]
+            G[dofs, k] = f[dofs] / port.power_W
         return G
 
     @cached_property
@@ -240,11 +257,15 @@ class AffineParametricModel:
         ``p_c = k_c·h / (k_c + h·half_c)`` per cell for the same ``h_k``,
         giving the FloTHERM ThirdType capacitance-free face condensation.
         """
-        n = self._full.cell_count
+        n = self.core.K.shape[0]
         terms = []
         for group in self.boundary_groups():
             diagonal = np.zeros(n)
-            diagonal[np.asarray(group.cells, dtype=np.int64)] = group.areas
+            np.add.at(
+                diagonal,
+                self.cell_dofs[np.asarray(group.cells, dtype=np.int64)],
+                group.areas,
+            )
             terms.append(sp.diags(diagonal))
         return terms
 
@@ -368,7 +389,7 @@ class AffineParametricModel:
         started = time.perf_counter()
         steady_rise = solve_rom_steady(K_h, G, self.nominal_power())
         steady_s = time.perf_counter() - started
-        steady_temperature = self.ambient_K + steady_rise
+        steady_temperature = self.ambient_K + steady_rise[self.cell_dofs]
 
         started = time.perf_counter()
         times, history = solve_rom_transient(
@@ -383,7 +404,7 @@ class AffineParametricModel:
         return AffineSolveResult(
             steady_temperature=steady_temperature,
             times=times,
-            history=self.ambient_K + history,
+            history=self.ambient_K + history[:, self.cell_dofs],
             steady_s=steady_s,
             transient_s=transient_s,
         )

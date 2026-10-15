@@ -1,6 +1,8 @@
 #include "compiler/model_compiler.hpp"
 #include "core/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
+#include "solver/postprocessor.hpp"
+#include "solver/interpolation.hpp"
 #include <gtest/gtest.h>
 #include <numeric>
 
@@ -102,4 +104,34 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     const auto ops = mhs::sim::assemble_thermal(model, std::vector<double>(8, 300), 0);
     EXPECT_NEAR(ops.f.sum(), 0.1, 1e-14);
     EXPECT_NO_THROW(model.discrete.validate());
+}
+
+TEST(DiscreteMesh, ExternalMeshNeedsNoCartesianAxes)
+{
+    auto definition=cube_definition();
+    auto original=mhs::sim::build_model(definition);
+    definition.mesh={};
+    const auto imported=mhs::sim::build_model(definition,original.discrete);
+    EXPECT_EQ(imported.discrete.cells.size(),8u);
+    EXPECT_EQ(imported.discrete.faces.size(),36u);
+    EXPECT_EQ(imported.output.cell_vertices.size(),8u);
+    EXPECT_EQ(imported.output.points.size(),27u);
+    EXPECT_EQ(imported.dofs.size(),8u);
+}
+
+TEST(DiscreteMesh, PointAndVertexSamplingUseDofMap)
+{
+    auto model=mhs::sim::build_model(cube_definition());
+    const std::vector<double> temperature{300,310,320,330,340,350,360,370};
+    const auto vertices=mhs::post::interpolate_cell_to_node(model,temperature,0);
+    const Vec3 point{0.2,0.3,0.4};
+    const auto cell=model.discrete.locate(point);
+    const auto sample=mhs::utils::sample_point(model,temperature,0,cell,point);
+    const std::vector<Index> permutation{7,5,3,1,6,4,2,0};
+    model.dofs.set_permutation(permutation);
+    std::vector<double> reordered(8);
+    for(Index c=0;c<8;++c) reordered[permutation[c]]=temperature[c];
+    const auto result=mhs::post::interpolate_cell_to_node(model,reordered,0);
+    for(Index v=0;v<vertices.size();++v) EXPECT_NEAR(result[v],vertices[v],1e-12);
+    EXPECT_NEAR(mhs::utils::sample_point(model,reordered,0,cell,point),sample,1e-12);
 }

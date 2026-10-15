@@ -38,11 +38,8 @@ def test_model_native_calls_compile_and_assemble():
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert (compiled.metadata.nx, compiled.metadata.ny, compiled.metadata.nz) == (
-        1,
-        1,
-        1,
-    )
+    assert compiled.metadata.face_count == 6
+    assert compiled.metadata.state_count == 1
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)

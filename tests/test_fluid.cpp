@@ -1,6 +1,5 @@
 #include "compiler/model_compiler.hpp"
 #include "config.h"
-#include "core/mesh.hpp"
 #include "io/model_io.hpp"
 #include "solver/fluid_assembler.hpp"
 
@@ -23,7 +22,7 @@ namespace {
     std::vector<double> default_state(const mhs::core::Model& model)
     {
         return std::vector<double>(
-            static_cast<std::size_t>(model.cells.cell_to_grid.size()), model.initial_temperature);
+            static_cast<std::size_t>(model.dofs.size()), model.initial_temperature);
     }
 
 } // namespace
@@ -95,18 +94,11 @@ TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
         if (row == col)
             continue;
 
-        const mhs::core::Index old = model.cells.cell_to_grid[row];
-        mhs::core::Index ix, iy, iz;
-        mhs::utils::decode_index(old, model.mesh.ny, model.mesh.nz, ix, iy, iz);
-
-        bool direct_neighbor = false;
-        for (auto dir : mhs::core::FACE_DIRS) {
-            const mhs::core::Index neighbor_old = mhs::utils::neighbor_grid_index(
-                ix, iy, iz, dir, model.mesh.nx, model.mesh.ny, model.mesh.nz, model.cells.grid_to_cell);
-            if (neighbor_old != mhs::core::invalidIndex && model.cells.grid_to_cell[neighbor_old] == col) {
-                direct_neighbor = true;
-                break;
-            }
+        const auto cell=model.dofs.cell(mhs::core::DofId{row});
+        const auto neighbor=model.dofs.cell(mhs::core::DofId{col});
+        bool direct_neighbor=false;
+        for(auto id:model.discrete.incident_faces(cell)) {
+            if(model.discrete.faces[id.value].other(cell)==neighbor) { direct_neighbor=true; break; }
         }
         EXPECT_TRUE(direct_neighbor) << "fluid increment added non-neighbor coordinate (" << row << ", " << col << ")";
     }

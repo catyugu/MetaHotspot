@@ -139,71 +139,54 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     cells = np.asarray(cells, dtype=np.int64)
     full = model.geometry
     layout = model.cell_layout
-    n = cells.size
     local = {int(c): i for i, c in enumerate(cells)}
-    ijk = full.indices[cells]  # (n,3)
-    nx, ny, nz = full.nx, full.ny, full.nz
-
-    in_group = np.zeros(model.full_cell_count, dtype=bool)
-    for g in model.boundary_groups():
-        in_group[np.asarray(g.cells, dtype=np.int64)] = True
-    by_key: dict[tuple[int, int], list[int]] = {}
-    for r in range(n):
-        ci, cj, ck = (int(ijk[r, 0]), int(ijk[r, 1]), int(ijk[r, 2]))
-        for axis in range(3):
-            for direction in (-1, 1):
-                if axis == 0:
-                    ni = ci + direction
-                    in_grid = 0 <= ni < nx
-                    nidx = ni * (ny * nz) + cj * nz + ck
-                elif axis == 1:
-                    nj = cj + direction
-                    in_grid = 0 <= nj < ny
-                    nidx = ci * (ny * nz) + nj * nz + ck
-                else:
-                    nk = ck + direction
-                    in_grid = 0 <= nk < nz
-                    nidx = ci * (ny * nz) + cj * nz + nk
-                if (not in_grid) or (nidx not in local):
-                    by_key.setdefault((axis, direction), []).append(r)
-
+    fields = full.fields
+    ambient_faces = set(
+        int(f) for group in model.boundary_groups() for f in group.face_ids
+    )
+    by_key = {}
+    invalid = np.iinfo(fields.face_neighbor.dtype).max
+    for fid, (owner, neighbor) in enumerate(
+        zip(fields.face_owner, fields.face_neighbor)
+    ):
+        for cell, other, sign in (
+            (int(owner), int(neighbor), int(fields.face_sign[fid])),
+            (int(neighbor), int(owner), -int(fields.face_sign[fid])),
+        ):
+            if cell == invalid or cell not in local or other in local:
+                continue
+            ambient = other == invalid and fid in ambient_faces
+            if ambient and not include_ambient:
+                continue
+            key = (int(fields.face_axis[fid]), sign, ambient)
+            by_key.setdefault(key, []).append((local[cell], fid))
     ports = []
-    for (axis, direction), rows in by_key.items():
-        rows = np.asarray(rows, dtype=np.int64)
+    for (axis, direction, ambient), entries in by_key.items():
+        rows = np.asarray([r for r, _ in entries], dtype=np.int64)
+        face_ids = np.asarray([f for _, f in entries], dtype=np.int64)
         fc = cells[rows]
-        declared = in_group[fc] & full.exposed(_FACE_BIT[(axis, direction)])[fc]
-        interface = (
-            np.flatnonzero(~declared) if not include_ambient else np.arange(rows.size)
-        )
-        if interface.size == 0:
-            continue
-        ir = rows[interface]
-        fci = cells[ir]
         t1, t2 = _tangent_pair(axis)
-        centers = layout.centers[fci]
-        half = layout.half_sizes[fci]
-        areas = 2.0 * half[:, t1] * 2.0 * half[:, t2]
-        rects = np.column_stack(
-            (
-                centers[:, t1] - half[:, t1],
-                centers[:, t1] + half[:, t1],
-                centers[:, t2] - half[:, t2],
-                centers[:, t2] + half[:, t2],
-            )
+        lo = fields.face_min[face_ids]
+        hi = fields.face_max[face_ids]
+        rects = np.column_stack((lo[:, t1], hi[:, t1], lo[:, t2], hi[:, t2]))
+        distances = np.where(
+            fields.face_owner[face_ids] == fc,
+            fields.owner_distance[face_ids],
+            fields.neighbor_distance[face_ids],
         )
         ports.append(
             FacePort(
                 label=f"{_AXES[axis]}{_DIR[direction]}",
                 axis=axis,
                 direction=direction,
-                cells=ir,
-                areas=areas,
-                k=layout.conductivity[fci, axis],
-                half=half[:, axis],
+                cells=rows,
+                areas=fields.face_area[face_ids],
+                k=layout.conductivity[fc, axis],
+                half=distances,
                 t1=t1,
                 t2=t2,
                 rects=rects,
-                ambient=bool(include_ambient and np.all(declared)),
+                ambient=ambient,
             )
         )
     return ports
@@ -298,14 +281,15 @@ def build_subdomain(
     core = model.core
     n = cells.size
 
-    K = core.K.tocsc()[cells, :][:, cells].tocsc()
-    C = core.C.tocsc()[cells, :][:, cells].tocsc()
-    source = np.asarray(model.source_shape[cells, :], dtype=np.float64)
+    dofs = model.cell_dofs[cells]
+    K = core.K.tocsc()[dofs, :][:, dofs].tocsc()
+    C = core.C.tocsc()[dofs, :][:, dofs].tocsc()
+    source = np.asarray(model.source_shape[dofs, :], dtype=np.float64)
 
     # Declared ambient groups as local affine terms + effective coefficients.
     ambient_terms, ambient_ranges = [], []
     for term, h_range in zip(model.boundary_terms, model.h_ranges()):
-        diag = np.asarray(term.diagonal()).ravel()[cells]
+        diag = np.asarray(term.diagonal()).ravel()[dofs]
         ambient_terms.append(sp.diags(diag))
         ambient_ranges.append(list(h_range))
     if physical_h is None:
@@ -318,7 +302,7 @@ def build_subdomain(
     # Remove the phantom cross conductance(s) to now-removed neighbours so the
     # cut faces are genuinely adiabatic inside the subdomain.
     outside = np.setdiff1d(np.arange(model.full_cell_count), cells)
-    cross = (core.K.tocsc()[cells, :][:, outside]).tocoo()
+    cross = (core.K.tocsc()[dofs, :][:, model.cell_dofs[outside]]).tocoo()
     phantom = np.zeros(n)
     for row, value in zip(cross.row, cross.data):
         if value < 0.0:
@@ -471,7 +455,9 @@ def extract_rom(
     return _project_rom(subdomain, basis, summary)
 
 
-def _project_rom(subdomain: Subdomain, basis: np.ndarray, summary: dict) -> EmbeddableRom:
+def _project_rom(
+    subdomain: Subdomain, basis: np.ndarray, summary: dict
+) -> EmbeddableRom:
     """Project and modalize a response basis, then export physical face traces."""
     modal_k, modal_q = scipy.linalg.eigh(
         basis.T @ subdomain.K @ basis,

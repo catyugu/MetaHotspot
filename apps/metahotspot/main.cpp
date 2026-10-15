@@ -43,8 +43,7 @@ int main(int argc, char* argv[])
 
         auto model = mhs::sim::build_model(definition);
 
-        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model.mesh.nx * model.mesh.ny * model.mesh.nz,
-            model.mesh.nx, model.mesh.ny, model.mesh.nz);
+        MHS_LOG_INFO("Compiled {} cells and {} face patches", model.discrete.cells.size(), model.discrete.faces.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");

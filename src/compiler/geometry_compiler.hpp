@@ -14,9 +14,9 @@ namespace mhs::sim {
     /// Pre-resolved geometry for a single rect (all values in SI meters)
     struct ResolvedRect {
         mhs::model::GeometryOperation operation;
-        double x; // absolute SI x coordinate of rect origin
-        double y; // absolute SI y coordinate of rect origin
-        double width; // SI width (always positive after normalization)
+        double x;      // absolute SI x coordinate of rect origin
+        double y;      // absolute SI y coordinate of rect origin
+        double width;  // SI width (always positive after normalization)
         double height; // SI height (always positive after normalization)
     };
 
@@ -33,7 +33,7 @@ namespace mhs::sim {
     struct ResolvedLayerGeometry {
         std::vector<ResolvedBlock> blocks;
         double z_start; // SI z coordinate of layer bottom
-        double z_end; // SI z coordinate of layer top
+        double z_end;   // SI z coordinate of layer top
     };
 
     /// Compiled boundary region with resolved parameters
@@ -54,19 +54,17 @@ namespace mhs::sim {
     //  Public compiler API
     // ──────────────────────────────────────────────────────────────
 
-    std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
+    std::vector<ResolvedLayerGeometry> resolve_geometry(const std::vector<mhs::model::LayerSpec> &layers,
+                                                        double si_scale, const mhs::core::SymbolTable &symbols);
 
-    mhs::core::CellFields assign_cell_layers(
-        const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh);
+    std::pair<mhs::core::Index, mhs::core::Index> classify_point(const std::vector<ResolvedLayerGeometry> &layers,
+                                                                 const mhs::core::Vec3 &point);
+    void project_cell_regions(mhs::core::Model &model, const std::vector<ResolvedLayerGeometry> &layers);
+    void compile_cartesian_mesh(mhs::core::Model &model, const mhs::model::MeshSpec &input, double scale,
+                                const std::vector<ResolvedLayerGeometry> &layers);
+    void build_external_output_mesh(mhs::core::Model &model);
 
-    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
-        std::vector<mhs::core::FaceBC>& face_bcs);
-
-    void project_boundary_patches(mhs::core::Model& model,
-        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& fallback);
-
-    void compile_discrete_mesh(mhs::core::Model& model);
+    void project_boundary_patches(mhs::core::Model &model, const std::vector<CompiledBoundaryRegion> &boundaries,
+                                  const DefaultBoundary &fallback);
 
 } // namespace mhs::sim
