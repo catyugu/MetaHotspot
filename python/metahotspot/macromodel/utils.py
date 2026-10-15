@@ -25,12 +25,9 @@ def mpmm_elliptic_shift_count(
     relative_epsilon: float, lambda_min: float, lambda_max: float
 ):
     """Smallest m satisfying 4 exp(-m pi^2/log(4/k')) <= epsilon."""
-    k_prime = lambda_min / lambda_max
-    log_term = math.log(4.0 / k_prime)
-    for m in range(1, 400):
-        if 4.0 * math.exp(-m * math.pi * math.pi / log_term) <= relative_epsilon:
-            return m
-    raise RuntimeError("MPMM elliptic shift count did not converge")
+    log_term = math.log(4.0) + math.log(lambda_max) - math.log(lambda_min)
+    count = (math.log(4.0) - math.log(relative_epsilon)) * log_term / math.pi**2
+    return max(1, math.ceil(count))
 
 
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:

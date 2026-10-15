@@ -253,7 +253,7 @@ class Model(OwnedHandle):
         self,
         temperature: str,
         regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
+            list[tuple[int, float, float, float, float, float]] | None
         ) = None,
     ) -> None:
         """Add a Dirichlet boundary condition.
@@ -274,7 +274,7 @@ class Model(OwnedHandle):
         self,
         heat_flux: str,
         regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
+            list[tuple[int, float, float, float, float, float]] | None
         ) = None,
     ) -> None:
         """Add a Neumann (heat flux) boundary condition."""
@@ -292,7 +292,7 @@ class Model(OwnedHandle):
         coefficient: str,
         ambient_temperature: str,
         regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
+            list[tuple[int, float, float, float, float, float]] | None
         ) = None,
     ) -> None:
         """Add a convection (Robin) boundary condition."""

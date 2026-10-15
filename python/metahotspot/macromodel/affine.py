@@ -217,16 +217,15 @@ class AffineParametricModel:
 
         Column k is the unit-power shape of source port k: the constant
         heat-source RHS over the port's cells, normalized by the port's
-        nominal power.  ``G_src @ P(t)`` reproduces the native source RHS at
-        any power vector (FANTASTIC 2014 eq. 2).
+        nonzero nominal power. Signed powers are preserved. ``G_src @ P(t)``
+        reproduces the native source RHS at any power vector (FANTASTIC 2014 eq. 2).
         """
         f = np.asarray(self.core.f, dtype=np.float64)
         ports = self.source_ports()
         G = np.zeros((f.size, len(ports)), dtype=np.float64)
         for k, port in enumerate(ports):
             cells = np.asarray(port.cells, dtype=np.int64)
-            scale = max(float(port.power_W), np.finfo(float).tiny)
-            G[cells, k] = f[cells] / scale
+            G[cells, k] = f[cells] / port.power_W
         return G
 
     @cached_property
@@ -311,7 +310,6 @@ class AffineParametricModel:
         axes = self._boundary_axis_per_group()
         out = np.empty(len(groups), dtype=np.float64)
         for k, group in enumerate(groups):
-            cells = np.asarray(group.cells, dtype=np.int64)
             p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
             areas = np.asarray(group.areas, dtype=np.float64)
             out[k] = self._area_weighted(p_cell, areas)
@@ -332,7 +330,6 @@ class AffineParametricModel:
         axes = self._boundary_axis_per_group()
         out = []
         for k, g in enumerate(groups):
-            cells = np.asarray(g.cells, dtype=np.int64)
             lo, hi = g.h_range
             p_lo = self._effective_per_cell(g, axes[k], lo)
             p_hi = self._effective_per_cell(g, axes[k], hi)

@@ -468,41 +468,29 @@ def extract_rom(
         seed=seed,
     )
 
-    C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
-    K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
-    F_hat = np.asarray(basis.T @ G, dtype=np.float64)
-    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in subdomain.ambient_terms]
+    return _project_rom(subdomain, basis, summary)
 
-    # Modalize: M-normalized generalized modes (M = I, K = diag(λ), one ~0 mode).
+
+def _project_rom(subdomain: Subdomain, basis: np.ndarray, summary: dict) -> EmbeddableRom:
+    """Project and modalize a response basis, then export physical face traces."""
     modal_k, modal_q = scipy.linalg.eigh(
-        K0_hat.toarray(), C_hat.toarray(), check_finite=False
+        basis.T @ subdomain.K @ basis,
+        basis.T @ subdomain.C @ basis,
+        check_finite=False,
     )
-    modal_q = np.asarray(modal_q, dtype=np.float64)
-    basis = np.asarray(basis @ modal_q, dtype=np.float64)
-    C_hat = sp.eye(modal_k.size, format="csc")
-    K0_hat = sp.diags(modal_k, format="csc")
-    F_hat = np.asarray(modal_q.T @ F_hat, dtype=np.float64)
-    ambient_hat = [
-        sp.csc_matrix(modal_q.T @ H.toarray() @ modal_q) for H in ambient_hat
-    ]
-    boundary_traces = {
-        p.label: np.asarray(basis[np.asarray(p.cells), :], dtype=np.float64)
-        for p in subdomain.boundary_ports
-    }
-    boundary_conductances = {
-        p.label: np.asarray(p.g, dtype=np.float64) for p in subdomain.boundary_ports
-    }
-
+    basis = np.ascontiguousarray(basis @ modal_q)
     return EmbeddableRom(
         name=subdomain.name,
         cells=subdomain.cells,
-        basis=np.asarray(basis, dtype=np.float64),
-        C_hat=C_hat,
-        K0_hat=K0_hat,
-        F_hat=np.asarray(F_hat, dtype=np.float64),
-        ambient_hat=ambient_hat,
-        boundary_traces=boundary_traces,
-        boundary_conductances=boundary_conductances,
+        basis=basis,
+        C_hat=sp.eye(modal_k.size, format="csc"),
+        K0_hat=sp.diags(modal_k, format="csc"),
+        F_hat=basis.T @ subdomain.source,
+        ambient_hat=[
+            sp.csc_matrix(basis.T @ H @ basis) for H in subdomain.ambient_terms
+        ],
+        boundary_traces={p.label: basis[p.cells, :] for p in subdomain.boundary_ports},
+        boundary_conductances={p.label: p.g for p in subdomain.boundary_ports},
         ambient_ranges=subdomain.ambient_ranges,
         effective_p=subdomain.effective_p,
         ports=subdomain.ports,
