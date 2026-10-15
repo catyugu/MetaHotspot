@@ -1,9 +1,12 @@
 """Explicit cell geometry and native face topology, independent of mesh origin."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import cached_property
+
 import numpy as np
+
 from metahotspot._compiled_data import CellFields
 from metahotspot.enums import Face
 
@@ -36,18 +39,6 @@ class CellGeometry:
     @cached_property
     def volumes(self):
         return np.prod(self.sizes, axis=1)
-
-    def exposed(self, face: Face):
-        face = Face(face)
-        f = self.fields
-        selected = (
-            (f.face_neighbor == np.iinfo(np.uintp).max)
-            & (f.face_axis == int(face) // 2)
-            & (f.face_sign == (-1 if int(face) % 2 == 0 else 1))
-        )
-        result = np.zeros(len(self.centers), dtype=bool)
-        result[f.face_owner[selected]] = True
-        return result
 
     def surface(self, face: Face, coordinate: float | None = None, z_range=None):
         face = Face(face)

@@ -127,8 +127,7 @@ typedef struct {
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * face_neighbor == SIZE_MAX denotes exterior; signs are outward from owner.
- * This is a breaking replacement of the structured-grid ABI. */
+ * face_neighbor == SIZE_MAX denotes exterior; signs are outward from owner. */
 typedef struct {
     size_t cell_count, face_count, projection_count;
     double *cell_min;

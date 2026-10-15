@@ -27,9 +27,9 @@
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）、`DofMap`（CellId → 温度 DOF）和独立物理投影为契约。装配、流体、采样、VTU 和 CTM 不再从规则索引恢复邻接。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）、`DofMap`（CellId → 温度 DOF）和独立物理投影为契约。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。
 
-C/Python 快照 ABI 和 CTM 边界组构造已更改，不提供旧接口兼容层。当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。参见[迁移说明、接口约定与回归记录](docs/architecture/discrete-model-migration.md)。
+当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
 ## 运行
 
@@ -68,18 +68,10 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **GTest**：测试框架。每个模块一个测试套件。
 - **tbb**: 用于并行化和 CPU 资源调度。
 
-## 单元排序约定
+## 编号与数据顺序
 
-整个代码库（几何编译器、组装器、VTU写入器、Python API）统一使用 **ix-iy-iz** 遍历顺序。
+`CellId` 标识控制体，`FaceId` 标识唯一有向面片，`DofMap` 将控制体映射到温度状态。编号不表示空间位置或邻接关系。
 
-```text
-for (ix = 0; ix < nx; ix++)
-  for (iy = 0; iy < ny; iy++)
-    for (iz = 0; iz < nz; iz++)
-```
+几何和材料数组按 CellId 排列；`K`、`C`、`f`、`state` 和 `state_history` 按 DOF 排列。Python 的 `Solution.temperature` 和 `temperature_history` 按 CellId 返回物理温度。
 
-线性化公式：`grid_index = ix * (ny * nz) + iy * nz + iz`
-
-活跃单元（属于某个 layer/block 的网格单元）被连续编号，称为 **SoA（Structure-of-Arrays）顺序**。`grid_to_cell[grid_index]` 返回该网格位置对应的活跃单元索引，-1 表示非活跃。`cell_temperatures()`、`layer_ids()`、`block_ids()` 等所有单元级数组都按 SoA 顺序排列。
-
-**层的 Z 方向：** 层从上（高 Z）到下（低 Z）排列。Layer 0 在顶部（最高 Z 值），Layer N-1 在底部。
+层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。

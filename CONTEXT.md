@@ -1,6 +1,6 @@
 # MetaHotspot Context
 
-MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。当前采用结构化网格和单元中心温度自由度，支持稳态、瞬态，以及可选的单向流热耦合。
+MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。消费显式控制体与面片网格，采用单元中心温度自由度，支持稳态、瞬态，以及可选的单向流热耦合。
 
 本文只保存跨模块工作所需的稳定上下文。数据结构、调用链和接口签名分别以对应设计文档为准，不在此重复。
 
@@ -9,7 +9,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 | 目标             | 职责                                          |
 | ---------------- | --------------------------------------------- |
 | `mhs_core`       | header-only 运行期数据契约和网格助手          |
-| `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场 |
+| `mhs_compiler`   | 物理定义与给定网格 → 离散模型及冻结流场 |
 | `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
 | `mhs_expression` | muparser 与 TBB 表达式封装                    |
 | `mhs_linear`     | AMGCL/Eigen 迭代求解及可选 MKL/Pardiso 封装   |
@@ -47,13 +47,12 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 
-完整数据流以 [data-flow.md](docs/design/data-flow.md) 为唯一事实源。
-
 ## 数据约定
 
 - 内部几何一律使用 SI 米。
-- 运行期使用扁平 SoA；活跃单元由 `cell_to_grid` 紧凑遍历。
-- `face_bcs[cell * 6 + dir]` 保存单元面的已解析热边界。
+- 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 和温度 DOF 由 `DofMap` 映射。
+- `patch_bcs[FaceId]` 保存面片的热边界；材料归属与热源体积投影独立保存。
+- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。
 - 当前只支持三维网格。

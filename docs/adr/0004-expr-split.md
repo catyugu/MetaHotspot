@@ -30,11 +30,11 @@ Two separate paths.
 
 ### Heat source table
 
-`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, indexed by `CellFields::heat_source_idx` (`std::vector<TableIndex>`). Cells share their Block's compiled expression, while the 32-bit index avoids silent truncation in generated models.
+`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, referenced by `VolumeAssignment::source`. Each volume projection evaluates its source at the piece centroid and multiplies by the overlap volume; several sources may contribute to one cell.
 
 ### Native functions
 
-Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::string, FieldEvaluator>` populated by the preprocessor via `mhs::sim::register_all_functions(symbols, ios.functions)`. At `parse()` time, every entry is bound into the compiled AST as a `DefineFunUserData` slot whose user data is a heap-allocated `NativeFnCtx { FieldEvaluator fe; const FieldContext* ctx_ptr; }`. When muparser evaluates an expression like `fn(a, b)`, it first resolves each argument independently, then passes them as a raw `double*` + `int nargs` to the `native_fn_bridge` static, which forwards directly to the user's `FieldEvaluator` together with the current TLS `FieldContext*`. Because the `SymbolTable` is captured by value into the `MuCompiledTLS`, native closures never reach back to any global or external state.
+Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::string, FieldEvaluator>` populated by the preprocessor via `mhs::sim::register_all_functions(symbols, definition.functions)`. At `parse()` time, every entry is bound into the compiled AST as a `DefineFunUserData` slot whose user data is a heap-allocated `NativeFnCtx { FieldEvaluator fe; const FieldContext* ctx_ptr; }`. When muparser evaluates an expression like `fn(a, b)`, it first resolves each argument independently, then passes them as a raw `double*` + `int nargs` to the `native_fn_bridge` static, which forwards directly to the user's `FieldEvaluator` together with the current TLS `FieldContext*`. Because the `SymbolTable` is captured by value into the `MuCompiledTLS`, native closures never reach back to any global or external state.
 
 ## Rationale
 

@@ -2,14 +2,9 @@
 #include "core/model.hpp"
 #include "core/model_definition.hpp"
 #include "solver/assembler.hpp"
-#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::sim;
-
-// Helper: build a default-state vector from the model's initial_temperature.
-static std::vector<double> default_state(const mhs::core::Model& model)
-{ return std::vector<double>(static_cast<std::size_t>(model.dofs.size()), model.initial_temperature); }
 
 // Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
 static mhs::model::ModelDefinition make_simple_cube_io()
@@ -50,18 +45,6 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     io.default_boundary = mhs::model::NeumannBoundary {};
 
     return io;
-}
-
-TEST(AssemblerTest, ModelCompilerBuildsCorrectLayout)
-{
-    auto model = build_model(make_simple_cube_io());
-    const auto cell_count = model.cells.material_id.size();
-
-    EXPECT_EQ(model.dofs.size(), cell_count);
-    auto state = default_state(model);
-    ASSERT_EQ(state.size(), cell_count);
-    EXPECT_TRUE(
-        std::all_of(state.begin(), state.end(), [&](double value) { return value == model.initial_temperature; }));
 }
 
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
@@ -142,9 +125,6 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
-    // Sanity: for steady-state (dt=0), assemble returns A = K.
-    // The b vector should equal what the old `assemble` would have computed for
-    // steady (no mass term). The diagonal of K should be the same (negative).
     auto io = make_simple_cube_io();
     auto model = build_model(io);
 

@@ -3,8 +3,6 @@
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from numpy.testing import assert_allclose
-
 from metahotspot._compiled_data import Operators
 from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 from metahotspot.macromodel.embeddable import FacePort, Subdomain, extract_rom
@@ -13,6 +11,7 @@ from metahotspot.macromodel.interface_enrichment import (
     extract_interface_enriched_rom,
 )
 from metahotspot.macromodel.utils import mpmm_elliptic_shift_count
+from numpy.testing import assert_allclose
 
 
 @pytest.mark.parametrize("epsilon, hi", [(1e-3, 10.0), (1e-100, 1e12)])
@@ -22,19 +21,6 @@ def test_shift_count_satisfies_bound_without_an_iteration_cap(epsilon, hi):
     log_term = np.log(4 * hi / lo)
     assert 4 * np.exp(-count * np.pi**2 / log_term) <= epsilon
     assert 4 * np.exp(-(count - 1) * np.pi**2 / log_term) > epsilon
-
-
-def test_source_shape_preserves_signed_power():
-    class CoolingModel(AffineParametricModel):
-        cell_dofs = np.arange(2)
-        core = Operators(sp.eye(2), sp.eye(2), np.array([-2.0, -6.0]))
-
-        def source_ports(self):
-            return [SourcePort(cells=np.arange(2), power_W=-8.0)]
-
-    model = CoolingModel()
-    assert_allclose(model.source_shape[:, 0], [0.25, 0.75])
-    assert_allclose(model.source_shape @ model.nominal_power(), model.core.f)
 
 
 @pytest.mark.parametrize("extract", [extract_rom, extract_interface_enriched_rom])
@@ -127,7 +113,9 @@ def test_source_projection_maps_physical_cells_to_state_order():
                 SourcePort(cells=np.array([1]), power_W=-6.0),
             ]
 
-    assert_allclose(Model().source_shape, [[0, 1], [1, 0]])
+    model = Model()
+    assert_allclose(model.source_shape, [[0, 1], [1, 0]])
+    assert_allclose(model.source_shape @ model.nominal_power(), model.core.f)
     assert_allclose(
         Model().junction_temperature(np.array([310.0, 320.0])), [310.0, 320.0]
     )

@@ -34,7 +34,7 @@ namespace mhs::core {
         std::vector<CompiledExpression> cauchy_T_inf;
     };
 
-    // ── Cell topology and compact per-active-cell fields ────────────────
+    // Physical assignments in CellId order.
     struct CellFields {
         std::vector<RegionId> region_id;
 

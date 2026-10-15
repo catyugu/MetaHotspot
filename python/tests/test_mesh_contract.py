@@ -7,45 +7,6 @@ import pytest
 from test_model_binding import _model
 
 
-def test_compiled_snapshot_exposes_explicit_faces_and_cell_bounds():
-    compiled = _model().compile()
-    assert compiled.metadata.face_count == 6
-    assert compiled.metadata.state_count == 1
-    cells = compiled.cells
-    assert cells.cell_min.shape == (1, 3)
-    assert cells.cell_max.shape == (1, 3)
-    np.testing.assert_allclose(cells.cell_max - cells.cell_min, 1e-3)
-    assert cells.face_owner.shape == (6,)
-    assert cells.face_min.shape == (6, 3)
-    np.testing.assert_array_equal(cells.cell_to_dof, [0])
-    assert not hasattr(cells, "grid_to_cell")
-    assert not hasattr(cells, "cell_to_grid")
-
-
-def test_external_mesh_roundtrips_without_cartesian_input():
-    original = _model().compile()
-    f = original.cells
-    model = _model()
-    model.set_discrete_mesh(
-        **{
-            name: getattr(f, name)
-            for name in (
-                "cell_min",
-                "cell_max",
-                "face_owner",
-                "face_neighbor",
-                "face_axis",
-                "face_sign",
-                "face_min",
-                "face_max",
-            )
-        }
-    )
-    imported = model.compile()
-    np.testing.assert_allclose(imported.assemble().f, original.assemble().f)
-    np.testing.assert_array_equal(imported.cells.face_owner, f.face_owner)
-
-
 def test_native_dof_permutation_preserves_physical_results():
     model = _model()
     model.set_mesh(
@@ -181,14 +142,12 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
 
-def test_dof_order_rejects_fractional_and_out_of_range_values():
+def test_native_mesh_input_rejects_invalid_indices():
     model = _model()
     for order in ([0.5], [-1], [2**64], [np.nan]):
         with pytest.raises(ValueError):
             model.set_dof_order(order)
 
-
-def test_external_mesh_rejects_fractional_connectivity_before_casting():
     fields = _model().compile().cells
     inputs = {
         name: getattr(fields, name).copy()

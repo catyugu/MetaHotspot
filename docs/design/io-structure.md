@@ -56,7 +56,7 @@ struct LayerSpec {
 
 ## 材料与函数
 
-`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。旧 XML 名称只允许出现在 `src/io/xml_model_reader.cpp` 的 tag 解析中。
+`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。XML 标签名只用于 `src/io/xml_model_reader.cpp` 的 tag 解析中。
 
 函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec` 和 `PiecewiseFunctionSpec` 组成 `FunctionSpec` variant。
 
@@ -77,7 +77,7 @@ struct BoundaryPatch {
 
 BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，模型编译器不解析外部格式字符串。
 
-旧 XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
+XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
 
 ## 流体输入
 
@@ -103,9 +103,9 @@ BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 
 取值，并以 `Interval * Values.Count` 为周期重复。
 
 C API 和 Python 的流体边界枚举按 `None`、`PressureInlet`、`MassFlowInlet`、`Outlet`
-定义。移除旧的 `Velocity` 边界是一次有意的不兼容接口变更。
+定义。
 
 ## 附录：ModelDefinition 构造
 
 `ModelDefinition` 目前由 C API 的直接 Handle 函数（如 `mhs_model_add_material`、`mhs_model_add_block`）和 XML reader (`mhs::io::read_xml`) 共同填充。两者操作同一套数据结构，不经过中间 Builder。
-`BlockSpec`、`LayerSpec`、`BoundaryPatch` 等类型定义见前文。C API 的 `mhs_model_t` 是唯一的外部构造入口。
+`BlockSpec`、`LayerSpec`、`BoundaryPatch` 等类型定义见前文。C API 的 `mhs_model_t` 封装这份可变定义。

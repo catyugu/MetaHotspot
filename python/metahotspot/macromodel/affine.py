@@ -31,17 +31,16 @@ in the shared signatures.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable
 
 import numpy as np
 import scipy.sparse as sp
 
 from metahotspot._compiled_data import Operators
 from metahotspot.enums import Study
-from metahotspot.macromodel.geometry import CellGeometry, BoundarySurface
-
+from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.utils import (
     normalized_operators,
     solve_rom_steady,
@@ -51,20 +50,11 @@ from metahotspot.macromodel.utils import (
 
 @dataclass(frozen=True)
 class BoundaryGroup:
-    """
-    One affine parameter: the boundary data a single ``h`` controls.
+    """A physical surface controlled by one affine Robin parameter.
 
-    ``cells`` are physical CellId values projected onto the selected surface; ``areas`` the
-    SI exposed face area (m²) of each of those cells on this group's boundary
-    surface.  Together with a scalar ``h`` they define the linear affine Robin
-    term ``H_k = diag(areas)`` (BCI 2015 eq. 7).  ``h_range`` is the admissible
-    **physical** coefficient range used for training/holdout.
-
-    Series-condensed (effective) ``k_c`` and ``half_c`` are read off the base
-    :attr:`AffineParametricModel.cell_layout` at face-extraction time (face
-    direction selects which (kx, ky, kz) axis and which cell-side length to
-    pick); they are NOT carried here — a boundary group is pure boundary
-    geometry.
+    Selected FaceIds supply normals and owner distances; projected areas may
+    contain several contributions to the same physical CellId. ``h_range`` is
+    the physical HTC range; material conductivity comes from ``cell_layout``.
     """
 
     surface: BoundarySurface
@@ -85,14 +75,10 @@ class BoundaryGroup:
 
 @dataclass(frozen=True)
 class CellLayout:
-    """Per-cell (cell_count, 3) arrays computed once at compile time.
+    """Geometry and reference conductivity in physical CellId order.
 
-    ``centers[:, c]`` is the SI centre coordinate of cell c along each axis
-    (x, y, z); ``half_sizes[:, c]`` is half the cell-side length (centre → face
-    distance) along each axis; ``conductivity[:, c]`` is the static (kx, ky, kz)
-    in W/m·K, evaluated at compile time at (cell_centre, ambient, t=0).  All
-    three arrays align with :attr:`Compiled.cells` order, so every column is
-    indexed by the same compact Cell ID.
+    Rows identify cells; columns identify x/y/z. Conductivity is evaluated at
+    the cell center, ambient temperature and t=0, in W/(m K).
     """
 
     centers: np.ndarray  # (cell_count, 3) float64, SI metres
@@ -102,13 +88,11 @@ class CellLayout:
 
 @dataclass(frozen=True)
 class SourcePort:
-    """One heat-source port: a region plus its power waveform.
+    """A power input selecting physical source IDs or physical CellIds.
 
-    ``cells`` are the full-domain FVM indices of the source region,
-    ``power_W`` its nominal total power (W), and ``activity`` an optional
-    dimensionless time factor ``t -> factor`` (``None`` = constant).  The
-    port's power shape is its unit-power distribution ``G_src[:, k]`` and its
-    power input is ``P_k(t) = power_W * activity(t)``.
+    ``power_W`` is the signed nominal power. ``activity(t)`` scales it, with
+    ``None`` denoting constant power. ``source_ids`` preserves independent
+    sources that share cells; ``cells`` selects the assembled source field.
     """
 
     power_W: float

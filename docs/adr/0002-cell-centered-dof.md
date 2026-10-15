@@ -1,4 +1,4 @@
-# ADR-0002: Cell-Centered DOFs with Cell-Level BC Storage
+# ADR-0002: Cell-Centered DOFs and Explicit Face Patches
 
 ## Status
 
@@ -6,69 +6,27 @@ Accepted.
 
 ## Context
 
-The authoring model uses structured face regions to specify BCs; the XML adapter translates its legacy face-key encoding at the I/O boundary. The mesh uses cell-centered DOFs. BC types: Dirichlet / Neumann / Cauchy. A future microfluid phase might want face DOFs for velocity/pressure.
-
-Two storage concerns must be answered together:
-
-1. **Mathematical placement of DOFs.** Flux-type BCs are integrals, not field values; a face DOF would not be used by them. Storing a face DOF alongside a cell DOF roughly doubles memory.
-2. **Storage shape when block face projections overlap in the same layer.** A per-face SoA array holds only one BC per face, but two overlapping blocks in the same layer can disagree on what that face's BC should be.
+Control-volume identity, face connectivity and algebraic state ordering are distinct. Boundary conditions act on surface integrals; representing a surface does not require a surface temperature unknown.
 
 ## Decision
 
-**Cell-centered DOFs only, stored at the cell level.** BCs are applied as boundary integrals over cell faces — no face DOFs stored, no per-face SoA arrays. Each face of every cell carries its own BC descriptor, stored as a flat array on `Model`, indexed into a shared parameter table:
+Store one temperature unknown per control volume. `DofMap` maps CellId to temperature DOF independently of cell storage order. `DiscreteMesh` stores axis-aligned cell bounds, unique oriented `FacePatch` records and cell-to-face CSR incidence. Face patches contain geometry and connectivity; materials and boundary assignments belong to the physical model.
 
-```cpp
-struct FaceBC {
-    BcType type = BcType::None;
-    TableIndex param_idx = 0;    // → BCParamTable
-};
+`Model::patch_bcs[FaceId]` contains `FaceBC {type, param_idx}`, with parameters in `BCParamTable`. The compiler splits exterior patches at physical boundary intersections, applies patches in authoring order, and fills uncovered areas with the default condition. Heat sources use independent volume projections.
 
-// Model::face_bcs is std::vector<FaceBC> with size N_active * 6.
-// face_bcs[c * 6 + dir] gives the BC for cell c's face dir.
-```
+For normal conductivity `k`, owner-center distance `d` and patch area `A`:
 
-Discrete treatments:
+- Dirichlet contributes `g = k A / d` to the diagonal and `g T_D` to the RHS.
+- Neumann contributes `q A` to the RHS, with positive `q` adding heat.
+- Robin contributes `g = A / (d/k + 1/h)` to the diagonal and `g T_inf` to the RHS; zero HTC contributes zero.
 
-- **Dirichlet (FirstType)** — ghost cell method. The boundary cell's equation uses the ghost value `T_ghost = 2·T_dirichlet − T_boundary` (linear contribution to diag and RHS).
-- **Neumann (SecondType)** — flux `q·n` enters the cell RHS directly as `Σ q·A_face`.
-- **Cauchy (ThirdType)** — linearized as `h·A·(T_boundary − T_∞)`; contributes to the diagonal (`h·A` coefficient) and to the RHS (`h·A·T_∞`).
+An internal solid face uses `g = A / (d_i/k_i + d_j/k_j)` and contributes `g [[1,-1],[-1,1]]`. Assembly selects solid conduction or fluid–solid exchange directly from the two physical types. Frozen fluid volume fluxes use the same unique oriented faces.
 
-Anisotropic `k`: at assembly, pick `k_along(dir) ∈ {kx, ky, kz}` per face normal.
-
-The default boundary is applied during preprocessing to every face that was not explicitly specified — including faces of virtual neighbors — so the assembly hot loop sees a fully-populated per-face BC for every cell. Explicit patches are applied in authoring order, so later patches override earlier ones.
-
-The fluid subsystem is independent of thermal BC storage: thermal faces use `FaceBC`; fluid boundary records are temporary preprocessing state and only assembly-ready values enter `FluidDomain`.
+The current TPFA requires orthogonal axis-aligned boxes with diagonal conductivity; nonorthogonal center connections are rejected.
 
 ## Rationale
 
-- **No projection ambiguity.** Each individual face BC is independent; overlapping blocks each carry their own resolution.
-- **Virtual-neighbor consistency.** When a cell's neighbor is virtual, the cell's face BC is already set to the default boundary during preprocessing — the same channel as overlap resolution.
-- **Flexibility.** Different cells in the same layer can have different BC types on the same directional face.
-- **Simpler preprocessing.** No global face arrays; assignment is at cell level.
-- **Flux-type BCs need no face DOF.** They are integrals, and the ghost-cell pattern handles Dirichlet without face storage.
-- **Memory.** A dual volume+face DOF system would roughly double memory.
-- **Microfluid face fields (Phase 2).** Would warrant their own face-field storage; face DOFs would be added intentionally for that subsystem only, not retrofitted here.
-
-## Data flow
-
-```text
-ModelDefinition
-  └─> build_model()
-        ├─> preprocessor::assign_cell_layers()
-        │     ├─> grid_to_cell                   (full-grid)
-        │     ├─> cell_to_grid                   (compact inverse)
-        │     └─> material_id + heat_source_idx (compact)
-        ├─> preprocessor::compile_boundary_patches()
-        │     └─> flatten ordered (condition, FaceRegion) pairs
-        ├─> preprocessor::resolve_boundary_patches()
-        │     └─> face_bcs [N_active * 6] (handles overlap)
-        └─> Compile expressions → BCParamTable + heat_source_table
-```
-
-## Notes
-
-- `BCParamTable` remains: shared BC parameters live there, referenced by `param_idx`.
-- The default boundary is applied during preprocessing, not at assembly time. For virtual neighbors, the active cell's touching face is populated during `resolve_boundary_patches()`.
-- The heat source is **not** part of `FaceBC` — it is stored in a Block-level expression table indexed per cell by the 32-bit `TableIndex`.
-- The preprocessor resolves every structured `FaceRegion` into `FaceBC` entries in `Model::face_bcs[c * 6 + dir]`. Assembly hot loops do array lookups only — no region matching or string parsing.
-- All geometry stays in SI meters.
+- A single internal-face contribution guarantees equal and opposite heat flow.
+- Area projection preserves partial boundary coverage and repeated contributions to the same temperature DOF.
+- Explicit incidence frees assembly and sampling from coordinate-index arithmetic.
+- Keeping boundary integrals separate from unknown placement avoids unnecessary face DOFs.
