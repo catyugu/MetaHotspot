@@ -1,12 +1,13 @@
 #pragma once
 
+#include "core/solver.hpp"
 #include "solver/assembler.hpp"
 #include "solver/linear_system.hpp"
 #include "solver/solution_history.hpp"
 
 namespace mhs::sim::time_scheme {
 
-    enum class IntegratorKind { Bdf1, Bdf2 };
+    using IntegratorKind = SolveOptions::Integrator;
 
     LinearSystem build_system(
         IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt);
@@ -24,7 +25,7 @@ namespace mhs::sim::time_scheme {
     ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config);
 
-    enum class StepStrategy { Adaptive, Fixed };
+    using StepStrategy = SolveOptions::StepStrategy;
 
     class StepController {
     public:

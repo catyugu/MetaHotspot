@@ -41,12 +41,6 @@ namespace mhs::sim {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
         std::vector<mhs::model::RegionRect> rectangles;
-        mhs::core::BcType type = mhs::core::BcType::None;
-        mhs::core::TableIndex parameter_index = 0;
-    };
-
-    struct DefaultBoundary {
-        mhs::core::BcType type = mhs::core::BcType::None;
         mhs::core::TableIndex parameter_index = 0;
     };
 
@@ -66,8 +60,6 @@ namespace mhs::sim {
     void build_external_output_mesh(mhs::core::Model& model);
 
     std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
-        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& fallback);
-    void project_boundary_patches(mhs::core::Model& model, const std::vector<CompiledBoundaryRegion>& boundaries,
-        const DefaultBoundary& fallback);
-
+        const std::vector<CompiledBoundaryRegion>& boundaries,
+        mhs::core::TableIndex fallback = mhs::core::invalidTableIndex);
 } // namespace mhs::sim

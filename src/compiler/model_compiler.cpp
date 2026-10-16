@@ -16,7 +16,8 @@ namespace mhs::sim {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        inline double length_unit_to_si(mhs::model::LengthUnit unit) {
+        inline double length_unit_to_si(mhs::model::LengthUnit unit)
+        {
             switch (unit) {
             case mhs::model::LengthUnit::Meter:
                 return 1.0;
@@ -34,20 +35,22 @@ namespace mhs::sim {
             throw std::invalid_argument("invalid length unit");
         }
 
-        inline void copy_scalar_parameters(mhs::core::Model &model, const mhs::model::ModelDefinition &definition) {
+        inline void copy_scalar_parameters(mhs::core::Model& model, const mhs::model::ModelDefinition& definition)
+        {
             model.study_type = definition.settings.study_type == mhs::model::StudyType::Transient
-                                   ? mhs::core::StudyType::Transient
-                                   : mhs::core::StudyType::Steady;
+                ? mhs::core::StudyType::Transient
+                : mhs::core::StudyType::Steady;
             model.initial_temperature = definition.settings.initial_temperature;
             model.transient_duration = definition.settings.transient_duration;
             model.transient_time_step = definition.settings.transient_output_interval;
         }
 
-        mhs::core::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec> &variables,
-                                                  const std::vector<mhs::model::NamedFunction> &functions) {
+        mhs::core::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec>& variables,
+            const std::vector<mhs::model::NamedFunction>& functions)
+        {
             mhs::core::SymbolTable empty_for_geometry_eval;
             mhs::core::SymbolTable symbols;
-            for (const auto &var : variables) {
+            for (const auto& var : variables) {
                 double val = mhs::core::eval_geometry(var.value, empty_for_geometry_eval);
                 symbols.variables[var.name] = val;
             }
@@ -55,12 +58,13 @@ namespace mhs::sim {
             return symbols;
         }
 
-        std::vector<mhs::core::ProbePoint>
-        build_observation_points(const std::vector<mhs::model::ObservationPointSpec> &src,
-                                 const mhs::core::SymbolTable &symbols, double si_scale) {
+        std::vector<mhs::core::ProbePoint> build_observation_points(
+            const std::vector<mhs::model::ObservationPointSpec>& src, const mhs::core::SymbolTable& symbols,
+            double si_scale)
+        {
             std::vector<mhs::core::ProbePoint> out;
             out.reserve(src.size());
-            for (const auto &s : src) {
+            for (const auto& s : src) {
                 mhs::core::ProbePoint p;
                 p.name = s.name;
                 p.x = mhs::core::eval_geometry(s.x, symbols) * si_scale;
@@ -71,53 +75,51 @@ namespace mhs::sim {
             return out;
         }
 
-        DefaultBoundary compile_thermal_boundary(const mhs::model::ThermalBoundary &condition,
-                                                 mhs::core::BCParamTable &parameters,
-                                                 const std::function<std::string(const std::string &)> &rewriter,
-                                                 const mhs::core::SymbolTable &symbols) {
-            DefaultBoundary result;
-            std::visit(overloaded{
-                           [&](const mhs::model::DirichletBoundary &value) {
-                               result.type = mhs::core::BcType::FirstType;
-                               result.parameter_index =
-                                   static_cast<mhs::core::TableIndex>(parameters.dirichlet_T.size());
-                               parameters.dirichlet_T.push_back(mhs::core::parse(rewriter(value.temperature), symbols));
+        mhs::core::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
+            std::vector<mhs::core::BoundaryParameters>& parameters,
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
+        {
+            using namespace mhs::core;
+            BoundaryParameters result {};
+            auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
+            std::visit(overloaded {
+                           [&](const mhs::model::DirichletBoundary& value) {
+                               result.type = BcType::FirstType;
+                               result.value = compile(value.temperature);
                            },
-                           [&](const mhs::model::NeumannBoundary &value) {
-                               result.type = mhs::core::BcType::SecondType;
-                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.neumann_q.size());
-                               parameters.neumann_q.push_back(mhs::core::parse(rewriter(value.heat_flux), symbols));
+                           [&](const mhs::model::NeumannBoundary& value) {
+                               result.type = BcType::SecondType;
+                               result.value = compile(value.heat_flux);
                            },
-                           [&](const mhs::model::ConvectionBoundary &value) {
-                               result.type = mhs::core::BcType::ThirdType;
-                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.cauchy_h.size());
-                               parameters.cauchy_h.push_back(mhs::core::parse(rewriter(value.coefficient), symbols));
-                               parameters.cauchy_T_inf.push_back(
-                                   mhs::core::parse(rewriter(value.ambient_temperature), symbols));
+                           [&](const mhs::model::ConvectionBoundary& value) {
+                               result.type = BcType::ThirdType;
+                               result.value = compile(value.coefficient);
+                               result.ambient = compile(value.ambient_temperature);
                            },
                        },
-                       condition);
-            return result;
+                condition);
+            const auto index = static_cast<TableIndex>(parameters.size());
+            parameters.push_back(std::move(result));
+            return index;
         }
 
-        std::vector<CompiledBoundaryRegion>
-        compile_boundary_patches(const std::vector<mhs::model::BoundaryPatch> &boundaries,
-                                 mhs::core::BCParamTable &parameters, double si_scale,
-                                 const std::function<std::string(const std::string &)> &rewriter,
-                                 const mhs::core::SymbolTable &symbols) {
+        std::vector<CompiledBoundaryRegion> compile_boundary_patches(
+            const std::vector<mhs::model::BoundaryPatch>& boundaries,
+            std::vector<mhs::core::BoundaryParameters>& parameters, double si_scale,
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
+        {
             std::vector<CompiledBoundaryRegion> compiled;
-            for (const auto &boundary : boundaries) {
+            for (const auto& boundary : boundaries) {
                 const auto value = compile_thermal_boundary(boundary.condition, parameters, rewriter, symbols);
-                for (const auto &region : boundary.regions) {
+                for (const auto& region : boundary.regions) {
                     CompiledBoundaryRegion item;
                     item.axis = region.axis;
                     item.coordinate = region.coordinate * si_scale;
-                    item.type = value.type;
-                    item.parameter_index = value.parameter_index;
+                    item.parameter_index = value;
                     item.rectangles.reserve(region.rectangles.size());
-                    for (const auto &rectangle : region.rectangles) {
+                    for (const auto& rectangle : region.rectangles) {
                         item.rectangles.push_back({rectangle.a_min * si_scale, rectangle.a_max * si_scale,
-                                                   rectangle.b_min * si_scale, rectangle.b_max * si_scale});
+                            rectangle.b_min * si_scale, rectangle.b_max * si_scale});
                     }
                     compiled.push_back(std::move(item));
                 }
@@ -126,8 +128,9 @@ namespace mhs::sim {
         }
 
         // Build name-to-index from ModelDefinition::materials (insertion order).
-        std::unordered_map<std::string, size_t>
-        build_name_to_idx(const std::vector<mhs::model::NamedMaterial> &materials) {
+        std::unordered_map<std::string, size_t> build_name_to_idx(
+            const std::vector<mhs::model::NamedMaterial>& materials)
+        {
             std::unordered_map<std::string, size_t> map;
             map.reserve(materials.size());
             for (size_t i = 0; i < materials.size(); ++i)
@@ -137,8 +140,9 @@ namespace mhs::sim {
 
     } // namespace
 
-    mhs::core::Model build_model_impl(const mhs::model::ModelDefinition &definition,
-                                      const mhs::core::DiscreteMesh *external) {
+    mhs::core::Model build_model_impl(
+        const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh* external)
+    {
         mhs::core::Model model;
         copy_scalar_parameters(model, definition);
 
@@ -157,11 +161,11 @@ namespace mhs::sim {
         fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
 
         for (size_t m = 0; m < definition.materials.size(); m++) {
-            const auto &mat = definition.materials[m].value;
-            auto compile_mat = [&](const std::string &expr) {
+            const auto& mat = definition.materials[m].value;
+            auto compile_mat = [&](const std::string& expr) {
                 return mhs::core::parse(substitute_function_args(expr, "T"), symbols);
             };
-            auto &props = model.material_table[m];
+            auto& props = model.material_table[m];
             props.kx = compile_mat(mat.conductivity_x);
             props.ky = compile_mat(mat.conductivity_y);
             props.kz = compile_mat(mat.conductivity_z);
@@ -169,22 +173,22 @@ namespace mhs::sim {
             props.c = compile_mat(mat.specific_heat);
             if (mat.is_fluid) {
                 if (!mat.dynamic_viscosity.has_value() || mat.dynamic_viscosity->empty()) {
-                    throw std::runtime_error("fluid material '" + definition.materials[m].name +
-                                             "' is missing DynamicViscosity");
+                    throw std::runtime_error(
+                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
                 }
-                fluid_materials.initial_viscosity[m] =
-                    compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
+                fluid_materials.initial_viscosity[m]
+                    = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
             }
         }
 
         // Assign material_id and heat_source_idx to resolved blocks.
         model.heat_source_table.clear();
         for (size_t l = 0; l < definition.layers.size(); ++l) {
-            auto &rl = resolved_layers[l];
-            const auto &ls = definition.layers[l];
+            auto& rl = resolved_layers[l];
+            const auto& ls = definition.layers[l];
             for (size_t b = 0; b < ls.blocks.size(); ++b) {
-                auto &rb = rl.blocks[b];
-                const auto &bs = ls.blocks[b];
+                auto& rb = rl.blocks[b];
+                const auto& bs = ls.blocks[b];
 
                 // material_id from name table
                 auto it = name_to_idx.find(bs.material);
@@ -195,9 +199,8 @@ namespace mhs::sim {
                 // heat_source_idx: compile the heat source expression, append to table
                 rb.heat_source_idx = static_cast<mhs::core::TableIndex>(model.heat_source_table.size());
                 std::string heat_source = bs.volumetric_heat_source;
-                const bool names_function = std::any_of(
-                    definition.functions.begin(), definition.functions.end(),
-                    [&](const mhs::model::NamedFunction &function) { return function.name == heat_source; });
+                const bool names_function = std::any_of(definition.functions.begin(), definition.functions.end(),
+                    [&](const mhs::model::NamedFunction& function) { return function.name == heat_source; });
                 if (names_function)
                     heat_source += "(x)";
                 model.heat_source_table.push_back(
@@ -206,12 +209,13 @@ namespace mhs::sim {
         }
 
         // Compile boundary patches.
-        auto &bc_params = model.bc_params;
-        auto bc_rewriter = [&](const std::string &s) { return substitute_function_args(s, "T"); };
-        auto compiled_boundaries =
-            compile_boundary_patches(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
+        auto& boundary_table = model.boundary_table;
+        auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T"); };
+        auto compiled_boundaries
+            = compile_boundary_patches(definition.boundaries, boundary_table, si_scale, bc_rewriter, symbols);
 
-        auto default_boundary = compile_thermal_boundary(definition.default_boundary, bc_params, bc_rewriter, symbols);
+        auto default_boundary
+            = compile_thermal_boundary(definition.default_boundary, boundary_table, bc_rewriter, symbols);
 
         if (external) {
             model.discrete = *external;
@@ -219,16 +223,16 @@ namespace mhs::sim {
             model.discrete.validate();
             validate_external_cell_coverage(model.discrete);
             build_external_output_mesh(model);
-        } else
+        }
+        else
             compile_cartesian_mesh(model, definition.mesh, si_scale, resolved_layers);
         model.discrete.require_orthogonal_tpfa();
         project_cell_regions(model, resolved_layers);
-        project_boundary_patches(model, compiled_boundaries, default_boundary);
+        model.boundary_terms = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
 
         // Fluid coupling.
-        const bool has_fluid_material =
-            std::any_of(definition.materials.begin(), definition.materials.end(),
-                        [](const mhs::model::NamedMaterial &material) { return material.value.is_fluid; });
+        const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
+            [](const mhs::model::NamedMaterial& material) { return material.value.is_fluid; });
         if (has_fluid_material) {
             mhs::sim::fluid::build_domain(model, definition.fluid_boundaries, si_scale, fluid_materials);
         }
@@ -236,10 +240,8 @@ namespace mhs::sim {
         return model;
     }
 
-    mhs::core::Model build_model(const mhs::model::ModelDefinition &definition) {
-        return build_model_impl(definition, nullptr);
-    }
-    mhs::core::Model build_model(const mhs::model::ModelDefinition &definition, const mhs::core::DiscreteMesh &mesh) {
-        return build_model_impl(definition, &mesh);
-    }
+    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition)
+    { return build_model_impl(definition, nullptr); }
+    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh& mesh)
+    { return build_model_impl(definition, &mesh); }
 } // namespace mhs::sim

@@ -181,7 +181,6 @@ typedef struct {
 
 /** Scalar solution metadata. Array data is retrieved with copy functions. */
 typedef struct {
-    size_t fvm_count;
     size_t state_count;
     size_t record_count;
     size_t probe_count;

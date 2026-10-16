@@ -18,20 +18,19 @@ namespace mhs::utils {
         const mhs::core::BoundaryTerm& term)
     {
         const auto face = mhs::core::projected_face(model.discrete, term);
-        const auto& bc = term.bc;
+        const auto& bc = model.boundary_table[term.parameter];
         const auto T = temperature[face.owner.value];
         const auto p = face.center();
         const mhs::core::FieldContext ctx {p[0], p[1], p[2], T, time};
         const auto k = conductivity(model, temperature, face.owner, time)[face.axis];
-        const auto& b = model.bc_params;
         switch (bc.type) {
         case mhs::core::BcType::FirstType:
-            return b.dirichlet_T[bc.param_idx].eval(ctx);
+            return bc.value.eval(ctx);
         case mhs::core::BcType::SecondType:
-            return T + b.neumann_q[bc.param_idx].eval(ctx) * face.owner_distance / k;
+            return T + bc.value.eval(ctx) * face.owner_distance / k;
         case mhs::core::BcType::ThirdType: {
-            auto h = b.cauchy_h[bc.param_idx].eval(ctx), g = k / face.owner_distance;
-            return (h * b.cauchy_T_inf[bc.param_idx].eval(ctx) + g * T) / (h + g);
+            auto h = bc.value.eval(ctx), g = k / face.owner_distance;
+            return (h * bc.ambient.eval(ctx) + g * T) / (h + g);
         }
         default:
             return T;
@@ -94,10 +93,10 @@ namespace mhs::utils {
             if (f.neighbor.valid())
                 continue;
             for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                const auto& bc = term.bc;
+                const auto& bc = model.boundary_table[term.parameter];
                 if (bc.type == mhs::core::BcType::FirstType
                     && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                    sum += model.bc_params.dirichlet_T[bc.param_idx].eval({p[0], p[1], p[2], T, time});
+                    sum += bc.value.eval({p[0], p[1], p[2], T, time});
                     ++count;
                 }
             }

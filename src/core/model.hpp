@@ -12,16 +12,10 @@
 
 namespace mhs::core {
 
-    // ── A per-face BC record ─────────────────────────────────
-    struct FaceBC {
-        BcType type = BcType::None;
-        TableIndex param_idx = 0;
-    };
-
     // Boundary integration rectangle on an unchanged topological face.
     struct BoundaryTerm {
         FaceId face;
-        FaceBC bc;
+        TableIndex parameter;
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
@@ -49,12 +43,12 @@ namespace mhs::core {
         CompiledExpression c;
     };
 
-    // ── BC parameter table ───────────────────────────────────────────────
-    struct BCParamTable {
-        std::vector<CompiledExpression> dirichlet_T;
-        std::vector<CompiledExpression> neumann_q;
-        std::vector<CompiledExpression> cauchy_h;
-        std::vector<CompiledExpression> cauchy_T_inf;
+    // Value is temperature, heat flux or HTC according to type.
+    // Robin ambient temperature shares the same record and index as HTC.
+    struct BoundaryParameters {
+        BcType type;
+        CompiledExpression value;
+        CompiledExpression ambient;
     };
 
     // Midpoint quadrature on a physical source subvolume.
@@ -82,7 +76,7 @@ namespace mhs::core {
         std::vector<TableIndex> cell_material;
         std::vector<SourceTerm> source_terms;
 
-        BCParamTable bc_params;
+        std::vector<BoundaryParameters> boundary_table;
 
         std::vector<MaterialProps> material_table;
 

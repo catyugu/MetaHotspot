@@ -78,7 +78,7 @@ def test_solution_views_derive_from_one_native_snapshot():
 
     solution = model.compile().solve()
 
-    assert solution.fvm_count == 1
+    assert solution.state.size == 1
     assert solution.temperature is solution.state
     assert np.shares_memory(solution.temperature_history, solution.state_history)
     assert solution.state_history.shape[1] == solution.state.shape[0]

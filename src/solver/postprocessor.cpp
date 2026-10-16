@@ -31,11 +31,10 @@ namespace mhs::post {
                     if (f.neighbor.valid())
                         continue;
                     for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                        const auto& bc = term.bc;
+                        const auto& bc = model.boundary_table[term.parameter];
                         if (bc.type == mhs::core::BcType::FirstType
                             && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                            dirichlet_sum
-                                += model.bc_params.dirichlet_T[bc.param_idx].eval({p[0], p[1], p[2], T, time});
+                            dirichlet_sum += bc.value.eval({p[0], p[1], p[2], T, time});
                             ++count;
                         }
                     }

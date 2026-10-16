@@ -26,7 +26,6 @@ class ProbeSnapshot:
 @dataclass(frozen=True)
 class SolutionSnapshot:
     time: float
-    fvm_count: int
     state: np.ndarray
     history_times: np.ndarray
     state_history: np.ndarray
@@ -131,7 +130,6 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
 
     return SolutionSnapshot(
         time=float(info.time),
-        fvm_count=int(info.fvm_count),
         state=state,
         history_times=history_times,
         state_history=history_states.reshape(
@@ -205,11 +203,6 @@ class Solution(OwnedHandle):
     def probes(self) -> list[ProbeSnapshot]:
         """Return all probe traces as Python-owned snapshots."""
         return self.data.probes
-
-    @property
-    def fvm_count(self) -> int:
-        """Number of FVM temperatures at the front of the full state."""
-        return self.data.fvm_count
 
     def write_vtu(self, path: str) -> None:
         """Export the final FVM temperature field to a VTU file."""

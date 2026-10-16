@@ -890,9 +890,9 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t *s, const char 
     MHS_TRY({
         if (!s->model)
             throw std::invalid_argument("solution does not own a compiled runtime model");
-        if (s->sol.fvm_count != s->model->discrete.cells.size())
+        if (s->sol.state.size() != s->model->discrete.cells.size())
             throw std::invalid_argument("solution FVM state does not match its runtime model");
-        mhs::io::write_vtu(path, *s->model, std::span<const double>(s->sol.state.data(), s->sol.fvm_count));
+        mhs::io::write_vtu(path, *s->model, s->sol.state);
     });
 }
 
@@ -903,7 +903,6 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t *s, const char 
 MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t *s, mhs_solution_info_t *out) {
     CHECK_NULL(s);
     CHECK_NULL(out);
-    out->fvm_count = s->sol.fvm_count;
     out->state_count = s->sol.state.size();
     out->record_count = s->sol.snapshot_times.size();
     out->probe_count = s->sol.probe_traces.size();

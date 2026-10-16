@@ -183,3 +183,24 @@ TEST(DiscreteMesh, ExternalImportRejectsOverlappingControlVolumes)
     ASSERT_NO_THROW(mesh.validate());
     EXPECT_THROW(mhs::sim::build_model(definition, mesh), std::invalid_argument);
 }
+
+TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
+{
+    auto d = cube_definition();
+    d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
+    mhs::model::BoundaryPatch bc;
+    bc.condition = mhs::model::DirichletBoundary {"400"};
+    bc.regions.push_back({mhs::model::Axis::X, 1, {{0.1, 0.2, 0.1, 0.2}}});
+    d.boundaries.push_back(bc);
+    const auto model = mhs::sim::build_model(d);
+    const std::vector<double> state {300};
+    const auto ops = mhs::sim::assemble_thermal(model, state, 0);
+    EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
+    EXPECT_NEAR(ops.f[0], 8, 1e-12);
+    const auto g = mhs::utils::reconstruct_cell_gradient(model, state, 0, CellId {0});
+    EXPECT_NEAR(g.x, 1, 1e-12);
+    EXPECT_NEAR(g.y, 0, 1e-12);
+    EXPECT_NEAR(g.z, 0, 1e-12);
+    EXPECT_DOUBLE_EQ(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
+    EXPECT_NEAR(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300.5, 1e-12);
+}

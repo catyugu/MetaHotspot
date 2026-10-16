@@ -13,12 +13,11 @@ namespace mhs::core {
     };
 
     /// Canonical solution returned by any solve path.
-    /// Temperature is state[0:fvm_count] — no duplicate final-state storage.
+    /// Temperature is stored directly in state, indexed by CellId.
     /// Output snapshots are stored row-major in snapshot_states:
     /// snapshot_states[record * state_count + state].
     struct Solution {
         std::vector<double> state;
-        std::size_t fvm_count = 0;
         double time = 0.0;
         bool converged = true;
         std::vector<ProbeTrace> probe_traces;

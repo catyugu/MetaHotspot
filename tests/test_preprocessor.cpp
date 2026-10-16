@@ -8,19 +8,21 @@
 using namespace mhs::core;
 using namespace mhs::sim;
 
+enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
+
 // Helpers for testing patch-based BC assignment.
 
-/// Find a FaceBC on `cell_idx` with direction `dir`.
+/// Find a boundary integration term on `cell_idx` with direction `dir`.
 /// Returns pointer or nullptr if that face has BcType::None.
-static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+static const mhs::core::BoundaryTerm* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
         if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
             && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
             for (const auto& term : boundary_terms_on_face(model, id))
-                if (term.bc.type != BcType::None)
-                    return &term.bc;
+                if (model.boundary_table[term.parameter].type != BcType::None)
+                    return &term;
         }
     }
     return nullptr;
@@ -30,14 +32,14 @@ static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_i
 static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     auto* p = find_face_bc(model, cell_idx, dir);
-    return p ? p->type : BcType::None;
+    return p ? model.boundary_table[p->parameter].type : BcType::None;
 }
 
 /// Return the param_idx on cell_idx for direction dir, or 0 if not found.
 static mhs::core::TableIndex get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     auto* p = find_face_bc(model, cell_idx, dir);
-    return p ? p->param_idx : 0;
+    return p ? p->parameter : 0;
 }
 
 static TableIndex source_id(const Model& model, Index cell)
@@ -298,12 +300,12 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     size_t compact = input_cell(model, io.mesh, idx_bc);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::FirstType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::ZM), mhs::core::BcType::FirstType);
 
-    // mhs::core::BCParamTable should have dirichlet_T entries
-    EXPECT_FALSE(model.bc_params.dirichlet_T.empty());
-    EXPECT_TRUE(model.bc_params.dirichlet_T[0].is_constant());
-    EXPECT_NEAR(model.bc_params.dirichlet_T[0].constant_value(), 500.0, 1e-10);
+    // Boundary parameters share a single indexed table.
+    EXPECT_FALSE(model.boundary_table.empty());
+    EXPECT_TRUE(model.boundary_table[0].value.is_constant());
+    EXPECT_NEAR(model.boundary_table[0].value.constant_value(), 500.0, 1e-10);
 }
 
 TEST(PreprocessorTest, DefaultBoundaryFallback)
@@ -326,9 +328,9 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     size_t compact = input_cell(model, io.mesh, idx);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::XM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::ZM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::XM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::YM), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::ZM), mhs::core::BcType::SecondType);
 
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> None (no patch)
@@ -336,12 +338,12 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     size_t compact_inner = input_cell(model, io.mesh, idx_inner);
     ASSERT_NE(compact_inner, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::YM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::ZM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::XP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::YP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, mhs::core::FaceDir::ZP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::XM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::YM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::ZM), mhs::core::BcType::None);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::XP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::YP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::ZP), mhs::core::BcType::SecondType);
 }
 
 // ---- Full Case1 Integration Test ----
@@ -498,14 +500,13 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     const auto model = build_model(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, mhs::core::invalidIndex);
-    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM), mhs::core::BcType::ThirdType);
+    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), FaceDir::ZM), mhs::core::BcType::ThirdType);
 
-    const mhs::core::TableIndex param_idx = get_bc_param(model, static_cast<uint32_t>(cell), mhs::core::FaceDir::ZM);
+    const mhs::core::TableIndex param_idx = get_bc_param(model, static_cast<uint32_t>(cell), FaceDir::ZM);
     const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
-    ASSERT_LT(param_idx, model.bc_params.cauchy_h.size());
-    ASSERT_LT(param_idx, model.bc_params.cauchy_T_inf.size());
-    EXPECT_DOUBLE_EQ(model.bc_params.cauchy_h[param_idx].eval(ctx), 42.0);
-    EXPECT_DOUBLE_EQ(model.bc_params.cauchy_T_inf[param_idx].eval(ctx), 280.0);
+    ASSERT_LT(param_idx, model.boundary_table.size());
+    EXPECT_DOUBLE_EQ(model.boundary_table[param_idx].value.eval(ctx), 42.0);
+    EXPECT_DOUBLE_EQ(model.boundary_table[param_idx].ambient.eval(ctx), 280.0);
 }
 
 TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
@@ -565,7 +566,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
         int compact = (int)input_cell(model, io.mesh, idx);
-        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
+        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::YP), mhs::core::BcType::ThirdType)
             << "Y region should assign ThirdType to YP face at (" << ix << ",1,0)";
     }
 
@@ -573,7 +574,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // they should fall through to the default boundary (SecondType).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
     int compact_out = (int)input_cell(model, io.mesh, idx_outside);
-    EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, mhs::core::FaceDir::YP), mhs::core::BcType::ThirdType)
+    EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, FaceDir::YP), mhs::core::BcType::ThirdType)
         << "Cell outside rect must not get the ThirdType BC";
 }
 
@@ -634,7 +635,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
     // and specifically the three faces the keys target must be ThirdType.
-    auto check_face = [&](int ix, int iy, int iz, mhs::core::FaceDir dir) {
+    auto check_face = [&](int ix, int iy, int iz, FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
         int compact = (int)input_cell(model, io.mesh, idx);
         EXPECT_EQ(get_bc_type(model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
@@ -645,15 +646,15 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
     // X|E|10 -> XP face at x=10mm -> cells with ix=nx-1=1
     for (int iy = 0; iy < ny; ++iy)
         for (int iz = 0; iz < nz; ++iz)
-            check_face(nx - 1, iy, iz, mhs::core::FaceDir::XP);
+            check_face(nx - 1, iy, iz, FaceDir::XP);
 
     // X|E|0 -> XM face at x=0mm -> cells with ix=0
     for (int iy = 0; iy < ny; ++iy)
         for (int iz = 0; iz < nz; ++iz)
-            check_face(0, iy, iz, mhs::core::FaceDir::XM);
+            check_face(0, iy, iz, FaceDir::XM);
 
     // Y|E|10 -> YP face at y=10mm -> cells with iy=ny-1=1
     for (int ix = 0; ix < nx; ++ix)
         for (int iz = 0; iz < nz; ++iz)
-            check_face(ix, ny - 1, iz, mhs::core::FaceDir::YP);
+            check_face(ix, ny - 1, iz, FaceDir::YP);
 }

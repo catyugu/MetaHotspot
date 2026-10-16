@@ -62,7 +62,7 @@ namespace mhs::sim {
         }
         for (const auto& term : model.boundary_terms) {
             const auto f = projected_face(model.discrete, term);
-            const auto& bc = term.bc;
+            const auto& bc = model.boundary_table[term.parameter];
             const auto row = f.owner.value;
             const auto ki = conductivity[f.owner.value][f.axis];
             const auto p = f.center();
@@ -71,15 +71,15 @@ namespace mhs::sim {
             switch (bc.type) {
             case BcType::FirstType:
                 g = ki * f.area / f.owner_distance;
-                rhs[row] += g * model.bc_params.dirichlet_T[bc.param_idx].eval(ctx);
+                rhs[row] += g * bc.value.eval(ctx);
                 break;
             case BcType::SecondType:
-                rhs[row] += f.area * model.bc_params.neumann_q[bc.param_idx].eval(ctx);
+                rhs[row] += f.area * bc.value.eval(ctx);
                 break;
             case BcType::ThirdType: {
-                const double h = model.bc_params.cauchy_h[bc.param_idx].eval(ctx);
+                const double h = bc.value.eval(ctx);
                 g = ki * h * f.area / (ki + h * f.owner_distance);
-                rhs[row] += g * model.bc_params.cauchy_T_inf[bc.param_idx].eval(ctx);
+                rhs[row] += g * bc.ambient.eval(ctx);
                 break;
             }
             default:
