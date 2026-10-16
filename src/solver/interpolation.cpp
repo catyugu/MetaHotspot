@@ -1,3 +1,4 @@
+#include "core/boundary_geometry.hpp"
 #include "solver/interpolation.hpp"
 #include <cassert>
 #include <cmath>

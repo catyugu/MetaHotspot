@@ -18,6 +18,7 @@ class Operators(NamedTuple):
 
 @dataclass(frozen=True)
 class CellFields:
+    """Compiled geometry, material indices and source quadrature in CellId order."""
 
     cell_min: np.ndarray
     cell_max: np.ndarray

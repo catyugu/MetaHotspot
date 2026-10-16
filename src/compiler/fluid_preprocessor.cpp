@@ -1,3 +1,4 @@
+#include "core/boundary_geometry.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"

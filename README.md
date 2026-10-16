@@ -19,15 +19,15 @@
 ### 构建目标
 
 - **`src/core/model_definition.hpp`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
-- **`mhs_core`**：header-only 的显式控制体、面片、自由度映射与输出视图契约，作为 compiler、solver 和结果 IO 的稳定依赖边界。
-- **`mhs_compiler`**：消费有序 `ModelDefinition` 和给定网格，完成几何区域/热源的体积投影、边界面片分割、表达式编译和冻结流场构建。
+- **`mhs_core`**：header-only 的显式控制体、面片与输出视图契约，作为 compiler、solver 和结果 IO 的稳定依赖边界。
+- **`mhs_compiler`**：消费有序 `ModelDefinition` 和给定网格，完成几何区域/热源的体积投影、边界积分投影、表达式编译和冻结流场构建。
 - **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
 - **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
 - **`mhs_linear`**：AMGCL/Eigen 迭代求解和可选 MKL/Pardiso 封装；与建模代码的增量编译隔离。
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）、`DofMap`（CellId → 温度 DOF）和独立物理投影为契约。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。
 
 当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
@@ -49,12 +49,12 @@
 
 ```bash
 # 最常见的调用：指定主输入文件
-metahotspot --input cases/simple_steady_tests/steady_case1.xml
+metahotspot --input cases/simple_steady_cases/simple_steady_case1.xml
 
 # 顺序无关：把 output-vtu 放最前也行
 metahotspot --output-vtu /tmp/out.vtu \
             --output-xml /tmp/out.xml \
-            --input   cases/simple_steady_tests/steady_case1.xml
+            --input   cases/simple_steady_cases/simple_steady_case1.xml
 
 ```
 
@@ -70,8 +70,8 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 编号与数据顺序
 
-`CellId` 标识控制体，`FaceId` 标识唯一有向面片，`DofMap` 将控制体映射到温度状态。编号不表示空间位置或邻接关系。
+`CellId` 标识控制体及对应温度未知量，`FaceId` 标识唯一有向面片。编号不表示空间位置或邻接关系；物理边界投影不改变面片拓扑。
 
-几何和材料数组按 CellId 排列；`K`、`C`、`f`、`state` 和 `state_history` 按 DOF 排列。Python 的 `Solution.temperature` 和 `temperature_history` 按 CellId 返回物理温度。
+几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 统一按 CellId 排列。Python 的 `Solution.temperature` 和 `temperature_history` 直接共享状态数组。
 
 层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。

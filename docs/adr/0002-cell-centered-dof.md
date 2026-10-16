@@ -6,13 +6,13 @@ Accepted.
 
 ## Context
 
-Control-volume identity, face connectivity and algebraic state ordering are distinct. Boundary conditions act on surface integrals; representing a surface does not require a surface temperature unknown.
+Control-volume identity and face connectivity do not encode geometric coordinate indices. Boundary conditions act on surface integrals; representing a surface does not require a surface temperature unknown.
 
 ## Decision
 
-Store one temperature unknown per control volume. `DofMap` maps CellId to temperature DOF independently of cell storage order. `DiscreteMesh` stores axis-aligned cell bounds, unique oriented `FacePatch` records and cell-to-face CSR incidence. Face patches contain geometry and connectivity; materials and boundary assignments belong to the physical model.
+Store one temperature unknown per control volume, directly indexed by CellId. `DiscreteMesh` stores axis-aligned cell bounds, unique oriented `FacePatch` records and cell-to-face CSR incidence. Face patches contain geometry and connectivity; materials and boundary assignments belong to the physical model.
 
-`Model::patch_bcs[FaceId]` contains `FaceBC {type, param_idx}`, with parameters in `BCParamTable`. The compiler splits exterior patches at physical boundary intersections, applies patches in authoring order, and fills uncovered areas with the default condition. Heat sources use independent volume projections.
+`Model::boundary_terms` stores integration rectangles referencing original FaceIds and `boundary_table` indices. The table pairs each boundary type with compiled expression handles; Robin HTC and ambient temperature share one record. The compiler intersects physical boundary regions without modifying mesh topology, applies conditions in authoring order, and fills uncovered areas with the default condition. Heat sources use independent volume quadrature records. `Model` retains `OutputMesh` for sampling and output.
 
 For normal conductivity `k`, owner-center distance `d` and patch area `A`:
 

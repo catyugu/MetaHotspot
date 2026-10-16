@@ -1,3 +1,4 @@
+#include "core/boundary_geometry.hpp"
 #include "solver/assembler.hpp"
 #include "solver/fluid_assembler.hpp"
 #include <Eigen/Sparse>

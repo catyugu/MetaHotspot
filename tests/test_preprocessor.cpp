@@ -1,3 +1,4 @@
+#include "core/boundary_geometry.hpp"
 #include "compiler/model_compiler.hpp"
 #include "core/model_definition.hpp"
 #include "model_test_utils.hpp"

@@ -30,7 +30,7 @@ Two separate paths.
 
 ### Heat source table
 
-`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, referenced by `VolumeAssignment::source`. Each volume projection evaluates its source at the piece centroid and multiplies by the overlap volume; several sources may contribute to one cell.
+`Model::heat_source_table` is a `std::vector<CompiledExpression>` with one entry per Block, referenced by `SourceTerm::source`. Each volume projection evaluates its source at the piece centroid and multiplies by the overlap volume; several sources may contribute to one cell.
 
 ### Native functions
 

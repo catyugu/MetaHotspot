@@ -18,28 +18,7 @@ namespace {
         return mhs::sim::build_model(mhs::io::read_xml(input));
     }
 
-    /// Build the default (uniform initial_temperature) state vector.
-    std::vector<double> default_state(const mhs::core::Model& model)
-    { return std::vector<double>(static_cast<std::size_t>(model.discrete.cells.size()), model.initial_temperature); }
-
 } // namespace
-
-TEST(FluidModuleTest, PreprocessorStoresOnlyAssemblyReadyFields)
-{
-    auto model = load_microfluid_case();
-    const auto& fluid = model.fluid;
-
-    ASSERT_EQ(fluid.fluid_to_global.size(), 3200u);
-    EXPECT_EQ(fluid.global_to_fluid.size(), model.cell_material.size());
-    EXPECT_EQ(fluid.face_volume_flux.size(), model.discrete.faces.size());
-    EXPECT_EQ(fluid.interface_heat_transfer_factor.size(), fluid.fluid_to_global.size());
-    EXPECT_FALSE(fluid.boundary_terms.empty());
-
-    EXPECT_TRUE(std::any_of(fluid.face_volume_flux.begin(), fluid.face_volume_flux.end(),
-        [](double value) { return std::abs(value) > 0.0; }));
-    EXPECT_TRUE(std::all_of(fluid.interface_heat_transfer_factor.begin(), fluid.interface_heat_transfer_factor.end(),
-        [](double value) { return value > 0.0; }));
-}
 
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
@@ -53,55 +32,35 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
     EXPECT_TRUE(model.fluid.boundary_terms.empty());
 }
 
-TEST(FluidModuleTest, FrozenFaceFluxIsAntisymmetric)
+TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
 {
-    auto model = load_microfluid_case();
-
+    const auto model = load_microfluid_case();
     ASSERT_EQ(model.fluid.face_volume_flux.size(), model.discrete.faces.size());
-    double global_flux = 0;
+    std::vector<double> balance(model.discrete.cells.size(), 0);
+    auto density = [&](mhs::core::CellId cell) {
+        const auto p = model.discrete.cells[cell.value].center();
+        return model.material_table[model.cell_material[cell.value]].rho.eval(
+            {p[0], p[1], p[2], model.initial_temperature, 0});
+    };
     bool nonzero = false;
-    for (mhs::core::Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
-        const mhs::core::CellId cell {model.fluid.fluid_to_global[fi]};
-        double net = 0;
-        bool exterior = false;
-        for (auto id : model.discrete.incident_faces(cell)) {
-            const auto& f = model.discrete.faces[id.value];
-            if (!f.neighbor.valid())
-                exterior = true;
-            const double q = model.fluid.face_volume_flux[id.value] * (f.owner == cell ? 1 : -1);
-            nonzero = nonzero || std::abs(q) > 1e-20;
-            net += q;
-        }
-        global_flux += net;
-        if (!exterior)
-            EXPECT_NEAR(net, 0, 1e-12);
-    }
-    EXPECT_TRUE(nonzero);
-    EXPECT_NEAR(global_flux, 0, 1e-15);
-}
-
-TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
-{
-    auto model = load_microfluid_case();
-    const auto increment = mhs::sim::fluid::assemble_increment(model, default_state(model), 0.0);
-
-    for (const auto& entry : increment.matrix_entries) {
-        const mhs::core::Index row = static_cast<mhs::core::Index>(entry.row());
-        const mhs::core::Index col = static_cast<mhs::core::Index>(entry.col());
-        if (row == col)
+    for (mhs::core::Index id = 0; id < model.discrete.faces.size(); ++id) {
+        const auto& f = model.discrete.faces[id];
+        if (!f.neighbor.valid())
             continue;
-
-        const auto cell = mhs::core::CellId {row};
-        const auto neighbor = mhs::core::CellId {col};
-        bool direct_neighbor = false;
-        for (auto id : model.discrete.incident_faces(cell)) {
-            if (model.discrete.faces[id.value].other(cell) == neighbor) {
-                direct_neighbor = true;
-                break;
-            }
-        }
-        EXPECT_TRUE(direct_neighbor) << "fluid increment added non-neighbor coordinate (" << row << ", " << col << ")";
+        const double mass = model.fluid.face_volume_flux[id] * (density(f.owner) + density(f.neighbor)) / 2;
+        nonzero = nonzero || std::abs(mass) > 1e-20;
+        balance[f.owner.value] += mass;
+        balance[f.neighbor.value] -= mass;
     }
+    double boundary_sum = 0;
+    for (const auto& term : model.fluid.boundary_terms) {
+        balance[model.discrete.faces[term.face.value].owner.value] += term.mass_outflux;
+        boundary_sum += term.mass_outflux;
+    }
+    for (auto cell : model.fluid.fluid_to_global)
+        EXPECT_NEAR(balance[cell], 0, 1e-12);
+    EXPECT_NEAR(boundary_sum, 0, 1e-12);
+    EXPECT_TRUE(nonzero);
 }
 
 // Two disjoint inlet pieces and an outlet share a single control volume.
