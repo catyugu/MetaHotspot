@@ -55,7 +55,7 @@ namespace mhs::core {
 
 特点：
 
-- **可复制轻量句柄** — `shared_ptr` 共享公式字符串 + SymbolTable 副本 + ETS 基础设施；可放 `vector<MaterialProps>` / `BCParamTable` / `heat_source_table` 中自由复制移动
+- **可复制轻量句柄** — `shared_ptr` 共享公式字符串 + SymbolTable 副本 + ETS 基础设施；可放 `vector<MaterialProps>` / `BoundaryCondition` / `heat_source_table` 中自由复制移动
 - **懒构造 per-thread AST** — 公式字符串与 `SymbolTable` 在 ETS 构造器中按值捕获；无锁、无 false sharing
 - **AST 地址稳定** — ETS 元素类型是 `unique_ptr<MuCompiled>`，移动 `MuCompiledTLS` 不会搬动内部 AST；`NativeFnCtx` 持有的 `FieldContext*` 永远有效
 - **常数短路** — `is_const_` 为 true 时直接返回 `const_val_`，不触达 `tls_impl_`

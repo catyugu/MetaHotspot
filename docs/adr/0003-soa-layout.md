@@ -1,4 +1,4 @@
-# ADR-0003: SoA Data Layout Throughout
+# ADR-0003: Contiguous Geometry and Attribute Storage
 
 ## Status
 
@@ -6,14 +6,14 @@ Accepted.
 
 ## Context
 
-CLAUDE.md mandates data-oriented design and flat SoA. The structured grid can hold millions of cells.
+Large control-volume models require compact storage and predictable iteration without per-entity allocations.
 
 ## Decision
 
-All mesh and field data uses SoA throughout the internal model. See `src/core/model.hpp` for concrete types. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the preprocessor.
+Store cell geometry and face patches in contiguous vectors, adjacency in CSR arrays, and physical attributes in separate arrays and expression tables. See `src/core/discrete_mesh.hpp` and `src/core/model.hpp`. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the compiler.
 
 ## Rationale
 
-- Hot assembly loops iterate cells, reading one field at a time — SoA gives cache-friendly contiguous reads and SIMD opportunity.
-- TBB parallel_for partitions the contiguous cell range cleanly per worker.
+- Contiguous cell and face loops avoid pointer chasing.
+- Attribute arrays separate physical assignments from geometric and algebraic identities.
 - AoS in IO is correct: it maps 1:1 to XML elements.

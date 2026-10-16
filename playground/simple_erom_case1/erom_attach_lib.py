@@ -231,14 +231,10 @@ class AttachModel(AffineParametricModel):
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
         top = self.geometry.surface(Face.ZP)
-        top_cells, top_areas = top.cell_ids, top.areas
-        groups = [BoundaryGroup(cells=top_cells, areas=top_areas, h_range=(1.0, 1.0e4))]
+        groups = [BoundaryGroup(surface=top, h_range=(1.0, 1.0e4))]
         if self.config.ext_bottom_h is not None:
             bottom = self.geometry.surface(Face.ZM)
-            bot_cells, bot_areas = bottom.cell_ids, bottom.areas
-            groups.append(
-                BoundaryGroup(cells=bot_cells, areas=bot_areas, h_range=(1.0, 1.0e4))
-            )
+            groups.append(BoundaryGroup(surface=bottom, h_range=(1.0, 1.0e4)))
         return tuple(groups)
 
 
@@ -247,52 +243,28 @@ class AttachModel(AffineParametricModel):
 # -----------------------------------------------------------------------------
 
 
-def _grid_vertices(cells: CellFields):
-    """(V,3) vertex coordinates from the structured cell layout (SI metres)."""
-    vertices = CellGeometry(cells).vertices
-    pts = np.empty((np.prod([vertex.size for vertex in vertices]), 3))
-    k = 0
-    for iz in range(vertices[2].size):
-        for iy in range(vertices[1].size):
-            for ix in range(vertices[0].size):
-                pts[k] = (
-                    vertices[0][ix],
-                    vertices[1][iy],
-                    vertices[2][iz],
-                )
-                k += 1
-    return pts
-
-
 def write_vtu(
     path, cells: CellFields, cell_field: np.ndarray, name: str = "Temperature_K"
 ) -> str:
-    """Write a cell-centred scalar field on the structured grid to ``path`` (SI)."""
-    # Vertex-point coordinate order matches _grid_vertices: iz outer, iy middle,
-    # ix inner.  index = iz*(Yv*Xv) + iy*Xv + ix, with Xv/Yv the *vertex* counts.
-    x_vertices, y_vertices, z_vertices = CellGeometry(cells).vertices
-    Xv = x_vertices.size
-    Yv = y_vertices.size
-
-    def vid(ix, iy, iz):
-        return iz * (Yv * Xv) + iy * Xv + ix
-
-    ijk = CellGeometry(cells).indices
-    n_cells = ijk.shape[0]
-    conn = np.empty((n_cells, 8), dtype=np.int64)
-    for c in range(n_cells):
-        ix, iy, iz = int(ijk[c, 0]), int(ijk[c, 1]), int(ijk[c, 2])
-        conn[c] = [
-            vid(ix, iy, iz),
-            vid(ix + 1, iy, iz),
-            vid(ix + 1, iy + 1, iz),
-            vid(ix, iy + 1, iz),
-            vid(ix, iy, iz + 1),
-            vid(ix + 1, iy, iz + 1),
-            vid(ix + 1, iy + 1, iz + 1),
-            vid(ix, iy + 1, iz + 1),
+    """Write explicit box geometry, independent of Cartesian index conventions."""
+    corners = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
         ]
-
+    )
+    pts_arr = (
+        cells.cell_min[:, None, :]
+        + corners[None, :, :] * (cells.cell_max - cells.cell_min)[:, None, :]
+    ).reshape(-1, 3)
+    n_cells = len(cells.cell_min)
+    conn = np.arange(8 * n_cells, dtype=np.int64).reshape(-1, 8)
     cell_offsets = 8 * np.arange(1, n_cells + 1, dtype=np.int64)
     cell_types = np.full(n_cells, 12, dtype=np.uint8)  # VTK_HEXAHEDRON
 
@@ -302,7 +274,6 @@ def write_vtu(
     def fmt_int(a):
         return " ".join(str(int(v)) for v in a)
 
-    pts_arr = _grid_vertices(cells)
     pts_str = " ".join(f"{x:.12e} {y:.12e} {z:.12e}" for x, y, z in pts_arr)
     cells_block = "\n".join(" ".join(str(v) for v in conn[i]) for i in range(n_cells))
     xml = (

@@ -17,6 +17,7 @@ from metahotspot.types import (
     MhsFaceRegion,
     MhsCompiledInfo,
     MhsCellFields,
+    MhsMesh,
     MhsMaterialValues,
     MhsOperatorsInfo,
     MhsSolutionInfo,
@@ -29,6 +30,24 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Global helpers ----
     ("mhs_solve_options_default", None, [ctypes.POINTER(_SolveOptionsCStruct)]),
     ("mhs_last_error", ctypes.c_char_p, []),
+    (
+        "mhs_model_set_discrete_mesh",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsModel), ctypes.POINTER(MhsMesh)],
+    ),
+
+    (
+        "mhs_compiled_eval_source_terms",
+        ctypes.c_int32,
+        [
+            ctypes.POINTER(MhsCompiled),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.c_size_t,
+        ],
+    ),
     # ---- Model life-cycle ----
     ("mhs_model_create", ctypes.c_int32, [ctypes.POINTER(ctypes.POINTER(MhsModel))]),
     ("mhs_model_destroy", None, [ctypes.POINTER(MhsModel)]),

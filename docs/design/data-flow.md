@@ -1,97 +1,49 @@
 # 数据流与设计原则
 
-## 总览
-
-```text
-XML
-  └─> mhs::io::read_xml                          (tinyxml2)
-        └─> mhs::model::ModelDefinition              (有序 Authoring Model)
-                └─> mhs::sim::build_model
-                      ├─> 构造本地 mhs::core::SymbolTable（几何变量 + mhs::sim::register_all_functions(ios.functions) 注入的 native）
-                      ├─> mhs::core::MeshGeometry (×si_scale)
-                      ├─> mhs::sim::resolve_geometry         (几何预求)
-                      ├─> material_table           (kx/ky/kz/ρ/c 编译)
-                      ├─> mhs::sim::assign_cell_layers       (grid_to_cell [full-grid]; cell_to_grid + fields [compact])
-                      ├─> heat_source_table        (按 Block 编译 volumetric_heat_source)
-                      ├─> mhs::sim::resolve_boundary_patches (face_bcs [N_active * 6] 扁平数组)
-                      ├─> mhs::sim::fluid::build_domain
-                      │     └─> pressure scratch → frozen face flux + interface factor
-                      └─> mhs::core::Model (含 face_bcs, FluidDomain)
-                              └─> mhs::sim::solve
-                                    └─> mhs::sim::solve_system(Study, SystemAssembler, state)
-                                    ├─> mhs::sim::time_scheme::StepController::prepare(dt_sug, t) → dt_exec
-                                    ├─> mhs::sim::assemble_thermal(model, fvm_state, time)
-                                    │     ├─> assemble_cells parallel_for // no fluid branches
-                                    │     │     ├─> material_table[mat_id].{kx,ky,kz}.eval(ctx)   @ cell state
-                                    │     │     ├─> material_table[mat_id].{rho,c}.eval(ctx)       @ cell state
-                                    │     │     ├─> k_along(dir) 选用该面法向对应的 k
-                                    │     │     ├─> face_bcs[c*6 + dir] + bc_params.eval
-                                    │     │     ├─> heat_source_table[hs_idx].eval
-                                    │     │     └─> thread-local K/C triplets + f
-                                    │     ├─> assemble_fluid               // same sparse coordinates
-                                    │     └─> merge once → Operators {K, C, f}
-                                    ├─> mhs::sim::time_scheme::build_system(kind, ops, hist, dt) → LinearSystem
-                                    ├─> mhs::sim::nonlinear_solve(ls_provider, state, solver) [Anderson 加速定点迭代]
-                                    └─> mhs::sim::time_scheme::estimate_error(hist, state, dt, cfg) → ErrorEstimate
-                                    ├─> StepController::output_due(t + dt) → exact solved output state
-                                    ├─> mhs::sim::ProbeRecorder::record(time, cell_T)   // 输出时刻 O(n_probes) 局部采样
-                                    └─> mhs::post::interpolate_cell_to_node           // solve_thermal() 结束后一次性展开
-                                          ├─> cell 内 k 退化为三轴算术平均（软权重）
-                                          ├─> 面中心外推使用该面法向对应的 k
-                                          └─> mhs::io::write_vtu + mhs::io::write_xml(probeTraces)   (virtual → NaN)
-```
-
 ## 核心对象与生命周期
 
-公共模型流程只保留四个对象。它们分别对应一个明确的数学或运行期语义，
-不把 C ABI handle、Python wrapper 或中间 buffer 当成新的领域对象。
+| 对象 | 职责 | 生命周期 |
+| --- | --- | --- |
+| `ModelDefinition` | 几何、材料、热源、边界、探针和 study 设置 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
+| `mhs::core::Model` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `build_model` 的独立结果；供重复装配和求解使用 |
+| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 每次装配的值对象 |
+| `Solution` | 最终状态、输出时刻的状态历史和探针记录 | 独立拥有求解结果 |
 
-```text
-ModelDefinition
-    可变的 authoring model；保存几何、材料、边界、源和 study 设置
-    由 XML reader 或 Model builder 创建；compile 不修改它
-        │ compile
-        ▼
-CompiledModel (mhs::core::Model)
-    不可变的离散运行期模型；保存网格、cell mapping、已编译表达式、face BC
-    和流体预处理结果；独立拥有编译结果
-        │ assemble(state, time)
-        ▼
-Operators {K, C, f}
-    某一状态和时刻的线性化离散系统：C · dx/dt + K · x = f
-    一次 assembly 的值对象；不拥有 CompiledModel，也不改变它
-        │ solve(initial_state, options)
-        ▼
-Solution
-    一次求解的最终状态、accepted/output history 和 probe traces
-    独立拥有结果；不依赖调用方传入的 state buffer
-```
+`compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
 
-生命周期约定：
+## 编译与装配
 
-- `ModelDefinition` 只负责 setup；`compile` 是从定义到冻结离散模型的一次转换。
-- `CompiledModel` 是重复 `assemble` 和 `solve` 的唯一运行期入口。
-- `Operators` 是 assembly 的结果，不是第二种模型定义，也不是求解器的全局状态。
-- `Solution` 是一次 solve 的不可变快照；关闭或修改输入对象不改变它。
-- C API 的 opaque handle 和 Python 对象只负责 ownership 与转换，不增加上述对象的语义。
-- Python 返回的 NumPy/SciPy 数据属于 Python；native handle 销毁后仍然有效。
+| 阶段 | 输入 | 输出与规则 |
+| --- | --- | --- |
+| 几何解析 | Layer / Block / Rect 和几何表达式 | SI 米下的区域；同层后出现的 Block 覆盖前者 |
+| 网格输入 | Cartesian 坐标轴或调用方提供的控制体、面片 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
+| 网格契约 | 控制体与面片几何、连接 | 调用者保证有效性；编译器不校验网格，只建立 CSR 关联 |
+| 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；跨材料或物理域边界的控制体被拒绝 |
+| 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成引用原始 FaceId 的 `boundary_terms`；积分矩形通过 `condition` 引用 `boundary_conditions` 中的 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
+| 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
+| 流体预处理 | 流体材料、连接和流体边界 | 独立按面积投影流体边界；临时压力解转换为内部面体积流量、边界片质量通量与入口温度、流固换热因子 |
+| 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |
+| 面片装配 | 面片、两侧物理类型、边界描述 | 固固导热、流固换热、外边界通量；内部面只装配一次，两侧热流相反 |
+| 流体能量装配 | 冻结流量、状态和材料 | 上风对流和入口能量贡献，与导热项合并为 `Operators` |
 
-## 各阶段
+当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。数值内核消费已有网格，不生成或加密网格。
 
-| 阶段              | 输入                                  | 输出                            | 关键                                                     |
-| ----------------- | ------------------------------------- | ------------------------------- | -------------------------------------------------------- |
-| XML 解析          | XML 文件                              | `ModelDefinition`               | `mhs_io` / tinyxml2                                      |
-| 预处理-几何       | `mesh.{x,y,z}_vertices`               | `MeshGeometry`                  | si_scale, dx/dy/dz, cx/cy/cz                             |
-| 预处理-层几何     | `ModelDefinition.layers`              | `ResolvedLayerGeometry[]`       | 预求 Z 范围 + Block XY                                   |
-| 预处理-单元拓扑   | mesh + 层几何                         | `grid_to_cell` + `cell_to_grid` | 精确双向映射；虚拟网格标记                               |
-| 预处理-单元归属   | mesh + 层几何                         | `material_id`                   | compact（`c_idx` 索引）；cell→block 反向遍历（后写优先） |
-| 预处理-面 BC      | mesh + `BoundaryPatch[]`              | `face_bcs` + `BCParamTable`     | 6 面独立 + `default_boundary` 兜底                       |
-| 预处理-表达式编译 | `ModelDefinition` 中的表达式字符串    | `CompiledExpression`            | `mhs_expression`（muparser + TBB）                       |
-| 组装              | 当前完整状态 + 时间                   | `Operators {K,C,f}`             | `SystemAssembler` 拥有全部当前热/流体耦合物理            |
-| 时间输出          | accepted state + output grid          | observer state                  | Adaptive/Fixed 均截短到网格；禁止插值全局/模态状态       |
-| 线性求解          | `A x = b`                             | `x`                             | 默认 AmgCg（AMGCL + Eigen）；可选 Pardiso（MKL）         |
-| 非线性更新        | 线性解 `G(x)`                         | 下一状态迭代值                  | Anderson 加速或欠松弛                                    |
-| 后处理            | `Model` + `cell_temperature`          | VTU + XML                       | 展开到全网格，虚拟位置 NaN                               |
-| 探针记录          | `cell_T` + `model.observation_points` | `ProbeTrace[]`                  | 每步 O(n_probes) 局部采样；trace 作为 `Solution` 返回    |
+`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引。热与流体边界分别采用后出现条件覆盖前者的面积投影，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取初始温度。
 
-运行期 SoA 和面 BC 约定见代码注释；表达式线程模型见 [expr-api.md](expr-api.md)。
+`FluidBoundaryTerm` 保存 FaceId 和内联的 `FluidBoundaryCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+
+## 求解与输出
+
+`solve_system` 通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态使用 BDF1/BDF2，`StepController` 控制 Adaptive/Fixed 步长并截短到输出时刻，observer 接收真实积分状态。全局状态不做时间插值。
+
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。温度状态直接按 CellId 访问。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
+
+## 输入与数组约定
+
+- C++ 的 `build_model(definition, discrete_mesh)`、C 的 `mhs_model_set_discrete_mesh` 和 Python 的 `Model.set_discrete_mesh` 接收完整的控制体与面片连接。外部网格坐标始终使用 SI 米，与物理定义的长度单位无关。
+- Python 网格边界数组为 `(count, 3)`；面片 owner/neighbor、axis/sign 为 `(face_count,)`。外边界 neighbor 为 `SIZE_MAX`，Python 输入也接受有符号 `-1`。面片 sign 表示 owner 的外法向。
+- 几何、材料、`K/C/f`、`state` 和 `state_history` 统一按 CellId 排列；该编号只在当前编译模型内有效。Python `Solution.temperature` 和 `temperature_history` 直接共享状态数组。
+- `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
+- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
+
+函数在编译阶段统一构造求值器：分段线性点按横坐标排序，并拒绝空数据、重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。

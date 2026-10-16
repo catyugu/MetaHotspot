@@ -7,7 +7,7 @@
 | 目录                       | 目标                | 职责                                               |
 | -------------------------- | ------------------- | -------------------------------------------------- |
 | `src/core/`                | `mhs_core`          | header-only authoring/runtime 契约、网格和结果类型 |
-| `src/compiler/`            | `mhs_compiler`      | 几何解析、表达式编译、SoA 编译和冻结流场构建       |
+| `src/compiler/`            | `mhs_compiler`      | 网格校验、几何投影、表达式编译和冻结流场构建       |
 | `src/solver/`              | `mhs_solver`        | 组装、非线性迭代、线性求解、时间推进、探针和后处理 |
 | `src/numerics/expression/` | `mhs_expression`    | muparser 与 TBB 表达式封装                         |
 | `src/numerics/linear/`     | `mhs_linear`        | AMGCL/Eigen AMG 迭代求解和可选 MKL/Pardiso 封装    |

@@ -10,6 +10,7 @@
 #include <Eigen/Sparse>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -70,6 +71,7 @@ struct BlockLocation {
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
     std::vector<BlockLocation> block_locations;
+    std::optional<mhs::core::DiscreteMesh> external_mesh;
 };
 
 struct mhs_compiled_t {

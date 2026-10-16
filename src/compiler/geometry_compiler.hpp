@@ -36,18 +36,12 @@ namespace mhs::sim {
         double z_end; // SI z coordinate of layer top
     };
 
-    /// Compiled boundary region with resolved parameters
+    /// Compiled boundary region referencing a condition in the caller's table
     struct CompiledBoundaryRegion {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
         std::vector<mhs::model::RegionRect> rectangles;
-        mhs::core::BcType type = mhs::core::BcType::None;
-        mhs::core::TableIndex parameter_index = 0;
-    };
-
-    struct DefaultBoundary {
-        mhs::core::BcType type = mhs::core::BcType::None;
-        mhs::core::TableIndex parameter_index = 0;
+        mhs::core::TableIndex condition_index = 0;
     };
 
     // ──────────────────────────────────────────────────────────────
@@ -57,11 +51,14 @@ namespace mhs::sim {
     std::vector<ResolvedLayerGeometry> resolve_geometry(
         const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
 
-    mhs::core::CellFields assign_cell_layers(
-        const std::vector<ResolvedLayerGeometry>& resolved_layers, const mhs::core::MeshGeometry& mesh);
+    std::pair<mhs::core::Index, mhs::core::Index> classify_point(
+        const std::vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& point);
+    void project_cell_regions(mhs::core::Model& model, const std::vector<ResolvedLayerGeometry>& layers);
+    void compile_cartesian_mesh(mhs::core::Model& model, const mhs::model::MeshSpec& input, double scale,
+        const std::vector<ResolvedLayerGeometry>& layers);
+    void build_external_output_mesh(mhs::core::Model& model);
 
-    void resolve_boundary_patches(const mhs::core::MeshGeometry& mesh, const mhs::core::CellFields& cells,
-        const std::vector<CompiledBoundaryRegion>& boundaries, const DefaultBoundary& default_boundary,
-        std::vector<mhs::core::FaceBC>& face_bcs);
-
+    std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+        const std::vector<CompiledBoundaryRegion>& boundaries,
+        mhs::core::TableIndex fallback = mhs::core::invalidTableIndex);
 } // namespace mhs::sim

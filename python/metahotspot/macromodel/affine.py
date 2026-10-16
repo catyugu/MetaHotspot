@@ -31,17 +31,16 @@ in the shared signatures.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Callable
 
 import numpy as np
 import scipy.sparse as sp
 
 from metahotspot._compiled_data import Operators
 from metahotspot.enums import Study
-from metahotspot.macromodel.geometry import CellGeometry
-
+from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.utils import (
     normalized_operators,
     solve_rom_steady,
@@ -51,37 +50,35 @@ from metahotspot.macromodel.utils import (
 
 @dataclass(frozen=True)
 class BoundaryGroup:
-    """
-    One affine parameter: the boundary data a single ``h`` controls.
+    """A physical surface controlled by one affine Robin parameter.
 
-    ``cells`` are 0-based indices into the full-domain FVM order; ``areas`` the
-    SI exposed face area (m²) of each of those cells on this group's boundary
-    surface.  Together with a scalar ``h`` they define the linear affine Robin
-    term ``H_k = diag(areas)`` (BCI 2015 eq. 7).  ``h_range`` is the admissible
-    **physical** coefficient range used for training/holdout.
-
-    Series-condensed (effective) ``k_c`` and ``half_c`` are read off the base
-    :attr:`AffineParametricModel.cell_layout` at face-extraction time (face
-    direction selects which (kx, ky, kz) axis and which cell-side length to
-    pick); they are NOT carried here — a boundary group is pure boundary
-    geometry.
+    Selected FaceIds supply normals and owner distances; projected areas may
+    contain several contributions to the same physical CellId. ``h_range`` is
+    the physical HTC range; material conductivity comes from ``cell_layout``.
     """
 
-    cells: np.ndarray  # int64, boundary cells in the full-domain FVM order
-    areas: np.ndarray  # float64, SI exposed face area of each cell (m^2)
-    h_range: tuple[float, float] = (1.0, 1.0e6)  # admissible physical range
+    surface: BoundarySurface
+    h_range: tuple[float, float] = (1.0, 1.0e6)
+
+    @property
+    def cells(self):
+        return self.surface.cell_ids
+
+    @property
+    def areas(self):
+        return self.surface.areas
+
+    @property
+    def face_ids(self):
+        return self.surface.face_ids
 
 
 @dataclass(frozen=True)
 class CellLayout:
-    """Per-cell (cell_count, 3) arrays computed once at compile time.
+    """Geometry and reference conductivity in physical CellId order.
 
-    ``centers[:, c]`` is the SI centre coordinate of cell c along each axis
-    (x, y, z); ``half_sizes[:, c]`` is half the cell-side length (centre → face
-    distance) along each axis; ``conductivity[:, c]`` is the static (kx, ky, kz)
-    in W/m·K, evaluated at compile time at (cell_centre, ambient, t=0).  All
-    three arrays align with :attr:`Compiled.cells` order, so every column is
-    indexed by the same compact Cell ID.
+    Rows identify cells; columns identify x/y/z. Conductivity is evaluated at
+    the cell center, ambient temperature and t=0, in W/(m K).
     """
 
     centers: np.ndarray  # (cell_count, 3) float64, SI metres
@@ -91,18 +88,23 @@ class CellLayout:
 
 @dataclass(frozen=True)
 class SourcePort:
-    """One heat-source port: a region plus its power waveform.
+    """A power input selecting physical source IDs or physical CellIds.
 
-    ``cells`` are the full-domain FVM indices of the source region,
-    ``power_W`` its nominal total power (W), and ``activity`` an optional
-    dimensionless time factor ``t -> factor`` (``None`` = constant).  The
-    port's power shape is its unit-power distribution ``G_src[:, k]`` and its
-    power input is ``P_k(t) = power_W * activity(t)``.
+    ``power_W`` is the signed nominal power. ``activity(t)`` scales it, with
+    ``None`` denoting constant power. ``source_ids`` preserves independent
+    sources that share cells; ``cells`` selects the assembled source field.
     """
 
-    cells: np.ndarray  # int64, source-region cells in the full-domain order
-    power_W: float  # nominal total power (W)
-    activity: Callable[[float], float] | None = None  # t -> dimensionless factor
+    power_W: float
+    cells: np.ndarray | None = None  # explicit physical CellId selection
+    source_ids: np.ndarray | None = None  # physical source-table columns
+    activity: Callable[[float], float] | None = None
+
+    def __post_init__(self):
+        if (self.cells is None) == (self.source_ids is None):
+            raise ValueError("SourcePort needs exactly one of cells or source_ids")
+        if not np.isfinite(self.power_W) or self.power_W == 0:
+            raise ValueError("SourcePort.power_W must be finite and nonzero")
 
 
 @dataclass(frozen=True)
@@ -212,21 +214,32 @@ class AffineParametricModel:
         return normalized_operators(*self._full.assemble())
 
     @cached_property
+    def source_contributions(self):
+        """Native sparse contributions with a separate column per physical source."""
+        return self._full.source_operator()
+
+    @cached_property
     def source_shape(self) -> np.ndarray:
         """Unit-power source-shape matrix ``G_src`` (N, n_src).
 
         Column k is the unit-power shape of source port k: the constant
         heat-source RHS over the port's cells, normalized by the port's
-        nominal power.  ``G_src @ P(t)`` reproduces the native source RHS at
-        any power vector (FANTASTIC 2014 eq. 2).
+        nonzero nominal power. Signed powers are preserved. ``G_src @ P(t)``
+        reproduces the native source RHS at any power vector (FANTASTIC 2014 eq. 2).
         """
         f = np.asarray(self.core.f, dtype=np.float64)
         ports = self.source_ports()
         G = np.zeros((f.size, len(ports)), dtype=np.float64)
         for k, port in enumerate(ports):
-            cells = np.asarray(port.cells, dtype=np.int64)
-            scale = max(float(port.power_W), np.finfo(float).tiny)
-            G[cells, k] = f[cells] / scale
+            if port.source_ids is not None:
+                ids = np.asarray(port.source_ids, dtype=np.intp)
+                G[:, k] = (
+                    np.asarray(self.source_contributions[:, ids].sum(axis=1)).ravel()
+                    / port.power_W
+                )
+            else:
+                cells = np.asarray(port.cells, dtype=np.int64)
+                G[cells, k] = f[cells] / port.power_W
         return G
 
     @cached_property
@@ -241,11 +254,15 @@ class AffineParametricModel:
         ``p_c = k_c·h / (k_c + h·half_c)`` per cell for the same ``h_k``,
         giving the FloTHERM ThirdType capacitance-free face condensation.
         """
-        n = self._full.cell_count
+        n = self.core.K.shape[0]
         terms = []
         for group in self.boundary_groups():
             diagonal = np.zeros(n)
-            diagonal[np.asarray(group.cells, dtype=np.int64)] = group.areas
+            np.add.at(
+                diagonal,
+                np.asarray(group.cells, dtype=np.int64),
+                group.areas,
+            )
             terms.append(sp.diags(diagonal))
         return terms
 
@@ -275,28 +292,16 @@ class AffineParametricModel:
         total = float(areas.sum())
         return float((values * areas).sum() / total) if total else float(values.mean())
 
-    def _effective_per_cell(self, group, axis: int, h_phys: float) -> np.ndarray:
-        """Per-cell series-effective ``p_c = k_c·h / (k_c + h·half_c)``.
-
-        ``k``/``half`` are read from :attr:`cell_layout` along the face-normal
-        ``axis``, so the series condensation uses the model's own geometry and
-        material — not anything carried on the boundary group.
-        """
-        cells = np.asarray(group.cells, dtype=np.int64)
-        k = self.cell_layout.conductivity[cells, axis]
-        half = self.cell_layout.half_sizes[cells, axis]
+    def _effective_per_patch(self, group, h_phys: float) -> np.ndarray:
+        """Series-condensed coefficient on each selected native surface patch."""
+        fields = self.geometry.fields
+        faces = np.asarray(group.face_ids, dtype=np.intp)
+        cells = np.asarray(group.cells, dtype=np.intp)
+        axes = fields.face_axis[faces]
+        k = self.cell_layout.conductivity[cells, axes]
+        half = fields.owner_distance[faces]
         h = float(h_phys)
         return k * h / (k + h * half)
-
-    def _boundary_axis_per_group(self) -> tuple[int, ...]:
-        """Face-normal axis (0=x, 1=y, 2=z) for each boundary group.
-
-        Default: all-Z.  Models with lateral (X/Y) groups override this.
-        Used by :meth:`physical_to_effective` / :meth:`full_reference` to pick
-        the right (kx, ky, kz) / cell-side half-distance for the per-cell
-        series condensation.
-        """
-        return (2,) * len(self.boundary_groups())
 
     def physical_to_effective(self, physical_h) -> np.ndarray:
         """Map a physical HTC vector → effective affine coefficient per group.
@@ -308,11 +313,9 @@ class AffineParametricModel:
         the mapping internally before assembling the affine ``K``.
         """
         groups = self.boundary_groups()
-        axes = self._boundary_axis_per_group()
         out = np.empty(len(groups), dtype=np.float64)
         for k, group in enumerate(groups):
-            cells = np.asarray(group.cells, dtype=np.int64)
-            p_cell = self._effective_per_cell(group, axes[k], float(physical_h[k]))
+            p_cell = self._effective_per_patch(group, float(physical_h[k]))
             areas = np.asarray(group.areas, dtype=np.float64)
             out[k] = self._area_weighted(p_cell, areas)
         return out
@@ -329,13 +332,11 @@ class AffineParametricModel:
         ``physical_to_effective``) and :meth:`full_reference` consume.
         """
         groups = self.boundary_groups()
-        axes = self._boundary_axis_per_group()
         out = []
-        for k, g in enumerate(groups):
-            cells = np.asarray(g.cells, dtype=np.int64)
+        for g in groups:
             lo, hi = g.h_range
-            p_lo = self._effective_per_cell(g, axes[k], lo)
-            p_hi = self._effective_per_cell(g, axes[k], hi)
+            p_lo = self._effective_per_patch(g, lo)
+            p_hi = self._effective_per_patch(g, hi)
             areas = np.asarray(g.areas, dtype=np.float64)
             s_lo = self._area_weighted(p_lo, areas)
             s_hi = self._area_weighted(p_hi, areas)

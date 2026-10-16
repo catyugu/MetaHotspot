@@ -16,13 +16,13 @@ is used to cover boundary-driven response directions reproducibly.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 
 import numpy as np
-import scipy.linalg
 import scipy.sparse as sp
 from numpy.polynomial.legendre import Legendre
 
-from metahotspot.macromodel.embeddable import EmbeddableRom, Subdomain
+from metahotspot.macromodel.embeddable import EmbeddableRom, Subdomain, _project_rom
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
     normalized_operators,
@@ -215,34 +215,6 @@ def extract_interface_enriched_rom(
         seed=seed,
     )
 
-    C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
-    K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
-    F_hat = np.asarray(basis.T @ physical_sources, dtype=np.float64)
-    ambient_hat = [
-        sp.csc_matrix(basis.T @ H @ basis)
-        for H in boundary_terms[: len(active_indices)]
-    ]
-
-    modal_k, modal_q = scipy.linalg.eigh(
-        K0_hat.toarray(), C_hat.toarray(), check_finite=False
-    )
-    modal_q = np.asarray(modal_q, dtype=np.float64)
-    basis = np.asarray(basis @ modal_q, dtype=np.float64)
-    C_hat = sp.eye(modal_k.size, format="csc")
-    K0_hat = sp.diags(modal_k, format="csc")
-    F_hat = np.asarray(modal_q.T @ F_hat, dtype=np.float64)
-    ambient_hat = [
-        sp.csc_matrix(modal_q.T @ H.toarray() @ modal_q) for H in ambient_hat
-    ]
-    boundary_traces = {
-        p.label: np.asarray(basis[np.asarray(p.cells), :], dtype=np.float64)
-        for p in subdomain.boundary_ports
-    }
-    boundary_conductances = {
-        p.label: np.asarray(p.g, dtype=np.float64)
-        for p in subdomain.boundary_ports
-    }
-
     summary = dict(summary)
     summary.update(
         {
@@ -259,43 +231,15 @@ def extract_interface_enriched_rom(
         }
     )
 
-    return EmbeddableRom(
-        name=subdomain.name,
-        cells=subdomain.cells,
-        basis=np.ascontiguousarray(basis),
-        C_hat=C_hat,
-        K0_hat=K0_hat,
-        F_hat=np.asarray(F_hat, dtype=np.float64),
-        ambient_hat=ambient_hat,
-        boundary_traces=boundary_traces,
-        boundary_conductances=boundary_conductances,
+    projected_domain = replace(
+        subdomain,
+        ambient_terms=boundary_terms[: len(active_indices)],
         ambient_ranges=ambient_ranges,
         effective_p=effective_p,
-        ports=subdomain.ports,
-        summary=summary,
     )
+    return _project_rom(projected_domain, basis, summary)
 
 
 def clone_embeddable_rom(rom: EmbeddableRom) -> EmbeddableRom:
-    """Deep-enough clone for per-case solves that mutate projected source scaling."""
-    return EmbeddableRom(
-        name=rom.name,
-        cells=np.asarray(rom.cells, dtype=np.int64).copy(),
-        basis=np.asarray(rom.basis, dtype=np.float64).copy(),
-        C_hat=rom.C_hat.copy(),
-        K0_hat=rom.K0_hat.copy(),
-        F_hat=np.asarray(rom.F_hat, dtype=np.float64).copy(),
-        ambient_hat=[H.copy() for H in rom.ambient_hat],
-        boundary_traces={
-            k: np.asarray(v, dtype=np.float64).copy()
-            for k, v in rom.boundary_traces.items()
-        },
-        boundary_conductances={
-            k: np.asarray(v, dtype=np.float64).copy()
-            for k, v in rom.boundary_conductances.items()
-        },
-        ambient_ranges=np.asarray(rom.ambient_ranges, dtype=np.float64).copy(),
-        effective_p=np.asarray(rom.effective_p, dtype=np.float64).copy(),
-        ports=copy.deepcopy(rom.ports),
-        summary=copy.deepcopy(rom.summary),
-    )
+    """Clone all mutable ROM data for independent per-case solves."""
+    return copy.deepcopy(rom)

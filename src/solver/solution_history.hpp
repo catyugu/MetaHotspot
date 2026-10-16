@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace mhs::core {
@@ -26,7 +27,7 @@ namespace mhs::core {
         /// Post-condition: size() == 1, current() == initial_state, time_at(0) == t0.
         inline void initialize(std::span<const double> initial_state, double t0 = 0.0)
         {
-            head_ = 1;
+            head_ = 1 % cap_;
             stored_ = 1;
             slots_[0].assign(initial_state.begin(), initial_state.end());
             times_[0] = t0;
@@ -46,12 +47,11 @@ namespace mhs::core {
         }
 
         /// Most recently accepted solution vector.
-        /// UB if no snapshot has ever been stored (returns a reference to an
-        /// empty vector for the default-constructed case).
-        inline std::span<const double> current() const noexcept
+        /// Reading before initialize() is a caller error.
+        inline std::span<const double> current() const
         {
             if (stored_ == 0)
-                return slots_[0];
+                throw std::logic_error("SolutionHistory must be initialized before current()");
             return at(0);
         }
 

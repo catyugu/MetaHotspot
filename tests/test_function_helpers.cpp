@@ -86,8 +86,12 @@ namespace {
     {
         mhs::core::SymbolTable sym;
         std::vector<mhs::model::NamedFunction> fns;
+        EXPECT_THROW(
+            register_all_functions(sym, {{"empty", mhs::model::PiecewiseFunctionSpec {}}}), std::invalid_argument);
+        EXPECT_THROW(register_all_functions(sym, {{"duplicate", mhs::model::PiecewiseFunctionSpec {{{0, 1}, {0, 2}}}}}),
+            std::invalid_argument);
         mhs::model::PiecewiseFunctionSpec pw;
-        pw.points = {{0, -1}, {1, 2}, {5, 3}};
+        pw.points = {{5, 3}, {0, -1}, {1, 2}};
         fns.push_back({"mypw", std::move(pw)});
         register_all_functions(sym, fns);
 
@@ -132,11 +136,13 @@ namespace {
         mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
         ppc.period = 10.0;
         fns.push_back({"emptyppc", std::move(ppc)});
-        register_all_functions(sym, fns);
-
-        auto compiled = mhs::core::parse("emptyppc(t)", sym);
-        FieldContext ctx {};
-        EXPECT_DOUBLE_EQ(compiled.eval(ctx), 0.0);
+        EXPECT_THROW(register_all_functions(sym, fns), std::invalid_argument);
+        EXPECT_THROW(
+            register_all_functions(sym, {{"zero", mhs::model::PeriodicPiecewiseConstantFunctionSpec {0, {1}}}}),
+            std::invalid_argument);
+        EXPECT_THROW(
+            register_all_functions(sym, {{"negative", mhs::model::PeriodicPiecewiseConstantFunctionSpec {-1, {1}}}}),
+            std::invalid_argument);
     }
 
     TEST(PeriodicPiecewiseConstant, SingleValue)

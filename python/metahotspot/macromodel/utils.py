@@ -25,12 +25,9 @@ def mpmm_elliptic_shift_count(
     relative_epsilon: float, lambda_min: float, lambda_max: float
 ):
     """Smallest m satisfying 4 exp(-m pi^2/log(4/k')) <= epsilon."""
-    k_prime = lambda_min / lambda_max
-    log_term = math.log(4.0 / k_prime)
-    for m in range(1, 400):
-        if 4.0 * math.exp(-m * math.pi * math.pi / log_term) <= relative_epsilon:
-            return m
-    raise RuntimeError("MPMM elliptic shift count did not converge")
+    log_term = math.log(4.0) + math.log(lambda_max) - math.log(lambda_min)
+    count = (math.log(4.0) - math.log(relative_epsilon)) * log_term / math.pi**2
+    return max(1, math.ceil(count))
 
 
 def mpmm_elliptic_shifts(count: int, lambda_max: float, kappa: float) -> np.ndarray:
@@ -326,26 +323,75 @@ def _draw_h(h_ranges, rng) -> tuple[float, ...]:
     return tuple(float(v) for v in 10.0 ** rng.uniform(low, high))
 
 
-def _local_projection(K, C, boundary_terms, g, basis):
-    K_hat = basis.T @ (K @ basis)
-    C_hat = basis.T @ (C @ basis)
-    H_hat = [basis.T @ (H @ basis) for H in boundary_terms]
-    g_hat = basis.T @ g
-    return K_hat, C_hat, H_hat, g_hat
+class _AffineResidualGram:
+    """Incremental affine projections without cached full-dimensional images.
 
+    Columns of the implicit image matrix are ordered by basis vector, then
+    operator: F = [A_0 v_0, ..., A_(q-1) v_0, A_0 v_1, ...].  Only F.T F,
+    F.T g and the Galerkin matrices persist.  Updating uses
+    (A_i V).T Z = V.T (A_i.T Z), with one sparse image block at a time.
+    Operators in the thermal affine family are real symmetric.
+    """
 
-def _local_response(projected, basis, h_vec, shift):
-    K_hat, C_hat, H_hat, g_hat = projected
-    A_hat = K_hat + shift * C_hat
-    for h, H in zip(h_vec, H_hat):
-        A_hat = A_hat + h * H
-    coefficients = scipy.linalg.solve(
-        A_hat,
-        g_hat,
-        assume_a="pos",
-        check_finite=False,
-    )
-    return basis @ coefficients
+    def __init__(self, operators, g):
+        self.operators = tuple(operators)
+        q = len(self.operators)
+        self.reduced = np.empty((q, 0, 0))
+        self.gram = np.empty((0, 0))
+        self.cross = np.empty(0)
+        self.g_hat = np.empty(0)
+        self.g_norm2 = float(g @ g)
+        self.g = g
+
+    def append(self, basis, block):
+        """Extend caches by an already orthonormalized block."""
+        r, k = basis.shape[1], block.shape[1]
+        if not k:
+            return
+        q = len(self.operators)
+        # Full-dimensional temporaries scale with q*k, never q*r.
+        Z = np.column_stack([A @ block for A in self.operators])
+        # Reorder from operator-major to basis-major columns.
+        Z = (
+            Z.reshape(block.shape[0], q, k)
+            .transpose(0, 2, 1)
+            .reshape(block.shape[0], k*q)
+        )
+        cross = np.empty((r*q, k*q))
+        reduced = np.empty((q, r+k, r+k))
+        reduced[:, :r, :r] = self.reduced
+        for i, A in enumerate(self.operators):
+            cross[i::q] = basis.T @ (A.T @ Z)
+            image = Z[:, i::q]
+            edge = basis.T @ image
+            reduced[i, :r, r:] = edge
+            reduced[i, r:, :r] = edge.T
+            reduced[i, r:, r:] = block.T @ image
+        self.gram = np.block([[self.gram, cross], [cross.T, Z.T @ Z]])
+        self.cross = np.concatenate((self.cross, Z.T @ self.g))
+        self.g_hat = np.concatenate((self.g_hat, block.T @ self.g))
+        self.reduced = reduced
+
+    def evaluate(self, h_vec, shift):
+        """Return coefficients, squared residual and a roundoff guard.
+
+        The guard is a conservative floating-point heuristic, not a certified
+        error bound.  Ambiguous acceptance decisions use the direct residual.
+        """
+        weights = np.asarray((1.0, shift, *h_vec))
+        A_hat = np.einsum("i,ijk->jk", weights, self.reduced)
+        coefficients = scipy.linalg.solve(
+            A_hat, self.g_hat, assume_a="pos", check_finite=False,
+        )
+        z = (coefficients[:, None] * weights).ravel()
+        norm2 = float(z @ (self.gram @ z) - 2.0 * (z @ self.cross) + self.g_norm2)
+        absolute_z = np.abs(z)
+        scale = float(
+            absolute_z @ (np.abs(self.gram) @ absolute_z)
+            + 2.0 * (absolute_z @ np.abs(self.cross)) + self.g_norm2
+        )
+        guard = 64.0 * np.finfo(float).eps * (z.size + 1) * scale
+        return coefficients, norm2, guard
 
 
 def build_parametric_basis(
@@ -367,7 +413,9 @@ def build_parametric_basis(
     that same parameter value, warm-started by the rejected DCTM response.
     All exact responses are collected in one snapshot matrix for the closing
     SVD.  ``probe_rounds`` repeats the paper's random acceptance test before
-    advancing to the next matching point.
+    advancing to the next matching point.  Streaming affine Gram updates make
+    ordinary residual tests independent of the full dimension; no full-sized
+    operator images are retained.  Ambiguous Gram tests use a direct residual.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
@@ -392,7 +440,7 @@ def build_parametric_basis(
         g = G[:, port].copy()
         g_norm = np.linalg.norm(g)
         local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
-        projected = None
+        residual_cache = _AffineResidualGram((K, C, *boundary_terms), g)
         lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
         kappa = lambda_max / lambda_min
         shift_count = mpmm_elliptic_shift_count(
@@ -422,22 +470,30 @@ def build_parametric_basis(
                 h_vec = _draw_h(h_ranges, rng)
                 initial_guess = np.zeros(K.shape[0], dtype=np.float64)
 
-                if projected is not None:
-                    estimate = _local_response(
-                        projected,
-                        local_basis,
-                        h_vec,
-                        shift,
-                    )
-                    trial_A = full_operator(h_vec, shift)
-                    residual = np.linalg.norm(trial_A @ estimate - g) / g_norm
+                if local_basis.shape[1]:
+                    coefficients, norm2, guard = residual_cache.evaluate(h_vec, shift)
+                    threshold2 = (tolerance * g_norm) ** 2
+                    estimate = None
+                    if (
+                        not np.isfinite(norm2)
+                        or not np.isfinite(guard)
+                        or norm2 <= guard
+                        or abs(norm2 - threshold2) <= guard
+                    ):
+                        estimate = local_basis @ coefficients
+                        trial_A = full_operator(h_vec, shift)
+                        residual = np.linalg.norm(trial_A @ estimate - g) / g_norm
+                    else:
+                        residual = np.sqrt(norm2) / g_norm
                     validation_count += 1
                     trials += 1
                     if residual <= tolerance:
                         accepted_residual = max(accepted_residual, float(residual))
                         accepted_rounds += 1
                         continue
-                    initial_guess = estimate
+                    initial_guess = (
+                        local_basis @ coefficients if estimate is None else estimate
+                    )
 
                 if len(snapshots) >= max_order:
                     raise RuntimeError("FANTASTIC extraction reached max_order")
@@ -452,14 +508,8 @@ def build_parametric_basis(
 
                 block = orthonormalize_block(local_basis, response[:, None])
                 if block.shape[1]:
+                    residual_cache.append(local_basis, block)
                     local_basis = np.column_stack((local_basis, block))
-                projected = _local_projection(
-                    K,
-                    C,
-                    boundary_terms,
-                    g,
-                    local_basis,
-                )
                 accepted_residual = 0.0
                 accepted_rounds = 0
 
@@ -515,8 +565,6 @@ def build_parametric_basis(
 # accuracy metrics
 # ---------------------------------------------------------------------------
 
-MAX_RELATIVE_RISE_ERROR = 0.01
-
 
 def _field_error_metrics(reference, approximation, ambient_K: float) -> dict:
     reference = np.asarray(reference)
@@ -535,7 +583,6 @@ def _field_error_metrics(reference, approximation, ambient_K: float) -> dict:
         ],
         "max_absolute_rise_error_K": absolute_error,
         "max_relative_rise_error": relative_error,
-        "passed": relative_error < MAX_RELATIVE_RISE_ERROR,
     }
 
 
@@ -562,5 +609,4 @@ def accuracy_summary(
             "max_absolute_rise_error_K"
         ],
         "transient_final_max_relative_rise_error": transient["max_relative_rise_error"],
-        "accuracy_passed": steady["passed"] and transient["passed"],
     }
