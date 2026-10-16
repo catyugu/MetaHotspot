@@ -1,7 +1,6 @@
 #include "solver/interpolation.hpp"
 #include "core/boundary_geometry.hpp"
 #include <cassert>
-#include <cmath>
 #include <limits>
 #include <type_traits>
 

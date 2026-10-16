@@ -5,7 +5,6 @@
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
 #include <algorithm>
-#include <cmath>
 #include <limits>
 #include <numeric>
 #include <type_traits>
@@ -120,18 +119,20 @@ namespace mhs::sim::fluid {
             const auto& term = projected[t];
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
-            std::visit([&](const auto& bc) {
-                using T = std::decay_t<decltype(bc)>;
-                if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                    rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition] / rho[i];
-                else {
-                    reference = true;
-                    const double g = f.area * mobility[i] / f.owner_distance;
-                    boundary_conductance[t] = g;
-                    diagonal[i] += g;
-                    rhs[i] += g * bc.pressure;
-                }
-            }, boundaries[term.condition].condition);
+            std::visit(
+                [&](const auto& bc) {
+                    using T = std::decay_t<decltype(bc)>;
+                    if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
+                        rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition] / rho[i];
+                    else {
+                        reference = true;
+                        const double g = f.area * mobility[i] / f.owner_distance;
+                        boundary_conductance[t] = g;
+                        diagonal[i] += g;
+                        rhs[i] += g * bc.pressure;
+                    }
+                },
+                boundaries[term.condition].condition);
         }
         if (!reference)
             throw std::runtime_error(
@@ -157,21 +158,25 @@ namespace mhs::sim::fluid {
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
             const auto& condition = boundaries[term.condition].condition;
-            const double mass = std::visit([&](const auto& bc) {
-                using T = std::decay_t<decltype(bc)>;
-                if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                    return -bc.mass_flow_rate * f.area / total_area[term.condition];
-                else
-                    return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
-            }, condition);
-            if (mass < 0) {
-                const double temperature = std::visit([&](const auto& bc) {
+            const double mass = std::visit(
+                [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
-                    if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
-                        return model.initial_temperature;
+                    if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
+                        return -bc.mass_flow_rate * f.area / total_area[term.condition];
                     else
-                        return bc.temperature.value_or(model.initial_temperature);
-                }, condition);
+                        return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
+                },
+                condition);
+            if (mass < 0) {
+                const double temperature = std::visit(
+                    [&](const auto& bc) {
+                        using T = std::decay_t<decltype(bc)>;
+                        if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
+                            return model.initial_temperature;
+                        else
+                            return bc.temperature.value_or(model.initial_temperature);
+                    },
+                    condition);
                 fluid.boundary_terms.push_back({term.face, FluidInflow {-mass, temperature}});
             }
             else {

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
+#include <stdexcept>
 #include <vector>
 
 namespace mhs::post {

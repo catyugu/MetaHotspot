@@ -1,7 +1,5 @@
 #include "compiler/geometry_compiler.hpp"
-#include <cmath>
 #include <map>
-#include <stdexcept>
 
 namespace mhs::sim {
     // The only structured-index arithmetic in the compiled model pipeline.

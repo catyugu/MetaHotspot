@@ -1,6 +1,5 @@
 #include "solver/probe_recorder.hpp"
 #include "solver/interpolation.hpp"
-#include <stdexcept>
 
 namespace mhs::sim {
     void ProbeRecorder::initialize(const mhs::core::Model& model)

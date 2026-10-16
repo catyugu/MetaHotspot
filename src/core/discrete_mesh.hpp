@@ -1,6 +1,5 @@
 #pragma once
 #include "core/types.hpp"
-#include <algorithm>
 #include <array>
 #include <numeric>
 #include <span>
@@ -59,8 +58,7 @@ namespace mhs::core {
         std::span<const FaceId> incident_faces(CellId c) const
         {
             return std::span(cell_face_ids)
-                .subspan(
-                    cell_face_offsets[c.value], cell_face_offsets[c.value + 1] - cell_face_offsets[c.value]);
+                .subspan(cell_face_offsets[c.value], cell_face_offsets[c.value + 1] - cell_face_offsets[c.value]);
         }
         void build_incidence()
         {

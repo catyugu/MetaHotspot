@@ -1,5 +1,5 @@
-#include "solver/solve.hpp"
 #include "solver/solution_history.hpp"
+#include "solver/solve.hpp"
 
 #include <Eigen/Sparse>
 #include <array>

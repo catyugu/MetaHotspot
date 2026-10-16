@@ -6,7 +6,6 @@
 #include <cmath>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <limits>
 #include <type_traits>
 
 namespace {
@@ -117,10 +116,9 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.fluid_boundaries
-        = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
-            {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
-            {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
+    d.fluid_boundaries = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
+        {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
+        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
     auto verify = [&](const mhs::core::Model& model) {
         const auto inc = mhs::sim::fluid::assemble_increment(model, std::vector<double> {300}, 0);
         double diagonal = 0;
@@ -143,8 +141,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.fluid_boundaries = {{{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}},
-        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1}}};
+    d.fluid_boundaries = {
+        {{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1}}};
     auto reverse = mhs::sim::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {

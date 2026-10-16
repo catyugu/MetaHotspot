@@ -134,7 +134,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
         EXPECT_NEAR(result.snapshot_times.front(), 0.0, 1e-9);
         EXPECT_NEAR(result.snapshot_times.back(), 5.0, 1e-9);
         for (size_t i = 1; i < result.snapshot_times.size(); ++i) {
-            EXPECT_GT(result.snapshot_times[i], result.snapshot_times[i - 1]) << "Times must be monotonically increasing";
+            EXPECT_GT(result.snapshot_times[i], result.snapshot_times[i - 1])
+                << "Times must be monotonically increasing";
         }
     }
 
@@ -207,7 +208,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     for (size_t i = 0; i < result.snapshot_times.size(); ++i) {
         double expected = 500.0 + 100.0 * result.snapshot_times[i];
-        EXPECT_NEAR(tr.values[i], expected, 1e-6) << "Time-dependent Dirichlet eval failed at t=" << result.snapshot_times[i]
-                                                  << " (expected " << expected << ", got " << tr.values[i] << ")";
+        EXPECT_NEAR(tr.values[i], expected, 1e-6)
+            << "Time-dependent Dirichlet eval failed at t=" << result.snapshot_times[i] << " (expected " << expected
+            << ", got " << tr.values[i] << ")";
     }
 }

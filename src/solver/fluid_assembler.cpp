@@ -1,5 +1,4 @@
 #include "solver/fluid_assembler.hpp"
-#include <cmath>
 #include <type_traits>
 
 namespace mhs::sim::fluid {

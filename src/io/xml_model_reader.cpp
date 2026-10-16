@@ -1,6 +1,5 @@
 #include <tinyxml2.h>
 
-#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -26,12 +25,12 @@ namespace mhs::io {
         const XMLElement* pressure = child_by_local_name(source, "Pressure");
         const XMLElement* mass_flow = child_by_local_name(source, "MassFlowRate");
         if (inlet && pressure && !mass_flow) {
-            boundary.condition = mhs::model::PressureInlet {
-                parse_double(get_text(pressure)), parse_double(get_text(inlet))};
+            boundary.condition
+                = mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
         }
         else if (inlet && mass_flow && !pressure) {
-            boundary.condition = mhs::model::MassFlowInlet {
-                parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
+            boundary.condition
+                = mhs::model::MassFlowInlet {parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
         }
         else if (!inlet && pressure && !mass_flow) {
             boundary.condition = mhs::model::PressureOutlet {parse_double(get_text(pressure))};
@@ -453,9 +452,12 @@ namespace mhs::io {
                     const bool pressure_inlet_type = type_str.find("PressureInletBoundary") != std::string::npos;
                     const bool mass_flow_inlet_type = type_str.find("MassFlowInletBoundary") != std::string::npos;
                     const bool outlet_type = type_str.find("OutletBoundary") != std::string::npos;
-                    if ((pressure_inlet_type && !std::holds_alternative<mhs::model::PressureInlet>(fluid_boundary.condition))
-                        || (mass_flow_inlet_type && !std::holds_alternative<mhs::model::MassFlowInlet>(fluid_boundary.condition))
-                        || (outlet_type && !std::holds_alternative<mhs::model::PressureOutlet>(fluid_boundary.condition)))
+                    if ((pressure_inlet_type
+                            && !std::holds_alternative<mhs::model::PressureInlet>(fluid_boundary.condition))
+                        || (mass_flow_inlet_type
+                            && !std::holds_alternative<mhs::model::MassFlowInlet>(fluid_boundary.condition))
+                        || (outlet_type
+                            && !std::holds_alternative<mhs::model::PressureOutlet>(fluid_boundary.condition)))
                         throw std::runtime_error(
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
