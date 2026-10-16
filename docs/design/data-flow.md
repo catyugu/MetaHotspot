@@ -30,6 +30,8 @@
 
 `SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引。热与流体边界分别采用后出现条件覆盖前者的面积投影，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取初始温度。
 
+`FluidBoundaryTerm` 保存 FaceId 和内联的 `FluidBoundaryCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+
 ## 求解与输出
 
 `solve_system` 通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态使用 BDF1/BDF2，`StepController` 控制 Adaptive/Fixed 步长并截短到输出时刻，observer 接收真实积分状态。全局状态不做时间插值。

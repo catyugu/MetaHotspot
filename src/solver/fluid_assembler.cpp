@@ -1,6 +1,7 @@
 #include "solver/fluid_assembler.hpp"
 #include "core/constants.hpp"
 #include <cmath>
+#include <type_traits>
 
 namespace mhs::sim::fluid {
     FluidAssemblyIncrement assemble_increment(const mhs::core::Model& model, std::span<const double> state, double time)
@@ -43,10 +44,15 @@ namespace mhs::sim::fluid {
             const auto row = cell.value;
             const auto& mat = model.material_table[model.cell_material[cell.value]];
             const auto cp = mat.c.eval(context(cell));
-            if (term.mass_outflux > 0)
-                result.matrix_entries.emplace_back(row, row, term.mass_outflux * cp);
-            else
-                result.rhs[row] -= term.mass_outflux * cp * term.temperature;
+            std::visit(
+                [&](const auto& flow) {
+                    using T = std::decay_t<decltype(flow)>;
+                    if constexpr (std::is_same_v<T, FluidInflow>)
+                        result.rhs[row] += flow.mass_flow_rate * cp * flow.temperature;
+                    else
+                        result.matrix_entries.emplace_back(row, row, flow.mass_flow_rate * cp);
+                },
+                term.condition);
         }
         return result;
     }

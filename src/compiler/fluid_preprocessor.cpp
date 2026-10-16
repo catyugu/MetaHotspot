@@ -159,8 +159,14 @@ namespace mhs::sim::fluid {
             const double mass = bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet
                 ? -bc.value * f.area / total_area[term.condition]
                 : rho[i] * boundary_conductance[t] * (pressure[i] - bc.value);
-            fluid.boundary_terms.push_back(
-                {term.face, mass, std::isnan(bc.inlet_temperature) ? model.initial_temperature : bc.inlet_temperature});
+            if (mass < 0) {
+                const double temperature
+                    = std::isnan(bc.inlet_temperature) ? model.initial_temperature : bc.inlet_temperature;
+                fluid.boundary_terms.push_back({term.face, FluidInflow {-mass, temperature}});
+            }
+            else {
+                fluid.boundary_terms.push_back({term.face, FluidOutflow {mass}});
+            }
         }
         for (Index id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {

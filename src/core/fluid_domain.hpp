@@ -2,14 +2,27 @@
 
 #include "core/discrete_mesh.hpp"
 
+#include <variant>
 #include <vector>
 
 namespace mhs::core {
 
+    // Nonnegative frozen mass flow rates (kg/s), classified by actual flow
+    // direction after the pressure solve, including reversed pressure boundaries.
+    struct FluidInflow {
+        double mass_flow_rate;
+        double temperature;
+    };
+
+    struct FluidOutflow {
+        double mass_flow_rate;
+    };
+
+    using FluidBoundaryCondition = std::variant<FluidInflow, FluidOutflow>;
+
     struct FluidBoundaryTerm {
         FaceId face;
-        double mass_outflux;
-        double temperature;
+        FluidBoundaryCondition condition;
     };
 
     struct FluidDomain {
@@ -26,7 +39,7 @@ namespace mhs::core {
         // evaluates h = factor * k_fluid at the current temperature.
         std::vector<double> interface_heat_transfer_factor;
 
-        // Frozen outward mass flux and inlet temperature per projected boundary piece.
+        // Frozen transport per projected boundary piece; only inflow carries temperature.
         std::vector<FluidBoundaryTerm> boundary_terms;
     };
 
