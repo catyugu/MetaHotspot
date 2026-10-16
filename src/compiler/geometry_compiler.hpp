@@ -36,12 +36,12 @@ namespace mhs::sim {
         double z_end; // SI z coordinate of layer top
     };
 
-    /// Compiled boundary region with resolved parameters
+    /// Compiled boundary region referencing a condition in the caller's table
     struct CompiledBoundaryRegion {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
         std::vector<mhs::model::RegionRect> rectangles;
-        mhs::core::TableIndex parameter_index = 0;
+        mhs::core::TableIndex condition_index = 0;
     };
 
     // ──────────────────────────────────────────────────────────────

@@ -235,15 +235,15 @@ namespace mhs::sim {
                     patch.max[b] = cb[j];
                     patch.area = (ca[i] - ca[i - 1]) * (cb[j] - cb[j - 1]);
                     const auto p = patch.center();
-                    TableIndex parameter = fallback;
+                    TableIndex condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
                         if (static_cast<int>(it->axis) == face.axis && std::abs(it->coordinate - p[face.axis]) < EPS
                             && point_in_region(*it, p[a], p[b])) {
-                            parameter = it->parameter_index;
+                            condition = it->condition_index;
                             break;
                         }
                     }
-                    terms.push_back({FaceId {id}, parameter, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    terms.push_back({FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
         return terms;

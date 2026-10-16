@@ -1,4 +1,5 @@
 #include "compiler/model_compiler.hpp"
+#include "core/boundary_geometry.hpp"
 #include "core/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
 #include "solver/interpolation.hpp"
@@ -203,4 +204,69 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_NEAR(g.z, 0, 1e-12);
     EXPECT_DOUBLE_EQ(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
     EXPECT_NEAR(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300.5, 1e-12);
+}
+
+TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
+{
+    auto d = cube_definition();
+    d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
+    const std::array<mhs::model::ThermalBoundary, 3> conditions {mhs::model::DirichletBoundary {"x+10*t+y"},
+        mhs::model::NeumannBoundary {"x/100+t+y"}, mhs::model::ConvectionBoundary {"x/100+t+y", "280+t+z"}};
+    for (size_t kind = 0; kind < conditions.size(); ++kind) {
+        SCOPED_TRACE(kind);
+        d.boundaries = {{{{mhs::model::Axis::X, 1, {{0, 1, 0, 1}}}}, conditions[kind]}};
+        const auto model = mhs::sim::build_model(d);
+        // All other faces share the compiled zero-flux default condition.
+        ASSERT_EQ(model.boundary_conditions.size(), 2u);
+        ASSERT_EQ(model.boundary_terms.size(), 6u);
+        for (const auto& term : model.boundary_terms) {
+            const auto face = projected_face(model.discrete, term);
+            if (face.axis != 0 || face.sign != 1) {
+                EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
+                continue;
+            }
+            for (double time : {2.0, 3.0}) {
+                const double T = 280 + 10 * time;
+                const std::vector<double> state {T};
+                const auto ops = mhs::sim::assemble_thermal(model, state, time);
+                double g, load, trace;
+                if (kind == 0) {
+                    const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);
+                    const double prescribed = T + 10 * time + 0.5;
+                    EXPECT_DOUBLE_EQ(bc.temperature.eval({1, 0.5, 0.5, T, time}), prescribed);
+                    g = 2;
+                    load = g * prescribed;
+                    trace = prescribed;
+                    const auto nodes = mhs::post::interpolate_cell_to_node(model, state, time);
+                    for (Index v = 0; v < nodes.size(); ++v) {
+                        const auto& p = model.output.points[v];
+                        if (p[0] == 1)
+                            EXPECT_DOUBLE_EQ(nodes[v], T + 10 * time + p[1]);
+                    }
+                    EXPECT_DOUBLE_EQ(
+                        mhs::utils::sample_point(model, state, time, CellId {0}, {1, 0.5, 0.5}), prescribed);
+                }
+                else if (kind == 1) {
+                    const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
+                    const double q = T / 100 + time + 0.5;
+                    EXPECT_DOUBLE_EQ(bc.heat_flux.eval({1, 0.5, 0.5, T, time}), q);
+                    g = 0;
+                    load = q;
+                    trace = T + q * 0.5;
+                }
+                else {
+                    const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition]);
+                    const double h = T / 100 + time + 0.5, ambient = 280 + time + 0.5;
+                    EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, T, time}), h);
+                    EXPECT_DOUBLE_EQ(bc.ambient_temperature.eval({1, 0.5, 0.5, T, time}), ambient);
+                    g = h / (1 + h * 0.5);
+                    load = g * ambient;
+                    trace = (h * ambient + 2 * T) / (h + 2);
+                }
+                EXPECT_NEAR(ops.K.coeff(0, 0), g, 1e-13);
+                EXPECT_NEAR(ops.f[0], load, 1e-12);
+                EXPECT_NEAR(mhs::utils::boundary_trace(model, state, time, term), trace, 1e-12);
+            }
+        }
+    }
 }

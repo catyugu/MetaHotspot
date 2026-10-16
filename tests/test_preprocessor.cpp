@@ -1,5 +1,5 @@
-#include "core/boundary_geometry.hpp"
 #include "compiler/model_compiler.hpp"
+#include "core/boundary_geometry.hpp"
 #include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
@@ -14,33 +14,25 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 // Helpers for testing patch-based BC assignment.
 
 /// Find a boundary integration term on `cell_idx` with direction `dir`.
-/// Returns pointer or nullptr if that face has BcType::None.
+/// Returns nullptr for an internal face without a boundary term.
 static const mhs::core::BoundaryTerm* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
         if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
             && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            for (const auto& term : boundary_terms_on_face(model, id))
-                if (model.boundary_table[term.parameter].type != BcType::None)
-                    return &term;
+            const auto terms = boundary_terms_on_face(model, id);
+            if (!terms.empty())
+                return &terms.front();
         }
     }
     return nullptr;
 }
 
-/// Return the BcType on cell_idx for direction dir, or None if not found.
-static BcType get_bc_type(const Model& model, uint32_t cell_idx, FaceDir dir)
+template <typename Condition> static const Condition* find_condition(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
-    auto* p = find_face_bc(model, cell_idx, dir);
-    return p ? model.boundary_table[p->parameter].type : BcType::None;
-}
-
-/// Return the param_idx on cell_idx for direction dir, or 0 if not found.
-static mhs::core::TableIndex get_bc_param(const Model& model, uint32_t cell_idx, FaceDir dir)
-{
-    auto* p = find_face_bc(model, cell_idx, dir);
-    return p ? p->parameter : 0;
+    const auto* term = find_face_bc(model, cell_idx, dir);
+    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition]) : nullptr;
 }
 
 static TableIndex source_id(const Model& model, Index cell)
@@ -294,19 +286,17 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
-    // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> FirstType on ZM
+    // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> Dirichlet on ZM
     int ny_bc = (io.mesh.y_vertices.size() - 1);
     int nz_bc = (io.mesh.z_vertices.size() - 1);
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
     size_t compact = input_cell(model, io.mesh, idx_bc);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::ZM), mhs::core::BcType::FirstType);
-
-    // Boundary parameters share a single indexed table.
-    EXPECT_FALSE(model.boundary_table.empty());
-    EXPECT_TRUE(model.boundary_table[0].value.is_constant());
-    EXPECT_NEAR(model.boundary_table[0].value.constant_value(), 500.0, 1e-10);
+    const auto* condition = find_condition<Dirichlet>(model, (uint32_t)compact, FaceDir::ZM);
+    ASSERT_NE(condition, nullptr);
+    EXPECT_TRUE(condition->temperature.is_constant());
+    EXPECT_NEAR(condition->temperature.constant_value(), 500.0, 1e-10);
 }
 
 TEST(PreprocessorTest, DefaultBoundaryFallback)
@@ -315,13 +305,13 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     auto model = build_model(io);
 
     // With no explicit boundaries and a zero-flux default,
-    // all faces on domain boundaries should have SecondType BC
-    // Interior faces should have None BC (no patch entry)
+    // all faces on domain boundaries should have Neumann BC
+    // Interior faces should have no boundary term (no patch entry)
 
     // Cell (0,0,0) - bottom-left-front cell:
-    // XM (x=0 face): domain boundary -> SecondType
-    // YM (y=0 face): domain boundary -> SecondType
-    // ZM (z=0 face): domain boundary -> SecondType
+    // XM (x=0 face): domain boundary -> Neumann
+    // YM (y=0 face): domain boundary -> Neumann
+    // ZM (z=0 face): domain boundary -> Neumann
     // XP, YP, ZP: interior or domain boundary
     int ny = (io.mesh.y_vertices.size() - 1);
     int nz = (io.mesh.z_vertices.size() - 1);
@@ -329,22 +319,22 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     size_t compact = input_cell(model, io.mesh, idx);
     ASSERT_NE(compact, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::XM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::YM), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::ZM), mhs::core::BcType::SecondType);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::XM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::YM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::ZM), nullptr);
 
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
-    // XM, YM, ZM are interior -> None (no patch)
+    // XM, YM, ZM are interior -> no boundary term
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
     size_t compact_inner = input_cell(model, io.mesh, idx_inner);
     ASSERT_NE(compact_inner, mhs::core::invalidIndex);
 
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::XM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::YM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::ZM), mhs::core::BcType::None);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::XP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::YP), mhs::core::BcType::SecondType);
-    EXPECT_EQ(get_bc_type(model, (uint32_t)compact_inner, FaceDir::ZP), mhs::core::BcType::SecondType);
+    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::XM), nullptr);
+    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::YM), nullptr);
+    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::ZM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::XP), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::YP), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::ZP), nullptr);
 }
 
 // ---- Full Case1 Integration Test ----
@@ -501,13 +491,11 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     const auto model = build_model(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, mhs::core::invalidIndex);
-    ASSERT_EQ(get_bc_type(model, static_cast<uint32_t>(cell), FaceDir::ZM), mhs::core::BcType::ThirdType);
-
-    const mhs::core::TableIndex param_idx = get_bc_param(model, static_cast<uint32_t>(cell), FaceDir::ZM);
+    const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
+    ASSERT_NE(condition, nullptr);
     const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
-    ASSERT_LT(param_idx, model.boundary_table.size());
-    EXPECT_DOUBLE_EQ(model.boundary_table[param_idx].value.eval(ctx), 42.0);
-    EXPECT_DOUBLE_EQ(model.boundary_table[param_idx].ambient.eval(ctx), 280.0);
+    EXPECT_DOUBLE_EQ(condition->coefficient.eval(ctx), 42.0);
+    EXPECT_DOUBLE_EQ(condition->ambient_temperature.eval(ctx), 280.0);
 }
 
 TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
@@ -559,24 +547,24 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
 
     // Cells adjacent to the Y+ face at y=10mm have iy=1 (vertex_y[2] = 10).
     // Their YP face is exposed. mhs::model::RectOperation: cx in [0,10], cz in [0,5].
-    // Cells with iz=0 (cz=2.5) are inside the rect and get ThirdType.
+    // Cells with iz=0 (cz=2.5) are inside the rect and get Convection.
     // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
-    // the default boundary (SecondType).
+    // the default boundary (Neumann).
     int ny = (io.mesh.y_vertices.size() - 1);
     int nz = (io.mesh.z_vertices.size() - 1);
     for (int ix = 0; ix < 2; ++ix) {
         int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
         int compact = (int)input_cell(model, io.mesh, idx);
-        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, FaceDir::YP), mhs::core::BcType::ThirdType)
-            << "Y region should assign ThirdType to YP face at (" << ix << ",1,0)";
+        EXPECT_NE(find_condition<Convection>(model, (uint32_t)compact, FaceDir::YP), nullptr)
+            << "Y region should assign Convection to YP face at (" << ix << ",1,0)";
     }
 
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
-    // they should fall through to the default boundary (SecondType).
+    // they should fall through to the default boundary (Neumann).
     int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
     int compact_out = (int)input_cell(model, io.mesh, idx_outside);
-    EXPECT_NE(get_bc_type(model, (uint32_t)compact_out, FaceDir::YP), mhs::core::BcType::ThirdType)
-        << "Cell outside rect must not get the ThirdType BC";
+    EXPECT_EQ(find_condition<Convection>(model, (uint32_t)compact_out, FaceDir::YP), nullptr)
+        << "Cell outside rect must not get the Convection BC";
 }
 
 TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
@@ -635,13 +623,13 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
     int nx = (io.mesh.x_vertices.size() - 1);
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
-    // and specifically the three faces the keys target must be ThirdType.
+    // and specifically the three faces the keys target must be Convection.
     auto check_face = [&](int ix, int iy, int iz, FaceDir dir) {
         int idx = ix * ny * nz + iy * nz + iz;
         int compact = (int)input_cell(model, io.mesh, idx);
-        EXPECT_EQ(get_bc_type(model, (uint32_t)compact, dir), mhs::core::BcType::ThirdType)
+        EXPECT_NE(find_condition<Convection>(model, (uint32_t)compact, dir), nullptr)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
-            << ") should be ThirdType from one of the boundary regions";
+            << ") should be Convection from one of the boundary regions";
     };
 
     // X|E|10 -> XP face at x=10mm -> cells with ix=nx-1=1

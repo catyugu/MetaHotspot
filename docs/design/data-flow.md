@@ -19,7 +19,7 @@
 | 网格输入 | Cartesian 坐标轴或调用方提供的控制体、面片 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
 | 网格校验 | 控制体与面片几何、连接 | 检查体积重叠、面覆盖、法向距离和 TPFA 正交条件 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；跨材料或物理域边界的控制体被拒绝 |
-| 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成引用原始 FaceId 的 `boundary_terms`；积分矩形引用统一的 `boundary_table`，不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
+| 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成引用原始 FaceId 的 `boundary_terms`；积分矩形通过 `condition` 引用 `boundary_conditions` 中的 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
 | 流体预处理 | 流体材料、连接和流体边界 | 独立按面积投影流体边界；临时压力解转换为内部面体积流量、边界片质量通量与入口温度、流固换热因子 |
 | 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |

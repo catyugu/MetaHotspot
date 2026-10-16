@@ -1,5 +1,5 @@
-#include "core/boundary_geometry.hpp"
 #include "solver/postprocessor.hpp"
+#include "core/boundary_geometry.hpp"
 #include "solver/interpolation.hpp"
 #include <algorithm>
 #include <cassert>
@@ -32,10 +32,10 @@ namespace mhs::post {
                     if (f.neighbor.valid())
                         continue;
                     for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                        const auto& bc = model.boundary_table[term.parameter];
-                        if (bc.type == mhs::core::BcType::FirstType
-                            && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                            dirichlet_sum += bc.value.eval({p[0], p[1], p[2], T, time});
+                        const auto& bc = model.boundary_conditions[term.condition];
+                        if (const auto* dirichlet = std::get_if<mhs::core::Dirichlet>(&bc);
+                            dirichlet && mhs::core::projected_face(model.discrete, term).contains(p)) {
+                            dirichlet_sum += dirichlet->temperature.eval({p[0], p[1], p[2], T, time});
                             ++count;
                         }
                     }

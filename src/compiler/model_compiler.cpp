@@ -76,46 +76,42 @@ namespace mhs::sim {
         }
 
         mhs::core::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            std::vector<mhs::core::BoundaryParameters>& parameters,
+            std::vector<mhs::core::BoundaryCondition>& conditions,
             const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
         {
             using namespace mhs::core;
-            BoundaryParameters result {};
             auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
-            std::visit(overloaded {
-                           [&](const mhs::model::DirichletBoundary& value) {
-                               result.type = BcType::FirstType;
-                               result.value = compile(value.temperature);
-                           },
-                           [&](const mhs::model::NeumannBoundary& value) {
-                               result.type = BcType::SecondType;
-                               result.value = compile(value.heat_flux);
-                           },
-                           [&](const mhs::model::ConvectionBoundary& value) {
-                               result.type = BcType::ThirdType;
-                               result.value = compile(value.coefficient);
-                               result.ambient = compile(value.ambient_temperature);
-                           },
-                       },
-                condition);
-            const auto index = static_cast<TableIndex>(parameters.size());
-            parameters.push_back(std::move(result));
+            auto result
+                = std::visit(overloaded {
+                                 [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
+                                     return Dirichlet {compile(value.temperature)};
+                                 },
+                                 [&](const mhs::model::NeumannBoundary& value) -> BoundaryCondition {
+                                     return Neumann {compile(value.heat_flux)};
+                                 },
+                                 [&](const mhs::model::ConvectionBoundary& value) -> BoundaryCondition {
+                                     return Convection {compile(value.coefficient), compile(value.ambient_temperature)};
+                                 },
+                             },
+                    condition);
+            const auto index = static_cast<TableIndex>(conditions.size());
+            conditions.push_back(std::move(result));
             return index;
         }
 
         std::vector<CompiledBoundaryRegion> compile_boundary_patches(
             const std::vector<mhs::model::BoundaryPatch>& boundaries,
-            std::vector<mhs::core::BoundaryParameters>& parameters, double si_scale,
+            std::vector<mhs::core::BoundaryCondition>& conditions, double si_scale,
             const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
         {
             std::vector<CompiledBoundaryRegion> compiled;
             for (const auto& boundary : boundaries) {
-                const auto value = compile_thermal_boundary(boundary.condition, parameters, rewriter, symbols);
+                const auto condition = compile_thermal_boundary(boundary.condition, conditions, rewriter, symbols);
                 for (const auto& region : boundary.regions) {
                     CompiledBoundaryRegion item;
                     item.axis = region.axis;
                     item.coordinate = region.coordinate * si_scale;
-                    item.parameter_index = value;
+                    item.condition_index = condition;
                     item.rectangles.reserve(region.rectangles.size());
                     for (const auto& rectangle : region.rectangles) {
                         item.rectangles.push_back({rectangle.a_min * si_scale, rectangle.a_max * si_scale,
@@ -209,13 +205,13 @@ namespace mhs::sim {
         }
 
         // Compile boundary patches.
-        auto& boundary_table = model.boundary_table;
+        auto& boundary_conditions = model.boundary_conditions;
         auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T"); };
         auto compiled_boundaries
-            = compile_boundary_patches(definition.boundaries, boundary_table, si_scale, bc_rewriter, symbols);
+            = compile_boundary_patches(definition.boundaries, boundary_conditions, si_scale, bc_rewriter, symbols);
 
         auto default_boundary
-            = compile_thermal_boundary(definition.default_boundary, boundary_table, bc_rewriter, symbols);
+            = compile_thermal_boundary(definition.default_boundary, boundary_conditions, bc_rewriter, symbols);
 
         if (external) {
             model.discrete = *external;

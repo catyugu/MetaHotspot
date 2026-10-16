@@ -1,7 +1,7 @@
-#include "core/boundary_geometry.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
+#include "core/boundary_geometry.hpp"
 #include "core/constants.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
@@ -85,7 +85,7 @@ namespace mhs::sim::fluid {
                 CompiledBoundaryRegion region;
                 region.axis = r.axis;
                 region.coordinate = r.coordinate * scale;
-                region.parameter_index = id;
+                region.condition_index = id;
                 for (const auto& rect : r.rectangles)
                     region.rectangles.push_back(
                         {rect.a_min * scale, rect.a_max * scale, rect.b_min * scale, rect.b_max * scale});
@@ -93,13 +93,13 @@ namespace mhs::sim::fluid {
             }
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
-            return term.parameter == invalidTableIndex
+            return term.condition == invalidTableIndex
                 || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex
-                || boundaries[term.parameter].kind == mhs::model::FluidBoundaryKind::None;
+                || boundaries[term.condition].kind == mhs::model::FluidBoundaryKind::None;
         });
         std::vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.parameter] += projected_face(mesh, term).area;
+            total_area[term.condition] += projected_face(mesh, term).area;
         std::vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -121,9 +121,9 @@ namespace mhs::sim::fluid {
             const auto& term = projected[t];
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
-            const auto& bc = boundaries[term.parameter];
+            const auto& bc = boundaries[term.condition];
             if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet)
-                rhs[i] += bc.value * f.area / total_area[term.parameter] / rho[i];
+                rhs[i] += bc.value * f.area / total_area[term.condition] / rho[i];
             else {
                 reference = true;
                 const double g = f.area * mobility[i] / f.owner_distance;
@@ -155,9 +155,9 @@ namespace mhs::sim::fluid {
             const auto& term = projected[t];
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
-            const auto& bc = boundaries[term.parameter];
+            const auto& bc = boundaries[term.condition];
             const double mass = bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet
-                ? -bc.value * f.area / total_area[term.parameter]
+                ? -bc.value * f.area / total_area[term.condition]
                 : rho[i] * boundary_conductance[t] * (pressure[i] - bc.value);
             fluid.boundary_terms.push_back(
                 {term.face, mass, std::isnan(bc.inlet_temperature) ? model.initial_temperature : bc.inlet_temperature});

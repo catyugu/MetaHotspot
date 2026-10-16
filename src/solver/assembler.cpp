@@ -1,8 +1,9 @@
-#include "core/boundary_geometry.hpp"
 #include "solver/assembler.hpp"
+#include "core/boundary_geometry.hpp"
 #include "solver/fluid_assembler.hpp"
 #include <Eigen/Sparse>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace mhs::sim {
@@ -63,29 +64,30 @@ namespace mhs::sim {
         }
         for (const auto& term : model.boundary_terms) {
             const auto f = projected_face(model.discrete, term);
-            const auto& bc = model.boundary_table[term.parameter];
+            const auto& bc = model.boundary_conditions[term.condition];
             const auto row = f.owner.value;
             const auto ki = conductivity[f.owner.value][f.axis];
             const auto p = f.center();
             const FieldContext ctx {p[0], p[1], p[2], temperature[row], time};
             double g = 0;
-            switch (bc.type) {
-            case BcType::FirstType:
-                g = ki * f.area / f.owner_distance;
-                rhs[row] += g * bc.value.eval(ctx);
-                break;
-            case BcType::SecondType:
-                rhs[row] += f.area * bc.value.eval(ctx);
-                break;
-            case BcType::ThirdType: {
-                const double h = bc.value.eval(ctx);
-                g = ki * h * f.area / (ki + h * f.owner_distance);
-                rhs[row] += g * bc.ambient.eval(ctx);
-                break;
-            }
-            default:
-                break;
-            }
+            std::visit(
+                [&](const auto& condition) {
+                    using T = std::decay_t<decltype(condition)>;
+                    if constexpr (std::is_same_v<T, Dirichlet>) {
+                        g = ki * f.area / f.owner_distance;
+                        rhs[row] += g * condition.temperature.eval(ctx);
+                    }
+                    else if constexpr (std::is_same_v<T, Neumann>) {
+                        rhs[row] += f.area * condition.heat_flux.eval(ctx);
+                    }
+                    else {
+                        static_assert(std::is_same_v<T, Convection>);
+                        const double h = condition.coefficient.eval(ctx);
+                        g = ki * h * f.area / (ki + h * f.owner_distance);
+                        rhs[row] += g * condition.ambient_temperature.eval(ctx);
+                    }
+                },
+                bc);
             if (g != 0)
                 stiffness.emplace_back(row, row, g);
         }

@@ -1,8 +1,9 @@
-#include "core/boundary_geometry.hpp"
 #include "solver/interpolation.hpp"
+#include "core/boundary_geometry.hpp"
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 namespace mhs::utils {
     namespace {
@@ -19,24 +20,29 @@ namespace mhs::utils {
         const mhs::core::BoundaryTerm& term)
     {
         const auto face = mhs::core::projected_face(model.discrete, term);
-        const auto& bc = model.boundary_table[term.parameter];
+        const auto& bc = model.boundary_conditions[term.condition];
         const auto T = temperature[face.owner.value];
         const auto p = face.center();
         const mhs::core::FieldContext ctx {p[0], p[1], p[2], T, time};
         const auto k = conductivity(model, temperature, face.owner, time)[face.axis];
-        switch (bc.type) {
-        case mhs::core::BcType::FirstType:
-            return bc.value.eval(ctx);
-        case mhs::core::BcType::SecondType:
-            return T + bc.value.eval(ctx) * face.owner_distance / k;
-        case mhs::core::BcType::ThirdType: {
-            auto h = bc.value.eval(ctx), g = k / face.owner_distance;
-            return (h * bc.ambient.eval(ctx) + g * T) / (h + g);
-        }
-        default:
-            return T;
-        }
+        return std::visit(
+            [&](const auto& condition) -> double {
+                using C = std::decay_t<decltype(condition)>;
+                if constexpr (std::is_same_v<C, mhs::core::Dirichlet>) {
+                    return condition.temperature.eval(ctx);
+                }
+                else if constexpr (std::is_same_v<C, mhs::core::Neumann>) {
+                    return T + condition.heat_flux.eval(ctx) * face.owner_distance / k;
+                }
+                else {
+                    static_assert(std::is_same_v<C, mhs::core::Convection>);
+                    const auto h = condition.coefficient.eval(ctx), g = k / face.owner_distance;
+                    return (h * condition.ambient_temperature.eval(ctx) + g * T) / (h + g);
+                }
+            },
+            bc);
     }
+
     TemperatureGradient reconstruct_cell_gradient(
         const mhs::core::Model& model, std::span<const double> temperature, double time, mhs::core::CellId cell)
     {
@@ -94,10 +100,10 @@ namespace mhs::utils {
             if (f.neighbor.valid())
                 continue;
             for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                const auto& bc = model.boundary_table[term.parameter];
-                if (bc.type == mhs::core::BcType::FirstType
-                    && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                    sum += bc.value.eval({p[0], p[1], p[2], T, time});
+                const auto& bc = model.boundary_conditions[term.condition];
+                if (const auto* dirichlet = std::get_if<mhs::core::Dirichlet>(&bc);
+                    dirichlet && mhs::core::projected_face(model.discrete, term).contains(p)) {
+                    sum += dirichlet->temperature.eval({p[0], p[1], p[2], T, time});
                     ++count;
                 }
             }

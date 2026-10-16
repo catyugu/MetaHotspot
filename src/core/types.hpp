@@ -15,6 +15,4 @@ namespace mhs::core {
 
     enum class StudyType { Steady, Transient };
 
-    enum class BcType : uint8_t { None = 0, FirstType = 1, SecondType = 2, ThirdType = 3 };
-
 } // namespace mhs::core

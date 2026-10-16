@@ -51,7 +51,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 - 内部几何一律使用 SI 米。
 - 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
-- `boundary_terms` 引用原始 FaceId 与统一的 `boundary_table`，不修改网格拓扑；`cell_material` 与 `source_terms` 分别保存材料索引和热源积分数据。
+- `boundary_terms` 引用原始 FaceId 与 `boundary_conditions` 中的类型化 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不修改网格拓扑；`cell_material` 与 `source_terms` 分别保存材料索引和热源积分数据。
 - 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。

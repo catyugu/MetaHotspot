@@ -7,6 +7,7 @@
 #include "numerics/expression/expr.hpp"
 
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace mhs::core {
@@ -14,7 +15,7 @@ namespace mhs::core {
     // Boundary integration rectangle on an unchanged topological face.
     struct BoundaryTerm {
         FaceId face;
-        TableIndex parameter;
+        TableIndex condition; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
@@ -26,13 +27,21 @@ namespace mhs::core {
         CompiledExpression c;
     };
 
-    // Value is temperature, heat flux or HTC according to type.
-    // Robin ambient temperature shares the same record and index as HTC.
-    struct BoundaryParameters {
-        BcType type;
-        CompiledExpression value;
-        CompiledExpression ambient;
+    struct Dirichlet {
+        CompiledExpression temperature;
     };
+
+    struct Neumann {
+        CompiledExpression heat_flux;
+    };
+
+    struct Convection {
+        CompiledExpression coefficient;
+        CompiledExpression ambient_temperature;
+    };
+
+    // Shared compiled laws; per-face BoundaryTerm records store only an index.
+    using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
     struct SourceTerm {
@@ -56,7 +65,7 @@ namespace mhs::core {
         std::vector<TableIndex> cell_material;
         std::vector<MaterialProps> material_table;
         std::vector<CompiledExpression> heat_source_table;
-        std::vector<BoundaryParameters> boundary_table;
+        std::vector<BoundaryCondition> boundary_conditions;
         std::vector<SourceTerm> source_terms;
         std::vector<BoundaryTerm> boundary_terms;
         FluidDomain fluid;
