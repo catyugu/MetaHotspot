@@ -279,6 +279,7 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(mhs_mode
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t *m, const char *name, double x, double y, double z);
+/* inlet_temperature applies only to inlets and is ignored for MHS_FLUID_OUTLET. */
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t *m, mhs_axis_t axis, double coordinate,
                                                   mhs_rect2d_t region, mhs_fluid_bc_t kind, double value,
                                                   double inlet_temperature);

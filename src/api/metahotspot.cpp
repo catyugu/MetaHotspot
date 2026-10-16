@@ -511,7 +511,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t *m, mhs_axis_t axi
             fb.condition = mhs::model::MassFlowInlet{value, temperature};
             break;
         case MHS_FLUID_OUTLET:
-            fb.condition = mhs::model::PressureOutlet{value, temperature};
+            fb.condition = mhs::model::PressureOutlet{value};
             break;
         default:
             throw std::invalid_argument("invalid fluid boundary kind: " + std::to_string(kind));

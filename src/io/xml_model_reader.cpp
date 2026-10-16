@@ -34,7 +34,7 @@ namespace mhs::io {
                 parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
         }
         else if (!inlet && pressure && !mass_flow) {
-            boundary.condition = mhs::model::PressureOutlet {parse_double(get_text(pressure)), std::nullopt};
+            boundary.condition = mhs::model::PressureOutlet {parse_double(get_text(pressure))};
         }
         else {
             throw std::runtime_error("fluid boundary fields must be InletTemperature+Pressure, "

@@ -95,9 +95,10 @@ XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegi
 冻结流模型按单元采用恒定密度且视为不可压缩，入口与出口之间的压力差驱动流动。
 
 温度条件按实际流向生效：流入使用指定温度，流出使用单元温度。未指定流入温度时
-使用模型初始温度；出口回流同样遵循此规则。C++ 建模层使用 `PressureInlet`、
-`MassFlowInlet`、`PressureOutlet` 的 `variant`，温度缺省用 `std::optional` 表达。
-C ABI 仍接受原枚举与数值字段，`MHS_FLUID_NONE` 不添加边界，NaN 温度映射为缺省；
+使用模型初始温度；出口回流固定使用模型初始温度。C++ 建模层使用 `PressureInlet`、
+`MassFlowInlet`、`PressureOutlet` 的 `variant`，入口温度缺省用 `std::optional` 表达，
+`PressureOutlet` 仅保存压力。C ABI 仍接受原枚举与数值字段，出口忽略温度参数，
+`MHS_FLUID_NONE` 不添加边界，入口的 NaN 温度映射为缺省；
 Python 使用 `None` 表达缺省。流热装配仅跳过精确零通量，不使用绝对流量阈值。
 
 `VolumetricHeatSource` 是单位为 W/m3 的体热源。积分功率等于热源值乘以材料块占据的

@@ -172,7 +172,6 @@ namespace mhs::model {
     };
     struct PressureOutlet {
         double pressure = 0.0;
-        std::optional<double> backflow_temperature;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     struct FluidBoundarySpec {

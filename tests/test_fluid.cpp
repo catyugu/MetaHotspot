@@ -120,7 +120,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     d.fluid_boundaries
         = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
             {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
-            {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0, std::nullopt}}};
+            {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
     auto verify = [&](const mhs::core::Model& model) {
         const auto inc = mhs::sim::fluid::assemble_increment(model, std::vector<double> {300}, 0);
         double diagonal = 0;
@@ -144,14 +144,14 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
     d.fluid_boundaries = {{{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}},
-        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1, 310}}};
+        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1}}};
     auto reverse = mhs::sim::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
         const auto& face = reverse.discrete.faces[term.face.value];
         if (face.sign > 0) {
             ASSERT_TRUE(std::holds_alternative<mhs::core::FluidInflow>(term.condition));
-            EXPECT_DOUBLE_EQ(std::get<mhs::core::FluidInflow>(term.condition).temperature, 310);
+            EXPECT_DOUBLE_EQ(std::get<mhs::core::FluidInflow>(term.condition).temperature, 300);
         }
         else {
             EXPECT_TRUE(std::holds_alternative<mhs::core::FluidOutflow>(term.condition));
@@ -165,9 +165,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
         ASSERT_GT(diagonal, 0);
         EXPECT_NEAR(inc.rhs[0], diagonal * temperature, 1e-10);
     };
-    verify_reverse(reverse, 310);
-    std::get<PressureOutlet>(d.fluid_boundaries.back().condition).backflow_temperature.reset();
-    verify_reverse(mhs::sim::build_model(d), 300);
+    verify_reverse(reverse, 300);
 
     std::get<PressureOutlet>(d.fluid_boundaries.back().condition).pressure = 0;
     const auto stagnant = mhs::sim::build_model(d);

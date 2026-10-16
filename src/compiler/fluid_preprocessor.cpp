@@ -168,7 +168,7 @@ namespace mhs::sim::fluid {
                 const double temperature = std::visit([&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
-                        return bc.backflow_temperature.value_or(model.initial_temperature);
+                        return model.initial_temperature;
                     else
                         return bc.temperature.value_or(model.initial_temperature);
                 }, condition);
