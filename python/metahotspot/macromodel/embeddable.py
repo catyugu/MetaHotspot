@@ -281,15 +281,14 @@ def build_subdomain(
     core = model.core
     n = cells.size
 
-    dofs = model.cell_dofs[cells]
-    K = core.K.tocsc()[dofs, :][:, dofs].tocsc()
-    C = core.C.tocsc()[dofs, :][:, dofs].tocsc()
-    source = np.asarray(model.source_shape[dofs, :], dtype=np.float64)
+    K = core.K.tocsc()[cells, :][:, cells].tocsc()
+    C = core.C.tocsc()[cells, :][:, cells].tocsc()
+    source = np.asarray(model.source_shape[cells, :], dtype=np.float64)
 
     # Declared ambient groups as local affine terms + effective coefficients.
     ambient_terms, ambient_ranges = [], []
     for term, h_range in zip(model.boundary_terms, model.h_ranges()):
-        diag = np.asarray(term.diagonal()).ravel()[dofs]
+        diag = np.asarray(term.diagonal()).ravel()[cells]
         ambient_terms.append(sp.diags(diag))
         ambient_ranges.append(list(h_range))
     if physical_h is None:
@@ -302,7 +301,7 @@ def build_subdomain(
     # Remove the phantom cross conductance(s) to now-removed neighbours so the
     # cut faces are genuinely adiabatic inside the subdomain.
     outside = np.setdiff1d(np.arange(model.full_cell_count), cells)
-    cross = (core.K.tocsc()[dofs, :][:, model.cell_dofs[outside]]).tocoo()
+    cross = (core.K.tocsc()[cells, :][:, outside]).tocoo()
     phantom = np.zeros(n)
     for row, value in zip(cross.row, cross.data):
         if value < 0.0:

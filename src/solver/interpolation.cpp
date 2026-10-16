@@ -9,8 +9,8 @@ namespace mhs::utils {
             const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell, double time)
         {
             const auto p = model.discrete.cells[cell.value].center();
-            const mhs::core::FieldContext ctx {p[0], p[1], p[2], temperature[model.dofs.temperature(cell).value], time};
-            const auto& m = model.material_table[model.cells.material_id[cell.value]];
+            const mhs::core::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
+            const auto& m = model.material_table[model.cell_material[cell.value]];
             return {m.kx.eval(ctx), m.ky.eval(ctx), m.kz.eval(ctx)};
         }
     } // namespace
@@ -19,7 +19,7 @@ namespace mhs::utils {
     {
         const auto face = mhs::core::projected_face(model.discrete, term);
         const auto& bc = term.bc;
-        const auto T = temperature[model.dofs.temperature(face.owner).value];
+        const auto T = temperature[face.owner.value];
         const auto p = face.center();
         const mhs::core::FieldContext ctx {p[0], p[1], p[2], T, time};
         const auto k = conductivity(model, temperature, face.owner, time)[face.axis];
@@ -57,9 +57,7 @@ namespace mhs::utils {
                 const double a = (f.owner == cell ? f.owner_distance : f.neighbor_distance) / k[f.axis];
                 const double b = (f.owner == cell ? f.neighbor_distance : f.owner_distance)
                     / conductivity(model, temperature, neighbor, time)[f.axis];
-                trace = (b * temperature[model.dofs.temperature(cell).value]
-                            + a * temperature[model.dofs.temperature(neighbor).value])
-                    / (a + b);
+                trace = (b * temperature[cell.value] + a * temperature[neighbor.value]) / (a + b);
             }
             gradient[f.axis] += (f.owner == cell ? f.sign : -f.sign) * f.area * trace;
         }
@@ -88,7 +86,7 @@ namespace mhs::utils {
     {
         if (!cell.valid())
             return std::numeric_limits<double>::quiet_NaN();
-        const auto T = temperature[model.dofs.temperature(cell).value];
+        const auto T = temperature[cell.value];
         double sum = 0;
         size_t count = 0;
         for (auto id : model.discrete.incident_faces(cell)) {

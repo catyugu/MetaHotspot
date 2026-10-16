@@ -152,12 +152,8 @@ class Solution(OwnedHandle):
     and final accepted state.
     """
 
-    def __init__(self, dll, handle, cell_to_dof) -> None:
+    def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_solution_destroy)
-        self._cell_to_dof = np.array(cell_to_dof, dtype=np.intp, copy=True)
-        self._identity_order = np.array_equal(
-            self._cell_to_dof, np.arange(self._cell_to_dof.size)
-        )
 
     @classmethod
     def _solve_compiled(
@@ -168,7 +164,7 @@ class Solution(OwnedHandle):
     ) -> Solution:
         overrides = opts._overrides() if opts is not None else {}
         handle = _solve(compiled._dll, compiled._handle, state, overrides)
-        return cls(compiled._dll, handle, compiled.cells.cell_to_dof)
+        return cls(compiled._dll, handle)
 
     @cached_property
     def data(self) -> SolutionSnapshot:
@@ -177,12 +173,8 @@ class Solution(OwnedHandle):
 
     @property
     def temperature(self) -> np.ndarray:
-        """Final temperature in physical CellId order; a view for identity DOF ordering."""
-        return (
-            self.state[: self.fvm_count]
-            if self._identity_order
-            else self.state[self._cell_to_dof]
-        )
+        """Final temperature in CellId order."""
+        return self.state
 
     @property
     def time(self) -> float:
@@ -191,7 +183,7 @@ class Solution(OwnedHandle):
 
     @property
     def state(self) -> np.ndarray:
-        """Final full state, including retained external modes."""
+        """Final full state, in CellId order."""
         return self.data.state
 
     @property
@@ -206,12 +198,8 @@ class Solution(OwnedHandle):
 
     @property
     def temperature_history(self) -> np.ndarray:
-        """Temperature snapshots in physical CellId order; a view for identity DOF ordering."""
-        return (
-            self.state_history[:, : self.fvm_count]
-            if self._identity_order
-            else self.state_history[:, self._cell_to_dof]
-        )
+        """Temperature snapshots in CellId order."""
+        return self.state_history
 
     @property
     def probes(self) -> list[ProbeSnapshot]:

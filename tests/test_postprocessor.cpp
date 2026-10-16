@@ -53,7 +53,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     auto io = make_simple_uniform_grid_io();
     auto model = build_model(io);
 
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
     // Set cell temperatures to known values
     std::vector<double> cell_T(N);
     for (int i = 0; i < N; i++) {
@@ -135,7 +135,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     auto model = build_model(io);
 
     // Set all cell temperatures to something different from 500
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
     std::vector<double> cell_T(N, 400.0);
 
     auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
@@ -205,7 +205,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     auto model = build_model(io);
 
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
     std::vector<double> cell_T(N, 400.0);
 
     int node_ny = (model.output.cartesian_shape[1]-1) + 1;

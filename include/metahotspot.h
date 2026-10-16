@@ -119,7 +119,7 @@ typedef struct {
     double fixed_dt;
 } mhs_solve_options_t;
 
-/** Explicit compiled geometry sizes. State order is independent of cell order. */
+/** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
     size_t cell_count, face_count, state_count, projection_count, source_count;
     mhs_study_t study_type;
@@ -132,10 +132,6 @@ typedef struct {
     size_t cell_count, face_count, projection_count;
     double *cell_min;
     double *cell_max;
-    size_t *cell_to_dof;
-    size_t *region_id;
-    uint32_t *layer_id;
-    uint32_t *block_id;
     uint32_t *material_id;
     size_t *face_owner;
     size_t *face_neighbor;
@@ -147,7 +143,6 @@ typedef struct {
     double *owner_distance;
     double *neighbor_distance;
     size_t *projection_cell;
-    size_t *projection_region;
     uint32_t *projection_source;
     double *projection_volume;
     double *projection_center;
@@ -222,8 +217,6 @@ MHS_API mhs_status_t mhs_model_set_mesh(mhs_model_t *m, size_t nx, const double 
                                         size_t nz, const double *z);
 
 MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_t *mesh);
-/** A permutation indexed by CellId; entries are temperature DOF indices. */
-MHS_API mhs_status_t mhs_model_set_dof_order(mhs_model_t *m, const size_t *cell_to_dof, size_t count);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t *m, const char *name, const char *expression);
 

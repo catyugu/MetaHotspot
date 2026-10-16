@@ -20,7 +20,7 @@ namespace {
 
     /// Build the default (uniform initial_temperature) state vector.
     std::vector<double> default_state(const mhs::core::Model& model)
-    { return std::vector<double>(static_cast<std::size_t>(model.dofs.size()), model.initial_temperature); }
+    { return std::vector<double>(static_cast<std::size_t>(model.discrete.cells.size()), model.initial_temperature); }
 
 } // namespace
 
@@ -30,7 +30,7 @@ TEST(FluidModuleTest, PreprocessorStoresOnlyAssemblyReadyFields)
     const auto& fluid = model.fluid;
 
     ASSERT_EQ(fluid.fluid_to_global.size(), 3200u);
-    EXPECT_EQ(fluid.global_to_fluid.size(), model.cells.material_id.size());
+    EXPECT_EQ(fluid.global_to_fluid.size(), model.cell_material.size());
     EXPECT_EQ(fluid.face_volume_flux.size(), model.discrete.faces.size());
     EXPECT_EQ(fluid.interface_heat_transfer_factor.size(), fluid.fluid_to_global.size());
     EXPECT_FALSE(fluid.boundary_terms.empty());
@@ -91,8 +91,8 @@ TEST(FluidModuleTest, IncrementDoesNotIntroduceNewSparseCoordinates)
         if (row == col)
             continue;
 
-        const auto cell = model.dofs.cell(mhs::core::DofId {row});
-        const auto neighbor = model.dofs.cell(mhs::core::DofId {col});
+        const auto cell = mhs::core::CellId {row};
+        const auto neighbor = mhs::core::CellId {col};
         bool direct_neighbor = false;
         for (auto id : model.discrete.incident_faces(cell)) {
             if (model.discrete.faces[id.value].other(cell) == neighbor) {

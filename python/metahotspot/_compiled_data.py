@@ -18,14 +18,9 @@ class Operators(NamedTuple):
 
 @dataclass(frozen=True)
 class CellFields:
-    """Explicit cell and face geometry; cell_to_dof maps into algebraic state order."""
 
     cell_min: np.ndarray
     cell_max: np.ndarray
-    cell_to_dof: np.ndarray
-    region_id: np.ndarray
-    layer_id: np.ndarray
-    block_id: np.ndarray
     material_id: np.ndarray
     face_owner: np.ndarray
     face_neighbor: np.ndarray
@@ -37,7 +32,6 @@ class CellFields:
     owner_distance: np.ndarray
     neighbor_distance: np.ndarray
     projection_cell: np.ndarray
-    projection_region: np.ndarray
     projection_source: np.ndarray
     projection_volume: np.ndarray
     projection_center: np.ndarray

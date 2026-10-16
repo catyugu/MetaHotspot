@@ -216,7 +216,7 @@ class AttachModel(AffineParametricModel):
         return build_geometry(self.config, study, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
-        f = np.asarray(self.core.f, dtype=np.float64)[self.cell_dofs]
+        f = np.asarray(self.core.f, dtype=np.float64)
         zc = self.cell_layout.centers[:, 2]
         H = self.config.ext_thickness_mm * 1.0e-3
         src = np.flatnonzero(f > 0.0)

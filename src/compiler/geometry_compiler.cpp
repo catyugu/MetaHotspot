@@ -140,11 +140,8 @@ namespace mhs::sim {
     void project_cell_regions(mhs::core::Model& model, const std::vector<ResolvedLayerGeometry>& layers)
     {
         using namespace mhs::core;
-        model.cells = {};
-        model.volume_projection.clear();
-        std::vector<Index> region_offsets(layers.size() + 1, 0);
-        for (Index l = 0; l < layers.size(); ++l)
-            region_offsets[l + 1] = region_offsets[l] + layers[l].blocks.size();
+        model.cell_material.clear();
+        model.source_terms.clear();
         constexpr TableIndex invalid_table = std::numeric_limits<TableIndex>::max();
         for (Index c = 0; c < model.discrete.cells.size(); ++c) {
             const auto& cell = model.discrete.cells[c];
@@ -175,9 +172,7 @@ namespace mhs::sim {
                 std::sort(v.begin(), v.end());
                 v.erase(std::unique(v.begin(), v.end()), v.end());
             }
-            TableIndex material = invalid_table, layer_id = invalid_table, block_id = invalid_table;
-            RegionId region;
-            bool first = true, mixed_region = false, mixed_layer = false, mixed_block = false;
+            TableIndex material = invalid_table;
             for (Index x = 1; x < cuts[0].size(); ++x)
                 for (Index y = 1; y < cuts[1].size(); ++y)
                     for (Index z = 1; z < cuts[2].size(); ++z) {
@@ -188,30 +183,15 @@ namespace mhs::sim {
                             throw std::invalid_argument(
                                 "mesh cell crosses physical domain boundary; cut cells are unsupported");
                         const auto& block = layers[l].blocks[b];
-                        RegionId current {region_offsets[l] + b};
-                        if (first) {
-                            material = block.material_id;
-                            region = current;
-                            layer_id = static_cast<TableIndex>(l);
-                            block_id = static_cast<TableIndex>(b);
-                            first = false;
-                        }
-                        else {
-                            if (material != block.material_id)
-                                throw std::invalid_argument(
-                                    "mesh cell crosses material interface; align the supplied mesh with materials");
-                            mixed_region = mixed_region || current != region;
-                            mixed_layer = mixed_layer || layer_id != l;
-                            mixed_block = mixed_block || block_id != b;
-                        }
+                        if (material != invalid_table && material != block.material_id)
+                            throw std::invalid_argument(
+                                "mesh cell crosses material interface; align the supplied mesh with materials");
+                        material = block.material_id;
                         const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                             * (cuts[2][z] - cuts[2][z - 1]);
-                        model.volume_projection.push_back({CellId {c}, current, block.heat_source_idx, volume, p});
+                        model.source_terms.push_back({CellId {c}, block.heat_source_idx, volume, p});
                     }
-            model.cells.material_id.push_back(material);
-            model.cells.region_id.push_back(mixed_region ? RegionId {} : region);
-            model.cells.layer_id.push_back(mixed_layer ? invalid_table : layer_id);
-            model.cells.block_id.push_back((mixed_layer || mixed_block) ? invalid_table : block_id);
+            model.cell_material.push_back(material);
         }
     }
 

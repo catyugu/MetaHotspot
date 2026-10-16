@@ -57,25 +57,14 @@ namespace mhs::core {
         std::vector<CompiledExpression> cauchy_T_inf;
     };
 
-    // Physical assignments in CellId order.
-    struct CellFields {
-        std::vector<RegionId> region_id;
-
-        std::vector<TableIndex> material_id;
-
-        std::vector<TableIndex> layer_id;
-        std::vector<TableIndex> block_id;
-    };
-
-    // Exact geometric subvolume membership, independent of material and DOFs.
-    // Expressions are integrated by midpoint quadrature on each projected piece.
-    struct VolumeAssignment {
+    // Midpoint quadrature on a physical source subvolume.
+    struct SourceTerm {
         CellId cell;
-        RegionId region;
         TableIndex source;
-        double volume;
-        Vec3 centroid;
+        double weight;
+        Vec3 point;
     };
+    static_assert(std::is_trivially_copyable_v<SourceTerm> && std::is_standard_layout_v<SourceTerm>);
 
     // ── Probe / observation point ────────────────────────────────────────
     struct ProbePoint {
@@ -89,10 +78,9 @@ namespace mhs::core {
     struct Model {
         DiscreteMesh discrete;
         OutputMesh output;
-        DofMap dofs;
         std::vector<BoundaryTerm> boundary_terms;
-        CellFields cells;
-        std::vector<VolumeAssignment> volume_projection;
+        std::vector<TableIndex> cell_material;
+        std::vector<SourceTerm> source_terms;
 
         BCParamTable bc_params;
 

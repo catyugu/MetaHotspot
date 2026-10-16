@@ -249,18 +249,6 @@ class Model(OwnedHandle):
             "mhs_model_set_discrete_mesh", ctypes.byref(native), ctx="set_discrete_mesh"
         )
 
-    def set_dof_order(self, cell_to_dof):
-        """Select a temperature-state permutation indexed by physical CellId."""
-        order = _integer_array(cell_to_dof, np.uintp, "cell_to_dof")
-        if order.ndim != 1:
-            raise ValueError("cell_to_dof must be one-dimensional")
-        self._call(
-            "mhs_model_set_dof_order",
-            order.ctypes.data_as(ctypes.POINTER(ctypes.c_size_t)),
-            order.size,
-            ctx="set_dof_order",
-        )
-
     def set_mesh(
         self,
         x: np.ndarray | None = None,

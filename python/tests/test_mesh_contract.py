@@ -1,28 +1,10 @@
-"""Native topology, geometry and algebraic ordering are separate contracts."""
+"""Cell identity is independent of geometric position."""
 
 from pathlib import Path
 
 import numpy as np
 import pytest
 from test_model_binding import _model
-
-
-def test_native_dof_permutation_preserves_physical_results():
-    model = _model()
-    model.set_mesh(
-        np.array([0.0, 0.25, 1.0]), np.array([0.0, 1.0]), np.array([0.0, 1.0])
-    )
-    model.set_default_dirichlet("300+x")
-    original = model.compile()
-    reference = original.assemble(np.array([301.0, 307.0]))
-    physical = original.solve().temperature
-    model.set_dof_order(np.array([1, 0]))
-    reordered = model.compile()
-    np.testing.assert_array_equal(reordered.cells.cell_to_dof, [1, 0])
-    result = reordered.assemble(np.array([307.0, 301.0]))
-    np.testing.assert_allclose(result.C.toarray(), reference.C.toarray()[::-1, ::-1])
-    np.testing.assert_allclose(result.f, reference.f[::-1])
-    np.testing.assert_allclose(reordered.solve().temperature, physical)
 
 
 def test_subcell_sources_keep_independent_power_columns():
@@ -89,12 +71,11 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
         face_min=fields.face_min,
         face_max=fields.face_max,
     )
-    model.set_dof_order(order)
     imported = model.compile()
     result = imported.assemble()
-    k_error = spla.norm(result.K - reference.K) / spla.norm(reference.K)
-    c_error = spla.norm(result.C - reference.C) / spla.norm(reference.C)
-    f_error = np.linalg.norm(result.f - reference.f) / np.linalg.norm(reference.f)
+    k_error = spla.norm(result.K - reference.K[order, :][:, order]) / spla.norm(reference.K)
+    c_error = spla.norm(result.C - reference.C[order, :][:, order]) / spla.norm(reference.C)
+    f_error = np.linalg.norm(result.f - reference.f[order]) / np.linalg.norm(reference.f)
     # Hydraulic preprocessing solves pressure iteratively at relative 1e-8.
     # Reordering fluid cells changes its finite-tolerance pressure/flux result.
     # Pure geometry/capacity and source projections have no such solve error.
@@ -103,7 +84,7 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
     assert f_error < 1e-8
     q_reference = original.source_operator()
     q_result = imported.source_operator()
-    assert spla.norm(q_result - q_reference) <= 1e-13 * max(
+    assert spla.norm(q_result - q_reference[order]) <= 1e-13 * max(
         spla.norm(q_reference), 1e-300
     )
     np.testing.assert_array_equal(imported.cells.cell_min, fields.cell_min[order])
@@ -144,10 +125,6 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
 
 def test_native_mesh_input_rejects_invalid_indices():
     model = _model()
-    for order in ([0.5], [-1], [2**64], [np.nan]):
-        with pytest.raises(ValueError):
-            model.set_dof_order(order)
-
     fields = _model().compile().cells
     inputs = {
         name: getattr(fields, name).copy()

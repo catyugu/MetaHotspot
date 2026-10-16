@@ -235,7 +235,7 @@ namespace mhs::sim {
     mhs::core::Solution solve(
         const mhs::core::Model& model, std::span<const double> initial_state, const SolveOptions& options)
     {
-        const auto fvm_count = model.dofs.size();
+        const auto fvm_count = model.discrete.cells.size();
         if (fvm_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }

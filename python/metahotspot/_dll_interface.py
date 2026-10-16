@@ -35,11 +35,7 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
         ctypes.c_int32,
         [ctypes.POINTER(MhsModel), ctypes.POINTER(MhsMesh)],
     ),
-    (
-        "mhs_model_set_dof_order",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.POINTER(ctypes.c_size_t), ctypes.c_size_t],
-    ),
+
     (
         "mhs_compiled_eval_source_terms",
         ctypes.c_int32,

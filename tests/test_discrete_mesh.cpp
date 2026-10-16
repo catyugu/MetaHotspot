@@ -38,7 +38,7 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.faces.size(), 36u);
-    ASSERT_EQ(model.dofs.cell_to_dof.size(), 8u);
+    ASSERT_EQ(model.cell_material.size(), 8u);
     Index internal = 0;
     for (const auto& face : mesh.faces) {
         EXPECT_GT(face.area, 0);
@@ -63,35 +63,50 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
     EXPECT_NO_THROW(mesh.validate());
 }
 
-TEST(DiscreteMesh, OperatorsAndSamplingRespectIndependentDofOrdering)
+TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
-    auto model = mhs::sim::build_model(cube_definition());
-    model.material_table[0].kx = mhs::core::parse("1+T/1000", {});
-    model.heat_source_table[0] = mhs::core::parse("x+2*y+3*z", {});
+    auto definition = cube_definition();
+    auto model = mhs::sim::build_model(definition);
+    const std::vector<Index> order {7, 5, 3, 1, 6, 4, 2, 0};
+    auto mesh = model.discrete;
+    std::vector<Index> inverse(order.size());
+    for (Index i = 0; i < order.size(); ++i) {
+        mesh.cells[i] = model.discrete.cells[order[i]];
+        inverse[order[i]] = i;
+    }
+    for (auto& face : mesh.faces) {
+        face.owner.value = inverse[face.owner.value];
+        if (face.neighbor.valid())
+            face.neighbor.value = inverse[face.neighbor.value];
+    }
+    auto imported = mhs::sim::build_model(definition, mesh);
+    for (auto* m : {&model, &imported}) {
+        m->material_table[0].kx = mhs::core::parse("1+T/1000", {});
+        m->heat_source_table[0] = mhs::core::parse("x+2*y+3*z", {});
+    }
     std::vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
-    const auto baseline = mhs::sim::assemble_thermal(model, original, 0);
-    const std::vector<Index> permutation {7, 5, 3, 1, 6, 4, 2, 0};
-    const auto vertices = mhs::post::interpolate_cell_to_node(model, original, 0);
-    const Vec3 point {0.2, 0.3, 0.4};
-    const auto cell = model.discrete.locate(point);
-    const auto sample = mhs::utils::sample_point(model, original, 0, cell, point);
-    EXPECT_THROW(model.dofs.set_permutation({0, 0, 2, 3, 4, 5, 6, 7}), std::invalid_argument);
-    model.dofs.set_permutation(permutation);
     std::vector<double> reordered(8);
-    for (Index c = 0; c < 8; ++c)
-        reordered[permutation[c]] = original[c];
-    const auto result = mhs::sim::assemble_thermal(model, reordered, 0);
+    for (Index i = 0; i < order.size(); ++i)
+        reordered[i] = original[order[i]];
+    const auto baseline = mhs::sim::assemble_thermal(model, original, 0);
+    const auto result = mhs::sim::assemble_thermal(imported, reordered, 0);
     for (Index i = 0; i < 8; ++i) {
-        EXPECT_NEAR(result.f[permutation[i]], baseline.f[i], 1e-14);
+        EXPECT_NEAR(result.f[i], baseline.f[order[i]], 1e-14);
         for (Index j = 0; j < 8; ++j) {
-            EXPECT_NEAR(result.K.coeff(permutation[i], permutation[j]), baseline.K.coeff(i, j), 1e-14);
-            EXPECT_NEAR(result.C.coeff(permutation[i], permutation[j]), baseline.C.coeff(i, j), 1e-14);
+            EXPECT_NEAR(result.K.coeff(i, j), baseline.K.coeff(order[i], order[j]), 1e-14);
+            EXPECT_NEAR(result.C.coeff(i, j), baseline.C.coeff(order[i], order[j]), 1e-14);
         }
     }
-    const auto nodes = mhs::post::interpolate_cell_to_node(model, reordered, 0);
-    for (Index v = 0; v < vertices.size(); ++v)
-        EXPECT_NEAR(nodes[v], vertices[v], 1e-12);
-    EXPECT_NEAR(mhs::utils::sample_point(model, reordered, 0, cell, point), sample, 1e-12);
+    const auto vertices = mhs::post::interpolate_cell_to_node(model, original, 0);
+    const auto nodes = mhs::post::interpolate_cell_to_node(imported, reordered, 0);
+    for (Index v = 0; v < imported.output.points.size(); ++v) {
+        auto found = std::find(model.output.points.begin(), model.output.points.end(), imported.output.points[v]);
+        ASSERT_NE(found, model.output.points.end());
+        EXPECT_NEAR(nodes[v], vertices[found - model.output.points.begin()], 1e-12);
+    }
+    const Vec3 point {0.2, 0.3, 0.4};
+    EXPECT_NEAR(mhs::utils::sample_point(model, original, 0, model.discrete.locate(point), point),
+        mhs::utils::sample_point(imported, reordered, 0, imported.discrete.locate(point), point), 1e-12);
 }
 
 TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
@@ -134,14 +149,17 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
     auto& first = d.layers[0].blocks[0];
     first.geometry = {{mhs::model::GeometryOperation::Add, {"0", "0", "0.25", "1"}}};
-    first.volumetric_heat_source = "4";
+    first.volumetric_heat_source = "4*z";
     auto second = first;
     second.geometry = {{mhs::model::GeometryOperation::Add, {"0.25", "0", "0.75", "1"}}};
-    second.volumetric_heat_source = "8";
+    second.volumetric_heat_source = "8*z";
     d.layers[0].blocks.push_back(second);
     const auto model = mhs::sim::build_model(d);
     const auto ops = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
-    EXPECT_NEAR(ops.f.sum(), 7, 1e-13);
+    EXPECT_NEAR(ops.f.sum(), 3.5, 1e-13);
+    ASSERT_EQ(model.source_terms.size(), 2u);
+    EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
+    EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);
     auto other = d.materials[0];
     other.name = "other";
     other.value.conductivity_x = "2";

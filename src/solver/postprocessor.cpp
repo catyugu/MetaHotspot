@@ -12,7 +12,7 @@ namespace mhs::post {
     std::vector<double> interpolate_cell_to_node(
         const mhs::core::Model& model, std::span<const double> cell_temperature, double time)
     {
-        if (cell_temperature.size() != model.dofs.size())
+        if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
         std::vector<double> node_T(model.output.points.size(), std::numeric_limits<double>::quiet_NaN());
         for (mhs::core::Index v = 0; v < model.output.points.size(); ++v) {
@@ -21,10 +21,10 @@ namespace mhs::post {
             size_t count = 0;
             std::vector<mhs::utils::PointTemperatureSample> samples;
             for (auto cell : model.output.incident_cells(v)) {
-                const auto row = model.dofs.temperature(cell).value;
+                const auto row = cell.value;
                 const auto T = cell_temperature[row];
                 const auto center = model.discrete.cells[cell.value].center();
-                const auto& mat = model.material_table[model.cells.material_id[cell.value]];
+                const auto& mat = model.material_table[model.cell_material[cell.value]];
                 const mhs::core::FieldContext ctx {center[0], center[1], center[2], T, time};
                 for (auto id : model.discrete.incident_faces(cell)) {
                     const auto& f = model.discrete.faces[id.value];

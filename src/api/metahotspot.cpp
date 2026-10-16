@@ -196,7 +196,6 @@ MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t *m, const char *path) {
         m->def = mhs::io::read_xml(path);
         m->block_locations.clear();
         m->external_mesh.reset();
-        m->temperature_order.clear();
     });
 }
 
@@ -221,7 +220,6 @@ MHS_API mhs_status_t mhs_model_set_mesh(mhs_model_t *m, size_t nx, const double 
     CHECK_NULL(m);
     MHS_TRY({
         m->external_mesh.reset();
-        m->temperature_order.clear();
         m->def.mesh.x_vertices.clear();
         m->def.mesh.y_vertices.clear();
         m->def.mesh.z_vertices.clear();
@@ -284,23 +282,7 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_
         mesh.build_incidence();
         mesh.validate();
         m->external_mesh = std::move(mesh);
-        m->temperature_order.clear();
         m->def.mesh = {};
-    });
-}
-
-MHS_API mhs_status_t mhs_model_set_dof_order(mhs_model_t *m, const size_t *cell_to_dof, size_t count) {
-    CHECK_NULL(m);
-    if (count) {
-        CHECK_NULL(cell_to_dof);
-    }
-    MHS_TRY({
-        std::vector<size_t> order;
-        if (count)
-            order.assign(cell_to_dof, cell_to_dof + count);
-        mhs::core::DofMap map;
-        map.set_permutation(order);
-        m->temperature_order = std::move(order);
     });
 }
 
@@ -567,19 +549,9 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t *m, mhs_compiled_t **ou
     MHS_TRY({
         auto core_model =
             m->external_mesh ? mhs::sim::build_model(m->def, *m->external_mesh) : mhs::sim::build_model(m->def);
-        if (!m->temperature_order.empty()) {
-            if (m->temperature_order.size() != core_model.discrete.cells.size())
-                throw std::invalid_argument("DOF ordering size differs from mesh cell count");
-            core_model.dofs.set_permutation(m->temperature_order);
-        }
-        auto *c = new (std::nothrow) mhs_compiled_t{};
-        if (!c) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERROR;
-        }
+        auto c = std::make_unique<mhs_compiled_t>();
         c->model = std::make_shared<const mhs::core::Model>(std::move(core_model));
-        *out = c;
+        *out = c.release();
     });
 }
 
@@ -594,8 +566,8 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t *c, mhs_compiled
     CHECK_NULL(out);
     out->cell_count = c->model->discrete.cells.size();
     out->face_count = c->model->discrete.faces.size();
-    out->state_count = c->model->dofs.size();
-    out->projection_count = c->model->volume_projection.size();
+    out->state_count = c->model->discrete.cells.size();
+    out->projection_count = c->model->source_terms.size();
     out->source_count = c->model->heat_source_table.size();
     out->study_type = _from_core_study(c->model->study_type);
     out->initial_temperature = c->model->initial_temperature;
@@ -646,7 +618,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_
     const auto &model = *c->model;
     const auto &mesh = model.discrete;
     if (fields->cell_count != mesh.cells.size() || fields->face_count != mesh.faces.size() ||
-        fields->projection_count != model.volume_projection.size()) {
+        fields->projection_count != model.source_terms.size()) {
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -655,18 +627,6 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_
     }
     if (fields->cell_count > 0) {
         CHECK_NULL(fields->cell_max);
-    }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->cell_to_dof);
-    }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->region_id);
-    }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->layer_id);
-    }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->block_id);
     }
     if (fields->cell_count > 0) {
         CHECK_NULL(fields->material_id);
@@ -703,9 +663,6 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_
         CHECK_NULL(fields->projection_cell);
     }
     if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_region);
-    }
-    if (fields->projection_count > 0) {
         CHECK_NULL(fields->projection_source);
     }
     if (fields->projection_count > 0) {
@@ -719,11 +676,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_
             fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
             fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
         }
-        fields->cell_to_dof[cidx] = model.dofs.temperature(mhs::core::CellId{cidx}).value;
-        fields->region_id[cidx] = model.cells.region_id[cidx].value;
-        fields->layer_id[cidx] = model.cells.layer_id[cidx];
-        fields->block_id[cidx] = model.cells.block_id[cidx];
-        fields->material_id[cidx] = model.cells.material_id[cidx];
+        fields->material_id[cidx] = model.cell_material[cidx];
     }
     for (size_t id = 0; id < mesh.faces.size(); ++id) {
         const auto &face = mesh.faces[id];
@@ -739,14 +692,13 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_
             fields->face_max[3 * id + a] = face.max[a];
         }
     }
-    for (size_t id = 0; id < model.volume_projection.size(); ++id) {
-        const auto &term = model.volume_projection[id];
+    for (size_t id = 0; id < model.source_terms.size(); ++id) {
+        const auto &term = model.source_terms[id];
         fields->projection_cell[id] = term.cell.value;
-        fields->projection_region[id] = term.region.value;
         fields->projection_source[id] = term.source;
-        fields->projection_volume[id] = term.volume;
+        fields->projection_volume[id] = term.weight;
         for (size_t a = 0; a < 3; ++a)
-            fields->projection_center[3 * id + a] = term.centroid[a];
+            fields->projection_center[3 * id + a] = term.point[a];
     }
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -761,13 +713,13 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t *c, con
     }
     MHS_TRY({
         const auto &model = *c->model;
-        if (state_count != model.dofs.size() || projection_count != model.volume_projection.size())
+        if (state_count != model.discrete.cells.size() || projection_count != model.source_terms.size())
             throw std::invalid_argument("source projection buffer size mismatch");
         for (size_t i = 0; i < projection_count; ++i) {
-            const auto &term = model.volume_projection[i];
-            const auto &p = term.centroid;
-            powers[i] = term.volume * model.heat_source_table[term.source].eval(
-                                          {p[0], p[1], p[2], state[model.dofs.temperature(term.cell).value], time});
+            const auto &term = model.source_terms[i];
+            const auto &p = term.point;
+            powers[i] = term.weight * model.heat_source_table[term.source].eval(
+                                          {p[0], p[1], p[2], state[term.cell.value], time});
         }
     });
 }
@@ -778,9 +730,9 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t *c, const 
     CHECK_NULL(temperature);
     CHECK_NULL(values);
     const auto &model = *c->model;
-    const auto &cells = model.cells;
+
     const auto &mesh = model.discrete;
-    if (temperature_count != model.dofs.size() || values->count != temperature_count) {
+    if (temperature_count != model.discrete.cells.size() || values->count != temperature_count) {
         SET_ERR("material evaluation buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -791,8 +743,8 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t *c, const 
     }
     for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
         const auto p = mesh.cells[cell].center();
-        const auto &props = model.material_table[cells.material_id[cell]];
-        const auto dof = model.dofs.temperature(mhs::core::CellId{cell}).value;
+        const auto &props = model.material_table[model.cell_material[cell]];
+        const auto dof = cell;
         const mhs::core::FieldContext context{p[0], p[1], p[2], temperature[dof], time};
         values->conductivity_x[cell] = props.kx.eval(context);
         values->conductivity_y[cell] = props.ky.eval(context);

@@ -79,7 +79,7 @@ def test_solution_views_derive_from_one_native_snapshot():
     solution = model.compile().solve()
 
     assert solution.fvm_count == 1
-    assert solution.temperature.base is solution.state
+    assert solution.temperature is solution.state
     assert np.shares_memory(solution.temperature_history, solution.state_history)
     assert solution.state_history.shape[1] == solution.state.shape[0]
     assert solution.history_times[0] == pytest.approx(0.0)

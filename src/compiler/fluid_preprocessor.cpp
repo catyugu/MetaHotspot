@@ -20,7 +20,7 @@ namespace mhs::sim::fluid {
         fluid.global_to_fluid.assign(mesh.cells.size(), invalidIndex);
         std::vector<double> viscosity;
         for (Index c = 0; c < mesh.cells.size(); ++c) {
-            const auto mat = model.cells.material_id[c];
+            const auto mat = model.cell_material[c];
             if (mat >= materials.initial_viscosity.size() || !materials.initial_viscosity[mat])
                 continue;
             fluid.global_to_fluid[c] = fluid.fluid_to_global.size();
@@ -73,7 +73,7 @@ namespace mhs::sim::fluid {
             mobility[i] = diameter * diameter / (2 * mhs::utils::f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cells.material_id[c]].rho.eval(
+            rho[i] = model.material_table[model.cell_material[c]].rho.eval(
                 {p[0], p[1], p[2], model.initial_temperature, 0});
         }
         // Use the same rectangle intersection algorithm as thermal projection,

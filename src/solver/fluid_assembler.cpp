@@ -7,15 +7,15 @@ namespace mhs::sim::fluid {
     {
         using namespace mhs::core;
         FluidAssemblyIncrement result;
-        result.rhs = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(model.dofs.size()));
+        result.rhs = Eigen::VectorXd::Zero(static_cast<Eigen::Index>(model.discrete.cells.size()));
         auto context = [&](CellId c) {
             auto p = model.discrete.cells[c.value].center();
-            return FieldContext {p[0], p[1], p[2], state[model.dofs.temperature(c).value], time};
+            return FieldContext {p[0], p[1], p[2], state[c.value], time};
         };
         for (Index fi = 0; fi < model.fluid.fluid_to_global.size(); ++fi) {
             const CellId cell {model.fluid.fluid_to_global[fi]};
-            const auto row = model.dofs.temperature(cell).value;
-            const auto& mat = model.material_table[model.cells.material_id[cell.value]];
+            const auto row = cell.value;
+            const auto& mat = model.material_table[model.cell_material[cell.value]];
             const auto ctx = context(cell);
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
             for (auto id : model.discrete.incident_faces(cell)) {
@@ -23,8 +23,8 @@ namespace mhs::sim::fluid {
                 const auto neighbor = f.other(cell);
                 if (!neighbor.valid() || model.fluid.global_to_fluid[neighbor.value] == invalidIndex)
                     continue;
-                const auto col = model.dofs.temperature(neighbor).value;
-                const auto& other = model.material_table[model.cells.material_id[neighbor.value]];
+                const auto col = neighbor.value;
+                const auto& other = model.material_table[model.cell_material[neighbor.value]];
                 const auto other_ctx = context(neighbor);
                 const double q = model.fluid.face_volume_flux[id.value] * (f.owner == cell ? 1 : -1);
                 if (std::abs(q) <= zero_guard)
@@ -40,8 +40,8 @@ namespace mhs::sim::fluid {
         }
         for (const auto& term : model.fluid.boundary_terms) {
             const auto cell = model.discrete.faces[term.face.value].owner;
-            const auto row = model.dofs.temperature(cell).value;
-            const auto& mat = model.material_table[model.cells.material_id[cell.value]];
+            const auto row = cell.value;
+            const auto& mat = model.material_table[model.cell_material[cell.value]];
             const auto cp = mat.c.eval(context(cell));
             if (term.mass_outflux > 0)
                 result.matrix_entries.emplace_back(row, row, term.mass_outflux * cp);

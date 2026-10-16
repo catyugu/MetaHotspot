@@ -214,11 +214,6 @@ class AffineParametricModel:
         return normalized_operators(*self._full.assemble())
 
     @cached_property
-    def cell_dofs(self) -> np.ndarray:
-        """Explicit projection from physical CellId order to algebraic state order."""
-        return self._full.cells.cell_to_dof.astype(np.intp)
-
-    @cached_property
     def source_contributions(self):
         """Native sparse contributions with a separate column per physical source."""
         return self._full.source_operator()
@@ -244,8 +239,7 @@ class AffineParametricModel:
                 )
             else:
                 cells = np.asarray(port.cells, dtype=np.int64)
-                dofs = self.cell_dofs[cells]
-                G[dofs, k] = f[dofs] / port.power_W
+                G[cells, k] = f[cells] / port.power_W
         return G
 
     @cached_property
@@ -266,7 +260,7 @@ class AffineParametricModel:
             diagonal = np.zeros(n)
             np.add.at(
                 diagonal,
-                self.cell_dofs[np.asarray(group.cells, dtype=np.int64)],
+                np.asarray(group.cells, dtype=np.int64),
                 group.areas,
             )
             terms.append(sp.diags(diagonal))
@@ -378,7 +372,7 @@ class AffineParametricModel:
         started = time.perf_counter()
         steady_rise = solve_rom_steady(K_h, G, self.nominal_power())
         steady_s = time.perf_counter() - started
-        steady_temperature = self.ambient_K + steady_rise[self.cell_dofs]
+        steady_temperature = self.ambient_K + steady_rise
 
         started = time.perf_counter()
         times, history = solve_rom_transient(
@@ -393,7 +387,7 @@ class AffineParametricModel:
         return AffineSolveResult(
             steady_temperature=steady_temperature,
             times=times,
-            history=self.ambient_K + history[:, self.cell_dofs],
+            history=self.ambient_K + history,
             steady_s=steady_s,
             transient_s=transient_s,
         )
@@ -414,7 +408,7 @@ class AffineParametricModel:
         coincide by construction on the true field.
         """
         field = np.asarray(field)
-        G = self.source_shape[self.cell_dofs, :]
+        G = self.source_shape
         if field.ndim == 1:
             return self.ambient_K + G.T @ (field - self.ambient_K)
         return self.ambient_K + (field - self.ambient_K) @ G

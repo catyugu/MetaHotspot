@@ -72,7 +72,6 @@ struct mhs_model_t {
     mhs::model::ModelDefinition def;
     std::vector<BlockLocation> block_locations;
     std::optional<mhs::core::DiscreteMesh> external_mesh;
-    std::vector<mhs::core::Index> temperature_order;
 };
 
 struct mhs_compiled_t {

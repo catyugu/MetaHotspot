@@ -52,7 +52,7 @@ TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
     auto io = make_simple_cube_io();
     auto model = build_model(io);
 
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
@@ -105,7 +105,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     auto model = build_model(io);
 
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
 
     std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
     std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -128,7 +128,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto io = make_simple_cube_io();
     auto model = build_model(io);
 
-    int N = static_cast<int>(model.cells.material_id.size());
+    int N = static_cast<int>(model.cell_material.size());
     std::vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);

@@ -15,8 +15,6 @@ namespace mhs::core {
     };
     using CellId = EntityId<struct CellTag>;
     using FaceId = EntityId<struct FaceTag>;
-    using DofId = EntityId<struct DofTag>;
-    using RegionId = EntityId<struct RegionTag>;
     using Vec3 = std::array<double, 3>;
 
     struct CellGeometry {
@@ -191,33 +189,6 @@ namespace mhs::core {
                             throw std::invalid_argument("nonorthogonal mesh requires an unimplemented flux scheme; "
                                                         "current TPFA supports aligned cell centers only");
                 }
-        }
-    };
-    struct DofMap {
-        std::vector<DofId> cell_to_dof;
-        std::vector<CellId> dof_to_cell;
-        DofId temperature(CellId cell) const { return cell_to_dof.at(cell.value); }
-        CellId cell(DofId dof) const { return dof_to_cell.at(dof.value); }
-        Index size() const { return dof_to_cell.size(); }
-        void set_permutation(const std::vector<Index>& permutation)
-        {
-            std::vector<DofId> forward(permutation.size());
-            std::vector<CellId> inverse(permutation.size());
-            for (Index c = 0; c < permutation.size(); ++c) {
-                auto d = permutation[c];
-                if (d >= permutation.size() || inverse[d].valid())
-                    throw std::invalid_argument("invalid DOF permutation");
-                forward[c] = {d};
-                inverse[d] = {c};
-            }
-            cell_to_dof = std::move(forward);
-            dof_to_cell = std::move(inverse);
-        }
-        void identity(Index n)
-        {
-            std::vector<Index> p(n);
-            std::iota(p.begin(), p.end(), 0);
-            set_permutation(p);
         }
     };
 } // namespace mhs::core

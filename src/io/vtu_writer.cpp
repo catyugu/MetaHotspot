@@ -12,7 +12,7 @@ namespace mhs::io {
 
     void write_vtu(const std::string &path, const mhs::core::Model &model, std::span<const double> cell_temperature) {
         using namespace tinyxml2;
-        if (cell_temperature.size() != model.dofs.size())
+        if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("VTU state size mismatch");
         const auto &output = model.output;
         std::vector<mhs::core::Index> node_remap(output.points.size(), mhs::core::invalidIndex);
@@ -44,7 +44,7 @@ namespace mhs::io {
             off_str += std::to_string(cell_num * 8) + "\n";
             type_str += "12\n";
             std::snprintf(buf, sizeof(buf), "%.17g\n",
-                          cell_temperature[model.dofs.temperature(mhs::core::CellId{c}).value]);
+                          cell_temperature[c]);
             cell_temp_str += buf;
         }
 

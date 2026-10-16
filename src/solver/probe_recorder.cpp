@@ -20,7 +20,7 @@ namespace mhs::sim {
     }
     void ProbeRecorder::record(double time, std::span<const double> temperature)
     {
-        if (temperature.size() != model_->dofs.size())
+        if (temperature.size() != model_->discrete.cells.size())
             throw std::invalid_argument("probe state size mismatch");
         for (size_t i = 0; i < slots_.size(); ++i) {
             traces_[i].times.push_back(time);

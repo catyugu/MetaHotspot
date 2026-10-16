@@ -47,7 +47,6 @@ def _cell_split(cells, half_z):
 class _FakePortsModel:
     def __init__(self, compiled, ops):
         self._full = compiled
-        self.cell_dofs = compiled.cells.cell_to_dof.astype(np.intp)
         self.geometry = CellGeometry(compiled.cells)
         self._ops = ops
         self.cell_layout = mm.CellLayout(

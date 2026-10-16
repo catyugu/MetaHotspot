@@ -121,10 +121,6 @@ def _int32_ptr(array: np.ndarray):
 _CELL_FIELD_SPECS = (
     ("cell_min", ctypes.c_double, np.float64, "cell_count", 3),
     ("cell_max", ctypes.c_double, np.float64, "cell_count", 3),
-    ("cell_to_dof", ctypes.c_size_t, np.uintp, "cell_count", 1),
-    ("region_id", ctypes.c_size_t, np.uintp, "cell_count", 1),
-    ("layer_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
-    ("block_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("face_owner", ctypes.c_size_t, np.uintp, "face_count", 1),
     ("face_neighbor", ctypes.c_size_t, np.uintp, "face_count", 1),
@@ -136,7 +132,6 @@ _CELL_FIELD_SPECS = (
     ("owner_distance", ctypes.c_double, np.float64, "face_count", 1),
     ("neighbor_distance", ctypes.c_double, np.float64, "face_count", 1),
     ("projection_cell", ctypes.c_size_t, np.uintp, "projection_count", 1),
-    ("projection_region", ctypes.c_size_t, np.uintp, "projection_count", 1),
     ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
     ("projection_center", ctypes.c_double, np.float64, "projection_count", 3),
@@ -311,7 +306,7 @@ class Compiled(OwnedHandle):
         result = sp.csc_matrix(
             (
                 values,
-                (fields.cell_to_dof[fields.projection_cell], fields.projection_source),
+                (fields.projection_cell, fields.projection_source),
             ),
             shape=(self.metadata.state_count, self.metadata.source_count),
         )

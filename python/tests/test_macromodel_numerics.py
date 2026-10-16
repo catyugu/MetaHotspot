@@ -81,12 +81,11 @@ def test_extracted_modal_rom_preserves_projected_operators(extract):
     assert rom.summary["per_port_plans"][0]["shifts_per_s"][-1] > 0
 
 
-def test_boundary_projection_accumulates_patches_and_maps_dofs():
+def test_boundary_projection_accumulates_patches_in_cell_order():
     from metahotspot.macromodel.affine import BoundaryGroup
     from metahotspot.macromodel.geometry import BoundarySurface
 
     class Model(AffineParametricModel):
-        cell_dofs = np.array([1, 0])
         core = Operators(sp.eye(2), sp.eye(2), np.zeros(2))
 
         def boundary_groups(self):
@@ -98,14 +97,13 @@ def test_boundary_projection_accumulates_patches_and_maps_dofs():
                 ),
             )
 
-    assert_allclose(Model().boundary_terms[0].diagonal(), [0.4, 0.3])
+    assert_allclose(Model().boundary_terms[0].diagonal(), [0.3, 0.4])
 
 
-def test_source_projection_maps_physical_cells_to_state_order():
+def test_source_projection_preserves_signed_powers():
     class Model(AffineParametricModel):
         ambient_K = 300.0
-        cell_dofs = np.array([1, 0])
-        core = Operators(sp.eye(2), sp.eye(2), np.array([-6.0, -2.0]))
+        core = Operators(sp.eye(2), sp.eye(2), np.array([-2.0, -6.0]))
 
         def source_ports(self):
             return [
@@ -114,7 +112,7 @@ def test_source_projection_maps_physical_cells_to_state_order():
             ]
 
     model = Model()
-    assert_allclose(model.source_shape, [[0, 1], [1, 0]])
+    assert_allclose(model.source_shape, [[1, 0], [0, 1]])
     assert_allclose(model.source_shape @ model.nominal_power(), model.core.f)
     assert_allclose(
         Model().junction_temperature(np.array([310.0, 320.0])), [310.0, 320.0]
