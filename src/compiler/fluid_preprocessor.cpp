@@ -1,5 +1,6 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
+#include "compiler/geometry_compiler.hpp"
 #include "core/constants.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
@@ -33,8 +34,6 @@ namespace mhs::sim::fluid {
         }
         fluid.face_volume_flux.assign(mesh.faces.size(), 0);
         fluid.interface_heat_transfer_factor.resize(n);
-        fluid.boundary_outflux.assign(n, std::numeric_limits<double>::quiet_NaN());
-        fluid.boundary_temperature = fluid.boundary_outflux;
         std::vector<Vec3> extents(n);
         // Rectangular-channel extents from connected fluid runs along each axis.
         for (int axis = 0; axis < 3; ++axis) {
@@ -77,50 +76,30 @@ namespace mhs::sim::fluid {
             rho[i] = model.material_table[model.cells.material_id[c]].rho.eval(
                 {p[0], p[1], p[2], model.initial_temperature, 0});
         }
-        struct BC {
-            mhs::model::FluidBoundaryKind kind = mhs::model::FluidBoundaryKind::None;
-            double value = 0;
-        };
-        std::vector<BC> bcs(n);
-        for (const auto& boundary : boundaries) {
-            std::vector<double> area(n, 0);
-            for (const auto& f : mesh.faces) {
-                if (f.neighbor.valid())
-                    continue;
-                auto i = fluid.global_to_fluid[f.owner.value];
-                if (i == invalidIndex)
-                    continue;
-                auto p = f.center();
-                for (const auto& r : boundary.regions) {
-                    if (static_cast<int>(r.axis) != f.axis
-                        || std::abs(r.coordinate * scale - p[f.axis]) >= geometry_eps)
-                        continue;
-                    const int a = f.axis == 0 ? 1 : 0, b = f.axis == 2 ? 1 : 2;
-                    bool match = std::any_of(r.rectangles.begin(), r.rectangles.end(), [&](const auto& rect) {
-                        return p[a] >= rect.a_min * scale - geometry_eps && p[a] <= rect.a_max * scale + geometry_eps
-                            && p[b] >= rect.b_min * scale - geometry_eps && p[b] <= rect.b_max * scale + geometry_eps;
-                    });
-                    if (match) {
-                        area[i] += f.area;
-                        break;
-                    }
-                }
+        // Use the same rectangle intersection algorithm as thermal projection,
+        // against the original mesh and an independent set of regions.
+        std::vector<CompiledBoundaryRegion> regions;
+        for (TableIndex id = 0; id < boundaries.size(); ++id)
+            for (const auto& r : boundaries[id].regions) {
+                CompiledBoundaryRegion region;
+                region.axis = r.axis;
+                region.coordinate = r.coordinate * scale;
+                region.type = BcType::FirstType; // marks an explicitly assigned piece
+                region.parameter_index = id;
+                for (const auto& rect : r.rectangles)
+                    region.rectangles.push_back(
+                        {rect.a_min * scale, rect.a_max * scale, rect.b_min * scale, rect.b_max * scale});
+                regions.push_back(std::move(region));
             }
-            const double total = std::accumulate(area.begin(), area.end(), 0.0);
-            if (total == 0)
-                continue;
-            for (Index i = 0; i < n; ++i)
-                if (area[i] > 0) {
-                    double value = boundary.value;
-                    if (boundary.kind == mhs::model::FluidBoundaryKind::MassFlowInlet) {
-                        value *= area[i] / total;
-                        fluid.boundary_outflux[i] = value;
-                    }
-                    bcs[i] = {boundary.kind, value};
-                    if (!std::isnan(boundary.inlet_temperature))
-                        fluid.boundary_temperature[i] = boundary.inlet_temperature;
-                }
-        }
+        auto projected = project_surface_regions(mesh, regions, {});
+        std::erase_if(projected, [&](const auto& term) {
+            return term.bc.type == BcType::None
+                || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex
+                || boundaries[term.bc.param_idx].kind == mhs::model::FluidBoundaryKind::None;
+        });
+        std::vector<double> total_area(boundaries.size(), 0);
+        for (const auto& term : projected)
+            total_area[term.bc.param_idx] += projected_face(mesh, term).area;
         std::vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -134,33 +113,36 @@ namespace mhs::sim::fluid {
             diagonal[i] += g;
             diagonal[j] += g;
         }
-        auto fixed = [&](Index i) {
-            return bcs[i].kind == mhs::model::FluidBoundaryKind::PressureInlet
-                || bcs[i].kind == mhs::model::FluidBoundaryKind::Outlet;
-        };
         bool reference = false;
+        std::vector<double> boundary_conductance(projected.size(), 0);
         std::vector<Eigen::Triplet<double>> entries;
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
-        for (Index i = 0; i < n; ++i) {
-            entries.emplace_back(i, i, diagonal[i]);
-            if (fixed(i)) {
+        for (Index t = 0; t < projected.size(); ++t) {
+            const auto& term = projected[t];
+            const auto f = projected_face(mesh, term);
+            const auto i = fluid.global_to_fluid[f.owner.value];
+            const auto& bc = boundaries[term.bc.param_idx];
+            if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet)
+                rhs[i] += bc.value * f.area / total_area[term.bc.param_idx] / rho[i];
+            else {
                 reference = true;
-                rhs[i] = bcs[i].value * diagonal[i];
+                const double g = f.area * mobility[i] / f.owner_distance;
+                boundary_conductance[t] = g;
+                diagonal[i] += g;
+                rhs[i] += g * bc.value;
             }
-            else if (bcs[i].kind == mhs::model::FluidBoundaryKind::MassFlowInlet)
-                rhs[i] = bcs[i].value / rho[i];
         }
         if (!reference)
             throw std::runtime_error(
                 "fluid domain has no pressure reference; a pressure inlet or an outlet is required");
+        for (Index i = 0; i < n; ++i)
+            entries.emplace_back(i, i, diagonal[i]);
         for (Index id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {
                 const auto& f = mesh.faces[id];
                 auto i = fluid.global_to_fluid[f.owner.value], j = fluid.global_to_fluid[f.neighbor.value];
-                if (!fixed(i))
-                    entries.emplace_back(i, j, -conductance[id]);
-                if (!fixed(j))
-                    entries.emplace_back(j, i, -conductance[id]);
+                entries.emplace_back(i, j, -conductance[id]);
+                entries.emplace_back(j, i, -conductance[id]);
             }
         Eigen::SparseMatrix<double> matrix(n, n);
         matrix.setFromTriplets(entries.begin(), entries.end());
@@ -169,6 +151,17 @@ namespace mhs::sim::fluid {
         auto pressure = solver->solve(rhs, Eigen::VectorXd::Zero(n));
         if (!solver->success())
             throw std::runtime_error("fluid pressure solve failed");
+        for (Index t = 0; t < projected.size(); ++t) {
+            const auto& term = projected[t];
+            const auto f = projected_face(mesh, term);
+            const auto i = fluid.global_to_fluid[f.owner.value];
+            const auto& bc = boundaries[term.bc.param_idx];
+            const double mass = bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet
+                ? -bc.value * f.area / total_area[term.bc.param_idx]
+                : rho[i] * boundary_conductance[t] * (pressure[i] - bc.value);
+            fluid.boundary_terms.push_back(
+                {term.face, mass, std::isnan(bc.inlet_temperature) ? model.initial_temperature : bc.inlet_temperature});
+        }
         for (Index id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {
                 const auto& f = mesh.faces[id];

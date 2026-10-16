@@ -18,9 +18,9 @@ static const mhs::core::FaceBC* find_face_bc(const Model& model, uint32_t cell_i
         const auto& f = model.discrete.faces[id.value];
         if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
             && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            const auto& bc = model.patch_bcs[id.value];
-            if (bc.type != BcType::None)
-                return &bc;
+            for (const auto& term : boundary_terms_on_face(model, id))
+                if (term.bc.type != BcType::None)
+                    return &term.bc;
         }
     }
     return nullptr;

@@ -101,7 +101,15 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {{0.1, 0.2, 0.1, 0.2}}});
     d.boundaries.push_back(bc);
+    const auto base = mhs::sim::build_model(cube_definition()).discrete;
     const auto model = mhs::sim::build_model(d);
+    ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
+    EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
+    EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
+    for (Index i = 0; i < base.faces.size(); ++i) {
+        EXPECT_EQ(model.discrete.faces[i].min, base.faces[i].min);
+        EXPECT_EQ(model.discrete.faces[i].max, base.faces[i].max);
+    }
     const auto ops = mhs::sim::assemble_thermal(model, std::vector<double>(8, 300), 0);
     EXPECT_NEAR(ops.f.sum(), 0.1, 1e-14);
     EXPECT_NO_THROW(model.discrete.validate());
