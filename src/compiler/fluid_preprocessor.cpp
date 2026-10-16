@@ -2,7 +2,6 @@
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "core/boundary_geometry.hpp"
-#include "core/constants.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
 #include <algorithm>

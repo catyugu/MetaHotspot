@@ -3,7 +3,6 @@
 #include "io/model_io.hpp"
 #include "solver/fluid_assembler.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <gtest/gtest.h>

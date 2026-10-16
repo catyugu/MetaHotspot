@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <span>
 #include <stdexcept>
 
 namespace mhs::sim {

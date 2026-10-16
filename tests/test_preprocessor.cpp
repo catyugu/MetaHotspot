@@ -3,7 +3,6 @@
 #include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
-#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::core;

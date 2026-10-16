@@ -5,7 +5,6 @@
 #include "solver/interpolation.hpp"
 #include "solver/postprocessor.hpp"
 #include <gtest/gtest.h>
-#include <numeric>
 
 using namespace mhs::core;
 

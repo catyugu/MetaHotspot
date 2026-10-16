@@ -1,6 +1,7 @@
 #pragma once
 #include "core/types.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numeric>
 #include <span>

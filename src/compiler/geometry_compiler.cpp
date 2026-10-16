@@ -3,7 +3,6 @@
 
 #include "numerics/expression/expr.hpp"
 #include <algorithm>
-#include <cstddef>
 
 namespace mhs::sim {
 
