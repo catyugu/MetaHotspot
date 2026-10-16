@@ -1,5 +1,4 @@
 #include "solver/fluid_assembler.hpp"
-#include "core/constants.hpp"
 #include <cmath>
 #include <type_traits>
 
@@ -28,10 +27,10 @@ namespace mhs::sim::fluid {
                 const auto& other = model.material_table[model.cell_material[neighbor.value]];
                 const auto other_ctx = context(neighbor);
                 const double q = model.fluid.face_volume_flux[id.value] * (f.owner == cell ? 1 : -1);
-                if (std::abs(q) <= zero_guard)
+                if (q == 0.0)
                     continue;
                 const double mass = q * 0.5 * (rho + other.rho.eval(other_ctx));
-                if (std::abs(mass) <= zero_guard)
+                if (mass == 0.0)
                     continue;
                 if (mass > 0)
                     result.matrix_entries.emplace_back(row, row, mass * cp);

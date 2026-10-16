@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <type_traits>
 
 namespace mhs::sim::fluid {
     void build_domain(mhs::core::Model& model, const std::vector<mhs::model::FluidBoundarySpec>& boundaries,
@@ -93,8 +94,7 @@ namespace mhs::sim::fluid {
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
             return term.condition == invalidTableIndex
-                || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex
-                || boundaries[term.condition].kind == mhs::model::FluidBoundaryKind::None;
+                || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex;
         });
         std::vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
@@ -120,16 +120,18 @@ namespace mhs::sim::fluid {
             const auto& term = projected[t];
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
-            const auto& bc = boundaries[term.condition];
-            if (bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet)
-                rhs[i] += bc.value * f.area / total_area[term.condition] / rho[i];
-            else {
-                reference = true;
-                const double g = f.area * mobility[i] / f.owner_distance;
-                boundary_conductance[t] = g;
-                diagonal[i] += g;
-                rhs[i] += g * bc.value;
-            }
+            std::visit([&](const auto& bc) {
+                using T = std::decay_t<decltype(bc)>;
+                if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
+                    rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition] / rho[i];
+                else {
+                    reference = true;
+                    const double g = f.area * mobility[i] / f.owner_distance;
+                    boundary_conductance[t] = g;
+                    diagonal[i] += g;
+                    rhs[i] += g * bc.pressure;
+                }
+            }, boundaries[term.condition].condition);
         }
         if (!reference)
             throw std::runtime_error(
@@ -154,13 +156,22 @@ namespace mhs::sim::fluid {
             const auto& term = projected[t];
             const auto f = projected_face(mesh, term);
             const auto i = fluid.global_to_fluid[f.owner.value];
-            const auto& bc = boundaries[term.condition];
-            const double mass = bc.kind == mhs::model::FluidBoundaryKind::MassFlowInlet
-                ? -bc.value * f.area / total_area[term.condition]
-                : rho[i] * boundary_conductance[t] * (pressure[i] - bc.value);
+            const auto& condition = boundaries[term.condition].condition;
+            const double mass = std::visit([&](const auto& bc) {
+                using T = std::decay_t<decltype(bc)>;
+                if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
+                    return -bc.mass_flow_rate * f.area / total_area[term.condition];
+                else
+                    return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
+            }, condition);
             if (mass < 0) {
-                const double temperature
-                    = std::isnan(bc.inlet_temperature) ? model.initial_temperature : bc.inlet_temperature;
+                const double temperature = std::visit([&](const auto& bc) {
+                    using T = std::decay_t<decltype(bc)>;
+                    if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
+                        return bc.backflow_temperature.value_or(model.initial_temperature);
+                    else
+                        return bc.temperature.value_or(model.initial_temperature);
+                }, condition);
                 fluid.boundary_terms.push_back({term.face, FluidInflow {-mass, temperature}});
             }
             else {

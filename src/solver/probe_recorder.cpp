@@ -9,7 +9,7 @@ namespace mhs::sim {
         traces_.clear();
         slots_.clear();
         for (const auto& p : model.observation_points) {
-            traces_.push_back({p.name, {}, {}});
+            traces_.push_back({p.name, {}});
             ProbeSlot slot;
             slot.px = p.x;
             slot.py = p.y;
@@ -20,10 +20,7 @@ namespace mhs::sim {
     }
     void ProbeRecorder::record(double time, std::span<const double> temperature)
     {
-        if (temperature.size() != model_->discrete.cells.size())
-            throw std::invalid_argument("probe state size mismatch");
         for (size_t i = 0; i < slots_.size(); ++i) {
-            traces_[i].times.push_back(time);
             const auto& slot = slots_[i];
             traces_[i].values.push_back(
                 mhs::utils::sample_point(*model_, temperature, time, slot.cell, {slot.px, slot.py, slot.pz}));

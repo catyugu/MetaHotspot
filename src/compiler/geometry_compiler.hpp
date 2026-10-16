@@ -56,7 +56,6 @@ namespace mhs::sim {
     void project_cell_regions(mhs::core::Model& model, const std::vector<ResolvedLayerGeometry>& layers);
     void compile_cartesian_mesh(mhs::core::Model& model, const mhs::model::MeshSpec& input, double scale,
         const std::vector<ResolvedLayerGeometry>& layers);
-    void validate_external_cell_coverage(const mhs::core::DiscreteMesh& mesh);
     void build_external_output_mesh(mhs::core::Model& model);
 
     std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,

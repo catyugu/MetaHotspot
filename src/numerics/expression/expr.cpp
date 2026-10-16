@@ -30,11 +30,7 @@ namespace mhs::core {
 
     class MuCompiled {
     public:
-        // Constructs a muparser instance with x/y/z/T/t, pi/e, and every native
-        // function in `symbols` bound to a heap-allocated NativeFnCtx slot.
-        // `symbols` is captured by reference into native_slots_ entries; the
-        // caller (MuCompiledTLS) keeps the SymbolTable alive for the lifetime
-        // of every MuCompiled it creates.
+        // Fixed slots keep muparser's user-data pointers stable for this instance.
         explicit MuCompiled(const std::string& formula, const SymbolTable& symbols)
         {
             // Bind x/y/z/T/t to the addresses of current_ctx_ — muparser dereferences
@@ -50,24 +46,19 @@ namespace mhs::core {
             parser_.DefineConst("pi", mu::MathImpl<mu::value_type>::CONST_PI);
             parser_.DefineConst("e", mu::MathImpl<mu::value_type>::CONST_E);
 
+            native_slots_.reserve(symbols.natives.size());
             for (const auto& [name, fe] : symbols.natives) {
-                auto slot = std::make_shared<NativeFnCtx>();
-                slot->fe = fe;
-                slot->ctx_ptr = &current_ctx_;
-                native_slots_[name] = slot;
-                // muparser requires user data pointer to be non-null; our slot is.
-                parser_.DefineFunUserData(name, &native_fn_bridge, slot.get(), false);
+                native_slots_.push_back({fe, &current_ctx_});
+                parser_.DefineFunUserData(name, &native_fn_bridge, &native_slots_.back(), false);
             }
 
             try {
                 parser_.SetExpr(formula);
-                // Force compilation up front so the caller learns about syntax errors
-                // synchronously, mirroring the old `parser.compile(...)` bool contract.
+                // muparser compiles on first Eval(). Never publish a failed parser.
                 (void)parser_.Eval();
-                valid_ = true;
             }
-            catch (const mu::ParserError&) {
-                valid_ = false;
+            catch (const mu::ParserError& e) {
+                throw std::runtime_error("expression compile error: '" + formula + "': " + e.GetMsg());
             }
         }
 
@@ -78,12 +69,8 @@ namespace mhs::core {
         MuCompiled(MuCompiled&&) = delete;
         MuCompiled& operator=(MuCompiled&&) = delete;
 
-        bool valid() const { return valid_; }
-
         double eval(const FieldContext& ctx)
         {
-            if (!valid_)
-                throw std::runtime_error("expression is not valid (compile failed)");
             current_ctx_ = ctx;
             try {
                 return parser_.Eval();
@@ -94,13 +81,10 @@ namespace mhs::core {
         }
 
     private:
-        bool valid_ = true;
         FieldContext current_ctx_; // single TLS-backing state for x/y/z/T/t
 
+        std::vector<NativeFnCtx> native_slots_;
         mu::Parser parser_;
-        // Heap-allocated so the address we hand to DefineFunUserData stays valid even
-        // if `this` moves — though we delete move ops, the slot's identity is independent.
-        std::unordered_map<std::string, std::shared_ptr<NativeFnCtx>> native_slots_;
     };
 
     // TLS wrapper: each thread that touches this expression gets its own MuCompiled.
@@ -113,36 +97,32 @@ namespace mhs::core {
         MuCompiledTLS(const std::string& formula, SymbolTable sym)
             : symbols(std::move(sym)), tls([formula, this]() { return std::make_unique<MuCompiled>(formula, symbols); })
         {
+            (void)tls.local(); // Validate immediately and reuse this parser on the creating thread.
         }
     };
 
-    CompiledExpression::CompiledExpression() : is_const_(true), const_val_(0.0) { }
+    CompiledExpression::CompiledExpression() = default;
 
     CompiledExpression::~CompiledExpression() = default;
 
     double CompiledExpression::eval(const FieldContext& ctx) const
     {
-        if (is_const_)
-            return const_val_;
-        if (!tls_impl_)
-            throw std::logic_error("non-constant expression has no evaluator");
-        // Lock-free grab of this thread's dedicated AST
-        return tls_impl_->tls.local()->eval(ctx);
+        if (const auto* constant = std::get_if<double>(&value_))
+            return *constant;
+        return std::get<std::shared_ptr<MuCompiledTLS>>(value_)->tls.local()->eval(ctx);
     }
 
     CompiledExpression CompiledExpression::make_constant(double value)
     {
         CompiledExpression e;
-        e.is_const_ = true;
-        e.const_val_ = value;
+        e.value_ = value;
         return e;
     }
 
     CompiledExpression CompiledExpression::make_evaluator(const std::string& formula, const SymbolTable& symbols)
     {
         CompiledExpression e;
-        e.is_const_ = false;
-        e.tls_impl_ = std::make_shared<MuCompiledTLS>(formula, symbols);
+        e.value_ = std::make_shared<MuCompiledTLS>(formula, symbols);
         return e;
     }
 
@@ -157,13 +137,6 @@ namespace mhs::core {
             return CompiledExpression::make_constant(val);
         }
 
-        // Main-thread trial compile: catch syntax errors early
-        {
-            MuCompiled test_compile(formula, symbols);
-            if (!test_compile.valid()) {
-                throw std::runtime_error("parse error: " + formula + " (syntax or unknown identifier)");
-            }
-        }
         return CompiledExpression::make_evaluator(formula, symbols);
     }
 

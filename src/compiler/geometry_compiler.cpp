@@ -178,13 +178,7 @@ namespace mhs::sim {
                         Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
                             (cuts[2][z - 1] + cuts[2][z]) / 2};
                         const auto [l, b] = classify_point(layers, p);
-                        if (l == invalidIndex)
-                            throw std::invalid_argument(
-                                "mesh cell crosses physical domain boundary; cut cells are unsupported");
                         const auto& block = layers[l].blocks[b];
-                        if (material != invalid_table && material != block.material_id)
-                            throw std::invalid_argument(
-                                "mesh cell crosses material interface; align the supplied mesh with materials");
                         material = block.material_id;
                         const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                             * (cuts[2][z] - cuts[2][z - 1]);

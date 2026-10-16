@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | 几何解析 | Layer / Block / Rect 和几何表达式 | SI 米下的区域；同层后出现的 Block 覆盖前者 |
 | 网格输入 | Cartesian 坐标轴或调用方提供的控制体、面片 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
-| 网格校验 | 控制体与面片几何、连接 | 检查体积重叠、面覆盖、法向距离和 TPFA 正交条件 |
+| 网格契约 | 控制体与面片几何、连接 | 调用者保证有效性；编译器不校验网格，只建立 CSR 关联 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；跨材料或物理域边界的控制体被拒绝 |
 | 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成引用原始 FaceId 的 `boundary_terms`；积分矩形通过 `condition` 引用 `boundary_conditions` 中的 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
@@ -45,3 +45,5 @@
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 统一按 CellId 排列；该编号只在当前编译模型内有效。Python `Solution.temperature` 和 `temperature_history` 直接共享状态数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
+
+函数在编译阶段统一构造求值器：分段线性点按横坐标排序，并拒绝空数据、重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。

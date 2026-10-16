@@ -195,7 +195,8 @@ class Model(OwnedHandle):
     ):
         """Copy a supplied box/face mesh in SI metres; exterior neighbors are SIZE_MAX.
 
-        Connectivity must be complete. This method does not generate/refine a mesh.
+        Geometry and connectivity must be valid, complete and TPFA-orthogonal.
+        No mesh validity checking, generation or refinement is performed.
         """
         from metahotspot.types import MhsMesh
 
@@ -482,7 +483,7 @@ class Model(OwnedHandle):
         b_max: float,
         kind: FluidBC,
         value: float,
-        inlet_temperature: float = 0.0,
+        inlet_temperature: float | None = None,
     ) -> None:
         _add_fluid_boundary(
             self._dll,
@@ -492,7 +493,7 @@ class Model(OwnedHandle):
             (a_min, a_max, b_min, b_max),
             kind,
             value,
-            inlet_temperature,
+            float("nan") if inlet_temperature is None else inlet_temperature,
         )
 
     # ---- Compile ----

@@ -95,6 +95,20 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
         EXPECT_NEAR(balance[cell], 0, 1e-12);
     EXPECT_NEAR(boundary_sum, 0, 1e-12);
     EXPECT_TRUE(nonzero);
+    const std::vector<double> state(model.discrete.cells.size(), 300);
+    const auto normal = mhs::sim::fluid::assemble_increment(model, state, 0);
+    auto scaled = model;
+    constexpr double factor = 1e-20;
+    for (auto& flux : scaled.fluid.face_volume_flux)
+        flux *= factor;
+    for (auto& term : scaled.fluid.boundary_terms)
+        std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);
+    const auto tiny = mhs::sim::fluid::assemble_increment(scaled, state, 0);
+    ASSERT_EQ(tiny.matrix_entries.size(), normal.matrix_entries.size());
+    for (std::size_t i = 0; i < normal.matrix_entries.size(); ++i)
+        EXPECT_NEAR(tiny.matrix_entries[i].value() / factor, normal.matrix_entries[i].value(),
+            std::abs(normal.matrix_entries[i].value()) * 1e-12);
+    EXPECT_LE((tiny.rhs / factor - normal.rhs).norm(), normal.rhs.norm() * 1e-12);
 }
 
 // Two disjoint inlet pieces and an outlet share a single control volume.
@@ -104,9 +118,9 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     using namespace mhs::model;
     auto d = single_fluid_cell();
     d.fluid_boundaries
-        = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, FluidBoundaryKind::MassFlowInlet, 2, 280},
-            {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, FluidBoundaryKind::MassFlowInlet, 3, 320},
-            {{{Axis::X, 1, {{0, 1, 0, 1}}}}, FluidBoundaryKind::Outlet, 0}};
+        = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
+            {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
+            {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0, std::nullopt}}};
     auto verify = [&](const mhs::core::Model& model) {
         const auto inc = mhs::sim::fluid::assemble_increment(model, std::vector<double> {300}, 0);
         double diagonal = 0;
@@ -129,8 +143,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.fluid_boundaries = {{{{Axis::X, 0, {{0, 1, 0, 1}}}}, FluidBoundaryKind::PressureInlet, 0, 280},
-        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, FluidBoundaryKind::Outlet, 1, 310}};
+    d.fluid_boundaries = {{{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}},
+        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1, 310}}};
     auto reverse = mhs::sim::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
@@ -152,10 +166,10 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
         EXPECT_NEAR(inc.rhs[0], diagonal * temperature, 1e-10);
     };
     verify_reverse(reverse, 310);
-    d.fluid_boundaries.back().inlet_temperature = std::numeric_limits<double>::quiet_NaN();
+    std::get<PressureOutlet>(d.fluid_boundaries.back().condition).backflow_temperature.reset();
     verify_reverse(mhs::sim::build_model(d), 300);
 
-    d.fluid_boundaries.back().value = 0;
+    std::get<PressureOutlet>(d.fluid_boundaries.back().condition).pressure = 0;
     const auto stagnant = mhs::sim::build_model(d);
     const auto zero = mhs::sim::fluid::assemble_increment(stagnant, std::vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.rhs[0], 0);

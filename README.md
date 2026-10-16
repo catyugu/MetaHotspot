@@ -27,7 +27,7 @@
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
 
 当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 

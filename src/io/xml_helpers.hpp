@@ -2,6 +2,7 @@
 
 #include <tinyxml2.h>
 
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -42,6 +43,13 @@ namespace mhs::io::detail {
         return text ? trim(text) : "";
     }
 
-    inline double parse_double(const std::string& value) { return value.empty() ? 0.0 : std::stod(value); }
+    inline double parse_double(const std::string& value)
+    {
+        std::size_t end = 0;
+        const double result = std::stod(value, &end);
+        if (end != value.size())
+            throw std::invalid_argument("invalid numeric field: " + value);
+        return result;
+    }
 
 } // namespace mhs::io::detail

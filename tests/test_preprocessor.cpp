@@ -338,15 +338,15 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
 
 // ---- Full Case1 Integration Test ----
 
-TEST(PreprocessorTest, RejectsControlVolumesCutByPhysicalDomainBoundary)
+TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
 {
-    // Center inclusion is insufficient: both old cells extend outside [25,75].
+    // The caller supplies control volumes aligned with the physical domain.
     mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
     io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0, 50, 100};
+    io.mesh.x_vertices = {25, 50, 75};
     io.mesh.y_vertices = {0, 50, 100};
     io.mesh.z_vertices = {0, 10, 20, 30};
 
@@ -374,8 +374,6 @@ TEST(PreprocessorTest, RejectsControlVolumesCutByPhysicalDomainBoundary)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    EXPECT_THROW(build_model(io), std::invalid_argument);
-    io.mesh.x_vertices = {25, 50, 75};
     const auto model = build_model(io);
     ASSERT_EQ(model.discrete.cells.size(), 12u);
     EXPECT_NEAR(model.discrete.cells.front().min[0], 0.025, 1e-12);

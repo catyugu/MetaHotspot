@@ -127,20 +127,6 @@ static mhs::sim::SolveOptions::StepStrategy _to_step_strategy(mhs_step_strategy_
     throw std::invalid_argument("invalid step strategy: " + std::to_string(strategy));
 }
 
-static mhs::model::FluidBoundaryKind _to_fluid_kind(mhs_fluid_bc_t k) {
-    switch (k) {
-    case MHS_FLUID_NONE:
-        return mhs::model::FluidBoundaryKind::None;
-    case MHS_FLUID_PRESSURE_INLET:
-        return mhs::model::FluidBoundaryKind::PressureInlet;
-    case MHS_FLUID_MASS_FLOW_INLET:
-        return mhs::model::FluidBoundaryKind::MassFlowInlet;
-    case MHS_FLUID_OUTLET:
-        return mhs::model::FluidBoundaryKind::Outlet;
-    }
-    throw std::invalid_argument("invalid fluid boundary kind: " + std::to_string(k));
-}
-
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
@@ -242,8 +228,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_
     CHECK_NULL(m);
     CHECK_NULL(input);
     MHS_TRY({
-        if (input->cell_count == 0 || input->face_count == 0)
-            throw std::invalid_argument("external mesh must have cells and faces");
         CHECK_NULL(input->cell_min);
         CHECK_NULL(input->cell_max);
         CHECK_NULL(input->face_owner);
@@ -266,9 +250,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_
             f.neighbor = {input->face_neighbor[id]};
             f.axis = input->face_axis[id];
             f.sign = input->face_sign[id];
-            if (f.axis < 0 || f.axis > 2 || f.owner.value >= mesh.cells.size() ||
-                (f.neighbor.valid() && f.neighbor.value >= mesh.cells.size()))
-                throw std::invalid_argument("external face references invalid axis or cell");
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
@@ -279,8 +260,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_
             f.neighbor_distance =
                 f.neighbor.valid() ? std::abs(mesh.cells[f.neighbor.value].center()[f.axis] - f.min[f.axis]) : 0;
         }
-        mesh.build_incidence();
-        mesh.validate();
         m->external_mesh = std::move(mesh);
         m->def.mesh = {};
     });
@@ -481,10 +460,6 @@ MHS_API mhs_status_t mhs_model_add_function_piecewise(mhs_model_t *m, const char
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(points);
-    if (count < 2) {
-        SET_ERR("piecewise requires count >= 2");
-        return MHS_ERROR;
-    }
     MHS_TRY({
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
@@ -499,14 +474,6 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(mhs_mode
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(values);
-    if (count < 1) {
-        SET_ERR("periodic_piecewise_constant requires count >= 1");
-        return MHS_ERROR;
-    }
-    if (period <= 0.0) {
-        SET_ERR("period must be positive");
-        return MHS_ERROR;
-    }
     MHS_TRY({
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
@@ -532,10 +499,25 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t *m, mhs_axis_t axi
     MHS_TRY({
         mhs::model::FluidBoundarySpec fb;
         fb.regions.push_back(_make_face_region(axis, coordinate, region));
-        fb.kind = _to_fluid_kind(kind);
-        fb.value = value;
-        fb.inlet_temperature = inlet_temperature;
-        m->def.fluid_boundaries.push_back(std::move(fb));
+        const std::optional<double> temperature = std::isnan(inlet_temperature)
+            ? std::nullopt : std::optional<double>{inlet_temperature};
+        switch (kind) {
+        case MHS_FLUID_NONE:
+            break;
+        case MHS_FLUID_PRESSURE_INLET:
+            fb.condition = mhs::model::PressureInlet{value, temperature};
+            break;
+        case MHS_FLUID_MASS_FLOW_INLET:
+            fb.condition = mhs::model::MassFlowInlet{value, temperature};
+            break;
+        case MHS_FLUID_OUTLET:
+            fb.condition = mhs::model::PressureOutlet{value, temperature};
+            break;
+        default:
+            throw std::invalid_argument("invalid fluid boundary kind: " + std::to_string(kind));
+        }
+        if (kind != MHS_FLUID_NONE)
+            m->def.fluid_boundaries.push_back(std::move(fb));
     });
 }
 
@@ -741,19 +723,19 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t *c, const 
         SET_ERR("NULL material evaluation output buffer");
         return MHS_ERROR;
     }
-    for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
-        const auto p = mesh.cells[cell].center();
-        const auto &props = model.material_table[model.cell_material[cell]];
-        const auto dof = cell;
-        const mhs::core::FieldContext context{p[0], p[1], p[2], temperature[dof], time};
-        values->conductivity_x[cell] = props.kx.eval(context);
-        values->conductivity_y[cell] = props.ky.eval(context);
-        values->conductivity_z[cell] = props.kz.eval(context);
-        values->density[cell] = props.rho.eval(context);
-        values->specific_heat[cell] = props.c.eval(context);
-    }
-    mhs_detail_clear_last_error();
-    return MHS_OK;
+    MHS_TRY({
+        for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
+            const auto p = mesh.cells[cell].center();
+            const auto &props = model.material_table[model.cell_material[cell]];
+            const auto dof = cell;
+            const mhs::core::FieldContext context{p[0], p[1], p[2], temperature[dof], time};
+            values->conductivity_x[cell] = props.kx.eval(context);
+            values->conductivity_y[cell] = props.ky.eval(context);
+            values->conductivity_z[cell] = props.kz.eval(context);
+            values->density[cell] = props.rho.eval(context);
+            values->specific_heat[cell] = props.c.eval(context);
+        }
+    });
 }
 
 /* ------------------------------------------------------------------ */
@@ -888,10 +870,6 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t *s, const char 
     CHECK_NULL(s);
     CHECK_NULL(path);
     MHS_TRY({
-        if (!s->model)
-            throw std::invalid_argument("solution does not own a compiled runtime model");
-        if (s->sol.state.size() != s->model->discrete.cells.size())
-            throw std::invalid_argument("solution FVM state does not match its runtime model");
         mhs::io::write_vtu(path, *s->model, s->sol.state);
     });
 }
@@ -940,12 +918,8 @@ MHS_API mhs_status_t mhs_solution_probe_get_info(const mhs_solution_t *s, size_t
         return MHS_ERROR;
     }
     const auto &tr = s->sol.probe_traces[index];
-    if (tr.times.size() != tr.values.size()) {
-        SET_ERR("probe storage is inconsistent");
-        return MHS_ERROR;
-    }
     *name_size = tr.name.size() + 1;
-    *record_count = tr.times.size();
+    *record_count = s->sol.snapshot_times.size();
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
@@ -959,7 +933,7 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t *s, size_t ind
         return MHS_ERROR;
     }
     const auto &tr = s->sol.probe_traces[index];
-    if (name_size != tr.name.size() + 1 || record_count != tr.times.size() || tr.times.size() != tr.values.size()) {
+    if (name_size != tr.name.size() + 1 || record_count != s->sol.snapshot_times.size()) {
         SET_ERR("probe buffer sizes do not match probe data");
         return MHS_ERROR;
     }
@@ -968,7 +942,7 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t *s, size_t ind
         return MHS_ERROR;
     }
     std::memcpy(name, tr.name.c_str(), name_size);
-    std::copy(tr.times.begin(), tr.times.end(), times);
+    std::copy(s->sol.snapshot_times.begin(), s->sol.snapshot_times.end(), times);
     std::copy(tr.values.begin(), tr.values.end(), values);
     mhs_detail_clear_last_error();
     return MHS_OK;

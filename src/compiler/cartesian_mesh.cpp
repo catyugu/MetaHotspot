@@ -13,13 +13,8 @@ namespace mhs::sim {
         std::array<std::vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
         std::array<Index, 3> n {};
         for (int a = 0; a < 3; ++a) {
-            if (axes[a].size() < 2)
-                throw std::invalid_argument("Cartesian mesh requires at least two vertices per axis");
-            for (Index i = 0; i < axes[a].size(); ++i) {
-                axes[a][i] *= scale;
-                if (!std::isfinite(axes[a][i]) || (i && axes[a][i] <= axes[a][i - 1]))
-                    throw std::invalid_argument("Cartesian vertices must be finite and strictly increasing");
-            }
+            for (auto& coordinate : axes[a])
+                coordinate *= scale;
             n[a] = axes[a].size() - 1;
         }
         auto flatten = [&](Index x, Index y, Index z) { return (x * n[1] + y) * n[2] + z; };
@@ -80,7 +75,6 @@ namespace mhs::sim {
                         }
                 }
         model.discrete.build_incidence();
-        model.discrete.validate();
         model.output.build_incidence();
     }
     void build_external_output_mesh(mhs::core::Model& model)

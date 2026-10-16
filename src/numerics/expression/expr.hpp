@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <variant>
 
 namespace mhs::core {
 
@@ -41,16 +42,14 @@ namespace mhs::core {
 
         double eval(const FieldContext& ctx) const;
 
-        bool is_constant() const { return is_const_; }
-        double constant_value() const { return const_val_; }
+        bool is_constant() const { return std::holds_alternative<double>(value_); }
+        double constant_value() const { return std::get<double>(value_); }
 
         static CompiledExpression make_constant(double value);
         static CompiledExpression make_evaluator(const std::string& formula, const SymbolTable& symbols);
 
     private:
-        bool is_const_ = false;
-        double const_val_ = 0.0;
-        std::shared_ptr<MuCompiledTLS> tls_impl_;
+        std::variant<double, std::shared_ptr<MuCompiledTLS>> value_ {0.0};
     };
 
     // Parse a field expression string against the supplied SymbolTable.

@@ -60,7 +60,6 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
         for (auto v : closure)
             EXPECT_NEAR(v, 0, 1e-14);
     }
-    EXPECT_NO_THROW(mesh.validate());
 }
 
 TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
@@ -127,20 +126,6 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     }
     const auto ops = mhs::sim::assemble_thermal(model, std::vector<double>(8, 300), 0);
     EXPECT_NEAR(ops.f.sum(), 0.1, 1e-14);
-    EXPECT_NO_THROW(model.discrete.validate());
-}
-
-TEST(DiscreteMesh, ImportedMeshRejectsEmptyOrDuplicatedClosedShell)
-{
-    auto mesh = mhs::sim::build_model(cube_definition()).discrete;
-    const auto original = mesh.faces;
-    mesh.faces.clear();
-    mesh.build_incidence();
-    EXPECT_THROW(mesh.validate(), std::invalid_argument);
-    mesh.faces = original;
-    mesh.faces.insert(mesh.faces.end(), original.begin(), original.end());
-    mesh.build_incidence();
-    EXPECT_THROW(mesh.validate(), std::invalid_argument);
 }
 
 TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
@@ -160,28 +145,6 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     ASSERT_EQ(model.source_terms.size(), 2u);
     EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
     EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);
-    auto other = d.materials[0];
-    other.name = "other";
-    other.value.conductivity_x = "2";
-    d.materials.push_back(other);
-    d.layers[0].blocks[1].material = "other";
-    EXPECT_THROW(mhs::sim::build_model(d), std::invalid_argument);
-}
-
-TEST(DiscreteMesh, ExternalImportRejectsOverlappingControlVolumes)
-{
-    auto definition = cube_definition();
-    definition.mesh.x_vertices = definition.mesh.y_vertices = definition.mesh.z_vertices = {0, 1};
-    auto mesh = mhs::sim::build_model(definition).discrete;
-    const auto faces = mesh.faces;
-    mesh.cells.push_back(mesh.cells.front());
-    for (auto face : faces) {
-        face.owner = CellId {1};
-        mesh.faces.push_back(face);
-    }
-    mesh.build_incidence();
-    ASSERT_NO_THROW(mesh.validate());
-    EXPECT_THROW(mhs::sim::build_model(definition, mesh), std::invalid_argument);
 }
 
 TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)

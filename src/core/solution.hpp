@@ -5,9 +5,9 @@
 
 namespace mhs::core {
 
+    // Values follow Solution::snapshot_times; all probes share that timeline.
     struct ProbeTrace {
         std::string name;
-        std::vector<double> times;
         std::vector<double> values;
     };
 

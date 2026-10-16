@@ -129,12 +129,12 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     EXPECT_EQ(traces[1].name, "z0");
 
     for (const auto& tr : traces) {
-        EXPECT_GE(tr.times.size(), 6u);
-        EXPECT_GE(tr.values.size(), 6u);
-        EXPECT_NEAR(tr.times.front(), 0.0, 1e-9);
-        EXPECT_NEAR(tr.times.back(), 5.0, 1e-9);
-        for (size_t i = 1; i < tr.times.size(); ++i) {
-            EXPECT_GT(tr.times[i], tr.times[i - 1]) << "Times must be monotonically increasing";
+        EXPECT_GE(result.snapshot_times.size(), 6u);
+        EXPECT_EQ(tr.values.size(), result.snapshot_times.size());
+        EXPECT_NEAR(result.snapshot_times.front(), 0.0, 1e-9);
+        EXPECT_NEAR(result.snapshot_times.back(), 5.0, 1e-9);
+        for (size_t i = 1; i < result.snapshot_times.size(); ++i) {
+            EXPECT_GT(result.snapshot_times[i], result.snapshot_times[i - 1]) << "Times must be monotonically increasing";
         }
     }
 
@@ -202,12 +202,12 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);
     const auto& tr = traces[0];
-    ASSERT_GE(tr.times.size(), 6u);
-    ASSERT_GE(tr.values.size(), 6u);
+    ASSERT_GE(result.snapshot_times.size(), 6u);
+    ASSERT_EQ(tr.values.size(), result.snapshot_times.size());
 
-    for (size_t i = 0; i < tr.times.size(); ++i) {
-        double expected = 500.0 + 100.0 * tr.times[i];
-        EXPECT_NEAR(tr.values[i], expected, 1e-6) << "Time-dependent Dirichlet eval failed at t=" << tr.times[i]
+    for (size_t i = 0; i < result.snapshot_times.size(); ++i) {
+        double expected = 500.0 + 100.0 * result.snapshot_times[i];
+        EXPECT_NEAR(tr.values[i], expected, 1e-6) << "Time-dependent Dirichlet eval failed at t=" << result.snapshot_times[i]
                                                   << " (expected " << expected << ", got " << tr.values[i] << ")";
     }
 }

@@ -14,7 +14,7 @@ namespace mhs::core {
             point_cell_offsets.assign(points.size() + 1, 0);
             for (const auto &vertices : cell_vertices)
                 for (auto v : vertices)
-                    ++point_cell_offsets.at(v + 1);
+                    ++point_cell_offsets[v + 1];
             std::partial_sum(point_cell_offsets.begin(), point_cell_offsets.end(), point_cell_offsets.begin());
             point_cell_ids.resize(point_cell_offsets.back());
             auto next = point_cell_offsets;
@@ -24,7 +24,7 @@ namespace mhs::core {
         }
         std::span<const CellId> incident_cells(Index p) const {
             return std::span(point_cell_ids)
-                .subspan(point_cell_offsets.at(p), point_cell_offsets.at(p + 1) - point_cell_offsets.at(p));
+                .subspan(point_cell_offsets[p], point_cell_offsets[p + 1] - point_cell_offsets[p]);
         }
     };
 } // namespace mhs::core

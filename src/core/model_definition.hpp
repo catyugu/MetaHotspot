@@ -15,7 +15,6 @@ namespace mhs::model {
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
     enum class Axis : uint8_t { X, Y, Z };
-    enum class FluidBoundaryKind : uint8_t { None, PressureInlet, MassFlowInlet, Outlet };
 
     struct ModelSettings {
         StudyType study_type = StudyType::Steady;
@@ -162,11 +161,23 @@ namespace mhs::model {
         Expression z;
     };
 
+    // Omitted incoming temperature uses the model's initial temperature.
+    struct PressureInlet {
+        double pressure = 0.0;
+        std::optional<double> temperature;
+    };
+    struct MassFlowInlet {
+        double mass_flow_rate = 0.0;
+        std::optional<double> temperature;
+    };
+    struct PressureOutlet {
+        double pressure = 0.0;
+        std::optional<double> backflow_temperature;
+    };
+    using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     struct FluidBoundarySpec {
         std::vector<FaceRegion> regions;
-        FluidBoundaryKind kind = FluidBoundaryKind::None;
-        double value = 0.0;
-        double inlet_temperature = std::numeric_limits<double>::quiet_NaN();
+        FluidBoundaryCondition condition;
     };
 
     struct ModelDefinition {

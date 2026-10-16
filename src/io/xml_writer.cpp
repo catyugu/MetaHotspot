@@ -48,7 +48,8 @@ namespace mhs::io {
 
     void write_xml(const std::string &input_path, const std::string &output_path, const mhs::core::Model &model,
                    std::span<const double> node_temperature,
-                   const std::vector<mhs::core::ProbeTrace> &observation_traces) {
+                   const std::vector<mhs::core::ProbeTrace> &observation_traces,
+                   std::span<const double> observation_times) {
         using namespace tinyxml2;
 
         const auto shape = model.output.cartesian_shape;
@@ -154,7 +155,7 @@ namespace mhs::io {
                 results_elem->InsertEndChild(target);
             }
 
-            refill_double_list(doc, target->FirstChildElement("Times"), trace.times, false);
+            refill_double_list(doc, target->FirstChildElement("Times"), observation_times, false);
             refill_double_list(doc, target->FirstChildElement("Values"), trace.values, true);
         }
 

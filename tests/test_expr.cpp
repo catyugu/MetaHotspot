@@ -32,6 +32,7 @@ namespace {
 
         mhs::core::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 3.0);
+        EXPECT_THROW(CompiledExpression::make_evaluator("x +", sym), std::runtime_error);
     }
 
 } // namespace
