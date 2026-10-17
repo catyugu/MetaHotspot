@@ -2,7 +2,7 @@
 
 本文件区分已证的固定实移代数、明确定义的全场动态目标与尚未建立的动态保证。
 本次数学核对见 [MetaHotspot 项目对话](https://chatgpt.com/g/g-p-6aa80d54d2608191adb78637c1211232/c/6abcaa95-3260-83ee-a2f5-3efec6022d6a)。
-历史端口测量与旧 vendor 常数只留在 `records/FAILURE_ARCHIVE.md`。
+历史端口路线的失败机制见 `records/FAILURE_ARCHIVE.md`；具体测量结果不在本目录文档重复，历史原始记录应通过对应实验归档或 Git 历史查阅。
 
 ## 0. 假设与验收对象
 
