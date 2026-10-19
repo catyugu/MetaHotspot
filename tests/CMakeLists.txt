@@ -15,11 +15,9 @@ target_link_libraries(mhs_tests PRIVATE
     mhs_solver
     mhs_io
     mhs_logging
-    gtest_main
+    GTest::gtest_main
 )
 
-target_include_directories(mhs_tests PRIVATE ${CMAKE_BINARY_DIR})
-target_include_directories(mhs_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-
+target_include_directories(mhs_tests PRIVATE ${PROJECT_BINARY_DIR})
 mhs_copy_runtime_dlls(mhs_tests)
 gtest_discover_tests(mhs_tests)

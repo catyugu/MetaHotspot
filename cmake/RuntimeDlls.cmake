@@ -3,20 +3,6 @@
 # needed because a Windows executable launched from the build tree must find
 # its DLLs next to itself. No-ops when the relevant dependency is absent.
 
-# Copy Intel oneTBB runtime DLL next to a Windows executable so it can be
-# launched from the build tree. No-op on non-Windows and when TBB is absent.
-function(mhs_copy_tbb_runtime TARGET_NAME)
-    if(TARGET TBB::tbb)
-        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TBB::tbb>
-            $<TARGET_FILE_DIR:${TARGET_NAME}>
-            COMMENT "Copying TBB runtime to ${TARGET_NAME}"
-        )
-    endif()
-endfunction()
-
-
 # Copy Intel oneMKL runtime DLLs next to a Windows executable. The set of
 # DLLs depends on the link type (sdl vs static) and threading runtime
 # (intel_thread vs openmp); we glob via CONFIGURE_DEPENDS so adding a new
@@ -40,6 +26,12 @@ function(mhs_copy_mkl_runtime TARGET_NAME)
 endfunction()
 
 function(mhs_copy_runtime_dlls TARGET_NAME)
-    mhs_copy_tbb_runtime(${TARGET_NAME})
+    if(WIN32)
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy -t "$<TARGET_FILE_DIR:${TARGET_NAME}>"
+                $<TARGET_RUNTIME_DLLS:${TARGET_NAME}>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
     mhs_copy_mkl_runtime(${TARGET_NAME})
 endfunction()

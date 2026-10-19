@@ -178,6 +178,10 @@ namespace mhs::sim {
                         Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
                             (cuts[2][z - 1] + cuts[2][z]) / 2};
                         const auto [l, b] = classify_point(layers, p);
+                        // A block edge can cut a control volume and leave a piece
+                        // outside every block. Such a piece carries no source.
+                        if (l == invalidIndex)
+                            continue;
                         const auto& block = layers[l].blocks[b];
                         material = block.material_id;
                         const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])

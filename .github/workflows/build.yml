@@ -1,0 +1,42 @@
+name: Build and package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, cc: gcc, cxx: g++, config: Release, generator: Ninja, label: linux-gcc}
+          - {os: ubuntu-latest, cc: clang-18, cxx: clang++-18, config: Debug, generator: Ninja, label: linux-clang}
+          - {os: macos-latest, cc: clang, cxx: clang++, config: Release, generator: Ninja, label: macos-clang}
+          - {os: windows-latest, cc: cl, cxx: cl, config: Release, generator: Ninja, label: windows-msvc}
+          - {os: windows-latest, cc: clang-cl, cxx: clang-cl, config: Debug, generator: Ninja, label: windows-clang}
+          - {os: windows-2022, cc: cl, cxx: cl, config: Debug, generator: 'Visual Studio 17 2022', label: windows-multiconfig}
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - run: python -m pip install 'cmake>=3.30' ninja
+      - if: matrix.label == 'linux-clang'
+        run: sudo apt-get update && sudo apt-get install -y clang-18 libomp-18-dev
+      - if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+      - run: python ci/check_build.py --config ${{ matrix.config }} --generator "${{ matrix.generator }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
+          path: build/MetaHotspot-*.zip

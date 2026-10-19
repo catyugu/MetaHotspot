@@ -1,5 +1,78 @@
 # MetaHotspot
 
+三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行工具。
+构建与安装布局参照 [modern-cpp-template](https://github.com/catyugu/modern-cpp-template)，保留现有模块和 CPM 依赖获取方式。
+
+## 下载与构建
+
+需要 Git、CMake 3.26+ 和支持 C++20 的编译器。Windows 使用 MSVC 或 clang-cl，
+在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang。
+CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
+muparser 默认启用 OpenMP；macOS 需安装 `libomp`（`brew install libomp`），
+也可通过 `-DENABLE_OPENMP=OFF` 关闭。MKL 默认关闭，仅使用 Pardiso 时需要安装并启用。
+
+```sh
+git clone https://github.com/catyugu/MetaHotspot.git
+cd MetaHotspot
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+使用 Ninja 时，在配置命令中加入 `-G Ninja`。`run_tests.py` 仍可运行默认 `build/` 下的单配置测试；
+Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
+
+| 选项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `MHS_BUILD_TESTS` | 顶层 ON，子项目 OFF | 构建现有单元测试 |
+| `MHS_BUILD_TOOLS` | 顶层 ON，子项目 OFF | 构建 `metahotspot` XML 命令行工具 |
+| `MHS_BUILD_C_API` | ON | 构建 `mhs_c_api` 动态库，供 C/Python 调用 |
+| `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
+| `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
+| `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
+
+C++ 模块保持静态库，C API 保持动态库。只构建 C++ 库时可关闭测试、工具和 C API。
+`CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。
+
+## 安装与打包
+
+```sh
+cmake --install build --config Release --prefix ./build/package
+cpack --config build/CPackConfig.cmake -C Release -B build
+```
+
+ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
+CMake 配置和可选命令行工具。包对应构建时的平台、架构、编译器及配置；
+运行环境仍需相应的 C++/OpenMP 运行库。启用 MKL 的包还需要对应 MKL 运行环境。
+GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 ZIP artifact，下载时选择对应任务。
+
+实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
+`CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
+两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
+通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
+C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包仍位于 `python/`，
+通过 `MHS_CAPI_PATH` 指定构建或安装后的 C API 动态库。
+
+各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
+头文件路径及公开依赖；调用方无需手动补充 `src/` 或第三方头文件路径。
+仓库在顶层统一设置 C++20，单独使用组件的外部项目也应采用 C++20。
+
+| 目标 | 组件 |
+| --- | --- |
+| `mhs::core` | 模型定义、离散网格和运行期数据类型 |
+| `mhs::expression` | 表达式编译与求值 |
+| `mhs::amg` | AMG 迭代求解器实现 |
+| `mhs::linear` | 线性求解器接口与工厂、可选 Pardiso 实现 |
+| `mhs::compiler` | 模型与几何编译 |
+| `mhs::solver` | 装配、求解、时间推进和后处理 |
+| `mhs::io` | XML 读取及 XML/VTU 输出 |
+| `mhs::logging` | 日志接口 |
+
+所有已安装的组件头文件继续开放，`mhs::metahotspot` 保留为主要 C++ 组件的统一入口。
+
+`python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
+可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
+
 ## 规范
 
 - 语言：C++20
