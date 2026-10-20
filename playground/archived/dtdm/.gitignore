@@ -1,0 +1,8 @@
+# Local extracts of the paper; never committed.
+paper.txt
+paper_clean.txt
+paper_layout.txt
+figs-*.png
+
+# Console logs of local runs; the report quotes what matters.
+data/

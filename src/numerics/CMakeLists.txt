@@ -1,9 +1,9 @@
 add_library(mhs_expression STATIC expression/expr.cpp)
-target_include_directories(mhs_expression PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(mhs_expression PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(mhs_expression PRIVATE
-    mhs_options
+    $<BUILD_INTERFACE:mhs_options>
     TBB::tbb
-    muparser
+    muparser::muparser
 )
 
 set(_linear_sources
@@ -18,11 +18,10 @@ set(_linear_sources
 # which breaks the strict-warning mhs_linear. We only take AMGCL's headers.
 add_library(mhs_amg STATIC linear/amg_solver.cpp)
 target_include_directories(mhs_amg PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src
     ${amgcl_SOURCE_DIR}
 )
 target_link_libraries(mhs_amg PUBLIC Eigen3::Eigen)
-target_compile_features(mhs_amg PRIVATE cxx_std_20)
 target_compile_definitions(mhs_amg PRIVATE AMGCL_NO_BOOST)
 # AMGCL emits -Wunsafe-buffer-usage in its smoothed-aggregation templates on
 # clang/clang-cl; harmless for us, but suppress so the log stays readable.
@@ -35,9 +34,9 @@ if(MHS_ENABLE_PARDISO)
 endif()
 
 add_library(mhs_linear STATIC ${_linear_sources})
-target_include_directories(mhs_linear PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(mhs_linear PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(mhs_linear PUBLIC Eigen3::Eigen)
-target_link_libraries(mhs_linear PRIVATE mhs_options)
+target_link_libraries(mhs_linear PRIVATE $<BUILD_INTERFACE:mhs_options>)
 target_link_libraries(mhs_linear PRIVATE mhs_amg)
 
 if(MHS_ENABLE_PARDISO)

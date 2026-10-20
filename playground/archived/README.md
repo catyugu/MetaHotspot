@@ -5,7 +5,11 @@
 | 工作区 | 封存日期 | 状态 |
 | --- | --- | --- |
 | `adaptive_bci_sampling/` | 2026-10-18 | 全场误差与参数采样路线封存，不再启用 |
+| `dtdm/` | 2026-10-20 | ASP-DAC 2026 DTDM 复现封存，不再维护 |
+| `hdim/` | 2026-10-20 | ISEDA 2025 层级分解复现封存，不再维护 |
 
 `adaptive_bci_sampling/` 从提交 `c776a7552366b322ad1cd043dff622c7e449dba6` 原样迁入。内部 README 的“维护中”状态、运行命令和旧路径属于历史记录，不代表当前维护承诺；迁移后不修补其运行环境或路径。
+
+`dtdm/` 与 `hdim/` 从 `playground/` 根目录原样迁入，并已从 `playground/CMakeLists.txt` 移除 `add_subdirectory`，构建系统中不再存在 `mhs_dtdm`、`mhs_hdim` 目标。两者 CMakeLists 与 README 中残留的构建命令属于历史记录。
 
 后续研究在独立工作区开展，不导入或重新启用本目录下的脚本。

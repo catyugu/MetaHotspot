@@ -12,6 +12,7 @@ include(CPM)
 CPMAddPackage(
     GITLAB_REPOSITORY libeigen/eigen
     GIT_TAG 5.0.0
+    OPTIONS "EIGEN_BUILD_CMAKE_PACKAGE ON"
 )
 
 # ----------------------------------------------------------------------------
@@ -22,6 +23,7 @@ CPMAddPackage(
     NAME spdlog
     GITHUB_REPOSITORY gabime/spdlog
     GIT_TAG v1.17.0
+    OPTIONS "SPDLOG_INSTALL ${MHS_INSTALL}"
 )
 
 # ----------------------------------------------------------------------------

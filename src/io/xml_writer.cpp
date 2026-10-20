@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -117,13 +118,13 @@ namespace mhs::io {
 
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
         if (sx)
-            sx->SetText(node_nx);
+            sx->SetText(static_cast<std::uint64_t>(node_nx));
         XMLElement* sy = values_elem->FirstChildElement("SizeY");
         if (sy)
-            sy->SetText(node_ny);
+            sy->SetText(static_cast<std::uint64_t>(node_ny));
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
-            sz->SetText(node_nz);
+            sz->SetText(static_cast<std::uint64_t>(node_nz));
 
         for (const auto& trace : observation_traces) {
             XMLElement* target = nullptr;
