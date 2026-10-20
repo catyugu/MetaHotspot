@@ -26,7 +26,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 ## 求解约定
 
-- 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
+- 稳态是在 `t = 0` 执行一次非线性求解；瞬态在 `nonlinear_solve` 的各次迭代中执行 `assemble → build_system`，收敛后由 Adaptive 策略执行 `estimate_error`；Fixed 策略直接接受收敛步。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
@@ -63,7 +63,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 1. POD 与纯函数优先，不建立多层继承体系。
 2. `mhs` 只作品牌命名空间，不重导出或定义类型。
-3. 公共 API 最多两层命名空间；`detail` 只保存跨文件私有实现。
+3. 公共领域接口使用两层命名空间；内部实现包括 `mhs::sim::fluid` 和 `mhs::sim::time_scheme`。
 4. 头文件禁止 `using namespace`。
 5. 匿名命名空间用于单文件私有实现。
 6. 外部格式字符串止于 IO；运行期模型不保存 XML 表示。

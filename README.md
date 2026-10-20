@@ -1,7 +1,7 @@
 # MetaHotspot
 
 三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行工具。
-构建与安装布局参照 [modern-cpp-template](https://github.com/catyugu/modern-cpp-template)，保留现有模块和 CPM 依赖获取方式。
+使用 CMake 构建与安装，通过 CPM 获取第三方依赖。
 
 ## 下载与构建
 
@@ -19,7 +19,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-使用 Ninja 时，在配置命令中加入 `-G Ninja`。`run_tests.py` 仍可运行默认 `build/` 下的单配置测试；
+使用 Ninja 时，在配置命令中加入 `-G Ninja`。`run_tests.py` 可运行默认 `build/` 下的单配置测试；
 Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
 
 | 选项 | 默认值 | 用途 |
@@ -31,7 +31,7 @@ Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
 | `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
-C++ 模块保持静态库，C API 保持动态库。只构建 C++ 库时可关闭测试、工具和 C API。
+`mhs_core` 和 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、工具和 C API。
 `CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。
 
 ## 安装与打包
@@ -50,7 +50,7 @@ GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 Z
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
 两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
 通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
-C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包仍位于 `python/`，
+C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `python/`，
 通过 `MHS_CAPI_PATH` 指定构建或安装后的 C API 动态库。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
@@ -68,7 +68,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包仍位于 `p
 | `mhs::io` | XML 读取及 XML/VTU 输出 |
 | `mhs::logging` | 日志接口 |
 
-所有已安装的组件头文件继续开放，`mhs::metahotspot` 保留为主要 C++ 组件的统一入口。
+安装包包含各组件的 `.hpp` 头文件，`mhs::metahotspot` 是主要 C++ 组件的统一入口。
 
 `python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
 可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
@@ -78,14 +78,14 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包仍位于 `p
 - 语言：C++20
 - 构建系统：CMake
 - 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
-- 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
+- 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。实例化 AMGCL 的 `mhs_amg` 不使用这组严格选项。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
-- 单元测试：每个模块一个测试套件，不要过于零碎。
-- 回归测试：应包括单元测试和案例行为验证。回归测试的结果会与 `cases/` 目录中的参考输出文件进行核对。可以使用 `pytest` 方便地进行回归测试。
+- 单元测试：`tests/` 中的 GTest 用例统一链接到 `mhs_tests`，由 CTest 发现并运行。
+- 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
-- 日志：放弃原生流或格式化输入。应封装一个成熟的日志库（如 spdlog），以实现结构化、高性能的日志。默认级别应为 `INFO`。热循环中如需打印，则应该使用 `DEBUG`。
-- 错误处理：模块可通过 `std::exception` 报告错误；CLI 入口统一捕获、记录并退出。可恢复问题应记录警告和回退值。
+- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
+- 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
 
 ## 架构
 
@@ -95,12 +95,12 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包仍位于 `p
 - **`mhs_core`**：header-only 的显式控制体、面片与输出视图契约，作为 compiler、solver 和结果 IO 的稳定依赖边界。
 - **`mhs_compiler`**：消费有序 `ModelDefinition` 和给定网格，完成几何区域/热源的体积投影、边界积分投影、表达式编译和冻结流场构建。
 - **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
-- **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
+- **`mhs_expression`**：muparser 与 TBB 表达式封装。
 - **`mhs_linear`**：AMGCL/Eigen 迭代求解和可选 MKL/Pardiso 封装；与建模代码的增量编译隔离。
 - **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
 - **`mhs_logging`**：spdlog 封装。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 CTM 使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
 
 当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
@@ -138,7 +138,8 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
-- **GTest**：测试框架。每个模块一个测试套件。
+- **AMGCL**：代数多重网格预条件与 CG 求解，由 `mhs_amg` 封装。
+- **GTest**：单元测试框架，用例由 CTest 发现并运行。
 - **tbb**: 用于并行化和 CPU 资源调度。
 
 ## 编号与数据顺序
