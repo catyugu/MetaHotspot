@@ -15,7 +15,7 @@ cmake -S . -B build
 cmake --build build --parallel --config Release
 
 # Run tests
-python run_tests.py
+ctest --test-dir build
 
 # Run cases
 python run_cases.py

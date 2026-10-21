@@ -19,9 +19,6 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-使用 Ninja 时，在配置命令中加入 `-G Ninja`。`run_tests.py` 可运行默认 `build/` 下的单配置测试；
-Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
-
 | 选项 | 默认值 | 用途 |
 | --- | --- | --- |
 | `MHS_BUILD_TESTS` | 顶层 ON，子项目 OFF | 构建现有单元测试 |
