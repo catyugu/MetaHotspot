@@ -8,8 +8,7 @@ if(MHS_BUILD_C_API)
     add_subdirectory(api)
 endif()
 
-# All C++ components share one header layout and the same build/install names.
-foreach(_component core expression amg linear compiler solver io logging)
+foreach(_component core expression linear compiler solver io logging)
     add_library(mhs::${_component} ALIAS mhs_${_component})
     set_target_properties(mhs_${_component} PROPERTIES EXPORT_NAME ${_component})
     target_include_directories(mhs_${_component} INTERFACE

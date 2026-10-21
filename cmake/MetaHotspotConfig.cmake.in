@@ -1,15 +1,20 @@
 @PACKAGE_INIT@
+
 include(CMakeFindDependencyMacro)
-find_dependency(Eigen3 5 CONFIG)
-find_dependency(spdlog 1.17 CONFIG)
-find_dependency(tinyxml2 11 CONFIG)
-if(@MHS_NEEDS_OPENMP@)
-    find_dependency(OpenMP COMPONENTS CXX)
-endif()
-find_dependency(muparser 2.3.5 CONFIG)
-find_dependency(TBB 2023 CONFIG)
+
+# The same packages cmake/Dependencies.cmake acquires, at the versions declared
+# there: every one of them is linked into an installed library, so a consumer
+# has to be able to find it.
+find_dependency(Eigen3 @MHS_EIGEN_VERSION@ CONFIG)
+find_dependency(spdlog @MHS_SPDLOG_VERSION@ CONFIG)
+find_dependency(tinyxml2 @MHS_TINYXML2_VERSION@ CONFIG)
+find_dependency(muparser @MHS_MUPARSER_VERSION@ CONFIG)
+find_dependency(TBB @MHS_TBB_VERSION@ CONFIG)
+find_dependency(OpenMP COMPONENTS CXX)
 if(@MHS_ENABLE_PARDISO@)
     find_dependency(MKL CONFIG)
 endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/MetaHotspotTargets.cmake")
+
 check_required_components(MetaHotspot)

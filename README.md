@@ -1,15 +1,15 @@
 # MetaHotspot
 
-三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行工具。
+三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行应用。
 使用 CMake 构建与安装，通过 CPM 获取第三方依赖。
 
 ## 下载与构建
 
-需要 Git、CMake 3.26+ 和支持 C++20 的编译器。Windows 使用 MSVC 或 clang-cl，
-在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang。
+需要 Git、CMake 3.26+、支持 C++20 的编译器和 OpenMP 运行环境。Windows 使用 MSVC 或 clang-cl，
+在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
+（`brew install libomp`）。
 CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
-muparser 默认启用 OpenMP；macOS 需安装 `libomp`（`brew install libomp`），
-也可通过 `-DENABLE_OPENMP=OFF` 关闭。MKL 默认关闭，仅使用 Pardiso 时需要安装并启用。
+MKL 默认关闭，仅使用 Pardiso 时需要安装并启用。
 
 ```sh
 git clone https://github.com/catyugu/MetaHotspot.git
@@ -25,14 +25,14 @@ Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
 | 选项 | 默认值 | 用途 |
 | --- | --- | --- |
 | `MHS_BUILD_TESTS` | 顶层 ON，子项目 OFF | 构建现有单元测试 |
-| `MHS_BUILD_TOOLS` | 顶层 ON，子项目 OFF | 构建 `metahotspot` XML 命令行工具 |
+| `MHS_BUILD_APPS` | 顶层 ON，子项目 OFF | 构建 `metahotspot` 命令行应用 |
 | `MHS_BUILD_C_API` | ON | 构建 `mhs_c_api` 动态库，供 C/Python 调用 |
 | `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
 | `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
 | `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
-`mhs_core` 和 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、工具和 C API。
+`mhs_core` 和 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
 `CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。
 
 ## 安装与打包
@@ -43,7 +43,7 @@ cpack --config build/CPackConfig.cmake -C Release -B build
 ```
 
 ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
-CMake 配置和可选命令行工具。包对应构建时的平台、架构、编译器及配置；
+CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置；
 运行环境仍需相应的 C++/OpenMP 运行库。启用 MKL 的包还需要对应 MKL 运行环境。
 GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 ZIP artifact，下载时选择对应任务。
 
@@ -59,7 +59,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `pyth
 仓库在顶层统一设置 C++20，单独使用组件的外部项目也应采用 C++20。
 可链接目标及其职责以[项目结构](docs/design/project-structure.md)为准，此处不重复。
 
-安装包包含各组件的 `.hpp` 头文件，`mhs::metahotspot` 是主要 C++ 组件的统一入口。
+安装包包含各组件显式注册的公开头文件，`mhs::metahotspot` 是主要 C++ 组件的统一入口。
 
 `python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
 可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
@@ -69,7 +69,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `pyth
 - 语言：C++20
 - 构建系统：CMake
 - 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
-- 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。实例化 AMGCL 的 `mhs_amg` 不使用这组严格选项。
+- 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
 - 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
@@ -116,11 +116,12 @@ metahotspot --output-vtu /tmp/out.vtu \
 ## 第三方依赖
 
 - **CPM**：用于引入其余依赖项。
-- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
+- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，仅私链，不进安装包接口。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
-- **AMGCL**：代数多重网格预条件与 CG 求解，由 `mhs_amg` 封装。
+- **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
+- **OpenMP**：muparser 与 AMGCL 的线程后端。
 - **GTest**：单元测试框架，用例由 CTest 发现并运行。
 - **tbb**: 用于并行化和 CPU 资源调度。
 

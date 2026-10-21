@@ -140,19 +140,18 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
 
-    int node_ny = (model.output.cartesian_shape[1] - 1) + 1;
-    int node_nz = (model.output.cartesian_shape[2] - 1) + 1;
+    const std::size_t node_ny = model.output.cartesian_shape[1];
+    const std::size_t node_nz = model.output.cartesian_shape[2];
 
     // Corner node (vx=0, vy=0, vz=0) touches Dirichlet Z-bottom AND
     // Neumann Y-bottom AND Neumann X-bottom. Dirichlet must win.
-    int corner_idx = 0 * node_ny * node_nz + 0 * node_nz + 0;
-    EXPECT_NEAR(node_T[corner_idx], 500.0, 1e-6)
+    EXPECT_NEAR(node_T[0], 500.0, 1e-6)
         << "Corner node touching Dirichlet must have exactly 500K, not an average";
 
     // All nodes on Z=0 face should be 500K (they all touch Dirichlet)
-    for (int vx = 0; vx < (model.output.cartesian_shape[0] - 1) + 1; vx++) {
-        for (int vy = 0; vy < (model.output.cartesian_shape[1] - 1) + 1; vy++) {
-            int idx = vx * node_ny * node_nz + vy * node_nz + 0;
+    for (std::size_t vx = 0; vx < model.output.cartesian_shape[0]; vx++) {
+        for (std::size_t vy = 0; vy < model.output.cartesian_shape[1]; vy++) {
+            const std::size_t idx = vx * node_ny * node_nz + vy * node_nz;
             EXPECT_NEAR(node_T[idx], 500.0, 1e-6) << "Z=0 node at (vx=" << vx << ", vy=" << vy << ") must be 500K";
         }
     }

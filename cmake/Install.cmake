@@ -1,33 +1,39 @@
+# Install rules and CMake package export. Included from the top-level
+# CMakeLists.txt when MHS_INSTALL is on.
+
 include(CMakePackageConfigHelpers)
 
-get_target_property(_muparser_links muparser INTERFACE_LINK_LIBRARIES)
-set(MHS_NEEDS_OPENMP OFF)
-if("${_muparser_links}" MATCHES "OpenMP::OpenMP_CXX")
-    set(MHS_NEEDS_OPENMP ON)
-endif()
-
-set(_mhs_targets mhs_metahotspot mhs_core mhs_expression mhs_amg mhs_linear
+set(_mhs_targets mhs_metahotspot mhs_core mhs_expression mhs_linear
     mhs_compiler mhs_solver mhs_io mhs_logging)
 if(MHS_BUILD_C_API)
     list(APPEND _mhs_targets mhs_c_api)
 endif()
+
 install(TARGETS ${_mhs_targets} EXPORT MetaHotspotTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/src/"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/metahotspot
-    FILES_MATCHING PATTERN "*.hpp")
-if(MHS_BUILD_TOOLS)
+
+if(MHS_BUILD_C_API)
+    install(FILES "${PROJECT_SOURCE_DIR}/include/metahotspot.h"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+if(MHS_BUILD_APPS)
     install(TARGETS metahotspot RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
-install(FILES "${PROJECT_SOURCE_DIR}/README.md" DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+# Licence and readme ship with the installed package.
+install(FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/README.md"
+    DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
 install(EXPORT MetaHotspotTargets NAMESPACE mhs::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MetaHotspot)
+
 configure_package_config_file("${PROJECT_SOURCE_DIR}/cmake/MetaHotspotConfig.cmake.in"
     "${PROJECT_BINARY_DIR}/MetaHotspotConfig.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MetaHotspot)
+# Same compatibility boundary as the shared library SONAME.
 write_basic_package_version_file("${PROJECT_BINARY_DIR}/MetaHotspotConfigVersion.cmake"
     VERSION ${MHS_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES "${PROJECT_BINARY_DIR}/MetaHotspotConfig.cmake"

@@ -1,8 +1,8 @@
-"""Build, test, install, and package MetaHotspot."""
+"""Build, test, install and package MetaHotspot."""
 
 import argparse
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 
 def run(*args):
@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--generator", default="Ninja")
     parser.add_argument("--cmake-arg", action="append", default=[])
     args = parser.parse_args()
+
     root = Path(__file__).resolve().parents[1]
     build = Path(args.build_dir).resolve()
     prefix = build / "package"
@@ -25,7 +26,9 @@ def main():
     run("cmake", "--build", build, "--config", args.config, "--parallel", "4")
     run("ctest", "--test-dir", build, "-C", args.config, "--output-on-failure")
     run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
-    run("cpack", "--config", build / "CPackConfig.cmake", "-C", args.config, "-B", build)
+    run(
+        "cpack", "--config", build / "CPackConfig.cmake", "-C", args.config, "-B", build
+    )
 
 
 if __name__ == "__main__":

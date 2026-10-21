@@ -1,10 +1,20 @@
 cmake_minimum_required(VERSION 3.26)
 
+# The same source added twice (two subprojects each add_subdirectory this repo)
+# would define the targets twice; leave the existing ones in place instead.
 if(TARGET mhs::metahotspot)
     return()
 endif()
 project(MetaHotspot LANGUAGES CXX)
+
+# The version lives in project-scope variables rather than project(VERSION): a
+# subproject's project(VERSION) also sets CMAKE_PROJECT_VERSION, which the
+# embedding project would then report as its own version.
 set(MHS_VERSION 1.0.0)
+# SONAME major and the find_package compatibility boundary; bump it only for a
+# binary-incompatible release.
+set(MHS_ABI_VERSION 1)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -17,21 +27,22 @@ if(PROJECT_IS_TOP_LEVEL)
     endif()
 endif()
 
+# Standalone builds default to everything on; as a subproject only the library.
 option(MHS_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
-option(MHS_BUILD_TOOLS "Build the XML command-line tool" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_BUILD_APPS "Build the command-line applications" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_BUILD_C_API "Build the shared C/Python API" ON)
 option(MHS_INSTALL "Install libraries, headers and CMake package" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_WERROR "Treat project warnings as errors" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_VERBOSE "Enable DEBUG level logging" OFF)
 option(USE_MKL "Enable optional Intel MKL-backed Pardiso solver" OFF)
 
-# Preserve the existing source cache and allow an explicit shared cache.
-if(NOT DEFINED CPM_SOURCE_CACHE AND NOT DEFINED ENV{CPM_SOURCE_CACHE})
-    set(CPM_SOURCE_CACHE "${PROJECT_SOURCE_DIR}/.cache/cpm" CACHE PATH "CPM source cache")
-endif()
 include(GNUInstallDirs)
+# Dependencies come from installed packages or the pinned CPM versions only.
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(cmake/MhsOptions.cmake)
+include(cmake/Headers.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/RuntimeDlls.cmake)
 add_subdirectory(src)
@@ -46,10 +57,9 @@ if(MHS_BUILD_TESTS)
     if(PROJECT_IS_TOP_LEVEL)
         enable_testing()
     endif()
-    configure_file(cmake/config.h.in "${PROJECT_BINARY_DIR}/config.h" @ONLY)
     add_subdirectory(tests)
 endif()
-if(MHS_BUILD_TOOLS)
+if(MHS_BUILD_APPS)
     add_subdirectory(apps/metahotspot)
 endif()
 if(MHS_INSTALL)
