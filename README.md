@@ -29,6 +29,7 @@ Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
 | `MHS_BUILD_C_API` | ON | 构建 `mhs_c_api` 动态库，供 C/Python 调用 |
 | `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
+| `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
 | `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
 `mhs_core` 和 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、工具和 C API。
@@ -56,17 +57,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `pyth
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
 头文件路径及公开依赖；调用方无需手动补充 `src/` 或第三方头文件路径。
 仓库在顶层统一设置 C++20，单独使用组件的外部项目也应采用 C++20。
-
-| 目标 | 组件 |
-| --- | --- |
-| `mhs::core` | 模型定义、离散网格和运行期数据类型 |
-| `mhs::expression` | 表达式编译与求值 |
-| `mhs::amg` | AMG 迭代求解器实现 |
-| `mhs::linear` | 线性求解器接口与工厂、可选 Pardiso 实现 |
-| `mhs::compiler` | 模型与几何编译 |
-| `mhs::solver` | 装配、求解、时间推进和后处理 |
-| `mhs::io` | XML 读取及 XML/VTU 输出 |
-| `mhs::logging` | 日志接口 |
+可链接目标及其职责以[项目结构](docs/design/project-structure.md)为准，此处不重复。
 
 安装包包含各组件的 `.hpp` 头文件，`mhs::metahotspot` 是主要 C++ 组件的统一入口。
 
@@ -81,24 +72,15 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `pyth
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。实例化 AMGCL 的 `mhs_amg` 不使用这组严格选项。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
-- 单元测试：`tests/` 中的 GTest 用例统一链接到 `mhs_tests`，由 CTest 发现并运行。
+- 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
 - 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
-- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
+- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`MHS_VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
 - 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
 
 ## 架构
 
-### 构建目标
-
-- **`src/core/model_definition.hpp`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
-- **`mhs_core`**：header-only 的显式控制体、面片与输出视图契约，作为 compiler、solver 和结果 IO 的稳定依赖边界。
-- **`mhs_compiler`**：消费有序 `ModelDefinition` 和给定网格，完成几何区域/热源的体积投影、边界积分投影、表达式编译和冻结流场构建。
-- **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
-- **`mhs_expression`**：muparser 与 TBB 表达式封装。
-- **`mhs_linear`**：AMGCL/Eigen 迭代求解和可选 MKL/Pardiso 封装；与建模代码的增量编译隔离。
-- **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
-- **`mhs_logging`**：spdlog 封装。
+构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
 运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
 

@@ -4,6 +4,6 @@ target_include_directories(mhs_logging PRIVATE ${PROJECT_SOURCE_DIR}/src)
 # so consumers like mhs_solver need the include dir transitively.
 target_link_libraries(mhs_logging PUBLIC spdlog::spdlog PRIVATE $<BUILD_INTERFACE:mhs_options>)
 
-if(VERBOSE)
-    target_compile_definitions(mhs_logging PRIVATE VERBOSE)
+if(MHS_VERBOSE)
+    target_compile_definitions(mhs_logging PRIVATE MHS_VERBOSE)
 endif()

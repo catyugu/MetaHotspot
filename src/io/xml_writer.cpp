@@ -144,6 +144,9 @@ namespace mhs::io {
                 target = doc.NewElement("a:anyType");
                 target->SetAttribute("i:type", "Result0DTransient");
 
+                // The downstream front-end reader matches this label verbatim,
+                // so it is a fixed value of the output contract, not a
+                // localizable string. Do not translate it.
                 XMLElement* physics = doc.NewElement("PhysicsName");
                 physics->SetText("温度");
                 target->InsertEndChild(physics);

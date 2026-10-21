@@ -29,7 +29,6 @@
 | `mhs`             | 品牌前缀；不定义或重导出类型         |
 | `mhs::model`      | authoring model 数据类型           |
 | `mhs::core`       | 运行期数据契约、表达式句柄和共享枚举 |
-| `mhs::utils`      | 网格、采样和物理辅助函数             |
 | `mhs::sim`        | 编译、组装、数值求解和调度           |
 | `mhs::sim::fluid` | 冻结流场构建及流热装配               |
 | `mhs::io`         | 输入输出适配                         |

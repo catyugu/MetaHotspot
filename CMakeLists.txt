@@ -22,7 +22,7 @@ option(MHS_BUILD_TOOLS "Build the XML command-line tool" ${PROJECT_IS_TOP_LEVEL}
 option(MHS_BUILD_C_API "Build the shared C/Python API" ON)
 option(MHS_INSTALL "Install libraries, headers and CMake package" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_WERROR "Treat project warnings as errors" ${PROJECT_IS_TOP_LEVEL})
-option(VERBOSE "Enable DEBUG level logging" OFF)
+option(MHS_VERBOSE "Enable DEBUG level logging" OFF)
 option(USE_MKL "Enable optional Intel MKL-backed Pardiso solver" OFF)
 
 # Preserve the existing source cache and allow an explicit shared cache.

@@ -6,15 +6,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 ## 架构边界
 
-| 目标             | 职责                                          |
-| ---------------- | --------------------------------------------- |
-| `mhs_core`       | header-only 运行期数据契约和网格助手          |
-| `mhs_compiler`   | 物理定义与给定网格 → 离散模型及冻结流场 |
-| `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
-| `mhs_expression` | muparser 与 TBB 表达式封装                    |
-| `mhs_linear`     | AMGCL/Eigen 迭代求解及可选 MKL/Pardiso 封装   |
-| `mhs_io`         | XML 输入、XML/VTU 输出及外部格式适配          |
-| `mhs_logging`    | spdlog 封装                                   |
+构建目标划分、目录归属和命名空间规则以[项目结构](docs/design/project-structure.md)为准，不在此重复。
 
 依赖方向：
 
