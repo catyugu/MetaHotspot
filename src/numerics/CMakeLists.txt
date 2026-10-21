@@ -28,6 +28,14 @@ target_link_libraries(mhs_linear
     OpenMP::OpenMP_CXX
 )
 
+# amgcl is third-party template code and this is the only TU that instantiates
+# it. MSVC's /external warning level does not cover its back-end C47XX
+# diagnostics, so the one that fires there (C4701, "potentially uninitialized
+# local variable") is turned off for this file alone rather than for the target.
+set_source_files_properties(linear/amg_solver.cpp PROPERTIES
+    COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4701>"
+)
+
 if(MHS_ENABLE_PARDISO)
     target_link_libraries(mhs_linear PUBLIC MKL::MKL)
     target_compile_definitions(mhs_linear PUBLIC MHS_ENABLE_PARDISO)
