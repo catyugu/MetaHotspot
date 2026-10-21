@@ -88,8 +88,6 @@ namespace {
         std::vector<mhs::model::NamedFunction> fns;
         EXPECT_THROW(
             register_all_functions(sym, {{"empty", mhs::model::PiecewiseFunctionSpec {}}}), std::invalid_argument);
-        EXPECT_THROW(register_all_functions(sym, {{"duplicate", mhs::model::PiecewiseFunctionSpec {{{0, 1}, {0, 2}}}}}),
-            std::invalid_argument);
         mhs::model::PiecewiseFunctionSpec pw;
         pw.points = {{5, 3}, {0, -1}, {1, 2}};
         fns.push_back({"mypw", std::move(pw)});

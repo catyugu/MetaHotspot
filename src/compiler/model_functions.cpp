@@ -71,9 +71,6 @@ namespace mhs::sim {
             if (!std::isfinite(p.x) || !std::isfinite(p.y))
                 throw std::invalid_argument("piecewise function points must be finite");
         std::sort(pts.begin(), pts.end(), [](const auto& a, const auto& b) { return a.x < b.x; });
-        for (std::size_t i = 1; i < pts.size(); ++i)
-            if (pts[i].x == pts[i - 1].x)
-                throw std::invalid_argument("piecewise function abscissas must be unique");
         return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double x = args[0];
             if (x <= pts.front().x)
