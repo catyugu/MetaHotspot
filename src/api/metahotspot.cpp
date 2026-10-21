@@ -1,5 +1,5 @@
 /* Implementation of the MetaHotspot C API. */
-#include "metahotspot.h"
+#include "metahotspot_c_api.h"
 #include "api/internal.h"
 
 #include "compiler/model_compiler.hpp"

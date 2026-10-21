@@ -10,7 +10,7 @@ Large control-volume models require compact storage and predictable iteration wi
 
 ## Decision
 
-Store cell geometry and face patches in contiguous vectors, adjacency in CSR arrays, and physical attributes in separate arrays and expression tables. See `src/core/discrete_mesh.hpp` and `src/core/model.hpp`. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the compiler.
+Store cell geometry and face patches in contiguous vectors, adjacency in CSR arrays, and physical attributes in separate arrays and expression tables. See `include/metahotspot/core/discrete_mesh.hpp` and `include/metahotspot/core/model.hpp`. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the compiler.
 
 ## Rationale
 

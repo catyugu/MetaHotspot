@@ -45,5 +45,5 @@ Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::s
 
 ## Notes
 
-- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `src/numerics/expression/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
+- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `include/metahotspot/numerics/expression/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
 - The runtime model exposes compiled handles; nonconstant handles retain their formula strings internally to construct each thread's parser.

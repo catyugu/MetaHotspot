@@ -42,7 +42,6 @@ set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(cmake/MhsOptions.cmake)
-include(cmake/Headers.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/RuntimeDlls.cmake)
 add_subdirectory(src)

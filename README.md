@@ -32,7 +32,7 @@ Visual Studio 等多配置生成器使用上面的 `ctest -C Release`。
 | `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
 | `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
-`mhs_core` 和 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
+`mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
 `CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。
 
 ## 安装与打包
@@ -51,7 +51,7 @@ GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 Z
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
 两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
 通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
-C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `python/`，
+C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。Python 包位于 `python/`，
 通过 `MHS_CAPI_PATH` 指定构建或安装后的 C API 动态库。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
@@ -59,7 +59,8 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot.h>`。Python 包位于 `pyth
 仓库在顶层统一设置 C++20，单独使用组件的外部项目也应采用 C++20。
 可链接目标及其职责以[项目结构](docs/design/project-structure.md)为准，此处不重复。
 
-安装包包含各组件显式注册的公开头文件，`mhs::metahotspot` 是主要 C++ 组件的统一入口。
+`include/metahotspot/` 下的头文件都是公开 API，安装时整棵树原样复制；`src/` 下的头文件是实现细节，
+不安装。`mhs::metahotspot` 是主要 C++ 组件的统一入口。
 
 `python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
 可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。

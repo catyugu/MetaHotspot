@@ -1,4 +1,4 @@
-set(mhs_solver_sources
+add_library(mhs_solver STATIC
     assembler.cpp
     fluid_assembler.cpp
     interpolation.cpp
@@ -8,16 +8,12 @@ set(mhs_solver_sources
     solve.cpp
     time_integration.cpp
 )
-
-add_library(mhs_solver STATIC ${mhs_solver_sources})
-target_include_directories(mhs_solver PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(mhs_solver
     PUBLIC
-    mhs_core
+    mhs_expression
     mhs_linear
     PRIVATE
     mhs_logging
     TBB::tbb
     $<BUILD_INTERFACE:mhs_options>
 )
-mhs_install_headers(solver postprocessor.hpp)

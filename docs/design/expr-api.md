@@ -1,12 +1,12 @@
 # expr 模块接口
 
-封装 muparser。`src/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
+封装 muparser。`include/metahotspot/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
 
 ---
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::core` (`src/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
+**定义**：`mhs::core` (`include/metahotspot/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
 
 ```cpp
 namespace mhs::core {
@@ -116,10 +116,10 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 
 ## 线程安全
 
-| 操作                                                     | 同步                           |
-| -------------------------------------------------------- | ------------------------------ |
+| 操作                                                     | 同步                                   |
+| -------------------------------------------------------- | -------------------------------------- |
 | `parse()` / `eval_geometry()` / `register_all_functions` | setup 阶段使用各自的本地 `SymbolTable` |
-| `CompiledExpression::eval()`                             | 每线程独立 AST，无应用层互斥锁 |
+| `CompiledExpression::eval()`                             | 每线程独立 AST，无应用层互斥锁         |
 
 `SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
 

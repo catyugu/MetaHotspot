@@ -3,7 +3,7 @@
 
 include(CMakePackageConfigHelpers)
 
-set(_mhs_targets mhs_metahotspot mhs_core mhs_expression mhs_linear
+set(_mhs_targets mhs_metahotspot mhs_expression mhs_linear
     mhs_compiler mhs_solver mhs_io mhs_logging)
 if(MHS_BUILD_C_API)
     list(APPEND _mhs_targets mhs_c_api)
@@ -14,10 +14,10 @@ install(TARGETS ${_mhs_targets} EXPORT MetaHotspotTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-if(MHS_BUILD_C_API)
-    install(FILES "${PROJECT_SOURCE_DIR}/include/metahotspot.h"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
+# include/metahotspot holds the public API and src/ the implementation, so the
+# whole public tree is installed as it stands.
+install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/metahotspot"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 if(MHS_BUILD_APPS)
     install(TARGETS metahotspot RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

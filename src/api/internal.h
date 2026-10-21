@@ -5,7 +5,7 @@
 
 #include "core/model_definition.hpp"
 #include "core/solver.hpp" // mhs::sim::SolveOptions
-#include "metahotspot.h" // mhs_solve_options_t etc.
+#include "metahotspot_c_api.h" // mhs_solve_options_t etc.
 #include "solver/assembler.hpp" // mhs::sim::Operators (assemble scratch)
 #include <Eigen/Sparse>
 #include <cstdint>

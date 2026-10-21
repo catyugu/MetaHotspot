@@ -8,8 +8,8 @@ target_link_libraries(mhs_c_api PRIVATE
 )
 target_include_directories(mhs_c_api
     PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/metahotspot>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/metahotspot>
     PRIVATE ${PROJECT_SOURCE_DIR}/src
 )
 target_compile_definitions(mhs_c_api PRIVATE

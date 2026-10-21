@@ -1,5 +1,5 @@
-#ifndef METAHOTSPOT_H
-#define METAHOTSPOT_H
+#ifndef METAHOTSPOT_C_API_H
+#define METAHOTSPOT_C_API_H
 
 /*
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
@@ -353,4 +353,4 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t *s, size_t ind
 } /* extern "C" */
 #endif
 
-#endif /* METAHOTSPOT_H */
+#endif /* METAHOTSPOT_C_API_H */
