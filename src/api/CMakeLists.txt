@@ -17,6 +17,11 @@ target_compile_definitions(mhs_c_api PRIVATE
 )
 target_link_libraries(mhs_c_api PRIVATE $<BUILD_INTERFACE:mhs_options>)
 
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/delayomp)
+if(TARGET mhs_delayomp)
+    target_link_libraries(mhs_c_api PRIVATE mhs_delayomp)
+endif()
+
 target_compile_definitions(mhs_c_api PUBLIC MHS_BUILD_SHARED)
 add_library(mhs::c_api ALIAS mhs_c_api)
 # Every symbol is exported by default on ELF/Mach-O; hiding them makes the
