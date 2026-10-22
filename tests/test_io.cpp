@@ -45,7 +45,8 @@ static std::string make_xml_with_observe_points(const std::string& obs_block)
 
 static std::filesystem::path tmp_dir()
 {
-    auto dir = std::filesystem::temp_directory_path() / "mhs_test_io";
+    const auto* test = ::testing::UnitTest::GetInstance()->current_test_info();
+    auto dir = std::filesystem::current_path() / "mhs_test_io" / test->name();
     std::filesystem::create_directories(dir);
     return dir;
 }
@@ -203,6 +204,24 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     EXPECT_NE(out_xml.find("<a:double>300.000000</a:double>"), std::string::npos);
     EXPECT_NE(out_xml.find("<a:double>320.000000</a:double>"), std::string::npos);
 
+    std::filesystem::remove(in_path);
+    std::filesystem::remove(out_path);
+}
+
+TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
+{
+    const auto in_path = write_tmp_xml("io_dimensions.xml", make_xml_with_observe_points(""));
+    const auto out_path = tmp_dir() / "io_dimensions_output.xml";
+    mhs::core::Model model;
+    model.output.cartesian_shape = {2, 3, 4};
+    const std::vector<double> temperatures(24, 300.0);
+
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, temperatures, {});
+
+    const auto xml = read_file(out_path);
+    EXPECT_NE(xml.find("<SizeX>2</SizeX>"), std::string::npos);
+    EXPECT_NE(xml.find("<SizeY>3</SizeY>"), std::string::npos);
+    EXPECT_NE(xml.find("<SizeZ>4</SizeZ>"), std::string::npos);
     std::filesystem::remove(in_path);
     std::filesystem::remove(out_path);
 }

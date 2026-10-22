@@ -13,7 +13,6 @@ import os
 import sys
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 #  Cache for the loaded CDLL
 # ---------------------------------------------------------------------------
@@ -30,6 +29,11 @@ def get_dll() -> ctypes.CDLL:
         configure_dll(dll)
         _dll = dll
     return _dll
+
+
+def library_version() -> str:
+    """Version string reported by the loaded native library."""
+    return get_dll().mhs_version_string().decode("ascii")
 
 
 def load_library() -> ctypes.CDLL:

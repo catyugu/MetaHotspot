@@ -179,7 +179,7 @@ def test_coupling_is_symmetric_psd_and_reproduces_monolithic_steady():
     assert {p.normal for p in left.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
     assert {p.normal for p in right.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
 
-    Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
+    Kc, Cc, rhsc, lo, _ro, npatch = mm.connect(
         left, right, left.port("z+"), right.port("z-"), power=np.array([1.0])
     )
     Kd = Kc.toarray()

@@ -2,6 +2,7 @@
 #include <tinyxml2.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
@@ -117,13 +118,13 @@ namespace mhs::io {
 
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
         if (sx)
-            sx->SetText(node_nx);
+            sx->SetText(static_cast<std::uint64_t>(node_nx));
         XMLElement* sy = values_elem->FirstChildElement("SizeY");
         if (sy)
-            sy->SetText(node_ny);
+            sy->SetText(static_cast<std::uint64_t>(node_ny));
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
-            sz->SetText(node_nz);
+            sz->SetText(static_cast<std::uint64_t>(node_nz));
 
         for (const auto& trace : observation_traces) {
             XMLElement* target = nullptr;
@@ -143,6 +144,9 @@ namespace mhs::io {
                 target = doc.NewElement("a:anyType");
                 target->SetAttribute("i:type", "Result0DTransient");
 
+                // The downstream front-end reader matches this label verbatim,
+                // so it is a fixed value of the output contract, not a
+                // localizable string. Do not translate it.
                 XMLElement* physics = doc.NewElement("PhysicsName");
                 physics->SetText("温度");
                 target->InsertEndChild(physics);

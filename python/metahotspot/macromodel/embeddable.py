@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Embeddable FANTASTIC–BCI ROM extraction: extract once, connect everywhere.
+"""Embeddable FANTASTIC-BCI ROM extraction: extract once, connect everywhere.
 
 A *subdomain* (an arbitrary connected set of cells of the full model) is
 reduced a single time.  Its boundary splits in two roles:
@@ -61,8 +61,6 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
-
-
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
     normalized_operators,
@@ -141,9 +139,9 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     layout = model.cell_layout
     local = {int(c): i for i, c in enumerate(cells)}
     fields = full.fields
-    ambient_faces = set(
+    ambient_faces = {
         int(f) for group in model.boundary_groups() for f in group.face_ids
-    )
+    }
     by_key = {}
     invalid = np.iinfo(fields.face_neighbor.dtype).max
     for fid, (owner, neighbor) in enumerate(

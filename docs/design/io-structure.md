@@ -1,6 +1,6 @@
 # Authoring Model
 
-`src/core/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
+`include/metahotspot/core/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 
 XML reader 和外部代码都直接填充 `ModelDefinition` 结构，随后调用 `mhs::sim::build_model()` 编译为运行期 `mhs::core::Model`。
 
@@ -58,7 +58,7 @@ struct LayerSpec {
 
 `MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。XML 标签名只用于 `src/io/xml_model_reader.cpp` 的 tag 解析中。
 
-函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec` 和 `PiecewiseFunctionSpec` 组成 `FunctionSpec` variant。
+函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec`、`PiecewiseFunctionSpec` 和 `PeriodicPiecewiseConstantFunctionSpec` 组成 `FunctionSpec` variant。
 
 ## 结构化边界
 
@@ -91,13 +91,13 @@ XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegi
 `InletTemperature` 与 `MassFlowRate` 对应 `MassFlowInletBoundary`，仅有
 `Pressure` 对应 `OutletBoundary`。一个边界可包含多个 `FaceKeys/string` 面区域。
 `MassFlowRate` 表示该边界所有匹配面的总流量
-(kg/s)，并在这些面之间平均分配；正值表示质量流入计算域。压力按输入值使用。
+(kg/s)，并按投影面积在匹配片之间分配；正值表示质量流入计算域。压力按输入值使用。
 冻结流模型按单元采用恒定密度且视为不可压缩，入口与出口之间的压力差驱动流动。
 
 温度条件按实际流向生效：流入使用指定温度，流出使用单元温度。未指定流入温度时
 使用模型初始温度；出口回流固定使用模型初始温度。C++ 建模层使用 `PressureInlet`、
 `MassFlowInlet`、`PressureOutlet` 的 `variant`，入口温度缺省用 `std::optional` 表达，
-`PressureOutlet` 仅保存压力。C ABI 仍接受原枚举与数值字段，出口忽略温度参数，
+`PressureOutlet` 仅保存压力。C ABI 接受枚举与数值字段，出口忽略温度参数，
 `MHS_FLUID_NONE` 不添加边界，入口的 NaN 温度映射为缺省；
 Python 使用 `None` 表达缺省。流热装配仅跳过精确零通量，不使用绝对流量阈值。
 

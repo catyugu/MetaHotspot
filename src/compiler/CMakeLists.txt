@@ -5,9 +5,8 @@ add_library(mhs_compiler STATIC
     model_compiler.cpp
     model_functions.cpp
 )
-target_include_directories(mhs_compiler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(mhs_compiler
-    PUBLIC mhs_core
+    PUBLIC mhs_expression
     PRIVATE mhs_linear
-    PRIVATE mhs_options
+    PRIVATE $<BUILD_INTERFACE:mhs_options>
 )

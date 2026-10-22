@@ -33,9 +33,7 @@ def _contour_orders(degree: int) -> tuple[tuple[int, int], ...]:
     if degree < 0:
         raise ValueError("interface_contour_degree must be non-negative")
     return tuple(
-        (i, total - i)
-        for total in range(degree + 1)
-        for i in range(total + 1)
+        (i, total - i) for total in range(degree + 1) for i in range(total + 1)
     )
 
 
@@ -51,15 +49,11 @@ def _integrals_1d(
     for n in range(max_order + 1):
         anti = Legendre.basis(n).integ()
         integral_u = anti(u1) - anti(u0)
-        result[:, n] = (
-            np.sqrt((2.0 * n + 1.0) / length) * (length / 2.0) * integral_u
-        )
+        result[:, n] = np.sqrt((2.0 * n + 1.0) / length) * (length / 2.0) * integral_u
     return result
 
 
-def _port_contour_integrals(
-    rects: np.ndarray, degree: int
-) -> tuple[np.ndarray, tuple]:
+def _port_contour_integrals(rects: np.ndarray, degree: int) -> tuple[np.ndarray, tuple]:
     """Exact face integrals of a continuous L2-orthonormal contour basis."""
     rects = np.asarray(rects, dtype=np.float64)
     if rects.ndim != 2 or rects.shape[1] != 4 or rects.shape[0] == 0:
@@ -176,8 +170,8 @@ def extract_interface_enriched_rom(
             "interface-enriched extraction requires a physical source port"
         )
 
-    active_indices, boundary_terms, ambient_ranges, effective_p = (
-        _active_ambient_data(subdomain)
+    active_indices, boundary_terms, ambient_ranges, effective_p = _active_ambient_data(
+        subdomain
     )
     h_ranges = [list(r) for r in ambient_ranges]
 
@@ -191,9 +185,7 @@ def extract_interface_enriched_rom(
         )
     if training_ports:
         boundary_terms.append(sp.diags(interface_areas, format="csc"))
-        h_ranges.append(
-            [float(interface_h_range[0]), float(interface_h_range[1])]
-        )
+        h_ranges.append([float(interface_h_range[0]), float(interface_h_range[1])])
 
     interface_sources, interface_metadata = interface_flux_training_sources(
         subdomain,

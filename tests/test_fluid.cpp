@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "config.h"
 #include "io/model_io.hpp"
 #include "solver/fluid_assembler.hpp"
 
@@ -12,7 +11,7 @@ namespace {
 
     mhs::core::Model load_microfluid_case()
     {
-        const std::string root = PROJECT_SOURCE_DIR;
+        const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
         return mhs::sim::build_model(mhs::io::read_xml(input));
@@ -45,7 +44,7 @@ namespace {
 
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
-    const std::string input = std::string(PROJECT_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
+    const std::string input = std::string(MHS_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
     auto model = mhs::sim::build_model(mhs::io::read_xml(input));
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());

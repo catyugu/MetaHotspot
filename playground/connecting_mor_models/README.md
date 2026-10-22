@@ -1,61 +1,69 @@
 # Connecting MOR models
 
-Reproducible experiments for connecting embeddable BCI thermal ROMs. Generated
-outputs under `results/` are ignored; experiment code and curated comparison
-data are versioned.
+Experiments for whole-PoP BCI reduction, contour-element boundary
+representation, and embeddable thermal ROM connections. Run the commands below
+from this directory with NumPy, SciPy and PyAMG installed, and the repository's
+`python/` package on `PYTHONPATH`. Native model examples also require the built
+C API library, selected with `MHS_CAPI_PATH`.
 
 ## Files
 
 ```text
 experiments/
-  mor_common.py             conservative FVM coupling and standard contour-element utilities
-  pop.py                    two-source PoP BCI/contour comparison
-  simple_erom.py            MetaHotspot vs FloTHERM simple-EROM comparison
-  test_contour_elements.py  independent quadrature checks for contour elements
+  mor_common.py                    FVM operators, conservative coupling and contour elements
+  pop.py                           whole-PoP two-source BCI/contour comparison
+  simple_erom.py                   reusable interface-enriched ROM vs FloTHERM
+  test_contour_elements.py         independent contour quadrature checks
+  transfer_boundary_basis.py       matrix-based boundary transfer directions
+  transfer_boundary_enrichment.py  manual extra-boundary-mode sweep
 baseline/
-  flotherm_erom/            curated FloTHERM EROM reference data
-  metahotspot/              curated results from the current reproducible rerun
-results/                     generated locally; ignored
+  flotherm_erom/                   curated FloTHERM EROM reference data
+  metahotspot/                     reference-run configuration and provenance
+results/                            generated locally; ignored
 ```
 
-## PoP boundary-representation comparison
+Generated numerical results stay under ignored `results/` directories or in CI
+artifacts; the repository contains experiment code, baseline notes and the
+curated FloTHERM comparison CSV.
+
+## Whole-PoP boundary-representation comparison
 
 ```bash
 python experiments/test_contour_elements.py
-python experiments/pop.py --method both --cases nominal strong_board_cooling lowk_board
+python experiments/pop.py --cases paper_fig2 paper_fig4 range_low range_high
 ```
 
-The surrogate PoP contains two independent die heat sources in total: one in
-the bottom package and one in the top package. The reduced bottom package is
-extracted directly with the repository Extended-FANTASTIC implementation in
-`python/metahotspot/macromodel/utils.py`; its two connectable faces are ordinary
-affine BCI Robin groups during extraction.
+`pop.py` extracts one BCI ROM for the entire surrogate PoP, including two
+independent die heat sources. Its six external surfaces use three independent
+HTC parameters: one shared by the four lateral faces, one for the bottom, and
+one for the top. The basis is built with
+`metahotspot.macromodel.utils.build_parametric_basis`.
 
-The comparison deliberately keeps that *same* BCI basis and changes only the
-exported connection-surface representation:
+The script compares two boundary representations of the same interior basis:
 
-1. `affine_full_trace`: use the complete modal boundary trace on every FVM face.
-2. `affine_contour`: represent the same trace with the contour elements of
-   Codecasa et al., *Boundary Condition Independent Compact Thermal Models
-   Enhanced by Contour Elements*, THERMINIC 2023.
+1. `full_trace`: complete modal trace on every FVM boundary face.
+2. `contour`: the trace projected onto the contour elements of Codecasa et al.,
+   *Boundary Condition Independent Compact Thermal Models Enhanced by Contour
+   Elements*, THERMINIC 2023.
 
-The contour implementation follows the paper's Eqs. (13)-(17), rather than
-using contour modes as extra heat-source snapshots. Each rectangular surface
-uses products of continuous one-dimensional Legendre polynomials with total
-degree `p`, analytically normalized in the physical-area inner product. The
-FVM implementation evaluates the integrals in Eq. (15) exactly over every
-boundary face and evaluates Eq. (16) by exact rectangle averages on the common
-patches. The symmetric coupling uses the same map in transpose for heat flux,
-which is the discrete Eq. (17).
+Each rectangular surface uses products of continuous Legendre polynomials with
+total degree `p`, normalized in the physical-area inner product. Integrals are
+evaluated from face rectangles; contour traces are recovered as exact rectangle
+averages. Degrees are 2 on each lateral face (6 coefficients each), 4 on the
+bottom (15), and 10 on the top (66), for 105 boundary coefficients. The interior
+ROM order is unchanged by this representation choice.
 
-For the two connection surfaces the default orders follow the 2023 PoP example:
-`p_top = 10` (66 coefficients) and `p_bottom = 4` (15 coefficients). The
-interior ROM order is therefore unchanged by contour elements; only the
-boundary representation is compressed.
+The default surrogate resolution is `--nxy 43 --nz 36`, with extraction tolerance
+`1e-2` and three residual-probe rounds. Geometry and material values define a
+surrogate, not an exact reconstruction of the paper's detailed model. Steady
+field comparisons and independent source/shift transfer checks are written to
+`results/pop/`; `--vtu` also writes the `paper_fig2` contour field when that case
+is selected. Reference-run settings and reported limitations are in
+[baseline/metahotspot/README.md](baseline/metahotspot/README.md).
 
-Non-conforming interfaces are integrated on conservative common patches. The
-massless patch temperatures are analytically condensed, preserving a symmetric
-coupling and heat-flux balance to roundoff.
+Conservative non-conforming common-patch coupling is provided separately by
+`mor_common.py` and `metahotspot.macromodel.embeddable`; `pop.py` compares whole-PoP
+operators rather than connecting a reduced bottom package to a detailed top.
 
 ## FloTHERM simple-EROM comparison
 
@@ -64,12 +72,9 @@ python experiments/simple_erom.py \
   --cases baseline_copper bottom_htc_strong external_source_200w all_stress layered_extreme_source
 ```
 
-This reuses `playground/simple_erom_case1/` and compares the current
-MetaHotspot BCI extraction against the frozen FloTHERM EROM stress baseline in
-`baseline/flotherm_erom/simple_case1_stress_baseline.csv`. Detailed case
-configuration notes are kept in the Obsidian weekly report rather than in this
-repository.
-
-The committed rerun tables in `baseline/metahotspot/` were produced by GitHub
-Actions from the validated implementation; their README records the exact run
-and extraction settings.
+This uses `playground/simple_erom_case1/` and compares one reusable
+interface-enriched MetaHotspot cube ROM against the frozen FloTHERM EROM stress
+baseline in `baseline/flotherm_erom/simple_case1_stress_baseline.csv`. The cube
+ROM is extracted once using its internal source and interface heat-flux
+training directions, then reused for every attachment case. Results are written
+to `results/simple_erom/`.

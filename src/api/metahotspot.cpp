@@ -1,6 +1,5 @@
 /* Implementation of the MetaHotspot C API. */
-#include "metahotspot.h"
-#include "api/internal.h"
+#include "metahotspot_c_api.h"
 
 #include "compiler/model_compiler.hpp"
 #include "core/model_definition.hpp"
@@ -10,11 +9,88 @@
 #include "solver/assembler.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
+
+#include <Eigen/Sparse>
+
+/* ------------------------------------------------------------------ */
+/*  Shared error-buffer helpers                                        */
+/* ------------------------------------------------------------------ */
+
+void mhs_detail_set_last_error(const std::string& msg);
+void mhs_detail_clear_last_error();
+const char* mhs_detail_last_error();
+
+/* ------------------------------------------------------------------ */
+/*  Shared error-handling macros                                       */
+/* ------------------------------------------------------------------ */
+
+#define SET_ERR(msg)                                                                                                   \
+    do {                                                                                                               \
+        std::ostringstream _oss;                                                                                       \
+        _oss << msg;                                                                                                   \
+        mhs_detail_set_last_error(_oss.str());                                                                         \
+    } while (0)
+
+#define CHECK_NULL(p)                                                                                                  \
+    do {                                                                                                               \
+        if (!(p)) {                                                                                                    \
+            SET_ERR("NULL pointer: " #p);                                                                              \
+            return MHS_ERROR;                                                                                          \
+        }                                                                                                              \
+    } while (0)
+
+#define MHS_TRY(...)                                                                                                   \
+    try {                                                                                                              \
+        __VA_ARGS__;                                                                                                   \
+        mhs_detail_clear_last_error();                                                                                 \
+        return MHS_OK;                                                                                                 \
+    }                                                                                                                  \
+    catch (const std::exception& e) {                                                                                  \
+        SET_ERR(e.what());                                                                                             \
+        return MHS_ERROR;                                                                                              \
+    }
+
+/* ------------------------------------------------------------------ */
+/*  Shared helper declarations                                         */
+/* ------------------------------------------------------------------ */
+
+/** Convert C-level solver opts to SolveOptions. */
+mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
+
+/* ------------------------------------------------------------------ */
+/*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
+/* ------------------------------------------------------------------ */
+
+struct BlockLocation {
+    uint32_t layer;
+    uint32_t block;
+};
+
+struct mhs_model_t {
+    mhs::model::ModelDefinition def;
+    std::vector<BlockLocation> block_locations;
+    std::optional<mhs::core::DiscreteMesh> external_mesh;
+};
+
+struct mhs_compiled_t {
+    std::shared_ptr<const mhs::core::Model> model;
+};
+
+struct mhs_operators_t {
+    mhs::sim::Operators operators;
+};
+
+struct mhs_solution_t {
+    mhs::core::Solution sol;
+    std::shared_ptr<const mhs::core::Model> model;
+};
 
 /* ------------------------------------------------------------------ */
 /*  Thread-local error buffer                                          */
@@ -162,6 +238,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 }
 
 MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
+
+MHS_API const char* mhs_version_string(void) { return MHS_VERSION_STRING; }
 
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */

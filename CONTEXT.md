@@ -6,15 +6,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 
 ## 架构边界
 
-| 目标             | 职责                                          |
-| ---------------- | --------------------------------------------- |
-| `mhs_core`       | header-only 运行期数据契约和网格助手          |
-| `mhs_compiler`   | 物理定义与给定网格 → 离散模型及冻结流场 |
-| `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
-| `mhs_expression` | muparser 与 TBB 表达式封装                    |
-| `mhs_linear`     | AMGCL/Eigen 迭代求解及可选 MKL/Pardiso 封装   |
-| `mhs_io`         | XML 输入、XML/VTU 输出及外部格式适配          |
-| `mhs_logging`    | spdlog 封装                                   |
+构建目标划分、目录归属和命名空间规则以[项目结构](docs/design/project-structure.md)为准，不在此重复。
 
 依赖方向：
 
@@ -26,7 +18,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 ## 求解约定
 
-- 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
+- 稳态是在 `t = 0` 执行一次非线性求解；瞬态在 `nonlinear_solve` 的各次迭代中执行 `assemble → build_system`，收敛后由 Adaptive 策略执行 `estimate_error`；Fixed 策略直接接受收敛步。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
@@ -63,7 +55,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 1. POD 与纯函数优先，不建立多层继承体系。
 2. `mhs` 只作品牌命名空间，不重导出或定义类型。
-3. 公共 API 最多两层命名空间；`detail` 只保存跨文件私有实现。
+3. 公共领域接口使用两层命名空间；内部实现包括 `mhs::sim::fluid` 和 `mhs::sim::time_scheme`。
 4. 头文件禁止 `using namespace`。
 5. 匿名命名空间用于单文件私有实现。
 6. 外部格式字符串止于 IO；运行期模型不保存 XML 表示。
