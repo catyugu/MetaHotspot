@@ -33,6 +33,7 @@ option(MHS_BUILD_APPS "Build the command-line applications" ${PROJECT_IS_TOP_LEV
 option(MHS_BUILD_C_API "Build the shared C/Python API" ON)
 option(MHS_INSTALL "Install libraries, headers and CMake package" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_WERROR "Treat project warnings as errors" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(MHS_VERBOSE "Enable DEBUG level logging" OFF)
 option(USE_MKL "Enable optional Intel MKL-backed Pardiso solver" OFF)
 
@@ -44,6 +45,17 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(cmake/MhsOptions.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/RuntimeDlls.cmake)
+
+# Instrument every target of this project, tests included; the fetch above runs
+# first so third-party targets stay uninstrumented. The MSVC frontend (clang-cl
+# included) has no UBSan, so asking there is an error instead of a silent no-op.
+if(MHS_SANITIZE)
+    if(MSVC)
+        message(FATAL_ERROR "MHS_SANITIZE needs a GCC or Clang GNU-style frontend, not MSVC or clang-cl")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)
+endif()
 
 add_subdirectory(src)
 

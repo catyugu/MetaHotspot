@@ -4,7 +4,28 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # Formatting and lint results must not depend on the runner's tool versions.
+  CLANG_FORMAT_VERSION: "23.1.3"
+  RUFF_VERSION: "0.17.1"
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "clang-format==${{ env.CLANG_FORMAT_VERSION }}" "ruff==${{ env.RUFF_VERSION }}"
+      - name: Check C++ formatting
+        run: python ci/check_format.py
+      - name: Check Python formatting and lint
+        run: |
+          ruff format --check python ci
+          ruff check python ci
+
   build:
     strategy:
       fail-fast: false
@@ -25,6 +46,15 @@ jobs:
               config: Debug,
               generator: Ninja,
               label: linux-clang,
+            }
+          - {
+              os: ubuntu-latest,
+              cc: clang-18,
+              cxx: clang++-18,
+              config: Debug,
+              generator: Ninja,
+              label: linux-sanitize,
+              extra: "--cmake-arg=-DMHS_SANITIZE=ON",
             }
           - {
               os: macos-latest,
@@ -62,7 +92,6 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
-      CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,13 +100,13 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
       - run: python -m pip install 'cmake>=3.30' ninja
-      - if: matrix.label == 'linux-clang'
+      - if: matrix.cxx == 'clang++-18'
         run: sudo apt-get update && sudo apt-get install -y clang-18 libomp-18-dev
       - if: runner.os == 'macOS'
         run: |
           brew install libomp
           echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
-      - run: python ci/check_build.py --config ${{ matrix.config }} --generator "${{ matrix.generator }}"
+      - run: python ci/check_build.py --config ${{ matrix.config }} --generator "${{ matrix.generator }}" ${{ matrix.extra }}
       - uses: actions/upload-artifact@v4
         with:
           name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
@@ -92,3 +121,39 @@ jobs:
             build/**/CMakeFiles/CMakeError.log
             build/**/Testing/Temporary/*
           if-no-files-found: ignore
+
+  # The Python package is a ctypes wrapper, so the wheel carries the C library
+  # and the runtime libraries it loads; the tests run against the installed
+  # wheel rather than the build tree.
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.9" }
+          - { os: ubuntu-latest, python: "3.14" }
+          - { os: windows-latest, python: "3.12" }
+          - { os: macos-latest, python: "3.12" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+      - run: python -m pip install build pytest
+      - name: Build the wheel
+        run: python -m build --wheel --outdir dist
+      - name: Install the wheel
+        run: python -m pip install dist/*.whl
+      - name: Run the Python tests
+        run: python -m pytest python/tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MetaHotspot-wheel-${{ runner.os }}-${{ matrix.python }}
+          path: dist/*.whl

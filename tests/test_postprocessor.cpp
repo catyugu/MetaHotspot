@@ -145,8 +145,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     // Corner node (vx=0, vy=0, vz=0) touches Dirichlet Z-bottom AND
     // Neumann Y-bottom AND Neumann X-bottom. Dirichlet must win.
-    EXPECT_NEAR(node_T[0], 500.0, 1e-6)
-        << "Corner node touching Dirichlet must have exactly 500K, not an average";
+    EXPECT_NEAR(node_T[0], 500.0, 1e-6) << "Corner node touching Dirichlet must have exactly 500K, not an average";
 
     // All nodes on Z=0 face should be 500K (they all touch Dirichlet)
     for (std::size_t vx = 0; vx < model.output.cartesian_shape[0]; vx++) {
