@@ -9,7 +9,7 @@
 在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
 （`brew install libomp`）。
 CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
-MKL 默认关闭；启用 `USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
+MKL 默认关闭；启用 `MHS_USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
 
 ```sh
 git clone https://github.com/catyugu/MetaHotspot.git
@@ -28,7 +28,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
 | `MHS_SANITIZE` | OFF | 用 ASan/UBSan 编译并链接全部本项目目标（仅 GCC/Clang） |
 | `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
-| `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
+| `MHS_USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
 `CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。

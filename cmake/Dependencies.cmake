@@ -157,7 +157,7 @@ endif()
 # ----------------------------------------------------------------------------
 set(MHS_ENABLE_PARDISO OFF)
 
-if(USE_MKL)
+if(MHS_USE_MKL)
     # Consumed by oneMKL's own MKLConfig.cmake (MKL_LINK etc.); `sdl` is a
     # valid link mode when MPI is off (the default here).
     set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
