@@ -7,14 +7,13 @@ import math
 import time
 
 import numpy as np
+import pyamg
 import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from scipy import special
-import pyamg
 
 from metahotspot._compiled_data import Operators
-
 
 # ---------------------------------------------------------------------------
 # MPMM elliptic-optimal frequency sampling
@@ -355,10 +354,10 @@ class _AffineResidualGram:
         Z = (
             Z.reshape(block.shape[0], q, k)
             .transpose(0, 2, 1)
-            .reshape(block.shape[0], k*q)
+            .reshape(block.shape[0], k * q)
         )
-        cross = np.empty((r*q, k*q))
-        reduced = np.empty((q, r+k, r+k))
+        cross = np.empty((r * q, k * q))
+        reduced = np.empty((q, r + k, r + k))
         reduced[:, :r, :r] = self.reduced
         for i, A in enumerate(self.operators):
             cross[i::q] = basis.T @ (A.T @ Z)
@@ -381,14 +380,18 @@ class _AffineResidualGram:
         weights = np.asarray((1.0, shift, *h_vec))
         A_hat = np.einsum("i,ijk->jk", weights, self.reduced)
         coefficients = scipy.linalg.solve(
-            A_hat, self.g_hat, assume_a="pos", check_finite=False,
+            A_hat,
+            self.g_hat,
+            assume_a="pos",
+            check_finite=False,
         )
         z = (coefficients[:, None] * weights).ravel()
         norm2 = float(z @ (self.gram @ z) - 2.0 * (z @ self.cross) + self.g_norm2)
         absolute_z = np.abs(z)
         scale = float(
             absolute_z @ (np.abs(self.gram) @ absolute_z)
-            + 2.0 * (absolute_z @ np.abs(self.cross)) + self.g_norm2
+            + 2.0 * (absolute_z @ np.abs(self.cross))
+            + self.g_norm2
         )
         guard = 64.0 * np.finfo(float).eps * (z.size + 1) * scale
         return coefficients, norm2, guard
@@ -531,7 +534,8 @@ def build_parametric_basis(
     basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)
     svd_order = basis.shape[1]
 
-    # The h-free BCI operator has the uniform-temperature null mode; preserve it exactly.
+    # The h-free BCI operator has the uniform-temperature null mode;
+    # preserve it exactly.
     constant = np.ones((K.shape[0], 1), dtype=np.float64)
     constant /= np.linalg.norm(constant)
     constant = orthonormalize_block(basis, constant)
@@ -547,9 +551,9 @@ def build_parametric_basis(
         "tolerance": float(tolerance),
         "probe_rounds": int(probe_rounds),
         "candidate_count": int(len(snapshots) + validation_count),
-        "processed_candidate_count": int(len(snapshots)),
+        "processed_candidate_count": len(snapshots),
         "validation_count": int(validation_count),
-        "pre_svd_order": int(len(snapshots)),
+        "pre_svd_order": len(snapshots),
         "svd_kept_order": int(svd_order),
         "basis_order": int(basis.shape[1]),
         "maximum_order": int(max_order),
