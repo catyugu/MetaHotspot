@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.26)
 
-# The same source added twice (two subprojects each add_subdirectory this repo)
-# would define the targets twice; leave the existing ones in place instead.
-if(TARGET mhs::metahotspot)
-    return()
-endif()
-
 # The public header owns the version; the project version, the installed CMake
 # package report and the Python wheel all derive from these three macros.
 foreach(_part MAJOR MINOR PATCH)
@@ -38,10 +32,6 @@ option(MHS_VERBOSE "Enable DEBUG level logging" OFF)
 option(USE_MKL "Enable optional Intel MKL-backed Pardiso solver" OFF)
 
 include(GNUInstallDirs)
-# Dependencies come from installed packages or the pinned CPM versions only.
-set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
-
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(cmake/MhsOptions.cmake)
 include(cmake/Dependencies.cmake)
 include(cmake/RuntimeDlls.cmake)
@@ -63,7 +53,6 @@ add_library(mhs_metahotspot INTERFACE)
 add_library(mhs::metahotspot ALIAS mhs_metahotspot)
 set_target_properties(mhs_metahotspot PROPERTIES EXPORT_NAME metahotspot)
 target_link_libraries(mhs_metahotspot INTERFACE mhs_compiler mhs_solver mhs_io mhs_logging)
-target_compile_features(mhs_metahotspot INTERFACE cxx_std_20)
 
 if(MHS_BUILD_TESTS)
     if(PROJECT_IS_TOP_LEVEL)
