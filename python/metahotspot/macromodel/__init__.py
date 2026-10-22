@@ -7,7 +7,7 @@ workflows live in the playground/ adapters that consume these algorithms.
 
 Modules:
 
-* :mod:`utils` — FANTASTIC–BCI operator-level machinery: per-port spectral
+* :mod:`utils` — FANTASTIC-BCI operator-level machinery: per-port spectral
   bounds, elliptic shift planning, residual-driven Krylov enrichment,
   ``build_parametric_basis``, ``project_bci``, reduced solves, accuracy
   metrics.  Purely numeric; consumes the generic ``Operators`` interface.
@@ -22,7 +22,8 @@ Modules:
   itself ships no concrete model.
 * :mod:`embeddable` — the embeddable ROM extractor: boundary-face port
   enumeration (only explicitly declared ambient faces are excluded; every other
-  boundary face becomes a connectable :class:`~metahotspot.macromodel.embeddable.FacePort`),
+  boundary face becomes a connectable
+  :class:`~metahotspot.macromodel.embeddable.FacePort`),
   subdomain assembly and whole-subdomain extraction
   (:class:`~metahotspot.macromodel.embeddable.EmbeddableRom`),
   non-conforming common-patch area weighting, and
@@ -33,9 +34,7 @@ All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
 generic ``Operators`` / ``CellFields`` contracts — never a named case.
 """
 
-from metahotspot.macromodel import utils
-from metahotspot.macromodel import affine
-from metahotspot.macromodel import embeddable
+from metahotspot.macromodel import affine, embeddable, utils
 
 # Re-export the stable public surface.
 from metahotspot.macromodel.affine import (
@@ -45,7 +44,6 @@ from metahotspot.macromodel.affine import (
     CellLayout,
     SourcePort,
 )
-from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.embeddable import (
     EmbeddableRom,
     FacePort,
@@ -57,28 +55,26 @@ from metahotspot.macromodel.embeddable import (
     extract_rom,
     solve_system,
 )
+from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 
 __all__ = [
-    # modules
-    "utils",
-    "affine",
-    "embeddable",
-    # affine contract
     "AffineParametricModel",
     "AffineSolveResult",
     "BoundaryGroup",
-    "CellLayout",
-    "SourcePort",
     "BoundarySurface",
     "CellGeometry",
-    # embeddable ROM
+    "CellLayout",
     "EmbeddableRom",
     "FacePort",
+    "SourcePort",
     "Subdomain",
+    "affine",
     "build_subdomain",
     "common_patches",
     "connect",
+    "embeddable",
     "enumerate_interface_ports",
     "extract_rom",
     "solve_system",
+    "utils",
 ]

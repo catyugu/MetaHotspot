@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 import scipy.sparse as sp
+from numpy.testing import assert_allclose
+
 from metahotspot._compiled_data import Operators
 from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 from metahotspot.macromodel.embeddable import FacePort, Subdomain, extract_rom
@@ -11,7 +13,6 @@ from metahotspot.macromodel.interface_enrichment import (
     extract_interface_enriched_rom,
 )
 from metahotspot.macromodel.utils import mpmm_elliptic_shift_count
-from numpy.testing import assert_allclose
 
 
 @pytest.mark.parametrize("epsilon, hi", [(1e-3, 10.0), (1e-100, 1e12)])

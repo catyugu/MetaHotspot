@@ -37,6 +37,20 @@ extern "C" {
 #endif
 
 /* ------------------------------------------------------------------ */
+/*  Version                                                            */
+/* ------------------------------------------------------------------ */
+/* The single source of the library version: CMake reads project(VERSION)
+ * from these macros, the Python package takes its metadata version from
+ * them, and mhs_version_string() reports them at run time. */
+#define MHS_VERSION_MAJOR 1
+#define MHS_VERSION_MINOR 0
+#define MHS_VERSION_PATCH 0
+
+#define MHS_VERSION_STRINGIFY_(major, minor, patch) #major "." #minor "." #patch
+#define MHS_VERSION_STRINGIFY(major, minor, patch) MHS_VERSION_STRINGIFY_(major, minor, patch)
+#define MHS_VERSION_STRING MHS_VERSION_STRINGIFY(MHS_VERSION_MAJOR, MHS_VERSION_MINOR, MHS_VERSION_PATCH)
+
+/* ------------------------------------------------------------------ */
 /*  Opaque handle forward declarations                                 */
 /* ------------------------------------------------------------------ */
 typedef struct mhs_model_t mhs_model_t;
@@ -110,7 +124,7 @@ typedef struct {
     int32_t nonlinear_max_iterations;
     double nonlinear_relative_tolerance;
     double nonlinear_absolute_tolerance;
-    int32_t integrator;    // mhs_integrator_t
+    int32_t integrator; // mhs_integrator_t
     int32_t step_strategy; // mhs_step_strategy_t
     double error_rel_tol;
     double error_safety;
@@ -130,27 +144,27 @@ typedef struct {
  * face_neighbor == SIZE_MAX denotes exterior; signs are outward from owner. */
 typedef struct {
     size_t cell_count, face_count, projection_count;
-    double *cell_min;
-    double *cell_max;
-    uint32_t *material_id;
-    size_t *face_owner;
-    size_t *face_neighbor;
-    int32_t *face_axis;
-    int32_t *face_sign;
-    double *face_min;
-    double *face_max;
-    double *face_area;
-    double *owner_distance;
-    double *neighbor_distance;
-    size_t *projection_cell;
-    uint32_t *projection_source;
-    double *projection_volume;
-    double *projection_center;
+    double* cell_min;
+    double* cell_max;
+    uint32_t* material_id;
+    size_t* face_owner;
+    size_t* face_neighbor;
+    int32_t* face_axis;
+    int32_t* face_sign;
+    double* face_min;
+    double* face_max;
+    double* face_area;
+    double* owner_distance;
+    double* neighbor_distance;
+    size_t* projection_cell;
+    uint32_t* projection_source;
+    double* projection_volume;
+    double* projection_center;
 } mhs_cell_fields_t;
 
 /** Evaluate power in each geometric volume-projection term at supplied state/time. */
-MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t *c, const double *state, size_t state_count,
-                                                    double time, double *powers, size_t projection_count);
+MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
+    double time, double* powers, size_t projection_count);
 
 /** Caller-owned external mesh, all coordinates in SI metres. No connectivity
  * discovery or validity checking is performed. The caller guarantees positive
@@ -166,11 +180,11 @@ typedef struct {
 
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */
 typedef struct {
-    double *conductivity_x;
-    double *conductivity_y;
-    double *conductivity_z;
-    double *density;
-    double *specific_heat;
+    double* conductivity_x;
+    double* conductivity_y;
+    double* conductivity_z;
+    double* density;
+    double* specific_heat;
     size_t count;
 } mhs_material_values_t;
 
@@ -194,160 +208,159 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /** Fill opts with sensible defaults (AMG, 1e-8, 1e-6, …). */
-MHS_API void mhs_solve_options_default(mhs_solve_options_t *opts);
+MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
+
+/** Library version, e.g. "1.0.0". */
+MHS_API const char* mhs_version_string(void);
 
 /** Thread-local last error message. Reset on every API call. */
-MHS_API const char *mhs_last_error(void);
+MHS_API const char* mhs_last_error(void);
 
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_create(mhs_model_t **out);
-MHS_API void mhs_model_destroy(mhs_model_t *m);
-MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t *m, const char *path);
+MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
+MHS_API void mhs_model_destroy(mhs_model_t* m);
+MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t *m, mhs_study_t study, mhs_length_unit_t length_unit,
-                                            double initial_temperature_K, double duration, double output_interval);
+MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
+    double initial_temperature_K, double duration, double output_interval);
 
-MHS_API mhs_status_t mhs_model_set_mesh(mhs_model_t *m, size_t nx, const double *x, size_t ny, const double *y,
-                                        size_t nz, const double *z);
+MHS_API mhs_status_t mhs_model_set_mesh(
+    mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
 
-MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t *m, const mhs_mesh_t *mesh);
+MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_t* mesh);
 
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t *m, const char *name, const char *expression);
+MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, layers, blocks, rects           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_material(mhs_model_t *m, const char *name, const char *kx, const char *ky,
-                                            const char *kz, const char *rho, const char *c,
-                                            const char *dynamic_viscosity);
+MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
 
-MHS_API mhs_status_t mhs_model_add_layer(mhs_model_t *m, const char *thickness, const char *x_offset,
-                                         const char *y_offset, uint32_t *out_id);
+MHS_API mhs_status_t mhs_model_add_layer(
+    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, uint32_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t *m, uint32_t layer, const char *material_name,
-                                         const char *heat_source, const char *x_offset, const char *y_offset,
-                                         const char *thickness, uint32_t *out_id);
+MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const char* material_name,
+    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, uint32_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t *m, uint32_t block, mhs_geometry_op_t op, const char *x,
-                                        const char *y, const char *width, const char *height);
+MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geometry_op_t op, const char* x,
+    const char* y, const char* width, const char* height);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_dirichlet(mhs_model_t *m, const mhs_face_region_t *regions, size_t n_regions,
-                                             const char *temperature);
+MHS_API mhs_status_t mhs_model_add_dirichlet(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature);
 
-MHS_API mhs_status_t mhs_model_add_neumann(mhs_model_t *m, const mhs_face_region_t *regions, size_t n_regions,
-                                           const char *heat_flux);
+MHS_API mhs_status_t mhs_model_add_neumann(
+    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux);
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t *m, const mhs_face_region_t *regions, size_t n_regions,
-                                              const char *coefficient, const char *ambient_temperature);
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+    const char* coefficient, const char* ambient_temperature);
 
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t *m, const char *temperature);
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t *m, const char *heat_flux);
-MHS_API mhs_status_t mhs_model_set_default_convection(mhs_model_t *m, const char *coefficient,
-                                                      const char *ambient_temperature);
+MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
+MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux);
+MHS_API mhs_status_t mhs_model_set_default_convection(
+    mhs_model_t* m, const char* coefficient, const char* ambient_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t *m, const char *name, const char *expression);
-MHS_API mhs_status_t mhs_model_add_function_gauss(mhs_model_t *m, const char *name, double amplitude, double tau,
-                                                  double center);
-MHS_API mhs_status_t mhs_model_add_function_sine(mhs_model_t *m, const char *name, double amplitude,
-                                                 double angular_frequency, double phase);
-MHS_API mhs_status_t mhs_model_add_function_double_exponential(mhs_model_t *m, const char *name, double amplitude,
-                                                               double alpha, double beta);
-MHS_API mhs_status_t mhs_model_add_function_piecewise(mhs_model_t *m, const char *name, const mhs_point2d_t *points,
-                                                      size_t count);
-MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(mhs_model_t *m, const char *name,
-                                                                        const double *values, size_t count,
-                                                                        double period);
+MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression);
+MHS_API mhs_status_t mhs_model_add_function_gauss(
+    mhs_model_t* m, const char* name, double amplitude, double tau, double center);
+MHS_API mhs_status_t mhs_model_add_function_sine(
+    mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase);
+MHS_API mhs_status_t mhs_model_add_function_double_exponential(
+    mhs_model_t* m, const char* name, double amplitude, double alpha, double beta);
+MHS_API mhs_status_t mhs_model_add_function_piecewise(
+    mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count);
+MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
+    mhs_model_t* m, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t *m, const char *name, double x, double y, double z);
+MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
 /* inlet_temperature applies only to inlets and is ignored for MHS_FLUID_OUTLET. */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t *m, mhs_axis_t axis, double coordinate,
-                                                  mhs_rect2d_t region, mhs_fluid_bc_t kind, double value,
-                                                  double inlet_temperature);
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
+    mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_compile(const mhs_model_t *m, mhs_compiled_t **out);
-MHS_API void mhs_compiled_destroy(mhs_compiled_t *c);
+MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** out);
+MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 
 /* ------------------------------------------------------------------ */
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t *c, mhs_compiled_info_t *out);
-MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t *c, mhs_cell_fields_t *fields);
-MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t *c, const double *temperature,
-                                                 size_t temperature_count, double time, mhs_material_values_t *values);
+MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
+MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
+MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
+    size_t temperature_count, double time, mhs_material_values_t* values);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
 /** Evaluate K, C, f at *temperature* and return a new owned operator handle. */
-MHS_API mhs_status_t mhs_compiled_assemble(const mhs_compiled_t *c, const double *temperature, size_t temperature_count,
-                                           double time, mhs_operators_t **out);
+MHS_API mhs_status_t mhs_compiled_assemble(
+    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
 
-MHS_API void mhs_operators_destroy(mhs_operators_t *operators);
-MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t *operators, mhs_operators_info_t *out);
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t *operators, int32_t *outer, size_t outer_count,
-                                          int32_t *inner, size_t inner_count, double *values, size_t value_count);
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t *operators, int32_t *outer, size_t outer_count,
-                                          int32_t *inner, size_t inner_count, double *values, size_t value_count);
-MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t *operators, double *out, size_t count);
+MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
+MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
+    int32_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t *c, const double *state, size_t state_count,
-                                        const mhs_solve_options_t *opts, mhs_solution_t **out);
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
+    const mhs_solve_options_t* opts, mhs_solution_t** out);
 
-MHS_API void mhs_solution_destroy(mhs_solution_t *s);
+MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t *s, const char *path);
+MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Solution copy-out accessors                                        */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t *s, mhs_solution_info_t *out);
-MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t *s, double *out, size_t count);
-MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t *s, double *out, size_t count);
-MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t *s, double *out, size_t count);
+MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution_info_t* out);
+MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* out, size_t count);
+MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count);
+MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Probe trace accessors                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_solution_probe_get_info(const mhs_solution_t *s, size_t index, size_t *name_size,
-                                                 size_t *record_count);
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t *s, size_t index, char *name, size_t name_size,
-                                             double *times, double *values, size_t record_count);
+MHS_API mhs_status_t mhs_solution_probe_get_info(
+    const mhs_solution_t* s, size_t index, size_t* name_size, size_t* record_count);
+MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
+    double* times, double* values, size_t record_count);
 
 #ifdef __cplusplus
 } /* extern "C" */

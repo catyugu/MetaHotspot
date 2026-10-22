@@ -9,22 +9,15 @@
 #include "solver/assembler.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
 
-#include "core/model_definition.hpp"
-#include "core/solver.hpp"
-#include "metahotspot_c_api.h"
-#include "solver/assembler.hpp"
 #include <Eigen/Sparse>
-#include <cstdint>
-#include <memory>
-#include <optional>
-#include <string>
-#include <vector>
 
 /* ------------------------------------------------------------------ */
 /*  Shared error-buffer helpers                                        */
@@ -245,6 +238,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 }
 
 MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
+
+MHS_API const char* mhs_version_string(void) { return MHS_VERSION_STRING; }
 
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */

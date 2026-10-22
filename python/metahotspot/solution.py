@@ -12,7 +12,6 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.types import MhsSolution, MhsSolutionInfo, _SolveOptionsCStruct
 
-
 # ---- read-only result snapshots -----------------------------------------
 
 

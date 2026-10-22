@@ -1,12 +1,14 @@
 build*
 /output*
 results/
+dist/
 *.log
 .claude
 .cache
 .vscode
 .idea
 .pytest_cache
+.ruff_cache
 *.msh
 *.vtu
 __pycache__/

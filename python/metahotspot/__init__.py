@@ -12,18 +12,22 @@ Usage::
 """
 
 from metahotspot import enums
-from metahotspot._error import MetaHotspotError
 from metahotspot._compiled_data import Operators
+from metahotspot._error import MetaHotspotError
+from metahotspot._lib import library_version
 from metahotspot.compiled import Compiled, SolveOptions
 from metahotspot.model import Model
 from metahotspot.solution import Solution
 
+# Reported by the library this module binds, so it can never drift from it.
+__version__ = library_version()
+
 __all__ = [
-    "Model",
     "Compiled",
+    "MetaHotspotError",
+    "Model",
+    "Operators",
     "Solution",
     "SolveOptions",
-    "Operators",
     "enums",
-    "MetaHotspotError",
 ]
