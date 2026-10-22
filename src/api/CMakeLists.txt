@@ -48,9 +48,8 @@ mhs_stage_runtime(mhs_c_api)
 # the headers and CMake packages of the CPM dependencies stay out of it.
 if(SKBUILD)
     install(TARGETS mhs_c_api
-        RUNTIME DESTINATION metahotspot
-        LIBRARY DESTINATION metahotspot
-        COMPONENT python)
+        RUNTIME DESTINATION metahotspot COMPONENT python
+        LIBRARY DESTINATION metahotspot COMPONENT python)
     install(CODE [[
         # oneTBB is built by CPM and never installed, so its build directory has
         # to be a search location; Homebrew's OpenMP is outside the default
