@@ -47,28 +47,5 @@ if(MHS_WERROR)
     )
 endif()
 
-# Profiling and debugger conveniences belong to the top-level build owner.
-if(PROJECT_IS_TOP_LEVEL)
-    target_compile_options(mhs_options INTERFACE
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:Debug>>:-g3>
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:Debug>>:-ggdb>
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:Release>>:-fno-omit-frame-pointer>
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:RelWithDebInfo>>:-fno-omit-frame-pointer>
-    )
-    target_link_options(mhs_options INTERFACE
-        $<$<AND:$<PLATFORM_ID:Linux>,${_MHS_GNU_FRONTEND},$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>>:-rdynamic>
-    )
-endif()
-
-option(MHS_ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
-if(MHS_ENABLE_COVERAGE)
-    target_compile_options(mhs_options INTERFACE
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:Debug>>:--coverage>
-    )
-    target_link_options(mhs_options INTERFACE
-        $<$<AND:${_MHS_GNU_FRONTEND},$<CONFIG:Debug>>:--coverage>
-    )
-endif()
-
 unset(_MHS_GNU_FRONTEND)
 unset(_MHS_MSVC_FRONTEND)

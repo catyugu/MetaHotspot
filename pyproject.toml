@@ -6,7 +6,8 @@ build-backend = "scikit_build_core.build"
 name = "metahotspot"
 description = "MetaHotspot — thermal simulation C API Python bindings + model-agnostic macromodel (MOR) algorithms"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = [
     "numpy>=1.21",
@@ -23,8 +24,8 @@ Homepage = "https://github.com/catyugu/MetaHotspot"
 # command-line application are not part of it.
 [tool.scikit-build]
 minimum-version = "build-system.requires"
-cmake.version = ">=3.26"
 wheel.packages = ["python/metahotspot"]
+sdist.exclude = ["/playground/**", "/.github/**"]
 # No Python extension module is involved, so one wheel serves every Python.
 wheel.py-api = "py3"
 # The C library sits in the "python" install component (src/api/CMakeLists.txt),

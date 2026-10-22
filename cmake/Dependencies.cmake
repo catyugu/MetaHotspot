@@ -119,26 +119,19 @@ if(MINGW AND TARGET tbb)
 endif()
 
 # ----------------------------------------------------------------------------
-# amgcl - header-only algebraic multigrid (builtin backend). Powers the
-# AMG-preconditioned CG solver.
-#
-# Fetched with SYSTEM so its headers stay out of this project's warning policy,
-# and its inherited compile options are dropped: amgcl passes its OpenMP flag as
-# one string ("-Xclang -fopenmp"), which clang-cl rejects as an unknown
-# argument, and this project already sets its own warning flags. mhs_linear
-# links OpenMP::OpenMP_CXX itself for the same reason.
+# AMGCL's builtin backend only needs headers. Do not run its upstream build,
+# probe Boost, or inherit compiler flags; mhs_linear links OpenMP explicitly.
 # ----------------------------------------------------------------------------
 if(NOT TARGET amgcl::amgcl)
     CPMAddPackage(
         NAME amgcl
         GITHUB_REPOSITORY ddemidov/amgcl
         GIT_TAG ${MHS_AMGCL_VERSION}
-        SYSTEM YES
-        OPTIONS
-        "AMGCL_BUILD_TESTS OFF"
-        "AMGCL_BUILD_EXAMPLES OFF"
+        DOWNLOAD_ONLY YES
     )
-    set_property(TARGET amgcl PROPERTY INTERFACE_COMPILE_OPTIONS "")
+    add_library(mhs_amgcl INTERFACE)
+    add_library(amgcl::amgcl ALIAS mhs_amgcl)
+    target_include_directories(mhs_amgcl SYSTEM INTERFACE "${amgcl_SOURCE_DIR}")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -162,7 +155,7 @@ endif()
 # Intel oneMKL (optional, provides MKL::MKL). Pardiso is the direct solver; the
 # AMG-preconditioned CG (AmgCg) default does not depend on MKL.
 # ----------------------------------------------------------------------------
-set(MHS_ENABLE_PARDISO FALSE CACHE INTERNAL "" FORCE)
+set(MHS_ENABLE_PARDISO OFF)
 
 if(USE_MKL)
     # Consumed by oneMKL's own MKLConfig.cmake (MKL_LINK etc.); `sdl` is a
@@ -170,15 +163,6 @@ if(USE_MKL)
     set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
     set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading runtime")
     set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
-    find_package(MKL QUIET)
-
-    if(TARGET MKL::MKL)
-        set(MHS_ENABLE_PARDISO TRUE CACHE INTERNAL "" FORCE)
-    else()
-        message(WARNING
-            "USE_MKL=ON but oneMKL was not found; Pardiso is disabled "
-            "(the AmgCg default still works)")
-    endif()
-else()
-    message(STATUS "USE_MKL=OFF; Pardiso support is disabled")
+    find_package(MKL CONFIG REQUIRED)
+    set(MHS_ENABLE_PARDISO ON)
 endif()

@@ -9,7 +9,7 @@
 在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
 （`brew install libomp`）。
 CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
-MKL 默认关闭，仅使用 Pardiso 时需要安装并启用。
+MKL 默认关闭；启用 `USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
 
 ```sh
 git clone https://github.com/catyugu/MetaHotspot.git
@@ -53,7 +53,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
 头文件路径及公开依赖；调用方无需手动补充 `src/` 或第三方头文件路径。
-仓库在顶层统一设置 C++20，单独使用组件的外部项目也应采用 C++20。
+每个 C++ 组件均通过目标接口传递 C++20 要求，调用方无需重复设置。
 可链接目标及其职责以[项目结构](docs/design/project-structure.md)为准，此处不重复。
 
 `include/metahotspot/` 下的头文件都是公开 API，安装时整棵树原样复制；`src/` 下的头文件是实现细节，
@@ -69,10 +69,12 @@ Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，�
 `pip install` 之后即可直接使用，不需要另外构建 C++。
 
 ```sh
-python -m build --wheel
-python -m pip install dist/*.whl
-python -m pytest python/tests
+python -m pip install build pytest
+python ci/check_python.py
 ```
+
+`ci/check_python.py` 先生成 sdist，再从 sdist 构建 wheel，按文件路径安装并运行现有测试。
+sdist 排除 `playground/` 实验资料；CMake 最低版本直接从 `CMakeLists.txt` 读取。
 
 `MHS_CAPI_PATH` 可指定别处的 C API 动态库，覆盖随包加载的那份。
 库版本只在 `include/metahotspot/metahotspot_c_api.h` 的 `MHS_VERSION_*` 宏里定义一次：
@@ -131,7 +133,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 ## 第三方依赖
 
 - **CPM**：用于引入其余依赖项。
-- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，仅私链，不进安装包接口。
+- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，作为静态库的私有链接依赖，安装包仍通过 `find_dependency` 查找。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
