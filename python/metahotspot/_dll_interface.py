@@ -8,19 +8,19 @@ from __future__ import annotations
 import ctypes
 
 from metahotspot.types import (
-    MhsModel,
-    MhsCompiled,
-    MhsSolution,
-    MhsOperators,
-    Rect2D,
-    Point2D,
-    MhsFaceRegion,
-    MhsCompiledInfo,
     MhsCellFields,
-    MhsMesh,
+    MhsCompiled,
+    MhsCompiledInfo,
+    MhsFaceRegion,
     MhsMaterialValues,
+    MhsMesh,
+    MhsModel,
+    MhsOperators,
     MhsOperatorsInfo,
+    MhsSolution,
     MhsSolutionInfo,
+    Point2D,
+    Rect2D,
     _SolveOptionsCStruct,
 )
 
@@ -30,12 +30,12 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Global helpers ----
     ("mhs_solve_options_default", None, [ctypes.POINTER(_SolveOptionsCStruct)]),
     ("mhs_last_error", ctypes.c_char_p, []),
+    ("mhs_version_string", ctypes.c_char_p, []),
     (
         "mhs_model_set_discrete_mesh",
         ctypes.c_int32,
         [ctypes.POINTER(MhsModel), ctypes.POINTER(MhsMesh)],
     ),
-
     (
         "mhs_compiled_eval_source_terms",
         ctypes.c_int32,

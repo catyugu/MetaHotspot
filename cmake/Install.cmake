@@ -35,7 +35,7 @@ configure_package_config_file("${PROJECT_SOURCE_DIR}/cmake/MetaHotspotConfig.cma
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MetaHotspot)
 # Same compatibility boundary as the shared library SONAME.
 write_basic_package_version_file("${PROJECT_BINARY_DIR}/MetaHotspotConfigVersion.cmake"
-    VERSION ${MHS_VERSION} COMPATIBILITY SameMajorVersion)
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
 install(FILES "${PROJECT_BINARY_DIR}/MetaHotspotConfig.cmake"
     "${PROJECT_BINARY_DIR}/MetaHotspotConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/MetaHotspot)
@@ -43,7 +43,7 @@ install(FILES "${PROJECT_BINARY_DIR}/MetaHotspotConfig.cmake"
 # Package the install tree, including CPM-built dependency install rules.
 if(PROJECT_IS_TOP_LEVEL)
     set(CPACK_PACKAGE_NAME MetaHotspot)
-    set(CPACK_PACKAGE_VERSION ${MHS_VERSION})
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
     set(CPACK_GENERATOR ZIP)
     include(CPack)
 endif()

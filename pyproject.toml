@@ -1,0 +1,70 @@
+[build-system]
+requires = ["scikit-build-core>=1.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "metahotspot"
+description = "MetaHotspot — thermal simulation C API Python bindings + model-agnostic macromodel (MOR) algorithms"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "pyamg>=4.0",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/catyugu/MetaHotspot"
+
+# The wheel ships the ctypes-loaded C API library built by this same CMake
+# project, so `pip install .` produces a working package; the tests and the
+# command-line application are not part of it.
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.26"
+wheel.packages = ["python/metahotspot"]
+# No Python extension module is involved, so one wheel serves every Python.
+wheel.py-api = "py3"
+# The C library sits in the "python" install component (src/api/CMakeLists.txt),
+# which keeps the dependency install rules out of the wheel.
+install.components = ["python"]
+cmake.define.MHS_BUILD_TESTS = "OFF"
+cmake.define.MHS_BUILD_APPS = "OFF"
+cmake.define.MHS_INSTALL = "OFF"
+
+# The version is defined once, as macros in the public C header.
+[[tool.dynamic-metadata]]
+provider = "scikit_build_core.metadata.regex"
+field = "version"
+input = "include/metahotspot/metahotspot_c_api.h"
+regex = '''(?sx)
+\#define \s+ MHS_VERSION_MAJOR \s+ (?P<major>\d+) .*?
+\#define \s+ MHS_VERSION_MINOR \s+ (?P<minor>\d+) .*?
+\#define \s+ MHS_VERSION_PATCH \s+ (?P<patch>\d+) .*?
+'''
+result = "{major}.{minor}.{patch}"
+
+[tool.ruff]
+target-version = "py39"
+src = ["python"]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "B",
+    "C4",
+    "PIE",
+    "PERF",
+    "RUF",
+    "SIM",
+]
+ignore = [
+    # Docstrings quote Greek and mathematical symbols on purpose.
+    "RUF002",
+]
