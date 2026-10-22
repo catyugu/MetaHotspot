@@ -71,8 +71,13 @@ if(SKBUILD)
                 "^/usr/lib/.*"
                 "^/System/.*")
         foreach(_mhs_dep IN LISTS _mhs_wheel_deps)
+            # Copy the real file, named the way the loader asks for it: a
+            # "SHARED_LIBRARY" install of a versioned symlink leaves a dangling
+            # link behind, which a wheel cannot carry.
+            get_filename_component(_mhs_dep_name "${_mhs_dep}" NAME)
+            get_filename_component(_mhs_dep_real "${_mhs_dep}" REALPATH)
             file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/metahotspot"
-                TYPE SHARED_LIBRARY FILES "${_mhs_dep}")
+                TYPE FILE RENAME "${_mhs_dep_name}" FILES "${_mhs_dep_real}")
         endforeach()
         if(_mhs_wheel_unresolved)
             message(WARNING "Unresolved runtime dependencies: ${_mhs_wheel_unresolved}")
