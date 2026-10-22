@@ -12,7 +12,9 @@
 AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND()
 
 #include <Eigen/Sparse>
+#include <algorithm>
 #include <exception>
+#include <omp.h>
 #include <stdexcept>
 #include <tuple>
 
@@ -30,11 +32,35 @@ namespace mhs::sim {
         // GMRES restart / Krylov-subspace budget.
         constexpr unsigned kGmresRestart = 64;
 
+        // The performance sweet point
+        constexpr Eigen::Index kRowsPerThread = 8192;
+        constexpr int kMaxThreads = 6;
+
+        /// amgcl reads the team size from OpenMP itself, so the only handle on it
+        /// is the calling thread's setting. The previous value is restored on
+        /// scope exit, leaving MKL's own threading untouched.
+        class ScopedTeam {
+        public:
+            explicit ScopedTeam(Eigen::Index rows) : previous_(omp_get_max_threads())
+            {
+                const Eigen::Index wanted = (rows + kRowsPerThread - 1) / kRowsPerThread;
+                const Eigen::Index limit = std::min<Eigen::Index>(kMaxThreads, previous_);
+                omp_set_num_threads(static_cast<int>(std::clamp(wanted, Eigen::Index {1}, limit)));
+            }
+            ScopedTeam(const ScopedTeam&) = delete;
+            ScopedTeam& operator=(const ScopedTeam&) = delete;
+            ~ScopedTeam() { omp_set_num_threads(previous_); }
+
+        private:
+            int previous_;
+        };
+
     } // namespace
 
     struct AmgCgSolver::Impl {
         bool symmetric = true;
         int max_iterations = 1000;
+        Eigen::Index rows = 0;
         std::shared_ptr<CgSolver> cg;
         std::shared_ptr<GmresSolver> gmres;
     };
@@ -53,6 +79,8 @@ namespace mhs::sim {
         const double scale = A.norm();
         impl_->symmetric = (asym <= 1e-6 * scale + 1e-300);
         impl_->max_iterations = config_.max_iterations;
+        impl_->rows = A.rows();
+        const ScopedTeam team(impl_->rows);
 
         // AMGCL reads the operator by rows, so hand it a row-major copy. The
         // AMG hierarchy is built eagerly here and the copy can go out of scope.
@@ -100,6 +128,7 @@ namespace mhs::sim {
         Eigen::VectorXd x = x0; // warm start
         std::size_t iters = 0;
         double residual = 0.0;
+        const ScopedTeam team(impl_->rows);
         try {
             if (impl_->symmetric) {
                 std::tie(iters, residual) = (*impl_->cg)(b, x);
