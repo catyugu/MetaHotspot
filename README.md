@@ -26,6 +26,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `MHS_BUILD_C_API` | ON | 构建 `mhs_c_api` 动态库，供 C/Python 调用 |
 | `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
+| `MHS_SANITIZE` | OFF | 用 ASan/UBSan 编译并链接全部本项目目标（仅 GCC/Clang） |
 | `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
 | `USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
@@ -48,8 +49,7 @@ GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 Z
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
 两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
 通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
-C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。Python 包位于 `python/`，
-通过 `MHS_CAPI_PATH` 指定构建或安装后的 C API 动态库。
+C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
 头文件路径及公开依赖；调用方无需手动补充 `src/` 或第三方头文件路径。
@@ -61,6 +61,23 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。Python 包位于
 
 `python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
 可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
+
+## Python 包
+
+Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
+`pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，
+`pip install` 之后即可直接使用，不需要另外构建 C++。
+
+```sh
+python -m build --wheel
+python -m pip install dist/*.whl
+python -m pytest python/tests
+```
+
+`MHS_CAPI_PATH` 可指定别处的 C API 动态库，覆盖随包加载的那份。
+库版本只在 `include/metahotspot/metahotspot_c_api.h` 的 `MHS_VERSION_*` 宏里定义一次：
+CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据和 `metahotspot.__version__`
+都由它派生，不要另建版本号副本。
 
 ## 规范
 
