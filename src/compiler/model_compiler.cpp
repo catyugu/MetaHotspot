@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <span>
 #include <stdexcept>
 
 namespace mhs::sim {
@@ -33,18 +32,6 @@ namespace mhs::sim {
                 return 2.54e-5;
             }
             throw std::invalid_argument("invalid length unit");
-        }
-
-        inline void compute_cell_spacing(
-            std::span<const double> vertices, std::vector<double>& d, std::vector<double>& c, double si_scale)
-        {
-            const mhs::core::Index n = static_cast<mhs::core::Index>(d.size());
-            for (mhs::core::Index i = 0; i < n; ++i) {
-                const double v0 = vertices[i] * si_scale;
-                const double v1 = vertices[i + 1] * si_scale;
-                d[i] = v1 - v0;
-                c[i] = (v0 + v1) * 0.5;
-            }
         }
 
         inline void copy_scalar_parameters(mhs::core::Model& model, const mhs::model::ModelDefinition& definition)
@@ -87,49 +74,43 @@ namespace mhs::sim {
             return out;
         }
 
-        DefaultBoundary compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            mhs::core::BCParamTable& parameters, const std::function<std::string(const std::string&)>& rewriter,
-            const mhs::core::SymbolTable& symbols)
+        mhs::core::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
+            std::vector<mhs::core::BoundaryCondition>& conditions,
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
         {
-            DefaultBoundary result;
-            std::visit(overloaded {
-                           [&](const mhs::model::DirichletBoundary& value) {
-                               result.type = mhs::core::BcType::FirstType;
-                               result.parameter_index
-                                   = static_cast<mhs::core::TableIndex>(parameters.dirichlet_T.size());
-                               parameters.dirichlet_T.push_back(mhs::core::parse(rewriter(value.temperature), symbols));
-                           },
-                           [&](const mhs::model::NeumannBoundary& value) {
-                               result.type = mhs::core::BcType::SecondType;
-                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.neumann_q.size());
-                               parameters.neumann_q.push_back(mhs::core::parse(rewriter(value.heat_flux), symbols));
-                           },
-                           [&](const mhs::model::ConvectionBoundary& value) {
-                               result.type = mhs::core::BcType::ThirdType;
-                               result.parameter_index = static_cast<mhs::core::TableIndex>(parameters.cauchy_h.size());
-                               parameters.cauchy_h.push_back(mhs::core::parse(rewriter(value.coefficient), symbols));
-                               parameters.cauchy_T_inf.push_back(
-                                   mhs::core::parse(rewriter(value.ambient_temperature), symbols));
-                           },
-                       },
-                condition);
-            return result;
+            using namespace mhs::core;
+            auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
+            auto result
+                = std::visit(overloaded {
+                                 [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
+                                     return Dirichlet {compile(value.temperature)};
+                                 },
+                                 [&](const mhs::model::NeumannBoundary& value) -> BoundaryCondition {
+                                     return Neumann {compile(value.heat_flux)};
+                                 },
+                                 [&](const mhs::model::ConvectionBoundary& value) -> BoundaryCondition {
+                                     return Convection {compile(value.coefficient), compile(value.ambient_temperature)};
+                                 },
+                             },
+                    condition);
+            const auto index = static_cast<TableIndex>(conditions.size());
+            conditions.push_back(std::move(result));
+            return index;
         }
 
         std::vector<CompiledBoundaryRegion> compile_boundary_patches(
-            const std::vector<mhs::model::BoundaryPatch>& boundaries, mhs::core::BCParamTable& parameters,
-            double si_scale, const std::function<std::string(const std::string&)>& rewriter,
-            const mhs::core::SymbolTable& symbols)
+            const std::vector<mhs::model::BoundaryPatch>& boundaries,
+            std::vector<mhs::core::BoundaryCondition>& conditions, double si_scale,
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
         {
             std::vector<CompiledBoundaryRegion> compiled;
             for (const auto& boundary : boundaries) {
-                const auto value = compile_thermal_boundary(boundary.condition, parameters, rewriter, symbols);
+                const auto condition = compile_thermal_boundary(boundary.condition, conditions, rewriter, symbols);
                 for (const auto& region : boundary.regions) {
                     CompiledBoundaryRegion item;
                     item.axis = region.axis;
                     item.coordinate = region.coordinate * si_scale;
-                    item.type = value.type;
-                    item.parameter_index = value.parameter_index;
+                    item.condition_index = condition;
                     item.rectangles.reserve(region.rectangles.size());
                     for (const auto& rectangle : region.rectangles) {
                         item.rectangles.push_back({rectangle.a_min * si_scale, rectangle.a_max * si_scale,
@@ -154,7 +135,8 @@ namespace mhs::sim {
 
     } // namespace
 
-    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition)
+    mhs::core::Model build_model_impl(
+        const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh* external)
     {
         mhs::core::Model model;
         copy_scalar_parameters(model, definition);
@@ -162,23 +144,6 @@ namespace mhs::sim {
         auto symbols = build_symbol_table(definition.variables, definition.functions);
         const double si_scale = length_unit_to_si(definition.settings.length_unit);
         model.observation_points = build_observation_points(definition.observation_points, symbols, si_scale);
-
-        auto& mesh = model.mesh;
-        mesh.nx = static_cast<mhs::core::Index>(definition.mesh.x_vertices.size()) - 1;
-        mesh.ny = static_cast<mhs::core::Index>(definition.mesh.y_vertices.size()) - 1;
-        mesh.nz = static_cast<mhs::core::Index>(definition.mesh.z_vertices.size()) - 1;
-
-        assert(mesh.nx > 0 && mesh.ny > 0 && mesh.nz > 0);
-        mesh.dx.resize(static_cast<size_t>(mesh.nx));
-        mesh.cx.resize(static_cast<size_t>(mesh.nx));
-        mesh.dy.resize(static_cast<size_t>(mesh.ny));
-        mesh.cy.resize(static_cast<size_t>(mesh.ny));
-        mesh.dz.resize(static_cast<size_t>(mesh.nz));
-        mesh.cz.resize(static_cast<size_t>(mesh.nz));
-
-        compute_cell_spacing(definition.mesh.x_vertices, mesh.dx, mesh.cx, si_scale);
-        compute_cell_spacing(definition.mesh.y_vertices, mesh.dy, mesh.cy, si_scale);
-        compute_cell_spacing(definition.mesh.z_vertices, mesh.dz, mesh.cz, si_scale);
 
         auto resolved_layers = resolve_geometry(definition.layers, si_scale, symbols);
 
@@ -203,8 +168,8 @@ namespace mhs::sim {
             props.c = compile_mat(mat.specific_heat);
             if (mat.is_fluid) {
                 if (!mat.dynamic_viscosity.has_value() || mat.dynamic_viscosity->empty()) {
-                    throw std::runtime_error("fluid material '" + definition.materials[m].name
-                        + "' is missing DynamicViscosity");
+                    throw std::runtime_error(
+                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
                 }
                 fluid_materials.initial_viscosity[m]
                     = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
@@ -233,26 +198,29 @@ namespace mhs::sim {
                     [&](const mhs::model::NamedFunction& function) { return function.name == heat_source; });
                 if (names_function)
                     heat_source += "(x)";
-                model.heat_source_table.push_back(mhs::core::parse(substitute_function_args(heat_source, "t"), symbols));
+                model.heat_source_table.push_back(
+                    mhs::core::parse(substitute_function_args(heat_source, "t"), symbols));
             }
         }
 
         // Compile boundary patches.
-        auto& bc_params = model.bc_params;
+        auto& boundary_conditions = model.boundary_conditions;
         auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T"); };
         auto compiled_boundaries
-            = compile_boundary_patches(definition.boundaries, bc_params, si_scale, bc_rewriter, symbols);
+            = compile_boundary_patches(definition.boundaries, boundary_conditions, si_scale, bc_rewriter, symbols);
 
-        auto default_boundary = compile_thermal_boundary(definition.default_boundary, bc_params, bc_rewriter, symbols);
+        auto default_boundary
+            = compile_thermal_boundary(definition.default_boundary, boundary_conditions, bc_rewriter, symbols);
 
-        // Cell assignment and boundary resolution.
-        model.cells = assign_cell_layers(resolved_layers, mesh);
-        const auto cell_count = model.cells.cell_to_grid.size();
-        for (mhs::core::Index cell = 0; cell < cell_count; ++cell) {
-            if (static_cast<size_t>(model.cells.material_id[cell]) >= model.material_table.size())
-                throw std::out_of_range("cell material ID out of range while compiling");
+        if (external) {
+            model.discrete = *external;
+            model.discrete.build_incidence();
+            build_external_output_mesh(model);
         }
-        resolve_boundary_patches(mesh, model.cells, compiled_boundaries, default_boundary, model.face_bcs);
+        else
+            compile_cartesian_mesh(model, definition.mesh, si_scale, resolved_layers);
+        project_cell_regions(model, resolved_layers);
+        model.boundary_terms = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
 
         // Fluid coupling.
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
@@ -264,4 +232,8 @@ namespace mhs::sim {
         return model;
     }
 
+    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition)
+    { return build_model_impl(definition, nullptr); }
+    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh& mesh)
+    { return build_model_impl(definition, &mesh); }
 } // namespace mhs::sim

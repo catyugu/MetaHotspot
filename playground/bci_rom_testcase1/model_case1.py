@@ -321,17 +321,14 @@ class Case1Model(AffineParametricModel):
         silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
         top_cells, top_areas = top_cells[silicon], top_areas[silicon]
         bottom = self.geometry.surface(Face.ZM, coordinate=0.0)
-        bot_cells, bot_areas = bottom.cell_ids, bottom.areas
 
         return (
             BoundaryGroup(
-                cells=top_cells,
-                areas=top_areas,
+                surface=type(top)(top_cells, top_areas, top.face_ids[silicon]),
                 h_range=self.config.h_ranges[0],
             ),
             BoundaryGroup(
-                cells=bot_cells,
-                areas=bot_areas,
+                surface=bottom,
                 h_range=self.config.h_ranges[1],
             ),
         )

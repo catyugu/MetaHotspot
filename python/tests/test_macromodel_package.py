@@ -3,7 +3,7 @@
 These tests exercise the generic algorithms without any named case: face-port
 conductance, explicit-face exclusion, common-patch area fractions, symmetry of
 the coupled system, identity-basis coupling agreement with the monolithic split
-reference, and the Extended-FANTASTIC extraction state machine.
+reference. Extraction contracts are covered in test_macromodel_numerics.py.
 """
 
 from __future__ import annotations
@@ -86,13 +86,8 @@ class _FakePortsModel:
     def source_shape(self):
         return self._ops.f.reshape(-1, 1)
 
-    def build_geometry(self, study, *, detail, macro):
-        raise NotImplementedError
-
 
 def test_face_port_conductance_uses_face_area_and_half_distance():
-    _model, compiled, ops = _build_operators(1, 1, 1)
-    model = _FakePortsModel(compiled, ops)
     port = mm.FacePort(
         label="z+",
         axis=2,
@@ -117,16 +112,12 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
     for p in ports:
         assert np.all(p.g > 0.0)
 
-    top = CellGeometry(compiled.cells).indices[:, 2] == compiled.metadata.nz - 1
-    top_cells = np.flatnonzero(top)
-    top_areas = np.full(top_cells.size, 1.0e-6)
-    model.boundary_groups = lambda: (
-        mm.BoundaryGroup(cells=top_cells, areas=top_areas),
-    )
+    model.boundary_groups = lambda: (mm.BoundaryGroup(model.geometry.surface(Face.ZP)),)
     ports = mm.enumerate_interface_ports(model, np.arange(compiled.cell_count))
     labels = {p.normal for p in ports}
     assert "z+" not in labels
     assert "z-" in labels
+    assert {"x-", "x+", "y-", "y+"} <= labels
 
 
 def _rect_port(n, lo, hi, axis=2, direction=1):
@@ -172,7 +163,7 @@ def test_nonconforming_ports_are_split_into_area_weighted_common_patches():
     assert np.allclose(np.asarray(E_r.sum(axis=1)).ravel(), 1.0)
 
 
-def test_identity_coupling_reproduces_monolithic_steady():
+def test_coupling_is_symmetric_psd_and_reproduces_monolithic_steady():
     _model, compiled, ops = _build_operators(2, 2, 3)
     model = _FakePortsModel(compiled, ops)
     lower, upper = _cell_split(compiled.cells, 1.5e-3)
@@ -188,9 +179,14 @@ def test_identity_coupling_reproduces_monolithic_steady():
     assert {p.normal for p in left.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
     assert {p.normal for p in right.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
 
-    Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
+    Kc, Cc, rhsc, lo, _ro, npatch = mm.connect(
         left, right, left.port("z+"), right.port("z-"), power=np.array([1.0])
     )
+    Kd = Kc.toarray()
+    np.testing.assert_allclose(Kd, Kd.T, atol=1.0e-10)
+    assert np.linalg.eigvalsh(Kd).min() >= -1.0e-9
+    assert Cc.shape == Kc.shape
+
     Kc = sp.csc_matrix(Kc)
     Kc[pin, pin] += 1.0e3
     steady_c = mm.solve_system(Kc, Cc, rhsc, dt=1.0, duration=0.0)[0]
@@ -199,19 +195,3 @@ def test_identity_coupling_reproduces_monolithic_steady():
     full[left.cells] = steady_c[:lo]
     full[right.cells] = steady_c[lo + npatch :]
     assert np.max(np.abs(full - steady_mono)) < 1.0e-8
-
-
-def test_coupled_system_is_symmetric_psd():
-    _model, compiled, ops = _build_operators(2, 2, 3)
-    model = _FakePortsModel(compiled, ops)
-    lower, upper = _cell_split(compiled.cells, 1.5e-3)
-    left = mm.build_subdomain(model, lower, name="lower")
-    right = mm.build_subdomain(model, upper, name="upper")
-    Kc, Cc, rhsc, lo, ro, npatch = mm.connect(
-        left, right, left.port("z+"), right.port("z-"), power=np.array([1.0])
-    )
-    Kd = Kc.toarray()
-    assert np.max(np.abs(Kd - Kd.T)) < 1.0e-10
-    eig = np.linalg.eigvalsh(Kd)
-    assert eig.min() >= -1.0e-9
-    assert Cc.shape == Kc.shape

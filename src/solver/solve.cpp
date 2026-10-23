@@ -52,30 +52,6 @@ namespace mhs::sim {
                 opts.nonlinear_absolute_tolerance};
         }
 
-        time_scheme::IntegratorKind build_integrator(const SolveOptions& opts)
-        {
-            switch (opts.integrator) {
-            case SolveOptions::Integrator::Bdf1:
-                return time_scheme::IntegratorKind::Bdf1;
-            case SolveOptions::Integrator::Bdf2:
-                return time_scheme::IntegratorKind::Bdf2;
-            default:
-                throw std::invalid_argument("build_integrator: unknown integrator");
-            }
-        }
-
-        time_scheme::StepStrategy build_strategy(const SolveOptions& opts)
-        {
-            switch (opts.step_strategy) {
-            case SolveOptions::StepStrategy::Adaptive:
-                return time_scheme::StepStrategy::Adaptive;
-            case SolveOptions::StepStrategy::Fixed:
-                return time_scheme::StepStrategy::Fixed;
-            default:
-                throw std::invalid_argument("build_strategy: unknown step_strategy");
-            }
-        }
-
         mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state, SolverPtr& solver,
             const NonLinearConfig& nl_config, const StateObserver& observe)
         {
@@ -88,7 +64,6 @@ namespace mhs::sim {
             };
             auto nonlinear_result = nonlinear_solve(build_ls, state, solver, nl_config);
             result.state = std::move(state);
-            result.fvm_count = state_count;
             result.time = 0.0;
             result.converged = nonlinear_result.converged;
             result.snapshot_times.push_back(0.0);
@@ -105,7 +80,6 @@ namespace mhs::sim {
         {
             const auto state_count = state.size();
             mhs::core::Solution result;
-            result.fvm_count = state_count;
             const double duration = study.duration;
             const double output_dt = study.output_interval;
             time_scheme::StepController step_ctrl {
@@ -219,8 +193,11 @@ namespace mhs::sim {
 
         auto solver_spec = build_solver_spec(opts);
         auto nl_config = build_nonlinear_config(opts);
-        auto integrator = build_integrator(opts);
-        auto step_strategy = build_strategy(opts);
+        if (opts.integrator != SolveOptions::Integrator::Bdf1 && opts.integrator != SolveOptions::Integrator::Bdf2)
+            throw std::invalid_argument("unknown integrator");
+        if (opts.step_strategy != SolveOptions::StepStrategy::Adaptive
+            && opts.step_strategy != SolveOptions::StepStrategy::Fixed)
+            throw std::invalid_argument("unknown step strategy");
 
         SolverPtr solver = create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
@@ -229,25 +206,25 @@ namespace mhs::sim {
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         }
         return solve_transient(
-            study, assemble, std::move(state), solver, opts, nl_config, integrator, step_strategy, observe);
+            study, assemble, std::move(state), solver, opts, nl_config, opts.integrator, opts.step_strategy, observe);
     }
 
     mhs::core::Solution solve(
         const mhs::core::Model& model, std::span<const double> initial_state, const SolveOptions& options)
     {
-        const auto fvm_count = model.cells.cell_to_grid.size();
-        if (fvm_count == 0) {
+        const auto cell_count = model.discrete.cells.size();
+        if (cell_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }
 
         std::vector<double> state;
         if (initial_state.empty()) {
-            state.assign(fvm_count, model.initial_temperature);
+            state.assign(cell_count, model.initial_temperature);
         }
         else {
-            if (initial_state.size() != fvm_count) {
+            if (initial_state.size() != cell_count) {
                 throw std::invalid_argument("solve: initial_state size (" + std::to_string(initial_state.size())
-                    + ") must equal fvm_count (" + std::to_string(fvm_count) + ")");
+                    + ") must equal cell_count (" + std::to_string(cell_count) + ")");
             }
             state.assign(initial_state.begin(), initial_state.end());
         }
@@ -262,7 +239,6 @@ namespace mhs::sim {
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 
         auto sol = solve_system(study, assemble, state, options, observe);
-        sol.fvm_count = fvm_count;
         sol.probe_traces = probe_recorder.traces();
         return sol;
     }

@@ -43,8 +43,7 @@ int main(int argc, char* argv[])
 
         auto model = mhs::sim::build_model(definition);
 
-        MHS_LOG_INFO("Created mesh with {} cells ({} x {} x {})", model.mesh.nx * model.mesh.ny * model.mesh.nz,
-            model.mesh.nx, model.mesh.ny, model.mesh.nz);
+        MHS_LOG_INFO("Compiled {} cells and {} face patches", model.discrete.cells.size(), model.discrete.faces.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
@@ -60,7 +59,7 @@ int main(int argc, char* argv[])
 
         // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
-        mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces);
+        mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics

@@ -4,14 +4,30 @@ from __future__ import annotations
 
 import ctypes
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import FluidBC, GeometryOp, Study, LengthUnit, Axis
+from metahotspot.enums import Axis, FluidBC, GeometryOp, LengthUnit, Study
 from metahotspot.types import MhsFaceRegion, MhsModel, Point2D, Rect2D
+
+if TYPE_CHECKING:
+    from metahotspot.compiled import Compiled
+
+
+def _integer_array(value, dtype, name, *, exterior_sentinel=False):
+    array = np.asarray(value)
+    if array.size:
+        if array.dtype.kind not in "iu":
+            raise ValueError(f"{name} must contain integers")
+        limits = np.iinfo(dtype)
+        lower = -1 if exterior_sentinel else limits.min
+        if int(array.min()) < lower or int(array.max()) > limits.max:
+            raise ValueError(f"{name} contains an out-of-range integer")
+    return np.ascontiguousarray(array.astype(dtype))
 
 
 # ---- low-level ctypes marshalling helpers --------------------------------
@@ -165,6 +181,75 @@ class Model(OwnedHandle):
             ctx="set_settings",
         )
 
+    def set_discrete_mesh(
+        self,
+        *,
+        cell_min,
+        cell_max,
+        face_owner,
+        face_neighbor,
+        face_axis,
+        face_sign,
+        face_min,
+        face_max,
+    ):
+        """Copy a supplied box/face mesh in SI metres; exterior neighbors are SIZE_MAX.
+
+        Geometry and connectivity must be valid, complete and TPFA-orthogonal.
+        No mesh validity checking, generation or refinement is performed.
+        """
+        from metahotspot.types import MhsMesh
+
+        inputs = {
+            "cell_min": cell_min,
+            "cell_max": cell_max,
+            "face_owner": face_owner,
+            "face_neighbor": face_neighbor,
+            "face_axis": face_axis,
+            "face_sign": face_sign,
+            "face_min": face_min,
+            "face_max": face_max,
+        }
+        arrays = {}
+        for name, value in inputs.items():
+            dtype = (
+                np.float64
+                if name in {"cell_min", "cell_max", "face_min", "face_max"}
+                else (np.int32 if name in {"face_axis", "face_sign"} else np.uintp)
+            )
+            arrays[name] = (
+                np.ascontiguousarray(value, dtype=dtype)
+                if dtype == np.float64
+                else _integer_array(
+                    value, dtype, name, exterior_sentinel=name == "face_neighbor"
+                )
+            )
+        if arrays["cell_min"].ndim != 2:
+            raise ValueError("cell_min must have shape (cell_count, 3)")
+        n = arrays["cell_min"].shape[0]
+        m = arrays["face_owner"].size
+        for name, array in arrays.items():
+            count = n if name.startswith("cell_") else m
+            shape = (count, 3) if name.endswith(("_min", "_max")) else (count,)
+            if array.shape != shape:
+                raise ValueError(f"{name} must have shape {shape}")
+        types = {
+            np.dtype(np.float64): ctypes.c_double,
+            np.dtype(np.uintp): ctypes.c_size_t,
+            np.dtype(np.int32): ctypes.c_int32,
+        }
+        native = MhsMesh(
+            cell_count=n,
+            face_count=m,
+            **{
+                name: a.ctypes.data_as(ctypes.POINTER(types[a.dtype]))
+                for name, a in arrays.items()
+            },
+        )
+        self._call(
+            "mhs_model_set_discrete_mesh", ctypes.byref(native), ctx="set_discrete_mesh"
+        )
+
     def set_mesh(
         self,
         x: np.ndarray | None = None,
@@ -252,9 +337,7 @@ class Model(OwnedHandle):
     def add_dirichlet(
         self,
         temperature: str,
-        regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
-        ) = None,
+        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
     ) -> None:
         """Add a Dirichlet boundary condition.
 
@@ -273,9 +356,7 @@ class Model(OwnedHandle):
     def add_neumann(
         self,
         heat_flux: str,
-        regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
-        ) = None,
+        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
     ) -> None:
         """Add a Neumann (heat flux) boundary condition."""
         native_regions, count = _face_regions(regions)
@@ -291,9 +372,7 @@ class Model(OwnedHandle):
         self,
         coefficient: str,
         ambient_temperature: str,
-        regions: (
-            list[tuple[int, float, float, float, float, float, float]] | None
-        ) = None,
+        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
     ) -> None:
         """Add a convection (Robin) boundary condition."""
         native_regions, count = _face_regions(regions)
@@ -404,7 +483,7 @@ class Model(OwnedHandle):
         b_max: float,
         kind: FluidBC,
         value: float,
-        inlet_temperature: float = 0.0,
+        inlet_temperature: float | None = None,
     ) -> None:
         _add_fluid_boundary(
             self._dll,
@@ -414,7 +493,7 @@ class Model(OwnedHandle):
             (a_min, a_max, b_min, b_max),
             kind,
             value,
-            inlet_temperature,
+            float("nan") if inlet_temperature is None else inlet_temperature,
         )
 
     # ---- Compile ----

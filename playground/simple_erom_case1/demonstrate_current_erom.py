@@ -4,6 +4,7 @@
 This script is intentionally independent of historical case scripts.  It reconstructs the current ecxml model, reads the current binary
 payload, and reports source scaling, closure, and detailed-vs-EROM errors.
 """
+
 from __future__ import annotations
 
 import re
@@ -141,7 +142,7 @@ def main():
     ops, compiled = build_current_detailed(x, y)
     cells = compiled.cells
     geometry = CellGeometry(cells)
-    top = np.flatnonzero(geometry.indices[:, 2] == geometry.nz - 1)
+    top = geometry.surface(Face.ZP).cell_ids
     centers = geometry.centers
     top = top[np.lexsort((centers[top, 1], centers[top, 0]))]
     top_area = geometry.sizes[top, 0] * geometry.sizes[top, 1]
@@ -155,7 +156,7 @@ def main():
     detailed_junction = float((source / source.sum()) @ detailed)
     if top.size != Vb.shape[0]:
         raise RuntimeError(
-            f"current ecxml reconstruction has {top.size} top cells, export has {Vb.shape[0]} faces; mesh=({x.size-1},{y.size-1})"
+            f"current ecxml reconstruction has {top.size} top cells, export has {Vb.shape[0]} faces; mesh=({x.size - 1},{y.size - 1})"
         )
     closure = area / (R + 1.0 / HTC)
     Hrom = sp.csc_matrix(Vb.T @ (closure[:, None] * Vb))

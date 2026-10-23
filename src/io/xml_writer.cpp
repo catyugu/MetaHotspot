@@ -2,8 +2,10 @@
 #include <tinyxml2.h>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 
 namespace mhs::io {
@@ -50,9 +52,16 @@ namespace mhs::io {
     } // namespace
 
     void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
-        std::span<const double> node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces)
+        std::span<const double> node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces,
+        std::span<const double> observation_times)
     {
         using namespace tinyxml2;
+
+        const auto shape = model.output.cartesian_shape;
+        if (shape[0] == 0 || shape[1] == 0 || shape[2] == 0)
+            throw std::invalid_argument("XML output requires a Cartesian sampling grid; use VTU for imported meshes");
+        if (node_temperature.size() != shape[0] * shape[1] * shape[2])
+            throw std::invalid_argument("XML node values do not match sampling-grid shape");
 
         XMLDocument doc;
         const XMLError err = doc.LoadFile(input_path.c_str());
@@ -84,9 +93,9 @@ namespace mhs::io {
             data_elem->DeleteChild(child);
         }
 
-        const mhs::core::Index node_nx = model.mesh.nx + 1;
-        const mhs::core::Index node_ny = model.mesh.ny + 1;
-        const mhs::core::Index node_nz = model.mesh.nz + 1;
+        const mhs::core::Index node_nx = model.output.cartesian_shape[0];
+        const mhs::core::Index node_ny = model.output.cartesian_shape[1];
+        const mhs::core::Index node_nz = model.output.cartesian_shape[2];
 
         for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
             for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
@@ -109,13 +118,13 @@ namespace mhs::io {
 
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
         if (sx)
-            sx->SetText(node_nx);
+            sx->SetText(static_cast<std::uint64_t>(node_nx));
         XMLElement* sy = values_elem->FirstChildElement("SizeY");
         if (sy)
-            sy->SetText(node_ny);
+            sy->SetText(static_cast<std::uint64_t>(node_ny));
         XMLElement* sz = values_elem->FirstChildElement("SizeZ");
         if (sz)
-            sz->SetText(node_nz);
+            sz->SetText(static_cast<std::uint64_t>(node_nz));
 
         for (const auto& trace : observation_traces) {
             XMLElement* target = nullptr;
@@ -135,6 +144,9 @@ namespace mhs::io {
                 target = doc.NewElement("a:anyType");
                 target->SetAttribute("i:type", "Result0DTransient");
 
+                // The downstream front-end reader matches this label verbatim,
+                // so it is a fixed value of the output contract, not a
+                // localizable string. Do not translate it.
                 XMLElement* physics = doc.NewElement("PhysicsName");
                 physics->SetText("温度");
                 target->InsertEndChild(physics);
@@ -152,7 +164,7 @@ namespace mhs::io {
                 results_elem->InsertEndChild(target);
             }
 
-            refill_double_list(doc, target->FirstChildElement("Times"), trace.times, false);
+            refill_double_list(doc, target->FirstChildElement("Times"), observation_times, false);
             refill_double_list(doc, target->FirstChildElement("Values"), trace.values, true);
         }
 

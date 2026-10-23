@@ -4,13 +4,10 @@ add_library(mhs_io STATIC
     vtu_writer.cpp
     face_region_parser.cpp
 )
-target_include_directories(mhs_io PRIVATE ${CMAKE_SOURCE_DIR}/src)
+# The tinyxml2 wrappers are implementation details and stay in this directory.
+target_include_directories(mhs_io PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(mhs_io
-    PUBLIC mhs_core
-    PRIVATE tinyxml2
-    PRIVATE mhs_options
-)
-
-target_include_directories(mhs_io SYSTEM PRIVATE
-    ${CMAKE_BINARY_DIR}/_deps/tinyxml2-src
+    PUBLIC mhs_expression
+    PRIVATE tinyxml2::tinyxml2
+    PRIVATE $<BUILD_INTERFACE:mhs_options>
 )

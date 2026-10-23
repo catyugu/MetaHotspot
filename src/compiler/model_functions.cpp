@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -20,6 +21,8 @@ namespace mhs::sim {
     mhs::core::FieldEvaluator make_expression_evaluator(
         const std::string& inner_expr, const mhs::core::SymbolTable& symbols)
     {
+        if (inner_expr.empty())
+            throw std::invalid_argument("function expression must not be empty");
         auto ce = mhs::core::parse(inner_expr, symbols);
         return [ce](const double* args, int nargs, const mhs::core::FieldContext& ctx) {
             mhs::core::FieldContext effective_ctx = ctx;
@@ -31,6 +34,8 @@ namespace mhs::sim {
     }
     mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
+        if (!std::isfinite(A) || !std::isfinite(alpha) || !std::isfinite(beta))
+            throw std::invalid_argument("double exponential function parameters must be finite");
         return [A, alpha, beta](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * (std::exp(alpha * t_val) - std::exp(beta * t_val));
@@ -39,6 +44,8 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
     {
+        if (!std::isfinite(A) || !std::isfinite(tau) || tau <= 0.0 || !std::isfinite(x0))
+            throw std::invalid_argument("Gaussian function requires finite parameters and positive tau");
         return [A, tau, x0](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             double u = (t_val - x0) / tau;
@@ -48,6 +55,8 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
+        if (!std::isfinite(A) || !std::isfinite(omega) || !std::isfinite(phi))
+            throw std::invalid_argument("sine function parameters must be finite");
         return [A, omega, phi](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * std::sin(omega * t_val + phi);
@@ -56,11 +65,14 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
     {
-        // Points are pre-sorted by X in the IO parser, so no resort needed.
+        if (pts.size() < 2)
+            throw std::invalid_argument("piecewise function requires at least two points");
+        for (const auto& p : pts)
+            if (!std::isfinite(p.x) || !std::isfinite(p.y))
+                throw std::invalid_argument("piecewise function points must be finite");
+        std::sort(pts.begin(), pts.end(), [](const auto& a, const auto& b) { return a.x < b.x; });
         return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double x = args[0];
-            if (pts.empty())
-                return 0.0;
             if (x <= pts.front().x)
                 return pts.front().y;
             if (x >= pts.back().x)
@@ -76,13 +88,16 @@ namespace mhs::sim {
 
     mhs::core::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values)
     {
+        if (!std::isfinite(period) || period <= 0.0 || values.empty())
+            throw std::invalid_argument("periodic function requires a positive finite period and nonempty values");
+        for (double value : values)
+            if (!std::isfinite(value))
+                throw std::invalid_argument("periodic function values must be finite");
         return [period, values = std::move(values)](
                    const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
             double t_val = args[0];
-            if (values.empty())
-                return 0.0;
             const std::size_t n = values.size();
-            if (period <= 0.0 || n == 1)
+            if (n == 1)
                 return values.front();
 
             // 每个完整周期 period 对应一个 values[i]，

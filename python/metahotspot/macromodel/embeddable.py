@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Embeddable FANTASTIC–BCI ROM extraction: extract once, connect everywhere.
+"""Embeddable FANTASTIC-BCI ROM extraction: extract once, connect everywhere.
 
 A *subdomain* (an arbitrary connected set of cells of the full model) is
 reduced a single time.  Its boundary splits in two roles:
@@ -61,8 +61,6 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from metahotspot.enums import Face
-
-
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
     normalized_operators,
@@ -139,71 +137,54 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     cells = np.asarray(cells, dtype=np.int64)
     full = model.geometry
     layout = model.cell_layout
-    n = cells.size
     local = {int(c): i for i, c in enumerate(cells)}
-    ijk = full.indices[cells]  # (n,3)
-    nx, ny, nz = full.nx, full.ny, full.nz
-
-    in_group = np.zeros(model.full_cell_count, dtype=bool)
-    for g in model.boundary_groups():
-        in_group[np.asarray(g.cells, dtype=np.int64)] = True
-    by_key: dict[tuple[int, int], list[int]] = {}
-    for r in range(n):
-        ci, cj, ck = (int(ijk[r, 0]), int(ijk[r, 1]), int(ijk[r, 2]))
-        for axis in range(3):
-            for direction in (-1, 1):
-                if axis == 0:
-                    ni = ci + direction
-                    in_grid = 0 <= ni < nx
-                    nidx = ni * (ny * nz) + cj * nz + ck
-                elif axis == 1:
-                    nj = cj + direction
-                    in_grid = 0 <= nj < ny
-                    nidx = ci * (ny * nz) + nj * nz + ck
-                else:
-                    nk = ck + direction
-                    in_grid = 0 <= nk < nz
-                    nidx = ci * (ny * nz) + cj * nz + nk
-                if (not in_grid) or (nidx not in local):
-                    by_key.setdefault((axis, direction), []).append(r)
-
+    fields = full.fields
+    ambient_faces = {
+        int(f) for group in model.boundary_groups() for f in group.face_ids
+    }
+    by_key = {}
+    invalid = np.iinfo(fields.face_neighbor.dtype).max
+    for fid, (owner, neighbor) in enumerate(
+        zip(fields.face_owner, fields.face_neighbor)
+    ):
+        for cell, other, sign in (
+            (int(owner), int(neighbor), int(fields.face_sign[fid])),
+            (int(neighbor), int(owner), -int(fields.face_sign[fid])),
+        ):
+            if cell == invalid or cell not in local or other in local:
+                continue
+            ambient = other == invalid and fid in ambient_faces
+            if ambient and not include_ambient:
+                continue
+            key = (int(fields.face_axis[fid]), sign, ambient)
+            by_key.setdefault(key, []).append((local[cell], fid))
     ports = []
-    for (axis, direction), rows in by_key.items():
-        rows = np.asarray(rows, dtype=np.int64)
+    for (axis, direction, ambient), entries in by_key.items():
+        rows = np.asarray([r for r, _ in entries], dtype=np.int64)
+        face_ids = np.asarray([f for _, f in entries], dtype=np.int64)
         fc = cells[rows]
-        declared = in_group[fc] & full.exposed(_FACE_BIT[(axis, direction)])[fc]
-        interface = (
-            np.flatnonzero(~declared) if not include_ambient else np.arange(rows.size)
-        )
-        if interface.size == 0:
-            continue
-        ir = rows[interface]
-        fci = cells[ir]
         t1, t2 = _tangent_pair(axis)
-        centers = layout.centers[fci]
-        half = layout.half_sizes[fci]
-        areas = 2.0 * half[:, t1] * 2.0 * half[:, t2]
-        rects = np.column_stack(
-            (
-                centers[:, t1] - half[:, t1],
-                centers[:, t1] + half[:, t1],
-                centers[:, t2] - half[:, t2],
-                centers[:, t2] + half[:, t2],
-            )
+        lo = fields.face_min[face_ids]
+        hi = fields.face_max[face_ids]
+        rects = np.column_stack((lo[:, t1], hi[:, t1], lo[:, t2], hi[:, t2]))
+        distances = np.where(
+            fields.face_owner[face_ids] == fc,
+            fields.owner_distance[face_ids],
+            fields.neighbor_distance[face_ids],
         )
         ports.append(
             FacePort(
                 label=f"{_AXES[axis]}{_DIR[direction]}",
                 axis=axis,
                 direction=direction,
-                cells=ir,
-                areas=areas,
-                k=layout.conductivity[fci, axis],
-                half=half[:, axis],
+                cells=rows,
+                areas=fields.face_area[face_ids],
+                k=layout.conductivity[fc, axis],
+                half=distances,
                 t1=t1,
                 t2=t2,
                 rects=rects,
-                ambient=bool(include_ambient and np.all(declared)),
+                ambient=ambient,
             )
         )
     return ports
@@ -452,7 +433,7 @@ def extract_rom(
     h_ranges = [list(r) for r in subdomain.ambient_ranges]
     interface_areas = np.zeros(cells.size, dtype=np.float64)
     for port in subdomain.ports:
-        interface_areas[np.asarray(port.cells, dtype=np.int64)] += port.areas
+        np.add.at(interface_areas, np.asarray(port.cells, dtype=np.int64), port.areas)
     if subdomain.ports:
         boundary_terms.append(sp.diags(interface_areas, format="csc"))
         h_ranges.append(list(interface_h_range))
@@ -468,41 +449,31 @@ def extract_rom(
         seed=seed,
     )
 
-    C_hat = sp.csc_matrix(basis.T @ ops.C @ basis)
-    K0_hat = sp.csc_matrix(basis.T @ ops.K @ basis)
-    F_hat = np.asarray(basis.T @ G, dtype=np.float64)
-    ambient_hat = [sp.csc_matrix(basis.T @ H @ basis) for H in subdomain.ambient_terms]
+    return _project_rom(subdomain, basis, summary)
 
-    # Modalize: M-normalized generalized modes (M = I, K = diag(λ), one ~0 mode).
+
+def _project_rom(
+    subdomain: Subdomain, basis: np.ndarray, summary: dict
+) -> EmbeddableRom:
+    """Project and modalize a response basis, then export physical face traces."""
     modal_k, modal_q = scipy.linalg.eigh(
-        K0_hat.toarray(), C_hat.toarray(), check_finite=False
+        basis.T @ subdomain.K @ basis,
+        basis.T @ subdomain.C @ basis,
+        check_finite=False,
     )
-    modal_q = np.asarray(modal_q, dtype=np.float64)
-    basis = np.asarray(basis @ modal_q, dtype=np.float64)
-    C_hat = sp.eye(modal_k.size, format="csc")
-    K0_hat = sp.diags(modal_k, format="csc")
-    F_hat = np.asarray(modal_q.T @ F_hat, dtype=np.float64)
-    ambient_hat = [
-        sp.csc_matrix(modal_q.T @ H.toarray() @ modal_q) for H in ambient_hat
-    ]
-    boundary_traces = {
-        p.label: np.asarray(basis[np.asarray(p.cells), :], dtype=np.float64)
-        for p in subdomain.boundary_ports
-    }
-    boundary_conductances = {
-        p.label: np.asarray(p.g, dtype=np.float64) for p in subdomain.boundary_ports
-    }
-
+    basis = np.ascontiguousarray(basis @ modal_q)
     return EmbeddableRom(
         name=subdomain.name,
         cells=subdomain.cells,
-        basis=np.asarray(basis, dtype=np.float64),
-        C_hat=C_hat,
-        K0_hat=K0_hat,
-        F_hat=np.asarray(F_hat, dtype=np.float64),
-        ambient_hat=ambient_hat,
-        boundary_traces=boundary_traces,
-        boundary_conductances=boundary_conductances,
+        basis=basis,
+        C_hat=sp.eye(modal_k.size, format="csc"),
+        K0_hat=sp.diags(modal_k, format="csc"),
+        F_hat=basis.T @ subdomain.source,
+        ambient_hat=[
+            sp.csc_matrix(basis.T @ H @ basis) for H in subdomain.ambient_terms
+        ],
+        boundary_traces={p.label: basis[p.cells, :] for p in subdomain.boundary_ports},
+        boundary_conductances={p.label: p.g for p in subdomain.boundary_ports},
         ambient_ranges=subdomain.ambient_ranges,
         effective_p=subdomain.effective_p,
         ports=subdomain.ports,

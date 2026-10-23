@@ -38,11 +38,8 @@ def test_model_native_calls_compile_and_assemble():
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert (compiled.metadata.nx, compiled.metadata.ny, compiled.metadata.nz) == (
-        1,
-        1,
-        1,
-    )
+    assert compiled.metadata.face_count == 6
+    assert compiled.metadata.state_count == 1
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)
@@ -81,8 +78,8 @@ def test_solution_views_derive_from_one_native_snapshot():
 
     solution = model.compile().solve()
 
-    assert solution.fvm_count == 1
-    assert solution.temperature.base is solution.state
+    assert solution.state.size == 1
+    assert solution.temperature is solution.state
     assert np.shares_memory(solution.temperature_history, solution.state_history)
     assert solution.state_history.shape[1] == solution.state.shape[0]
     assert solution.history_times[0] == pytest.approx(0.0)

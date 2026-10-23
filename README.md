@@ -1,33 +1,107 @@
 # MetaHotspot
 
+三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行应用。
+使用 CMake 构建与安装，通过 CPM 获取第三方依赖。
+
+## 下载与构建
+
+需要 Git、CMake 3.26+、支持 C++20 的编译器和 OpenMP 运行环境。Windows 使用 MSVC 或 clang-cl，
+在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
+（`brew install libomp`）。
+CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
+MKL 默认关闭；启用 `MHS_USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
+
+```sh
+git clone https://github.com/catyugu/MetaHotspot.git
+cd MetaHotspot
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+| 选项 | 默认值 | 用途 |
+| --- | --- | --- |
+| `MHS_BUILD_TESTS` | 顶层 ON，子项目 OFF | 构建现有单元测试 |
+| `MHS_BUILD_APPS` | 顶层 ON，子项目 OFF | 构建 `metahotspot` 命令行应用 |
+| `MHS_BUILD_C_API` | ON | 构建 `mhs_c_api` 动态库，供 C/Python 调用 |
+| `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
+| `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
+| `MHS_SANITIZE` | OFF | 用 ASan/UBSan 编译并链接全部本项目目标（仅 GCC/Clang） |
+| `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
+| `MHS_USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
+
+`mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
+`CPM_SOURCE_CACHE` 可指定共享缓存以复用下载；未指定时沿用仓库的 `.cache/cpm`。
+
+## 安装与打包
+
+```sh
+cmake --install build --config Release --prefix ./build/package
+cpack --config build/CPackConfig.cmake -C Release -B build
+```
+
+ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
+CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置；
+运行环境仍需相应的 C++/OpenMP 运行库。启用 MKL 的包还需要对应 MKL 运行环境。
+GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 ZIP artifact，下载时选择对应任务。
+
+实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
+`CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
+两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
+通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
+C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
+
+各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
+头文件路径及公开依赖；调用方无需手动补充 `src/` 或第三方头文件路径。
+每个 C++ 组件均通过目标接口传递 C++20 要求，调用方无需重复设置。
+可链接目标及其职责以[项目结构](docs/design/project-structure.md)为准，此处不重复。
+
+`include/metahotspot/` 下的头文件都是公开 API，安装时整棵树原样复制；`src/` 下的头文件是实现细节，
+不安装。`mhs::metahotspot` 是主要 C++ 组件的统一入口。
+
+`python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
+可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
+
+## Python 包
+
+Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
+`pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，
+`pip install` 之后即可直接使用，不需要另外构建 C++。
+
+```sh
+python -m pip install build pytest
+python ci/check_python.py
+```
+
+`ci/check_python.py` 先生成 sdist，再从 sdist 构建 wheel，按文件路径安装并运行现有测试。
+sdist 排除 `playground/` 实验资料；CMake 最低版本直接从 `CMakeLists.txt` 读取。
+
+`MHS_CAPI_PATH` 可指定别处的 C API 动态库，覆盖随包加载的那份。
+库版本只在 `include/metahotspot/metahotspot_c_api.h` 的 `MHS_VERSION_*` 宏里定义一次：
+CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据和 `metahotspot.__version__`
+都由它派生，不要另建版本号副本。
+
 ## 规范
 
 - 语言：C++20
 - 构建系统：CMake
 - 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
-- 编译选项：严格（`/W4 /WX` 或 `-Wall -Wextra -Wpedantic -Werror`），第三方库除外。
+- 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
-- 单元测试：每个模块一个测试套件，不要过于零碎。
-- 回归测试：应包括单元测试和案例行为验证。回归测试的结果会与 `cases/` 目录中的参考输出文件进行核对。可以使用 `pytest` 方便地进行回归测试。
+- 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
+- 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
-- 日志：放弃原生流或格式化输入。应封装一个成熟的日志库（如 spdlog），以实现结构化、高性能的日志。默认级别应为 `INFO`。热循环中如需打印，则应该使用 `DEBUG`。
-- 错误处理：模块可通过 `std::exception` 报告错误；CLI 入口统一捕获、记录并退出。可恢复问题应记录警告和回退值。
+- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`MHS_VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
+- 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
 
 ## 架构
 
-### 构建目标
+构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
-- **`src/core/model_definition.hpp`**：header-only authoring model 类型（`mhs::model` 命名空间），不依赖第三方库；Layer / Block / Rect / Boundary 的输入顺序是模型语义。
-- **`mhs_core`**：header-only 的运行期数据契约与网格助手，作为 compiler、solver 和结果 IO 的稳定依赖边界。
-- **`mhs_compiler`**：把有序 `ModelDefinition` 编译为运行期 SoA 模型，包含几何覆盖、材料/热源/边界表达式编译以及冻结流场构建。
-- **`mhs_solver`**：消费运行期模型，负责热与流体组装、线性/非线性迭代、时间推进、探针和后处理。不包含宏模型逻辑。
-- **`mhs_expression`**：muparser 与 TBB 封装；只在表达式实现变化时重编。
-- **`mhs_linear`**：AMGCL/Eigen 迭代求解和可选 MKL/Pardiso 封装；与建模代码的增量编译隔离。
-- **`mhs_io`**：tinyxml2 适配以及 XML / VTU 输出；外部 FaceKey 格式不会进入建模或引擎层。
-- **`mhs_logging`**：spdlog 封装。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
 
-运行期只划分一个无编译成本的契约层 `runtime` 和两个实现模块：`compiler` 完成 setup，`solver` 完成 solve。模块内按职责保留独立 `.cpp`，不再为 assembler、scheduler、fluid 等实现细节逐一建库。
+当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
 ## 运行
 
@@ -47,37 +121,31 @@
 
 ```bash
 # 最常见的调用：指定主输入文件
-metahotspot --input cases/simple_steady_tests/steady_case1.xml
+metahotspot --input cases/simple_steady_cases/simple_steady_case1.xml
 
 # 顺序无关：把 output-vtu 放最前也行
 metahotspot --output-vtu /tmp/out.vtu \
             --output-xml /tmp/out.xml \
-            --input   cases/simple_steady_tests/steady_case1.xml
+            --input   cases/simple_steady_cases/simple_steady_case1.xml
 
 ```
 
 ## 第三方依赖
 
 - **CPM**：用于引入其余依赖项。
-- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML。
+- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，作为静态库的私有链接依赖，安装包仍通过 `find_dependency` 查找。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
-- **GTest**：测试框架。每个模块一个测试套件。
+- **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
+- **OpenMP**：muparser 与 AMGCL 的线程后端。
+- **GTest**：单元测试框架，用例由 CTest 发现并运行。
 - **tbb**: 用于并行化和 CPU 资源调度。
 
-## 单元排序约定
+## 编号与数据顺序
 
-整个代码库（几何编译器、组装器、VTU写入器、Python API）统一使用 **ix-iy-iz** 遍历顺序。
+`CellId` 标识控制体及对应温度未知量，`FaceId` 标识唯一有向面片。编号不表示空间位置或邻接关系；物理边界投影不改变面片拓扑。
 
-```text
-for (ix = 0; ix < nx; ix++)
-  for (iy = 0; iy < ny; iy++)
-    for (iz = 0; iz < nz; iz++)
-```
+几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 统一按 CellId 排列。Python 的 `Solution.temperature` 和 `temperature_history` 直接共享状态数组。
 
-线性化公式：`grid_index = ix * (ny * nz) + iy * nz + iz`
-
-活跃单元（属于某个 layer/block 的网格单元）被连续编号，称为 **SoA（Structure-of-Arrays）顺序**。`grid_to_cell[grid_index]` 返回该网格位置对应的活跃单元索引，-1 表示非活跃。`cell_temperatures()`、`layer_ids()`、`block_ids()` 等所有单元级数组都按 SoA 顺序排列。
-
-**层的 Z 方向：** 层从上（高 Z）到下（低 Z）排列。Layer 0 在顶部（最高 Z 值），Layer N-1 在底部。
+层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。

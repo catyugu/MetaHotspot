@@ -1,3 +1,4 @@
+#include "solver/solution_history.hpp"
 #include "solver/solve.hpp"
 
 #include <Eigen/Sparse>
@@ -7,6 +8,8 @@
 
 TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 {
+    mhs::core::SolutionHistory history(1, 2);
+    EXPECT_THROW(history.current(), std::logic_error);
     mhs::sim::Study study {mhs::core::StudyType::Transient, 0.5, 0.25};
     mhs::sim::SolveOptions options;
     options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::AmgCg;

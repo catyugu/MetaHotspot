@@ -45,7 +45,8 @@ static std::string make_xml_with_observe_points(const std::string& obs_block)
 
 static std::filesystem::path tmp_dir()
 {
-    auto dir = std::filesystem::temp_directory_path() / "mhs_test_io";
+    const auto* test = ::testing::UnitTest::GetInstance()->current_test_info();
+    auto dir = std::filesystem::current_path() / "mhs_test_io" / test->name();
     std::filesystem::create_directories(dir);
     return dir;
 }
@@ -183,19 +184,19 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto out_path = tmp_dir() / "io_write_output.xml";
 
     mhs::core::Model model;
-    model.mesh.nx = 1;
-    model.mesh.ny = 1;
-    model.mesh.nz = 1;
+    model.output.cartesian_shape[0] = 2;
+    model.output.cartesian_shape[1] = 2;
+    model.output.cartesian_shape[2] = 2;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<mhs::core::ProbeTrace> traces;
     mhs::core::ProbeTrace t1;
     t1.name = "probe_a";
-    t1.times = {0.0, 1.0, 2.0};
+    const std::vector<double> times {0.0, 1.0, 2.0};
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
-    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_NE(out_xml.find("Result0DTransient"), std::string::npos);
@@ -203,6 +204,24 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     EXPECT_NE(out_xml.find("<a:double>300.000000</a:double>"), std::string::npos);
     EXPECT_NE(out_xml.find("<a:double>320.000000</a:double>"), std::string::npos);
 
+    std::filesystem::remove(in_path);
+    std::filesystem::remove(out_path);
+}
+
+TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
+{
+    const auto in_path = write_tmp_xml("io_dimensions.xml", make_xml_with_observe_points(""));
+    const auto out_path = tmp_dir() / "io_dimensions_output.xml";
+    mhs::core::Model model;
+    model.output.cartesian_shape = {2, 3, 4};
+    const std::vector<double> temperatures(24, 300.0);
+
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, temperatures, {});
+
+    const auto xml = read_file(out_path);
+    EXPECT_NE(xml.find("<SizeX>2</SizeX>"), std::string::npos);
+    EXPECT_NE(xml.find("<SizeY>3</SizeY>"), std::string::npos);
+    EXPECT_NE(xml.find("<SizeZ>4</SizeZ>"), std::string::npos);
     std::filesystem::remove(in_path);
     std::filesystem::remove(out_path);
 }
@@ -236,13 +255,14 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
     mhs::core::Model model;
-    model.mesh.nx = 1;
-    model.mesh.ny = 1;
-    model.mesh.nz = 1;
+    model.output.cartesian_shape[0] = 2;
+    model.output.cartesian_shape[1] = 2;
+    model.output.cartesian_shape[2] = 2;
     std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
     std::vector<mhs::core::ProbeTrace> traces;
-    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces);
+    const std::vector<double> times;
+    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_EQ(out_xml.find("Result0DTransient"), std::string::npos)
@@ -296,8 +316,8 @@ TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
 
 TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 {
-    auto path = write_tmp_xml("io_thermal_conductivity_3trim.xml",
-        make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
+    auto path
+        = write_tmp_xml("io_thermal_conductivity_3trim.xml", make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
     mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
@@ -305,4 +325,10 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
     EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "2.5");
     EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "0");
     std::filesystem::remove(path);
+}
+
+TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape)
+{
+    const mhs::core::Model model;
+    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model, {}, {}), std::invalid_argument);
 }

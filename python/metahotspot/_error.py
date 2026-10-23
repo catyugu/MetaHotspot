@@ -24,11 +24,6 @@ def check(status: int, ctx: str = "") -> None:
         from metahotspot._lib import get_dll
 
         dll = get_dll()
-        err_ptr = dll.mhs_last_error()
-        msg = ""
-        if err_ptr:
-            raw = err_ptr
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8", errors="replace")
-            msg = raw
+        raw = dll.mhs_last_error()
+        msg = raw.decode("utf-8", errors="replace") if raw else ""
         raise MetaHotspotError(context=ctx, msg=msg)

@@ -1,20 +1,12 @@
 # MetaHotspot Context
 
-MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。当前采用结构化网格和单元中心温度自由度，支持稳态、瞬态，以及可选的单向流热耦合。
+MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。消费显式控制体与面片网格，采用单元中心温度自由度，支持稳态、瞬态，以及可选的单向流热耦合。
 
 本文只保存跨模块工作所需的稳定上下文。数据结构、调用链和接口签名分别以对应设计文档为准，不在此重复。
 
 ## 架构边界
 
-| 目标             | 职责                                          |
-| ---------------- | --------------------------------------------- |
-| `mhs_core`       | header-only 运行期数据契约和网格助手          |
-| `mhs_compiler`   | `ModelDefinition` → 运行期 SoA 模型及冻结流场 |
-| `mhs_solver`     | 算子组装、线性/非线性求解、时间推进和后处理   |
-| `mhs_expression` | muparser 与 TBB 表达式封装                    |
-| `mhs_linear`     | AMGCL/Eigen 迭代求解及可选 MKL/Pardiso 封装   |
-| `mhs_io`         | XML 输入、XML/VTU 输出及外部格式适配          |
-| `mhs_logging`    | spdlog 封装                                   |
+构建目标划分、目录归属和命名空间规则以[项目结构](docs/design/project-structure.md)为准，不在此重复。
 
 依赖方向：
 
@@ -26,7 +18,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 ## 求解约定
 
-- 稳态是在 `t = 0` 执行一次非线性求解；瞬态执行 `assemble → build_system → nonlinear_solve → estimate_error`。
+- 稳态是在 `t = 0` 执行一次非线性求解；瞬态在 `nonlinear_solve` 的各次迭代中执行 `assemble → build_system`，收敛后由 Adaptive 策略执行 `estimate_error`；Fixed 策略直接接受收敛步。
 - 全局算子统一写为 `C * dx/dt + K * x = f`。
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
@@ -47,13 +39,12 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - 热边界作用于单元面，不引入面自由度。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 
-完整数据流以 [data-flow.md](docs/design/data-flow.md) 为唯一事实源。
-
 ## 数据约定
 
 - 内部几何一律使用 SI 米。
-- 运行期使用扁平 SoA；活跃单元由 `cell_to_grid` 紧凑遍历。
-- `face_bcs[cell * 6 + dir]` 保存单元面的已解析热边界。
+- 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
+- `boundary_terms` 引用原始 FaceId 与 `boundary_conditions` 中的类型化 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不修改网格拓扑；`cell_material` 与 `source_terms` 分别保存材料索引和热源积分数据。
+- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。
 - 当前只支持三维网格。
@@ -64,7 +55,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 1. POD 与纯函数优先，不建立多层继承体系。
 2. `mhs` 只作品牌命名空间，不重导出或定义类型。
-3. 公共 API 最多两层命名空间；`detail` 只保存跨文件私有实现。
+3. 公共领域接口使用两层命名空间；内部实现包括 `mhs::sim::fluid` 和 `mhs::sim::time_scheme`。
 4. 头文件禁止 `using namespace`。
 5. 匿名命名空间用于单文件私有实现。
 6. 外部格式字符串止于 IO；运行期模型不保存 XML 表示。
