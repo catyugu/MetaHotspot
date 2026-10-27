@@ -16,7 +16,9 @@ mhs_stage_runtime(mhs_tests)
 
 # Discovery runs once per build (the default POST_BUILD mode). PRE_TEST re-runs it
 # on every ctest invocation and also wraps each test in a `cmake -P` process,
-# which costs ~70 ms — more than any test here.
+# which costs ~70 ms — more than any test here. The default 5 s is measured from
+# process start, so a cold Debug executable on a loaded CI runner runs out.
 gtest_discover_tests(mhs_tests
     TEST_PREFIX "mhs."
+    DISCOVERY_TIMEOUT 60
 )
