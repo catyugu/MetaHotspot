@@ -36,16 +36,21 @@ namespace mhs::dtdm {
     };
 
     // CODE: TAP-2.5D layers.lcf volumetric heat capacities.
-    inline constexpr Material kSilicon { "silicon", 100.0, 2330.0 * 751.0 };
-    inline constexpr Material kCopper { "copper", 400.0, 8960.0 * 385.0 };
-    inline constexpr Material kBump { "bump", 1.6, 1600.0 * 1450.0 };
-    inline constexpr Material kTim { "tim", 4.0, 4000.0 * 1000.0 };
-    inline constexpr Material kFr4 { "fr4", 0.30, 1250.0 * 2656.0 };
-    inline constexpr Material kAluminum { "aluminum", 400.0, 2700.0 * 897.0 };
+    inline constexpr Material kSilicon {"silicon", 100.0, 2330.0 * 751.0};
+    inline constexpr Material kCopper {"copper", 400.0, 8960.0 * 385.0};
+    inline constexpr Material kBump {"bump", 1.6, 1600.0 * 1450.0};
+    inline constexpr Material kTim {"tim", 4.0, 4000.0 * 1000.0};
+    inline constexpr Material kFr4 {"fr4", 0.30, 1250.0 * 2656.0};
+    inline constexpr Material kAluminum {"aluminum", 400.0, 2700.0 * 897.0};
 
     // In-plane footprint of a layer. The DoF grouping follows the footprint, not
     // the module: the TIM belongs to CM I but sits on the chip.
-    enum Footprint : int { kFootprintSink = 0, kFootprintSpreader = 1, kFootprintChiplets = 2, kFootprintInterposer = 3 };
+    enum Footprint : int {
+        kFootprintSink = 0,
+        kFootprintSpreader = 1,
+        kFootprintChiplets = 2,
+        kFootprintInterposer = 3
+    };
 
     // PAPER Sec. III / Fig. 3 lists the layers and their order top to bottom, and
     // Sec. III states the module of each. The thicknesses and materials are CODE
@@ -58,22 +63,22 @@ namespace mhs::dtdm {
         int footprint;
     };
 
-    inline constexpr std::array<Layer, 11> kStack { {
-        { "heat_sink", 6.9e-3, kAluminum, 0, kFootprintSink }, // ASSUMED HotSpot default
-        { "heat_spreader", 1.0e-3, kCopper, 0, kFootprintSpreader }, // CODE 1 mm, k = 400
-        { "tim", 20e-6, kTim, 0, kFootprintChiplets }, // CODE 20 um, k = 4.0
-        { "chip", 150e-6, kSilicon, 1, kFootprintChiplets }, // CODE 150 um, k = 100
-        { "micro_bump", 10e-6, kBump, 1, kFootprintChiplets }, // CODE 10 um
-        { "rdl", 5e-6, kCopper, 1, kFootprintChiplets }, // ASSUMED 5 um
-        { "interposer", 110e-6, kSilicon, 2, kFootprintInterposer }, // CODE 110 um
-        { "c4_bump", 70e-6, kBump, 2, kFootprintInterposer }, // CODE 70 um
-        { "substrate", 200e-6, kFr4, 2, kFootprintInterposer }, // CODE 200 um, k = 0.30
-        { "bga", 500e-6, kBump, 2, kFootprintInterposer }, // ASSUMED 500 um
-        { "pcb", 1.6e-3, kFr4, 2, kFootprintInterposer }, // ASSUMED 1.6 mm
-    } };
+    inline constexpr std::array<Layer, 11> kStack {{
+        {"heat_sink", 6.9e-3, kAluminum, 0, kFootprintSink}, // ASSUMED HotSpot default
+        {"heat_spreader", 1.0e-3, kCopper, 0, kFootprintSpreader}, // CODE 1 mm, k = 400
+        {"tim", 20e-6, kTim, 0, kFootprintChiplets}, // CODE 20 um, k = 4.0
+        {"chip", 150e-6, kSilicon, 1, kFootprintChiplets}, // CODE 150 um, k = 100
+        {"micro_bump", 10e-6, kBump, 1, kFootprintChiplets}, // CODE 10 um
+        {"rdl", 5e-6, kCopper, 1, kFootprintChiplets}, // ASSUMED 5 um
+        {"interposer", 110e-6, kSilicon, 2, kFootprintInterposer}, // CODE 110 um
+        {"c4_bump", 70e-6, kBump, 2, kFootprintInterposer}, // CODE 70 um
+        {"substrate", 200e-6, kFr4, 2, kFootprintInterposer}, // CODE 200 um, k = 0.30
+        {"bga", 500e-6, kBump, 2, kFootprintInterposer}, // ASSUMED 500 um
+        {"pcb", 1.6e-3, kFr4, 2, kFootprintInterposer}, // ASSUMED 1.6 mm
+    }};
 
     inline constexpr int kModuleCount = 3;
-    inline constexpr std::array<const char*, kModuleCount> kModuleNames { "CM_I", "KM", "CM_II" };
+    inline constexpr std::array<const char*, kModuleCount> kModuleNames {"CM_I", "KM", "CM_II"};
 
     struct Rect {
         double x, y, w, h;
@@ -105,31 +110,29 @@ namespace mhs::dtdm {
     // TAP-2.5D configuration, which is not this paper's input.
     inline SystemSpec multi_gpu_compact()
     {
-        return { "multi_gpu_compact",
-            kInterposer,
+        return {"multi_gpu_compact", kInterposer,
             {
-                { "cpu", 12.0e-3, 12.0e-3, 35.0, -22.0e-3, 10.0e-3 },
-                { "gpu0", 18.2e-3, 18.2e-3, 98.25, -9.5e-3, -22.0e-3 },
-                { "gpu1", 18.2e-3, 18.2e-3, 98.25, -9.5e-3, -3.3e-3 },
-                { "hbm0", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, -22.0e-3 },
-                { "hbm1", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, -9.63e-3 },
-                { "hbm2", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, 2.74e-3 },
-            } };
+                {"cpu", 12.0e-3, 12.0e-3, 35.0, -22.0e-3, 10.0e-3},
+                {"gpu0", 18.2e-3, 18.2e-3, 98.25, -9.5e-3, -22.0e-3},
+                {"gpu1", 18.2e-3, 18.2e-3, 98.25, -9.5e-3, -3.3e-3},
+                {"hbm0", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, -22.0e-3},
+                {"hbm1", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, -9.63e-3},
+                {"hbm2", 7.75e-3, 11.87e-3, 6.7, 9.2e-3, 2.74e-3},
+            }};
     }
 
     // GPUs on the left edge, CPU top-right, the three HBM chiplets between them.
     inline SystemSpec multi_gpu_thermal_aware()
     {
-        return { "multi_gpu_thermal_aware",
-            kInterposer,
+        return {"multi_gpu_thermal_aware", kInterposer,
             {
-                { "cpu", 12.0e-3, 12.0e-3, 35.0, 4.95e-3, 10.0e-3 },
-                { "gpu0", 18.2e-3, 18.2e-3, 98.25, -22.0e-3, -22.0e-3 },
-                { "gpu1", 18.2e-3, 18.2e-3, 98.25, -22.0e-3, 3.3e-3 },
-                { "hbm0", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, -22.0e-3 },
-                { "hbm1", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, -9.63e-3 },
-                { "hbm2", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, 2.74e-3 },
-            } };
+                {"cpu", 12.0e-3, 12.0e-3, 35.0, 4.95e-3, 10.0e-3},
+                {"gpu0", 18.2e-3, 18.2e-3, 98.25, -22.0e-3, -22.0e-3},
+                {"gpu1", 18.2e-3, 18.2e-3, 98.25, -22.0e-3, 3.3e-3},
+                {"hbm0", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, -22.0e-3},
+                {"hbm1", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, -9.63e-3},
+                {"hbm2", 7.75e-3, 11.87e-3, 6.7, -3.3e-3, 2.74e-3},
+            }};
     }
 
     // REF-28 Table II "CPU-DRAM System" sizes, PAPER Fig. 8(b) powers: 4 x 60 W
@@ -137,18 +140,17 @@ namespace mhs::dtdm {
     // chip-to-chip spacing; coordinates ASSUMED to match, in the 45 mm frame.
     inline SystemSpec cpu_dram()
     {
-        return { "cpu_dram",
-            kInterposer,
+        return {"cpu_dram", kInterposer,
             {
-                { "cpu0", 8.25e-3, 9.0e-3, 60.0, -8.5e-3, 0.25e-3 },
-                { "cpu1", 8.25e-3, 9.0e-3, 60.0, 0.25e-3, 0.25e-3 },
-                { "cpu2", 8.25e-3, 9.0e-3, 60.0, -8.5e-3, -9.25e-3 },
-                { "cpu3", 8.25e-3, 9.0e-3, 60.0, 0.25e-3, -9.25e-3 },
-                { "dram0", 8.75e-3, 8.75e-3, 8.0, -18.5e-3, 0.25e-3 },
-                { "dram1", 8.75e-3, 8.75e-3, 8.0, -18.5e-3, -9.0e-3 },
-                { "dram2", 8.75e-3, 8.75e-3, 8.0, 9.75e-3, 0.25e-3 },
-                { "dram3", 8.75e-3, 8.75e-3, 8.0, 9.75e-3, -9.0e-3 },
-            } };
+                {"cpu0", 8.25e-3, 9.0e-3, 60.0, -8.5e-3, 0.25e-3},
+                {"cpu1", 8.25e-3, 9.0e-3, 60.0, 0.25e-3, 0.25e-3},
+                {"cpu2", 8.25e-3, 9.0e-3, 60.0, -8.5e-3, -9.25e-3},
+                {"cpu3", 8.25e-3, 9.0e-3, 60.0, 0.25e-3, -9.25e-3},
+                {"dram0", 8.75e-3, 8.75e-3, 8.0, -18.5e-3, 0.25e-3},
+                {"dram1", 8.75e-3, 8.75e-3, 8.0, -18.5e-3, -9.0e-3},
+                {"dram2", 8.75e-3, 8.75e-3, 8.0, 9.75e-3, 0.25e-3},
+                {"dram3", 8.75e-3, 8.75e-3, 8.0, 9.75e-3, -9.0e-3},
+            }};
     }
 
     // In-plane discretisation. One number per level sets the finest cell: the
@@ -171,11 +173,11 @@ namespace mhs::dtdm {
     // z counts a stack this thin can justify.
     // Cells across the widest chiplet, chosen so the geometry lands on the paper's
     // count: the four levels miss it by +0.25, +1.14, -0.53 and +0.31 percent.
-    inline constexpr std::array<Layout, 4> kLevels { {
-        { "Mesh1", 19, 26513L },
-        { "Mesh2", 59, 210848L },
-        { "Mesh3", 151, 1208923L },
-        { "Mesh4", 198, 2037523L },
-    } };
+    inline constexpr std::array<Layout, 4> kLevels {{
+        {"Mesh1", 19, 26513L},
+        {"Mesh2", 59, 210848L},
+        {"Mesh3", 151, 1208923L},
+        {"Mesh4", 198, 2037523L},
+    }};
 
 } // namespace mhs::dtdm

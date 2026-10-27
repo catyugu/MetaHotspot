@@ -24,22 +24,17 @@ namespace mhs::dtdm {
         inline constexpr std::size_t kExtractionWorkers = 4;
 
         double seconds_since(const Clock::time_point& start)
-        {
-            return std::chrono::duration<double>(Clock::now() - start).count();
-        }
+        { return std::chrono::duration<double>(Clock::now() - start).count(); }
 
         /// The modules meet only through the interface system, so everything one
         /// module does inside an order is independent of the others.
-        template <class Task>
-        void for_each_module(Task task)
+        template <class Task> void for_each_module(Task task)
         {
             tbb::parallel_for(0, kModuleCount, [&task](int m) { task(m); });
         }
 
         std::vector<double> to_vector(const Eigen::VectorXd& field)
-        {
-            return std::vector<double>(field.data(), field.data() + field.size());
-        }
+        { return std::vector<double>(field.data(), field.data() + field.size()); }
 
         /// The paper excites every order with f_q = 2 P (-1)^q and lets the series
         /// carry the constant. This implementation carries it exactly and the series
@@ -61,8 +56,8 @@ namespace mhs::dtdm {
         }
 
         template <class Storage>
-        Eigen::SparseMatrix<double> principal_submatrix(const Storage& matrix,
-            const std::vector<int>& cells, const std::vector<int>& global_to_local)
+        Eigen::SparseMatrix<double> principal_submatrix(
+            const Storage& matrix, const std::vector<int>& cells, const std::vector<int>& global_to_local)
         {
             std::vector<Eigen::Triplet<double>> triplets;
             for (std::size_t b = 0; b < cells.size(); ++b) {
@@ -71,12 +66,12 @@ namespace mhs::dtdm {
                     const int row = static_cast<int>(it.row());
                     if (global_to_local[static_cast<std::size_t>(row)] < 0)
                         continue;
-                    triplets.emplace_back(global_to_local[static_cast<std::size_t>(row)],
-                        static_cast<int>(b), it.value());
+                    triplets.emplace_back(
+                        global_to_local[static_cast<std::size_t>(row)], static_cast<int>(b), it.value());
                 }
             }
-            Eigen::SparseMatrix<double> out(static_cast<Eigen::Index>(cells.size()),
-                static_cast<Eigen::Index>(cells.size()));
+            Eigen::SparseMatrix<double> out(
+                static_cast<Eigen::Index>(cells.size()), static_cast<Eigen::Index>(cells.size()));
             out.setFromTriplets(triplets.begin(), triplets.end());
             out.makeCompressed();
             return out;
@@ -125,7 +120,7 @@ namespace mhs::dtdm {
                 matrix_ = module.K + shift * module.C + boundary;
                 matrix_.makeCompressed();
 
-                solver_ = mhs::sim::create_solver({ type, { tolerance, 2000 } });
+                solver_ = mhs::sim::create_solver({type, {tolerance, 2000}});
                 solver_->compute(matrix_);
             }
 
@@ -141,9 +136,7 @@ namespace mhs::dtdm {
             Eigen::VectorXd solve_free(const Eigen::VectorXd& rhs) const { return solve(rhs, warm_free_); }
             /// Eq. (7): the same operator driven by the interface temperature.
             Eigen::VectorXd solve_with_interface(const Eigen::VectorXd& rhs, const Eigen::VectorXd& imposed) const
-            {
-                return solve(rhs + w_ * imposed, warm_driven_);
-            }
+            { return solve(rhs + w_ * imposed, warm_driven_); }
 
         private:
             /// Warm-started AMG-CG solve. Consecutive Laguerre orders are close, so
@@ -195,7 +188,7 @@ namespace mhs::dtdm {
             std::vector<mhs::sim::SolverPtr> pool;
             pool.reserve(workers);
             for (std::size_t w = 0; w < workers; ++w) {
-                pool.push_back(mhs::sim::create_solver({ type, { tolerance, 2000 } }));
+                pool.push_back(mhs::sim::create_solver({type, {tolerance, 2000}}));
                 pool.back()->compute(op.matrix());
             }
 
@@ -269,8 +262,7 @@ namespace mhs::dtdm {
         /// decomposition, scattered to its global cell ids.
         class Series {
         public:
-            Series(int orders, double scale, const std::vector<double>& times)
-                : weights_(times.size())
+            Series(int orders, double scale, const std::vector<double>& times) : weights_(times.size())
             {
                 for (std::size_t k = 0; k < times.size(); ++k)
                     phi(orders, scale * times[k], weights_[k]);
@@ -325,7 +317,7 @@ namespace mhs::dtdm {
             Eigen::SparseMatrix<double> matrix = operators.K;
             matrix += (1.0 / dt) * operators.C;
             matrix.makeCompressed();
-            auto solver = mhs::sim::create_solver({ type, { tolerance, 2000 } });
+            auto solver = mhs::sim::create_solver({type, {tolerance, 2000}});
             solver->compute(matrix);
 
             std::vector<std::vector<double>> samples(times.size());
@@ -353,8 +345,8 @@ namespace mhs::dtdm {
 
         /// 2 fine - coarse: removes the first-order term of two fields that differ
         /// only in their step.
-        std::vector<std::vector<double>> richardson(const std::vector<std::vector<double>>& coarse,
-            const std::vector<std::vector<double>>& fine)
+        std::vector<std::vector<double>> richardson(
+            const std::vector<std::vector<double>>& coarse, const std::vector<std::vector<double>>& fine)
         {
             auto out = fine;
             for (std::size_t k = 0; k < out.size(); ++k)
@@ -374,11 +366,8 @@ namespace mhs::dtdm {
         }
     } // namespace
 
-    System::System(StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver,
-        double linear_tolerance)
-        : stack_(std::move(stack))
-        , solver_(solver)
-        , linear_tolerance_(linear_tolerance)
+    System::System(StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver, double linear_tolerance)
+        : stack_(std::move(stack)), solver_(solver), linear_tolerance_(linear_tolerance)
     {
         build_operators();
         build_modules();
@@ -428,8 +417,8 @@ namespace mhs::dtdm {
         for (const auto& face : stack_.model.discrete.faces) {
             if (!face.neighbor.valid())
                 continue;
-            face_of_pair[{ static_cast<int>(face.owner.value), static_cast<int>(face.neighbor.value) }] = &face;
-            face_of_pair[{ static_cast<int>(face.neighbor.value), static_cast<int>(face.owner.value) }] = &face;
+            face_of_pair[{static_cast<int>(face.owner.value), static_cast<int>(face.neighbor.value)}] = &face;
+            face_of_pair[{static_cast<int>(face.neighbor.value), static_cast<int>(face.owner.value)}] = &face;
         }
 
         int next = 0;
@@ -462,7 +451,7 @@ namespace mhs::dtdm {
             std::vector<Patch> side_a(slots), side_b(slots);
             for (std::size_t c = 0; c < couplings.size(); ++c) {
                 const auto [ca, cb] = couplings[c];
-                const auto found = face_of_pair.find({ ca, cb });
+                const auto found = face_of_pair.find({ca, cb});
                 if (found == face_of_pair.end())
                     throw std::runtime_error("interface face not found in the mesh");
                 const auto& face = *found->second;
@@ -481,8 +470,8 @@ namespace mhs::dtdm {
                     const int iy = std::clamp(static_cast<int>((centre[1] - ymin) / spany * ny), 0, ny - 1);
                     patch = static_cast<std::size_t>(ix * ny + iy);
                 }
-                side_a[patch].faces.push_back({ ca, g_a, series });
-                side_b[patch].faces.push_back({ cb, g_b, series });
+                side_a[patch].faces.push_back({ca, g_a, series});
+                side_b[patch].faces.push_back({cb, g_b, series});
             }
 
             // A coarse grid leaves some patch ids unused; number the used ones.
@@ -514,7 +503,7 @@ namespace mhs::dtdm {
 
     Eigen::VectorXd System::steady_state() const
     {
-        auto solver = mhs::sim::create_solver({ solver_, { 0.1 * linear_tolerance_, 2000 } });
+        auto solver = mhs::sim::create_solver({solver_, {0.1 * linear_tolerance_, 2000}});
         solver->compute(K_);
         Eigen::VectorXd steady = solver->solve(f_, Eigen::VectorXd::Zero(f_.size()));
         if (!solver->success())
@@ -535,7 +524,7 @@ namespace mhs::dtdm {
         std::fprintf(stderr, "[wlp] nnz K %lld  nnz C %lld  nnz(K + s/2 C) %lld\n",
             static_cast<long long>(K_.nonZeros()), static_cast<long long>(C_.nonZeros()),
             static_cast<long long>(matrix.nonZeros()));
-        auto solver = mhs::sim::create_solver({ solver_, { linear_tolerance_, 2000 } });
+        auto solver = mhs::sim::create_solver({solver_, {linear_tolerance_, 2000}});
         solver->compute(matrix);
         report_dc_remainder(orders, scale, sample_times);
 
@@ -604,8 +593,8 @@ namespace mhs::dtdm {
             macromodel_bytes += 8LL * macromodels[mi].G.size();
             macromodel_columns += operators[mi].patches();
         }
-        std::fprintf(stderr, "[macromodel] %d columns, %lld iterations, %.1f MB\n",
-            macromodel_columns, macromodels[0].iterations + macromodels[1].iterations + macromodels[2].iterations,
+        std::fprintf(stderr, "[macromodel] %d columns, %lld iterations, %.1f MB\n", macromodel_columns,
+            macromodels[0].iterations + macromodels[1].iterations + macromodels[2].iterations,
             static_cast<double>(macromodel_bytes) / (1024.0 * 1024.0));
 
         Series series(orders, scale, sample_times);
@@ -656,9 +645,8 @@ namespace mhs::dtdm {
             out.setup_solves += operators[mi].patches();
             out.march_solves += operators[mi].solves();
             out.march_iterations += operators[mi].iterations();
-            std::fprintf(stderr, "[module %s] dof %zu patches %d solves %lld iterations %lld\n",
-                kModuleNames[mi], modules_[mi].cells.size(), operators[mi].patches(), operators[mi].solves(),
-                operators[mi].iterations());
+            std::fprintf(stderr, "[module %s] dof %zu patches %d solves %lld iterations %lld\n", kModuleNames[mi],
+                modules_[mi].cells.size(), operators[mi].patches(), operators[mi].solves(), operators[mi].iterations());
         }
         return out;
     }
@@ -667,7 +655,7 @@ namespace mhs::dtdm {
     {
         require_samples(sample_times);
         const auto start = Clock::now();
-        const mhs::sim::Operators operators { K_, C_, f_ };
+        const mhs::sim::Operators operators {K_, C_, f_};
         auto march = [&](int count) {
             return march_backward_euler(operators, count, duration, sample_times, solver_, linear_tolerance_);
         };

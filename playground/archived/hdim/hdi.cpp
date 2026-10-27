@@ -45,8 +45,8 @@ namespace mhs::hdim {
         return partition;
     }
 
-    void LinearHalf::build(const Model& model, const Assembled& assembled, int region_index, double interface_step,
-        double tolerance)
+    void LinearHalf::build(
+        const Model& model, const Assembled& assembled, int region_index, double interface_step, double tolerance)
     {
         region = region_index;
         system = assembled.region[region];
@@ -136,24 +136,19 @@ namespace mhs::hdim {
     }
 
     Hdi::Hdi(const Model& model, double dt, double interface_step, double linear_tolerance)
-        : model_(model)
-        , dt_(dt)
-        , linear_tolerance_(linear_tolerance)
+        : model_(model), dt_(dt), linear_tolerance_(linear_tolerance)
     {
         const auto start = std::chrono::steady_clock::now();
         const Assembled assembled = assemble(model, {}, dt); // the linear regions do not depend on T
         for (int i = 0; i < kInterfaceCount; ++i) {
-            half_[i].build(model, assembled, kInterfaceLinear[static_cast<std::size_t>(i)], interface_step,
-                linear_tolerance);
+            half_[i].build(
+                model, assembled, kInterfaceLinear[static_cast<std::size_t>(i)], interface_step, linear_tolerance);
             ti_[i] = Eigen::VectorXd::Zero(half_[i].partition.count);
         }
         presimulation_seconds_ = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     }
 
-    int Hdi::interface_blocks() const
-    {
-        return half_[0].partition.count + half_[1].partition.count;
-    }
+    int Hdi::interface_blocks() const { return half_[0].partition.count + half_[1].partition.count; }
 
     void Hdi::interface_flux(const Assembled& assembled, const std::vector<double>& field)
     {
@@ -191,15 +186,16 @@ namespace mhs::hdim {
         if (dt_ > 0.0)
             for (std::size_t idx = 0; idx < model_.region_cells[kNonlinear].size(); ++idx) {
                 const auto local = static_cast<Eigen::Index>(idx);
-                rhs(local) += nonlinear.capacity(local) * incoming_[static_cast<std::size_t>(model_.region_cells[kNonlinear][idx])]
-                    / dt_;
+                rhs(local) += nonlinear.capacity(local)
+                    * incoming_[static_cast<std::size_t>(model_.region_cells[kNonlinear][idx])] / dt_;
             }
         Eigen::VectorXd diagonal = Eigen::VectorXd::Zero(n);
         for (int i = 0; i < kInterfaceCount; ++i) {
             const LinearHalf& half = half_[i];
             for (std::size_t f = 0; f < half.face.size(); ++f) {
                 const InterfaceFace& face = assembled.interfaces[static_cast<std::size_t>(half.face[f])];
-                const auto local = static_cast<Eigen::Index>(model_.local[static_cast<std::size_t>(face.nonlinear_cell)]);
+                const auto local
+                    = static_cast<Eigen::Index>(model_.local[static_cast<std::size_t>(face.nonlinear_cell)]);
                 diagonal(local) += gain_[i][f];
                 rhs(local) += gain_[i][f] * ti_[i](half.partition.block[f]);
             }
@@ -233,8 +229,8 @@ namespace mhs::hdim {
         return change;
     }
 
-    std::vector<double> Hdi::advance(const std::vector<double>& previous, double tolerance, int max_sweeps,
-        RunInfo& info)
+    std::vector<double> Hdi::advance(
+        const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
     {
         const auto start = std::chrono::steady_clock::now();
         info = RunInfo {};
@@ -276,14 +272,9 @@ namespace mhs::hdim {
     }
 
     std::vector<double> Hdi::steady(double tolerance, int max_sweeps, RunInfo& info)
-    {
-        return advance({}, tolerance, max_sweeps, info);
-    }
+    { return advance({}, tolerance, max_sweeps, info); }
 
-    std::vector<double> Hdi::step(const std::vector<double>& previous, double tolerance, int max_sweeps,
-        RunInfo& info)
-    {
-        return advance(previous, tolerance, max_sweeps, info);
-    }
+    std::vector<double> Hdi::step(const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
+    { return advance(previous, tolerance, max_sweeps, info); }
 
 } // namespace mhs::hdim

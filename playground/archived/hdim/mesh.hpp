@@ -28,7 +28,7 @@ namespace mhs::hdim {
         inner = std::max(2, inner);
         const double step = 2.0 * half_chip / inner;
 
-        std::vector<double> right { 0.0 }; // cell edges > 0, ascending
+        std::vector<double> right {0.0}; // cell edges > 0, ascending
         for (int i = 1; i <= inner / 2; ++i)
             right.push_back(i * step);
         double edge = right.back();
@@ -70,9 +70,7 @@ namespace mhs::hdim {
     };
 
     inline bool inside(const Layer& layer, double cx, double cy)
-    {
-        return std::abs(cx) < 0.5 * layer.x && std::abs(cy) < 0.5 * layer.y;
-    }
+    { return std::abs(cx) < 0.5 * layer.x && std::abs(cy) < 0.5 * layer.y; }
 
     inline Mesh build_mesh(const Level& level)
     {
@@ -96,20 +94,18 @@ namespace mhs::hdim {
             cells.id.assign(static_cast<std::size_t>(mesh.nx) * mesh.ny * cells.nz, -1);
             for (int k = 0; k < cells.nz; ++k)
                 for (int j = 0; j < mesh.ny; ++j) {
-                    const double cy = 0.5 * (mesh.y[static_cast<std::size_t>(j)]
-                        + mesh.y[static_cast<std::size_t>(j + 1)]);
+                    const double cy
+                        = 0.5 * (mesh.y[static_cast<std::size_t>(j)] + mesh.y[static_cast<std::size_t>(j + 1)]);
                     for (int i = 0; i < mesh.nx; ++i) {
-                        const double cx = 0.5 * (mesh.x[static_cast<std::size_t>(i)]
-                            + mesh.x[static_cast<std::size_t>(i + 1)]);
+                        const double cx
+                            = 0.5 * (mesh.x[static_cast<std::size_t>(i)] + mesh.x[static_cast<std::size_t>(i + 1)]);
                         if (!inside(layer, cx, cy))
                             continue;
                         auto& slot = cells.id[(static_cast<std::size_t>(k) * mesh.ny + j) * mesh.nx + i];
                         slot = mesh.n++;
                         mesh.cell_layer.push_back(static_cast<int>(&layer - kStack.data()));
-                        const double vx = mesh.x[static_cast<std::size_t>(i + 1)]
-                            - mesh.x[static_cast<std::size_t>(i)];
-                        const double vy = mesh.y[static_cast<std::size_t>(j + 1)]
-                            - mesh.y[static_cast<std::size_t>(j)];
+                        const double vx = mesh.x[static_cast<std::size_t>(i + 1)] - mesh.x[static_cast<std::size_t>(i)];
+                        const double vy = mesh.y[static_cast<std::size_t>(j + 1)] - mesh.y[static_cast<std::size_t>(j)];
                         mesh.volume.push_back(1e-9 * vx * vy * cells.dz); // mm^3 -> m^3
                     }
                 }

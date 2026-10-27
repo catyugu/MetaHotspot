@@ -88,8 +88,8 @@ namespace mhs::hdim {
         /// through every interface face, from the current nonlinear temperatures.
         void interface_flux(const Assembled& assembled, const std::vector<double>& field);
         /// The shared body of `steady` and `step`.
-        std::vector<double> advance(const std::vector<double>& previous, double tolerance, int max_sweeps,
-            RunInfo& info);
+        std::vector<double> advance(
+            const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info);
 
         const Model& model_;
         double dt_ = 0.0;

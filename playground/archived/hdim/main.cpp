@@ -43,11 +43,11 @@ namespace {
         double x;
         double y;
     };
-    constexpr std::array<Observation, 3> kObservation { {
-        { "P1", 5, -3.9, -6.15 }, // chip1, CPU under the AI core
-        { "P2", 5, -12.8, 7.8 }, // chip1, GPU0
-        { "P3", 3, -6.2, -0.15 }, // chip2, AI core
-    } };
+    constexpr std::array<Observation, 3> kObservation {{
+        {"P1", 5, -3.9, -6.15}, // chip1, CPU under the AI core
+        {"P2", 5, -12.8, 7.8}, // chip1, GPU0
+        {"P3", 3, -6.2, -0.15}, // chip2, AI core
+    }};
 
     int nearest_cell(const Mesh& mesh, int layer, double x, double y)
     {
@@ -97,13 +97,15 @@ namespace {
             for (int j = 0; j < model.mesh.ny; ++j)
                 for (int i = 0; i < model.mesh.nx; ++i)
                     if (model.mesh.id(layer, i, j, k) == hot.cell) {
-                        x = 0.5 * (model.mesh.x[static_cast<std::size_t>(i)]
-                            + model.mesh.x[static_cast<std::size_t>(i + 1)]);
-                        y = 0.5 * (model.mesh.y[static_cast<std::size_t>(j)]
-                            + model.mesh.y[static_cast<std::size_t>(j + 1)]);
+                        x = 0.5
+                            * (model.mesh.x[static_cast<std::size_t>(i)]
+                                + model.mesh.x[static_cast<std::size_t>(i + 1)]);
+                        y = 0.5
+                            * (model.mesh.y[static_cast<std::size_t>(j)]
+                                + model.mesh.y[static_cast<std::size_t>(j + 1)]);
                     }
-        std::printf("%.2f K in %s at (%.1f, %.1f) mm", hot.temperature, kStack[static_cast<std::size_t>(layer)].name, x,
-            y);
+        std::printf(
+            "%.2f K in %s at (%.1f, %.1f) mm", hot.temperature, kStack[static_cast<std::size_t>(layer)].name, x, y);
     }
 
     /// Largest temperature inside one layer, for the two dies of Fig. 7.
@@ -155,7 +157,7 @@ namespace {
         const auto start = std::chrono::steady_clock::now();
         for (int step = 1; step <= steps; ++step) {
             const bool first = step <= half;
-            set_workload(model, { first == chip1_first, first != chip1_first });
+            set_workload(model, {first == chip1_first, first != chip1_first});
             RunInfo info;
             if (hdi != nullptr)
                 field = hdi->step(field, settings.tolerance, settings.max_sweeps, info);
@@ -266,8 +268,8 @@ int main(int argc, char** argv)
             std::printf("\n");
             if (settings.hdi) {
                 Hdi hdi(model, 0.0, settings.interface_step, settings.linear_tolerance);
-                std::printf("[steady] hdi   presim %.2f s  blocks %d\n", hdi.presimulation_seconds(),
-                    hdi.interface_blocks());
+                std::printf(
+                    "[steady] hdi   presim %.2f s  blocks %d\n", hdi.presimulation_seconds(), hdi.interface_blocks());
                 RunInfo info;
                 const std::vector<double> field = hdi.steady(settings.tolerance, settings.max_sweeps, info);
                 std::printf("[steady] hdi   sweeps %2d  %6.2f s  solves %6lld  hotspot ", info.sweeps, info.seconds,
@@ -283,8 +285,7 @@ int main(int argc, char** argv)
             std::printf("[trans]  dt %.3f s  steps %d\n", settings.dt, settings.steps);
             for (int case_index = 0; case_index < 2; ++case_index) {
                 const bool chip1_first = case_index == 0;
-                std::printf("[trans]  case %c  chip1 first: %s\n", chip1_first ? 'a' : 'b',
-                    chip1_first ? "yes" : "no");
+                std::printf("[trans]  case %c  chip1 first: %s\n", chip1_first ? 'a' : 'b', chip1_first ? "yes" : "no");
                 const March expected = march(model, settings, observer, nullptr, chip1_first, settings.verbose);
                 print_march("reference", expected);
                 if (settings.hdi) {
@@ -300,7 +301,8 @@ int main(int argc, char** argv)
             }
         }
         return 0;
-    } catch (const std::exception& error) {
+    }
+    catch (const std::exception& error) {
         std::fprintf(stderr, "fatal: %s\n", error.what());
         return 1;
     }

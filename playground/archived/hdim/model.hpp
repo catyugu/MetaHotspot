@@ -30,9 +30,7 @@ namespace mhs::hdim {
     /// Series conductance of an interface face: the nonlinear half cell, the
     /// linear half cell, and nothing else.
     inline double interface_conductance(const InterfaceFace& face)
-    {
-        return 1.0 / (1.0 / face.g_nonlinear + face.r_linear);
-    }
+    { return 1.0 / (1.0 / face.g_nonlinear + face.r_linear); }
 
     struct Model {
         Mesh mesh;
@@ -88,16 +86,15 @@ namespace mhs::hdim {
         for (int r = 0; r < kRegionCount; ++r)
             for (int c = 0; c < mesh.n; ++c)
                 if (model.cell_region[static_cast<std::size_t>(c)] == r) {
-                    model.local[static_cast<std::size_t>(c)]
-                        = static_cast<int>(model.region_cells[r].size());
+                    model.local[static_cast<std::size_t>(c)] = static_cast<int>(model.region_cells[r].size());
                     model.region_cells[r].push_back(c);
                 }
 
         // Power: each chiplet's wattage spread over the die cells inside it.
         // Chip1 is the bottom die, kStack[5], i.e. the Multi-GPU chip of Fig. 4;
         // chip2 is kStack[3], the die next to the TIM, the AI chip of Fig. 5.
-        const std::array<ChipSpec, 2> chips { multi_gpu_chip(), ai_chip() };
-        const std::array<int, 2> die_layer { 5, 3 }; // chip1, chip2
+        const std::array<ChipSpec, 2> chips {multi_gpu_chip(), ai_chip()};
+        const std::array<int, 2> die_layer {5, 3}; // chip1, chip2
         for (int chip = 0; chip < 2; ++chip) {
             const int layer_index = die_layer[static_cast<std::size_t>(chip)];
             const auto& cells_of_layer = mesh.layers[static_cast<std::size_t>(layer_index)];
@@ -106,11 +103,11 @@ namespace mhs::hdim {
                 double volume = 0.0;
                 for (int k = 0; k < cells_of_layer.nz; ++k)
                     for (int j = 0; j < mesh.ny; ++j) {
-                        const double cy = 0.5 * (mesh.y[static_cast<std::size_t>(j)]
-                            + mesh.y[static_cast<std::size_t>(j + 1)]);
+                        const double cy
+                            = 0.5 * (mesh.y[static_cast<std::size_t>(j)] + mesh.y[static_cast<std::size_t>(j + 1)]);
                         for (int i = 0; i < mesh.nx; ++i) {
-                            const double cx = 0.5 * (mesh.x[static_cast<std::size_t>(i)]
-                                + mesh.x[static_cast<std::size_t>(i + 1)]);
+                            const double cx
+                                = 0.5 * (mesh.x[static_cast<std::size_t>(i)] + mesh.x[static_cast<std::size_t>(i + 1)]);
                             const int id = mesh.id(layer_index, i, j, k);
                             if (id < 0 || !contains(ch.rect, cx + 0.5 * kChipX, cy + 0.5 * kChipY))
                                 continue;
@@ -146,8 +143,8 @@ namespace mhs::hdim {
     /// which is eq. (3) with the capacity term dropped). `only_region` restricts
     /// the couplings to one region; the interface faces are always produced, and
     /// the other regions come back empty.
-    inline Assembled assemble(const Model& model, const std::vector<double>& temperature, double dt,
-        int only_region = -1)
+    inline Assembled assemble(
+        const Model& model, const std::vector<double>& temperature, double dt, int only_region = -1)
     {
         const Mesh& mesh = model.mesh;
         Assembled out;
@@ -191,15 +188,15 @@ namespace mhs::hdim {
             for (int k = 0; k < cells.nz; ++k)
                 for (int j = 0; j < mesh.ny; ++j) {
                     const double dy = mesh.y[static_cast<std::size_t>(j + 1)] - mesh.y[static_cast<std::size_t>(j)];
-                    const double cy = 0.5 * (mesh.y[static_cast<std::size_t>(j)]
-                        + mesh.y[static_cast<std::size_t>(j + 1)]);
+                    const double cy
+                        = 0.5 * (mesh.y[static_cast<std::size_t>(j)] + mesh.y[static_cast<std::size_t>(j + 1)]);
                     for (int i = 0; i < mesh.nx; ++i) {
                         const int a = mesh.id(layer_index, i, j, k);
                         if (a < 0)
                             continue;
                         const double dx = mesh.x[static_cast<std::size_t>(i + 1)] - mesh.x[static_cast<std::size_t>(i)];
-                        const double cx = 0.5 * (mesh.x[static_cast<std::size_t>(i)]
-                            + mesh.x[static_cast<std::size_t>(i + 1)]);
+                        const double cx
+                            = 0.5 * (mesh.x[static_cast<std::size_t>(i)] + mesh.x[static_cast<std::size_t>(i + 1)]);
                         const double ta = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(a)];
                         const double ka_plane = cell_conductivity(layer, ta, false);
                         const double ka_depth = cell_conductivity(layer, ta, true);
@@ -207,9 +204,10 @@ namespace mhs::hdim {
                         // +x
                         const int bx = mesh.id(layer_index, i + 1, j, k);
                         if (active && bx >= 0) {
-                            const double dxb = mesh.x[static_cast<std::size_t>(i + 2)]
-                                - mesh.x[static_cast<std::size_t>(i + 1)];
-                            const double tb = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bx)];
+                            const double dxb
+                                = mesh.x[static_cast<std::size_t>(i + 2)] - mesh.x[static_cast<std::size_t>(i + 1)];
+                            const double tb
+                                = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bx)];
                             const double kb = cell_conductivity(layer, tb, false);
                             const double area = 1e-6 * dy * cells.dz;
                             add_coupling(a, bx, area / (0.5e-3 * dx / ka_plane + 0.5e-3 * dxb / kb));
@@ -217,9 +215,10 @@ namespace mhs::hdim {
                         // +y
                         const int by = mesh.id(layer_index, i, j + 1, k);
                         if (active && by >= 0) {
-                            const double dyb = mesh.y[static_cast<std::size_t>(j + 2)]
-                                - mesh.y[static_cast<std::size_t>(j + 1)];
-                            const double tb = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(by)];
+                            const double dyb
+                                = mesh.y[static_cast<std::size_t>(j + 2)] - mesh.y[static_cast<std::size_t>(j + 1)];
+                            const double tb
+                                = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(by)];
                             const double kb = cell_conductivity(layer, tb, false);
                             const double area = 1e-6 * dx * cells.dz;
                             add_coupling(a, by, area / (0.5e-3 * dy / ka_plane + 0.5e-3 * dyb / kb));
@@ -228,7 +227,8 @@ namespace mhs::hdim {
                         if (active && k + 1 < cells.nz) {
                             const int bz = mesh.id(layer_index, i, j, k + 1);
                             if (bz >= 0) {
-                                const double tb = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bz)];
+                                const double tb
+                                    = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bz)];
                                 const double kb = cell_conductivity(layer, tb, true);
                                 const double area = 1e-6 * dx * dy;
                                 add_coupling(a, bz, area / (0.5e-3 * cells.dz / ka_depth + 0.5e-3 * cells.dz / kb));
@@ -240,7 +240,8 @@ namespace mhs::hdim {
                             if (bz >= 0) {
                                 const Layer& below = kStack[static_cast<std::size_t>(layer_index + 1)];
                                 const double dz_below = mesh.layers[static_cast<std::size_t>(layer_index + 1)].dz;
-                                const double tb = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bz)];
+                                const double tb
+                                    = temperature.empty() ? kAmbient : temperature[static_cast<std::size_t>(bz)];
                                 const double kb_depth = cell_conductivity(below, tb, true);
                                 const double area = 1e-6 * dx * dy;
                                 if (layer.region == below.region) {

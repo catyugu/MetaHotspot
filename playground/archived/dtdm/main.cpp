@@ -81,7 +81,7 @@ namespace {
     std::vector<double> probe_times(double duration)
     {
         std::vector<double> times;
-        for (const double t : { 0.0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 35.0 })
+        for (const double t : {0.0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 35.0})
             if (t < duration)
                 times.push_back(t);
         times.push_back(duration);
@@ -123,25 +123,24 @@ namespace {
     void report(const char* name, const mhs::dtdm::MarchResult& result, const mhs::dtdm::MarchResult* reference)
     {
         const double total = result.setup_seconds + result.march_seconds;
-        std::printf("  %-14s %6d orders %7.2f s (setup %6.2f + march %6.2f)  peak %8.3f K  last coefficient %.2e",
-            name, result.count, total, result.setup_seconds, result.march_seconds, peak(result.samples.back()),
+        std::printf("  %-14s %6d orders %7.2f s (setup %6.2f + march %6.2f)  peak %8.3f K  last coefficient %.2e", name,
+            result.count, total, result.setup_seconds, result.march_seconds, peak(result.samples.back()),
             result.last_coefficient);
         if (reference)
             std::printf("  err %8.4f K", max_difference(result.samples.back(), reference->samples.back()));
         std::printf("\n");
-        std::printf("  %-14s %lld setup solves, %lld march solves, %lld CG iterations\n", "",
-            result.setup_solves, result.march_solves, result.march_iterations);
+        std::printf("  %-14s %lld setup solves, %lld march solves, %lld CG iterations\n", "", result.setup_solves,
+            result.march_solves, result.march_iterations);
     }
 
     /// The transient at every probe time, and the hotspot waveform the paper plots.
-    void report_transient(const mhs::dtdm::MarchResult& wlp, const mhs::dtdm::MarchResult& dtdm,
-        const mhs::dtdm::MarchResult* reference)
+    void report_transient(
+        const mhs::dtdm::MarchResult& wlp, const mhs::dtdm::MarchResult& dtdm, const mhs::dtdm::MarchResult* reference)
     {
         const std::vector<double>& times = wlp.sample_times;
         std::printf("  max abs difference over the field, K");
         if (reference)
-            std::printf(" (reference: %d steps, %.1e K left in it)\n", reference->count,
-                reference->estimated_error);
+            std::printf(" (reference: %d steps, %.1e K left in it)\n", reference->count, reference->estimated_error);
         else
             std::printf(" (no reference)\n");
         std::printf("    %8s %12s %12s %12s\n", "time", "Thermal-WLP", "DTDM", "DTDM-WLP");
@@ -160,11 +159,11 @@ namespace {
         std::printf("    %8s %12s %12s %12s\n", "time", "Thermal-WLP", "DTDM", "reference");
         for (std::size_t k = 0; k < times.size(); ++k) {
             if (reference)
-                std::printf("    %6.2f s %12.4f %12.4f %12.4f\n", times[k], peak(wlp.samples[k]),
-                    peak(dtdm.samples[k]), peak(reference->samples[k]));
+                std::printf("    %6.2f s %12.4f %12.4f %12.4f\n", times[k], peak(wlp.samples[k]), peak(dtdm.samples[k]),
+                    peak(reference->samples[k]));
             else
-                std::printf("    %6.2f s %12.4f %12.4f %12s\n", times[k], peak(wlp.samples[k]),
-                    peak(dtdm.samples[k]), "-");
+                std::printf(
+                    "    %6.2f s %12.4f %12.4f %12s\n", times[k], peak(wlp.samples[k]), peak(dtdm.samples[k]), "-");
         }
     }
 
@@ -187,12 +186,12 @@ int run(int argc, char** argv)
     const double build_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
     const double miss = 100.0 * static_cast<double>(mesh.dof - layout.target) / static_cast<double>(layout.target);
-    std::printf("level %s  cells %ld (paper %ld, %+.2f%%)  power %.3f W  build %.2f s\n",
-        layout.name, mesh.dof, layout.target, miss, mesh.total_power, build_seconds);
-    std::printf("  in-plane %zu x %zu cells, finest %.4f mm\n",
-        mesh.axes[0].size() - 1, mesh.axes[1].size() - 1, 1e3 * finest_cell(mesh.axes));
-    std::printf("  group z counts: sink %d spreader %d chip-side %d interposer-side %d\n",
-        mesh.group_nz[0], mesh.group_nz[1], mesh.group_nz[2], mesh.group_nz[3]);
+    std::printf("level %s  cells %ld (paper %ld, %+.2f%%)  power %.3f W  build %.2f s\n", layout.name, mesh.dof,
+        layout.target, miss, mesh.total_power, build_seconds);
+    std::printf("  in-plane %zu x %zu cells, finest %.4f mm\n", mesh.axes[0].size() - 1, mesh.axes[1].size() - 1,
+        1e3 * finest_cell(mesh.axes));
+    std::printf("  group z counts: sink %d spreader %d chip-side %d interposer-side %d\n", mesh.group_nz[0],
+        mesh.group_nz[1], mesh.group_nz[2], mesh.group_nz[3]);
     if (options.verbose)
         for (std::size_t l = 0; l < mesh.cells_of_layer.size(); ++l)
             std::printf("    layer %zu cells %zu\n", l, mesh.cells_of_layer[l].size());
@@ -207,13 +206,14 @@ int run(int argc, char** argv)
 
     const std::vector<double> sample_times = probe_times(options.duration);
     const double scale = options.scale_over_duration / options.duration;
-    System system(std::move(mesh), options.patches, options.patches, parse_solver(options.solver), options.linear_tolerance);
+    System system(
+        std::move(mesh), options.patches, options.patches, parse_solver(options.solver), options.linear_tolerance);
 
     MarchResult reference;
     if (options.marching) {
         reference = system.reference(options.steps, options.duration, sample_times);
-        std::printf("  reference        %6d steps %7.2f s  peak %8.3f K  %.1e K left in it\n",
-            reference.count, reference.march_seconds, peak(reference.samples.back()), reference.estimated_error);
+        std::printf("  reference        %6d steps %7.2f s  peak %8.3f K  %.1e K left in it\n", reference.count,
+            reference.march_seconds, peak(reference.samples.back()), reference.estimated_error);
     }
     const MarchResult* against = options.marching ? &reference : nullptr;
 
@@ -227,8 +227,8 @@ int run(int argc, char** argv)
 
     if (options.marching) {
         const double base = reference.single_march_seconds;
-        std::printf("  against one %d-step march (%.3f s): Thermal-WLP %.1fx, DTDM %.1fx\n", options.steps,
-            base, base / (wlp.setup_seconds + wlp.march_seconds), base / (dtdm.setup_seconds + dtdm.march_seconds));
+        std::printf("  against one %d-step march (%.3f s): Thermal-WLP %.1fx, DTDM %.1fx\n", options.steps, base,
+            base / (wlp.setup_seconds + wlp.march_seconds), base / (dtdm.setup_seconds + dtdm.march_seconds));
     }
     return 0;
 }
@@ -237,7 +237,8 @@ int main(int argc, char** argv)
 {
     try {
         return run(argc, argv);
-    } catch (const std::exception& error) {
+    }
+    catch (const std::exception& error) {
         std::fprintf(stderr, "fatal: %s\n", error.what());
         return 1;
     }

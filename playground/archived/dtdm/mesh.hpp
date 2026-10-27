@@ -21,10 +21,10 @@ namespace mhs::dtdm {
         std::vector<mhs::core::Index> cells_of_module[kModuleCount];
         std::vector<std::vector<mhs::core::Index>> cells_of_layer;
         std::vector<double> cell_k; // conductivity per cell
-        std::array<int, kModuleCount> nz_per_layer { { 0, 0, 0 } };
+        std::array<int, kModuleCount> nz_per_layer {{0, 0, 0}};
         long dof = 0;
         double total_power = 0.0;
-        std::array<int, 4> group_nz { { 0, 0, 0, 0 } };
+        std::array<int, 4> group_nz {{0, 0, 0, 0}};
     };
 
     /// Graded axis over the sink footprint with the chiplet edges as grid lines.
@@ -32,14 +32,14 @@ namespace mhs::dtdm {
     std::vector<double> build_axis(const Layout& layout, const std::vector<Chiplet>& chiplets, int axis);
 
     /// Per-layer z cell counts whose total cell count equals ``layout.target``.
-    std::vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout,
-        const std::vector<Chiplet>& chiplets, std::array<int, 4>& group_nz);
+    std::vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const std::vector<Chiplet>& chiplets,
+        std::array<int, 4>& group_nz);
 
     /// Build the full model for one level. Throws if the DoF count misses.
     StackMesh build_stack_mesh(const SystemSpec& spec, const Layout& layout);
 
     /// In-plane cell count covered by the union of the chiplet rectangles.
-    long covered_cells(const std::vector<double>& x, const std::vector<double>& y,
-        const std::vector<Chiplet>& chiplets);
+    long covered_cells(
+        const std::vector<double>& x, const std::vector<double>& y, const std::vector<Chiplet>& chiplets);
 
 } // namespace mhs::dtdm

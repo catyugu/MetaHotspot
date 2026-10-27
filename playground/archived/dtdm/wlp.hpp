@@ -27,8 +27,8 @@ namespace mhs::dtdm {
             return;
         out[1] = 1.0 - x;
         for (int p = 1; p + 1 < order; ++p)
-            out[static_cast<std::size_t>(p + 1)] = ((2.0 * p + 1.0 - x) * out[static_cast<std::size_t>(p)]
-                                                       - p * out[static_cast<std::size_t>(p - 1)])
+            out[static_cast<std::size_t>(p + 1)]
+                = ((2.0 * p + 1.0 - x) * out[static_cast<std::size_t>(p)] - p * out[static_cast<std::size_t>(p - 1)])
                 / (p + 1.0);
     }
 

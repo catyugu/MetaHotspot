@@ -23,10 +23,10 @@ namespace mhs::dtdm {
 
     /// Interface k joins modules k and k+1: CM I | KM, then KM | CM II.
     inline constexpr int kInterfaceCount = 2;
-    inline constexpr std::array<std::pair<int, int>, kInterfaceCount> kInterfaceModules { {
-        { 0, 1 },
-        { 1, 2 },
-    } };
+    inline constexpr std::array<std::pair<int, int>, kInterfaceCount> kInterfaceModules {{
+        {0, 1},
+        {1, 2},
+    }};
 
     /// One face element of an interface: the module cell behind it and that
     /// side's half of the face resistance.
@@ -56,7 +56,7 @@ namespace mhs::dtdm {
 
     struct PatchLayout {
         std::vector<int> global_id[kModuleCount]; // per module, its patches' global ids
-        int interface_patch_count[kInterfaceCount] { 0, 0 };
+        int interface_patch_count[kInterfaceCount] {0, 0};
         int total = 0;
     };
 
@@ -86,8 +86,8 @@ namespace mhs::dtdm {
     /// The whole stack at one mesh level, shared by the three methods.
     class System {
     public:
-        System(StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver,
-            double linear_tolerance = 1e-8);
+        System(
+            StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver, double linear_tolerance = 1e-8);
 
         const StackMesh& stack() const { return stack_; }
 

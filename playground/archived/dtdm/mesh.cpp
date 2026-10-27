@@ -30,9 +30,7 @@ namespace mhs::dtdm {
         }
 
         bool inside(const Chiplet& c, double x, double y, double eps = 1e-12)
-        {
-            return x >= c.x - eps && x <= c.x + c.width + eps && y >= c.y - eps && y <= c.y + c.height + eps;
-        }
+        { return x >= c.x - eps && x <= c.x + c.width + eps && y >= c.y - eps && y <= c.y + c.height + eps; }
 
         std::vector<int> split_by_thickness(const int total, const std::vector<double>& weight)
         {
@@ -82,8 +80,7 @@ namespace mhs::dtdm {
         }
     } // namespace
 
-    long covered_cells(const std::vector<double>& x, const std::vector<double>& y,
-        const std::vector<Chiplet>& chiplets)
+    long covered_cells(const std::vector<double>& x, const std::vector<double>& y, const std::vector<Chiplet>& chiplets)
     {
         long count = 0;
         for (std::size_t i = 0; i + 1 < x.size(); ++i) {
@@ -119,7 +116,7 @@ namespace mhs::dtdm {
         // to it are resolved the same way.
         const double fine = widest / static_cast<double>(layout.n_fine);
 
-        std::vector<double> inner { edges.front() };
+        std::vector<double> inner {edges.front()};
         for (std::size_t i = 0; i + 1 < edges.size(); ++i) {
             const double a = edges[i];
             const double b = edges[i + 1];
@@ -141,7 +138,7 @@ namespace mhs::dtdm {
                 cell *= kGrowth;
             }
             const double scale = (to - from) / covered;
-            std::vector<double> out { from };
+            std::vector<double> out {from};
             double acc = from;
             for (double weight : weights) {
                 acc += weight * scale;
@@ -160,8 +157,8 @@ namespace mhs::dtdm {
         return out;
     }
 
-    std::vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout,
-        const std::vector<Chiplet>& chiplets, std::array<int, 4>& group_nz)
+    std::vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const std::vector<Chiplet>& chiplets,
+        std::array<int, 4>& group_nz)
     {
         const auto& x = probe.axes[0];
         const auto& y = probe.axes[1];
@@ -178,8 +175,12 @@ namespace mhs::dtdm {
                     bool hit = layer_inside(layer, kInterposer, cx, cy);
                     if (kStack[layer].footprint == kFootprintChiplets)
                         for (const auto& c : chiplets)
-                            if (inside(c, cx, cy)) { hit = true; break; }
-                    if (hit) ++total;
+                            if (inside(c, cx, cy)) {
+                                hit = true;
+                                break;
+                            }
+                    if (hit)
+                        ++total;
                 }
             }
             return total;
@@ -228,7 +229,7 @@ namespace mhs::dtdm {
                             for (std::size_t i = 0; i < interp_idx.size(); ++i)
                                 nz[interp_idx[i]] = split_interp[i];
                             best = nz;
-                            group_nz = { { a, b, c, d } };
+                            group_nz = {{a, b, c, d}};
                         }
                     }
         if (best.empty())
@@ -243,7 +244,7 @@ namespace mhs::dtdm {
         out.axes[1] = build_axis(layout, spec.chiplets, 1);
 
         // probe pass: solve the z distribution so the DoF count is exact
-        std::array<int, 4> group { { 0, 0, 0, 0 } };
+        std::array<int, 4> group {{0, 0, 0, 0}};
         const auto nz = solve_layer_nz(out, layout, spec.chiplets, group);
         out.group_nz = group;
 
@@ -288,7 +289,7 @@ namespace mhs::dtdm {
                         if (!hit)
                             continue;
                         const auto id = static_cast<long>(mesh.cells.size());
-                        mesh.cells.push_back({ { x[i], y[j], z[l][k] }, { x[i + 1], y[j + 1], z[l][k + 1] } });
+                        mesh.cells.push_back({{x[i], y[j], z[l][k]}, {x[i + 1], y[j + 1], z[l][k + 1]}});
                         index[l][(static_cast<std::size_t>(k) * nx + i) * ny + j] = id;
                         out.cells_of_module[kStack[l].module].push_back(id);
                         out.cell_k.push_back(kStack[l].material.k);
@@ -328,14 +329,14 @@ namespace mhs::dtdm {
         for (int l = 0; l < static_cast<int>(kStack.size()); ++l)
             for (long id : index[l])
                 if (id >= 0)
-                    out.model.cell_material[static_cast<std::size_t>(id)] = static_cast<mhs::core::TableIndex>(material_of_layer[l]);
+                    out.model.cell_material[static_cast<std::size_t>(id)]
+                        = static_cast<mhs::core::TableIndex>(material_of_layer[l]);
 
         // heat sources: one per chiplet, constant volumetric density
         out.model.heat_source_table.clear();
         for (const auto& c : spec.chiplets) {
             const double volume = c.width * c.height * kStack[3].thickness;
-            out.model.heat_source_table.push_back(
-                mhs::core::CompiledExpression::make_constant(c.power / volume));
+            out.model.heat_source_table.push_back(mhs::core::CompiledExpression::make_constant(c.power / volume));
         }
         out.total_power = 0.0;
         for (std::size_t ci = 0; ci < spec.chiplets.size(); ++ci) {
@@ -348,8 +349,7 @@ namespace mhs::dtdm {
                         continue;
                     const double volume = mesh.cells[static_cast<std::size_t>(id)].volume();
                     out.model.source_terms.push_back(
-                        { { static_cast<mhs::core::Index>(id) }, static_cast<mhs::core::TableIndex>(ci), volume,
-                            centre });
+                        {{static_cast<mhs::core::Index>(id)}, static_cast<mhs::core::TableIndex>(ci), volume, centre});
                     out.total_power += density * volume;
                 }
         }
@@ -359,7 +359,7 @@ namespace mhs::dtdm {
         auto& faces = mesh.faces;
         auto emit = [&](long owner, long neighbor, int axis, int side) {
             mhs::core::FacePatch f;
-            f.owner = { static_cast<mhs::core::Index>(owner) };
+            f.owner = {static_cast<mhs::core::Index>(owner)};
             f.neighbor = mhs::core::CellId {};
             if (neighbor >= 0)
                 f.neighbor.value = static_cast<mhs::core::Index>(neighbor);
@@ -371,20 +371,21 @@ namespace mhs::dtdm {
             if (neighbor >= 0) {
                 const auto& cn = mesh.cells[static_cast<std::size_t>(neighbor)];
                 f.neighbor_distance = 0.5 * cn.size()[static_cast<std::size_t>(axis)];
-                const double plane = 0.5 * (co.center()[static_cast<std::size_t>(axis)]
-                    + cn.center()[static_cast<std::size_t>(axis)]);
-                f.min[static_cast<std::size_t>(axis)] = plane;
-                f.max[static_cast<std::size_t>(axis)] = plane;
-            } else {
-                // exterior: the face sits on the cell side the missing neighbour
-                // would be on, which is `side` along the axis
-                const double plane = side > 0 ? co.max[static_cast<std::size_t>(axis)]
-                                              : co.min[static_cast<std::size_t>(axis)];
+                const double plane
+                    = 0.5 * (co.center()[static_cast<std::size_t>(axis)] + cn.center()[static_cast<std::size_t>(axis)]);
                 f.min[static_cast<std::size_t>(axis)] = plane;
                 f.max[static_cast<std::size_t>(axis)] = plane;
             }
-            f.area = (co.max[(axis + 1) % 3] - co.min[(axis + 1) % 3])
-                * (co.max[(axis + 2) % 3] - co.min[(axis + 2) % 3]);
+            else {
+                // exterior: the face sits on the cell side the missing neighbour
+                // would be on, which is `side` along the axis
+                const double plane
+                    = side > 0 ? co.max[static_cast<std::size_t>(axis)] : co.min[static_cast<std::size_t>(axis)];
+                f.min[static_cast<std::size_t>(axis)] = plane;
+                f.max[static_cast<std::size_t>(axis)] = plane;
+            }
+            f.area
+                = (co.max[(axis + 1) % 3] - co.min[(axis + 1) % 3]) * (co.max[(axis + 2) % 3] - co.min[(axis + 2) % 3]);
             f.sign = side;
             faces.push_back(f);
             return static_cast<long>(faces.size() - 1);
@@ -416,7 +417,8 @@ namespace mhs::dtdm {
                             if (other >= 0) {
                                 if (other > self)
                                     emit(self, other, 2, dir);
-                            } else {
+                            }
+                            else {
                                 const long id = emit(self, -1, 2, dir);
                                 if (l == 0 && dir > 0)
                                     sink_top_faces.push_back(id);
@@ -430,7 +432,8 @@ namespace mhs::dtdm {
                                 if (other >= 0) {
                                     if (other > self)
                                         emit(self, other, axis, dir);
-                                } else {
+                                }
+                                else {
                                     emit(self, -1, axis, dir);
                                 }
                             }
@@ -441,21 +444,19 @@ namespace mhs::dtdm {
         // boundary conditions in RISE coordinates: the convection ambient equals
         // the initial temperature, so its contribution to the right-hand side is
         // zero and the WLP expansion sees a homogeneous initial value problem
+        out.model.boundary_conditions.push_back(
+            mhs::core::Convection {mhs::core::CompiledExpression::make_constant(kHeatSinkH),
+                mhs::core::CompiledExpression::make_constant(0.0)});
         out.model.boundary_conditions.push_back(mhs::core::Convection {
-            mhs::core::CompiledExpression::make_constant(kHeatSinkH),
-            mhs::core::CompiledExpression::make_constant(0.0) });
-        out.model.boundary_conditions.push_back(mhs::core::Convection {
-            mhs::core::CompiledExpression::make_constant(kPcbH),
-            mhs::core::CompiledExpression::make_constant(0.0) });
+            mhs::core::CompiledExpression::make_constant(kPcbH), mhs::core::CompiledExpression::make_constant(0.0)});
 
         auto add_term = [&](long face_id, std::size_t condition) {
             const auto& f = faces[static_cast<std::size_t>(face_id)];
             const int axis = f.axis;
             const int a = axis == 0 ? 1 : 0;
             const int b = axis == 2 ? 1 : 2;
-            out.model.boundary_terms.push_back(
-                { { static_cast<mhs::core::Index>(face_id) }, static_cast<mhs::core::TableIndex>(condition),
-                    { f.min[a], f.max[a], f.min[b], f.max[b] } });
+            out.model.boundary_terms.push_back({{static_cast<mhs::core::Index>(face_id)},
+                static_cast<mhs::core::TableIndex>(condition), {f.min[a], f.max[a], f.min[b], f.max[b]}});
         };
         for (long id : sink_top_faces)
             add_term(id, 0);
@@ -472,5 +473,3 @@ namespace mhs::dtdm {
     }
 
 } // namespace mhs::dtdm
-
-
