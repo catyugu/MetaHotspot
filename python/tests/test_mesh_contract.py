@@ -39,8 +39,9 @@ def test_subcell_sources_keep_independent_power_columns():
 
 @pytest.mark.parametrize("case", [1, 2])
 def test_production_external_mesh_decouples_cell_and_state_order(case):
-    import metahotspot
     import scipy.sparse.linalg as spla
+
+    import metahotspot
 
     path = (
         Path(__file__).resolve().parents[2]
@@ -73,9 +74,15 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
     )
     imported = model.compile()
     result = imported.assemble()
-    k_error = spla.norm(result.K - reference.K[order, :][:, order]) / spla.norm(reference.K)
-    c_error = spla.norm(result.C - reference.C[order, :][:, order]) / spla.norm(reference.C)
-    f_error = np.linalg.norm(result.f - reference.f[order]) / np.linalg.norm(reference.f)
+    k_error = spla.norm(result.K - reference.K[order, :][:, order]) / spla.norm(
+        reference.K
+    )
+    c_error = spla.norm(result.C - reference.C[order, :][:, order]) / spla.norm(
+        reference.C
+    )
+    f_error = np.linalg.norm(result.f - reference.f[order]) / np.linalg.norm(
+        reference.f
+    )
     # Hydraulic preprocessing solves pressure iteratively at relative 1e-8.
     # Reordering fluid cells changes its finite-tolerance pressure/flux result.
     # Pure geometry/capacity and source projections have no such solve error.
@@ -95,7 +102,9 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
         actual_temperature, expected_temperature, rtol=0, atol=1e-5
     )
     print(
-        f"case={case} states={order.size} K_rel={k_error:.3e} C_rel={c_error:.3e} f_rel={f_error:.3e} T_max={temperature_error:.3e} K"
+        f"case={case} states={order.size} "
+        f"K_rel={k_error:.3e} C_rel={c_error:.3e} f_rel={f_error:.3e} "
+        f"T_max={temperature_error:.3e} K"
     )
 
 
@@ -124,7 +133,6 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
 
 
 def test_native_mesh_input_rejects_invalid_indices():
-    model = _model()
     fields = _model().compile().cells
     inputs = {
         name: getattr(fields, name).copy()

@@ -21,7 +21,6 @@ from metahotspot.types import (
     MhsOperatorsInfo,
 )
 
-
 # ---- SolveOptions --------------------------------------------------------
 
 _SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}

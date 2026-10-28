@@ -22,7 +22,7 @@ For normal conductivity `k`, owner-center distance `d` and patch area `A`:
 
 An internal solid face uses `g = A / (d_i/k_i + d_j/k_j)` and contributes `g [[1,-1],[-1,1]]`. Assembly selects solid conduction or fluid–solid exchange directly from the two physical types. Frozen fluid volume fluxes use the same unique oriented faces.
 
-The current TPFA requires orthogonal axis-aligned boxes with diagonal conductivity; nonorthogonal center connections are rejected.
+The current TPFA requires orthogonal axis-aligned boxes with diagonal conductivity; geometry, connectivity, material alignment and TPFA orthogonality are caller preconditions and are not validated by the compiler.
 
 ## Rationale
 

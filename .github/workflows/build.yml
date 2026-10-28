@@ -1,0 +1,162 @@
+name: Build and package
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Formatting and lint results must not depend on the runner's tool versions.
+  CLANG_FORMAT_VERSION: "23.1.3"
+  RUFF_VERSION: "0.17.1"
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "clang-format==${{ env.CLANG_FORMAT_VERSION }}" "ruff==${{ env.RUFF_VERSION }}"
+      - name: Check C++ formatting
+        run: python ci/check_format.py
+      - name: Check Python formatting and lint
+        run: |
+          ruff format --check python ci
+          ruff check python ci
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              os: ubuntu-latest,
+              cc: gcc,
+              cxx: g++,
+              config: Release,
+              generator: Ninja,
+              label: linux-gcc,
+            }
+          - {
+              os: ubuntu-latest,
+              cc: clang-18,
+              cxx: clang++-18,
+              config: Debug,
+              generator: Ninja,
+              label: linux-clang,
+            }
+          - {
+              os: ubuntu-latest,
+              cc: clang-18,
+              cxx: clang++-18,
+              config: Debug,
+              generator: Ninja,
+              label: linux-sanitize,
+              extra: "--cmake-arg=-DMHS_SANITIZE=ON",
+            }
+          - {
+              os: macos-latest,
+              cc: clang,
+              cxx: clang++,
+              config: Release,
+              generator: Ninja,
+              label: macos-clang,
+            }
+          - {
+              os: windows-latest,
+              cc: cl,
+              cxx: cl,
+              config: Release,
+              generator: Ninja,
+              label: windows-msvc,
+            }
+          - {
+              os: windows-latest,
+              cc: clang-cl,
+              cxx: clang-cl,
+              config: Debug,
+              generator: Ninja,
+              label: windows-clang,
+            }
+          - {
+              os: windows-2022,
+              cc: cl,
+              cxx: cl,
+              config: Debug,
+              generator: "Visual Studio 17 2022",
+              label: windows-multiconfig,
+            }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - run: python -m pip install 'cmake>=3.30' ninja
+      - if: matrix.cxx == 'clang++-18'
+        run: sudo apt-get update && sudo apt-get install -y clang-18 libomp-18-dev
+      - if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+      - run: python ci/check_build.py --config ${{ matrix.config }} --generator "${{ matrix.generator }}" ${{ matrix.extra }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
+          path: build/MetaHotspot-*.zip
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-${{ matrix.label }}-${{ matrix.config }}
+          path: |
+            build/**/CMakeFiles/CMakeConfigureLog.yaml
+            build/**/CMakeFiles/CMakeError.log
+            build/**/Testing/Temporary/*
+          if-no-files-found: ignore
+
+  # The Python package is a ctypes wrapper, so the wheel carries the C library
+  # and the runtime libraries it loads; the tests run against the installed
+  # wheel rather than the build tree.
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.9" }
+          - { os: ubuntu-latest, python: "3.14" }
+          - { os: windows-latest, python: "3.12" }
+          - { os: macos-latest, python: "3.12" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - if: runner.os == 'macOS'
+        run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+      - run: python -m pip install build pytest
+      - name: Build sdist, build and verify its wheel
+        run: python ci/check_python.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MetaHotspot-wheel-${{ runner.os }}-${{ matrix.python }}
+          path: dist/*

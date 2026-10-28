@@ -41,7 +41,7 @@ namespace mhs::logger {
         // 遇到 Warning 及以上级别自动将缓冲刷入文件
         spdlog::flush_on(spdlog::level::warn);
 
-#ifdef VERBOSE
+#ifdef MHS_VERBOSE
         spdlog::set_level(spdlog::level::debug);
 #else
         spdlog::set_level(spdlog::level::info);

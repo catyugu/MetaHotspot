@@ -23,7 +23,7 @@ namespace mhs::sim {
         }
 #else
             throw std::runtime_error("Pardiso solver requested but MKL/Pardiso is not enabled "
-                                     "(build with USE_MKL=ON)");
+                                     "(build with MHS_USE_MKL=ON)");
 #endif
         case SolverType::AmgCg: {
             auto solver = std::make_unique<AmgCgSolver>();

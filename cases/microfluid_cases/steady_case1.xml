@@ -613,9 +613,8 @@
     <ObservePoints3D />
     <OtherThermalBondary i:nil="true" />
     <PreviewRowNum>0</PreviewRowNum>
-    <Results xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />
     <SoftwareMode>PTA</SoftwareMode>
-    <SolverType>Fem2</SolverType>
+    <SolverType>FVM</SolverType>
     <StudyType>Steady</StudyType>
     <TIMMaterialName />
     <ThermalMaskResults xmlns:a="http://schemas.microsoft.com/2003/10/Serialization/Arrays" />

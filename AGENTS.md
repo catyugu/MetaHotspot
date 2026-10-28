@@ -15,11 +15,28 @@ cmake -S . -B build
 cmake --build build --parallel --config Release
 
 # Run tests
-python run_tests.py
+ctest --test-dir build
 
 # Run cases
 python run_cases.py
 ```
+
+```bash
+# Python package, tests and style gate
+python -m build --wheel
+python -m pip install dist/*.whl
+python -m pytest python/tests
+ruff format --check python ci
+ruff check python ci
+```
+
+```bash
+# C++ formatting gate, plus a sanitizer build tree (GCC or Clang only)
+python ci/check_format.py
+cmake -G "Ninja" -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DMHS_SANITIZE=ON
+```
+
+- **Versions**: the library version is defined once, as `MHS_VERSION_*` macros in `include/metahotspot/metahotspot_c_api.h`; CMake and the Python package derive from it.
 
 ## Testing Guidelines
 
