@@ -144,7 +144,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, python: "3.9" }
+          # 3.9 is the floor in pyproject.toml, but setup-python has no 3.9
+          # build for ubuntu-26.04, which ubuntu-latest now resolves to.
+          - { os: ubuntu-24.04, python: "3.9" }
           - { os: ubuntu-latest, python: "3.14" }
           - { os: windows-latest, python: "3.12" }
           - { os: macos-latest, python: "3.12" }
