@@ -1,0 +1,2 @@
+# The commit hook is executed by Git's own shell, which cannot parse CRLF scripts.
+.githooks/* text eol=lf

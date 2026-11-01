@@ -12,27 +12,9 @@ on:
   workflow_dispatch:
 
 env:
-  # Formatting and lint results must not depend on the runner's tool versions.
-  CLANG_FORMAT_VERSION: "23.1.3"
-  RUFF_VERSION: "0.17.1"
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - run: python -m pip install "clang-format==${{ env.CLANG_FORMAT_VERSION }}" "ruff==${{ env.RUFF_VERSION }}"
-      - name: Check C++ formatting
-        run: python ci/check_format.py
-      - name: Check Python formatting and lint
-        run: |
-          ruff format --check python ci
-          ruff check python ci
-
   build:
     strategy:
       fail-fast: false
