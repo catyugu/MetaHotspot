@@ -220,7 +220,7 @@ namespace mhs::sim {
         else
             compile_cartesian_mesh(model, definition.mesh, si_scale, resolved_layers);
         project_cell_regions(model, resolved_layers);
-        model.boundary_terms = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
+        model.boundary_faces = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
 
         // Fluid coupling.
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),

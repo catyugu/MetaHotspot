@@ -12,9 +12,9 @@
 
 namespace mhs::core {
 
-    // Boundary integration rectangle on an unchanged topological face.
-    struct BoundaryTerm {
-        FaceId face;
+    // Boundary integration face and its trace DOF on an unchanged topological face.
+    struct BoundaryFace {
+        FaceId parent;
         TableIndex condition; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
@@ -40,7 +40,7 @@ namespace mhs::core {
         CompiledExpression ambient_temperature;
     };
 
-    // Shared compiled laws; per-face BoundaryTerm records store only an index.
+    // Shared compiled laws; per-face BoundaryFace records store only an index.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
@@ -67,7 +67,7 @@ namespace mhs::core {
         std::vector<CompiledExpression> heat_source_table;
         std::vector<BoundaryCondition> boundary_conditions;
         std::vector<SourceTerm> source_terms;
-        std::vector<BoundaryTerm> boundary_terms;
+        std::vector<BoundaryFace> boundary_faces;
         FluidDomain fluid;
 
         double initial_temperature = 300.0;

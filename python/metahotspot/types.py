@@ -126,6 +126,7 @@ class MhsOperatorsInfo(ctypes.Structure):
 class MhsSolutionInfo(ctypes.Structure):
     _fields_ = [
         ("state_count", ctypes.c_size_t),
+        ("boundary_count", ctypes.c_size_t),
         ("record_count", ctypes.c_size_t),
         ("probe_count", ctypes.c_size_t),
         ("time", ctypes.c_double),

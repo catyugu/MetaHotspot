@@ -79,6 +79,8 @@ def test_solution_views_derive_from_one_native_snapshot():
     solution = model.compile().solve()
 
     assert solution.state.size == 1
+    assert solution.boundary_temperature.shape == (6,)
+    np.testing.assert_allclose(solution.boundary_temperature, solution.state[0])
     assert solution.temperature is solution.state
     assert np.shares_memory(solution.temperature_history, solution.state_history)
     assert solution.state_history.shape[1] == solution.state.shape[0]

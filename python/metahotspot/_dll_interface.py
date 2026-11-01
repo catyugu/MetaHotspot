@@ -381,6 +381,11 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
         [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
     ),
     (
+        "mhs_solution_copy_boundary_temperature",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
+    ),
+    (
         "mhs_solution_copy_history_times",
         ctypes.c_int32,
         [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],

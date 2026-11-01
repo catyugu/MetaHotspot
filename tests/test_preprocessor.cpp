@@ -12,17 +12,17 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 // Helpers for testing patch-based BC assignment.
 
-/// Find a boundary integration term on `cell_idx` with direction `dir`.
-/// Returns nullptr for an internal face without a boundary term.
-static const mhs::core::BoundaryTerm* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+/// Find a boundary integration face on `cell_idx` with direction `dir`.
+/// Returns nullptr for an internal face without a boundary face.
+static const mhs::core::BoundaryFace* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
         if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
             && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            const auto terms = boundary_terms_on_face(model, id);
-            if (!terms.empty())
-                return &terms.front();
+            const auto faces = boundary_faces_on(model, id);
+            if (!faces.empty())
+                return &faces.front();
         }
     }
     return nullptr;

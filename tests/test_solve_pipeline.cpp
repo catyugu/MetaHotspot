@@ -53,6 +53,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     auto result = mhs::sim::solve(model);
 
     EXPECT_EQ(result.state.size(), model.discrete.cells.size());
+    EXPECT_EQ(result.boundary_temperature.size(), model.boundary_faces.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K

@@ -58,7 +58,7 @@ namespace mhs::sim {
         const std::vector<ResolvedLayerGeometry>& layers);
     void build_external_output_mesh(mhs::core::Model& model);
 
-    std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
         const std::vector<CompiledBoundaryRegion>& boundaries,
         mhs::core::TableIndex fallback = mhs::core::invalidTableIndex);
 } // namespace mhs::sim

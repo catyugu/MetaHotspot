@@ -33,12 +33,22 @@ namespace mhs::utils {
         double z = 0.0;
     };
 
+    struct BoundaryTrace {
+        double temperature = 0.0;
+        double conductance = 0.0;
+        double load = 0.0;
+    };
+
     // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
     // use the same two-point thermal-resistance law as the diffusion assembly.
     TemperatureGradient reconstruct_cell_gradient(
         const mhs::core::Model& model, std::span<const double> temperature, double time, mhs::core::CellId cell);
+    BoundaryTrace evaluate_boundary(const mhs::core::Model& model, std::span<const double> temperature, double time,
+        const mhs::core::BoundaryFace& face, double normal_conductivity);
     double boundary_trace(const mhs::core::Model& model, std::span<const double> temperature, double time,
-        const mhs::core::BoundaryTerm& term);
+        const mhs::core::BoundaryFace& face);
+    std::vector<double> recover_boundary_temperature(
+        const mhs::core::Model& model, std::span<const double> temperature, double time);
     double sample_point(const mhs::core::Model& model, std::span<const double> temperature, double time,
         mhs::core::CellId cell, const mhs::core::Vec3& point);
 

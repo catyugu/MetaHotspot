@@ -26,6 +26,7 @@ class ProbeSnapshot:
 class SolutionSnapshot:
     time: float
     state: np.ndarray
+    boundary_temperature: np.ndarray
     history_times: np.ndarray
     state_history: np.ndarray
     probes: list[ProbeSnapshot]
@@ -79,6 +80,7 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
     check(dll.mhs_solution_get_info(handle, ctypes.byref(info)), "solution_info")
 
     state = np.empty(int(info.state_count), dtype=np.float64)
+    boundary_temperature = np.empty(int(info.boundary_count), dtype=np.float64)
     history_times = np.empty(int(info.record_count), dtype=np.float64)
     history_states = np.empty(
         int(info.record_count) * int(info.state_count), dtype=np.float64
@@ -86,6 +88,12 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
     check(
         dll.mhs_solution_copy_state(handle, _double_ptr(state), state.size),
         "solution_copy_state",
+    )
+    check(
+        dll.mhs_solution_copy_boundary_temperature(
+            handle, _double_ptr(boundary_temperature), boundary_temperature.size
+        ),
+        "solution_copy_boundary_temperature",
     )
     check(
         dll.mhs_solution_copy_history_times(
@@ -130,6 +138,7 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
     return SolutionSnapshot(
         time=float(info.time),
         state=state,
+        boundary_temperature=boundary_temperature,
         history_times=history_times,
         state_history=history_states.reshape(
             int(info.record_count), int(info.state_count)
@@ -182,6 +191,11 @@ class Solution(OwnedHandle):
     def state(self) -> np.ndarray:
         """Final full state, in CellId order."""
         return self.data.state
+
+    @property
+    def boundary_temperature(self) -> np.ndarray:
+        """Final temperature traces in compiled boundary-face order."""
+        return self.data.boundary_temperature
 
     @property
     def history_times(self) -> np.ndarray:

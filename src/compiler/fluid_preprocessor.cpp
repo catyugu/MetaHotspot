@@ -93,7 +93,7 @@ namespace mhs::sim::fluid {
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
             return term.condition == invalidTableIndex
-                || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex;
+                || fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == invalidIndex;
         });
         std::vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
@@ -177,10 +177,10 @@ namespace mhs::sim::fluid {
                             return bc.temperature.value_or(model.initial_temperature);
                     },
                     condition);
-                fluid.boundary_terms.push_back({term.face, FluidInflow {-mass, temperature}});
+                fluid.boundary_terms.push_back({term.parent, FluidInflow {-mass, temperature}});
             }
             else {
-                fluid.boundary_terms.push_back({term.face, FluidOutflow {mass}});
+                fluid.boundary_terms.push_back({term.parent, FluidOutflow {mass}});
             }
         }
         for (Index id = 0; id < mesh.faces.size(); ++id)

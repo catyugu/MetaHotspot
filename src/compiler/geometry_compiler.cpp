@@ -192,11 +192,11 @@ namespace mhs::sim {
         }
     }
 
-    std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
         const std::vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
     {
         using namespace mhs::core;
-        std::vector<BoundaryTerm> terms;
+        std::vector<BoundaryFace> faces;
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
             if (face.neighbor.valid())
@@ -240,10 +240,10 @@ namespace mhs::sim {
                             break;
                         }
                     }
-                    terms.push_back({FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    faces.push_back({FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
-        return terms;
+        return faces;
     }
 
 } // namespace mhs::sim

@@ -3,6 +3,7 @@
 #include "core/solver.hpp"
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
+#include "solver/interpolation.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/solution_history.hpp"
@@ -240,6 +241,7 @@ namespace mhs::sim {
 
         auto sol = solve_system(study, assemble, state, options, observe);
         sol.probe_traces = probe_recorder.traces();
+        sol.boundary_temperature = mhs::utils::recover_boundary_temperature(model, sol.state, sol.time);
         return sol;
     }
 

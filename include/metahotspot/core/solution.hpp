@@ -17,6 +17,8 @@ namespace mhs::core {
     /// snapshot_states[record * state_count + state].
     struct Solution {
         std::vector<double> state;
+        // Final external BoundaryFace trace temperatures in Model order.
+        std::vector<double> boundary_temperature;
         double time = 0.0;
         bool converged = true;
         std::vector<ProbeTrace> probe_traces;

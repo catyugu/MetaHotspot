@@ -198,6 +198,7 @@ typedef struct {
 /** Scalar solution metadata. Array data is retrieved with copy functions. */
 typedef struct {
     size_t state_count;
+    size_t boundary_count;
     size_t record_count;
     size_t probe_count;
     double time;
@@ -350,6 +351,7 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char*
 
 MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution_info_t* out);
 MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* out, size_t count);
+MHS_API mhs_status_t mhs_solution_copy_boundary_temperature(const mhs_solution_t* s, double* out, size_t count);
 MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count);
 MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, double* out, size_t count);
 

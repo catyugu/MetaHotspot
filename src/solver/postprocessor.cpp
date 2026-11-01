@@ -19,8 +19,6 @@ namespace mhs::post {
         std::vector<double> node_T(model.output.points.size(), std::numeric_limits<double>::quiet_NaN());
         for (mhs::core::Index v = 0; v < model.output.points.size(); ++v) {
             const auto p = model.output.points[v];
-            double dirichlet_sum = 0;
-            size_t count = 0;
             std::vector<mhs::utils::PointTemperatureSample> samples;
             for (auto cell : model.output.incident_cells(v)) {
                 const auto row = cell.value;
@@ -28,25 +26,22 @@ namespace mhs::post {
                 const auto center = model.discrete.cells[cell.value].center();
                 const auto& mat = model.material_table[model.cell_material[cell.value]];
                 const mhs::core::FieldContext ctx {center[0], center[1], center[2], T, time};
+                bool boundary_point = false;
                 for (auto id : model.discrete.incident_faces(cell)) {
                     const auto& f = model.discrete.faces[id.value];
                     if (f.neighbor.valid())
                         continue;
-                    for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                        const auto& bc = model.boundary_conditions[term.condition];
-                        if (const auto* dirichlet = std::get_if<mhs::core::Dirichlet>(&bc);
-                            dirichlet && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                            dirichlet_sum += dirichlet->temperature.eval({p[0], p[1], p[2], T, time});
-                            ++count;
-                        }
+                    for (const auto& boundary : mhs::core::boundary_faces_on(model, id)) {
+                        if (mhs::core::projected_face(model.discrete, boundary).contains(p))
+                            boundary_point = true;
                     }
                 }
+                const double sample
+                    = boundary_point ? mhs::utils::sample_point(model, cell_temperature, time, cell, p) : T;
                 samples.push_back(
-                    {center[0], center[1], center[2], T, mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)});
+                    {center[0], center[1], center[2], sample, mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)});
             }
-            if (count)
-                node_T[v] = dirichlet_sum / static_cast<double>(count);
-            else if (!samples.empty())
+            if (!samples.empty())
                 node_T[v] = mhs::utils::recover_point_temperature(samples, p[0], p[1], p[2]);
         }
 

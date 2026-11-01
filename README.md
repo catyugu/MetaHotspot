@@ -99,7 +99,7 @@ CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据�
 
 构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；温度状态直接按 CellId 编号。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，外边界积分片另有连续温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
 
 当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
@@ -144,8 +144,8 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 编号与数据顺序
 
-`CellId` 标识控制体及对应温度未知量，`FaceId` 标识唯一有向面片。编号不表示空间位置或邻接关系；物理边界投影不改变面片拓扑。
+`CellId` 标识控制体及主温度未知量，`FaceId` 标识唯一有向面片。`BoundaryFace` 标识外边界积分片及其温度迹；物理边界投影不改变面片拓扑。
 
-几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 统一按 CellId 排列。Python 的 `Solution.temperature` 和 `temperature_history` 直接共享状态数组。
+几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列；`boundary_temperature` 按 `BoundaryFace` 排列。Python 暴露这三组温度结果。
 
 层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。

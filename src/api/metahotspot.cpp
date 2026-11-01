@@ -1004,6 +1004,7 @@ MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution
     CHECK_NULL(s);
     CHECK_NULL(out);
     out->state_count = s->sol.state.size();
+    out->boundary_count = s->sol.boundary_temperature.size();
     out->record_count = s->sol.snapshot_times.size();
     out->probe_count = s->sol.probe_traces.size();
     out->time = s->sol.time;
@@ -1015,6 +1016,12 @@ MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* ou
 {
     CHECK_NULL(s);
     return copy_vector(s->sol.state, out, count, "state");
+}
+
+MHS_API mhs_status_t mhs_solution_copy_boundary_temperature(const mhs_solution_t* s, double* out, size_t count)
+{
+    CHECK_NULL(s);
+    return copy_vector(s->sol.boundary_temperature, out, count, "boundary temperature");
 }
 
 MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count)
