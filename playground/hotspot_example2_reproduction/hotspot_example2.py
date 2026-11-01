@@ -322,7 +322,7 @@ def main():
     c_steady = steady_model.compile()
     print(f"  Active cells: {c_steady.cell_count}")
     sol_steady = c_steady.solve()
-    steady_temp = sol_steady.temperature
+    steady_temp = sol_steady.state
     t_steady = _time.perf_counter() - t0
     print(
         f"  Steady T in [{steady_temp.min():.4f}, "
@@ -377,7 +377,7 @@ def main():
     sol_transient = c_transient.solve(state=steady_temp)
     t_transient = _time.perf_counter() - t0
 
-    final_temp = sol_transient.temperature
+    final_temp = sol_transient.state
     print(
         f"  Transient final T in [{final_temp.min():.4f}, "
         f"{final_temp.max():.4f}] K  ({t_transient:.3f}s)"
@@ -385,13 +385,14 @@ def main():
 
     # -- Transient probe traces --
     probes = sol_transient.probes
+    times = sol_transient.history_times
     print(f"\n  Probes recorded: {len(probes)}")
     for pi, probe in enumerate(probes[:5]):
-        if probe.times is not None and len(probe.times) > 0:
+        if probe.values.size > 0:
             print(
-                f"    {probe.name:<20s}  t={probe.times[0]:.4f}..{probe.times[-1]:.4f}  "
+                f"    {probe.name:<20s}  t={times[0]:.4f}..{times[-1]:.4f}  "
                 f"T={probe.values[0]:.2f}..{probe.values[-1]:.2f} K  "
-                f"({len(probe.times)} records)"
+                f"({probe.values.size} records)"
             )
 
     # Compare with HotSpot reference (gcc.init)

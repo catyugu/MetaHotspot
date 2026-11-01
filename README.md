@@ -146,6 +146,6 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 `CellId` 标识控制体及主温度未知量，`FaceId` 标识唯一有向面片。`BoundaryFace` 标识外边界积分片及其温度迹；物理边界投影不改变面片拓扑。
 
-几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列；`boundary_temperature` 按 `BoundaryFace` 排列。Python 暴露这三组温度结果。
+几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列。Python 暴露 `Solution.state` 与 `Solution.state_history` 两组结果。
 
 层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。

@@ -18,7 +18,6 @@ from metahotspot.types import MhsSolution, MhsSolutionInfo, _SolveOptionsCStruct
 @dataclass(frozen=True)
 class ProbeSnapshot:
     name: str
-    times: np.ndarray
     values: np.ndarray
 
 
@@ -26,7 +25,6 @@ class ProbeSnapshot:
 class SolutionSnapshot:
     time: float
     state: np.ndarray
-    boundary_temperature: np.ndarray
     history_times: np.ndarray
     state_history: np.ndarray
     probes: list[ProbeSnapshot]
@@ -80,7 +78,6 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
     check(dll.mhs_solution_get_info(handle, ctypes.byref(info)), "solution_info")
 
     state = np.empty(int(info.state_count), dtype=np.float64)
-    boundary_temperature = np.empty(int(info.boundary_count), dtype=np.float64)
     history_times = np.empty(int(info.record_count), dtype=np.float64)
     history_states = np.empty(
         int(info.record_count) * int(info.state_count), dtype=np.float64
@@ -88,12 +85,6 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
     check(
         dll.mhs_solution_copy_state(handle, _double_ptr(state), state.size),
         "solution_copy_state",
-    )
-    check(
-        dll.mhs_solution_copy_boundary_temperature(
-            handle, _double_ptr(boundary_temperature), boundary_temperature.size
-        ),
-        "solution_copy_boundary_temperature",
     )
     check(
         dll.mhs_solution_copy_history_times(
@@ -119,7 +110,6 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
             "solution_probe_info",
         )
         name = ctypes.create_string_buffer(name_size.value)
-        times = np.empty(record_count.value, dtype=np.float64)
         values = np.empty(record_count.value, dtype=np.float64)
         check(
             dll.mhs_solution_copy_probe(
@@ -127,18 +117,16 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
                 index,
                 name,
                 name_size.value,
-                _double_ptr(times),
                 _double_ptr(values),
                 record_count.value,
             ),
             "solution_copy_probe",
         )
-        probes.append(ProbeSnapshot(name.value.decode("utf-8"), times, values))
+        probes.append(ProbeSnapshot(name.value.decode("utf-8"), values))
 
     return SolutionSnapshot(
         time=float(info.time),
         state=state,
-        boundary_temperature=boundary_temperature,
         history_times=history_times,
         state_history=history_states.reshape(
             int(info.record_count), int(info.state_count)
@@ -178,11 +166,6 @@ class Solution(OwnedHandle):
         return _solution_snapshot(self._dll, self._handle)
 
     @property
-    def temperature(self) -> np.ndarray:
-        """Final temperature in CellId order."""
-        return self.state
-
-    @property
     def time(self) -> float:
         """Final simulation time."""
         return self.data.time
@@ -193,11 +176,6 @@ class Solution(OwnedHandle):
         return self.data.state
 
     @property
-    def boundary_temperature(self) -> np.ndarray:
-        """Final temperature traces in compiled boundary-face order."""
-        return self.data.boundary_temperature
-
-    @property
     def history_times(self) -> np.ndarray:
         """C++ output times [record_count]."""
         return self.data.history_times
@@ -206,11 +184,6 @@ class Solution(OwnedHandle):
     def state_history(self) -> np.ndarray:
         """C++ output states [record_count, state_count], row-major."""
         return self.data.state_history
-
-    @property
-    def temperature_history(self) -> np.ndarray:
-        """Temperature snapshots in CellId order."""
-        return self.state_history
 
     @property
     def probes(self) -> list[ProbeSnapshot]:

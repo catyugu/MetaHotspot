@@ -16,7 +16,7 @@ For cell temperature `T`, trace `lambda`, normal conductivity `k`, owner distanc
 
 `F = k A (T - lambda) / d`.
 
-Dirichlet prescribes `lambda`; Neumann satisfies `F + A q(lambda) = 0`, where positive `q` is inward; convection equates `F` to `A h(lambda) (lambda - T_inf(lambda))`. Boundary expressions therefore receive `lambda` as `T`. The same local equation supplies assembly, gradient reconstruction, probes, output sampling, and the final `Solution::boundary_temperature` array.
+Dirichlet prescribes `lambda`; Neumann satisfies `F + A q(lambda) = 0`, where positive `q` is inward; convection equates `F` to `A h(lambda) (lambda - T_inf(lambda))`. Boundary expressions therefore receive `lambda` as `T`. The same local equation supplies assembly, gradient reconstruction, probes and output sampling.
 
 The trace equations are statically condensed face by face. Constant laws use their analytic solution; a temperature-dependent law uses a bracketed scalar solve. The global state, `K/C/f`, nonlinear driver, time integration, and public solve entry remain cell-sized. Internal faces retain TPFA.
 

@@ -2,8 +2,8 @@
 #include "core/boundary_geometry.hpp"
 #include "core/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
-#include "solver/interpolation.hpp"
 #include "solver/postprocessor.hpp"
+#include "solver/thermal_reconstruction.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
@@ -104,8 +104,8 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         EXPECT_NEAR(nodes[v], vertices[found - model.output.points.begin()], 1e-12);
     }
     const Vec3 point {0.2, 0.3, 0.4};
-    EXPECT_NEAR(mhs::utils::sample_point(model, original, 0, model.discrete.locate(point), point),
-        mhs::utils::sample_point(imported, reordered, 0, imported.discrete.locate(point), point), 1e-12);
+    EXPECT_NEAR(mhs::sim::sample_point(model, original, 0, model.discrete.locate(point), point),
+        mhs::sim::sample_point(imported, reordered, 0, imported.discrete.locate(point), point), 1e-12);
 }
 
 TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
@@ -160,12 +160,13 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     const auto ops = mhs::sim::assemble_thermal(model, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
-    const auto g = mhs::utils::reconstruct_cell_gradient(model, state, 0, CellId {0});
-    EXPECT_NEAR(g.x, 1, 1e-12);
-    EXPECT_NEAR(g.y, 0, 1e-12);
-    EXPECT_NEAR(g.z, 0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::utils::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300);
+    // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
+    // so an interior probe moves at exactly that rate along x.
+    const auto left = mhs::sim::sample_point(model, state, 0, CellId {0}, {0.2, 0.5, 0.5});
+    const auto right = mhs::sim::sample_point(model, state, 0, CellId {0}, {0.8, 0.5, 0.5});
+    EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
+    EXPECT_DOUBLE_EQ(mhs::sim::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::sim::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
@@ -191,34 +192,38 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const double T = 280 + 10 * time;
                 const std::vector<double> state {T};
                 const auto ops = mhs::sim::assemble_thermal(model, state, time);
-                double g, load, trace;
+                // The cell is a unit cube with unit conductivity, so the
+                // condensed patch coefficients follow from the trace alone.
+                const auto condensed
+                    = mhs::sim::evaluate_boundary(model.boundary_conditions[term.condition], face, T, 1.0, time);
+                double g, load;
                 if (kind == 0) {
                     const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);
                     const double prescribed = 280 + 10 * time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.temperature.eval({1, 0.5, 0.5, T, time}), prescribed);
+                    EXPECT_NEAR(condensed.temperature, prescribed, 1e-12);
                     g = 2;
                     load = g * prescribed;
-                    trace = prescribed;
                     const auto nodes = mhs::post::interpolate_cell_to_node(model, state, time);
                     for (Index v = 0; v < nodes.size(); ++v) {
                         const auto& p = model.output.points[v];
                         if (p[0] == 1)
                             EXPECT_NEAR(nodes[v], prescribed, 1e-10);
                     }
-                    EXPECT_DOUBLE_EQ(
-                        mhs::utils::sample_point(model, state, time, CellId {0}, {1, 0.5, 0.5}), prescribed);
+                    EXPECT_DOUBLE_EQ(mhs::sim::sample_point(model, state, time, CellId {0}, {1, 0.5, 0.5}), prescribed);
                 }
                 else if (kind == 1) {
                     const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
                     const double q = (T / 100 + time + 0.5) / (1 - 0.5 / 100);
-                    trace = T + q * 0.5;
+                    const double trace = T + q * 0.5;
                     EXPECT_NEAR(bc.heat_flux.eval({1, 0.5, 0.5, trace, time}), q, 1e-12);
+                    EXPECT_NEAR(condensed.temperature, trace, 2e-12);
                     g = 0;
                     load = q;
                 }
                 else {
                     const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition]);
-                    trace = mhs::utils::boundary_trace(model, state, time, term);
+                    const double trace = condensed.temperature;
                     const double h = trace / 100 + time + 0.5, ambient = 280 + time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, trace, time}), h);
                     EXPECT_DOUBLE_EQ(bc.ambient_temperature.eval({1, 0.5, 0.5, trace, time}), ambient);
@@ -228,7 +233,9 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 }
                 EXPECT_NEAR(ops.K.coeff(0, 0), g, 1e-13);
                 EXPECT_NEAR(ops.f[0], load, 1e-12);
-                EXPECT_NEAR(mhs::utils::boundary_trace(model, state, time, term), trace, 2e-12);
+                // Condensed coefficients and the assembled operator must agree.
+                EXPECT_NEAR(condensed.conductance, g, 1e-13);
+                EXPECT_NEAR(condensed.load, load, 1e-12);
             }
         }
     }

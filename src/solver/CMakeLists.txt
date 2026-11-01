@@ -1,11 +1,11 @@
 add_library(mhs_solver STATIC
     assembler.cpp
     fluid_assembler.cpp
-    interpolation.cpp
     nonlinear_solver.cpp
     postprocessor.cpp
     probe_recorder.cpp
     solve.cpp
+    thermal_reconstruction.cpp
     time_integration.cpp
 )
 target_link_libraries(mhs_solver

@@ -95,8 +95,8 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
         spla.norm(q_reference), 1e-300
     )
     np.testing.assert_array_equal(imported.cells.cell_min, fields.cell_min[order])
-    expected_temperature = original.solve().temperature[order]
-    actual_temperature = imported.solve().temperature
+    expected_temperature = original.solve().state[order]
+    actual_temperature = imported.solve().state
     temperature_error = np.max(np.abs(actual_temperature - expected_temperature))
     np.testing.assert_allclose(
         actual_temperature, expected_temperature, rtol=0, atol=1e-5

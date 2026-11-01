@@ -36,13 +36,13 @@
 
 公开 C++ 入口 `mhs::sim::solve(model, initial_state, options)` 位于 `core/solver.hpp`。内部驱动 `solve_system`（`solver/solve.hpp`）通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态使用 BDF1/BDF2，`StepController` 控制 Adaptive/Fixed 步长并截短到输出时刻，observer 接收真实积分状态。全局状态不做时间插值。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，外边界迹按 `BoundaryFace` 顺序恢复，历史快照仍只保存单元状态。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
 
 ## 输入与数组约定
 
 - C++ 的 `build_model(definition, discrete_mesh)`、C 的 `mhs_model_set_discrete_mesh` 和 Python 的 `Model.set_discrete_mesh` 接收完整的控制体与面片连接。外部网格坐标始终使用 SI 米，与物理定义的长度单位无关。
 - Python 网格边界数组为 `(count, 3)`；面片 owner/neighbor、axis/sign 为 `(face_count,)`。外边界 neighbor 为 `SIZE_MAX`，Python 输入也接受有符号 `-1`。面片 sign 表示 owner 的外法向。
-- 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列；`boundary_temperature` 按 `boundary_faces` 排列。Python `Solution.temperature`、`temperature_history` 和 `boundary_temperature` 返回对应数组。
+- 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
 

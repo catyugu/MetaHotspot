@@ -100,7 +100,6 @@ class MaterialValues:
 class CompiledMetadata:
     cell_count: int
     face_count: int
-    state_count: int
     projection_count: int
     source_count: int
     study_type: int
@@ -169,7 +168,6 @@ def _compiled_metadata(dll, handle) -> CompiledMetadata:
     return CompiledMetadata(
         cell_count=int(info.cell_count),
         face_count=int(info.face_count),
-        state_count=int(info.state_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
         study_type=int(info.study_type),
@@ -307,7 +305,7 @@ class Compiled(OwnedHandle):
                 values,
                 (fields.projection_cell, fields.projection_source),
             ),
-            shape=(self.metadata.state_count, self.metadata.source_count),
+            shape=(self.metadata.cell_count, self.metadata.source_count),
         )
 
         result.eliminate_zeros()

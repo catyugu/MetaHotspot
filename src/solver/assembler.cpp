@@ -1,7 +1,7 @@
 #include "solver/assembler.hpp"
 #include "core/boundary_geometry.hpp"
 #include "solver/fluid_assembler.hpp"
-#include "solver/interpolation.hpp"
+#include "thermal_reconstruction.hpp"
 #include <Eigen/Sparse>
 #include <stdexcept>
 #include <type_traits>
@@ -66,8 +66,8 @@ namespace mhs::sim {
         for (const auto& term : model.boundary_faces) {
             const auto f = projected_face(model.discrete, term);
             const auto row = f.owner.value;
-            const auto ki = conductivity[f.owner.value][f.axis];
-            const auto trace = mhs::utils::evaluate_boundary(model, temperature, time, term, ki);
+            const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], f, temperature[row],
+                conductivity[f.owner.value][f.axis], time);
             rhs[row] += trace.load;
             if (trace.conductance != 0)
                 stiffness.emplace_back(row, row, trace.conductance);

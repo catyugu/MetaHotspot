@@ -1,5 +1,5 @@
 #include "solver/probe_recorder.hpp"
-#include "solver/interpolation.hpp"
+#include "thermal_reconstruction.hpp"
 
 namespace mhs::sim {
     void ProbeRecorder::initialize(const mhs::core::Model& model)
@@ -22,7 +22,7 @@ namespace mhs::sim {
         for (size_t i = 0; i < slots_.size(); ++i) {
             const auto& slot = slots_[i];
             traces_[i].values.push_back(
-                mhs::utils::sample_point(*model_, temperature, time, slot.cell, {slot.px, slot.py, slot.pz}));
+                sample_point(*model_, temperature, time, slot.cell, {slot.px, slot.py, slot.pz}));
         }
     }
 } // namespace mhs::sim

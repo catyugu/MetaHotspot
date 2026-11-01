@@ -135,7 +135,7 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, face_count, state_count, projection_count, source_count;
+    size_t cell_count, face_count, projection_count, source_count;
     mhs_study_t study_type;
     double initial_temperature;
 } mhs_compiled_info_t;
@@ -198,7 +198,6 @@ typedef struct {
 /** Scalar solution metadata. Array data is retrieved with copy functions. */
 typedef struct {
     size_t state_count;
-    size_t boundary_count;
     size_t record_count;
     size_t probe_count;
     double time;
@@ -351,7 +350,6 @@ MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char*
 
 MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution_info_t* out);
 MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* out, size_t count);
-MHS_API mhs_status_t mhs_solution_copy_boundary_temperature(const mhs_solution_t* s, double* out, size_t count);
 MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count);
 MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, double* out, size_t count);
 
@@ -361,8 +359,8 @@ MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, d
 
 MHS_API mhs_status_t mhs_solution_probe_get_info(
     const mhs_solution_t* s, size_t index, size_t* name_size, size_t* record_count);
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
-    double* times, double* values, size_t record_count);
+MHS_API mhs_status_t mhs_solution_copy_probe(
+    const mhs_solution_t* s, size_t index, char* name, size_t name_size, double* values, size_t record_count);
 
 #ifdef __cplusplus
 } /* extern "C" */

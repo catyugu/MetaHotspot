@@ -658,7 +658,6 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(out);
     out->cell_count = c->model->discrete.cells.size();
     out->face_count = c->model->discrete.faces.size();
-    out->state_count = c->model->discrete.cells.size();
     out->projection_count = c->model->source_terms.size();
     out->source_count = c->model->heat_source_table.size();
     out->study_type = _from_core_study(c->model->study_type);
@@ -1004,7 +1003,6 @@ MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution
     CHECK_NULL(s);
     CHECK_NULL(out);
     out->state_count = s->sol.state.size();
-    out->boundary_count = s->sol.boundary_temperature.size();
     out->record_count = s->sol.snapshot_times.size();
     out->probe_count = s->sol.probe_traces.size();
     out->time = s->sol.time;
@@ -1016,12 +1014,6 @@ MHS_API mhs_status_t mhs_solution_copy_state(const mhs_solution_t* s, double* ou
 {
     CHECK_NULL(s);
     return copy_vector(s->sol.state, out, count, "state");
-}
-
-MHS_API mhs_status_t mhs_solution_copy_boundary_temperature(const mhs_solution_t* s, double* out, size_t count)
-{
-    CHECK_NULL(s);
-    return copy_vector(s->sol.boundary_temperature, out, count, "boundary temperature");
 }
 
 MHS_API mhs_status_t mhs_solution_copy_history_times(const mhs_solution_t* s, double* out, size_t count)
@@ -1057,8 +1049,8 @@ MHS_API mhs_status_t mhs_solution_probe_get_info(
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
-    double* times, double* values, size_t record_count)
+MHS_API mhs_status_t mhs_solution_copy_probe(
+    const mhs_solution_t* s, size_t index, char* name, size_t name_size, double* values, size_t record_count)
 {
     CHECK_NULL(s);
     CHECK_NULL(name);
@@ -1071,12 +1063,11 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t ind
         SET_ERR("probe buffer sizes do not match probe data");
         return MHS_ERROR;
     }
-    if (record_count > 0 && (!times || !values)) {
+    if (record_count > 0 && !values) {
         SET_ERR("NULL probe output buffer");
         return MHS_ERROR;
     }
     std::memcpy(name, tr.name.c_str(), name_size);
-    std::copy(s->sol.snapshot_times.begin(), s->sol.snapshot_times.end(), times);
     std::copy(tr.values.begin(), tr.values.end(), values);
     mhs_detail_clear_last_error();
     return MHS_OK;

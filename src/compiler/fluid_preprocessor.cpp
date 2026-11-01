@@ -69,8 +69,8 @@ namespace mhs::sim::fluid {
             auto lengths = extents[i];
             std::sort(lengths.begin(), lengths.end());
             double w = lengths[0], h = lengths[1], diameter = 2 * w * h / (w + h);
-            fluid.interface_heat_transfer_factor[i] = mhs::utils::nusselt_rectangular(w, h) / diameter;
-            mobility[i] = diameter * diameter / (2 * mhs::utils::f_re_rectangular(w, h) * viscosity[i]);
+            fluid.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
+            mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
             rho[i] = model.material_table[model.cell_material[c]].rho.eval(

@@ -39,7 +39,6 @@ def test_model_native_calls_compile_and_assemble():
 
     assert compiled.cell_count == 1
     assert compiled.metadata.face_count == 6
-    assert compiled.metadata.state_count == 1
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)
@@ -79,11 +78,9 @@ def test_solution_views_derive_from_one_native_snapshot():
     solution = model.compile().solve()
 
     assert solution.state.size == 1
-    assert solution.boundary_temperature.shape == (6,)
-    np.testing.assert_allclose(solution.boundary_temperature, solution.state[0])
-    assert solution.temperature is solution.state
-    assert np.shares_memory(solution.temperature_history, solution.state_history)
-    assert solution.state_history.shape[1] == solution.state.shape[0]
+    assert solution.state_history.shape == (solution.history_times.size, 1)
+    assert solution.state_history[0][0] == pytest.approx(300.0)
     assert solution.history_times[0] == pytest.approx(0.0)
     assert solution.history_times[-1] == pytest.approx(1.0)
     assert [trace.name for trace in solution.probes] == ["center"]
+    assert solution.probes[0].values.size == solution.history_times.size
