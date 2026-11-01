@@ -16,6 +16,7 @@ sys.path.insert(0, str(SIMPLE_CASE))
 
 import erom_attach_lib as attach  # noqa: E402
 from stress_erom_attach import CASES  # noqa: E402
+
 from metahotspot.macromodel.embeddable import build_subdomain  # noqa: E402
 from metahotspot.macromodel.interface_enrichment import (  # noqa: E402
     clone_embeddable_rom,
@@ -186,9 +187,7 @@ def main() -> None:
             "metahotspot_training_sources": int(
                 reusable_rom.summary["training_source_count"]
             ),
-            "metahotspot_interface_contour_degree": int(
-                args.interface_contour_degree
-            ),
+            "metahotspot_interface_contour_degree": int(args.interface_contour_degree),
             "flotherm_steady_global_pct": float(ref["steady_global_pct"]),
             "metahotspot_steady_global_pct": 100.0
             * float(metrics["global_field_max_relative_error"]),

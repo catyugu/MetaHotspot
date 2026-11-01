@@ -8,14 +8,14 @@ was not.
 
 ## What is here
 
-| file | role |
-| --- | --- |
-| `stack.hpp` | Table I: twelve layers with size, `k_parallel`/`k_perpendicular`, `cp`, `rho`; the die conductivity `148 (T/300)^-1.3`; the ambient and the two convection coefficients; the chiplet layouts of Fig. 4 and Fig. 5; the five mesh levels of Fig. 9. |
-| `mesh.hpp` | Rectilinear cell-centred grid: a graded in-plane axis shared by all layers, one cell count per layer through the thickness. |
-| `model.hpp` | The three regions of Sec. II-A, per-cell power, the FVM assembly of eq. (2)-(3) split by region, the interface faces of eq. (7)-(10), and `assemble_whole`, the same discretisation as one global operator (the standard FVM of Sec. III). |
-| `hdi.hpp`, `hdi.cpp` | The method of Sec. II: the macromodels (R of eq. (8), T0 of eq. (7)), the zero-input response of eq. (4), and the interconnection of eq. (10) as the Robin condition of the nonlinear region. |
-| `reference.hpp`, `reference.cpp` | The standard FVM over the whole stack with the fixed-point iteration on `kappa(T)`: accuracy reference and timing baseline. |
-| `main.cpp` | Driver: geometry, the steady state of Sec. III-A, the two alternating transient cases of Sec. III-B, and the comparison between the two solvers. |
+| file                             | role                                                                                                                                                                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stack.hpp`                      | Table I: twelve layers with size, `k_parallel`/`k_perpendicular`, `cp`, `rho`; the die conductivity `148 (T/300)^-1.3`; the ambient and the two convection coefficients; the chiplet layouts of Fig. 4 and Fig. 5; the five mesh levels of Fig. 9. |
+| `mesh.hpp`                       | Rectilinear cell-centred grid: a graded in-plane axis shared by all layers, one cell count per layer through the thickness.                                                                                                                        |
+| `model.hpp`                      | The three regions of Sec. II-A, per-cell power, the FVM assembly of eq. (2)-(3) split by region, the interface faces of eq. (7)-(10), and `assemble_whole`, the same discretisation as one global operator (the standard FVM of Sec. III).         |
+| `hdi.hpp`, `hdi.cpp`             | The method of Sec. II: the macromodels (R of eq. (8), T0 of eq. (7)), the zero-input response of eq. (4), and the interconnection of eq. (10) as the Robin condition of the nonlinear region.                                                      |
+| `reference.hpp`, `reference.cpp` | The standard FVM over the whole stack with the fixed-point iteration on `kappa(T)`: accuracy reference and timing baseline.                                                                                                                        |
+| `main.cpp`                       | Driver: geometry, the steady state of Sec. III-A, the two alternating transient cases of Sec. III-B, and the comparison between the two solvers.                                                                                                   |
 
 ## Build and run
 

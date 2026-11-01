@@ -90,8 +90,8 @@ class AffineErrorMap:
 
         self.source_count = int(self.source.shape[1])
         self.order = int(self.basis.shape[1])
-        self.base = self.kernel if not self.shift else (
-            self.kernel + self.shift * self.mass
+        self.base = (
+            self.kernel if not self.shift else (self.kernel + self.shift * self.mass)
         )
         diagonal = sum(np.asarray(term.diagonal()).ravel() for term in self.terms)
         self.boundary = np.flatnonzero(diagonal > 0.0)
@@ -111,8 +111,14 @@ class AffineErrorMap:
         # Riesz Gram, which the Woodbury tables supply; sharing the class
         # keeps one implementation of the polynomial enclosure.
         self.certificate = BoxCertificate(
-            self.kernel, self.terms, self.source, self.ranges, self.basis,
-            shift=self.shift, mass=self.mass, blocks=(2,) * self.dimension,
+            self.kernel,
+            self.terms,
+            self.source,
+            self.ranges,
+            self.basis,
+            shift=self.shift,
+            mass=self.mass,
+            blocks=(2,) * self.dimension,
         )
 
         self._prepare()
@@ -209,9 +215,7 @@ class AffineErrorMap:
         mesh = np.meshgrid(*axes, indexing="ij")
         unit = np.column_stack([coordinate.ravel() for coordinate in mesh])
         logarithm = np.log10(self.ranges)
-        grid = 10.0 ** (
-            logarithm[:, 0] + unit * (logarithm[:, 1] - logarithm[:, 0])
-        )
+        grid = 10.0 ** (logarithm[:, 0] + unit * (logarithm[:, 1] - logarithm[:, 0]))
         started = time.perf_counter()
         worst = 0.0
         location = None
@@ -258,7 +262,9 @@ class AffineErrorMap:
         location = None
         for choice in itertools.product(*[range(count) for count in cells_per_axis]):
             low = np.array([edges[axis][index] for axis, index in enumerate(choice)])
-            high = np.array([edges[axis][index + 1] for axis, index in enumerate(choice)])
+            high = np.array(
+                [edges[axis][index + 1] for axis, index in enumerate(choice)]
+            )
             centre = 0.5 * (low + high)
             exact = self.relative_port_defect(centre)
             weight, _fallback = self.certificate.cell_weight(high, denominator)

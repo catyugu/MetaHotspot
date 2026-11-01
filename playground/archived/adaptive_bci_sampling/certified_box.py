@@ -157,7 +157,9 @@ def generalized_max(matrix, denominator, floor=1e-14):
     for attempt in range(4):
         try:
             return float(
-                np.max(la.eigvalsh(form + attempt * jitter * np.eye(form.shape[0]), weight))
+                np.max(
+                    la.eigvalsh(form + attempt * jitter * np.eye(form.shape[0]), weight)
+                )
             )
         except la.LinAlgError:
             continue
@@ -237,16 +239,23 @@ class BoxCertificate:
             # Z^T A(a,0)^-1 Z`` then serves the whole frequency plan.
             if self.mass is None:
                 raise ValueError("a shift-free common span needs the mass matrix")
-            span_blocks = [self.source, self.kernel @ self.basis, self.mass @ self.basis]
+            span_blocks = [
+                self.source,
+                self.kernel @ self.basis,
+                self.mass @ self.basis,
+            ]
         else:
             span_blocks = [self.source, self.base_operator @ self.basis]
         span_blocks.extend(term @ self.basis for term in self.terms)
         self.span = np.ascontiguousarray(np.column_stack(span_blocks))
         self.span_columns = int(self.span.shape[1])
 
-        self.projected_base = np.ascontiguousarray(self.basis.T @ (self.kernel @ self.basis))
+        self.projected_base = np.ascontiguousarray(
+            self.basis.T @ (self.kernel @ self.basis)
+        )
         self.projected_terms = [
-            np.ascontiguousarray(self.basis.T @ (term @ self.basis)) for term in self.terms
+            np.ascontiguousarray(self.basis.T @ (term @ self.basis))
+            for term in self.terms
         ]
         self.projected_mass = (
             None
@@ -268,10 +277,14 @@ class BoxCertificate:
     # ------------------------------------------------------ anchor measures
 
     def _prepare_blocks(self, blocks):
-        blocks = (4,) * self.dimension if blocks is None else (
-            (int(blocks),) * self.dimension
-            if np.isscalar(blocks)
-            else tuple(int(block) for block in blocks)
+        blocks = (
+            (4,) * self.dimension
+            if blocks is None
+            else (
+                (int(blocks),) * self.dimension
+                if np.isscalar(blocks)
+                else tuple(int(block) for block in blocks)
+            )
         )
         if len(blocks) != self.dimension:
             raise ValueError("one block count per parameter is required")
@@ -293,13 +306,19 @@ class BoxCertificate:
     def block_lower(self, index):
         positions = np.unravel_index(index, self.blocks)
         return np.array(
-            [self.block_edges[axis][position] for axis, position in enumerate(positions)]
+            [
+                self.block_edges[axis][position]
+                for axis, position in enumerate(positions)
+            ]
         )
 
     def block_upper(self, index):
         positions = np.unravel_index(index, self.blocks)
         return np.array(
-            [self.block_edges[axis][position + 1] for axis, position in enumerate(positions)]
+            [
+                self.block_edges[axis][position + 1]
+                for axis, position in enumerate(positions)
+            ]
         )
 
     def operator(self, parameter, omega=0.0, shift=None):
@@ -331,9 +350,10 @@ class BoxCertificate:
 
     def transfer(self, parameter):
         """Exact full-order transfer at one parameter (reference only)."""
-        return np.ascontiguousarray(self.source.T @ AmgSolver(
-            self.operator(np.asarray(parameter, float))
-        ).solve(self.source))
+        return np.ascontiguousarray(
+            self.source.T
+            @ AmgSolver(self.operator(np.asarray(parameter, float))).solve(self.source)
+        )
 
     # ---------------------------------------------------------- small system
 
@@ -455,9 +475,13 @@ class BoxCertificate:
         anchor-mismatch floor from a partition that is merely too coarse.
         """
         point = np.asarray(point, dtype=np.float64)
-        coefficients = self._reduced_solve(self._reduced_matrix(point), self.projected_source)
+        coefficients = self._reduced_solve(
+            self._reduced_matrix(point), self.projected_source
+        )
         block = self._stacked(coefficients, self._block_coefficients(point))
-        return float(generalized_max(self._gram_form(gram, block), self.cell_denominator(point)))
+        return float(
+            generalized_max(self._gram_form(gram, block), self.cell_denominator(point))
+        )
 
     def cell_reduced_transfer(self, point):
         """Reduced (Galerkin) transfer at a lattice point, cached.
@@ -477,7 +501,8 @@ class BoxCertificate:
         if transfer is None:
             projected = self.projected_source
             transfer = np.ascontiguousarray(
-                projected.T @ self._reduced_solve(self._reduced_matrix(point), projected)
+                projected.T
+                @ self._reduced_solve(self._reduced_matrix(point), projected)
             )
             transfer = 0.5 * (transfer + transfer.T)
             self._denominators[key] = transfer
@@ -503,9 +528,18 @@ class BoxCertificate:
             np.ascontiguousarray(0.5 * (transfer + transfer.T)),
         )
 
-    def branch_and_bound(self, threshold, initial_cells=2, orders=(2, 3, 4, 5),
-                         trial="taylor", samples=3, max_cells=512,
-                         max_rounds=32, upgrade_anchor=False, oracle=False):
+    def branch_and_bound(
+        self,
+        threshold,
+        initial_cells=2,
+        orders=(2, 3, 4, 5),
+        trial="taylor",
+        samples=3,
+        max_cells=512,
+        max_rounds=32,
+        upgrade_anchor=False,
+        oracle=False,
+    ):
         """Certified branch and bound over the box, without any enrichment.
 
         A leaf is measured once, when it is created: the successive trial orders
@@ -554,8 +588,10 @@ class BoxCertificate:
             if oracle:
                 step = (high / low) ** (1.0 / (samples + 1))
                 for point in itertools.product(
-                    *[low[axis] * step[axis] ** np.arange(samples + 2)
-                      for axis in range(self.dimension)]
+                    *[
+                        low[axis] * step[axis] ** np.arange(samples + 2)
+                        for axis in range(self.dimension)
+                    ]
                 ):
                     value, _ = self.defect(np.array(point))
                     counts["witnesses"] += 1
@@ -566,8 +602,17 @@ class BoxCertificate:
         def place(low, high, gram):
             bound, order, witness, witness_point = measure(low, high, gram)
             heapq.heappush(
-                heap, (-bound, next(placements), low, high, gram, order, witness,
-                       None if witness_point is None else np.array(witness_point))
+                heap,
+                (
+                    -bound,
+                    next(placements),
+                    low,
+                    high,
+                    gram,
+                    order,
+                    witness,
+                    None if witness_point is None else np.array(witness_point),
+                ),
             )
             return bound
 
@@ -577,20 +622,37 @@ class BoxCertificate:
         heap = []
         for choice in itertools.product(*[range(initial_cells)] * self.dimension):
             low = np.array([edges[axis][index] for axis, index in enumerate(choice)])
-            high = np.array([edges[axis][index + 1] for axis, index in enumerate(choice)])
+            high = np.array(
+                [edges[axis][index + 1] for axis, index in enumerate(choice)]
+            )
             place(low, high, block_anchor(low))
         created = len(heap)
         splits = 0
 
         history = []
         while heap and splits < max_rounds:
-            minus, _, low, high, gram, order, witness, witness_point = heapq.heappop(heap)
+            minus, _, low, high, gram, order, witness, witness_point = heapq.heappop(
+                heap
+            )
             bound = -minus
             if bound <= threshold:
                 return self._bound_report(
-                    True, history, bound, splits, len(heap) + 1, created, orders,
-                    explore, threshold, low, high, witness, witness_point, oracle,
-                    counts, start,
+                    True,
+                    history,
+                    bound,
+                    splits,
+                    len(heap) + 1,
+                    created,
+                    orders,
+                    explore,
+                    threshold,
+                    low,
+                    high,
+                    witness,
+                    witness_point,
+                    oracle,
+                    counts,
+                    start,
                 )
             own = None
             if upgrade_anchor and gram is block_grams[self.block_index(low)]:
@@ -601,14 +663,32 @@ class BoxCertificate:
                 refined = measure(low, high, own)
                 if refined[0] < bound:
                     heapq.heappush(
-                        heap, (-refined[0], next(placements), low, high, own,
-                               refined[1], refined[2],
-                               None if refined[3] is None else np.array(refined[3]))
+                        heap,
+                        (
+                            -refined[0],
+                            next(placements),
+                            low,
+                            high,
+                            own,
+                            refined[1],
+                            refined[2],
+                            None if refined[3] is None else np.array(refined[3]),
+                        ),
                     )
-                    history.append(self._step_entry(
-                        splits, len(heap), len(block_grams), refined[0], refined[1],
-                        refined[2], low, high, oracle, "anchor",
-                    ))
+                    history.append(
+                        self._step_entry(
+                            splits,
+                            len(heap),
+                            len(block_grams),
+                            refined[0],
+                            refined[1],
+                            refined[2],
+                            low,
+                            high,
+                            oracle,
+                            "anchor",
+                        )
+                    )
                     continue
                 own = None
             if created + 2 > max_cells:
@@ -626,18 +706,44 @@ class BoxCertificate:
             created += 2
             splits += 1
             root = heap[0]
-            history.append(self._step_entry(
-                splits, len(heap), len(block_grams), -root[0], root[5], root[6],
-                root[2], root[3], oracle, "split",
-            ))
+            history.append(
+                self._step_entry(
+                    splits,
+                    len(heap),
+                    len(block_grams),
+                    -root[0],
+                    root[5],
+                    root[6],
+                    root[2],
+                    root[3],
+                    oracle,
+                    "split",
+                )
+            )
         root = heap[0]
         return self._bound_report(
-            False, history, -root[0], splits, len(heap), created, orders, explore,
-            threshold, root[2], root[3], root[6], root[7], oracle, counts, start,
+            False,
+            history,
+            -root[0],
+            splits,
+            len(heap),
+            created,
+            orders,
+            explore,
+            threshold,
+            root[2],
+            root[3],
+            root[6],
+            root[7],
+            oracle,
+            counts,
+            start,
         )
 
     @staticmethod
-    def _step_entry(step, leaves, blocks, bound, order, witness, low, high, oracle, action):
+    def _step_entry(
+        step, leaves, blocks, bound, order, witness, low, high, oracle, action
+    ):
         return {
             "round": step,
             "action": action,
@@ -650,9 +756,24 @@ class BoxCertificate:
         }
 
     @staticmethod
-    def _bound_report(accepted, history, bound, splits, leaves, created, orders,
-                      trial, threshold, low, high, witness, witness_point, oracle,
-                      counts, start):
+    def _bound_report(
+        accepted,
+        history,
+        bound,
+        splits,
+        leaves,
+        created,
+        orders,
+        trial,
+        threshold,
+        low,
+        high,
+        witness,
+        witness_point,
+        oracle,
+        counts,
+        start,
+    ):
         return {
             "accepted": bool(accepted),
             "splits": splits,
@@ -708,7 +829,9 @@ class BoxCertificate:
                 coefficients[alpha] = jet
             return coefficients
         if trial == "chebyshev":
-            nodes = [np.cos(np.pi * (2.0 * np.arange(count) + 1.0) / (2.0 * count))] * dimension
+            nodes = [
+                np.cos(np.pi * (2.0 * np.arange(count) + 1.0) / (2.0 * count))
+            ] * dimension
         elif trial == "logfit":
             nodes = []
             for axis in range(dimension):
@@ -768,8 +891,14 @@ class BoxCertificate:
 
     # --------------------------------------------------------------- sweeps
 
-    def sweep(self, cells_per_axis, order=2, local_anchor=True,
-              trial="taylor", denominator="reduced"):
+    def sweep(
+        self,
+        cells_per_axis,
+        order=2,
+        local_anchor=True,
+        trial="taylor",
+        denominator="reduced",
+    ):
         """Bound ``sup_h lambda_max(E(h), Y(h))`` over the whole box.
 
         This is the quantity that survives the falsification of the cheap
@@ -801,7 +930,9 @@ class BoxCertificate:
         started = time.perf_counter()
         for choice in itertools.product(*[range(count) for count in cells_per_axis]):
             low = np.array([edges[axis][index] for axis, index in enumerate(choice)])
-            high = np.array([edges[axis][index + 1] for axis, index in enumerate(choice)])
+            high = np.array(
+                [edges[axis][index + 1] for axis, index in enumerate(choice)]
+            )
             if local_anchor:
                 key = tuple(np.round(low, 14))
                 anchor = low

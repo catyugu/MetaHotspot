@@ -8,11 +8,11 @@
 
 ## 文档导航
 
-| 文件 | 作用 |
-| --- | --- |
-| [THEORY.md](THEORY.md) | 误差对象、Riesz–Bernstein 固定实移证书、连续分布风险定理、未证明的动态传递问题 |
-| [近期路线梳理](records/RESEARCH_SYNTHESIS_2026-10-17.md) | Project 历史中的研究方案、简要问题与当前状态 |
-| [失败路线档案](records/FAILURE_ARCHIVE.md) | 较早路线的失败机制、适用范围及实验实现错误；仅作定性记录 |
+| 文件                                                     | 作用                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [THEORY.md](THEORY.md)                                   | 误差对象、Riesz–Bernstein 固定实移证书、连续分布风险定理、未证明的动态传递问题 |
+| [近期路线梳理](records/RESEARCH_SYNTHESIS_2026-10-17.md) | Project 历史中的研究方案、简要问题与当前状态                                   |
+| [失败路线档案](records/FAILURE_ARCHIVE.md)               | 较早路线的失败机制、适用范围及实验实现错误；仅作定性记录                       |
 
 ## 判定原则
 
@@ -22,13 +22,13 @@
 
 ## 维护中的工具
 
-| 文件 | 用途 |
-| --- | --- |
-| `certify_extraction.py` | stock 最终基的 DC 连续盒上界和直接全场对照 |
-| `certified_box.py` | 固定实移 Riesz–Bernstein 单元上界与分支定界 |
-| `exact_error.py` | 对角 Robin 族的 Woodbury 误差映射 |
-| `sparse_solve.py` | 大型实 SPD 系统的 AMG 预条件 CG |
-| `test_field_audit.py` | 已有的全输入场误差回归检查 |
+| 文件                    | 用途                                        |
+| ----------------------- | ------------------------------------------- |
+| `certify_extraction.py` | stock 最终基的 DC 连续盒上界和直接全场对照  |
+| `certified_box.py`      | 固定实移 Riesz–Bernstein 单元上界与分支定界 |
+| `exact_error.py`        | 对角 Robin 族的 Woodbury 误差映射           |
+| `sparse_solve.py`       | 大型实 SPD 系统的 AMG 预条件 CG             |
+| `test_field_audit.py`   | 已有的全输入场误差回归检查                  |
 
 旧的确定性种子、网格贪心、预算 sweep 已退役。JFRGE 的历史原型和正式实验原始记录保存在其 [历史提交](https://github.com/catyugu/MetaHotspot/commit/56fbfea98a31b9a07c6553c41a23646f76faad54)，不在当前 `agent/work` 工作树中。
 

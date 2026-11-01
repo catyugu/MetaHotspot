@@ -24,7 +24,6 @@ import numpy as np
 import metahotspot
 from metahotspot import enums
 
-
 # ====================================================================
 #  HotSpot example2 configuration  (from example.config)
 # ====================================================================
@@ -275,22 +274,22 @@ def main():
     if not ptrace_path.exists():
         ptrace_path = Path("gcc.ptrace")
     if not ptrace_path.exists():
-        print(f"\n  ERROR: gcc.ptrace not found at " f"{HOTSPOT_DIR / 'gcc.ptrace'}")
+        print(f"\n  ERROR: gcc.ptrace not found at {HOTSPOT_DIR / 'gcc.ptrace'}")
         return 1
     print(f"\n  ptrace: {ptrace_path}")
 
-    ptrace, header = load_ptrace(str(ptrace_path))
+    ptrace, _header = load_ptrace(str(ptrace_path))
     n_tsteps, n_blocks = ptrace.shape
     print(f"  Power trace: {n_tsteps} steps x {n_blocks} blocks")
     print(f"  sampling_intvl = {SAMPLING_INTVL}s  -> duration = {DURATION}s")
-    assert n_blocks == len(
-        EV6_NAMES
-    ), f"Expected {len(EV6_NAMES)} blocks, got {n_blocks}"
+    assert n_blocks == len(EV6_NAMES), (
+        f"Expected {len(EV6_NAMES)} blocks, got {n_blocks}"
+    )
 
     # -- Per-block stats --
     block_volume = {}
     print("\n" + "-" * 72)
-    print("Per-block power statistics " "(HotSpot ptrace -> volumetric density)")
+    print("Per-block power statistics (HotSpot ptrace -> volumetric density)")
     print("-" * 72)
     for name in EV6_NAMES:
         w, h, *_ = EV6_DIM[name]
@@ -300,7 +299,7 @@ def main():
         pwr = ptrace[:, col]  # total power (W) per sample
         q_vol = pwr / vol  # -> W/m3 per sample
         print(
-            f"  {name:<12s}  area={w*h*1e6:>8.4f} mm2  "
+            f"  {name:<12s}  area={w * h * 1e6:>8.4f} mm2  "
             f"P_avg={pwr.mean():>7.3f} W  "
             f"q_avg={q_vol.mean():>7.3e} W/m3"
         )

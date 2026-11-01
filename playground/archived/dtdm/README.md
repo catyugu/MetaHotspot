@@ -42,18 +42,18 @@ cmake --build build-playground --target mhs_dtdm --parallel
 ./build-playground/dtdm/mhs_dtdm.exe --level 0 --patch -1 --orders 300 --scale 10
 ```
 
-| option | meaning |
-| --- | --- |
-| `--level` | 0..3 selects Mesh1..Mesh4 |
-| `--patch` | patches per interface side; `-1` puts one patch on every interface face |
-| `--orders` | Laguerre orders to march |
-| `--scale` | the transform parameter, given as `s * duration` |
-| `--duration` | time window in seconds, 50 s by default |
-| `--solver` | `amg` (default) or `pardiso` when MKL is enabled |
-| `--marching` | also run the time-stepping reference |
-| `--steps` | time-marching steps, 5000 by default, i.e. the paper's 0.01 s over 50 s; the reference refines internally beyond it |
-| `--tolerance` | relative residual of every iterative solve, 1e-8 by default |
-| `--dof-only` | build the mesh only, to check the DoF against the paper |
+| option        | meaning                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `--level`     | 0..3 selects Mesh1..Mesh4                                                                                           |
+| `--patch`     | patches per interface side; `-1` puts one patch on every interface face                                             |
+| `--orders`    | Laguerre orders to march                                                                                            |
+| `--scale`     | the transform parameter, given as `s * duration`                                                                    |
+| `--duration`  | time window in seconds, 50 s by default                                                                             |
+| `--solver`    | `amg` (default) or `pardiso` when MKL is enabled                                                                    |
+| `--marching`  | also run the time-stepping reference                                                                                |
+| `--steps`     | time-marching steps, 5000 by default, i.e. the paper's 0.01 s over 50 s; the reference refines internally beyond it |
+| `--tolerance` | relative residual of every iterative solve, 1e-8 by default                                                         |
+| `--dof-only`  | build the mesh only, to check the DoF against the paper                                                             |
 
 ## Mesh
 
@@ -62,12 +62,12 @@ in-plane cell; every other interval follows from it, uniform across the chiplets
 and their gaps and geometrically coarser outwards, so the unknowns sit where the
 heat is:
 
-| level | n_fine | in-plane cells | finest cell | DoF | paper | deviation |
-| --- | --- | --- | --- | --- | --- | --- |
-| Mesh1 | 19 | 67 x 72 | 0.29 mm | 26579 | 26513 | +0.25 % |
-| Mesh2 | 59 | 161 x 178 | 0.24 mm | 213258 | 210848 | +1.14 % |
-| Mesh3 | 151 | 363 x 403 | 0.11 mm | 1202498 | 1208923 | -0.53 % |
-| Mesh4 | 198 | 465 x 518 | 0.083 mm | 2043764 | 2037523 | +0.31 % |
+| level | n_fine | in-plane cells | finest cell | DoF     | paper   | deviation |
+| ----- | ------ | -------------- | ----------- | ------- | ------- | --------- |
+| Mesh1 | 19     | 67 x 72        | 0.29 mm     | 26579   | 26513   | +0.25 %   |
+| Mesh2 | 59     | 161 x 178      | 0.24 mm     | 213258  | 210848  | +1.14 %   |
+| Mesh3 | 151    | 363 x 403      | 0.11 mm     | 1202498 | 1208923 | -0.53 %   |
+| Mesh4 | 198    | 465 x 518      | 0.083 mm    | 2043764 | 2037523 | +0.31 %   |
 
 The module split that follows is physical: CM I 29-37 %, KM 19-21 %, CM II
 44-52 % of the unknowns. An earlier revision of this directory reached the same

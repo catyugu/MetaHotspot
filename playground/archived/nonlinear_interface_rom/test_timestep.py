@@ -37,7 +37,9 @@ def main() -> None:
         "rk_src_8": rd.assemble(
             operators,
             part,
-            np.column_stack((rd.rational_krylov(part, 8, plan), rd.orthonormal(source))),
+            np.column_stack(
+                (rd.rational_krylov(part, 8, plan), rd.orthonormal(source))
+            ),
             psi,
         ),
     }
@@ -45,9 +47,13 @@ def main() -> None:
     power = np.array([2.0, 0.8])
     histories = {}
     for dt in STEPS:
-        common = dict(dt=dt, duration=DURATION, port_cells=package.interface, ambient=300.0)
+        common = dict(
+            dt=dt, duration=DURATION, port_cells=package.interface, ambient=300.0
+        )
         histories[dt] = {
-            "full": tr.integrate(operators, law, package.source, package.probes, power, **common)
+            "full": tr.integrate(
+                operators, law, package.source, package.probes, power, **common
+            )
         }
         for name, model in models.items():
             histories[dt][name] = tr.integrate_reduced(
@@ -70,7 +76,9 @@ def main() -> None:
     print("\nFull-order self-convergence (successive refinement):")
     for coarse_dt, fine_dt in zip(STEPS[:-1], STEPS[1:]):
         port, probe = compare(histories[coarse_dt]["full"], histories[fine_dt]["full"])
-        print(f"  dt {coarse_dt:>7g} -> {fine_dt:<7g} port {port:.3e} K   probe {probe:.3e} K")
+        print(
+            f"  dt {coarse_dt:>7g} -> {fine_dt:<7g} port {port:.3e} K   probe {probe:.3e} K"
+        )
 
     print("\nReduced-vs-full, port channel:")
     print(f"  {'method':<12}" + "".join(f"{'dt=' + str(dt):>13}" for dt in STEPS))

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Numerical checks for the THERMINIC-2023 contour-element implementation."""
+
 from __future__ import annotations
 
 import numpy as np
-from numpy.polynomial.legendre import Legendre, leggauss
-
 from mor_common import ContourElements
+from numpy.polynomial.legendre import Legendre, leggauss
 
 
 def uniform_rects(nx: int, ny: int) -> np.ndarray:

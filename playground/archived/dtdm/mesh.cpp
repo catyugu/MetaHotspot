@@ -30,9 +30,7 @@ namespace mhs::dtdm {
         }
 
         bool inside(const Chiplet& c, double x, double y, double eps = 1e-12)
-        {
-            return x >= c.x - eps && x <= c.x + c.width + eps && y >= c.y - eps && y <= c.y + c.height + eps;
-        }
+        { return x >= c.x - eps && x <= c.x + c.width + eps && y >= c.y - eps && y <= c.y + c.height + eps; }
 
         std::vector<int> split_by_thickness(const int total, const std::vector<double>& weight)
         {

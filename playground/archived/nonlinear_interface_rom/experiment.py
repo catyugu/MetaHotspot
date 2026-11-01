@@ -45,7 +45,9 @@ def scenario(package, *, board, ambient, emissivity, coefficient, reference_h=15
     top, bottom = package.ports
     return pm.Interface(
         laws=(
-            pm.RadiationConvection(top, emissivity=emissivity, coefficient=coefficient, ambient=ambient),
+            pm.RadiationConvection(
+                top, emissivity=emissivity, coefficient=coefficient, ambient=ambient
+            ),
             pm.ContactConductance(bottom, reference_h=reference_h, board=board),
         )
     )
@@ -69,14 +71,25 @@ def build_models(package, operators, part, plan, plan_full, orders, cost):
     m = part.port_count
     psi = rd.static_modes(part, cost)
     source = rd.source_directions(part, package.source, cost)
-    models = {"guyan": rd.assemble(operators, part, np.empty((part.interior_count, 0)), psi)}
+    models = {
+        "guyan": rd.assemble(operators, part, np.empty((part.interior_count, 0)), psi)
+    }
     for order in orders:
-        models[f"cb_{order}"] = rd.assemble(operators, part, rd.craig_bampton(part, order), psi)
-        models[f"rk_{order}"] = rd.assemble(operators, part, rd.rational_krylov(part, order, plan), psi)
-        models[f"rkl_{order}"] = rd.assemble(operators, part, rd.rational_krylov(part, order, plan_full), psi)
+        models[f"cb_{order}"] = rd.assemble(
+            operators, part, rd.craig_bampton(part, order), psi
+        )
+        models[f"rk_{order}"] = rd.assemble(
+            operators, part, rd.rational_krylov(part, order, plan), psi
+        )
+        models[f"rkl_{order}"] = rd.assemble(
+            operators, part, rd.rational_krylov(part, order, plan_full), psi
+        )
         rk = rd.rational_krylov(part, order, plan)
         models[f"rk_src_{order}"] = rd.assemble(
-            operators, part, np.column_stack((rk, rd.orthonormal(source, against=rk))), psi
+            operators,
+            part,
+            np.column_stack((rk, rd.orthonormal(source, against=rk))),
+            psi,
         )
     return models
 
@@ -97,31 +110,44 @@ def linear_metrics(package, part, models, extra, h_full, scale, shifts, cost):
     m = part.port_count
     probe = package.probes
     driven = package.source
-    dc_scale = rd.scaled_norm(rd.exact_interface_operator(part, extra, 0.0, cost), scale)
+    dc_scale = rd.scaled_norm(
+        rd.exact_interface_operator(part, extra, 0.0, cost), scale
+    )
     reference_operator, reference_transfer = [], []
     for shift in shifts:
         reference_operator.append(rd.exact_interface_operator(part, extra, shift, cost))
         a = (package.K + sp.diags(h_full) + shift * package.C).tocsc()
-        reference_transfer.append(SPDSolver(a, cost=cost).solve(driven, label="transfer reference")[probe])
+        reference_transfer.append(
+            SPDSolver(a, cost=cost).solve(driven, label="transfer reference")[probe]
+        )
     dc_transfer = float(np.linalg.norm(reference_transfer[0]))
     # Band of engineering interest: where the closed-loop transfer still carries
     # at least 1% of its DC magnitude.  Above that the interface is purely
     # inertial, every response is negligible, and the ratio is roundoff.
     magnitudes = np.array([np.linalg.norm(item) for item in reference_transfer])
     inside = np.flatnonzero(magnitudes >= 0.01 * dc_transfer)
-    band = slice(int(inside[0]), int(inside[-1]) + 1) if inside.size else slice(0, len(shifts))
+    band = (
+        slice(int(inside[0]), int(inside[-1]) + 1)
+        if inside.size
+        else slice(0, len(shifts))
+    )
 
     rows = []
     for name, model in models.items():
         errors, transfer = [], []
         for shift, ref, exact in zip(shifts, reference_operator, reference_transfer):
             errors.append(
-                rd.scaled_norm(rd.reduced_interface_operator(model, extra, shift) - ref, scale) / dc_scale
+                rd.scaled_norm(
+                    rd.reduced_interface_operator(model, extra, shift) - ref, scale
+                )
+                / dc_scale
             )
             reduced_system = model.K + shift * model.C
             reduced_system = reduced_system.copy()
             reduced_system[np.arange(m), np.arange(m)] += extra
-            reduced = model.V[probe, :] @ dense_spd_solve(reduced_system, model.V.T @ driven, cost=cost)
+            reduced = model.V[probe, :] @ dense_spd_solve(
+                reduced_system, model.V.T @ driven, cost=cost
+            )
             transfer.append(float(np.linalg.norm(reduced - exact) / dc_transfer))
         rows.append(
             {
@@ -180,9 +206,13 @@ def interface_mass_diagnostics(package, part, models):
 def transient_metrics(reference, candidate):
     port = np.abs(candidate.port_temperature - reference.port_temperature)
     probe = np.abs(candidate.probe_temperature - reference.probe_temperature)
-    rise = np.abs(reference.probe_temperature - reference.probe_temperature[0]).max(axis=0)
+    rise = np.abs(reference.probe_temperature - reference.probe_temperature[0]).max(
+        axis=0
+    )
     rise = np.where(rise > 1.0e-9, rise, 1.0)
-    power = np.abs(candidate.interface_power.sum(axis=1) - reference.interface_power.sum(axis=1))
+    power = np.abs(
+        candidate.interface_power.sum(axis=1) - reference.interface_power.sum(axis=1)
+    )
     scale = max(np.abs(reference.interface_power.sum(axis=1)).max(), 1.0e-12)
     return {
         "port_error_K": float(port.max()),
@@ -213,7 +243,9 @@ def main():
     schur = part.KGG + part.KiG.toarray().T @ psi
     scale = schur + np.diag(extra)
     closed_loop = float(package.C.sum()) / float(extra.sum())
-    eigenvalues = scipy.linalg.eigh(part.Kii.toarray(), part.Cii.toarray(), eigvals_only=True)
+    eigenvalues = scipy.linalg.eigh(
+        part.Kii.toarray(), part.Cii.toarray(), eigvals_only=True
+    )
     slow, fast = float(eigenvalues[0]), float(eigenvalues[-1])
     shifts = np.geomspace(0.5 / closed_loop, fast / 2.0, args.samples)
 
@@ -238,14 +270,22 @@ def main():
     cost = Cost()
     plan = rd.ResponsePlan.build(part, SHIFTS, cost)
     inputs_full = np.column_stack(
-        [(part.KiG + 0.0 * part.CiG).toarray(), np.asarray(package.source)[part.interior, :]]
+        [
+            (part.KiG + 0.0 * part.CiG).toarray(),
+            np.asarray(package.source)[part.interior, :],
+        ]
     )
     plan_full = rd.ResponsePlan.build(part, SHIFTS, cost, inputs=inputs_full)
     models = build_models(package, operators, part, plan, plan_full, args.orders, cost)
-    print(f"offline: {json.dumps(cost.as_dict())} ({2 * len(SHIFTS)} AMG setups for the two plans)", flush=True)
+    print(
+        f"offline: {json.dumps(cost.as_dict())} ({2 * len(SHIFTS)} AMG setups for the two plans)",
+        flush=True,
+    )
 
     rows = linear_metrics(package, part, models, extra, h_full, scale, shifts, cost)
-    print("\nQ1  LINEAR, CLOSED-LOOP OPERATOR (absolute error normalised by the DC gain)")
+    print(
+        "\nQ1  LINEAR, CLOSED-LOOP OPERATOR (absolute error normalised by the DC gain)"
+    )
     header = f"{'method':<14}{'dim':>5}{'q':>5}{'iface':>11}{'iface all':>11}{'transfer':>11}{'transf all':>11}"
     print(header)
     print("-" * len(header))
@@ -261,7 +301,9 @@ def main():
 
     print("\nQ1b INTERFACE CAPACITY DEFECT (the only part an interior basis controls)")
     mass_rows = interface_mass_diagnostics(package, part, models)
-    print(f"  {'method':<14}{'q':>5}{'C_r,GG':>13}{'subtraction':>14}{'defect':>13}{'defect %':>10}")
+    print(
+        f"  {'method':<14}{'q':>5}{'C_r,GG':>13}{'subtraction':>14}{'defect':>13}{'defect %':>10}"
+    )
     for row in mass_rows:
         percent = 100.0 * row["capacity_defect"] / row["reduced_interface_capacity"]
         print(
@@ -270,25 +312,46 @@ def main():
             f"{row['capacity_defect']:>13.3e}{percent:>10.1f}"
         )
 
-    print("\nQ0  NONLINEAR STEADY STATE: port temperatures must be exact for every enrichment")
+    print(
+        "\nQ0  NONLINEAR STEADY STATE: port temperatures must be exact for every enrichment"
+    )
     for label in args.scenarios:
         settings = SCENARIOS[label]
         law = scenario(package, **settings)
         reference = tr.steady(
-            operators, law, package.source, package.probes, power, ambient=settings["ambient"]
+            operators,
+            law,
+            package.source,
+            package.probes,
+            power,
+            ambient=settings["ambient"],
         )
         worst = 0.0
         for name, model in models.items():
             candidate = tr.steady_reduced(
-                model, law, package.source, package.probes, power, ambient=settings["ambient"]
+                model,
+                law,
+                package.source,
+                package.probes,
+                power,
+                ambient=settings["ambient"],
             )
             full = model.V @ candidate
-            worst = max(worst, float(np.abs(full[part.interface] - reference[part.interface]).max()))
-        print(f"  [{label}] worst port temperature deviation over all methods: {worst:.3e} K")
+            worst = max(
+                worst,
+                float(np.abs(full[part.interface] - reference[part.interface]).max()),
+            )
+        print(
+            f"  [{label}] worst port temperature deviation over all methods: {worst:.3e} K"
+        )
         if worst > 1.0e-6:
-            raise AssertionError(f"steady interface relation is not exact in {label}: {worst:.3e} K")
+            raise AssertionError(
+                f"steady interface relation is not exact in {label}: {worst:.3e} K"
+            )
 
-    print(f"\nQ2  NONLINEAR TRANSIENT, full order vs reduced (dt={args.dt:g} s, {args.duration:g} s)")
+    print(
+        f"\nQ2  NONLINEAR TRANSIENT, full order vs reduced (dt={args.dt:g} s, {args.duration:g} s)"
+    )
     transient_rows, reference_costs = [], {}
     for label in args.scenarios:
         settings = SCENARIOS[label]
@@ -296,11 +359,19 @@ def main():
         reference_cost = Cost()
         started = time.perf_counter()
         reference = tr.integrate(
-            operators, law, package.source, package.probes, power,
-            ambient=settings["ambient"], cost=reference_cost, **common,
+            operators,
+            law,
+            package.source,
+            package.probes,
+            power,
+            ambient=settings["ambient"],
+            cost=reference_cost,
+            **common,
         )
         seconds = time.perf_counter() - started
-        reference_costs[label] = dict(reference_cost.as_dict(), seconds=round(seconds, 2))
+        reference_costs[label] = dict(
+            reference_cost.as_dict(), seconds=round(seconds, 2)
+        )
         print(
             f"\n  [{label}] full order {seconds:.1f} s, {reference_cost.as_dict()}, "
             f"peak port {reference.port_temperature.max():.2f} K, "
@@ -309,8 +380,14 @@ def main():
         for name, model in models.items():
             reduced_cost = Cost()
             candidate = tr.integrate_reduced(
-                model, law, package.source, package.probes, power,
-                ambient=settings["ambient"], cost=reduced_cost, **common,
+                model,
+                law,
+                package.source,
+                package.probes,
+                power,
+                ambient=settings["ambient"],
+                cost=reduced_cost,
+                **common,
             )
             metrics = transient_metrics(reference, candidate)
             metrics.update(

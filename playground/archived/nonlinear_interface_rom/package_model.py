@@ -120,7 +120,8 @@ def build_package(grid: int = GRID, footprint: float = FOOTPRINT) -> Package:
     for k in range(nz - 1):
         # Two half cells in series between adjacent centres.
         conductance = area_xy / (
-            0.5 * thickness[k] / conductivity[k] + 0.5 * thickness[k + 1] / conductivity[k + 1]
+            0.5 * thickness[k] / conductivity[k]
+            + 0.5 * thickness[k + 1] / conductivity[k + 1]
         )
         for j in range(ny):
             for i in range(nx):
@@ -159,7 +160,9 @@ def build_package(grid: int = GRID, footprint: float = FOOTPRINT) -> Package:
             index(nx // 2, ny // 2, 0),  # substrate centre
         ]
     )
-    return Package(K=K, C=C, ports=(top, bottom), source=source, probes=probes, shape=(nx, ny, nz))
+    return Package(
+        K=K, C=C, ports=(top, bottom), source=source, probes=probes, shape=(nx, ny, nz)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +214,9 @@ class ContactConductance:
     board: float = 320.0  # K
 
     def conductance(self, temperature: np.ndarray) -> np.ndarray:
-        h = self.reference_h * (1.0 + self.beta * (temperature[self.port.cells] - self.reference))
+        h = self.reference_h * (
+            1.0 + self.beta * (temperature[self.port.cells] - self.reference)
+        )
         return self.port.area / (1.0 / h + self.port.half / self.port.conductivity)
 
     def flux(self, temperature: np.ndarray) -> np.ndarray:
