@@ -4,7 +4,6 @@
 #include "thermal_reconstruction.hpp"
 #include <Eigen/Sparse>
 #include <stdexcept>
-#include <type_traits>
 #include <vector>
 
 namespace mhs::sim {
