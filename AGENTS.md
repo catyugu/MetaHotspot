@@ -1,14 +1,19 @@
 # Repository Guidelines
 
-## Build, Test, and Development Commands
+## Setup, Build, Test, and Development Commands
 
 ```bash
-# Build
-conda activate numerical # For MKL
-# Use Ninja
+# Only run these for fresh clone of the project. If uv is not available, you may use native venv or conda etc.
+uv venv
+uv sync
+```
+
+```bash
+# Build using Ninja
 cmake  -B build -DCMAKE_BUILD_TYPE=Release -G "Ninja"
 cmake --build build --parallel
-# or use MSBuild
+
+# or use MSBuild (Not quite suggested since it cannot generate compile_commands.json for llvm tools)
 cmake -B build -G "Visual Studio 17 2022"  
 cmake --build build --parallel --config Release
 

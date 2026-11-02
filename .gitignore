@@ -2,14 +2,20 @@ build*
 /output*
 results/
 dist/
+
+# Result files
 *.log
-.claude
+*.msh
+*.vtu
+
+# IDE files
 .cache
 .vscode
 .idea
+
+# Build artifacts
+uv.lock
 .pytest_cache
 .ruff_cache
-*.msh
-*.vtu
 __pycache__/
 *.egg-info/
