@@ -9,7 +9,9 @@
 
 function(_mhs_find_msvc_openmp_runtime out)
     set(${out} "" PARENT_SCOPE)
-    if(NOT MSVC)
+    # clang-cl uses the MSVC command-line frontend but links LLVM OpenMP,
+    # not the MSVC vcomp redistributable.
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         return()
     endif()
 
