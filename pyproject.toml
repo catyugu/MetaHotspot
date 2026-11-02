@@ -33,6 +33,7 @@ dev = [
 minimum-version = "build-system.requires"
 wheel.packages = ["python/metahotspot"]
 sdist.exclude = ["/playground/**", "/.github/**"]
+build-dir = "build/skbuild"
 # No Python extension module is involved, so one wheel serves every Python.
 wheel.py-api = "py3"
 # The C library sits in the "python" install component (src/api/CMakeLists.txt),
