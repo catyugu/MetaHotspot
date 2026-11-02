@@ -3,17 +3,30 @@
 三维有限体积热仿真库，提供 C++ 模型与求解接口、C/Python 接口及 XML 命令行应用。
 使用 CMake 构建与安装，通过 CPM 获取第三方依赖。
 
+## C++ 构建环境要求
+
+- Git
+- CMake >= 3.26
+- 任意一个可用的生成器（如果要开发，推荐 Makefile, Ninja, NMake Makefile 等可以生成 compile_commands.json 的生成器）
+- 支持 C++20 标准（不用 module 特性）的编译器
+- 任意 OpenMP 运行时
+
 ## 下载与构建
 
-需要 Git、CMake 3.26+、支持 C++20 的编译器和 OpenMP 运行环境。Windows 使用 MSVC 工具链，
-在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
-（`brew install libomp`）。
-CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
-MKL 默认关闭；启用 `MHS_USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
+克隆，设立起基本 Python 开发环境（如果只开发 C++ 侧则不必建立 Python 环境）：
 
 ```sh
 git clone https://github.com/catyugu/MetaHotspot.git
 cd MetaHotspot
+uv venv
+uv sync
+```
+
+Windows 使用 MSVC 工具链，在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`（`brew install libomp`）。
+CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
+MKL 默认关闭；启用 `MHS_USE_MKL` 时必须能找到其 CMake 配置，否则配置失败。
+
+```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja # 推荐用 Ninja 或者 NMake Makefile 以生成 compile_commands.json 供 clangd 等 llvm 工具使用 
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
@@ -67,14 +80,6 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
 `pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，
 `pip install` 之后即可直接使用，不需要另外构建 C++。
-
-```sh
-python -m pip install build pytest
-python ci/check_python.py
-```
-
-`ci/check_python.py` 先生成 sdist，再从 sdist 构建 wheel，按文件路径安装并运行现有测试。
-sdist 排除 `playground/` 实验资料；CMake 最低版本直接从 `CMakeLists.txt` 读取。
 
 `MHS_CAPI_PATH` 可指定别处的 C API 动态库，覆盖随包加载的那份。
 库版本只在 `include/metahotspot/metahotspot_c_api.h` 的 `MHS_VERSION_*` 宏里定义一次：
