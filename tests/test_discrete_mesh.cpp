@@ -3,6 +3,7 @@
 #include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/thermal_reconstruction.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
@@ -107,6 +108,57 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     const Vec3 point {0.2, 0.3, 0.4};
     EXPECT_NEAR(mhs::sim::sample_point(model, original, 0, model.discrete.locate(point), point),
         mhs::sim::sample_point(imported, reordered, 0, imported.discrete.locate(point), point), 1e-12);
+}
+
+TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
+{
+    for (const auto& condition : {mhs::model::ThermalBoundary {mhs::model::ConvectionBoundary {"10+0.01*T", "300"}},
+             mhs::model::ThermalBoundary {mhs::model::NeumannBoundary {"1+0.001*T"}}}) {
+        auto d = cube_definition();
+        d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
+        d.default_boundary = condition;
+        const auto model = mhs::sim::build_model(d);
+        ASSERT_EQ(model.boundary_faces.size(), 6u);
+        // The solver's patch lookup binary-searches this order.
+        EXPECT_TRUE(
+            std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent.value; }));
+        const std::vector<double> state {350};
+        for (const auto& patch : model.boundary_faces) {
+            const auto face = model.discrete.faces[patch.parent.value].project(patch.bounds);
+            // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
+            // T-dependent laws are evaluated at the surface trace, not at the cell.
+            const auto trace
+                = mhs::sim::evaluate_boundary(model.boundary_conditions[patch.condition], face, state[0], 1.0, 0);
+            const mhs::core::FieldContext ctx {
+                face.center()[0], face.center()[1], face.center()[2], trace.temperature, 0};
+            const double conductive_flux = 2 * (state[0] - trace.temperature);
+            if (std::holds_alternative<mhs::core::Convection>(model.boundary_conditions[patch.condition])) {
+                const auto& law = std::get<mhs::core::Convection>(model.boundary_conditions[patch.condition]);
+                const double h = law.coefficient.eval(ctx);
+                const double ambient = law.ambient_temperature.eval(ctx);
+                EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);
+                const double condensed = 2 * h / (2 + h);
+                EXPECT_NEAR(trace.conductance, condensed, 1e-9);
+                EXPECT_NEAR(trace.load, condensed * ambient, 1e-9);
+            }
+            else {
+                const auto& law = std::get<mhs::core::Neumann>(model.boundary_conditions[patch.condition]);
+                // Positive q is inward: the trace conducts q out of the cell.
+                EXPECT_NEAR(conductive_flux, -law.heat_flux.eval(ctx), 1e-4);
+                EXPECT_DOUBLE_EQ(trace.conductance, 0.0);
+                EXPECT_NEAR(trace.load, -conductive_flux, 1e-5);
+            }
+            // Sampling and assembly read the same surface trace.
+            EXPECT_DOUBLE_EQ(mhs::sim::sample_point(model, state, 0, CellId {0}, face.center()), trace.temperature);
+        }
+    }
+}
+
+TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
+{
+    auto d = cube_definition();
+    d.boundaries = {{{{mhs::model::Axis::X, 1, {{0, 1, 0, 1}}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
+    EXPECT_THROW(mhs::sim::build_model(d), std::invalid_argument);
 }
 
 TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
@@ -218,7 +270,9 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     const double q = (T / 100 + time + 0.5) / (1 - 0.5 / 100);
                     const double trace = T + q * 0.5;
                     EXPECT_NEAR(bc.heat_flux.eval({1, 0.5, 0.5, trace, time}), q, 1e-12);
-                    EXPECT_NEAR(condensed.temperature, trace, 2e-12);
+                    // The local trace solve stops at 1e-9 relative trace width,
+                    // far inside the global nonlinear tolerance but not exact.
+                    EXPECT_NEAR(condensed.temperature, trace, 1e-6);
                     g = 0;
                     load = q;
                 }
@@ -228,15 +282,15 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     const double h = trace / 100 + time + 0.5, ambient = 280 + time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, trace, time}), h);
                     EXPECT_DOUBLE_EQ(bc.ambient_temperature.eval({1, 0.5, 0.5, trace, time}), ambient);
-                    EXPECT_NEAR(2 * (T - trace), h * (trace - ambient), 1e-9);
+                    EXPECT_NEAR(2 * (T - trace), h * (trace - ambient), 1e-5);
                     g = h / (1 + h * 0.5);
                     load = g * ambient;
                 }
-                EXPECT_NEAR(ops.K.coeff(0, 0), g, 1e-13);
-                EXPECT_NEAR(ops.f[0], load, 1e-12);
+                EXPECT_NEAR(ops.K.coeff(0, 0), g, 1e-9);
+                EXPECT_NEAR(ops.f[0], load, 1e-6);
                 // Condensed coefficients and the assembled operator must agree.
-                EXPECT_NEAR(condensed.conductance, g, 1e-13);
-                EXPECT_NEAR(condensed.load, load, 1e-12);
+                EXPECT_NEAR(condensed.conductance, g, 1e-9);
+                EXPECT_NEAR(condensed.load, load, 1e-6);
             }
         }
     }

@@ -4,7 +4,7 @@
 #include "core/model_definition.hpp"
 namespace mhs::sim {
 
-    /// Convert a model definition into the internal SoA representation.
+    /// Convert a model definition into the compiled runtime model.
     mhs::core::Model build_model(const mhs::model::ModelDefinition& definition);
 
     // External geometry is already in SI. No mesh generation or neighbor discovery.

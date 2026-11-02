@@ -3,29 +3,29 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
 
 namespace mhs::sim {
     namespace {
-        mhs::core::Vec3 conductivity(
-            const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell, double time)
+        double conductivity(const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell,
+            double time, int axis)
         {
             const auto p = model.discrete.cells[cell.value].center();
             const mhs::core::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
             const auto& m = model.material_table[model.cell_material[cell.value]];
-            return {m.kx.eval(ctx), m.ky.eval(ctx), m.kz.eval(ctx)};
+            return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
+        // Bracketed bisection on the trace temperature. The condensed
+        // coefficients only need the trace to a few digits beyond the global
+        // nonlinear tolerance, so the loop stops on relative trace width rather
+        // than on a residual whose unit changes between the boundary laws.
         template <class Residual> double solve_trace(Residual&& residual, double guess, double scale)
         {
-            auto converged = [&](double x, double value) {
-                return std::abs(value) <= 1e-14 * (1.0 + std::abs(scale) + std::abs(x));
-            };
-            const double fguess = residual(guess);
-            if (converged(guess, fguess))
-                return guess;
+            constexpr double trace_tolerance = 1e-9;
             double step = std::max(1.0, 0.05 * std::max(std::abs(guess), std::abs(scale)));
             double lo = guess - step, hi = guess + step;
             double flo = residual(lo), fhi = residual(hi);
@@ -38,10 +38,6 @@ namespace mhs::sim {
             }
             if (!std::isfinite(flo) || !std::isfinite(fhi))
                 throw std::runtime_error("non-finite boundary trace residual");
-            if (converged(lo, flo))
-                return lo;
-            if (converged(hi, fhi))
-                return hi;
             if (std::signbit(flo) == std::signbit(fhi))
                 throw std::runtime_error("boundary trace equation has no bracketed root");
             for (int i = 0; i < 64; ++i) {
@@ -49,7 +45,7 @@ namespace mhs::sim {
                 const double fmid = residual(mid);
                 if (!std::isfinite(fmid))
                     throw std::runtime_error("non-finite boundary trace residual");
-                if (converged(mid, fmid) || std::abs(hi - lo) <= 1e-14 * (1.0 + std::abs(mid)))
+                if (fmid == 0.0 || std::abs(hi - lo) <= trace_tolerance * std::max(1.0, std::abs(mid)))
                     return mid;
                 if (std::signbit(fmid) == std::signbit(flo)) {
                     lo = mid;
@@ -69,13 +65,14 @@ namespace mhs::sim {
             const mhs::core::Model& model, std::span<const double> temperature, double time, mhs::core::CellId cell)
         {
             using namespace mhs::core;
-            const auto k = conductivity(model, temperature, cell, time);
+            const Vec3 k {conductivity(model, temperature, cell, time, 0),
+                conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id.value];
                 if (!f.neighbor.valid()) {
-                    for (const auto& term : model.boundary_faces_on(id)) {
-                        const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
+                    for (const auto& term : boundary_faces_on(model, id)) {
+                        const auto patch = f.project(term.bounds);
                         const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], patch,
                             temperature[cell.value], k[patch.axis], time);
                         gradient[f.axis] += f.sign * patch.area * trace.temperature;
@@ -85,7 +82,7 @@ namespace mhs::sim {
                 const auto neighbor = f.other(cell);
                 const double a = (f.owner == cell ? f.owner_distance : f.neighbor_distance) / k[f.axis];
                 const double b = (f.owner == cell ? f.neighbor_distance : f.owner_distance)
-                    / conductivity(model, temperature, neighbor, time)[f.axis];
+                    / conductivity(model, temperature, neighbor, time, f.axis);
                 const double trace = (b * temperature[cell.value] + a * temperature[neighbor.value]) / (a + b);
                 gradient[f.axis] += (f.owner == cell ? f.sign : -f.sign) * f.area * trace;
             }
@@ -93,6 +90,17 @@ namespace mhs::sim {
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
+
+    std::span<const mhs::core::BoundaryFace> boundary_faces_on(const mhs::core::Model& model, mhs::core::FaceId parent)
+    {
+        const auto& patches = model.boundary_faces;
+        auto first = std::lower_bound(patches.begin(), patches.end(), parent,
+            [](const mhs::core::BoundaryFace& patch, mhs::core::FaceId id) { return patch.parent.value < id.value; });
+        auto last = first;
+        while (last != patches.end() && last->parent == parent)
+            ++last;
+        return {first, last};
+    }
 
     BoundaryTrace evaluate_boundary(const mhs::core::BoundaryCondition& condition, const mhs::core::FacePatch& face,
         double cell_temperature, double normal_conductivity, double time)
@@ -105,11 +113,9 @@ namespace mhs::sim {
             [&](const auto& law) -> BoundaryTrace {
                 using C = std::decay_t<decltype(law)>;
                 if constexpr (std::is_same_v<C, Dirichlet>) {
-                    double trace = law.temperature.eval(context(cell_temperature));
-                    if (!law.temperature.depends_on_temperature())
-                        return {trace, conductive, conductive * trace};
-                    trace = solve_trace([&](double value) { return value - law.temperature.eval(context(value)); },
-                        trace, cell_temperature);
+                    // The compiler rejects temperature-dependent Dirichlet data,
+                    // so the prescribed trace is evaluated once.
+                    const double trace = law.temperature.eval(context(cell_temperature));
                     return {trace, conductive, conductive * trace};
                 }
                 else if constexpr (std::is_same_v<C, Neumann>) {
@@ -160,21 +166,20 @@ namespace mhs::sim {
         if (!cell.valid())
             return std::nullopt;
         const double cell_temperature = temperature[cell.value];
-        std::optional<mhs::core::Vec3> k;
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
         for (auto id : model.discrete.incident_faces(cell)) {
-            if (model.discrete.faces[id.value].neighbor.valid())
+            const auto& f = model.discrete.faces[id.value];
+            if (f.neighbor.valid())
                 continue;
-            for (const auto& term : model.boundary_faces_on(id)) {
-                const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
+            for (const auto& term : boundary_faces_on(model, id)) {
+                const auto patch = f.project(term.bounds);
                 if (!patch.contains(p))
                     continue;
-                if (!k)
-                    k = conductivity(model, temperature, cell, time);
                 const auto& condition = model.boundary_conditions[term.condition];
-                const double trace
-                    = evaluate_boundary(condition, patch, cell_temperature, (*k)[patch.axis], time).temperature;
+                const double trace = evaluate_boundary(
+                    condition, patch, cell_temperature, conductivity(model, temperature, cell, time, patch.axis), time)
+                                         .temperature;
                 sum += trace;
                 ++count;
                 if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {

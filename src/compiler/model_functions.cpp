@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -19,12 +18,12 @@ namespace mhs::sim {
     // 单变元函数族（除 make_expression_evaluator 外）不参考 ctx。
 
     mhs::core::FieldEvaluator make_expression_evaluator(
-        const std::string& inner_expr, const mhs::core::SymbolTable& symbols, std::uint8_t& dependencies)
+        const std::string& inner_expr, const mhs::core::SymbolTable& symbols, bool& reads_temperature)
     {
         if (inner_expr.empty())
             throw std::invalid_argument("function expression must not be empty");
         auto ce = mhs::core::parse(inner_expr, symbols);
-        dependencies = ce.dependencies() & ~mhs::core::DependsX;
+        reads_temperature = ce.depends_on_temperature();
         return [ce](const double* args, int nargs, const mhs::core::FieldContext& ctx) {
             mhs::core::FieldContext effective_ctx = ctx;
             if (nargs > 0) {
@@ -165,12 +164,14 @@ namespace mhs::sim {
     {
         for (const auto& function : functions) {
             mhs::core::FieldEvaluator ev = nullptr;
-            std::uint8_t dependencies = 0;
+            // Built-in closures only read their arguments; expression functions
+            // inherit whatever the inner expression depends on.
+            bool reads_temperature = false;
             std::visit(
                 [&](const auto& variant) {
                     using T = std::decay_t<decltype(variant)>;
                     if constexpr (std::is_same_v<T, mhs::model::ExpressionFunctionSpec>) {
-                        ev = make_expression_evaluator(variant.expression, symbols, dependencies);
+                        ev = make_expression_evaluator(variant.expression, symbols, reads_temperature);
                     }
                     else if constexpr (std::is_same_v<T, mhs::model::DoubleExponentialFunctionSpec>) {
                         ev = make_double_exp_evaluator(variant.amplitude, variant.alpha, variant.beta);
@@ -189,8 +190,7 @@ namespace mhs::sim {
                     }
                 },
                 function.value);
-            symbols.natives[function.name] = std::move(ev);
-            symbols.native_dependencies[function.name] = dependencies;
+            symbols.natives[function.name] = {std::move(ev), reads_temperature};
         }
     }
 

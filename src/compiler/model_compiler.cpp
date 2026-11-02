@@ -80,19 +80,24 @@ namespace mhs::sim {
         {
             using namespace mhs::core;
             auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
-            auto result
-                = std::visit(overloaded {
-                                 [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
-                                     return Dirichlet {compile(value.temperature)};
-                                 },
-                                 [&](const mhs::model::NeumannBoundary& value) -> BoundaryCondition {
-                                     return Neumann {compile(value.heat_flux)};
-                                 },
-                                 [&](const mhs::model::ConvectionBoundary& value) -> BoundaryCondition {
-                                     return Convection {compile(value.coefficient), compile(value.ambient_temperature)};
-                                 },
-                             },
-                    condition);
+            auto result = std::visit(
+                overloaded {
+                    [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
+                        auto temperature = compile(value.temperature);
+                        // A trace that prescribes itself is not a Dirichlet
+                        // condition; require an explicit temperature.
+                        if (temperature.depends_on_temperature())
+                            throw std::invalid_argument("Dirichlet boundary temperature must not depend on T");
+                        return Dirichlet {std::move(temperature)};
+                    },
+                    [&](const mhs::model::NeumannBoundary& value) -> BoundaryCondition {
+                        return Neumann {compile(value.heat_flux)};
+                    },
+                    [&](const mhs::model::ConvectionBoundary& value) -> BoundaryCondition {
+                        return Convection {compile(value.coefficient), compile(value.ambient_temperature)};
+                    },
+                },
+                condition);
             const auto index = static_cast<TableIndex>(conditions.size());
             conditions.push_back(std::move(result));
             return index;

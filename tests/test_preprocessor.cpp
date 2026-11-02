@@ -17,12 +17,11 @@ static const mhs::core::BoundaryFace* find_face_bc(const Model& model, uint32_t 
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
-        if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
-            && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            const auto faces = model.boundary_faces_on(id);
-            if (!faces.empty())
-                return &faces.front();
-        }
+        if (f.neighbor.valid() || f.axis != static_cast<int>(dir) / 2 || f.sign != (static_cast<int>(dir) % 2 ? 1 : -1))
+            continue;
+        for (const auto& patch : model.boundary_faces)
+            if (patch.parent == id)
+                return &patch;
     }
     return nullptr;
 }
