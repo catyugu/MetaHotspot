@@ -714,54 +714,22 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->cell_min);
+    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {
+        SET_ERR("NULL cell field buffer");
+        return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->cell_max);
+    if (fields->face_count
+        && (!fields->face_owner || !fields->face_neighbor || !fields->face_axis || !fields->face_sign
+            || !fields->face_min || !fields->face_max || !fields->face_area || !fields->owner_distance
+            || !fields->neighbor_distance)) {
+        SET_ERR("NULL face field buffer");
+        return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->material_id);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_owner);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_neighbor);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_axis);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_sign);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_min);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_max);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_area);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->owner_distance);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->neighbor_distance);
-    }
-
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_cell);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_source);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_volume);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_center);
+    if (fields->projection_count
+        && (!fields->projection_cell || !fields->projection_source || !fields->projection_volume
+            || !fields->projection_center)) {
+        SET_ERR("NULL projection field buffer");
+        return MHS_ERROR;
     }
     for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
         for (size_t a = 0; a < 3; ++a) {

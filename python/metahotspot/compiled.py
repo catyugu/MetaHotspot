@@ -317,6 +317,7 @@ class Compiled(OwnedHandle):
         """Evaluate material laws for every compact cell at ``state`` and ``time``."""
         if state is None:
             state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
         return _eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
@@ -326,6 +327,7 @@ class Compiled(OwnedHandle):
         """Assemble K, C, f at a state and time."""
         if state is None:
             state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
         return Operators(*_assembled_operators(self._dll, self._handle, state, time))
 
     def solve(

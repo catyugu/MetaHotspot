@@ -24,13 +24,13 @@ namespace mhs::sim {
             return {first, last};
         }
 
-        mhs::core::Vec3 conductivity(
-            const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell, double time)
+        double conductivity(const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell,
+            double time, int axis)
         {
             const auto p = model.discrete.cells[cell.value].center();
             const mhs::core::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
             const auto& m = model.material_table[model.cell_material[cell.value]];
-            return {m.kx.eval(ctx), m.ky.eval(ctx), m.kz.eval(ctx)};
+            return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
         // Bracketed bisection on the trace temperature. The condensed
@@ -79,13 +79,14 @@ namespace mhs::sim {
             const mhs::core::Model& model, std::span<const double> temperature, double time, mhs::core::CellId cell)
         {
             using namespace mhs::core;
-            const auto k = conductivity(model, temperature, cell, time);
+            const Vec3 k {conductivity(model, temperature, cell, time, 0),
+                conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id.value];
                 if (!f.neighbor.valid()) {
                     for (const auto& term : boundary_faces_on(model, id)) {
-                        const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
+                        const auto patch = f.project(term.bounds);
                         const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], patch,
                             temperature[cell.value], k[patch.axis], time);
                         gradient[f.axis] += f.sign * patch.area * trace.temperature;
@@ -95,7 +96,7 @@ namespace mhs::sim {
                 const auto neighbor = f.other(cell);
                 const double a = (f.owner == cell ? f.owner_distance : f.neighbor_distance) / k[f.axis];
                 const double b = (f.owner == cell ? f.neighbor_distance : f.owner_distance)
-                    / conductivity(model, temperature, neighbor, time)[f.axis];
+                    / conductivity(model, temperature, neighbor, time, f.axis);
                 const double trace = (b * temperature[cell.value] + a * temperature[neighbor.value]) / (a + b);
                 gradient[f.axis] += (f.owner == cell ? f.sign : -f.sign) * f.area * trace;
             }
@@ -168,21 +169,20 @@ namespace mhs::sim {
         if (!cell.valid())
             return std::nullopt;
         const double cell_temperature = temperature[cell.value];
-        std::optional<mhs::core::Vec3> k;
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
         for (auto id : model.discrete.incident_faces(cell)) {
-            if (model.discrete.faces[id.value].neighbor.valid())
+            const auto& f = model.discrete.faces[id.value];
+            if (f.neighbor.valid())
                 continue;
             for (const auto& term : boundary_faces_on(model, id)) {
-                const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
+                const auto patch = f.project(term.bounds);
                 if (!patch.contains(p))
                     continue;
-                if (!k)
-                    k = conductivity(model, temperature, cell, time);
                 const auto& condition = model.boundary_conditions[term.condition];
-                const double trace
-                    = evaluate_boundary(condition, patch, cell_temperature, (*k)[patch.axis], time).temperature;
+                const double trace = evaluate_boundary(
+                    condition, patch, cell_temperature, conductivity(model, temperature, cell, time, patch.axis), time)
+                                         .temperature;
                 sum += trace;
                 ++count;
                 if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {

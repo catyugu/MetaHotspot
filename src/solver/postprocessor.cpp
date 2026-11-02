@@ -37,10 +37,13 @@ namespace mhs::post {
             const mhs::core::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::core::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
+            const bool boundary_cell = std::ranges::any_of(model.discrete.incident_faces({c}),
+                [&](auto id) { return !model.discrete.faces[id.value].neighbor.valid(); });
             for (auto v : model.output.cell_vertices[c]) {
                 const auto& p = model.output.points[v];
-                const double sample
-                    = mhs::sim::boundary_value_at(model, cell_temperature, time, {c}, p).value_or(temperature);
+                const double sample = boundary_cell
+                    ? mhs::sim::boundary_value_at(model, cell_temperature, time, {c}, p).value_or(temperature)
+                    : temperature;
                 const double w = anisotropic_weight(center, p, conductivity);
                 node_T[v] += w * sample;
                 weight[v] += w;
