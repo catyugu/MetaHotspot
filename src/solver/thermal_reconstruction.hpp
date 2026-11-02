@@ -13,6 +13,9 @@
 
 namespace mhs::sim {
 
+    // Boundary patches sorted by their parent face in the compiled model.
+    std::span<const mhs::core::BoundaryFace> boundary_faces_on(const mhs::core::Model& model, mhs::core::FaceId parent);
+
     // Condensed contributions of one external boundary patch to its owner cell.
     struct BoundaryTrace {
         double temperature = 0.0;

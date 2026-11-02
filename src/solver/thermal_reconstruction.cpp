@@ -10,20 +10,6 @@
 
 namespace mhs::sim {
     namespace {
-        std::span<const mhs::core::BoundaryFace> boundary_faces_on(
-            const mhs::core::Model& model, mhs::core::FaceId parent)
-        {
-            const auto& patches = model.boundary_faces;
-            auto first = std::lower_bound(
-                patches.begin(), patches.end(), parent, [](const mhs::core::BoundaryFace& patch, mhs::core::FaceId id) {
-                    return patch.parent.value < id.value;
-                });
-            auto last = first;
-            while (last != patches.end() && last->parent == parent)
-                ++last;
-            return {first, last};
-        }
-
         double conductivity(const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell,
             double time, int axis)
         {
@@ -104,6 +90,17 @@ namespace mhs::sim {
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
+
+    std::span<const mhs::core::BoundaryFace> boundary_faces_on(const mhs::core::Model& model, mhs::core::FaceId parent)
+    {
+        const auto& patches = model.boundary_faces;
+        auto first = std::lower_bound(patches.begin(), patches.end(), parent,
+            [](const mhs::core::BoundaryFace& patch, mhs::core::FaceId id) { return patch.parent.value < id.value; });
+        auto last = first;
+        while (last != patches.end() && last->parent == parent)
+            ++last;
+        return {first, last};
+    }
 
     BoundaryTrace evaluate_boundary(const mhs::core::BoundaryCondition& condition, const mhs::core::FacePatch& face,
         double cell_temperature, double normal_conductivity, double time)

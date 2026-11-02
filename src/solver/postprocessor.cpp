@@ -1,6 +1,7 @@
 #include "solver/postprocessor.hpp"
 #include "thermal_reconstruction.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <ranges>
@@ -37,13 +38,39 @@ namespace mhs::post {
             const mhs::core::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::core::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-            const bool boundary_cell = std::ranges::any_of(model.discrete.incident_faces({c}),
-                [&](auto id) { return !model.discrete.faces[id.value].neighbor.valid(); });
-            for (auto v : model.output.cell_vertices[c]) {
+            const auto& vertices = model.output.cell_vertices[c];
+            std::array<double, 8> sum {}, dirichlet_sum {};
+            std::array<unsigned, 8> count {}, dirichlet_count {};
+            for (auto id : model.discrete.incident_faces({c})) {
+                const auto& face = model.discrete.faces[id.value];
+                if (face.neighbor.valid())
+                    continue;
+                for (const auto& term : mhs::sim::boundary_faces_on(model, id)) {
+                    const auto patch = face.project(term.bounds);
+                    const auto& condition = model.boundary_conditions[term.condition];
+                    std::optional<double> trace;
+                    for (std::size_t i = 0; i < vertices.size(); ++i) {
+                        if (!patch.contains(model.output.points[vertices[i]]))
+                            continue;
+                        if (!trace)
+                            trace = mhs::sim::evaluate_boundary(
+                                condition, patch, temperature, conductivity[patch.axis], time)
+                                        .temperature;
+                        sum[i] += *trace;
+                        ++count[i];
+                        if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {
+                            dirichlet_sum[i] += *trace;
+                            ++dirichlet_count[i];
+                        }
+                    }
+                }
+            }
+            for (std::size_t i = 0; i < vertices.size(); ++i) {
+                const auto v = vertices[i];
                 const auto& p = model.output.points[v];
-                const double sample = boundary_cell
-                    ? mhs::sim::boundary_value_at(model, cell_temperature, time, {c}, p).value_or(temperature)
-                    : temperature;
+                const double sample = dirichlet_count[i] ? dirichlet_sum[i] / dirichlet_count[i]
+                    : count[i]                           ? sum[i] / count[i]
+                                                         : temperature;
                 const double w = anisotropic_weight(center, p, conductivity);
                 node_T[v] += w * sample;
                 weight[v] += w;
