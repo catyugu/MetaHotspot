@@ -37,11 +37,11 @@ include(cmake/Dependencies.cmake)
 include(cmake/RuntimeDlls.cmake)
 
 # Instrument every target of this project, tests included; the fetch above runs
-# first so third-party targets stay uninstrumented. The MSVC frontend has no UBSan, 
-# so asking there is an error instead of a silent no-op.
+# first so third-party targets stay uninstrumented. MSVC-style frontends have no
+# UBSan support here, so asking for this configuration is an error.
 if(MHS_SANITIZE)
-    if(MSVC)
-        message(FATAL_ERROR "MHS_SANITIZE needs a GCC or Clang GNU-style frontend, not MSVC")
+    if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        message(FATAL_ERROR "MHS_SANITIZE needs a GCC or Clang GNU-style frontend")
     endif()
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=all)

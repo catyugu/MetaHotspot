@@ -1,10 +1,40 @@
 # Runtime deployment for executables and shared libraries.
 #
-# $<TARGET_RUNTIME_DLLS:> covers the imported shared targets of the link closure
-# (oneTBB, and oneMKL when enabled) and is empty where a platform has no runtime
-# DLLs, so the copy needs no platform guard. OpenMP is not part of it: FindOpenMP
-# exposes an interface target, so the runtime behind /openmp is staged by name.
-# The MSVC C runtime is never staged; it comes from the Visual C++ Redistributable.
+# $<TARGET_RUNTIME_DLLS:> covers imported shared targets in the link closure
+# (oneTBB, and oneMKL when enabled). FindOpenMP exposes an interface target, so
+# MSVC's OpenMP DLL is not part of that list. Let CMake's own redistributable
+# discovery locate it instead of depending on Visual Studio's directory layout.
+# The MSVC C runtime is deliberately not bundled; users get it from the Visual
+# C++ Redistributable.
+
+function(_mhs_find_msvc_openmp_runtime out)
+    set(${out} "" PARENT_SCOPE)
+    if(NOT MSVC)
+        return()
+    endif()
+
+    # Discover compiler redistributables without adding the module's default
+    # install rule; MetaHotspot only app-local deploys the OpenMP runtime.
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP ON)
+    set(CMAKE_INSTALL_OPENMP_LIBRARIES ON)
+    include(InstallRequiredSystemLibraries)
+
+    set(_openmp "")
+    foreach(_runtime IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+        get_filename_component(_name "${_runtime}" NAME)
+        string(TOLOWER "${_name}" _name)
+        if(_name MATCHES "^vcomp[0-9]+d?\\.dll$")
+            list(APPEND _openmp "${_runtime}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _openmp)
+    if(NOT _openmp)
+        message(FATAL_ERROR "CMake could not locate the MSVC OpenMP redistributable")
+    endif()
+    set(${out} "${_openmp}" PARENT_SCOPE)
+endfunction()
+
+_mhs_find_msvc_openmp_runtime(_mhs_msvc_openmp_runtime)
 
 function(mhs_stage_runtime target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -12,65 +42,17 @@ function(mhs_stage_runtime target)
         $<TARGET_RUNTIME_DLLS:${target}>
         COMMAND_EXPAND_LISTS
     )
-endfunction()
-
-# Sets <out> to the OpenMP runtime that an MSVC build loads, and to nothing when
-# the platform has none or the build is not the supported Windows configuration.
-function(mhs_windows_openmp_runtime out)
-    set(${out} "" PARENT_SCOPE)
-    if(NOT WIN32)
-        return()
+    if(_mhs_msvc_openmp_runtime)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_mhs_msvc_openmp_runtime} "$<TARGET_FILE_DIR:${target}>"
+            COMMAND_EXPAND_LISTS
+        )
     endif()
-    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        return()
-    endif()
-
-    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64")
-        set(_arch arm64)
-    elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(_arch x64)
-    else()
-        set(_arch x86)
-    endif()
-    set(_name "${_arch}/Microsoft.VC${MSVC_TOOLSET_VERSION}.OpenMP/vcomp140.dll")
-
-    set(_globs "")
-    if(DEFINED ENV{VCToolsRedistDir})
-        file(TO_CMAKE_PATH "$ENV{VCToolsRedistDir}" _redist)
-        list(APPEND _globs "${_redist}/${_name}")
-    endif()
-    if(IS_ABSOLUTE "${CMAKE_CXX_COMPILER}")
-        get_filename_component(_vc "${CMAKE_CXX_COMPILER}" REALPATH)
-        string(REGEX REPLACE "/Tools/MSVC/.*$" "" _vc "${_vc}")
-        list(APPEND _globs "${_vc}/Redist/MSVC/*/${_name}")
-    endif()
-
-    set(_matches "")
-    foreach(_glob IN LISTS _globs)
-        file(GLOB _found "${_glob}")
-        list(APPEND _matches ${_found})
-    endforeach()
-    if(NOT _matches)
-        message(FATAL_ERROR
-            "vcomp140.dll is missing from the MSVC redistributable files; looked in: ${_globs}")
-    endif()
-    list(SORT _matches)
-    list(GET _matches -1 _newest)
-    set(${out} "${_newest}" PARENT_SCOPE)
-endfunction()
-
-function(mhs_stage_windows_openmp target)
-    mhs_windows_openmp_runtime(_runtime)
-    if(NOT _runtime)
-        return()
-    endif()
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_runtime}" "$<TARGET_FILE_DIR:${target}>"
-    )
 endfunction()
 
 # Installs the runtime DLLs of the given targets next to the installed binaries.
-# On Windows those are oneTBB, oneMKL when enabled, and the OpenMP runtime.
+# On Windows those are oneTBB, oneMKL when enabled, and the MSVC OpenMP runtime.
 function(mhs_install_windows_runtime)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "DESTINATION;COMPONENT" "TARGETS")
     if(NOT WIN32)
@@ -86,8 +68,8 @@ function(mhs_install_windows_runtime)
                 DESTINATION ${arg_DESTINATION} ${_component})
         endif()
     endforeach()
-    mhs_windows_openmp_runtime(_runtime)
-    if(_runtime)
-        install(FILES "${_runtime}" DESTINATION ${arg_DESTINATION} ${_component})
+    if(_mhs_msvc_openmp_runtime)
+        install(FILES ${_mhs_msvc_openmp_runtime}
+            DESTINATION ${arg_DESTINATION} ${_component})
     endif()
 endfunction()

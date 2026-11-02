@@ -37,7 +37,6 @@ elseif(UNIX)
     set_property(TARGET mhs_c_api PROPERTY INSTALL_RPATH "$ORIGIN")
 endif()
 mhs_stage_runtime(mhs_c_api)
-mhs_stage_windows_openmp(mhs_c_api)
 
 # scikit-build-core wheel: the Python package is a ctypes wrapper, so the
 # library is installed into the package directory with the runtime libraries
