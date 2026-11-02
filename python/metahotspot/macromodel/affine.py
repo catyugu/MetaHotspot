@@ -196,7 +196,7 @@ class AffineParametricModel:
 
     @cached_property
     def geometry(self) -> CellGeometry:
-        return CellGeometry(self._full.cells)
+        return CellGeometry(self._full.fields)
 
     @property
     def full_cell_count(self) -> int:

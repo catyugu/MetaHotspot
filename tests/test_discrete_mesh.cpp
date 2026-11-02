@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "core/boundary_geometry.hpp"
 #include "core/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
@@ -32,7 +31,9 @@ static mhs::model::ModelDefinition cube_definition()
 TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
 {
     auto definition = cube_definition();
-    const auto supplied = mhs::sim::build_model(definition).discrete;
+    auto supplied = mhs::sim::build_model(definition).discrete;
+    for (auto& face : supplied.faces)
+        face.sign = 0; // import derives orientation from geometry
     definition.mesh = {};
     const auto model = mhs::sim::build_model(definition, supplied);
     const auto& mesh = model.discrete;
@@ -183,7 +184,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
-            const auto face = projected_face(model.discrete, term);
+            const auto face = model.discrete.faces[term.parent.value].project(term.bounds);
             if (face.axis != 0 || face.sign != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
                 continue;

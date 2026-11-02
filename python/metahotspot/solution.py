@@ -55,6 +55,8 @@ def _solve_options(dll, overrides: dict):
 
 
 def _solve(dll, compiled_handle, state, opts_overrides: dict):
+    if state is not None:
+        state = np.ascontiguousarray(state, dtype=np.float64)
     opts = _solve_options(dll, opts_overrides)
     state_ptr = _double_ptr(state) if state is not None else None
     state_count = state.size if state is not None else 0

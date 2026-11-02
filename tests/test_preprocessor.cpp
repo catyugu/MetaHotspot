@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "core/boundary_geometry.hpp"
 #include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
@@ -20,7 +19,7 @@ static const mhs::core::BoundaryFace* find_face_bc(const Model& model, uint32_t 
         const auto& f = model.discrete.faces[id.value];
         if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
             && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            const auto faces = boundary_faces_on(model, id);
+            const auto faces = model.boundary_faces_on(id);
             if (!faces.empty())
                 return &faces.front();
         }

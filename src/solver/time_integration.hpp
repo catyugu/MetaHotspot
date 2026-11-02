@@ -35,10 +35,6 @@ namespace mhs::sim::time_scheme {
         double prepare(double dt_suggested, double current_t);
         bool output_due(double current_t);
 
-        StepStrategy strategy() const noexcept { return strategy_; }
-        double min_dt() const noexcept { return min_dt_; }
-        double max_dt() const noexcept { return max_dt_; }
-
     private:
         StepStrategy strategy_ = StepStrategy::Adaptive;
         double duration_ = 0.0;

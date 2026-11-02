@@ -6,6 +6,8 @@
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
+#include <algorithm>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -76,6 +78,17 @@ namespace mhs::core {
         double transient_time_step = 1.0;
 
         std::vector<ProbePoint> observation_points;
+
+        // Compiled patches are sorted by parent FaceId.
+        std::span<const BoundaryFace> boundary_faces_on(FaceId parent) const
+        {
+            auto first = std::lower_bound(boundary_faces.begin(), boundary_faces.end(), parent,
+                [](const BoundaryFace& f, FaceId p) { return f.parent.value < p.value; });
+            auto last = first;
+            while (last != boundary_faces.end() && last->parent == parent)
+                ++last;
+            return {first, last};
+        }
     };
 
 } // namespace mhs::core

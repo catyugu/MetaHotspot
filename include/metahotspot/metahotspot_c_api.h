@@ -174,7 +174,7 @@ typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
     const size_t *face_owner, *face_neighbor;
-    const int32_t *face_axis, *face_sign;
+    const int32_t* face_axis; /* owner normal sign is derived from geometry */
     const double *face_min, *face_max;
 } mhs_mesh_t;
 

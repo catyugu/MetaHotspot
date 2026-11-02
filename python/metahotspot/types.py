@@ -62,7 +62,6 @@ class MhsMesh(ctypes.Structure):
         ("face_owner", ctypes.POINTER(ctypes.c_size_t)),
         ("face_neighbor", ctypes.POINTER(ctypes.c_size_t)),
         ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_sign", ctypes.POINTER(ctypes.c_int32)),
         ("face_min", ctypes.POINTER(ctypes.c_double)),
         ("face_max", ctypes.POINTER(ctypes.c_double)),
     ]

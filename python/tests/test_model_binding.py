@@ -35,14 +35,18 @@ def test_model_native_calls_compile_and_assemble():
     model.set_default_neumann("0")
 
     compiled = model.compile()
+    assert compiled.cell_count == 1
+    compiled.default_state()
+    assert "fields" not in compiled.__dict__
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert compiled.metadata.face_count == 6
+    assert compiled.info.face_count == 6
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)
     assert operators.f[0] == pytest.approx(1.0e-3)
+    assert compiled.fields is compiled.fields
 
 
 def test_model_native_boundary_and_function_calls():
@@ -75,7 +79,7 @@ def test_solution_views_derive_from_one_native_snapshot():
     model.set_default_neumann("0")
     model.add_probe("center", 0.5, 0.5, 0.5)
 
-    solution = model.compile().solve()
+    solution = model.compile().solve(state=np.array([300, -1], dtype=np.float32)[::2])
 
     assert solution.state.size == 1
     assert solution.state_history.shape == (solution.history_times.size, 1)

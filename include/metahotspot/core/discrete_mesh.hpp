@@ -40,6 +40,17 @@ namespace mhs::core {
         Vec3 min {}, max {};
         double area = 0, owner_distance = 0, neighbor_distance = 0;
         Vec3 center() const { return {(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2}; }
+        FacePatch project(const std::array<double, 4>& bounds) const
+        {
+            auto patch = *this;
+            const int a = axis == 0 ? 1 : 0, b = axis == 2 ? 1 : 2;
+            patch.min[a] = bounds[0];
+            patch.max[a] = bounds[1];
+            patch.min[b] = bounds[2];
+            patch.max[b] = bounds[3];
+            patch.area = (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]);
+            return patch;
+        }
         CellId other(CellId c) const { return c == owner ? neighbor : owner; }
         bool contains(const Vec3& p, double eps = 1e-12) const
         {

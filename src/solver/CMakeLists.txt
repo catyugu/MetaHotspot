@@ -1,6 +1,5 @@
 add_library(mhs_solver STATIC
     assembler.cpp
-    fluid_assembler.cpp
     nonlinear_solver.cpp
     postprocessor.cpp
     probe_recorder.cpp

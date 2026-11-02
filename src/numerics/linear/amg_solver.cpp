@@ -73,7 +73,7 @@ namespace mhs::sim {
     {
         // Detect symmetry once: pure conduction/convection stays symmetric,
         // fluid-coupled cases with upwind advection introduce asymmetric
-        // off-diagonal terms (fluid_assembler). CG needs SPD, so route any
+        // off-diagonal terms (thermal assembly). CG needs SPD, so route any
         // non-symmetric operator to GMRES.
         const double asym = (A - Eigen::SparseMatrix<double>(A.transpose())).norm();
         const double scale = A.norm();

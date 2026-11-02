@@ -214,6 +214,8 @@ namespace mhs::sim {
 
         if (external) {
             model.discrete = *external;
+            for (auto& face : model.discrete.faces)
+                face.sign = face.min[face.axis] > model.discrete.cells[face.owner.value].center()[face.axis] ? 1 : -1;
             model.discrete.build_incidence();
             build_external_output_mesh(model);
         }

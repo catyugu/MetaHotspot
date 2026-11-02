@@ -1,7 +1,5 @@
 #include "thermal_reconstruction.hpp"
 
-#include "core/boundary_geometry.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -76,8 +74,8 @@ namespace mhs::sim {
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id.value];
                 if (!f.neighbor.valid()) {
-                    for (const auto& term : boundary_faces_on(model, id)) {
-                        const auto patch = projected_face(model.discrete, term);
+                    for (const auto& term : model.boundary_faces_on(id)) {
+                        const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
                         const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], patch,
                             temperature[cell.value], k[patch.axis], time);
                         gradient[f.axis] += f.sign * patch.area * trace.temperature;
@@ -108,7 +106,7 @@ namespace mhs::sim {
                 using C = std::decay_t<decltype(law)>;
                 if constexpr (std::is_same_v<C, Dirichlet>) {
                     double trace = law.temperature.eval(context(cell_temperature));
-                    if (law.temperature.is_constant())
+                    if (!law.temperature.depends_on_temperature())
                         return {trace, conductive, conductive * trace};
                     trace = solve_trace([&](double value) { return value - law.temperature.eval(context(value)); },
                         trace, cell_temperature);
@@ -118,7 +116,7 @@ namespace mhs::sim {
                     auto flux = [&](double trace) { return law.heat_flux.eval(context(trace)); };
                     const double initial_flux = flux(cell_temperature);
                     double trace = cell_temperature + face.area * initial_flux / conductive;
-                    if (law.heat_flux.is_constant())
+                    if (!law.heat_flux.depends_on_temperature())
                         return {trace, 0.0, face.area * initial_flux};
                     trace = solve_trace(
                         [&](double value) { return conductive * (cell_temperature - value) + face.area * flux(value); },
@@ -135,7 +133,8 @@ namespace mhs::sim {
                     auto [h, ambient] = values(cell_temperature);
                     double convective = h * face.area;
                     double trace = (conductive * cell_temperature + convective * ambient) / (conductive + convective);
-                    if (law.coefficient.is_constant() && law.ambient_temperature.is_constant()) {
+                    if (!law.coefficient.depends_on_temperature()
+                        && !law.ambient_temperature.depends_on_temperature()) {
                         const double condensed = conductive * convective / (conductive + convective);
                         return {trace, condensed, condensed * ambient};
                     }
@@ -167,8 +166,8 @@ namespace mhs::sim {
         for (auto id : model.discrete.incident_faces(cell)) {
             if (model.discrete.faces[id.value].neighbor.valid())
                 continue;
-            for (const auto& term : mhs::core::boundary_faces_on(model, id)) {
-                const auto patch = mhs::core::projected_face(model.discrete, term);
+            for (const auto& term : model.boundary_faces_on(id)) {
+                const auto patch = model.discrete.faces[term.parent.value].project(term.bounds);
                 if (!patch.contains(p))
                     continue;
                 if (!k)

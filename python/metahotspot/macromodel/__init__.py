@@ -31,7 +31,7 @@ Modules:
   (:func:`~metahotspot.macromodel.embeddable.connect`).
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
-generic ``Operators`` / ``CellFields`` contracts — never a named case.
+generic ``Operators`` / ``CompiledFields`` contracts — never a named case.
 """
 
 from metahotspot.macromodel import affine, embeddable, utils

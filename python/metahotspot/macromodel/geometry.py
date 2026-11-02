@@ -7,7 +7,7 @@ from functools import cached_property
 
 import numpy as np
 
-from metahotspot._compiled_data import CellFields
+from metahotspot._compiled_data import CompiledFields
 from metahotspot.enums import Face
 
 
@@ -22,7 +22,7 @@ class BoundarySurface:
 
 @dataclass(frozen=True)
 class CellGeometry:
-    fields: CellFields
+    fields: CompiledFields
 
     @cached_property
     def sizes(self):

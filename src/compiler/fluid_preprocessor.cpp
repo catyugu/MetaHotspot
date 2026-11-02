@@ -1,7 +1,6 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "core/boundary_geometry.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
 #include <algorithm>
@@ -92,12 +91,11 @@ namespace mhs::sim::fluid {
             }
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
-            return term.condition == invalidTableIndex
-                || fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == invalidIndex;
+            return fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == invalidIndex;
         });
         std::vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition] += projected_face(mesh, term).area;
+            total_area[term.condition] += mesh.faces[term.parent.value].project(term.bounds).area;
         std::vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -117,7 +115,7 @@ namespace mhs::sim::fluid {
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = projected_face(mesh, term);
+            const auto f = mesh.faces[term.parent.value].project(term.bounds);
             const auto i = fluid.global_to_fluid[f.owner.value];
             std::visit(
                 [&](const auto& bc) {
@@ -155,7 +153,7 @@ namespace mhs::sim::fluid {
             throw std::runtime_error("fluid pressure solve failed");
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = projected_face(mesh, term);
+            const auto f = mesh.faces[term.parent.value].project(term.bounds);
             const auto i = fluid.global_to_fluid[f.owner.value];
             const auto& condition = boundaries[term.condition].condition;
             const double mass = std::visit(

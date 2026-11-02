@@ -324,7 +324,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_owner);
         CHECK_NULL(input->face_neighbor);
         CHECK_NULL(input->face_axis);
-        CHECK_NULL(input->face_sign);
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::core::DiscreteMesh mesh;
@@ -340,7 +339,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             f.owner = {input->face_owner[id]};
             f.neighbor = {input->face_neighbor[id]};
             f.axis = input->face_axis[id];
-            f.sign = input->face_sign[id];
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
@@ -961,10 +959,8 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
 
         // Build initial state span
         std::span<const double> init_span;
-        std::vector<double> owned;
         if (state && state_count > 0) {
-            owned.assign(state, state + state_count);
-            init_span = owned;
+            init_span = {state, state_count};
         }
 
         auto sol = mhs::sim::solve(*c->model, init_span, so);

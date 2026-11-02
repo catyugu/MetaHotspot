@@ -140,7 +140,7 @@ def main():
     R = vector_file("Xresistances")
     area = (link[:, 6] - link[:, 5]) * (link[:, 8] - link[:, 7])
     ops, compiled = build_current_detailed(x, y)
-    cells = compiled.cells
+    cells = compiled.fields
     geometry = CellGeometry(cells)
     top = geometry.surface(Face.ZP).cell_ids
     centers = geometry.centers

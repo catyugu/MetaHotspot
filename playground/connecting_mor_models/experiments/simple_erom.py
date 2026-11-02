@@ -58,7 +58,7 @@ def build_reusable_cube_rom(
     """Extract the cube once, independent of every external attachment case."""
     cfg = attach.AttachConfig()
     model = attach.AttachModel(cfg)
-    cells = model._full.cells
+    cells = model._full.fields
     zc = attach.CellGeometry(cells).centers[:, 2]
     H_m = cfg.ext_thickness_mm * 1.0e-3
     cube_idx = np.flatnonzero(zc >= H_m - 1.0e-12)
