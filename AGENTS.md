@@ -2,16 +2,14 @@
 
 ## Build, Test, and Development Commands
 
-- **Build Config**: C++20, MSVC `/W4 /WX /permissive- /utf-8 /bigobj`, Clang `-Werror -Wall -Wextra -Wpedantic`
-
 ```bash
 # Build
 conda activate numerical # For MKL
 # Use Ninja
-cmake -G "Ninja" -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake  -B build -DCMAKE_BUILD_TYPE=Release -G "Ninja"
 cmake --build build --parallel
 # or use MSBuild
-cmake -S . -B build
+cmake -B build -G "Visual Studio 17 2022"  
 cmake --build build --parallel --config Release
 
 # Run tests
@@ -29,10 +27,8 @@ python -m pytest python/tests
 ```
 
 ```bash
-# Formatting and lint of every tracked source, plus a sanitizer build tree
-# (GCC or Clang only)
+# Formatting and lint of every tracked source.
 python scripts/pre_commit.py
-cmake -G "Ninja" -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DMHS_SANITIZE=ON
 ```
 
 - **Formatting and lint**: `.githooks/pre-commit` runs `scripts/pre_commit.py` on the staged files, so a commit carries no unformatted or unlinted source; enable it once per checkout with `git config core.hooksPath .githooks` and install the pinned tools with `python -m pip install --group dev` (pip 25.1+). clang-format covers `src`, `include` and `tests`, ruff covers `python` and `ci`. CI checks neither.
