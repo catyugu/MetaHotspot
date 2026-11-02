@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
-#include "solver/fluid_assembler.hpp"
+#include "solver/assembler.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -94,19 +94,22 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     EXPECT_NEAR(boundary_sum, 0, 1e-12);
     EXPECT_TRUE(nonzero);
     const std::vector<double> state(model.discrete.cells.size(), 300);
-    const auto normal = mhs::sim::fluid::assemble_increment(model, state, 0);
-    auto scaled = model;
+    // Suppress diffusion/sources to inspect advection through the main assembler.
+    auto transport = model;
+    transport.boundary_faces.clear();
+    transport.source_terms.clear();
+    for (auto& material : transport.material_table)
+        material.kx = material.ky = material.kz = mhs::core::CompiledExpression::make_constant(0);
+    const auto normal = mhs::sim::assemble_thermal(transport, state, 0);
+    auto scaled = transport;
     constexpr double factor = 1e-20;
     for (auto& flux : scaled.fluid.face_volume_flux)
         flux *= factor;
     for (auto& term : scaled.fluid.boundary_terms)
         std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);
-    const auto tiny = mhs::sim::fluid::assemble_increment(scaled, state, 0);
-    ASSERT_EQ(tiny.matrix_entries.size(), normal.matrix_entries.size());
-    for (std::size_t i = 0; i < normal.matrix_entries.size(); ++i)
-        EXPECT_NEAR(tiny.matrix_entries[i].value() / factor, normal.matrix_entries[i].value(),
-            std::abs(normal.matrix_entries[i].value()) * 1e-12);
-    EXPECT_LE((tiny.rhs / factor - normal.rhs).norm(), normal.rhs.norm() * 1e-12);
+    const auto tiny = mhs::sim::assemble_thermal(scaled, state, 0);
+    EXPECT_LE((tiny.K / factor - normal.K).norm(), normal.K.norm() * 1e-12);
+    EXPECT_LE((tiny.f / factor - normal.f).norm(), normal.f.norm() * 1e-12);
 }
 
 // Two disjoint inlet pieces and an outlet share a single control volume.
@@ -119,12 +122,10 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
         {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
         {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
     auto verify = [&](const mhs::core::Model& model) {
-        const auto inc = mhs::sim::fluid::assemble_increment(model, std::vector<double> {300}, 0);
-        double diagonal = 0;
-        for (const auto& e : inc.matrix_entries)
-            diagonal += e.value();
+        const auto inc = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
+        const double diagonal = inc.K.coeff(0, 0);
         EXPECT_NEAR(diagonal, 5, 1e-12);
-        EXPECT_NEAR(inc.rhs[0], 2 * 280 + 3 * 320, 1e-10);
+        EXPECT_NEAR(inc.f[0], 2 * 280 + 3 * 320, 1e-10);
     };
     verify(mhs::sim::build_model(d));
     BoundaryPatch thermal;
@@ -155,19 +156,16 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
         }
     }
     auto verify_reverse = [&](const mhs::core::Model& model, double temperature) {
-        const auto inc = mhs::sim::fluid::assemble_increment(model, std::vector<double> {300}, 0);
-        double diagonal = 0;
-        for (const auto& e : inc.matrix_entries)
-            diagonal += e.value();
+        const auto inc = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
+        const double diagonal = inc.K.coeff(0, 0);
         ASSERT_GT(diagonal, 0);
-        EXPECT_NEAR(inc.rhs[0], diagonal * temperature, 1e-10);
+        EXPECT_NEAR(inc.f[0], diagonal * temperature, 1e-10);
     };
     verify_reverse(reverse, 300);
 
     std::get<PressureOutlet>(d.fluid_boundaries.back().condition).pressure = 0;
     const auto stagnant = mhs::sim::build_model(d);
-    const auto zero = mhs::sim::fluid::assemble_increment(stagnant, std::vector<double> {300}, 0);
-    EXPECT_DOUBLE_EQ(zero.rhs[0], 0);
-    for (const auto& e : zero.matrix_entries)
-        EXPECT_DOUBLE_EQ(e.value(), 0);
+    const auto zero = mhs::sim::assemble_thermal(stagnant, std::vector<double> {300}, 0);
+    EXPECT_DOUBLE_EQ(zero.f[0], 0);
+    EXPECT_DOUBLE_EQ(zero.K.norm(), 0);
 }

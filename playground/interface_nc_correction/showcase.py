@@ -31,7 +31,13 @@ from matplotlib.patches import Rectangle
 
 import model as mdl
 import run_study as rs
-from nc_interface import FvmSide, InterfaceProblem, assemble, common_patches_with_rects, window_port
+from nc_interface import (
+    FvmSide,
+    InterfaceProblem,
+    assemble,
+    common_patches_with_rects,
+    window_port,
+)
 
 MM = 1.0e-3
 OUT = Path(__file__).resolve().parent / "results"
@@ -52,15 +58,16 @@ def blocks(phys: mdl.Physics):
         "component", xs, xs, phys.component_layers(), z0=0.0
     )
     comp = assemble(
-        comp_grid, active=comp_active, ambient=phys.component_ambient,
-        sources=phys.sources(), name="component",
+        comp_grid,
+        active=comp_active,
+        ambient=phys.component_ambient,
+        sources=phys.sources(),
+        name="component",
     )
 
     half = phys.lid_xy / 2
     count = int(round((phys.lid_xy - 2 * LID_SHIFT) / LID_H))
-    edges = np.r_[half * -1.0,
-                  -half + LID_SHIFT + LID_H * np.arange(count),
-                  half]
+    edges = np.r_[half * -1.0, -half + LID_SHIFT + LID_H * np.arange(count), half]
     env_grid, env_active = mdl.grid_of_layers(
         "envelope", edges, edges, phys.envelope_layers(), z0=phys.interface_z
     )
@@ -86,7 +93,9 @@ def panel(axis, rects, values, title, cmap, vmin, vmax):
             Rectangle((x0 * 1e3, y0 * 1e3), (x1 - x0) * 1e3, (y1 - y0) * 1e3)
             for x0, x1, y0, y1 in rects
         ],
-        cmap=cmap, norm=Normalize(vmin, vmax), edgecolor="none",
+        cmap=cmap,
+        norm=Normalize(vmin, vmax),
+        edgecolor="none",
     )
     boxes.set_array(values)
     axis.add_collection(boxes)
@@ -117,7 +126,9 @@ def main() -> None:
     rects = patches.rects
     area = patches.area
 
-    reference_system, reference_field, ref_cg = rs.reference_pair(phys, REF_H, CONTACT_H)
+    reference_system, reference_field, ref_cg = rs.reference_pair(
+        phys, REF_H, CONTACT_H
+    )
     q_ref, t_ref = rs.reference_interface(
         reference_system, reference_field, phys, patches, CONTACT_H
     )
@@ -134,7 +145,9 @@ def main() -> None:
     t_nc = np.asarray(corrected["state"][problem.node_slice])
 
     def l2(values):
-        return float(np.sqrt(np.sum(area * (values - q_ref) ** 2) / np.sum(area * q_ref**2)))
+        return float(
+            np.sqrt(np.sum(area * (values - q_ref) ** 2) / np.sum(area * q_ref**2))
+        )
 
     def rms(values):
         return float(np.sqrt(np.sum(area * (values - t_ref) ** 2) / np.sum(area)))
@@ -157,7 +170,9 @@ def main() -> None:
             "reference_h_mm": REF_H / MM,
             "reference_cells": int(reference_system.n),
             "reference_cg_iterations": int(ref_cg),
-            "delta_max_mm": float(np.abs(np.r_[problem.delta_l, problem.delta_r]).max() / MM),
+            "delta_max_mm": float(
+                np.abs(np.r_[problem.delta_l, problem.delta_r]).max() / MM
+            ),
             "skew_over_half_max": float(
                 np.max(
                     np.abs(
@@ -190,38 +205,77 @@ def main() -> None:
     (OUT / "showcase.json").write_text(json.dumps(numbers, indent=2), encoding="utf-8")
 
     # ---------------------------------------------------------------- figure
-    q_ref_kw, q_repo_err, q_nc_err = q_ref / 1e3, (q_repo - q_ref) / 1e3, (q_nc - q_ref) / 1e3
+    q_ref_kw, q_repo_err, q_nc_err = (
+        q_ref / 1e3,
+        (q_repo - q_ref) / 1e3,
+        (q_nc - q_ref) / 1e3,
+    )
     t_ref_mk, t_repo_err, t_nc_err = t_ref, 1e3 * (t_repo - t_ref), 1e3 * (t_nc - t_ref)
     flux_err = float(max(np.abs(q_repo_err).max(), np.abs(q_nc_err).max()))
     temp_err = float(max(np.abs(t_repo_err).max(), np.abs(t_nc_err).max()))
 
     fig, axes = plt.subplots(2, 3, figsize=(13.6, 8.6), constrained_layout=True)
     layout = (
-        (axes[0, 0], q_ref_kw, f"reference heat flux [kW/m$^2$]",
-         "inferno", 0.0, float(q_ref_kw.max())),
-        (axes[0, 1], q_nc_err,
-         f"corrected error  (L2 {100*numbers['flux']['corrected_l2']:.1f}%, "
-         f"max {numbers['flux']['corrected_max_error_kW_m2']:.0f} kW/m$^2$)",
-         "coolwarm", -flux_err, flux_err),
-        (axes[0, 2], q_repo_err,
-         f"not corrected error  (L2 {100*numbers['flux']['repo_l2']:.1f}%, "
-         f"max {numbers['flux']['repo_max_error_kW_m2']:.0f} kW/m$^2$)",
-         "coolwarm", -flux_err, flux_err),
-        (axes[1, 0], t_ref_mk, "reference interface temperature rise (ambient = 0) [K]",
-         "viridis", float(t_ref_mk.min()), float(t_ref_mk.max())),
-        (axes[1, 1], t_nc_err,
-         f"corrected error  (RMS {numbers['temperature']['corrected_rms_mK']:.1f} mK, "
-         f"max {numbers['temperature']['corrected_max_mK']:.0f} mK)",
-         "coolwarm", -temp_err, temp_err),
-        (axes[1, 2], t_repo_err,
-         f"not corrected error  (RMS {numbers['temperature']['repo_rms_mK']:.1f} mK, "
-         f"max {numbers['temperature']['repo_max_mK']:.0f} mK)",
-         "coolwarm", -temp_err, temp_err),
+        (
+            axes[0, 0],
+            q_ref_kw,
+            f"reference heat flux [kW/m$^2$]",
+            "inferno",
+            0.0,
+            float(q_ref_kw.max()),
+        ),
+        (
+            axes[0, 1],
+            q_nc_err,
+            f"corrected error  (L2 {100*numbers['flux']['corrected_l2']:.1f}%, "
+            f"max {numbers['flux']['corrected_max_error_kW_m2']:.0f} kW/m$^2$)",
+            "coolwarm",
+            -flux_err,
+            flux_err,
+        ),
+        (
+            axes[0, 2],
+            q_repo_err,
+            f"not corrected error  (L2 {100*numbers['flux']['repo_l2']:.1f}%, "
+            f"max {numbers['flux']['repo_max_error_kW_m2']:.0f} kW/m$^2$)",
+            "coolwarm",
+            -flux_err,
+            flux_err,
+        ),
+        (
+            axes[1, 0],
+            t_ref_mk,
+            "reference interface temperature rise (ambient = 0) [K]",
+            "viridis",
+            float(t_ref_mk.min()),
+            float(t_ref_mk.max()),
+        ),
+        (
+            axes[1, 1],
+            t_nc_err,
+            f"corrected error  (RMS {numbers['temperature']['corrected_rms_mK']:.1f} mK, "
+            f"max {numbers['temperature']['corrected_max_mK']:.0f} mK)",
+            "coolwarm",
+            -temp_err,
+            temp_err,
+        ),
+        (
+            axes[1, 2],
+            t_repo_err,
+            f"not corrected error  (RMS {numbers['temperature']['repo_rms_mK']:.1f} mK, "
+            f"max {numbers['temperature']['repo_max_mK']:.0f} mK)",
+            "coolwarm",
+            -temp_err,
+            temp_err,
+        ),
     )
     for axis, values, title, cmap, vmin, vmax in layout:
         image = panel(axis, rects, values, title, cmap, vmin, vmax)
-        unit = "kW/m$^2$" if axis in (axes[0, :]).tolist() else (
-            "K" if axis is axes[1, 0] else "mK")
+        unit = (
+            "kW/m$^2$"
+            if axis in (axes[0, :]).tolist()
+            else ("K" if axis is axes[1, 0] else "mK")
+        )
         fig.colorbar(image, ax=axis, shrink=0.86, pad=0.02, label=unit)
     fig.suptitle(
         f"die {DIE_H/MM:g} mm / lid {LID_H/MM:g} mm shifted {LID_SHIFT/MM:g} mm, "
@@ -236,8 +290,10 @@ def main() -> None:
     quads = np.empty((4 * patches.count, 3))
     for i, (x0, x1, y0, y1) in enumerate(rects):
         quads[4 * i : 4 * i + 4] = [
-            (x0, y0, phys.interface_z), (x1, y0, phys.interface_z),
-            (x1, y1, phys.interface_z), (x0, y1, phys.interface_z),
+            (x0, y0, phys.interface_z),
+            (x1, y0, phys.interface_z),
+            (x1, y1, phys.interface_z),
+            (x0, y1, phys.interface_z),
         ]
     fields = {
         "q_reference_W_m2": q_ref,
@@ -245,7 +301,6 @@ def main() -> None:
         "q_repo_W_m2": q_repo,
         "dq_corrected_W_m2": q_nc - q_ref,
         "dq_repo_W_m2": q_repo - q_ref,
-
         "T_rise_reference_K": t_ref,
         "T_rise_corrected_K": t_nc,
         "T_rise_repo_K": t_repo,
@@ -271,7 +326,10 @@ def main() -> None:
             "T_rise_repo_K": [repo_die, repo_lid],
             "T_rise_corrected_K": [nc_die, nc_lid],
             "dT_rise_repo_mK": [1e3 * (repo_die - ref_die), 1e3 * (repo_lid - ref_lid)],
-            "dT_rise_corrected_mK": [1e3 * (nc_die - ref_die), 1e3 * (nc_lid - ref_lid)],
+            "dT_rise_corrected_mK": [
+                1e3 * (nc_die - ref_die),
+                1e3 * (nc_lid - ref_lid),
+            ],
             "k_W_mK": [comp.conductivity(), env.conductivity()],
             "block": [np.zeros(comp.n), np.ones(env.n)],
         },
@@ -299,7 +357,7 @@ def _write_quads(path: Path, points, fields) -> None:
         f'<Piece NumberOfPoints="{points.shape[0]}" NumberOfCells="{n_cells}">\n'
         '<Points><DataArray type="Float64" NumberOfComponents="3" format="ascii">'
         + " ".join(f"{x:.9e} {y:.9e} {z:.9e}" for x, y, z in points)
-        + '</DataArray></Points>\n'
+        + "</DataArray></Points>\n"
         '<Cells><DataArray type="Int64" Name="connectivity" format="ascii">'
         + " ".join(str(int(v)) for v in connectivity)
         + '</DataArray><DataArray type="Int64" Name="offsets" format="ascii">'

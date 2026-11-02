@@ -17,16 +17,16 @@ eq. (7)-(8).
 
 ## Status
 
-| part | state |
-| --- | --- |
-| Table I stack, chiplet layouts, boundary conditions | implemented |
-| standard FVM of Sec. III over the whole stack, fixed-point iteration on `kappa(T)` | implemented, converged, used as the reference |
-| mesh levels reproducing the five DoF counts of Fig. 9 | calibrated, within 1% (table below) |
-| steady state of Sec. III-A | reproduced, hotspot 407.6 K (> 400 K) |
-| transient of Sec. III-B, both alternating cases | reproduced, peaks 350.3 K / 356.9 K |
-| HDI: R of eq. (8) and T0 of eq. (7), zero-input response of eq. (4) | implemented |
-| HDI: interconnection of eq. (10) inside the nonlinear solve | **not converged**, see below |
-| Fig. 9 timings and the 48x speed-up | not produced: the baseline here is AMG-CG, and the HDI solver does not converge yet |
+| part                                                                               | state                                                                               |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Table I stack, chiplet layouts, boundary conditions                                | implemented                                                                         |
+| standard FVM of Sec. III over the whole stack, fixed-point iteration on `kappa(T)` | implemented, converged, used as the reference                                       |
+| mesh levels reproducing the five DoF counts of Fig. 9                              | calibrated, within 1% (table below)                                                 |
+| steady state of Sec. III-A                                                         | reproduced, hotspot 407.6 K (> 400 K)                                               |
+| transient of Sec. III-B, both alternating cases                                    | reproduced, peaks 350.3 K / 356.9 K                                                 |
+| HDI: R of eq. (8) and T0 of eq. (7), zero-input response of eq. (4)                | implemented                                                                         |
+| HDI: interconnection of eq. (10) inside the nonlinear solve                        | **not converged**, see below                                                        |
+| Fig. 9 timings and the 48x speed-up                                                | not produced: the baseline here is AMG-CG, and the HDI solver does not converge yet |
 
 ## Geometry and mesh
 
@@ -34,13 +34,13 @@ eq. (7)-(8).
 calibrated by bisection (`--probe`) so that the cell count, which is the unknown count of
 this discretisation, meets the DoF of Fig. 9:
 
-| level | in-plane | die/thin cells | unknowns | Fig. 9 |
-| --- | --- | --- | --- | --- |
-| Mesh1 | 0.5983 mm | 1 / 1 | 64,408 | 65,760 |
-| Mesh2 | 0.2839 mm | 2 / 1 | 308,484 | 304,640 |
-| Mesh3 | 0.2154 mm | 2 / 2 | 914,448 | 912,640 |
-| Mesh4 | 0.1560 mm | 3 / 2 | 1,819,088 | 1,815,040 |
-| Mesh5 | 0.1397 mm | 4 / 3 | 3,315,648 | 3,296,640 |
+| level | in-plane  | die/thin cells | unknowns  | Fig. 9    |
+| ----- | --------- | -------------- | --------- | --------- |
+| Mesh1 | 0.5983 mm | 1 / 1          | 64,408    | 65,760    |
+| Mesh2 | 0.2839 mm | 2 / 1          | 308,484   | 304,640   |
+| Mesh3 | 0.2154 mm | 2 / 2          | 914,448   | 912,640   |
+| Mesh4 | 0.1560 mm | 3 / 2          | 1,819,088 | 1,815,040 |
+| Mesh5 | 0.1397 mm | 4 / 3          | 3,315,648 | 3,296,640 |
 
 Mesh1 holds 64,408 cells split into 13,224 / 18,088 / 33,096 (nonlinear / top linear /
 bottom linear), 8,816 interface faces and 184.101 W of total power, which is the
@@ -71,19 +71,19 @@ about 0.58 K/W, the same order as the 0.54 K/W implied by the paper's own "> 400
 200 s of 1 s steps, `mhs_hdim --level 0 --transient`. Case a: chip1 at full workload for
 the first 100 s and chip2 idle, then the reverse. Case b: the reverse order.
 
-| case | paper | measured (Mesh1) |
-| --- | --- | --- |
-| a, chip1 first | peak at t = 100 s, below 350 K | 350.30 K at t = 100 s |
-| b, chip2 first | close to 360 K at t = 200 s | 356.87 K at t = 200 s |
-| peak deviation between the two orders | nearly 10 K | 6.6 K |
+| case                                  | paper                          | measured (Mesh1)      |
+| ------------------------------------- | ------------------------------ | --------------------- |
+| a, chip1 first                        | peak at t = 100 s, below 350 K | 350.30 K at t = 100 s |
+| b, chip2 first                        | close to 360 K at t = 200 s    | 356.87 K at t = 200 s |
+| peak deviation between the two orders | nearly 10 K                    | 6.6 K                 |
 
 Observation points (the paper gives none; these are the chiplet centres of Figs. 4-5):
 P1 = CPU of chip1 under the AI core, P2 = GPU0 of chip1, P3 = AI core of chip2.
 
-| case | P1 | P2 | P3 | hotspot |
-| --- | --- | --- | --- | --- |
-| a | 348.73 K @100 s | 349.80 K @100 s | 348.32 K @100 s | 350.30 K @100 s |
-| b | 355.30 K @200 s | 356.36 K @200 s | 354.89 K @200 s | 356.87 K @200 s |
+| case | P1              | P2              | P3              | hotspot         |
+| ---- | --------------- | --------------- | --------------- | --------------- |
+| a    | 348.73 K @100 s | 349.80 K @100 s | 348.32 K @100 s | 350.30 K @100 s |
+| b    | 355.30 K @200 s | 356.36 K @200 s | 354.89 K @200 s | 356.87 K @200 s |
 
 The peak order follows the paper: heating the chip that runs first and keeping it idle
 afterwards leaves the package colder than running the other chip first, because the
@@ -126,9 +126,9 @@ standard two-point flux, which is the exactness check to build first.
 Only the reference solver is timed here, because the HDI solver does not converge yet:
 
 | level | unknowns | steady (3 sweeps) |
-| --- | --- | --- |
-| Mesh1 | 64,408 | 0.52 s |
-| Mesh2 | 308,484 | 2.89 s |
+| ----- | -------- | ----------------- |
+| Mesh1 | 64,408   | 0.52 s            |
+| Mesh2 | 308,484  | 2.89 s            |
 
 The transient at Mesh1 takes 260 s for case a (200 steps, 505 linear solves) and 301 s for
 case b (531 solves), i.e. about 1.4 s per step with an AMG-CG solve of the whole stack.

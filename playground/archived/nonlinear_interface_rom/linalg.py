@@ -61,7 +61,9 @@ class SPDSolver:
     frozen matrix by mistake turns Newton into a slow fixed-point iteration.
     """
 
-    def __init__(self, operator, *, rtol: float = DEFAULT_RTOL, cost: Cost | None = None):
+    def __init__(
+        self, operator, *, rtol: float = DEFAULT_RTOL, cost: Cost | None = None
+    ):
         self.matrix = sp.csr_matrix(operator)
         hierarchy = pyamg.ruge_stuben_solver(
             self.matrix, interpolation="direct", coarse_solver="gauss_seidel"
@@ -106,7 +108,9 @@ class SPDSolver:
             self.cost.cg_solves += 1
             self.cost.cg_iterations += counter["iterations"]
             if info != 0:
-                raise RuntimeError(f"AMG-CG failed ({label}, column {index}): info={info}")
+                raise RuntimeError(
+                    f"AMG-CG failed ({label}, column {index}): info={info}"
+                )
             out[:, index] = solution
         return out[:, 0] if vector else out
 

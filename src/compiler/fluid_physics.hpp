@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace mhs::utils {
+namespace mhs::sim::fluid {
 
     /**
      * @brief Nusselt number for fully-developed laminar flow in a rectangular duct.
@@ -37,4 +37,4 @@ namespace mhs::utils {
         double ar5 = ar4 * ar;
         return 24.0 * (1.0 - 1.355 * ar + 1.946 * ar2 - 1.701 * ar3 + 0.956 * ar4 - 0.253 * ar5);
     }
-} // namespace mhs::utils
+} // namespace mhs::sim::fluid

@@ -65,7 +65,7 @@ namespace mhs::sim {
             auto nonlinear_result = nonlinear_solve(build_ls, state, solver, nl_config);
             result.state = std::move(state);
             result.time = 0.0;
-            result.converged = nonlinear_result.converged;
+            result.converged = nonlinear_result;
             result.snapshot_times.push_back(0.0);
             result.snapshot_states = result.state;
             if (observe)
@@ -107,7 +107,7 @@ namespace mhs::sim {
                 auto saved_state = state;
                 auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
 
-                if (!nl.converged) {
+                if (!nl) {
                     state = std::move(saved_state);
                     dt_sug = dt * 0.5;
                     MHS_LOG_DEBUG("Step rejected at t={} (nonlinear), retry dt={}", current_time, dt_sug);
@@ -233,13 +233,12 @@ namespace mhs::sim {
         SystemAssembler assemble
             = [&](std::span<const double> s, double t) { return mhs::sim::assemble_thermal(model, s, t); };
 
-        ProbeRecorder probe_recorder;
-        probe_recorder.initialize(model);
+        ProbeRecorder probe_recorder(model);
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 
         auto sol = solve_system(study, assemble, state, options, observe);
-        sol.probe_traces = probe_recorder.traces();
+        sol.probe_traces = std::move(probe_recorder).take_traces();
         return sol;
     }
 

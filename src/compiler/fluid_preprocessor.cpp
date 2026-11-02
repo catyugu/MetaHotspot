@@ -1,7 +1,6 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "core/boundary_geometry.hpp"
 #include "numerics/linear/linear_solver.hpp"
 #include <Eigen/Sparse>
 #include <algorithm>
@@ -69,8 +68,8 @@ namespace mhs::sim::fluid {
             auto lengths = extents[i];
             std::sort(lengths.begin(), lengths.end());
             double w = lengths[0], h = lengths[1], diameter = 2 * w * h / (w + h);
-            fluid.interface_heat_transfer_factor[i] = mhs::utils::nusselt_rectangular(w, h) / diameter;
-            mobility[i] = diameter * diameter / (2 * mhs::utils::f_re_rectangular(w, h) * viscosity[i]);
+            fluid.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
+            mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
             rho[i] = model.material_table[model.cell_material[c]].rho.eval(
@@ -92,12 +91,11 @@ namespace mhs::sim::fluid {
             }
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
-            return term.condition == invalidTableIndex
-                || fluid.global_to_fluid[mesh.faces[term.face.value].owner.value] == invalidIndex;
+            return fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == invalidIndex;
         });
         std::vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition] += projected_face(mesh, term).area;
+            total_area[term.condition] += mesh.faces[term.parent.value].project(term.bounds).area;
         std::vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -117,7 +115,7 @@ namespace mhs::sim::fluid {
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = projected_face(mesh, term);
+            const auto f = mesh.faces[term.parent.value].project(term.bounds);
             const auto i = fluid.global_to_fluid[f.owner.value];
             std::visit(
                 [&](const auto& bc) {
@@ -155,7 +153,7 @@ namespace mhs::sim::fluid {
             throw std::runtime_error("fluid pressure solve failed");
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = projected_face(mesh, term);
+            const auto f = mesh.faces[term.parent.value].project(term.bounds);
             const auto i = fluid.global_to_fluid[f.owner.value];
             const auto& condition = boundaries[term.condition].condition;
             const double mass = std::visit(
@@ -177,10 +175,10 @@ namespace mhs::sim::fluid {
                             return bc.temperature.value_or(model.initial_temperature);
                     },
                     condition);
-                fluid.boundary_terms.push_back({term.face, FluidInflow {-mass, temperature}});
+                fluid.boundary_terms.push_back({term.parent, FluidInflow {-mass, temperature}});
             }
             else {
-                fluid.boundary_terms.push_back({term.face, FluidOutflow {mass}});
+                fluid.boundary_terms.push_back({term.parent, FluidOutflow {mass}});
             }
         }
         for (Index id = 0; id < mesh.faces.size(); ++id)

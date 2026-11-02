@@ -17,7 +17,7 @@ class Operators(NamedTuple):
 
 
 @dataclass(frozen=True)
-class CellFields:
+class CompiledFields:
     """Compiled geometry, material indices and source quadrature in CellId order."""
 
     cell_min: np.ndarray

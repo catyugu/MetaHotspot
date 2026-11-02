@@ -324,7 +324,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_owner);
         CHECK_NULL(input->face_neighbor);
         CHECK_NULL(input->face_axis);
-        CHECK_NULL(input->face_sign);
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::core::DiscreteMesh mesh;
@@ -340,7 +339,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             f.owner = {input->face_owner[id]};
             f.neighbor = {input->face_neighbor[id]};
             f.axis = input->face_axis[id];
-            f.sign = input->face_sign[id];
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
@@ -658,7 +656,6 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(out);
     out->cell_count = c->model->discrete.cells.size();
     out->face_count = c->model->discrete.faces.size();
-    out->state_count = c->model->discrete.cells.size();
     out->projection_count = c->model->source_terms.size();
     out->source_count = c->model->heat_source_table.size();
     out->study_type = _from_core_study(c->model->study_type);
@@ -962,10 +959,8 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
 
         // Build initial state span
         std::span<const double> init_span;
-        std::vector<double> owned;
         if (state && state_count > 0) {
-            owned.assign(state, state + state_count);
-            init_span = owned;
+            init_span = {state, state_count};
         }
 
         auto sol = mhs::sim::solve(*c->model, init_span, so);
@@ -1050,8 +1045,8 @@ MHS_API mhs_status_t mhs_solution_probe_get_info(
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
-    double* times, double* values, size_t record_count)
+MHS_API mhs_status_t mhs_solution_copy_probe(
+    const mhs_solution_t* s, size_t index, char* name, size_t name_size, double* values, size_t record_count)
 {
     CHECK_NULL(s);
     CHECK_NULL(name);
@@ -1064,12 +1059,11 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t ind
         SET_ERR("probe buffer sizes do not match probe data");
         return MHS_ERROR;
     }
-    if (record_count > 0 && (!times || !values)) {
+    if (record_count > 0 && !values) {
         SET_ERR("NULL probe output buffer");
         return MHS_ERROR;
     }
     std::memcpy(name, tr.name.c_str(), name_size);
-    std::copy(s->sol.snapshot_times.begin(), s->sol.snapshot_times.end(), times);
     std::copy(tr.values.begin(), tr.values.end(), values);
     mhs_detail_clear_last_error();
     return MHS_OK;

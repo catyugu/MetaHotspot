@@ -73,7 +73,6 @@ namespace mhs::sim {
                         }
                 }
         model.discrete.build_incidence();
-        model.output.build_incidence();
     }
     void build_external_output_mesh(mhs::core::Model& model)
     {
@@ -94,6 +93,5 @@ namespace mhs::sim {
             }
             model.output.cell_vertices.push_back(ids);
         }
-        model.output.build_incidence();
     }
 } // namespace mhs::sim

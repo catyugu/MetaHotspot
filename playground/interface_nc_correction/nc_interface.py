@@ -140,13 +140,21 @@ class System:
     def centers(self) -> np.ndarray:
         xc, yc, zc = self.grid.centers()
         return np.column_stack(
-            (xc[self.cells_ijk[:, 0]], yc[self.cells_ijk[:, 1]], zc[self.cells_ijk[:, 2]])
+            (
+                xc[self.cells_ijk[:, 0]],
+                yc[self.cells_ijk[:, 1]],
+                zc[self.cells_ijk[:, 2]],
+            )
         )
 
     def halves(self) -> np.ndarray:
         dx, dy, dz = self.grid.spacings()
         return 0.5 * np.column_stack(
-            (dx[self.cells_ijk[:, 0]], dy[self.cells_ijk[:, 1]], dz[self.cells_ijk[:, 2]])
+            (
+                dx[self.cells_ijk[:, 0]],
+                dy[self.cells_ijk[:, 1]],
+                dz[self.cells_ijk[:, 2]],
+            )
         )
 
     def conductivity(self) -> np.ndarray:
@@ -182,7 +190,9 @@ def _face_table(
     half = tuple(0.5 * s for s in spacing)
     levels = (grid.x, grid.y, grid.z)[axis]
     tr = [a for a in range(3) if a != axis]
-    m0, m1 = np.meshgrid(np.arange(grid.n[tr[0]]), np.arange(grid.n[tr[1]]), indexing="ij")
+    m0, m1 = np.meshgrid(
+        np.arange(grid.n[tr[0]]), np.arange(grid.n[tr[1]]), indexing="ij"
+    )
     area = spacing[tr[0]][m0] * spacing[tr[1]][m1]
     coords = [None, None, None]
     coords[tr[0]] = (xc, yc, zc)[tr[0]][m0]
@@ -190,7 +200,9 @@ def _face_table(
     idx = [None, None, None]
     idx[tr[0]], idx[tr[1]] = m0, m1
 
-    table: dict[str, list] = {key: [] for key in ("lo", "hi", "area", "hl", "hh", "kl", "kh", "x", "y", "z")}
+    table: dict[str, list] = {
+        key: [] for key in ("lo", "hi", "area", "hl", "hh", "kl", "kh", "x", "y", "z")
+    }
     for f in range(n_axis + 1):
         idx[axis] = f - 1
         lo = ids[tuple(idx)] if f > 0 else np.full(area.shape, -1, np.int64)
@@ -500,9 +512,7 @@ def pad_sources(*systems: System) -> None:
     for system in systems:
         missing = n_src - system.source.shape[1]
         if missing:
-            system.source = np.hstack(
-                [system.source, np.zeros((system.n, missing))]
-            )
+            system.source = np.hstack([system.source, np.zeros((system.n, missing))])
 
 
 class FvmSide:
@@ -746,12 +756,20 @@ class InterfaceProblem:
 
     def skew_lr(self, state) -> tuple[np.ndarray, np.ndarray]:
         left = self._side_skew(
-            self.left, self.port_l, self.patches.li, self.delta_l,
-            slice(0, self.ldof), state,
+            self.left,
+            self.port_l,
+            self.patches.li,
+            self.delta_l,
+            slice(0, self.ldof),
+            state,
         )
         right = self._side_skew(
-            self.right, self.port_r, self.patches.ri, self.delta_r,
-            self.right_slice, state,
+            self.right,
+            self.port_r,
+            self.patches.ri,
+            self.delta_r,
+            self.right_slice,
+            state,
         )
         return left, right
 
@@ -769,8 +787,14 @@ class InterfaceProblem:
         return rhs
 
     # -- solves ------------------------------------------------------------
-    def solve(self, correctors: int = 0, *, tol: float | None = None,
-              max_correctors: int = 60, relaxation: float = 1.0) -> dict:
+    def solve(
+        self,
+        correctors: int = 0,
+        *,
+        tol: float | None = None,
+        max_correctors: int = 60,
+        relaxation: float = 1.0,
+    ) -> dict:
         """Solve with ``correctors`` deferred-correction iterations.
 
         ``correctors=0`` is the repository scheme.  ``tol`` (relative to the first
@@ -812,7 +836,9 @@ class InterfaceProblem:
                     index=index,
                     max_dT=change,
                     max_dq=float(
-                        np.max(np.abs(self.patch_flux(state) - self.patch_flux(previous)))
+                        np.max(
+                            np.abs(self.patch_flux(state) - self.patch_flux(previous))
+                        )
                     ),
                     net_flux=float(self.patch_flux(state).sum()),
                     correction_scale=float(np.max(np.abs(new))) / reference,

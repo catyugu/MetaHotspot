@@ -103,10 +103,10 @@ literal form was implemented as well — the KM's operator with
 `A - W K^-1 W^T` applied matrix free and preconditioned by AMG built on the
 sparse `A` alone — and at Mesh1, 300 orders, one patch per face, it gives:
 
-| form | macromodel columns | setup | marching | total | KM solve iterations | DTDM - WLP |
-| --- | --- | --- | --- | --- | --- | --- |
-| all three modules | 4932 | 26.62 s | 31.21 s | 57.84 s | 3.1 per solve | 6.2e-05 K |
-| CMs only (Alg. 1 literal) | 2466 | 24.42 s | 208.18 s | 232.61 s | 172 per solve | 2.4e-05 K |
+| form                      | macromodel columns | setup   | marching | total    | KM solve iterations | DTDM - WLP |
+| ------------------------- | ------------------ | ------- | -------- | -------- | ------------------- | ---------- |
+| all three modules         | 4932               | 26.62 s | 31.21 s  | 57.84 s  | 3.1 per solve       | 6.2e-05 K  |
+| CMs only (Alg. 1 literal) | 2466               | 24.42 s | 208.18 s | 232.61 s | 172 per solve       | 2.4e-05 K  |
 
 Both forms are exact, and the literal one is in fact the more accurate of the
 two, but its condensed operator loses the conditioning that the sparse form has:
@@ -123,12 +123,12 @@ in-plane cell; every other interval follows from it, uniform across the chiplets
 and their gaps, geometrically coarser outwards, so the unknowns sit where the
 heat is. The paper's DoF come out of the geometry to within about a percent:
 
-| level | n_fine | in-plane cells | finest cell | DoF | paper | deviation |
-| --- | --- | --- | --- | --- | --- | --- |
-| Mesh1 | 19 | 67 x 72 | 0.29 mm | 26579 | 26513 | +0.25 % |
-| Mesh2 | 59 | 161 x 178 | 0.24 mm | 213258 | 210848 | +1.14 % |
-| Mesh3 | 151 | 363 x 403 | 0.11 mm | 1202498 | 1208923 | -0.53 % |
-| Mesh4 | 198 | 465 x 518 | 0.083 mm | 2043764 | 2037523 | +0.31 % |
+| level | n_fine | in-plane cells | finest cell | DoF     | paper   | deviation |
+| ----- | ------ | -------------- | ----------- | ------- | ------- | --------- |
+| Mesh1 | 19     | 67 x 72        | 0.29 mm     | 26579   | 26513   | +0.25 %   |
+| Mesh2 | 59     | 161 x 178      | 0.24 mm     | 213258  | 210848  | +1.14 %   |
+| Mesh3 | 151    | 363 x 403      | 0.11 mm     | 1202498 | 1208923 | -0.53 %   |
+| Mesh4 | 198    | 465 x 518      | 0.083 mm    | 2043764 | 2037523 | +0.31 %   |
 
 Matching the count is not matching the mesh: the paper does not publish how its
 four meshes are refined, so this is only evidence that the scale is right. The
@@ -205,38 +205,38 @@ absolute difference over the whole field, at each probe time. The first probe is
 the initial condition, which the reference holds exactly:
 
 | t / s | Thermal-WLP vs reference | DTDM vs reference | DTDM vs Thermal-WLP |
-| --- | --- | --- | --- |
-| 0.00 | 1.6009 | 1.6009 | 0.0001 |
-| 0.01 | 0.2514 | 0.2513 | 0.0001 |
-| 0.05 | 0.1960 | 0.1960 | 0.0001 |
-| 0.10 | 0.0732 | 0.0733 | 0.0001 |
-| 0.25 | 0.0291 | 0.0291 | 0.0001 |
-| 0.50 | 0.0240 | 0.0240 | 0.0001 |
-| 1.00 | 0.0258 | 0.0257 | 0.0001 |
-| 2.00 | 0.0139 | 0.0139 | 0.0001 |
-| 5.00 | 0.0059 | 0.0059 | 0.0001 |
-| 10.00 | 0.0043 | 0.0043 | 0.0001 |
-| 20.00 | 0.0019 | 0.0019 | 0.0001 |
-| 35.00 | 0.0007 | 0.0006 | 0.0001 |
-| 50.00 | 0.0015 | 0.0014 | 0.0001 |
+| ----- | ------------------------ | ----------------- | ------------------- |
+| 0.00  | 1.6009                   | 1.6009            | 0.0001              |
+| 0.01  | 0.2514                   | 0.2513            | 0.0001              |
+| 0.05  | 0.1960                   | 0.1960            | 0.0001              |
+| 0.10  | 0.0732                   | 0.0733            | 0.0001              |
+| 0.25  | 0.0291                   | 0.0291            | 0.0001              |
+| 0.50  | 0.0240                   | 0.0240            | 0.0001              |
+| 1.00  | 0.0258                   | 0.0257            | 0.0001              |
+| 2.00  | 0.0139                   | 0.0139            | 0.0001              |
+| 5.00  | 0.0059                   | 0.0059            | 0.0001              |
+| 10.00 | 0.0043                   | 0.0043            | 0.0001              |
+| 20.00 | 0.0019                   | 0.0019            | 0.0001              |
+| 35.00 | 0.0007                   | 0.0006            | 0.0001              |
+| 50.00 | 0.0015                   | 0.0014            | 0.0001              |
 
 The same comparison at the hotspot, which is the waveform the paper plots:
 
-| t / s | Thermal-WLP | DTDM | reference | reference - WLP |
-| --- | --- | --- | --- | --- |
-| 0.00 | 1.6009 | 1.6009 | 0.0000 | -1.6009 |
-| 0.01 | 2.0702 | 2.0702 | 2.0290 | -0.0412 |
-| 0.05 | 3.7389 | 3.7390 | 3.8605 | +0.1216 |
-| 0.10 | 4.9532 | 4.9532 | 4.9155 | -0.0377 |
-| 0.25 | 6.6600 | 6.6600 | 6.6766 | +0.0166 |
-| 0.50 | 8.7448 | 8.7449 | 8.7288 | -0.0160 |
-| 1.00 | 11.4885 | 11.4886 | 11.5075 | +0.0190 |
-| 2.00 | 14.8573 | 14.8573 | 14.8675 | +0.0102 |
-| 5.00 | 19.8098 | 19.8098 | 19.8141 | +0.0043 |
-| 10.00 | 23.6956 | 23.6956 | 23.6924 | -0.0032 |
-| 20.00 | 27.7775 | 27.7776 | 27.7761 | -0.0014 |
-| 35.00 | 31.6325 | 31.6325 | 31.6329 | +0.0004 |
-| 50.00 | 34.3384 | 34.3384 | 34.3394 | +0.0011 |
+| t / s | Thermal-WLP | DTDM    | reference | reference - WLP |
+| ----- | ----------- | ------- | --------- | --------------- |
+| 0.00  | 1.6009      | 1.6009  | 0.0000    | -1.6009         |
+| 0.01  | 2.0702      | 2.0702  | 2.0290    | -0.0412         |
+| 0.05  | 3.7389      | 3.7390  | 3.8605    | +0.1216         |
+| 0.10  | 4.9532      | 4.9532  | 4.9155    | -0.0377         |
+| 0.25  | 6.6600      | 6.6600  | 6.6766    | +0.0166         |
+| 0.50  | 8.7448      | 8.7449  | 8.7288    | -0.0160         |
+| 1.00  | 11.4885     | 11.4886 | 11.5075   | +0.0190         |
+| 2.00  | 14.8573     | 14.8573 | 14.8675   | +0.0102         |
+| 5.00  | 19.8098     | 19.8098 | 19.8141   | +0.0043         |
+| 10.00 | 23.6956     | 23.6956 | 23.6924   | -0.0032         |
+| 20.00 | 27.7775     | 27.7776 | 27.7761   | -0.0014         |
+| 35.00 | 31.6325     | 31.6325 | 31.6329   | +0.0004         |
+| 50.00 | 34.3384     | 34.3384 | 34.3394   | +0.0011         |
 
 Four readings, in order of how much they matter:
 
@@ -265,16 +265,16 @@ The paper says `s` scales time and does not choose it. `s t_d = 10` is the value
 used throughout this report; the hotspot it produces over a scan of `s t_d` at
 300 orders is:
 
-| s t_d | 0.05 s | 0.10 s | 0.25 s | 1.00 s | 5.00 s | 50.00 s |
-| --- | --- | --- | --- | --- | --- | --- |
-| 10 | 3.7389 | 4.9532 | 6.6600 | 11.4885 | 19.8098 | 34.3384 |
-| 20 | 3.8908 | 4.9298 | 6.6850 | 11.5016 | 19.8159 | 34.3394 |
-| 60 | 3.8394 | 4.9294 | 6.6814 | 11.5089 | 19.8136 | 34.3393 |
-| 100 | 3.8695 | 4.9071 | 6.6812 | 11.5089 | 19.8137 | 34.3394 |
-| 200 | 3.8513 | 4.9082 | 6.6716 | 11.5106 | 19.8119 | 34.3385 |
-| 300 | 3.9046 | 4.9406 | 6.6529 | 11.4906 | 19.8299 | 34.3412 |
-| 600 | 4.0872 | 5.1802 | 6.4603 | 11.6713 | 19.8351 | 34.2604 |
-| 1000 | 3.2813 | 4.6027 | 6.8530 | 11.1502 | 19.8427 | 34.1510 |
+| s t_d | 0.05 s | 0.10 s | 0.25 s | 1.00 s  | 5.00 s  | 50.00 s |
+| ----- | ------ | ------ | ------ | ------- | ------- | ------- |
+| 10    | 3.7389 | 4.9532 | 6.6600 | 11.4885 | 19.8098 | 34.3384 |
+| 20    | 3.8908 | 4.9298 | 6.6850 | 11.5016 | 19.8159 | 34.3394 |
+| 60    | 3.8394 | 4.9294 | 6.6814 | 11.5089 | 19.8136 | 34.3393 |
+| 100   | 3.8695 | 4.9071 | 6.6812 | 11.5089 | 19.8137 | 34.3394 |
+| 200   | 3.8513 | 4.9082 | 6.6716 | 11.5106 | 19.8119 | 34.3385 |
+| 300   | 3.9046 | 4.9406 | 6.6529 | 11.4906 | 19.8299 | 34.3412 |
+| 600   | 4.0872 | 5.1802 | 6.4603 | 11.6713 | 19.8351 | 34.2604 |
+| 1000  | 3.2813 | 4.6027 | 6.8530 | 11.1502 | 19.8427 | 34.1510 |
 
 Against the reference of 3.8601 / 4.9155 / 6.6766 / 11.5075 / 19.8141 /
 34.3395 K, three regimes are visible:
@@ -323,8 +323,8 @@ A coarse patch grid is a *different* model, not a cheaper solve of the same one.
 Measured at Mesh1, 300 orders:
 
 | patches per interface | 1233 (one per face) | 32 x 32 = 1024 | 16 x 16 = 256 |
-| --- | --- | --- | --- |
-| DTDM - Thermal-WLP | 6.2e-05 K | 0.23 K | 0.92 K |
+| --------------------- | ------------------- | -------------- | ------------- |
+| DTDM - Thermal-WLP    | 6.2e-05 K           | 0.23 K         | 0.92 K        |
 
 The paper does not publish `NI` per level, and it cannot be the face count at
 Mesh3/4: `NI` faces per side there would need a dense `NI x NI` matrix of
@@ -341,12 +341,12 @@ performance at Mesh2-4 belongs to a coarser interface.
 Table I has two DTDM columns, `Pre-simulation` (the macromodel of eq. 8-11) and
 `Simulation` (marching-on-order), plus the monolithic Thermal-WLP time:
 
-| mesh | Thermal-WLP | DTDM pre | DTDM simulation | DTDM total | paper speedup |
-| --- | --- | --- | --- | --- | --- |
-| Mesh1 | 56 s | 5 s | 37 s | 42 s | 45x / 61x |
-| Mesh2 | 273 s | 54 s | 115 s | 169 s | 88x / 142x |
-| Mesh3 | 1990 s | 434 s | 713 s | 1147 s | 205x / 355x |
-| Mesh4 | 3205 s | 673 s | 1290 s | 1963 s | 297x / 485x |
+| mesh  | Thermal-WLP | DTDM pre | DTDM simulation | DTDM total | paper speedup |
+| ----- | ----------- | -------- | --------------- | ---------- | ------------- |
+| Mesh1 | 56 s        | 5 s      | 37 s            | 42 s       | 45x / 61x     |
+| Mesh2 | 273 s       | 54 s     | 115 s           | 169 s      | 88x / 142x    |
+| Mesh3 | 1990 s      | 434 s    | 713 s           | 1147 s     | 205x / 355x   |
+| Mesh4 | 3205 s      | 673 s    | 1290 s          | 1963 s     | 297x / 485x   |
 
 The first speedup of each pair is FLUENT over the Thermal-WLP column, the second
 is FLUENT over the DTDM total; the separate claim of **738x** at Mesh4 is FLUENT
@@ -380,13 +380,13 @@ of Mesh1 was 12.86 s and 22.99 s in two runs of the identical command. The ratio
 inside a row are the meaningful quantity, and the CG iteration counts, which are
 deterministic, are given with them.
 
-| level | patches | DoF | Thermal-WLP | DTDM pre | DTDM march | DTDT total | DTDM / WLP | paper total | paper march |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Mesh1 | 1233 per face | 26579 | 22.99 s | 26.28 s | 30.85 s | 57.13 s | 2.48x | 0.75x | 0.66x |
-| Mesh1 | 32 x 32 | 26579 | 12.86 s | 14.81 s | 29.02 s | 43.83 s | 3.41x | 0.75x | 0.66x |
-| Mesh2 | 32 x 32 | 213258 | 275.22 s | 109.90 s | 199.27 s | 309.17 s | 1.12x | 0.62x | 0.42x |
-| Mesh3 | 32 x 32 | 1202498 | 2796.91 s | 719.85 s | 1376.17 s | 2096.01 s | 0.75x | 0.58x | 0.36x |
-| Mesh4 | 32 x 32 | 2043764 | 5576.32 s | 1307.63 s | 2542.61 s | 3850.24 s | 0.69x | 0.61x | 0.40x |
+| level | patches       | DoF     | Thermal-WLP | DTDM pre  | DTDM march | DTDT total | DTDM / WLP | paper total | paper march |
+| ----- | ------------- | ------- | ----------- | --------- | ---------- | ---------- | ---------- | ----------- | ----------- |
+| Mesh1 | 1233 per face | 26579   | 22.99 s     | 26.28 s   | 30.85 s    | 57.13 s    | 2.48x      | 0.75x       | 0.66x       |
+| Mesh1 | 32 x 32       | 26579   | 12.86 s     | 14.81 s   | 29.02 s    | 43.83 s    | 3.41x      | 0.75x       | 0.66x       |
+| Mesh2 | 32 x 32       | 213258  | 275.22 s    | 109.90 s  | 199.27 s   | 309.17 s   | 1.12x      | 0.62x       | 0.42x       |
+| Mesh3 | 32 x 32       | 1202498 | 2796.91 s   | 719.85 s  | 1376.17 s  | 2096.01 s  | 0.75x      | 0.58x       | 0.36x       |
+| Mesh4 | 32 x 32       | 2043764 | 5576.32 s   | 1307.63 s | 2542.61 s  | 3850.24 s  | 0.69x      | 0.61x       | 0.40x       |
 
 The trend is the paper's and by Mesh3 it has arrived: the decomposition is 2.5x
 slower than the monolithic solve at Mesh1, crosses over at Mesh2, and is 1.3x /
@@ -394,9 +394,9 @@ slower than the monolithic solve at Mesh1, crosses over at Mesh2, and is 1.3x /
 are close:
 
 | level | this march / WLP march | paper | this total / WLP | paper |
-| --- | --- | --- | --- | --- |
-| Mesh3 | 0.49x | 0.36x | 0.75x | 0.58x |
-| Mesh4 | 0.46x | 0.40x | 0.69x | 0.61x |
+| ----- | ---------------------- | ----- | ---------------- | ----- |
+| Mesh3 | 0.49x                  | 0.36x | 0.75x            | 0.58x |
+| Mesh4 | 0.46x                  | 0.40x | 0.69x            | 0.61x |
 
 The absolute times are on the paper's scale but 1.7-2x above it: 5576.32 s
 against 3205 s for the monolithic solve at Mesh4, 3850.24 s against 1963 s for
@@ -427,11 +427,11 @@ when the modules are large enough for the per-iteration cost to follow their
 size:
 
 | level | WLP iterations for 300 orders | DTDM iterations for 1800 solves | ratio | marching time ratio | paper |
-| --- | --- | --- | --- | --- | --- |
-| Mesh1 | 4178 | 14453 | 3.46x | 1.34x | 0.66x |
-| Mesh2 | 5335 | 16552 | 3.10x | 0.73x | 0.42x |
-| Mesh3 | 7373 | 18997 | 2.58x | 0.49x | 0.36x |
-| Mesh4 | 8778 | 21164 | 2.41x | 0.46x | 0.40x |
+| ----- | ----------------------------- | ------------------------------- | ----- | ------------------- | ----- |
+| Mesh1 | 4178                          | 14453                           | 3.46x | 1.34x               | 0.66x |
+| Mesh2 | 5335                          | 16552                           | 3.10x | 0.73x               | 0.42x |
+| Mesh3 | 7373                          | 18997                           | 2.58x | 0.49x               | 0.36x |
+| Mesh4 | 8778                          | 21164                           | 2.41x | 0.46x               | 0.40x |
 
 The decomposition needs 2.4-3.5x more iterations than the monolithic solve, but a
 module iteration costs 4-8x less, so the marching phase goes from 1.34x slower at
@@ -455,21 +455,21 @@ Nothing in the gap is an accounting error: every solve is either one of the
 
 ### 5.4 Verdict against the objective
 
-| what | result |
-| --- | --- |
-| the paper's four mesh levels | 26579 / 213258 / 1202498 / 2043764 unknowns, within 1.1 % |
-| the paper's decomposition and equations | eq. (2)-(13) as printed, with the DC split of 1.1 |
-| macromodel scope | all three modules instead of the two CMs, same Schur complement; the literal form was built and measured 4x slower (1.2) |
-| decomposition error | 6.2e-05 K at Mesh1, the CG tolerance at `--tolerance 1e-8` |
-| transform error at t = t_d | 0.0015 K, against the paper's 0.02 K claim |
-| transform error at every sampled time from 0.25 s | 0.0007 to 0.029 K |
-| transform error at t = 0 and in the first 0.1 s | 1.60 K at the initial condition and up to 0.20 K at 0.05 s; a property of the basis at `x = 0`, outside what the paper claims |
-| peak temperature | 334.3 K against the 316-333 K colour bar of Fig. 7 |
-| DTDM faster than Thermal-WLP at scale | 1.12x at Mesh2, 0.75x at Mesh3, 0.69x at Mesh4 |
-| the paper's ratios | within 1.15x of the marching ratio and 1.13x of the total at Mesh4 |
-| the paper's absolute times | 1.7-2x above them at Mesh4, on the same scale at Mesh3 |
-| Table I as a benchmark | **not reproduced**: it belongs to the CPU-DRAM example of Sec. III-B (5.1) |
-| the paper's reuse claim (738x) | not reproduced: no layout-to-layout macromodel reuse here |
+| what                                              | result                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| the paper's four mesh levels                      | 26579 / 213258 / 1202498 / 2043764 unknowns, within 1.1 %                                                                     |
+| the paper's decomposition and equations           | eq. (2)-(13) as printed, with the DC split of 1.1                                                                             |
+| macromodel scope                                  | all three modules instead of the two CMs, same Schur complement; the literal form was built and measured 4x slower (1.2)      |
+| decomposition error                               | 6.2e-05 K at Mesh1, the CG tolerance at `--tolerance 1e-8`                                                                    |
+| transform error at t = t_d                        | 0.0015 K, against the paper's 0.02 K claim                                                                                    |
+| transform error at every sampled time from 0.25 s | 0.0007 to 0.029 K                                                                                                             |
+| transform error at t = 0 and in the first 0.1 s   | 1.60 K at the initial condition and up to 0.20 K at 0.05 s; a property of the basis at `x = 0`, outside what the paper claims |
+| peak temperature                                  | 334.3 K against the 316-333 K colour bar of Fig. 7                                                                            |
+| DTDM faster than Thermal-WLP at scale             | 1.12x at Mesh2, 0.75x at Mesh3, 0.69x at Mesh4                                                                                |
+| the paper's ratios                                | within 1.15x of the marching ratio and 1.13x of the total at Mesh4                                                            |
+| the paper's absolute times                        | 1.7-2x above them at Mesh4, on the same scale at Mesh3                                                                        |
+| Table I as a benchmark                            | **not reproduced**: it belongs to the CPU-DRAM example of Sec. III-B (5.1)                                                    |
+| the paper's reuse claim (738x)                    | not reproduced: no layout-to-layout macromodel reuse here                                                                     |
 
 ## 6. Reproducing
 

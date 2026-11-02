@@ -1,6 +1,6 @@
 # MetaHotspot Context
 
-MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。消费显式控制体与面片网格，采用单元中心温度自由度，支持稳态、瞬态，以及可选的单向流热耦合。
+MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。消费显式控制体与面片网格，采用单元中心主状态和外边界温度迹，支持稳态、瞬态，以及可选的单向流热耦合。
 
 本文只保存跨模块工作所需的稳定上下文。数据结构、调用链和接口签名分别以对应设计文档为准，不在此重复。
 
@@ -36,14 +36,14 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - Model FVM 详细离散始终由求解器内部组装。
 - `solve_system` 要求显式完整初状态；`solve(state=)` 为空时才从
   `initial_temperature` 构建均匀温度。
-- 热边界作用于单元面，不引入面自由度。
+- 每个外边界积分片具有温度迹；局部静态凝聚保持全局状态和算子为单元规模。
 - 流体预处理只持久化热组装所需的冻结面流量和换热数据。
 
 ## 数据约定
 
 - 内部几何一律使用 SI 米。
 - 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
-- `boundary_terms` 引用原始 FaceId 与 `boundary_conditions` 中的类型化 `BoundaryCondition` variant（`Dirichlet` / `Neumann` / `Convection`），不修改网格拓扑；`cell_material` 与 `source_terms` 分别保存材料索引和热源积分数据。
+- `boundary_faces` 按父 FaceId 排序；每片引用原始 FaceId 与类型化 `BoundaryCondition`，不修改网格拓扑。边界表达式中的 `T` 指该片温度迹。
 - 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。

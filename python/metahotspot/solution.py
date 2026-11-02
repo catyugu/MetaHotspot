@@ -18,7 +18,6 @@ from metahotspot.types import MhsSolution, MhsSolutionInfo, _SolveOptionsCStruct
 @dataclass(frozen=True)
 class ProbeSnapshot:
     name: str
-    times: np.ndarray
     values: np.ndarray
 
 
@@ -56,6 +55,8 @@ def _solve_options(dll, overrides: dict):
 
 
 def _solve(dll, compiled_handle, state, opts_overrides: dict):
+    if state is not None:
+        state = np.ascontiguousarray(state, dtype=np.float64)
     opts = _solve_options(dll, opts_overrides)
     state_ptr = _double_ptr(state) if state is not None else None
     state_count = state.size if state is not None else 0
@@ -111,7 +112,6 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
             "solution_probe_info",
         )
         name = ctypes.create_string_buffer(name_size.value)
-        times = np.empty(record_count.value, dtype=np.float64)
         values = np.empty(record_count.value, dtype=np.float64)
         check(
             dll.mhs_solution_copy_probe(
@@ -119,13 +119,12 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
                 index,
                 name,
                 name_size.value,
-                _double_ptr(times),
                 _double_ptr(values),
                 record_count.value,
             ),
             "solution_copy_probe",
         )
-        probes.append(ProbeSnapshot(name.value.decode("utf-8"), times, values))
+        probes.append(ProbeSnapshot(name.value.decode("utf-8"), values))
 
     return SolutionSnapshot(
         time=float(info.time),
@@ -169,11 +168,6 @@ class Solution(OwnedHandle):
         return _solution_snapshot(self._dll, self._handle)
 
     @property
-    def temperature(self) -> np.ndarray:
-        """Final temperature in CellId order."""
-        return self.state
-
-    @property
     def time(self) -> float:
         """Final simulation time."""
         return self.data.time
@@ -192,11 +186,6 @@ class Solution(OwnedHandle):
     def state_history(self) -> np.ndarray:
         """C++ output states [record_count, state_count], row-major."""
         return self.data.state_history
-
-    @property
-    def temperature_history(self) -> np.ndarray:
-        """Temperature snapshots in CellId order."""
-        return self.state_history
 
     @property
     def probes(self) -> list[ProbeSnapshot]:

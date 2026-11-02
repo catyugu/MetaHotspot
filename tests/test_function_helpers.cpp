@@ -25,6 +25,7 @@ namespace {
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::core::parse(out, sym);
+        EXPECT_TRUE(compiled.depends_on_temperature());
         // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
         FieldContext ctx {0, 0, 0, 20.0, 0.0};
@@ -40,6 +41,12 @@ namespace {
 
         // 不做字面替换（"test_gaussian(x)" 直接编译），muparser 把 x 槽绑定。
         auto compiled = mhs::core::parse("test_gaussian(x)", sym);
+        EXPECT_FALSE(compiled.depends_on_temperature());
+        register_all_functions(sym,
+            {{"inner", mhs::model::ExpressionFunctionSpec {"x + T"}},
+                {"outer", mhs::model::ExpressionFunctionSpec {"inner(x) + t"}}});
+        EXPECT_TRUE(parse("outer(t)", sym).depends_on_temperature());
+        EXPECT_FALSE(parse("test_gaussian(t)", sym).depends_on_temperature());
         FieldContext ctx {20.0, 0, 0, 0, 0};
         EXPECT_NEAR(compiled.eval(ctx), 5.0, 1e-9);
     }

@@ -8,6 +8,7 @@ namespace mhs::sim {
     mhs::core::Model build_model(const mhs::model::ModelDefinition& definition);
 
     // External geometry is already in SI. No mesh generation or neighbor discovery.
+    // Face signs are derived from face coordinates and owner centers.
     mhs::core::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh& mesh);
 
 } // namespace mhs::sim

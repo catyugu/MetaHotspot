@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Callable
 
 import numpy as np
 import pyamg
-import scipy.linalg as la
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from numpy.polynomial.legendre import Legendre

@@ -6,6 +6,8 @@ file(GLOB test_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_executable(mhs_tests ${test_sources})
 # Test data lives in the source tree, so the tests address it through this.
 target_compile_definitions(mhs_tests PRIVATE MHS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+# White-box tests reach component-internal headers that are not installed API.
+target_include_directories(mhs_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(mhs_tests PRIVATE
     mhs_metahotspot

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Format and lint the staged sources so no commit carries unformatted or
+# unlinted code.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+exec python scripts/pre_commit.py --staged

@@ -12,6 +12,7 @@ namespace {
     {
         mhs::core::CompiledExpression expr;
         EXPECT_TRUE(expr.is_constant());
+        EXPECT_EQ(expr.dependencies(), 0);
         EXPECT_EQ(expr.constant_value(), 0.0);
         EXPECT_EQ(expr.eval({}), 0.0);
     }
@@ -20,6 +21,7 @@ namespace {
     {
         auto expr = mhs::core::CompiledExpression::make_constant(42.0);
         EXPECT_TRUE(expr.is_constant());
+        EXPECT_EQ(expr.dependencies(), 0);
         EXPECT_EQ(expr.constant_value(), 42.0);
         EXPECT_EQ(expr.eval({}), 42.0);
     }
@@ -28,6 +30,9 @@ namespace {
     {
         SymbolTable sym;
         auto expr = mhs::core::parse("x + y", sym);
+        EXPECT_EQ(expr.dependencies(), DependsX | DependsY);
+        EXPECT_FALSE(expr.depends_on_temperature());
+        EXPECT_EQ(parse("280+10*t+y", sym).dependencies(), DependsTime | DependsY);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
@@ -66,6 +71,7 @@ namespace {
         SymbolTable sym;
         auto expr = mhs::core::parse("42", sym);
         EXPECT_TRUE(expr.is_constant());
+        EXPECT_EQ(expr.dependencies(), 0);
         EXPECT_EQ(expr.constant_value(), 42.0);
     }
 
@@ -104,6 +110,7 @@ namespace {
     {
         SymbolTable sym;
         auto expr = mhs::core::parse("x + y + z + T + t", sym);
+        EXPECT_EQ(expr.dependencies(), DependsAll);
         EXPECT_FALSE(expr.is_constant());
 
         mhs::core::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
@@ -244,6 +251,11 @@ namespace {
         sym.natives["twice"]
             = [](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*ctx*/) { return 2.0 * args[0]; };
         auto expr = mhs::core::parse("twice(3) + x", sym);
+        EXPECT_TRUE(expr.depends_on_temperature()); // opaque callback
+        sym.native_dependencies["twice"] = 0;
+        EXPECT_EQ(parse("twice(3)+x", sym).dependencies(), DependsX);
+        EXPECT_TRUE(parse("twice(T)", sym).depends_on_temperature());
+        EXPECT_FALSE(parse("t+1", sym).depends_on_temperature());
         EXPECT_FALSE(expr.is_constant());
         mhs::core::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         ctx.x = 4.0;

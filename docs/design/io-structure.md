@@ -77,6 +77,8 @@ struct BoundaryPatch {
 
 BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，模型编译器不解析外部格式字符串。
 
+编译后每个互不重叠的外边界积分片具有一个温度迹。热边界表达式中的 `T` 在求解时表示该迹温度；材料表达式中的 `T` 仍表示单元中心温度。
+
 XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
 
 ## 流体输入

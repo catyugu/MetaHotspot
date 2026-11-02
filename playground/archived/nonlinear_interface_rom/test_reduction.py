@@ -52,13 +52,20 @@ def main() -> None:
         f"  linearized bottom port   = {conductance[package.ports[1].cells].sum():.4e} W/K"
     )
     if np.any(conductance[package.interface] <= 0.0):
-        raise AssertionError("interface conductance must be positive on every port cell")
-    if np.any(conductance[np.setdiff1d(np.arange(package.size), package.interface)] != 0.0):
+        raise AssertionError(
+            "interface conductance must be positive on every port cell"
+        )
+    if np.any(
+        conductance[np.setdiff1d(np.arange(package.size), package.interface)] != 0.0
+    ):
         raise AssertionError("the interface law must be supported on the ports only")
 
     print("\n1-2  STATIC CONSTRAINT MODES")
     residual = part.Kii @ psi + part.KiG.toarray()
-    check("K_ii Psi + K_iG = 0", float(np.linalg.norm(residual) / np.linalg.norm(part.KiG.toarray())))
+    check(
+        "K_ii Psi + K_iG = 0",
+        float(np.linalg.norm(residual) / np.linalg.norm(part.KiG.toarray())),
+    )
     check("Psi is the s = 0 interface response", relative(rd.response(part, 0.0), psi))
 
     print("\n3  OPEN vs CLOSED INTERFACE OPERATOR")
@@ -66,7 +73,9 @@ def main() -> None:
     scale = schur + np.diag(conductance[part.interface])
     null_gap = float(np.linalg.eigvalsh(schur)[0] / np.linalg.norm(schur))
     scale_min = float(np.linalg.eigvalsh(scale)[0])
-    print(f"  [info] open-loop S(0) min eig / norm       {null_gap:.3e} (singular, as expected)")
+    print(
+        f"  [info] open-loop S(0) min eig / norm       {null_gap:.3e} (singular, as expected)"
+    )
     print(f"  [info] closed-loop min eig                 {scale_min:.3e} (SPD scale)")
     if scale_min <= 0.0:
         raise AssertionError("the closed-loop interface operator must be SPD")
@@ -114,7 +123,11 @@ def main() -> None:
 
     print("\n7  A PORT FLUX PRODUCES EXACTLY THE STATIC CONSTRAINT MODE")
     load = -np.linalg.solve(part.Kii.toarray(), part.KiG.toarray())
-    check("K_ii^-1 f_G = Psi (no interface-load direction needed)", relative(load, psi), tolerance=1.0e-6)
+    check(
+        "K_ii^-1 f_G = Psi (no interface-load direction needed)",
+        relative(load, psi),
+        tolerance=1.0e-6,
+    )
 
     print("\n8  INTERNAL SOURCE RESPONSE: where CB actually loses")
     source_flux = np.asarray(package.source) @ np.array([1.0, 0.4])
@@ -128,11 +141,15 @@ def main() -> None:
     ):
         model = rd.assemble(operators, part, enrichment, psi)
         if enrichment.shape[1]:
-            z = np.linalg.solve(model.K[m:, m:], enrichment.T @ source_flux[part.interior])
+            z = np.linalg.solve(
+                model.K[m:, m:], enrichment.T @ source_flux[part.interior]
+            )
         else:
             z = np.zeros(0)
         interior = enrichment @ z
-        print(f"  {name:<24} interior source response error = {relative(interior, exact_interior):.2e}")
+        print(
+            f"  {name:<24} interior source response error = {relative(interior, exact_interior):.2e}"
+        )
 
     print("\nAll structural identities hold (to the CG tolerance).")
 

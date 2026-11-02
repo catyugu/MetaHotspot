@@ -19,6 +19,7 @@ No surface coordinates, contour modes, polynomial basis, or attachment geometry
 is used to choose a training direction. Euclidean residual is intentionally not
 used as a boundary-enrichment quality or stopping metric.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,8 +28,6 @@ from pathlib import Path
 
 import numpy as np
 import scipy.linalg
-
-from metahotspot.macromodel.utils import build_parametric_basis, normalized_operators
 from mor_common import AMGPCGSolver, boundary_port
 from transfer_boundary_basis import (
     PHYSICAL_H_RANGE,
@@ -42,6 +41,8 @@ from transfer_boundary_basis import (
     surface_term,
     transfer_boundary_basis,
 )
+
+from metahotspot.macromodel.utils import build_parametric_basis, normalized_operators
 
 
 def effective_range(domain, port) -> tuple[float, float]:
