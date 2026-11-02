@@ -2,6 +2,7 @@
 #include "numerics/expression/expr.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
+#include <cctype>
 #include <memory>
 #include <muParser.h>
 #include <stdexcept>
@@ -60,6 +61,36 @@ namespace mhs::core {
             catch (const mu::ParserError& e) {
                 throw std::runtime_error("expression compile error: '" + formula + "': " + e.GetMsg());
             }
+        }
+
+        std::uint8_t dependencies(const std::string& formula, const SymbolTable& symbols)
+        {
+            std::uint8_t mask = 0;
+            const auto& used = parser_.GetUsedVar();
+            const char* names[] = {"x", "y", "z", "T", "t"};
+            for (unsigned i = 0; i < 5; ++i)
+                if (used.contains(names[i]))
+                    mask |= 1u << i;
+            // Native functions can read context without naming its variables in
+            // the outer expression. Match whole identifiers, never substrings.
+            for (std::size_t i = 0; i < formula.size();) {
+                const auto ch = static_cast<unsigned char>(formula[i]);
+                if (!std::isalpha(ch) && ch != '_') {
+                    ++i;
+                    continue;
+                }
+                const auto start = i++;
+                while (
+                    i < formula.size() && (std::isalnum(static_cast<unsigned char>(formula[i])) || formula[i] == '_'))
+                    ++i;
+                const auto name = formula.substr(start, i - start);
+                if (symbols.natives.contains(name)) {
+                    const auto dependency = symbols.native_dependencies.find(name);
+                    mask |= dependency == symbols.native_dependencies.end() ? static_cast<std::uint8_t>(DependsAll)
+                                                                            : dependency->second;
+                }
+            }
+            return mask;
         }
 
         // Disable copy/move to guarantee current_ctx_'s address is stable — same
@@ -122,7 +153,9 @@ namespace mhs::core {
     CompiledExpression CompiledExpression::make_evaluator(const std::string& formula, const SymbolTable& symbols)
     {
         CompiledExpression e;
-        e.value_ = std::make_shared<MuCompiledTLS>(formula, symbols);
+        auto compiled = std::make_shared<MuCompiledTLS>(formula, symbols);
+        e.dependencies_ = compiled->tls.local()->dependencies(formula, symbols);
+        e.value_ = std::move(compiled);
         return e;
     }
 

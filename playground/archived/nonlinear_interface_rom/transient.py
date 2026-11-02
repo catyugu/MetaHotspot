@@ -74,11 +74,15 @@ def steady_reduced(model, interface_law, source, probes, power, *, ambient, cost
     reduced[:m] = ambient
     for _ in range(NEWTON_LIMIT):
         full = model.V @ reduced
-        residual = model.K @ reduced + model.V.T @ interface_law.flux(full, n) - reduced_rhs
+        residual = (
+            model.K @ reduced + model.V.T @ interface_law.flux(full, n) - reduced_rhs
+        )
         jacobian = model.K.copy()
         # model.interface is the full-model index of reduced port i, so this
         # slice of the slope vector is already in reduced port order.
-        jacobian[np.arange(m), np.arange(m)] += interface_law.slope(full, n)[model.interface]
+        jacobian[np.arange(m), np.arange(m)] += interface_law.slope(full, n)[
+            model.interface
+        ]
         delta = dense_spd_solve(jacobian, -residual, cost=cost)
         reduced = reduced + delta
         if np.linalg.norm(delta) <= NEWTON_RTOL * max(1.0, np.linalg.norm(reduced)):
@@ -86,7 +90,19 @@ def steady_reduced(model, interface_law, source, probes, power, *, ambient, cost
     raise RuntimeError("reduced steady Newton did not converge")
 
 
-def integrate(operators, interface_law, source, probes, power, *, dt, duration, port_cells, ambient, cost=None):
+def integrate(
+    operators,
+    interface_law,
+    source,
+    probes,
+    power,
+    *,
+    dt,
+    duration,
+    port_cells,
+    ambient,
+    cost=None,
+):
     """Full-order implicit Euler with Newton on the diagonal interface law."""
     cost = cost if cost is not None else Cost()
     K = operators.K.tocsc()
@@ -95,7 +111,9 @@ def integrate(operators, interface_law, source, probes, power, *, dt, duration, 
     steps = int(round(duration / dt))
     state = np.full(n, ambient)
     rhs = source @ np.asarray(power, dtype=np.float64)
-    port_history, probe_history, power_history = _allocate(steps, port_cells.size, probes.size)
+    port_history, probe_history, power_history = _allocate(
+        steps, port_cells.size, probes.size
+    )
     port_history[0] = state[port_cells]
     probe_history[0] = state[probes]
     power_history[0] = interface_law.flux(state, n)[port_cells]
@@ -106,7 +124,12 @@ def integrate(operators, interface_law, source, probes, power, *, dt, duration, 
     for step in range(1, steps + 1):
         target = state.copy()
         for _ in range(NEWTON_LIMIT):
-            residual = C @ (target - state) / dt + K @ target + interface_law.flux(target, n) - rhs
+            residual = (
+                C @ (target - state) / dt
+                + K @ target
+                + interface_law.flux(target, n)
+                - rhs
+            )
             jacobian = (base + sp.diags(interface_law.slope(target, n))).tocsc()
             delta = solver.solve_on(jacobian, -residual, label=f"newton {step}")
             target = target + delta
@@ -126,7 +149,19 @@ def integrate(operators, interface_law, source, probes, power, *, dt, duration, 
     )
 
 
-def integrate_reduced(model, interface_law, source, probes, power, *, dt, duration, port_cells, ambient, cost=None):
+def integrate_reduced(
+    model,
+    interface_law,
+    source,
+    probes,
+    power,
+    *,
+    dt,
+    duration,
+    port_cells,
+    ambient,
+    cost=None,
+):
     """Reduced implicit Euler; the interface law sees the true port temperatures."""
     cost = cost if cost is not None else Cost()
     m = model.port_count
@@ -146,12 +181,17 @@ def integrate_reduced(model, interface_law, source, probes, power, *, dt, durati
         for _ in range(NEWTON_LIMIT):
             full = model.V @ target
             residual = (
-                model.C @ (target - reduced) / dt + model.K @ target + model.V.T @ interface_law.flux(full, n) - reduced_rhs
+                model.C @ (target - reduced) / dt
+                + model.K @ target
+                + model.V.T @ interface_law.flux(full, n)
+                - reduced_rhs
             )
             jacobian = base.copy()
             # The interface block of V is the identity, so the diagonal slope
             # enters the reduced Jacobian exactly and nothing else does.
-            jacobian[np.arange(m), np.arange(m)] += interface_law.slope(full, n)[port_cells]
+            jacobian[np.arange(m), np.arange(m)] += interface_law.slope(full, n)[
+                port_cells
+            ]
             delta = dense_spd_solve(jacobian, -residual, cost=cost)
             target = target + delta
             if np.linalg.norm(delta) <= NEWTON_RTOL * max(1.0, np.linalg.norm(target)):

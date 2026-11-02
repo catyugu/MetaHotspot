@@ -1,6 +1,5 @@
 #include "solver/assembler.hpp"
-#include "core/boundary_geometry.hpp"
-#include "solver/fluid_assembler.hpp"
+#include "thermal_reconstruction.hpp"
 #include <Eigen/Sparse>
 #include <stdexcept>
 #include <type_traits>
@@ -18,6 +17,7 @@ namespace mhs::sim {
         capacity.reserve(model.discrete.cells.size());
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
         std::vector<Vec3> conductivity(model.discrete.cells.size());
+        std::vector<double> density(model.fluid.fluid_to_global.size()), specific_heat(density.size());
         for (Index c = 0; c < model.discrete.cells.size(); ++c) {
             const auto row = c;
             const auto center = model.discrete.cells[c].center();
@@ -25,7 +25,15 @@ namespace mhs::sim {
             const auto& mat = model.material_table[model.cell_material[c]];
             conductivity[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
-            capacity.emplace_back(row, row, mat.rho.eval(ctx) * mat.c.eval(ctx) * volume);
+            const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
+            capacity.emplace_back(row, row, rho * cp * volume);
+            if (!density.empty()) {
+                const auto fi = model.fluid.global_to_fluid[c];
+                if (fi != invalidIndex) {
+                    density[fi] = rho;
+                    specific_heat[fi] = cp;
+                }
+            }
         }
         for (const auto& term : model.source_terms) {
             const auto row = term.cell.value;
@@ -60,40 +68,40 @@ namespace mhs::sim {
                 stiffness.emplace_back(row, col, -g);
                 stiffness.emplace_back(col, col, g);
                 stiffness.emplace_back(col, row, -g);
+                if (fi != invalidIndex && fj != invalidIndex) {
+                    const double mass = model.fluid.face_volume_flux[id] * 0.5 * (density[fi] + density[fj]);
+                    if (mass != 0.0) {
+                        const auto upstream = mass > 0 ? row : col;
+                        const double enthalpy = mass * specific_heat[mass > 0 ? fi : fj];
+                        stiffness.emplace_back(row, upstream, enthalpy);
+                        stiffness.emplace_back(col, upstream, -enthalpy);
+                    }
+                }
             }
         }
-        for (const auto& term : model.boundary_terms) {
-            const auto f = projected_face(model.discrete, term);
-            const auto& bc = model.boundary_conditions[term.condition];
+        for (const auto& term : model.boundary_faces) {
+            const auto f = model.discrete.faces[term.parent.value].project(term.bounds);
             const auto row = f.owner.value;
-            const auto ki = conductivity[f.owner.value][f.axis];
-            const auto p = f.center();
-            const FieldContext ctx {p[0], p[1], p[2], temperature[row], time};
-            double g = 0;
-            std::visit(
-                [&](const auto& condition) {
-                    using T = std::decay_t<decltype(condition)>;
-                    if constexpr (std::is_same_v<T, Dirichlet>) {
-                        g = ki * f.area / f.owner_distance;
-                        rhs[row] += g * condition.temperature.eval(ctx);
-                    }
-                    else if constexpr (std::is_same_v<T, Neumann>) {
-                        rhs[row] += f.area * condition.heat_flux.eval(ctx);
-                    }
-                    else {
-                        static_assert(std::is_same_v<T, Convection>);
-                        const double h = condition.coefficient.eval(ctx);
-                        g = ki * h * f.area / (ki + h * f.owner_distance);
-                        rhs[row] += g * condition.ambient_temperature.eval(ctx);
-                    }
-                },
-                bc);
-            if (g != 0)
-                stiffness.emplace_back(row, row, g);
+            const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], f, temperature[row],
+                conductivity[f.owner.value][f.axis], time);
+            rhs[row] += trace.load;
+            if (trace.conductance != 0)
+                stiffness.emplace_back(row, row, trace.conductance);
         }
-        const auto fluid = mhs::sim::fluid::assemble_increment(model, temperature, time);
-        stiffness.insert(stiffness.end(), fluid.matrix_entries.begin(), fluid.matrix_entries.end());
-        rhs += fluid.rhs;
+        for (const auto& term : model.fluid.boundary_terms) {
+            const auto cell = model.discrete.faces[term.face.value].owner;
+            const auto row = cell.value;
+            const auto cp = specific_heat[model.fluid.global_to_fluid[cell.value]];
+            std::visit(
+                [&](const auto& flow) {
+                    using T = std::decay_t<decltype(flow)>;
+                    if constexpr (std::is_same_v<T, FluidInflow>)
+                        rhs[row] += flow.mass_flow_rate * cp * flow.temperature;
+                    else
+                        stiffness.emplace_back(row, row, flow.mass_flow_rate * cp);
+                },
+                term.condition);
+        }
         Eigen::SparseMatrix<double> K(n, n), C(n, n);
         K.setFromTriplets(stiffness.begin(), stiffness.end());
         C.setFromTriplets(capacity.begin(), capacity.end());

@@ -26,30 +26,7 @@ namespace mhs::core {
 
 `MuCompiledTLS` 按值持有 `SymbolTable` 副本。ETS 构造器 lambda 按值捕获公式，通过 `this` 访问该副本；共享句柄维持 `MuCompiledTLS` 的生命周期。构造时立即调用 `tls.local()` 完成当前线程的解析和验证，后续求值复用该解析器。其他线程在首次求值时构造各自的解析器。
 
-```cpp
-namespace mhs::core {
-    class CompiledExpression {
-    public:
-        CompiledExpression();                          // = make_constant(0.0)
-        CompiledExpression(const CompiledExpression&) = default;
-        CompiledExpression& operator=(const CompiledExpression&) = default;
-        CompiledExpression(CompiledExpression&&) noexcept = default;
-        CompiledExpression& operator=(CompiledExpression&& other) noexcept = default;
-        ~CompiledExpression();
-
-        double eval(const FieldContext& ctx) const;        // per-thread parser
-        bool   is_constant()   const;
-        double constant_value() const;
-
-        static CompiledExpression make_constant(double value);
-        static CompiledExpression make_evaluator(const std::string& formula,
-                                                 const SymbolTable& symbols);
-
-    private:
-        std::variant<double, std::shared_ptr<MuCompiledTLS>> value_ {0.0};
-    };
-}
-```
+`dependencies()` 返回 `x/y/z/T/t` 的依赖位掩码，`depends_on_temperature()` 用于选择边界解析路径。直接变量从 muparser 的已用变量集合读取；命名函数传播其内部上下文依赖，参数依赖由外层表达式提供。未声明依赖的自定义 native 保守视为可能读取所有上下文变量。纯数字表达式的依赖掩码为零。
 
 特点：
 
@@ -103,7 +80,7 @@ namespace mhs::core {
 ```cpp
 // build_model：构造本地 SymbolTable 贯穿 setup 路径
 mhs::core::SymbolTable symbols;
-mhs::sim::register_all_functions(symbols, definition.functions);  // typed Function → FieldEvaluator
+// 编译器内部将 typed Function 注册为 FieldEvaluator。
 
 // 几何：此例的变量值以米表示
 symbols.variables["w_top"] = 0.02;

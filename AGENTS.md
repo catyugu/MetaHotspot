@@ -22,19 +22,20 @@ python run_cases.py
 ```
 
 ```bash
-# Python package, tests and style gate
+# Python package and tests
 python -m build --wheel
 python -m pip install dist/*.whl
 python -m pytest python/tests
-ruff format --check python ci
-ruff check python ci
 ```
 
 ```bash
-# C++ formatting gate, plus a sanitizer build tree (GCC or Clang only)
-python ci/check_format.py
+# Formatting and lint of every tracked source, plus a sanitizer build tree
+# (GCC or Clang only)
+python scripts/pre_commit.py
 cmake -G "Ninja" -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DMHS_SANITIZE=ON
 ```
+
+- **Formatting and lint**: `.githooks/pre-commit` runs `scripts/pre_commit.py` on the staged files, so a commit carries no unformatted or unlinted source; enable it once per checkout with `git config core.hooksPath .githooks` and install the pinned tools with `python -m pip install --group dev` (pip 25.1+). clang-format covers `src`, `include` and `tests`, ruff covers `python` and `ci`. CI checks neither.
 
 - **Versions**: the library version is defined once, as `MHS_VERSION_*` macros in `include/metahotspot/metahotspot_c_api.h`; CMake and the Python package derive from it.
 

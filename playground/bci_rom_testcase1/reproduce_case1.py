@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """BCI-ROM Case 1 reproduction — full FVM, MetaHotspot ROM, and FloTHERM ROM."""
+
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import scipy.io as sio
 import scipy.sparse as sp
-
-import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -19,6 +19,7 @@ _ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
 
 from model_case1 import Case1Config, Case1Model  # noqa: E402
+
 from metahotspot.macromodel.utils import (  # noqa: E402
     accuracy_summary,
     assemble_reduced_k,
@@ -161,8 +162,8 @@ def run():
     for i, name in enumerate(DIE_NAMES):
         print(
             f"{name:<6}{junc_full_ss[i]:>10.3f}{junc_rom_ss[i]:>10.3f}"
-            f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i]-junc_full_ss[i]:>+10.3f}"
-            f"{junc_fl_ss[i]-junc_full_ss[i]:>+10.3f}"
+            f"{junc_fl_ss[i]:>10.3f}{junc_rom_ss[i] - junc_full_ss[i]:>+10.3f}"
+            f"{junc_fl_ss[i] - junc_full_ss[i]:>+10.3f}"
         )
     print(f"\nsteady full-FVM field peak = {Tf_ss.max():.3f} K")
 

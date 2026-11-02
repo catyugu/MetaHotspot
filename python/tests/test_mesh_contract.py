@@ -18,7 +18,7 @@ def test_subcell_sources_keep_independent_power_columns():
     q = compiled.source_operator()
     np.testing.assert_allclose(q.toarray(), [[0.00075, 0.0005]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
-    np.testing.assert_allclose(compiled.cells.projection_volume.sum(), 1e-9)
+    np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
 
     class Ports(AffineParametricModel):
         _full = compiled
@@ -53,7 +53,7 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
     original_model.read_xml(str(path))
     original = original_model.compile()
     reference = original.assemble()
-    fields = original.cells
+    fields = original.fields
     order = np.random.default_rng(44).permutation(original.cell_count)
     inverse = np.empty_like(order)
     inverse[order] = np.arange(order.size)
@@ -68,7 +68,6 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
         face_owner=inverse[fields.face_owner],
         face_neighbor=neighbors,
         face_axis=fields.face_axis,
-        face_sign=fields.face_sign,
         face_min=fields.face_min,
         face_max=fields.face_max,
     )
@@ -94,9 +93,9 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
     assert spla.norm(q_result - q_reference[order]) <= 1e-13 * max(
         spla.norm(q_reference), 1e-300
     )
-    np.testing.assert_array_equal(imported.cells.cell_min, fields.cell_min[order])
-    expected_temperature = original.solve().temperature[order]
-    actual_temperature = imported.solve().temperature
+    np.testing.assert_array_equal(imported.fields.cell_min, fields.cell_min[order])
+    expected_temperature = original.solve().state[order]
+    actual_temperature = imported.solve().state
     temperature_error = np.max(np.abs(actual_temperature - expected_temperature))
     np.testing.assert_allclose(
         actual_temperature, expected_temperature, rtol=0, atol=1e-5
@@ -118,7 +117,7 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
         np.array([0.0, 0.25, 1.0]), np.array([0.0, 1.0]), np.array([0.0, 1.0])
     )
     compiled = model.compile()
-    boundary = BoundaryGroup(CellGeometry(compiled.cells).surface(Face.XP))
+    boundary = BoundaryGroup(CellGeometry(compiled.fields).surface(Face.XP))
 
     class Ports(AffineParametricModel):
         _full = compiled
@@ -126,14 +125,14 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
         def boundary_groups(self):
             return (boundary,)
 
-    fields = compiled.cells
+    fields = compiled.fields
     half = fields.owner_distance[boundary.face_ids]
     expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
 
 def test_native_mesh_input_rejects_invalid_indices():
-    fields = _model().compile().cells
+    fields = _model().compile().fields
     inputs = {
         name: getattr(fields, name).copy()
         for name in (
@@ -142,12 +141,11 @@ def test_native_mesh_input_rejects_invalid_indices():
             "face_owner",
             "face_neighbor",
             "face_axis",
-            "face_sign",
             "face_min",
             "face_max",
         )
     }
-    for name in ("face_owner", "face_neighbor", "face_axis", "face_sign"):
+    for name in ("face_owner", "face_neighbor", "face_axis"):
         invalid = inputs[name].astype(float)
         invalid[0] = 0.5
         with pytest.raises(ValueError):

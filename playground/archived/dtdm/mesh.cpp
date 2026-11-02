@@ -450,21 +450,21 @@ namespace mhs::dtdm {
         out.model.boundary_conditions.push_back(mhs::core::Convection {
             mhs::core::CompiledExpression::make_constant(kPcbH), mhs::core::CompiledExpression::make_constant(0.0)});
 
-        auto add_term = [&](long face_id, std::size_t condition) {
+        auto add_boundary_face = [&](long face_id, std::size_t condition) {
             const auto& f = faces[static_cast<std::size_t>(face_id)];
             const int axis = f.axis;
             const int a = axis == 0 ? 1 : 0;
             const int b = axis == 2 ? 1 : 2;
-            out.model.boundary_terms.push_back({{static_cast<mhs::core::Index>(face_id)},
+            out.model.boundary_faces.push_back({{static_cast<mhs::core::Index>(face_id)},
                 static_cast<mhs::core::TableIndex>(condition), {f.min[a], f.max[a], f.min[b], f.max[b]}});
         };
         for (long id : sink_top_faces)
-            add_term(id, 0);
+            add_boundary_face(id, 0);
         for (long id : pcb_bottom_faces)
-            add_term(id, 1);
-        std::sort(out.model.boundary_terms.begin(), out.model.boundary_terms.end(),
-            [](const mhs::core::BoundaryTerm& l, const mhs::core::BoundaryTerm& r) {
-                return l.face.value < r.face.value;
+            add_boundary_face(id, 1);
+        std::sort(out.model.boundary_faces.begin(), out.model.boundary_faces.end(),
+            [](const mhs::core::BoundaryFace& l, const mhs::core::BoundaryFace& r) {
+                return l.parent.value < r.parent.value;
             });
 
         out.model.initial_temperature = kAmbient;

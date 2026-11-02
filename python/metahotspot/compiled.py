@@ -8,7 +8,7 @@ from functools import cached_property
 
 import numpy as np
 
-from metahotspot._compiled_data import CellFields, Operators
+from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
@@ -97,15 +97,13 @@ class MaterialValues:
 
 
 @dataclass(frozen=True)
-class CompiledMetadata:
+class CompiledInfo:
     cell_count: int
     face_count: int
-    state_count: int
     projection_count: int
     source_count: int
     study_type: int
     initial_temperature: float
-    cell_fields: CellFields
 
 
 def _double_ptr(array: np.ndarray):
@@ -143,10 +141,21 @@ def _compile_model(dll, model_handle):
     return handle
 
 
-def _compiled_metadata(dll, handle) -> CompiledMetadata:
+def _compiled_info(dll, handle) -> CompiledInfo:
     info = MhsCompiledInfo()
     check(dll.mhs_compiled_get_info(handle, ctypes.byref(info)), "compiled_info")
 
+    return CompiledInfo(
+        cell_count=int(info.cell_count),
+        face_count=int(info.face_count),
+        projection_count=int(info.projection_count),
+        source_count=int(info.source_count),
+        study_type=int(info.study_type),
+        initial_temperature=float(info.initial_temperature),
+    )
+
+
+def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
     arrays = {
         name: np.empty(
             (int(getattr(info, count)), 3) if dim == 3 else int(getattr(info, count)),
@@ -166,16 +175,7 @@ def _compiled_metadata(dll, handle) -> CompiledMetadata:
     check(
         dll.mhs_compiled_copy_cell_fields(handle, ctypes.byref(native)), "cell_fields"
     )
-    return CompiledMetadata(
-        cell_count=int(info.cell_count),
-        face_count=int(info.face_count),
-        state_count=int(info.state_count),
-        projection_count=int(info.projection_count),
-        source_count=int(info.source_count),
-        study_type=int(info.study_type),
-        initial_temperature=float(info.initial_temperature),
-        cell_fields=CellFields(**arrays),
-    )
+    return CompiledFields(**arrays)
 
 
 def _eval_materials(dll, handle, state: np.ndarray, time: float) -> MaterialValues:
@@ -268,16 +268,16 @@ class Compiled(OwnedHandle):
         return cls(dll, handle)
 
     @cached_property
-    def metadata(self) -> CompiledMetadata:
-        return _compiled_metadata(self._dll, self._handle)
+    def info(self) -> CompiledInfo:
+        return _compiled_info(self._dll, self._handle)
 
     @property
     def cell_count(self) -> int:
-        return self.metadata.cell_count
+        return self.info.cell_count
 
-    @property
-    def cells(self) -> CellFields:
-        return self.metadata.cell_fields
+    @cached_property
+    def fields(self) -> CompiledFields:
+        return _compiled_fields(self._dll, self._handle, self.info)
 
     def source_operator(self, state=None, time=0.0):
         """Per-source integrated powers in algebraic state order (sparse CSC).
@@ -289,7 +289,7 @@ class Compiled(OwnedHandle):
         if state is None:
             state = self.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
-        values = np.empty(self.metadata.projection_count, dtype=np.float64)
+        values = np.empty(self.info.projection_count, dtype=np.float64)
         check(
             self._dll.mhs_compiled_eval_source_terms(
                 self._handle,
@@ -301,13 +301,13 @@ class Compiled(OwnedHandle):
             ),
             "eval_source_terms",
         )
-        fields = self.cells
+        fields = self.fields
         result = sp.csc_matrix(
             (
                 values,
                 (fields.projection_cell, fields.projection_source),
             ),
-            shape=(self.metadata.state_count, self.metadata.source_count),
+            shape=(self.info.cell_count, self.info.source_count),
         )
 
         result.eliminate_zeros()
@@ -320,9 +320,7 @@ class Compiled(OwnedHandle):
         return _eval_materials(self._dll, self._handle, state, time)
 
     def default_state(self) -> np.ndarray:
-        return np.full(
-            self.cell_count, self.metadata.initial_temperature, dtype=np.float64
-        )
+        return np.full(self.cell_count, self.info.initial_temperature, dtype=np.float64)
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""

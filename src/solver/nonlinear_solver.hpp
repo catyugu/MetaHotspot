@@ -9,11 +9,6 @@
 
 namespace mhs::sim {
 
-    struct NonLinearResult {
-        bool converged = false;
-        int iterations = 0;
-    };
-
     struct NonLinearConfig {
         double underrelaxation = 1.0;
         int max_iterations = 200;
@@ -24,7 +19,7 @@ namespace mhs::sim {
     /// Per-iteration linear-system factory evaluated at the current state (read-only).
     using LinearSystemProvider = std::function<LinearSystem(std::span<const double>)>;
 
-    NonLinearResult nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, SolverPtr& solver,
+    bool nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, SolverPtr& solver,
         const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

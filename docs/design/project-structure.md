@@ -51,3 +51,5 @@ C 接口头文件是 `include/metahotspot/metahotspot_c_api.h`。
 - C API 公共头只暴露 C 类型、枚举和 opaque handle；批量结果通过 copy-out API 写入调用方缓冲区。
 
 具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。
+
+`include/metahotspot/compiler/model_compiler.hpp` 是公开编译入口；求解入口位于 `core/solver.hpp`。其余 compiler/solver 实现头文件位于各自 `src/` 目录，只通过 PRIVATE include 路径供组件和白盒测试使用，不随包安装。

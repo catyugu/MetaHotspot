@@ -78,7 +78,9 @@ def partition(operators, interface: np.ndarray) -> Partition:
 # ---------------------------------------------------------------------------
 
 
-def orthonormal(vectors: np.ndarray, against: np.ndarray | None = None, tol: float = 1.0e-10) -> np.ndarray:
+def orthonormal(
+    vectors: np.ndarray, against: np.ndarray | None = None, tol: float = 1.0e-10
+) -> np.ndarray:
     """Orthonormal basis of the range of ``vectors`` modulo ``against``."""
     block = np.asarray(vectors, dtype=np.float64)
     if block.ndim == 1:
@@ -89,7 +91,11 @@ def orthonormal(vectors: np.ndarray, against: np.ndarray | None = None, tol: flo
         for _ in range(2):
             block = block - against @ (against.T @ block)
     u, s, _ = np.linalg.svd(block, full_matrices=False)
-    return np.ascontiguousarray(u[:, s > tol * s[0]]) if s.size else np.empty((block.shape[0], 0))
+    return (
+        np.ascontiguousarray(u[:, s > tol * s[0]])
+        if s.size
+        else np.empty((block.shape[0], 0))
+    )
 
 
 def shifted_operator(part: Partition, shift: float):
@@ -112,7 +118,12 @@ def static_modes(part: Partition, cost: Cost | None = None) -> np.ndarray:
     return -solver.solve(part.KiG.toarray(), label="static modes")
 
 
-def response(part: Partition, shift: float, inputs: np.ndarray | None = None, cost: Cost | None = None) -> np.ndarray:
+def response(
+    part: Partition,
+    shift: float,
+    inputs: np.ndarray | None = None,
+    cost: Cost | None = None,
+) -> np.ndarray:
     """Interior response ``-A_ii(s)^-1 b`` at ``s = shift``.
 
     ``inputs`` defaults to the interface coupling ``A_iG(s)``.  Passing the
@@ -128,14 +139,23 @@ def response(part: Partition, shift: float, inputs: np.ndarray | None = None, co
     return -SPDSolver(a_ii, cost=cost).solve(rhs, label=f"response s={shift:g}")
 
 
-def residual_indicator(part: Partition, basis: np.ndarray, shift: float, inputs: np.ndarray | None = None) -> float:
+def residual_indicator(
+    part: Partition, basis: np.ndarray, shift: float, inputs: np.ndarray | None = None
+) -> float:
     """Relative Galerkin state residual of the shifted response."""
     a_ii = shifted_operator(part, shift)
-    rhs = (part.KiG + shift * part.CiG).toarray() if inputs is None else np.asarray(inputs)
+    rhs = (
+        (part.KiG + shift * part.CiG).toarray()
+        if inputs is None
+        else np.asarray(inputs)
+    )
     if basis.shape[1] == 0:
         return 1.0
     coefficients = np.linalg.solve(basis.T @ (a_ii @ basis), basis.T @ rhs)
-    return float(np.linalg.norm(rhs + a_ii @ (basis @ coefficients), "fro") / np.linalg.norm(rhs, "fro"))
+    return float(
+        np.linalg.norm(rhs + a_ii @ (basis @ coefficients), "fro")
+        / np.linalg.norm(rhs, "fro")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -172,10 +192,18 @@ class ResponsePlan:
     inputs: np.ndarray | None = None
 
     @classmethod
-    def build(cls, part: Partition, shifts, cost: Cost | None = None, inputs: np.ndarray | None = None) -> "ResponsePlan":
+    def build(
+        cls,
+        part: Partition,
+        shifts,
+        cost: Cost | None = None,
+        inputs: np.ndarray | None = None,
+    ) -> "ResponsePlan":
         directions, values = {}, {}
         for shift in shifts:
-            u, s, _ = np.linalg.svd(response(part, float(shift), inputs, cost), full_matrices=False)
+            u, s, _ = np.linalg.svd(
+                response(part, float(shift), inputs, cost), full_matrices=False
+            )
             keep = s > 1.0e-10 * s[0]
             directions[float(shift)] = np.ascontiguousarray(u[:, keep])
             values[float(shift)] = s[keep]
@@ -190,7 +218,9 @@ class ResponsePlan:
         return int(self.directions[shift].shape[1])
 
 
-def rational_krylov(part: Partition, order: int, plan: ResponsePlan, *, trace: list | None = None) -> np.ndarray:
+def rational_krylov(
+    part: Partition, order: int, plan: ResponsePlan, *, trace: list | None = None
+) -> np.ndarray:
     """Residual-greedy enrichment of the static space, one direction per step.
 
     Starts from the static constraint space and repeatedly adds the singular
@@ -207,7 +237,9 @@ def rational_krylov(part: Partition, order: int, plan: ResponsePlan, *, trace: l
         available = [s for s in used if used[s] < plan.rank(s)]
         if not available:
             break
-        indicators = {s: residual_indicator(part, basis, s, plan.inputs) for s in available}
+        indicators = {
+            s: residual_indicator(part, basis, s, plan.inputs) for s in available
+        }
         shift = max(available, key=indicators.get)
 
         remaining = plan.directions[shift][:, used[shift] :]
@@ -230,7 +262,9 @@ def rational_krylov(part: Partition, order: int, plan: ResponsePlan, *, trace: l
     return np.ascontiguousarray(basis[:, m:])
 
 
-def source_directions(part: Partition, source: np.ndarray, cost: Cost | None = None) -> np.ndarray:
+def source_directions(
+    part: Partition, source: np.ndarray, cost: Cost | None = None
+) -> np.ndarray:
     """Interior static responses to the source shapes: ``K_ii^-1 f_source``."""
     solver = SPDSolver(part.Kii, cost=cost)
     return solver.solve(np.asarray(source)[part.interior, :], label="source directions")
@@ -258,7 +292,9 @@ class Reduced:
         return self.dimension - self.port_count
 
 
-def assemble(operators, part: Partition, enrichment: np.ndarray, psi: np.ndarray) -> Reduced:
+def assemble(
+    operators, part: Partition, enrichment: np.ndarray, psi: np.ndarray
+) -> Reduced:
     """Galerkin projection on ``V = [[Psi, W], [I, 0]]``."""
     m = part.port_count
     q = enrichment.shape[1]
@@ -280,7 +316,9 @@ def assemble(operators, part: Partition, enrichment: np.ndarray, psi: np.ndarray
 # ---------------------------------------------------------------------------
 
 
-def exact_interface_operator(part: Partition, extra: np.ndarray, shift: float, cost: Cost | None = None) -> np.ndarray:
+def exact_interface_operator(
+    part: Partition, extra: np.ndarray, shift: float, cost: Cost | None = None
+) -> np.ndarray:
     """``S(s) = A_GG + diag(extra) - A_Gi A_ii(s)^-1 A_iG`` at real ``s >= 0``."""
     a_ii = shifted_operator(part, shift)
     a_iG = (part.KiG + shift * part.CiG).toarray()
@@ -288,7 +326,9 @@ def exact_interface_operator(part: Partition, extra: np.ndarray, shift: float, c
     return part.KGG + np.diag(extra) + shift * part.CGG - a_iG.T @ solved
 
 
-def reduced_interface_operator(model: Reduced, extra: np.ndarray, shift: float, cost: Cost | None = None) -> np.ndarray:
+def reduced_interface_operator(
+    model: Reduced, extra: np.ndarray, shift: float, cost: Cost | None = None
+) -> np.ndarray:
     """Schur complement of the reduced system with respect to its interface block."""
     m = model.port_count
     a = model.K + shift * model.C
@@ -299,10 +339,7 @@ def reduced_interface_operator(model: Reduced, extra: np.ndarray, shift: float, 
     inner = a[m:, m:]
     coupling = a[m:, :m]
     correction = np.column_stack(
-        [
-            dense_spd_solve(inner, coupling[:, column], cost=cost)
-            for column in range(m)
-        ]
+        [dense_spd_solve(inner, coupling[:, column], cost=cost) for column in range(m)]
     )
     return a[:m, :m] - coupling.T @ correction
 
@@ -311,5 +348,7 @@ def scaled_norm(matrix: np.ndarray, scale: np.ndarray) -> float:
     """Spectral norm of ``scale^-1/2 matrix scale^-1/2`` for SPD ``scale``."""
     chol = np.linalg.cholesky(scale)
     left = scipy.linalg.solve_triangular(chol, matrix, lower=True, check_finite=False)
-    scaled = scipy.linalg.solve_triangular(chol, left.T, lower=True, check_finite=False).T
+    scaled = scipy.linalg.solve_triangular(
+        chol, left.T, lower=True, check_finite=False
+    ).T
     return float(np.linalg.svd(scaled, compute_uv=False)[0])

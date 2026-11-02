@@ -47,7 +47,7 @@ def _cell_split(cells, half_z):
 class _FakePortsModel:
     def __init__(self, compiled, ops):
         self._full = compiled
-        self.geometry = CellGeometry(compiled.cells)
+        self.geometry = CellGeometry(compiled.fields)
         self._ops = ops
         self.cell_layout = mm.CellLayout(
             centers=self.geometry.centers,
@@ -166,7 +166,7 @@ def test_nonconforming_ports_are_split_into_area_weighted_common_patches():
 def test_coupling_is_symmetric_psd_and_reproduces_monolithic_steady():
     _model, compiled, ops = _build_operators(2, 2, 3)
     model = _FakePortsModel(compiled, ops)
-    lower, upper = _cell_split(compiled.cells, 1.5e-3)
+    lower, upper = _cell_split(compiled.fields, 1.5e-3)
 
     K = ops.K.tocsc()
     pin = 0

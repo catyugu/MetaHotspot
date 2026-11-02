@@ -192,11 +192,11 @@ namespace mhs::sim {
         }
     }
 
-    std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
         const std::vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
     {
         using namespace mhs::core;
-        std::vector<BoundaryTerm> terms;
+        std::vector<BoundaryFace> faces;
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
             if (face.neighbor.valid())
@@ -225,12 +225,7 @@ namespace mhs::sim {
             unique(cb);
             for (Index i = 1; i < ca.size(); ++i)
                 for (Index j = 1; j < cb.size(); ++j) {
-                    auto patch = face;
-                    patch.min[a] = ca[i - 1];
-                    patch.max[a] = ca[i];
-                    patch.min[b] = cb[j - 1];
-                    patch.max[b] = cb[j];
-                    patch.area = (ca[i] - ca[i - 1]) * (cb[j] - cb[j - 1]);
+                    const auto patch = face.project({ca[i - 1], ca[i], cb[j - 1], cb[j]});
                     const auto p = patch.center();
                     TableIndex condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
@@ -240,10 +235,12 @@ namespace mhs::sim {
                             break;
                         }
                     }
-                    terms.push_back({FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    if (condition != invalidTableIndex)
+                        faces.push_back(
+                            {FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
-        return terms;
+        return faces;
     }
 
 } // namespace mhs::sim

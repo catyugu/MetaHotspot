@@ -8,7 +8,7 @@ Usage::
     model.read_xml("case.xml")
     compiled = model.compile()
     solution = compiled.solve()
-    temperatures = solution.temperature
+    temperatures = solution.state
 """
 
 from metahotspot import enums

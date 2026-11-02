@@ -39,8 +39,12 @@ def field_errors(operator, source, basis):
     certificate or a componentwise relative temperature claim.
     """
     reference = AmgSolver(operator).solve(source)
-    coefficients = la.solve(basis.T @ (operator @ basis), basis.T @ source,
-                            assume_a="pos", check_finite=False)
+    coefficients = la.solve(
+        basis.T @ (operator @ basis),
+        basis.T @ source,
+        assume_a="pos",
+        check_finite=False,
+    )
     approximation = basis @ coefficients
     error = reference - approximation
     gram = error.T @ (operator @ error)
@@ -53,7 +57,9 @@ def field_errors(operator, source, basis):
     return {
         "relative_energy_error": float(np.sqrt(max(squared, 0.0))),
         "squared_relative_energy_error": max(squared, 0.0),
-        "max_absolute_field_error_per_unit_input": float(np.max(la.norm(error, axis=1))),
+        "max_absolute_field_error_per_unit_input": float(
+            np.max(la.norm(error, axis=1))
+        ),
         "galerkin_identity_relative_gap": float(la.norm(defect - gram) / scale),
     }
 
@@ -62,17 +68,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mesh_mm", nargs="?", type=float, default=5.0)
     parser.add_argument("--tolerance", type=float, default=1e-3)
-    parser.add_argument("--htc-ranges", nargs=4, type=float,
-                        metavar=("H1_MIN", "H1_MAX", "H2_MIN", "H2_MAX"))
+    parser.add_argument(
+        "--htc-ranges",
+        nargs=4,
+        type=float,
+        metavar=("H1_MIN", "H1_MAX", "H2_MIN", "H2_MAX"),
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    model = Case1Model(Case1Config(max_xy_cell_mm=args.mesh_mm,
-                                  max_z_cell_mm=args.mesh_mm))
+    model = Case1Model(
+        Case1Config(max_xy_cell_mm=args.mesh_mm, max_z_cell_mm=args.mesh_mm)
+    )
     kernel, mass = model.core.K.tocsc(), model.core.C.tocsc()
     source = np.asarray(model.source_shape, dtype=float)
     terms = [term.tocsc() for term in model.boundary_terms]
-    ranges = np.asarray(model.h_ranges() if args.htc_ranges is None
-                        else np.reshape(args.htc_ranges, (2, 2)), dtype=float)
+    ranges = np.asarray(
+        (
+            model.h_ranges()
+            if args.htc_ranges is None
+            else np.reshape(args.htc_ranges, (2, 2))
+        ),
+        dtype=float,
+    )
     if not 0 < args.tolerance < 1:
         parser.error("tolerance must lie in (0, 1)")
     if np.any(ranges <= 0) or np.any(ranges[:, 1] < ranges[:, 0]):
@@ -88,17 +105,21 @@ def main():
         "cells": int(kernel.shape[0]),
         "tolerance": args.tolerance,
         "htc_ranges": ranges.tolist(),
-        "audit_resolution": {"cells_per_axis": cells, "trial_order": order,
-                             "anchor_blocks_per_axis": blocks,
-                             "samples_per_cell": samples},
+        "audit_resolution": {
+            "cells_per_axis": cells,
+            "trial_order": order,
+            "anchor_blocks_per_axis": blocks,
+            "samples_per_cell": samples,
+        },
         "floating_point_certified": False,
         "dynamic_certified": False,
         "baselines": {},
     }
     for seed in (20260805, 7):
         started = time.perf_counter()
-        basis, stats = build_parametric_basis(model.core, source, terms, ranges,
-                                             tolerance=args.tolerance, seed=seed)
+        basis, stats = build_parametric_basis(
+            model.core, source, terms, ranges, tolerance=args.tolerance, seed=seed
+        )
         extraction_seconds = time.perf_counter() - started
         counts = {"certificate": 0, "reference": 0}
         phase = "certificate"
@@ -108,7 +129,9 @@ def main():
             counts[phase] += 1
             return original_column(solver, rhs)
 
-        certificate = BoxCertificate(kernel, terms, source, ranges, basis, blocks=blocks)
+        certificate = BoxCertificate(
+            kernel, terms, source, ranges, basis, blocks=blocks
+        )
         measured = []
         edges = [logarithmic_edges(low, high, cells) for low, high in ranges]
         rng = np.random.default_rng(20260930)
@@ -118,13 +141,16 @@ def main():
                 high = np.array([edges[axis][i + 1] for axis, i in enumerate(index)])
                 phase = "certificate"
                 gram = certificate.anchor_gram(
-                    certificate.block_lower(certificate.block_index(low)))
+                    certificate.block_lower(certificate.block_index(low))
+                )
                 weight, _ = certificate.cell_weight(high, "reduced")
                 bound = float(certificate.cell_bound(gram, low, high, weight, order))
                 # Corners are adversarial diagnostics. Interiors are independent
                 # of the stock extractor's frozen random stream.
-                points = [low, high] + [np.exp(rng.uniform(np.log(low), np.log(high)))
-                                        for _ in range(samples)]
+                points = [low, high] + [
+                    np.exp(rng.uniform(np.log(low), np.log(high)))
+                    for _ in range(samples)
+                ]
                 phase = "reference"
                 for parameter in points:
                     operator = kernel.copy()
@@ -133,8 +159,13 @@ def main():
                     metrics = field_errors(operator, source, basis)
                     if metrics["squared_relative_energy_error"] > bound + 1e-9:
                         raise RuntimeError(f"field certificate violated at {parameter}")
-                    measured.append({"htc": parameter.tolist(),
-                                     "certified_squared_energy_bound": bound, **metrics})
+                    measured.append(
+                        {
+                            "htc": parameter.tolist(),
+                            "certified_squared_energy_bound": bound,
+                            **metrics,
+                        }
+                    )
 
         extraction_rhs = int(stats["pre_svd_order"])
         record = {
@@ -146,22 +177,32 @@ def main():
             "reference_rhs": counts["reference"],
             "total_rhs": extraction_rhs + sum(counts.values()),
             "cost_scope": "source extraction plus certificate and reference inverse actions; "
-                          "spectral matvecs and AMG cycles are not RHS solves",
+            "spectral matvecs and AMG cycles are not RHS solves",
             "audit_seconds": time.perf_counter() - started - extraction_seconds,
-            "certified_relative_energy_bound": float(np.sqrt(max(
-                point["certified_squared_energy_bound"] for point in measured))),
-            "sampled_relative_energy_error": max(p["relative_energy_error"] for p in measured),
+            "certified_relative_energy_bound": float(
+                np.sqrt(
+                    max(point["certified_squared_energy_bound"] for point in measured)
+                )
+            ),
+            "sampled_relative_energy_error": max(
+                p["relative_energy_error"] for p in measured
+            ),
             "sampled_max_absolute_field_error_per_unit_input": max(
-                p["max_absolute_field_error_per_unit_input"] for p in measured),
+                p["max_absolute_field_error_per_unit_input"] for p in measured
+            ),
             "sampled_galerkin_identity_relative_gap": max(
-                p["galerkin_identity_relative_gap"] for p in measured),
+                p["galerkin_identity_relative_gap"] for p in measured
+            ),
             "samples": measured,
         }
         report["baselines"][str(seed)] = record
-        print(f"stock {seed}: order={basis.shape[1]}, extraction RHS={extraction_rhs}, "
-              f"certificate RHS={counts['certificate']}, reference RHS={counts['reference']}, "
-              f"field energy={record['sampled_relative_energy_error']:.6g}, "
-              f"bound={record['certified_relative_energy_bound']:.6g}", flush=True)
+        print(
+            f"stock {seed}: order={basis.shape[1]}, extraction RHS={extraction_rhs}, "
+            f"certificate RHS={counts['certificate']}, reference RHS={counts['reference']}, "
+            f"field energy={record['sampled_relative_energy_error']:.6g}, "
+            f"bound={record['certified_relative_energy_bound']:.6g}",
+            flush=True,
+        )
     if args.output:
         args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 

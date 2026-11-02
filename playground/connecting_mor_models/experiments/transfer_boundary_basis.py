@@ -36,9 +36,7 @@ from pathlib import Path
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
-
 from mor_common import AMGPCGSolver, SourceBox, boundary_port, build_domain
-
 
 COPPER_K = 385.0
 COPPER_RHO = 8930.0
@@ -158,10 +156,7 @@ def affine_operator(domain, top_port, interface_port, sample: TransferSample):
     p_top = effective_surface_coefficient(domain, top_port, sample.top_h)
     p_if = effective_surface_coefficient(domain, interface_port, sample.interface_h)
     return (
-        domain.K
-        + p_top * H_top
-        + p_if * H_if
-        + float(sample.shift) * domain.C
+        domain.K + p_top * H_top + p_if * H_if + float(sample.shift) * domain.C
     ).tocsc()
 
 
@@ -247,9 +242,7 @@ def transfer_boundary_basis(
         z_perp = project(z)
         return project(gramian_matvec(z_perp))
 
-    gramian = spla.LinearOperator(
-        (m, m), matvec=projected_gramian_matvec, dtype=float
-    )
+    gramian = spla.LinearOperator((m, m), matvec=projected_gramian_matvec, dtype=float)
     rng = np.random.default_rng(20260916)
     v0 = project(rng.standard_normal(m))
     v0 /= np.linalg.norm(v0)
@@ -295,9 +288,7 @@ def boundary_training_rhs(
     if extra_boundary_modes == 0:
         return np.ascontiguousarray(uniform)
     return np.ascontiguousarray(
-        np.column_stack(
-            (uniform, transfer.extra_rhs_modes[:, :extra_boundary_modes])
-        )
+        np.column_stack((uniform, transfer.extra_rhs_modes[:, :extra_boundary_modes]))
     )
 
 

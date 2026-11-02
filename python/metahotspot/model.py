@@ -189,12 +189,12 @@ class Model(OwnedHandle):
         face_owner,
         face_neighbor,
         face_axis,
-        face_sign,
         face_min,
         face_max,
     ):
         """Copy a supplied box/face mesh in SI metres; exterior neighbors are SIZE_MAX.
 
+        Owner normals are derived from face coordinates and owner centers.
         Geometry and connectivity must be valid, complete and TPFA-orthogonal.
         No mesh validity checking, generation or refinement is performed.
         """
@@ -206,7 +206,6 @@ class Model(OwnedHandle):
             "face_owner": face_owner,
             "face_neighbor": face_neighbor,
             "face_axis": face_axis,
-            "face_sign": face_sign,
             "face_min": face_min,
             "face_max": face_max,
         }
@@ -215,7 +214,7 @@ class Model(OwnedHandle):
             dtype = (
                 np.float64
                 if name in {"cell_min", "cell_max", "face_min", "face_max"}
-                else (np.int32 if name in {"face_axis", "face_sign"} else np.uintp)
+                else (np.int32 if name == "face_axis" else np.uintp)
             )
             arrays[name] = (
                 np.ascontiguousarray(value, dtype=dtype)

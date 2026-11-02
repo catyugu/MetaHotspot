@@ -210,7 +210,9 @@ def reference_discretisation_error(phys, contact_h) -> dict:
         "reference_cells": int(fine.n),
         "coarse_cells": int(coarse.n),
         "estimated_reference_error_K": float(np.nanmax(diff)),
-        "estimated_reference_die_error_K": abs(t_die(fine, t_fine) - t_die(coarse, t_coarse)),
+        "estimated_reference_die_error_K": abs(
+            t_die(fine, t_fine) - t_die(coarse, t_coarse)
+        ),
         "max_rise_K": float(t_fine.max()),
         "reference_cg_iterations": int(it_fine),
         "coarse_cg_iterations": int(it_coarse),
@@ -247,7 +249,9 @@ def blocked_flux_error(problem, qdens, q_ref, area, block: int = 4) -> float:
     weight = np.bincount(group, weights=area)
     a_mean = np.bincount(group, weights=area * qdens) / weight
     r_mean = np.bincount(group, weights=area * q_ref) / weight
-    return float(np.sqrt(np.sum(weight * (a_mean - r_mean) ** 2) / np.sum(weight * r_mean**2)))
+    return float(
+        np.sqrt(np.sum(weight * (a_mean - r_mean) ** 2) / np.sum(weight * r_mean**2))
+    )
 
 
 def observables(problem, state, ref) -> dict:
@@ -279,10 +283,15 @@ def observables(problem, state, ref) -> dict:
         "t_hotspot_pct": 100.0 * (t_hot - ref["t_hotspot"]) / ref["t_hotspot"],
         "field_max_K": float(err.max()),
         "field_rms_rel": float(
-            np.sqrt(np.sum(ref["volume"] * err**2) / np.sum(ref["volume"] * ref["reference"] ** 2))
+            np.sqrt(
+                np.sum(ref["volume"] * err**2)
+                / np.sum(ref["volume"] * ref["reference"] ** 2)
+            )
         ),
         "net_flux_W": float(q.sum()),
-        "skew_flux_max_W": float(np.max(np.abs(problem.interface_conductance_series() * skew))),
+        "skew_flux_max_W": float(
+            np.max(np.abs(problem.interface_conductance_series() * skew))
+        ),
     }
 
 
@@ -304,7 +313,9 @@ def timed_solve(problem, **kwargs):
 
 
 def run_variant(phys, variant, contact_h, correctors=14, reference=None):
-    comp, env, comp_port, env_port = mdl.build_blocks(phys, variant, contact_h=contact_h)
+    comp, env, comp_port, env_port = mdl.build_blocks(
+        phys, variant, contact_h=contact_h
+    )
     start = time.perf_counter()
     problem = InterfaceProblem(
         FvmSide(comp, {"z+": comp_port}),
@@ -328,9 +339,9 @@ def run_variant(phys, variant, contact_h, correctors=14, reference=None):
     relaxation = 1.0
     if converged["steps"][-1].max_dT > 1.0e-9:
         relaxation = 0.5
-        converged, cost_corrected = timed_solve(problem, tol=1.0e-11,
-                                                max_correctors=120,
-                                                relaxation=relaxation)
+        converged, cost_corrected = timed_solve(
+            problem, tol=1.0e-11, max_correctors=120, relaxation=relaxation
+        )
         if converged["steps"][-1].max_dT > 1.0e-9:
             raise RuntimeError(
                 f"{variant}: corrector loop did not converge even with relaxation"
@@ -351,7 +362,9 @@ def run_variant(phys, variant, contact_h, correctors=14, reference=None):
     area = problem.patches.area
     q_scale = float(np.sqrt(np.sum(area * (ref["flux"] * area) ** 2)))
     scheme = {
-        "dq_l2_rel": float(np.sqrt(np.sum(area * (q_repo - q_nc) ** 2)) / max(q_scale, 1e-300)),
+        "dq_l2_rel": float(
+            np.sqrt(np.sum(area * (q_repo - q_nc) ** 2)) / max(q_scale, 1e-300)
+        ),
         "dq_max_W": float(np.max(np.abs(q_repo - q_nc))),
         "dT_rms_mK": float(
             1e3 * np.sqrt(np.sum(area * (node_repo - node_nc) ** 2) / np.sum(area))
@@ -373,15 +386,21 @@ def run_variant(phys, variant, contact_h, correctors=14, reference=None):
         "component_h_mm": float(mdl.VARIANTS[variant][0] * 1e3),
         "correctors_to_1e-11": int(converged["correctors"]),
         "relaxation": relaxation,
-        "skew_max_mm": float(np.abs(np.r_[problem.delta_l, problem.delta_r]).max() * 1e3),
+        "skew_max_mm": float(
+            np.abs(np.r_[problem.delta_l, problem.delta_r]).max() * 1e3
+        ),
         "skew_over_half_max": float(
             np.max(
                 np.abs(
                     np.r_[
                         problem.delta_l
-                        / comp.halves()[comp_port.cells][:, 2][problem.patches.li][:, None],
+                        / comp.halves()[comp_port.cells][:, 2][problem.patches.li][
+                            :, None
+                        ],
                         problem.delta_r
-                        / env.halves()[env_port.cells][:, 2][problem.patches.ri][:, None],
+                        / env.halves()[env_port.cells][:, 2][problem.patches.ri][
+                            :, None
+                        ],
                     ]
                 )
             )
@@ -397,10 +416,19 @@ def run_variant(phys, variant, contact_h, correctors=14, reference=None):
         "cost_corrected": cost_corrected,
         "scheme": scheme,
     }
-    return meta, rows, {
-        "problem": problem, "trajectory": trajectory, "repo": repo,
-        "converged": converged, "comp": comp, "env": env, "ref": ref,
-    }
+    return (
+        meta,
+        rows,
+        {
+            "problem": problem,
+            "trajectory": trajectory,
+            "repo": repo,
+            "converged": converged,
+            "comp": comp,
+            "env": env,
+            "ref": ref,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +443,12 @@ def write_interface_vtu(path: Path, problem, ref, repo_state, nc_state) -> None:
     z0 = float(problem.interface_z)
     points = np.empty((4 * n, 3))
     for i, (x0, x1, y0, y1) in enumerate(rects):
-        points[4 * i : 4 * i + 4] = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)]
+        points[4 * i : 4 * i + 4] = [
+            (x0, y0, z0),
+            (x1, y0, z0),
+            (x1, y1, z0),
+            (x0, y1, z0),
+        ]
     connectivity = np.arange(4 * n, dtype=np.int64).reshape(-1, 4)
     area = problem.patches.area
     q_repo = problem.patch_flux(repo_state, corrected=False)
@@ -472,8 +505,17 @@ def _write_quads(path: Path, points, connectivity, fields) -> None:
 
 def write_fields_vtu(path: Path, blocks, fields) -> None:
     corners = np.array(
-        [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
-         [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], dtype=float
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ],
+        dtype=float,
     )
     points, cells = [], []
     offset = 0
@@ -485,9 +527,13 @@ def write_fields_vtu(path: Path, blocks, fields) -> None:
             (grid.x[ijk[:, 0] + 1], grid.y[ijk[:, 1] + 1], grid.z[ijk[:, 2] + 1])
         )
         points.append(
-            (lo[:, None, :] + corners[None, :, :] * (hi - lo)[:, None, :]).reshape(-1, 3)
+            (lo[:, None, :] + corners[None, :, :] * (hi - lo)[:, None, :]).reshape(
+                -1, 3
+            )
         )
-        cells.append(np.arange(8 * ijk.shape[0], dtype=np.int64).reshape(-1, 8) + offset)
+        cells.append(
+            np.arange(8 * ijk.shape[0], dtype=np.int64).reshape(-1, 8) + offset
+        )
         offset += 8 * ijk.shape[0]
     pts = np.concatenate(points)
     cls = np.concatenate(cells)
@@ -506,7 +552,7 @@ def write_fields_vtu(path: Path, blocks, fields) -> None:
         f'<Piece NumberOfPoints="{pts.shape[0]}" NumberOfCells="{cls.shape[0]}">\n'
         '<Points><DataArray type="Float64" NumberOfComponents="3" format="ascii">'
         + " ".join(f"{x:.9e} {y:.9e} {z:.9e}" for x, y, z in pts)
-        + '</DataArray></Points>\n'
+        + "</DataArray></Points>\n"
         '<Cells><DataArray type="Int64" Name="connectivity" format="ascii">'
         + " ".join(str(int(v)) for v in cls.ravel())
         + '</DataArray><DataArray type="Int64" Name="offsets" format="ascii">'
@@ -534,7 +580,10 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(
-                {k: (f"{v:.10g}" if isinstance(v, float) else v) for k, v in row.items()}
+                {
+                    k: (f"{v:.10g}" if isinstance(v, float) else v)
+                    for k, v in row.items()
+                }
             )
 
 
@@ -549,17 +598,33 @@ def export_patches(path: Path, problem, ref, repo_state, nc_state) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["x_m", "y_m", "area_m2", "q_repo_W", "q_nc_W", "q_ref_W",
-             "T_rise_repo_K", "T_rise_corrected_K", "T_rise_reference_K", "skew_K", "delta_r_m"]
+            [
+                "x_m",
+                "y_m",
+                "area_m2",
+                "q_repo_W",
+                "q_nc_W",
+                "q_ref_W",
+                "T_rise_repo_K",
+                "T_rise_corrected_K",
+                "T_rise_reference_K",
+                "skew_K",
+                "delta_r_m",
+            ]
         )
         for i in range(problem.n_patch):
             writer.writerow(
                 [
-                    f"{cents[i, 0]:.10g}", f"{cents[i, 1]:.10g}", f"{area[i]:.10g}",
-                    f"{q_repo[i]:.10g}", f"{q_nc[i]:.10g}",
+                    f"{cents[i, 0]:.10g}",
+                    f"{cents[i, 1]:.10g}",
+                    f"{area[i]:.10g}",
+                    f"{q_repo[i]:.10g}",
+                    f"{q_nc[i]:.10g}",
                     f"{ref['flux'][i] * area[i]:.10g}",
-                    f"{node_repo[i]:.10g}", f"{node_nc[i]:.10g}",
-                    f"{ref['plane'][i]:.10g}", f"{skew[i]:.10g}",
+                    f"{node_repo[i]:.10g}",
+                    f"{node_nc[i]:.10g}",
+                    f"{ref['plane'][i]:.10g}",
+                    f"{skew[i]:.10g}",
                     f"{np.linalg.norm(problem.delta_r[i]):.10g}",
                 ]
             )
@@ -584,7 +649,9 @@ def run_study(phys: mdl.Physics, variants: list[str]) -> None:
         )
         reference = reference_pair(phys, REF_H, contact_h)
         for variant in variants:
-            meta, rows, extra = run_variant(phys, variant, contact_h, reference=reference)
+            meta, rows, extra = run_variant(
+                phys, variant, contact_h, reference=reference
+            )
             for scheme in ("repo", "corrected"):
                 line = {"bondline": bondline, "variant": variant, "scheme": scheme}
                 line.update(meta[scheme])
@@ -592,11 +659,15 @@ def run_study(phys: mdl.Physics, variants: list[str]) -> None:
                 cost = meta["cost_repo"] if scheme == "repo" else meta["cost_corrected"]
                 costs.append(
                     {
-                        "bondline": bondline, "variant": variant, "scheme": scheme,
+                        "bondline": bondline,
+                        "variant": variant,
+                        "scheme": scheme,
                         "patches": meta["patches"],
                         "correctors": meta["correctors_to_1e-11"],
-                        "solves": cost["solves"], "cg_iterations": cost["cg_iterations"],
-                        "wall_s": cost["wall_s"], "setup_s": meta["setup_s"],
+                        "solves": cost["solves"],
+                        "cg_iterations": cost["cg_iterations"],
+                        "wall_s": cost["wall_s"],
+                        "setup_s": meta["setup_s"],
                         "if_q_l2_rel": meta[scheme]["if_q_l2_rel"],
                         "if_T_rms_K": meta[scheme]["if_T_rms_K"],
                         "t_die_err_mK": meta[scheme]["t_die_err_mK"],
@@ -606,7 +677,8 @@ def run_study(phys: mdl.Physics, variants: list[str]) -> None:
                 iterations.append({"bondline": bondline, "variant": variant, **row})
             meshes.append(
                 {
-                    "bondline": bondline, "variant": variant,
+                    "bondline": bondline,
+                    "variant": variant,
                     "patches": meta["patches"],
                     "component_cells": meta["component_cells"],
                     "envelope_cells": meta["envelope_cells"],
@@ -630,23 +702,38 @@ def run_study(phys: mdl.Physics, variants: list[str]) -> None:
             problem.interface_z = phys.interface_z
             write_interface_vtu(
                 VTU / f"interface_{bondline}_{variant}.vtu",
-                problem, extra["ref"], extra["repo"]["state"], extra["converged"]["state"],
+                problem,
+                extra["ref"],
+                extra["repo"]["state"],
+                extra["converged"]["state"],
             )
             if bondline == "ideal" and variant in FIELD_VTU_VARIANTS:
                 write_fields_vtu(
                     VTU / f"fields_{bondline}_{variant}.vtu",
                     [extra["comp"], extra["env"]],
                     {
-                        "T_rise_reference": [extra["ref"]["die_ref"], extra["ref"]["lid_ref"]],
-                        "T_rise_repo": [np.asarray(extra["repo"]["state"][: problem.ldof]),
-                                   np.asarray(extra["repo"]["state"][problem.right_slice])],
-                        "T_rise_corrected": [np.asarray(extra["converged"]["state"][: problem.ldof]),
-                                        np.asarray(extra["converged"]["state"][problem.right_slice])],
+                        "T_rise_reference": [
+                            extra["ref"]["die_ref"],
+                            extra["ref"]["lid_ref"],
+                        ],
+                        "T_rise_repo": [
+                            np.asarray(extra["repo"]["state"][: problem.ldof]),
+                            np.asarray(extra["repo"]["state"][problem.right_slice]),
+                        ],
+                        "T_rise_corrected": [
+                            np.asarray(extra["converged"]["state"][: problem.ldof]),
+                            np.asarray(
+                                extra["converged"]["state"][problem.right_slice]
+                            ),
+                        ],
                     },
                 )
                 export_patches(
-                    OUT / f"patches_{bondline}_{variant}.csv", problem, extra["ref"],
-                    extra["repo"]["state"], extra["converged"]["state"],
+                    OUT / f"patches_{bondline}_{variant}.csv",
+                    problem,
+                    extra["ref"],
+                    extra["repo"]["state"],
+                    extra["converged"]["state"],
                 )
             repo_obs, corr_obs = meta["repo"], meta["corrected"]
             print(
@@ -684,7 +771,9 @@ def run_refinement(phys: mdl.Physics) -> None:
         meta, _rows, _extra = run_variant(phys, name, None)
         rows.append(
             {
-                "family": name, "h_mm": h_mm, "patches": meta["patches"],
+                "family": name,
+                "h_mm": h_mm,
+                "patches": meta["patches"],
                 "repo_flux_l2": meta["repo"]["if_q_l2_rel"],
                 "corr_flux_l2": meta["corrected"]["if_q_l2_rel"],
                 "repo_ifT_rms": meta["repo"]["if_T_rms_K"],
@@ -711,7 +800,11 @@ def write_report(phys, ref_rows, meshes) -> None:
         json.dumps(
             {
                 "physics": {
-                    "base_mm": [phys.base_xy * 1e3, phys.base_xy * 1e3, phys.base_t * 1e3],
+                    "base_mm": [
+                        phys.base_xy * 1e3,
+                        phys.base_xy * 1e3,
+                        phys.base_t * 1e3,
+                    ],
                     "die_mm": [phys.die_xy * 1e3, phys.die_xy * 1e3, phys.die_t * 1e3],
                     "lid_mm": [phys.lid_xy * 1e3, phys.lid_xy * 1e3, phys.lid_t * 1e3],
                     "interface_z_mm": phys.interface_z * 1e3,
@@ -721,8 +814,10 @@ def write_report(phys, ref_rows, meshes) -> None:
                     "hotspot_W": phys.hotspot_W,
                     "source_mm": phys.source_xy * 1e3,
                     "htc": {
-                        "board": phys.h_board, "lid": phys.h_lid,
-                        "side": phys.h_side, "cavity": phys.h_cavity,
+                        "board": phys.h_board,
+                        "lid": phys.h_lid,
+                        "side": phys.h_side,
+                        "cavity": phys.h_cavity,
                     },
                     "bondlines": {name: h for name, h in BONDLINES},
                 },
@@ -750,7 +845,8 @@ def main() -> None:
         return
     variants = args.variants or (
         ["die0p5_lid0p5_same", PRIMARY, "die2p0_lid0p25_fine"]
-        if args.quick else list(mdl.VARIANTS)
+        if args.quick
+        else list(mdl.VARIANTS)
     )
     run_study(phys, variants)
     print(f"\nwrote {OUT}")

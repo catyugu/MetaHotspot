@@ -69,9 +69,6 @@ namespace mhs::core {
         /// Number of snapshots currently stored (0 right after default construction).
         std::size_t size() const noexcept { return stored_; }
 
-        /// Maximum number of snapshots this buffer can hold.
-        std::size_t capacity() const noexcept { return cap_; }
-
     private:
         /// Ring-buffer slot index for the i-th snapshot before current.
         /// Pre-condition: i < stored_.
