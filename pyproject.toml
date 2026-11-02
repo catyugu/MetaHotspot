@@ -43,6 +43,7 @@ install.components = ["python"]
 cmake.define.MHS_BUILD_TESTS = "OFF"
 cmake.define.MHS_BUILD_APPS = "OFF"
 cmake.define.MHS_INSTALL = "OFF"
+cmake.define.MHS_USE_MKL = "OFF"
 
 # The version is defined once, as macros in the public C header.
 [[tool.dynamic-metadata]]
