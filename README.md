@@ -5,7 +5,7 @@
 
 ## 下载与构建
 
-需要 Git、CMake 3.26+、支持 C++20 的编译器和 OpenMP 运行环境。Windows 使用 MSVC 或 clang-cl，
+需要 Git、CMake 3.26+、支持 C++20 的编译器和 OpenMP 运行环境。Windows 使用 MSVC 工具链，
 在开发者命令行中构建；Linux 使用 GCC 或 Clang；macOS 使用 AppleClang 并安装 `libomp`
 （`brew install libomp`）。
 CPM 按固定 Git 标签自动获取依赖，无需手动下载各个 C++ 库。
@@ -14,7 +14,7 @@ MKL 默认关闭；启用 `MHS_USE_MKL` 时必须能找到其 CMake 配置，否
 ```sh
 git clone https://github.com/catyugu/MetaHotspot.git
 cd MetaHotspot
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja # 推荐用 Ninja 或者 NMake Makefile 以生成 compile_commands.json 供 clangd 等 llvm 工具使用 
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
@@ -41,8 +41,8 @@ cpack --config build/CPackConfig.cmake -C Release -B build
 ```
 
 ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
-CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置；
-运行环境仍需相应的 C++/OpenMP 运行库。启用 MKL 的包还需要对应 MKL 运行环境。
+CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置。
+Windows 官方发行包用 MSVC 构建，随包只带 `tbb12.dll` 和 `vcomp140.dll`。对于启用 MKL 的构建，需要使用者自行处理对应 MKL 运行环境。
 GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 ZIP artifact，下载时选择对应任务。
 
 实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入

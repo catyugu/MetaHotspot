@@ -162,7 +162,12 @@ if(MHS_USE_MKL)
     # Consumed by oneMKL's own MKLConfig.cmake (MKL_LINK etc.); `sdl` is a
     # valid link mode when MPI is off (the default here).
     set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
-    set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading runtime")
+    set(MKL_THREADING "sequential" CACHE STRING "MKL threading layer (sequential|tbb_thread)")
+    if(NOT MKL_THREADING MATCHES "^(sequential|tbb_thread)$")
+        message(FATAL_ERROR
+            "MKL_THREADING must be sequential or tbb_thread, not ${MKL_THREADING}:"
+            " the project already links an OpenMP runtime and MKL must not add another")
+    endif()
     set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
     find_package(MKL CONFIG REQUIRED)
     set(MHS_ENABLE_PARDISO ON)

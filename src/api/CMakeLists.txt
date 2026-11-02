@@ -17,11 +17,6 @@ target_compile_definitions(mhs_c_api PRIVATE
 )
 target_link_libraries(mhs_c_api PRIVATE $<BUILD_INTERFACE:mhs_options>)
 
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/delayomp)
-if(TARGET mhs_delayomp)
-    target_link_libraries(mhs_c_api PRIVATE mhs_delayomp)
-endif()
-
 target_compile_definitions(mhs_c_api PUBLIC MHS_BUILD_SHARED)
 add_library(mhs::c_api ALIAS mhs_c_api)
 # Every symbol is exported by default on ELF/Mach-O; hiding them makes the
@@ -30,9 +25,12 @@ set_target_properties(mhs_c_api PROPERTIES
     EXPORT_NAME c_api
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
 )
+if(NOT SKBUILD)
+    set_target_properties(mhs_c_api PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+endif()
 if(APPLE)
     set_property(TARGET mhs_c_api PROPERTY INSTALL_RPATH "@loader_path")
 elseif(UNIX)
@@ -41,16 +39,20 @@ endif()
 mhs_stage_runtime(mhs_c_api)
 
 # scikit-build-core wheel: the Python package is a ctypes wrapper, so the
-# library is installed into the package directory and the runtime libraries it
-# needs travel with it (nothing guarantees oneTBB or an OpenMP runtime exists on
-# a machine that only runs pip). System libraries stay with the system. Both
-# rules sit in the "python" install component, the only one a wheel installs, so
-# the headers and CMake packages of the CPM dependencies stay out of it.
+# library is installed into the package directory with the runtime libraries
+# this build needs (oneTBB, and the MSVC OpenMP runtime). Windows system
+# libraries and the MSVC C runtime stay out, exactly as in the install tree.
+# Both rules sit in the "python" install component, the only one a wheel
+# installs, so the headers and CMake packages of the CPM dependencies stay out
+# of it.
 if(SKBUILD)
     install(TARGETS mhs_c_api
         RUNTIME DESTINATION metahotspot COMPONENT python
         LIBRARY DESTINATION metahotspot COMPONENT python)
     install(CODE [[
+        if(POLICY CMP0207)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
         # oneTBB is built by CPM and never installed, so its build directory has
         # to be a search location; Homebrew's OpenMP is outside the default
         # paths and announces itself through OpenMP_ROOT.
