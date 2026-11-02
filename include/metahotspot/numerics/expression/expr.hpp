@@ -1,7 +1,6 @@
 // muparser-backed expression API
 #pragma once
 
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -21,20 +20,16 @@ namespace mhs::core {
     };
     using FieldEvaluator = std::function<double(const double* args, int nargs, const FieldContext& ctx)>;
 
-    enum FieldDependency : std::uint8_t {
-        DependsX = 1,
-        DependsY = 2,
-        DependsZ = 4,
-        DependsTemperature = 8,
-        DependsTime = 16,
-        DependsAll = 31
+    // Registered under a formula-level name. A callback that is not annotated
+    // may read any context field, so it counts as temperature dependent.
+    struct NativeFunction {
+        FieldEvaluator evaluate;
+        bool reads_temperature = true;
     };
 
     struct SymbolTable {
         std::unordered_map<std::string, double> variables;
-        std::unordered_map<std::string, FieldEvaluator> natives;
-        // Unannotated native callbacks may read any context field.
-        std::unordered_map<std::string, std::uint8_t> native_dependencies;
+        std::unordered_map<std::string, NativeFunction> natives;
     };
 
     // Internal: Thread-Local Storage wrapper for muparser compiled instances
@@ -54,8 +49,7 @@ namespace mhs::core {
 
         double eval(const FieldContext& ctx) const;
 
-        std::uint8_t dependencies() const { return dependencies_; }
-        bool depends_on_temperature() const { return (dependencies_ & DependsTemperature) != 0; }
+        bool depends_on_temperature() const { return temperature_dependent_; }
 
         bool is_constant() const { return std::holds_alternative<double>(value_); }
         double constant_value() const { return std::get<double>(value_); }
@@ -64,7 +58,7 @@ namespace mhs::core {
         static CompiledExpression make_evaluator(const std::string& formula, const SymbolTable& symbols);
 
     private:
-        std::uint8_t dependencies_ = 0;
+        bool temperature_dependent_ = false;
         std::variant<double, std::shared_ptr<MuCompiledTLS>> value_ {0.0};
     };
 

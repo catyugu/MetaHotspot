@@ -26,7 +26,7 @@ namespace mhs::core {
 
 `MuCompiledTLS` 按值持有 `SymbolTable` 副本。ETS 构造器 lambda 按值捕获公式，通过 `this` 访问该副本；共享句柄维持 `MuCompiledTLS` 的生命周期。构造时立即调用 `tls.local()` 完成当前线程的解析和验证，后续求值复用该解析器。其他线程在首次求值时构造各自的解析器。
 
-`dependencies()` 返回 `x/y/z/T/t` 的依赖位掩码，`depends_on_temperature()` 用于选择边界解析路径。直接变量从 muparser 的已用变量集合读取；命名函数传播其内部上下文依赖，参数依赖由外层表达式提供。未声明依赖的自定义 native 保守视为可能读取所有上下文变量。纯数字表达式的依赖掩码为零。
+`depends_on_temperature()` 标记表达式是否读取温度场，边界求解据此选择解析快速路径或局部非线性求根。直接变量从 muparser 的已用变量集合读取；命名函数在注册时携带自己的标志并向调用方传播。未标注温度依赖的自定义 native 保守视为可能读取温度。纯数字表达式为假。
 
 特点：
 
@@ -41,15 +41,19 @@ namespace mhs::core {
 
 ```cpp
 namespace mhs::core {
+    struct NativeFunction {
+        FieldEvaluator evaluate;
+        bool reads_temperature = true; // 未标注的 native 保守视为读取温度
+    };
     struct SymbolTable {
-        std::unordered_map<std::string, double> variables;     // 几何变量，长度按输入单位
-        std::unordered_map<std::string, FieldEvaluator> natives; // 注册 C++ 函数
+        std::unordered_map<std::string, double> variables;       // 几何变量，长度按输入单位
+        std::unordered_map<std::string, NativeFunction> natives; // 注册 C++ 函数及其温度依赖
     };
 }
 ```
 
 - `variables` — 在 `eval_geometry()` 中被 substring 扫描 + `DefineVar` 绑定；在 `parse()` 中**不参与**绑定（场/BC 公式只引用 `x/y/z/T/t`）。
-- `natives` — 在各线程解析器构造时通过 `DefineFunUserData()` 绑定；每个 `MuCompiled` 的预留 vector 持有 `NativeFnCtx` 和闭包副本，`MuCompiledTLS` 另持有符号表快照。
+- `natives` — 在各线程解析器构造时通过 `DefineFunUserData()` 绑定；每个 `MuCompiled` 的预留 vector 持有 `NativeFnCtx` 和闭包副本，`MuCompiledTLS` 另持有符号表快照。`reads_temperature` 只服务边界解析路径的选择，不改变求值。
 
 Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void*, const value_type*, int)`) 注册到 muparser 的 `DefineFunUserData()` 槽，muparser 调用时先把所有实参独立求值，再以 `double* + int` 形式回调 `native_fn_bridge` 静态函数，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
 

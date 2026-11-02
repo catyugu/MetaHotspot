@@ -29,8 +29,8 @@ namespace mhs::post {
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
-        std::vector<double> numerator(model.output.points.size(), 0.0);
-        std::vector<double> denominator(model.output.points.size(), 0.0);
+        std::vector<double> node_T(model.output.points.size(), 0.0);
+        std::vector<double> weight(node_T.size(), 0.0);
         for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];
@@ -42,14 +42,12 @@ namespace mhs::post {
                 const double sample
                     = mhs::sim::boundary_value_at(model, cell_temperature, time, {c}, p).value_or(temperature);
                 const double w = anisotropic_weight(center, p, conductivity);
-                numerator[v] += w * sample;
-                denominator[v] += w;
+                node_T[v] += w * sample;
+                weight[v] += w;
             }
         }
-        std::vector<double> node_T(model.output.points.size(), std::numeric_limits<double>::quiet_NaN());
         for (mhs::core::Index v = 0; v < node_T.size(); ++v)
-            if (denominator[v] > 0.0)
-                node_T[v] = numerator[v] / denominator[v];
+            node_T[v] = weight[v] > 0.0 ? node_T[v] / weight[v] : std::numeric_limits<double>::quiet_NaN();
         return node_T;
     }
 

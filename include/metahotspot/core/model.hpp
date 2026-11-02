@@ -6,15 +6,13 @@
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
-#include <algorithm>
-#include <span>
 #include <string>
 #include <variant>
 #include <vector>
 
 namespace mhs::core {
 
-    // Boundary integration face and its trace DOF on an unchanged topological face.
+    // Projected integration patch on an external topological face.
     struct BoundaryFace {
         FaceId parent;
         TableIndex condition; // index in the condition table used for this projection
@@ -69,7 +67,7 @@ namespace mhs::core {
         std::vector<CompiledExpression> heat_source_table;
         std::vector<BoundaryCondition> boundary_conditions;
         std::vector<SourceTerm> source_terms;
-        std::vector<BoundaryFace> boundary_faces;
+        std::vector<BoundaryFace> boundary_faces; // sorted by parent FaceId
         FluidDomain fluid;
 
         double initial_temperature = 300.0;
@@ -78,17 +76,6 @@ namespace mhs::core {
         double transient_time_step = 1.0;
 
         std::vector<ProbePoint> observation_points;
-
-        // Compiled patches are sorted by parent FaceId.
-        std::span<const BoundaryFace> boundary_faces_on(FaceId parent) const
-        {
-            auto first = std::lower_bound(boundary_faces.begin(), boundary_faces.end(), parent,
-                [](const BoundaryFace& f, FaceId p) { return f.parent.value < p.value; });
-            auto last = first;
-            while (last != boundary_faces.end() && last->parent == parent)
-                ++last;
-            return {first, last};
-        }
     };
 
 } // namespace mhs::core
