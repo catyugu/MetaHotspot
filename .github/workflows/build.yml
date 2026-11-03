@@ -207,7 +207,6 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: MetaHotspot-wheel-${{ runner.os }}
-          path: wheelhouse
       - run: python -m pip install pytest
       - name: Test installed wheel without compiler setup
         shell: bash
