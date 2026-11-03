@@ -1,25 +1,14 @@
-"""Inspect the final wheel's native dependency closure and platform baseline."""
+"""Check wheel contents and Windows runtime closure after platform repair."""
 
 from __future__ import annotations
 
 import argparse
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
-
-# Libraries permitted by the manylinux policy; OpenMP and TBB are never system
-# dependencies, regardless of where they lived on the build machine.
-ELF_SYSTEM = re.compile(
-    r"^(lib(c|m|dl|rt|pthread|gcc_s|stdc\+\+|util|resolv)\.so[.\d]*|ld-linux.*)$"
-)
-
-
-def output(*args):
-    return subprocess.check_output(list(map(str, args)), text=True)
 
 
 def check_version(actual, maximum, binary):
@@ -30,71 +19,6 @@ def check_version(actual, maximum, binary):
 
     if version(actual) > version(maximum):
         raise ValueError(f"{binary}: requires {actual}, baseline is {maximum}")
-
-
-def check_dependency(name, binary, root, search):
-    if Path(name).is_absolute():
-        raise ValueError(f"{binary}: absolute dependency outside wheel: {name}")
-    for directory in search:
-        candidate = (directory / name).resolve()
-        if candidate.is_relative_to(root.resolve()) and candidate.is_file():
-            return
-    raise ValueError(f"{binary}: unresolved dependency {name}")
-
-
-def check_elf(binary, root):
-    dynamic = output("readelf", "-d", binary)
-    paths = re.findall(r"\((?:RUNPATH|RPATH)\).*\[(.*?)\]", dynamic)
-    search = []
-    for path in ":".join(paths).split(":"):
-        if not path:
-            continue
-        path = path.replace("${ORIGIN}", str(binary.parent)).replace(
-            "$ORIGIN", str(binary.parent)
-        )
-        directory = Path(path).resolve()
-        if not directory.is_relative_to(root):
-            raise ValueError(f"{binary}: external runtime search path {path}")
-        search.append(directory)
-    for name in re.findall(r"\(NEEDED\).*\[(.*?)\]", dynamic):
-        if not ELF_SYSTEM.fullmatch(name):
-            check_dependency(name, binary, root, search)
-    versions = output("readelf", "--version-info", binary)
-    for family, maximum in (
-        ("GLIBC", "2.28"),
-        ("GLIBCXX", "3.4.25"),
-        ("CXXABI", "1.3.11"),
-    ):
-        for actual in re.findall(rf"\b{family}_([0-9.]+)", versions):
-            check_version(actual, maximum, binary)
-
-
-def check_macho(binary, root, baseline):
-    if output("lipo", "-archs", binary).strip() != "arm64":
-        raise ValueError(f"{binary}: expected arm64")
-    commands = output("otool", "-l", binary)
-    for actual in re.findall(r"\bminos\s+([0-9.]+)", commands):
-        check_version(actual, baseline, binary)
-    for block in commands.split("Load command "):
-        if "LC_VERSION_MIN_MACOSX" in block:
-            actual = re.search(r"\bversion\s+([0-9.]+)", block).group(1)
-            check_version(actual, baseline, binary)
-    # -D identifies the dylib's own install name, which -L also prints.
-    own_ids = output("otool", "-D", binary).splitlines()[1:]
-    rpaths = re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset", commands)
-    search = [Path(p.replace("@loader_path", str(binary.parent))) for p in rpaths]
-    for line in output("otool", "-L", binary).splitlines()[1:]:
-        name = line.strip().split(" (", 1)[0]
-        if name in own_ids or name.startswith(("/usr/lib/", "/System/Library/")):
-            continue
-        if name.startswith("@loader_path/"):
-            check_dependency(
-                name[len("@loader_path/") :], binary, root, [binary.parent]
-            )
-        elif name.startswith("@rpath/"):
-            check_dependency(name[len("@rpath/") :], binary, root, search)
-        else:
-            check_dependency(name, binary, root, [])
 
 
 def check_pe(binary, root, *, sdk=False):
@@ -133,18 +57,14 @@ def check_pe(binary, root, *, sdk=False):
             raise ValueError(f"{binary}: missing DLL {name}")
 
 
-def inspect(root, *, baseline="11.0", sdk=False):
+def inspect(root, *, sdk=False):
     binaries = []
     for binary in root.rglob("*"):
         if not binary.is_file():
             continue
         with binary.open("rb") as stream:
             magic = stream.read(4)
-        if magic == b"\x7fELF":
-            check_elf(binary, root)
-        elif magic in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"):
-            check_macho(binary, root, baseline)
-        elif magic[:2] == b"MZ":
+        if magic[:2] == b"MZ":
             check_pe(binary, root, sdk=sdk)
         else:
             continue
@@ -174,8 +94,16 @@ def main():
                 }[sys.platform]
                 if f"Tag: py3-none-{platform}" not in tags:
                     raise ValueError(f"Unexpected wheel tags: {tags}")
-            archive.extractall(root)
-        inspect(root, sdk=args.sdk)
+                library = {
+                    "linux": "libmhs_c_api.so",
+                    "darwin": "libmhs_c_api.dylib",
+                    "win32": "mhs_c_api.dll",
+                }[sys.platform]
+                if f"metahotspot/{library}" not in archive.namelist():
+                    raise ValueError(f"Missing ctypes library: {library}")
+            if args.sdk or sys.platform == "win32":
+                archive.extractall(root)
+                inspect(root, sdk=args.sdk)
 
 
 if __name__ == "__main__":

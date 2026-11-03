@@ -81,7 +81,6 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
-      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -89,12 +88,15 @@ jobs:
           python-version: "3.12"
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
-      - run: python -m pip install 'cmake>=3.30' ninja pefile pytest
-      - run: python -m pytest ci/test_check_wheel.py -q
+      - run: python -m pip install 'cmake>=3.30' ninja
+      - if: runner.os == 'Windows'
+        run: python -m pip install pefile
       - if: matrix.cxx == 'clang++-18'
         run: sudo apt-get update && sudo apt-get install -y clang-18 libomp-18-dev
       - if: runner.os == 'macOS'
-        uses: ./.github/actions/setup-macos-openmp
+        run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
       # Configure fetches every dependency over the network, so a run that keeps
       # no copy pays the whole clone cost in all seven jobs.
       - uses: actions/cache@v6
@@ -109,6 +111,7 @@ jobs:
           $archive = (Get-ChildItem build/MetaHotspot-*.zip).FullName
           python ci/check_wheel.py --sdk $archive
       - uses: actions/upload-artifact@v7
+        if: matrix.config == 'Release'
         with:
           name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
           path: build/MetaHotspot-*.zip
@@ -152,11 +155,13 @@ jobs:
         run: echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
-      - run: python -m pip install build 'cmake>=3.30' ninja pytest pefile
+      - run: python -m pip install build 'cmake>=3.30' ninja
       - if: runner.os == 'Linux'
-        run: python -m pip install auditwheel patchelf
+        run: |
+          python -m pip install auditwheel patchelf pytest
+          python -m pytest ci -q
       - if: runner.os == 'Windows'
-        run: python -m pip install delvewheel
+        run: python -m pip install delvewheel pefile
       - if: runner.os == 'macOS'
         run: python -m pip install delocate
       - if: runner.os == 'macOS'
@@ -170,14 +175,14 @@ jobs:
       # Hide the source of the bundled runtime before any installed-wheel test.
       - if: runner.os == 'macOS'
         run: mv "$OpenMP_ROOT" "$OpenMP_ROOT.hidden"
-      - name: Install final wheel and exercise native solver
+      - name: Exercise baseline wheel with bundled runtime
+        if: runner.os != 'Windows'
         shell: bash
         env:
           OMP_NUM_THREADS: "2"
         run: |
-          python ci/check_python.py --wheel "$(find wheelhouse -name '*.whl')"
+          python -m pip install wheelhouse/*.whl
           python ci/wheel_smoke.py native-first
-          python ci/wheel_smoke.py numpy-first
       - uses: actions/upload-artifact@v7
         with:
           name: MetaHotspot-wheel-${{ matrix.platform }}

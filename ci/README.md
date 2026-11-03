@@ -1,8 +1,9 @@
 # Build and distribution checks
 
 The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC, clang-cl and a
-multi-configuration MSVC generator. Debug and sanitizer archives are development
-artifacts. Windows clang-cl uses Release so its ZIP can be deployed with the
+multi-configuration MSVC generator. Only Release ZIPs are uploaded; Debug and
+sanitizer jobs still build, test, install and package. Windows clang-cl uses
+Release so its ZIP can be deployed with the
 Visual C++ Redistributable. SDK consumers still need the compiler toolchain and
 CMake dependencies exported by `MetaHotspotConfig.cmake`.
 
@@ -23,12 +24,17 @@ remain native: `python -m build` or `pip install .` does not require Docker.
 Native Linux builds produce local `linux_x86_64` wheels; portable manylinux wheels
 must be compiled in the baseline environment, not merely relabelled afterward.
 
-macOS uses the latest ARM64 runner, with `MACOSX_DEPLOYMENT_TARGET=11.0` for all
-compiled libraries. The shared setup action builds pinned upstream LLVM OpenMP
+The macOS wheel uses the latest ARM64 runner, with
+`MACOSX_DEPLOYMENT_TARGET=11.0` for all compiled libraries. Its setup action builds
+pinned upstream LLVM OpenMP
 from source with that target. It avoids depending on the minimum OS version of a
 Homebrew bottle. Delocate rewrites the Mach-O dependency names and rejects any
 bundled dylib that requires a newer system. There is no maximum macOS version or
-Intel macOS build.
+Intel macOS build. Ordinary C++ SDK jobs use Homebrew's `libomp` and the runner's
+native deployment target; their ZIP does not promise the wheel's macOS baseline.
+
+muparser is built with `ENABLE_OPENMP=OFF`; expression evaluation already uses
+TBB. AMGCL retains its explicitly linked OpenMP backend.
 
 CMake collects the runtime libraries needed for local source installs; missing
 non-system dependencies are fatal. The Linux filter excludes named system
@@ -49,22 +55,26 @@ searching only the external build environment.
 
 ## Artifact acceptance
 
-`ci/check_wheel.py` opens the **repaired wheel** and checks:
+Platform repair tools enforce their own binary policies: `auditwheel repair
+--plat` rejects symbols newer than manylinux 2.28 and bundles non-system ELF
+dependencies; `delocate-wheel` rewrites Mach-O paths and enforces ARM64 and the
+macOS 11 baseline. The project does not duplicate their ELF/Mach-O parsers.
 
-- the `py3-none` platform tag;
-- ELF dependency resolution through in-wheel RPATH/RUNPATH, plus the glibc,
-  libstdc++ and C++ ABI symbol ceilings for manylinux 2.28;
-- ARM64 Mach-O dependency paths and every dylib's minimum system version;
-- PE imports and delay imports, including bundled OpenMP, TBB and VC runtimes;
-  bundled VC runtime versions must meet the importing binary's linker toolset.
+`ci/check_wheel.py` opens the **repaired wheel** and checks the `py3-none`
+platform tag and the library filename used by the ctypes loader. On Windows it
+also checks PE imports and delay imports, including bundled OpenMP, TBB and VC
+runtimes; bundled VC runtime versions must meet the importing binary's linker
+toolset.
 
 The same PE checker inspects Windows SDK ZIPs, allowing their documented VC
 runtime dependency. Debug SDKs also require the toolchain's Debug OpenMP runtime;
 that non-redistributable DLL is not put into Release SDKs or wheels. Missing
 Release OpenMP is never excused by its presence in System32.
 
-The wheel build job installs only the repaired artifact and runs all Python
-tests. On macOS it first hides the original OpenMP installation. Independent
+CI helper tests run once in the Linux wheel job, including repair-policy and
+muparser configuration regressions. The Linux wheel job runs a native solver
+smoke test inside the manylinux baseline container. The macOS wheel job runs the
+same smoke test after hiding the original OpenMP installation. Independent
 Python test jobs have no build tree or OpenMP development setup. Each also runs
 `ci/wheel_smoke.py` twice, in separate processes, loading native code before and
 after NumPy/SciPy and solving a 15,625-cell thermal problem with two OpenMP
@@ -74,7 +84,7 @@ successes that never exercise the AMG solver.
 Useful checks:
 
 ```sh
-python -m pytest ci/test_check_wheel.py -q
+python -m pytest ci -q
 python ci/check_python.py --build-only  # baseline build environment + repair tool
 python ci/check_wheel.py wheelhouse/metahotspot-....whl
 python ci/check_python.py --wheel wheelhouse/metahotspot-....whl
