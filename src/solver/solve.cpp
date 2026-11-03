@@ -30,15 +30,15 @@ namespace mhs::sim {
             }
         }
 
-        SolverSpec build_solver_spec(const SolveOptions& opts)
+        mhs::numerics::SolverSpec build_solver_spec(const SolveOptions& opts)
         {
-            SolverType type;
+            mhs::numerics::SolverType type;
             switch (opts.linear_solver) {
             case SolveOptions::LinearSolverType::Pardiso:
-                type = SolverType::Pardiso;
+                type = mhs::numerics::SolverType::Pardiso;
                 break;
             case SolveOptions::LinearSolverType::AmgCg:
-                type = SolverType::AmgCg;
+                type = mhs::numerics::SolverType::AmgCg;
                 break;
             default:
                 throw std::invalid_argument("build_solver_spec: unknown linear_solver");
@@ -52,8 +52,8 @@ namespace mhs::sim {
                 opts.nonlinear_absolute_tolerance};
         }
 
-        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state, SolverPtr& solver,
-            const NonLinearConfig& nl_config, const StateObserver& observe)
+        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state,
+            mhs::numerics::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe)
         {
             const auto state_count = state.size();
             mhs::core::Solution result;
@@ -65,7 +65,7 @@ namespace mhs::sim {
             auto nonlinear_result = nonlinear_solve(build_ls, state, solver, nl_config);
             result.state = std::move(state);
             result.time = 0.0;
-            result.converged = nonlinear_result.converged;
+            result.converged = nonlinear_result;
             result.snapshot_times.push_back(0.0);
             result.snapshot_states = result.state;
             if (observe)
@@ -74,8 +74,8 @@ namespace mhs::sim {
         }
 
         mhs::core::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
-            std::vector<double> state, SolverPtr& solver, const SolveOptions& opts, NonLinearConfig nl_config,
-            time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
+            std::vector<double> state, mhs::numerics::SolverPtr& solver, const SolveOptions& opts,
+            NonLinearConfig nl_config, time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
             const StateObserver& observe)
         {
             const auto state_count = state.size();
@@ -107,7 +107,7 @@ namespace mhs::sim {
                 auto saved_state = state;
                 auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
 
-                if (!nl.converged) {
+                if (!nl) {
                     state = std::move(saved_state);
                     dt_sug = dt * 0.5;
                     MHS_LOG_DEBUG("Step rejected at t={} (nonlinear), retry dt={}", current_time, dt_sug);
@@ -199,7 +199,7 @@ namespace mhs::sim {
             && opts.step_strategy != SolveOptions::StepStrategy::Fixed)
             throw std::invalid_argument("unknown step strategy");
 
-        SolverPtr solver = create_solver(solver_spec);
+        mhs::numerics::SolverPtr solver = mhs::numerics::create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
 
         if (study.type == mhs::core::StudyType::Steady) {
@@ -233,13 +233,12 @@ namespace mhs::sim {
         SystemAssembler assemble
             = [&](std::span<const double> s, double t) { return mhs::sim::assemble_thermal(model, s, t); };
 
-        ProbeRecorder probe_recorder;
-        probe_recorder.initialize(model);
+        ProbeRecorder probe_recorder(model);
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 
         auto sol = solve_system(study, assemble, state, options, observe);
-        sol.probe_traces = probe_recorder.traces();
+        sol.probe_traces = std::move(probe_recorder).take_traces();
         return sol;
     }
 

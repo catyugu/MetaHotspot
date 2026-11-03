@@ -324,7 +324,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_owner);
         CHECK_NULL(input->face_neighbor);
         CHECK_NULL(input->face_axis);
-        CHECK_NULL(input->face_sign);
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::core::DiscreteMesh mesh;
@@ -340,7 +339,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             f.owner = {input->face_owner[id]};
             f.neighbor = {input->face_neighbor[id]};
             f.axis = input->face_axis[id];
-            f.sign = input->face_sign[id];
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
@@ -658,7 +656,6 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(out);
     out->cell_count = c->model->discrete.cells.size();
     out->face_count = c->model->discrete.faces.size();
-    out->state_count = c->model->discrete.cells.size();
     out->projection_count = c->model->source_terms.size();
     out->source_count = c->model->heat_source_table.size();
     out->study_type = _from_core_study(c->model->study_type);
@@ -717,54 +714,22 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->cell_min);
+    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {
+        SET_ERR("NULL cell field buffer");
+        return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->cell_max);
+    if (fields->face_count
+        && (!fields->face_owner || !fields->face_neighbor || !fields->face_axis || !fields->face_sign
+            || !fields->face_min || !fields->face_max || !fields->face_area || !fields->owner_distance
+            || !fields->neighbor_distance)) {
+        SET_ERR("NULL face field buffer");
+        return MHS_ERROR;
     }
-    if (fields->cell_count > 0) {
-        CHECK_NULL(fields->material_id);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_owner);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_neighbor);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_axis);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_sign);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_min);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_max);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->face_area);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->owner_distance);
-    }
-    if (fields->face_count > 0) {
-        CHECK_NULL(fields->neighbor_distance);
-    }
-
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_cell);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_source);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_volume);
-    }
-    if (fields->projection_count > 0) {
-        CHECK_NULL(fields->projection_center);
+    if (fields->projection_count
+        && (!fields->projection_cell || !fields->projection_source || !fields->projection_volume
+            || !fields->projection_center)) {
+        SET_ERR("NULL projection field buffer");
+        return MHS_ERROR;
     }
     for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
         for (size_t a = 0; a < 3; ++a) {
@@ -843,7 +808,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
             const auto p = mesh.cells[cell].center();
             const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
-            const mhs::core::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
+            const mhs::numerics::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);
             values->conductivity_y[cell] = props.ky.eval(context);
             values->conductivity_z[cell] = props.kz.eval(context);
@@ -962,10 +927,8 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
 
         // Build initial state span
         std::span<const double> init_span;
-        std::vector<double> owned;
         if (state && state_count > 0) {
-            owned.assign(state, state + state_count);
-            init_span = owned;
+            init_span = {state, state_count};
         }
 
         auto sol = mhs::sim::solve(*c->model, init_span, so);
@@ -1050,8 +1013,8 @@ MHS_API mhs_status_t mhs_solution_probe_get_info(
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
-    double* times, double* values, size_t record_count)
+MHS_API mhs_status_t mhs_solution_copy_probe(
+    const mhs_solution_t* s, size_t index, char* name, size_t name_size, double* values, size_t record_count)
 {
     CHECK_NULL(s);
     CHECK_NULL(name);
@@ -1064,12 +1027,11 @@ MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t ind
         SET_ERR("probe buffer sizes do not match probe data");
         return MHS_ERROR;
     }
-    if (record_count > 0 && (!times || !values)) {
+    if (record_count > 0 && !values) {
         SET_ERR("NULL probe output buffer");
         return MHS_ERROR;
     }
     std::memcpy(name, tr.name.c_str(), name_size);
-    std::copy(s->sol.snapshot_times.begin(), s->sol.snapshot_times.end(), times);
     std::copy(tr.values.begin(), tr.values.end(), values);
     mhs_detail_clear_last_error();
     return MHS_OK;

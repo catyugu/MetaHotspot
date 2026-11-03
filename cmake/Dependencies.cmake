@@ -22,14 +22,15 @@ find_package(OpenMP REQUIRED COMPONENTS CXX)
 # ----------------------------------------------------------------------------
 # Eigen - header-only linear algebra. SYSTEM keeps a dependency's headers out of
 # this project's warning policy. The CMake package is only generated when it is
-# going to be installed next to us.
+# going to be installed next to us. Sourced from the GitHub mirror: anonymous
+# clones of gitlab.com fail from CI runners while GitLab is under load.
 # ----------------------------------------------------------------------------
 if(NOT TARGET Eigen3::Eigen)
     CPMFindPackage(
         NAME Eigen3
         VERSION ${MHS_EIGEN_VERSION}
         FIND_PACKAGE_ARGUMENTS CONFIG
-        GITLAB_REPOSITORY libeigen/eigen
+        GITHUB_REPOSITORY eigen-mirror/eigen
         GIT_TAG ${MHS_EIGEN_VERSION}
         SYSTEM YES
         OPTIONS "EIGEN_BUILD_CMAKE_PACKAGE ${MHS_INSTALL}"
@@ -78,6 +79,7 @@ if(NOT TARGET muparser::muparser)
         SYSTEM YES
         OPTIONS
         "ENABLE_SAMPLES OFF"
+        "ENABLE_OPENMP OFF"
         "BUILD_TESTING OFF"
         "BUILD_SHARED_LIBS OFF"
     )
@@ -161,7 +163,12 @@ if(MHS_USE_MKL)
     # Consumed by oneMKL's own MKLConfig.cmake (MKL_LINK etc.); `sdl` is a
     # valid link mode when MPI is off (the default here).
     set(MKL_LINK "sdl" CACHE STRING "MKL link type (sdl|static|dynamic)")
-    set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading runtime")
+    set(MKL_THREADING "sequential" CACHE STRING "MKL threading layer (sequential|tbb_thread)")
+    if(NOT MKL_THREADING MATCHES "^(sequential|tbb_thread)$")
+        message(FATAL_ERROR
+            "MKL_THREADING must be sequential or tbb_thread, not ${MKL_THREADING}:"
+            " the project already links an OpenMP runtime and MKL must not add another")
+    endif()
     set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
     find_package(MKL CONFIG REQUIRED)
     set(MHS_ENABLE_PARDISO ON)

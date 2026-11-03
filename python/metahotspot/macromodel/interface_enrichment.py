@@ -125,7 +125,7 @@ def _active_ambient_data(subdomain: Subdomain):
     ranges: list[list[float]] = []
     effective: list[float] = []
     for idx, (term, h_range) in enumerate(
-        zip(subdomain.ambient_terms, subdomain.ambient_ranges)
+        zip(subdomain.ambient_terms, subdomain.ambient_ranges, strict=True)
     ):
         diagonal = np.asarray(term.diagonal(), dtype=np.float64)
         if not np.any(np.abs(diagonal) > 0.0):

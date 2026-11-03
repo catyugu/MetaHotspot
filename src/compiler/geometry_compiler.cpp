@@ -42,7 +42,7 @@ namespace mhs::sim {
     } // anonymous namespace
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols)
+        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::numerics::SymbolTable& symbols)
     {
         mhs::core::Index num_layers = static_cast<mhs::core::Index>(layers.size());
         std::vector<ResolvedLayerGeometry> resolved(num_layers);
@@ -54,18 +54,18 @@ namespace mhs::sim {
                 double max_t = 0.0;
                 for (const auto& b : layers[l].blocks) {
                     if (b.thickness.has_value()) {
-                        double t = mhs::core::eval_geometry(*b.thickness, symbols) * si_scale;
+                        double t = mhs::numerics::eval_geometry(*b.thickness, symbols) * si_scale;
                         if (t > max_t)
                             max_t = t;
                     }
                 }
                 double layer_t = layers[l].thickness.empty()
                     ? 0.0
-                    : mhs::core::eval_geometry(layers[l].thickness, symbols) * si_scale;
+                    : mhs::numerics::eval_geometry(layers[l].thickness, symbols) * si_scale;
                 thickness[l] = std::max(max_t, layer_t);
             }
             else {
-                thickness[l] = mhs::core::eval_geometry(layers[l].thickness, symbols) * si_scale;
+                thickness[l] = mhs::numerics::eval_geometry(layers[l].thickness, symbols) * si_scale;
             }
             z_cursor += thickness[l];
         }
@@ -77,16 +77,16 @@ namespace mhs::sim {
 
         for (mhs::core::Index l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
-            double layer_x_off_si = mhs::core::eval_geometry(layer.x_offset, symbols) * si_scale;
-            double layer_y_off_si = mhs::core::eval_geometry(layer.y_offset, symbols) * si_scale;
+            double layer_x_off_si = mhs::numerics::eval_geometry(layer.x_offset, symbols) * si_scale;
+            double layer_y_off_si = mhs::numerics::eval_geometry(layer.y_offset, symbols) * si_scale;
 
             for (const auto& block : layer.blocks) {
                 ResolvedBlock rb;
-                double block_x_off_si = mhs::core::eval_geometry(block.x_offset, symbols) * si_scale;
-                double block_y_off_si = mhs::core::eval_geometry(block.y_offset, symbols) * si_scale;
+                double block_x_off_si = mhs::numerics::eval_geometry(block.x_offset, symbols) * si_scale;
+                double block_y_off_si = mhs::numerics::eval_geometry(block.y_offset, symbols) * si_scale;
 
                 if (l == 0 && block.thickness.has_value()) {
-                    double b_thick = mhs::core::eval_geometry(*block.thickness, symbols) * si_scale;
+                    double b_thick = mhs::numerics::eval_geometry(*block.thickness, symbols) * si_scale;
                     rb.z_start = resolved[l].z_start;
                     rb.z_end = resolved[l].z_start + b_thick;
                 }
@@ -99,10 +99,10 @@ namespace mhs::sim {
                     const auto& rect = operation.rect;
                     ResolvedRect rr;
                     rr.operation = operation.operation;
-                    double x_val = mhs::core::eval_geometry(rect.x, symbols);
-                    double y_val = mhs::core::eval_geometry(rect.y, symbols);
-                    double w_val = mhs::core::eval_geometry(rect.width, symbols);
-                    double h_val = mhs::core::eval_geometry(rect.height, symbols);
+                    double x_val = mhs::numerics::eval_geometry(rect.x, symbols);
+                    double y_val = mhs::numerics::eval_geometry(rect.y, symbols);
+                    double w_val = mhs::numerics::eval_geometry(rect.width, symbols);
+                    double h_val = mhs::numerics::eval_geometry(rect.height, symbols);
                     if (w_val < 0) {
                         x_val += w_val;
                         w_val = -w_val;
@@ -192,11 +192,11 @@ namespace mhs::sim {
         }
     }
 
-    std::vector<mhs::core::BoundaryTerm> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
         const std::vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
     {
         using namespace mhs::core;
-        std::vector<BoundaryTerm> terms;
+        std::vector<BoundaryFace> faces;
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
             if (face.neighbor.valid())
@@ -225,12 +225,7 @@ namespace mhs::sim {
             unique(cb);
             for (Index i = 1; i < ca.size(); ++i)
                 for (Index j = 1; j < cb.size(); ++j) {
-                    auto patch = face;
-                    patch.min[a] = ca[i - 1];
-                    patch.max[a] = ca[i];
-                    patch.min[b] = cb[j - 1];
-                    patch.max[b] = cb[j];
-                    patch.area = (ca[i] - ca[i - 1]) * (cb[j] - cb[j - 1]);
+                    const auto patch = face.project({ca[i - 1], ca[i], cb[j - 1], cb[j]});
                     const auto p = patch.center();
                     TableIndex condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
@@ -240,10 +235,12 @@ namespace mhs::sim {
                             break;
                         }
                     }
-                    terms.push_back({FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    if (condition != invalidTableIndex)
+                        faces.push_back(
+                            {FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
-        return terms;
+        return faces;
     }
 
 } // namespace mhs::sim

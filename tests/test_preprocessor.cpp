@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "core/boundary_geometry.hpp"
 #include "core/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "numerics/expression/expr.hpp"
@@ -12,18 +11,17 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 // Helpers for testing patch-based BC assignment.
 
-/// Find a boundary integration term on `cell_idx` with direction `dir`.
-/// Returns nullptr for an internal face without a boundary term.
-static const mhs::core::BoundaryTerm* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+/// Find a boundary integration face on `cell_idx` with direction `dir`.
+/// Returns nullptr for an internal face without a boundary face.
+static const mhs::core::BoundaryFace* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
-        if (!f.neighbor.valid() && f.axis == static_cast<int>(dir) / 2
-            && f.sign == (static_cast<int>(dir) % 2 ? 1 : -1)) {
-            const auto terms = boundary_terms_on_face(model, id);
-            if (!terms.empty())
-                return &terms.front();
-        }
+        if (f.neighbor.valid() || f.axis != static_cast<int>(dir) / 2 || f.sign != (static_cast<int>(dir) % 2 ? 1 : -1))
+            continue;
+        for (const auto& patch : model.boundary_faces)
+            if (patch.parent == id)
+                return &patch;
     }
     return nullptr;
 }
@@ -452,7 +450,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalidIndex);
     int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
 
-    const mhs::core::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
+    const mhs::numerics::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
@@ -490,7 +488,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     ASSERT_NE(cell, mhs::core::invalidIndex);
     const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
-    const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
+    const mhs::numerics::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
     EXPECT_DOUBLE_EQ(condition->coefficient.eval(ctx), 42.0);
     EXPECT_DOUBLE_EQ(condition->ambient_temperature.eval(ctx), 280.0);
 }

@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 import metahotspot
-from metahotspot.compiled import CellFields
+from metahotspot.compiled import CompiledFields
 from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
 from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.affine import (
@@ -244,7 +244,7 @@ class AttachModel(AffineParametricModel):
 
 
 def write_vtu(
-    path, cells: CellFields, cell_field: np.ndarray, name: str = "Temperature_K"
+    path, cells: CompiledFields, cell_field: np.ndarray, name: str = "Temperature_K"
 ) -> str:
     """Write explicit box geometry, independent of Cartesian index conventions."""
     corners = np.array(
@@ -316,7 +316,7 @@ def write_trajectory_csv(path, header: list[str], rows) -> str:
 # -----------------------------------------------------------------------------
 
 
-def _probe_cells(cells: CellFields, points_m) -> list[int]:
+def _probe_cells(cells: CompiledFields, points_m) -> list[int]:
     c = CellGeometry(cells).centers
     return [
         int(np.argmin((c[:, 0] - px) ** 2 + (c[:, 1] - py) ** 2 + (c[:, 2] - pz) ** 2))
@@ -338,7 +338,7 @@ def run_attached(cfg: AttachConfig, outdir: Path) -> dict:
     """Solve the coupled ROM-FVM system, export VTU + trajectory, return report."""
     outdir.mkdir(parents=True, exist_ok=True)
     model = AttachModel(cfg)
-    cells = model._full.cells
+    cells = model._full.fields
     zc = CellGeometry(cells).centers[:, 2]
     H_m = cfg.ext_thickness_mm * 1.0e-3
 

@@ -17,11 +17,6 @@ target_compile_definitions(mhs_c_api PRIVATE
 )
 target_link_libraries(mhs_c_api PRIVATE $<BUILD_INTERFACE:mhs_options>)
 
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/delayomp)
-if(TARGET mhs_delayomp)
-    target_link_libraries(mhs_c_api PRIVATE mhs_delayomp)
-endif()
-
 target_compile_definitions(mhs_c_api PUBLIC MHS_BUILD_SHARED)
 add_library(mhs::c_api ALIAS mhs_c_api)
 # Every symbol is exported by default on ELF/Mach-O; hiding them makes the
@@ -30,9 +25,12 @@ set_target_properties(mhs_c_api PROPERTIES
     EXPORT_NAME c_api
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
 )
+if(NOT SKBUILD)
+    set_target_properties(mhs_c_api PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR})
+endif()
 if(APPLE)
     set_property(TARGET mhs_c_api PROPERTY INSTALL_RPATH "@loader_path")
 elseif(UNIX)
@@ -41,16 +39,20 @@ endif()
 mhs_stage_runtime(mhs_c_api)
 
 # scikit-build-core wheel: the Python package is a ctypes wrapper, so the
-# library is installed into the package directory and the runtime libraries it
-# needs travel with it (nothing guarantees oneTBB or an OpenMP runtime exists on
-# a machine that only runs pip). System libraries stay with the system. Both
-# rules sit in the "python" install component, the only one a wheel installs, so
-# the headers and CMake packages of the CPM dependencies stay out of it.
+# library is installed into the package directory with the runtime libraries
+# this build needs (oneTBB, OpenMP and, on Windows, the matching VC runtime).
+# Platform repair tools then bundle and relocate non-system dependencies.
+# Both rules sit in the "python" install component, the only one a wheel
+# installs, so the headers and CMake packages of the CPM dependencies stay out
+# of it.
 if(SKBUILD)
     install(TARGETS mhs_c_api
         RUNTIME DESTINATION metahotspot COMPONENT python
         LIBRARY DESTINATION metahotspot COMPONENT python)
     install(CODE [[
+        if(POLICY CMP0207)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
         # oneTBB is built by CPM and never installed, so its build directory has
         # to be a search location; Homebrew's OpenMP is outside the default
         # paths and announces itself through OpenMP_ROOT.
@@ -68,7 +70,7 @@ if(SKBUILD)
                 ".*[Ss][Yy][Ss][Tt][Ee][Mm]32.*"
                 ".*(^|/)lib(c|m|dl|rt|pthread|gcc_s|stdc\\+\\+)\\.so.*"
                 ".*(^|/)ld-linux.*"
-                "^/usr/lib/.*"
+                "^/usr/lib/.*\\.dylib$"
                 "^/System/.*")
         foreach(_mhs_dep IN LISTS _mhs_wheel_deps)
             # Copy the real file, named the way the loader asks for it: a
@@ -80,7 +82,7 @@ if(SKBUILD)
                 TYPE FILE RENAME "${_mhs_dep_name}" FILES "${_mhs_dep_real}")
         endforeach()
         if(_mhs_wheel_unresolved)
-            message(WARNING "Unresolved runtime dependencies: ${_mhs_wheel_unresolved}")
+            message(FATAL_ERROR "Unresolved runtime dependencies: ${_mhs_wheel_unresolved}")
         endif()
     ]] COMPONENT python)
 endif()

@@ -25,9 +25,7 @@ class AmgSolver:
     def __init__(self, operator, rtol=RTOL):
         self.operator = sp.csr_matrix(operator)
         self.rtol = float(rtol)
-        self.hierarchy = pyamg.ruge_stuben_solver(
-            self.operator, interpolation="direct"
-        )
+        self.hierarchy = pyamg.ruge_stuben_solver(self.operator, interpolation="direct")
         self.preconditioner = self.hierarchy.aspreconditioner(cycle="V")
 
     def solve(self, rhs):
@@ -35,7 +33,9 @@ class AmgSolver:
         rhs = np.asarray(rhs, dtype=np.float64)
         if rhs.ndim == 1:
             return self._column(rhs)
-        return np.column_stack([self._column(rhs[:, index]) for index in range(rhs.shape[1])])
+        return np.column_stack(
+            [self._column(rhs[:, index]) for index in range(rhs.shape[1])]
+        )
 
     def _column(self, column):
         solution, info = spla.cg(

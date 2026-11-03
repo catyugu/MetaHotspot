@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     /// AMG-preconditioned Krylov iterative solver built on AMGCL (smoothed-
     /// aggregation AMG). The Krylov method is auto-selected on the assembled
@@ -34,4 +34,4 @@ namespace mhs::sim {
         std::unique_ptr<Impl> impl_;
     };
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

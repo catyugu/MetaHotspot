@@ -409,7 +409,6 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.POINTER(ctypes.c_char),
             ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.c_double),
             ctypes.c_size_t,
         ],
     ),

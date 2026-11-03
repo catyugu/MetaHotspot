@@ -2,6 +2,7 @@
 #include "numerics/expression/expr.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
+#include <cctype>
 #include <memory>
 #include <muParser.h>
 #include <stdexcept>
@@ -9,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace mhs::core {
+namespace mhs::numerics {
 
     // Bridge state carried alongside every native function registration.
     // muparser hands us a void* to this struct on every native call.
@@ -47,8 +48,8 @@ namespace mhs::core {
             parser_.DefineConst("e", mu::MathImpl<mu::value_type>::CONST_E);
 
             native_slots_.reserve(symbols.natives.size());
-            for (const auto& [name, fe] : symbols.natives) {
-                native_slots_.push_back({fe, &current_ctx_});
+            for (const auto& [name, native] : symbols.natives) {
+                native_slots_.push_back({native.evaluate, &current_ctx_});
                 parser_.DefineFunUserData(name, &native_fn_bridge, &native_slots_.back(), false);
             }
 
@@ -60,6 +61,29 @@ namespace mhs::core {
             catch (const mu::ParserError& e) {
                 throw std::runtime_error("expression compile error: '" + formula + "': " + e.GetMsg());
             }
+        }
+
+        bool temperature_dependent(const std::string& formula, const SymbolTable& symbols)
+        {
+            if (parser_.GetUsedVar().contains("T"))
+                return true;
+            // Native functions can read the context without naming its variables
+            // in the outer expression. Match whole identifiers, never substrings.
+            for (std::size_t i = 0; i < formula.size();) {
+                const auto ch = static_cast<unsigned char>(formula[i]);
+                if (!std::isalpha(ch) && ch != '_') {
+                    ++i;
+                    continue;
+                }
+                const auto start = i++;
+                while (
+                    i < formula.size() && (std::isalnum(static_cast<unsigned char>(formula[i])) || formula[i] == '_'))
+                    ++i;
+                const auto native = symbols.natives.find(formula.substr(start, i - start));
+                if (native != symbols.natives.end() && native->second.reads_temperature)
+                    return true;
+            }
+            return false;
         }
 
         // Disable copy/move to guarantee current_ctx_'s address is stable — same
@@ -122,7 +146,9 @@ namespace mhs::core {
     CompiledExpression CompiledExpression::make_evaluator(const std::string& formula, const SymbolTable& symbols)
     {
         CompiledExpression e;
-        e.value_ = std::make_shared<MuCompiledTLS>(formula, symbols);
+        auto compiled = std::make_shared<MuCompiledTLS>(formula, symbols);
+        e.temperature_dependent_ = compiled->tls.local()->temperature_dependent(formula, symbols);
+        e.value_ = std::move(compiled);
         return e;
     }
 
@@ -172,4 +198,4 @@ namespace mhs::core {
         }
     }
 
-} // namespace mhs::core
+} // namespace mhs::numerics

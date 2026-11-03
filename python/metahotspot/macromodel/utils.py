@@ -236,7 +236,7 @@ def project_bci(
 def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
     """Assemble K_hat(h) = K_hat0 + sum h_k F_bdry A_k F_bdry^T."""
     K = K_hat0.tocsc()
-    for h, A in zip(h_vec, A_bdry):
+    for h, A in zip(h_vec, A_bdry, strict=True):
         K = K + h * sp.csc_matrix(F_bdry @ A @ F_bdry.T)
     return K.tocsc()
 
@@ -435,7 +435,7 @@ def build_parametric_basis(
 
     def full_operator(h_vec, shift):
         A = K + shift * C
-        for h, H in zip(h_vec, boundary_terms):
+        for h, H in zip(h_vec, boundary_terms, strict=True):
             A = A + h * H
         return A.tocsc()
 

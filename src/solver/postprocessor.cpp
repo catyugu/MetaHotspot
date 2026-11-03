@@ -1,8 +1,7 @@
 #include "solver/postprocessor.hpp"
-#include "core/boundary_geometry.hpp"
-#include "solver/interpolation.hpp"
+#include "thermal_reconstruction.hpp"
 #include <algorithm>
-#include <cassert>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <ranges>
@@ -11,45 +10,74 @@
 
 namespace mhs::post {
 
+    namespace {
+
+        // Inverse anisotropic thermal distance Δx²/kx + Δy²/ky + Δz²/kz.
+        // The epsilon keeps a query point coincident with a cell center finite.
+        double anisotropic_weight(
+            const mhs::core::Vec3& center, const mhs::core::Vec3& point, const mhs::core::Vec3& conductivity)
+        {
+            const double dx = point[0] - center[0], dy = point[1] - center[1], dz = point[2] - center[2];
+            return 1.0
+                / (dx * dx / conductivity[0] + dy * dy / conductivity[1] + dz * dz / conductivity[2]
+                    + std::numeric_limits<double>::epsilon());
+        }
+
+    } // namespace
+
     std::vector<double> interpolate_cell_to_node(
         const mhs::core::Model& model, std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
-        std::vector<double> node_T(model.output.points.size(), std::numeric_limits<double>::quiet_NaN());
-        for (mhs::core::Index v = 0; v < model.output.points.size(); ++v) {
-            const auto p = model.output.points[v];
-            double dirichlet_sum = 0;
-            size_t count = 0;
-            std::vector<mhs::utils::PointTemperatureSample> samples;
-            for (auto cell : model.output.incident_cells(v)) {
-                const auto row = cell.value;
-                const auto T = cell_temperature[row];
-                const auto center = model.discrete.cells[cell.value].center();
-                const auto& mat = model.material_table[model.cell_material[cell.value]];
-                const mhs::core::FieldContext ctx {center[0], center[1], center[2], T, time};
-                for (auto id : model.discrete.incident_faces(cell)) {
-                    const auto& f = model.discrete.faces[id.value];
-                    if (f.neighbor.valid())
-                        continue;
-                    for (const auto& term : mhs::core::boundary_terms_on_face(model, id)) {
-                        const auto& bc = model.boundary_conditions[term.condition];
-                        if (const auto* dirichlet = std::get_if<mhs::core::Dirichlet>(&bc);
-                            dirichlet && mhs::core::projected_face(model.discrete, term).contains(p)) {
-                            dirichlet_sum += dirichlet->temperature.eval({p[0], p[1], p[2], T, time});
-                            ++count;
+        std::vector<double> node_T(model.output.points.size(), 0.0);
+        std::vector<double> weight(node_T.size(), 0.0);
+        for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
+            const auto center = model.discrete.cells[c].center();
+            const auto temperature = cell_temperature[c];
+            const mhs::numerics::FieldContext ctx {center[0], center[1], center[2], temperature, time};
+            const auto& mat = model.material_table[model.cell_material[c]];
+            const mhs::core::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
+            const auto& vertices = model.output.cell_vertices[c];
+            std::array<double, 8> sum {}, dirichlet_sum {};
+            std::array<unsigned, 8> count {}, dirichlet_count {};
+            for (auto id : model.discrete.incident_faces({c})) {
+                const auto& face = model.discrete.faces[id.value];
+                if (face.neighbor.valid())
+                    continue;
+                for (const auto& term : mhs::sim::boundary_faces_on(model, id)) {
+                    const auto patch = face.project(term.bounds);
+                    const auto& condition = model.boundary_conditions[term.condition];
+                    std::optional<double> trace;
+                    for (std::size_t i = 0; i < vertices.size(); ++i) {
+                        if (!patch.contains(model.output.points[vertices[i]]))
+                            continue;
+                        if (!trace)
+                            trace = mhs::sim::evaluate_boundary(
+                                condition, patch, temperature, conductivity[patch.axis], time)
+                                        .temperature;
+                        sum[i] += *trace;
+                        ++count[i];
+                        if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {
+                            dirichlet_sum[i] += *trace;
+                            ++dirichlet_count[i];
                         }
                     }
                 }
-                samples.push_back(
-                    {center[0], center[1], center[2], T, mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)});
             }
-            if (count)
-                node_T[v] = dirichlet_sum / static_cast<double>(count);
-            else if (!samples.empty())
-                node_T[v] = mhs::utils::recover_point_temperature(samples, p[0], p[1], p[2]);
+            for (std::size_t i = 0; i < vertices.size(); ++i) {
+                const auto v = vertices[i];
+                const auto& p = model.output.points[v];
+                const double sample = dirichlet_count[i] ? dirichlet_sum[i] / dirichlet_count[i]
+                    : count[i]                           ? sum[i] / count[i]
+                                                         : temperature;
+                const double w = anisotropic_weight(center, p, conductivity);
+                node_T[v] += w * sample;
+                weight[v] += w;
+            }
         }
-
+        for (mhs::core::Index v = 0; v < node_T.size(); ++v)
+            node_T[v] = weight[v] > 0.0 ? node_T[v] / weight[v] : std::numeric_limits<double>::quiet_NaN();
         return node_T;
     }
 

@@ -18,7 +18,7 @@ AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND()
 #include <stdexcept>
 #include <tuple>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     namespace {
 
@@ -73,7 +73,7 @@ namespace mhs::sim {
     {
         // Detect symmetry once: pure conduction/convection stays symmetric,
         // fluid-coupled cases with upwind advection introduce asymmetric
-        // off-diagonal terms (fluid_assembler). CG needs SPD, so route any
+        // off-diagonal terms (thermal assembly). CG needs SPD, so route any
         // non-symmetric operator to GMRES.
         const double asym = (A - Eigen::SparseMatrix<double>(A.transpose())).norm();
         const double scale = A.norm();
@@ -153,4 +153,4 @@ namespace mhs::sim {
         return x;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

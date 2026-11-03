@@ -97,8 +97,8 @@ namespace mhs::sim {
 
     } // namespace
 
-    NonLinearResult nonlinear_solve(
-        LinearSystemProvider ls_provider, std::vector<double>& state, SolverPtr& solver, const NonLinearConfig& cfg)
+    bool nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, mhs::numerics::SolverPtr& solver,
+        const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;
@@ -126,7 +126,7 @@ namespace mhs::sim {
             const double residual_threshold = rel_tol * max_b + abs_tol;
 
             if (iter > 0 && max_residual <= residual_threshold) {
-                return {true, iter};
+                return true;
             }
 
             solver->compute(linear_system.A);
@@ -159,13 +159,13 @@ namespace mhs::sim {
 
             if (max_update <= update_threshold && max_residual <= residual_threshold) {
                 mixer.push(x_k, G_k);
-                return {true, iter + 1};
+                return true;
             }
 
             mixer.push(x_k, G_k);
         }
 
-        return {false, cfg.max_iterations};
+        return false;
     }
 
 } // namespace mhs::sim

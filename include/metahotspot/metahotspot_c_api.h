@@ -135,7 +135,7 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, face_count, state_count, projection_count, source_count;
+    size_t cell_count, face_count, projection_count, source_count;
     mhs_study_t study_type;
     double initial_temperature;
 } mhs_compiled_info_t;
@@ -174,7 +174,7 @@ typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
     const size_t *face_owner, *face_neighbor;
-    const int32_t *face_axis, *face_sign;
+    const int32_t* face_axis; /* owner normal sign is derived from geometry */
     const double *face_min, *face_max;
 } mhs_mesh_t;
 
@@ -359,8 +359,8 @@ MHS_API mhs_status_t mhs_solution_copy_history_states(const mhs_solution_t* s, d
 
 MHS_API mhs_status_t mhs_solution_probe_get_info(
     const mhs_solution_t* s, size_t index, size_t* name_size, size_t* record_count);
-MHS_API mhs_status_t mhs_solution_copy_probe(const mhs_solution_t* s, size_t index, char* name, size_t name_size,
-    double* times, double* values, size_t record_count);
+MHS_API mhs_status_t mhs_solution_copy_probe(
+    const mhs_solution_t* s, size_t index, char* name, size_t name_size, double* values, size_t record_count);
 
 #ifdef __cplusplus
 } /* extern "C" */

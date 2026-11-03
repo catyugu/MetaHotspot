@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace mhs::core {
+namespace mhs::numerics {
 
     // FieldContext is the data contract that the expression engine exposes
     // to its callers: at eval time the caller must supply (x, y, z, T, t).
@@ -20,9 +20,16 @@ namespace mhs::core {
     };
     using FieldEvaluator = std::function<double(const double* args, int nargs, const FieldContext& ctx)>;
 
+    // Registered under a formula-level name. A callback that is not annotated
+    // may read any context field, so it counts as temperature dependent.
+    struct NativeFunction {
+        FieldEvaluator evaluate;
+        bool reads_temperature = true;
+    };
+
     struct SymbolTable {
         std::unordered_map<std::string, double> variables;
-        std::unordered_map<std::string, FieldEvaluator> natives;
+        std::unordered_map<std::string, NativeFunction> natives;
     };
 
     // Internal: Thread-Local Storage wrapper for muparser compiled instances
@@ -42,6 +49,8 @@ namespace mhs::core {
 
         double eval(const FieldContext& ctx) const;
 
+        bool depends_on_temperature() const { return temperature_dependent_; }
+
         bool is_constant() const { return std::holds_alternative<double>(value_); }
         double constant_value() const { return std::get<double>(value_); }
 
@@ -49,6 +58,7 @@ namespace mhs::core {
         static CompiledExpression make_evaluator(const std::string& formula, const SymbolTable& symbols);
 
     private:
+        bool temperature_dependent_ = false;
         std::variant<double, std::shared_ptr<MuCompiledTLS>> value_ {0.0};
     };
 
@@ -58,4 +68,4 @@ namespace mhs::core {
     // Evaluate a geometry expression against the supplied SymbolTable's variables.
     double eval_geometry(const std::string& formula, const SymbolTable& symbols);
 
-} // namespace mhs::core
+} // namespace mhs::numerics

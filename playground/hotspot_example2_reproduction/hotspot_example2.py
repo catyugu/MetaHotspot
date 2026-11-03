@@ -24,7 +24,6 @@ import numpy as np
 import metahotspot
 from metahotspot import enums
 
-
 # ====================================================================
 #  HotSpot example2 configuration  (from example.config)
 # ====================================================================
@@ -275,22 +274,22 @@ def main():
     if not ptrace_path.exists():
         ptrace_path = Path("gcc.ptrace")
     if not ptrace_path.exists():
-        print(f"\n  ERROR: gcc.ptrace not found at " f"{HOTSPOT_DIR / 'gcc.ptrace'}")
+        print(f"\n  ERROR: gcc.ptrace not found at {HOTSPOT_DIR / 'gcc.ptrace'}")
         return 1
     print(f"\n  ptrace: {ptrace_path}")
 
-    ptrace, header = load_ptrace(str(ptrace_path))
+    ptrace, _header = load_ptrace(str(ptrace_path))
     n_tsteps, n_blocks = ptrace.shape
     print(f"  Power trace: {n_tsteps} steps x {n_blocks} blocks")
     print(f"  sampling_intvl = {SAMPLING_INTVL}s  -> duration = {DURATION}s")
-    assert n_blocks == len(
-        EV6_NAMES
-    ), f"Expected {len(EV6_NAMES)} blocks, got {n_blocks}"
+    assert n_blocks == len(EV6_NAMES), (
+        f"Expected {len(EV6_NAMES)} blocks, got {n_blocks}"
+    )
 
     # -- Per-block stats --
     block_volume = {}
     print("\n" + "-" * 72)
-    print("Per-block power statistics " "(HotSpot ptrace -> volumetric density)")
+    print("Per-block power statistics (HotSpot ptrace -> volumetric density)")
     print("-" * 72)
     for name in EV6_NAMES:
         w, h, *_ = EV6_DIM[name]
@@ -300,7 +299,7 @@ def main():
         pwr = ptrace[:, col]  # total power (W) per sample
         q_vol = pwr / vol  # -> W/m3 per sample
         print(
-            f"  {name:<12s}  area={w*h*1e6:>8.4f} mm2  "
+            f"  {name:<12s}  area={w * h * 1e6:>8.4f} mm2  "
             f"P_avg={pwr.mean():>7.3f} W  "
             f"q_avg={q_vol.mean():>7.3e} W/m3"
         )
@@ -323,7 +322,7 @@ def main():
     c_steady = steady_model.compile()
     print(f"  Active cells: {c_steady.cell_count}")
     sol_steady = c_steady.solve()
-    steady_temp = sol_steady.temperature
+    steady_temp = sol_steady.state
     t_steady = _time.perf_counter() - t0
     print(
         f"  Steady T in [{steady_temp.min():.4f}, "
@@ -378,7 +377,7 @@ def main():
     sol_transient = c_transient.solve(state=steady_temp)
     t_transient = _time.perf_counter() - t0
 
-    final_temp = sol_transient.temperature
+    final_temp = sol_transient.state
     print(
         f"  Transient final T in [{final_temp.min():.4f}, "
         f"{final_temp.max():.4f}] K  ({t_transient:.3f}s)"
@@ -386,13 +385,14 @@ def main():
 
     # -- Transient probe traces --
     probes = sol_transient.probes
+    times = sol_transient.history_times
     print(f"\n  Probes recorded: {len(probes)}")
     for pi, probe in enumerate(probes[:5]):
-        if probe.times is not None and len(probe.times) > 0:
+        if probe.values.size > 0:
             print(
-                f"    {probe.name:<20s}  t={probe.times[0]:.4f}..{probe.times[-1]:.4f}  "
+                f"    {probe.name:<20s}  t={times[0]:.4f}..{times[-1]:.4f}  "
                 f"T={probe.values[0]:.2f}..{probe.values[-1]:.2f} K  "
-                f"({len(probe.times)} records)"
+                f"({probe.values.size} records)"
             )
 
     # Compare with HotSpot reference (gcc.init)

@@ -6,10 +6,10 @@
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::core` (`include/metahotspot/numerics/expression/expr.hpp`)。依赖方向 `mhs::sim → mhs::core`，从不超过这个方向。
+**定义**：`mhs::numerics` (`include/metahotspot/numerics/expression/expr.hpp`)。依赖方向 `mhs::core → mhs::numerics`、`mhs::sim → mhs::numerics`，`mhs::numerics` 不反向依赖本项目其他命名空间。
 
 ```cpp
-namespace mhs::core {
+namespace mhs::numerics {
     struct FieldContext { double x = 0.0, y = 0.0, z = 0.0, T = 0.0, t = 0.0; };
     // args = muparser 已先行求值好的实参列表（如 fn(a, b) 中的 a, b）；
     // ctx  = 当前物理上下文（x, y, z, T, t 的真实值），供 native 参考。
@@ -26,30 +26,7 @@ namespace mhs::core {
 
 `MuCompiledTLS` 按值持有 `SymbolTable` 副本。ETS 构造器 lambda 按值捕获公式，通过 `this` 访问该副本；共享句柄维持 `MuCompiledTLS` 的生命周期。构造时立即调用 `tls.local()` 完成当前线程的解析和验证，后续求值复用该解析器。其他线程在首次求值时构造各自的解析器。
 
-```cpp
-namespace mhs::core {
-    class CompiledExpression {
-    public:
-        CompiledExpression();                          // = make_constant(0.0)
-        CompiledExpression(const CompiledExpression&) = default;
-        CompiledExpression& operator=(const CompiledExpression&) = default;
-        CompiledExpression(CompiledExpression&&) noexcept = default;
-        CompiledExpression& operator=(CompiledExpression&& other) noexcept = default;
-        ~CompiledExpression();
-
-        double eval(const FieldContext& ctx) const;        // per-thread parser
-        bool   is_constant()   const;
-        double constant_value() const;
-
-        static CompiledExpression make_constant(double value);
-        static CompiledExpression make_evaluator(const std::string& formula,
-                                                 const SymbolTable& symbols);
-
-    private:
-        std::variant<double, std::shared_ptr<MuCompiledTLS>> value_ {0.0};
-    };
-}
-```
+`depends_on_temperature()` 标记表达式是否读取温度场，边界求解据此选择解析快速路径或局部非线性求根。直接变量从 muparser 的已用变量集合读取；命名函数在注册时携带自己的标志并向调用方传播。未标注温度依赖的自定义 native 保守视为可能读取温度。纯数字表达式为假。
 
 特点：
 
@@ -63,16 +40,20 @@ namespace mhs::core {
 `SymbolTable` 是 `parse()` / `eval_geometry()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
 
 ```cpp
-namespace mhs::core {
+namespace mhs::numerics {
+    struct NativeFunction {
+        FieldEvaluator evaluate;
+        bool reads_temperature = true; // 未标注的 native 保守视为读取温度
+    };
     struct SymbolTable {
-        std::unordered_map<std::string, double> variables;     // 几何变量，长度按输入单位
-        std::unordered_map<std::string, FieldEvaluator> natives; // 注册 C++ 函数
+        std::unordered_map<std::string, double> variables;       // 几何变量，长度按输入单位
+        std::unordered_map<std::string, NativeFunction> natives; // 注册 C++ 函数及其温度依赖
     };
 }
 ```
 
 - `variables` — 在 `eval_geometry()` 中被 substring 扫描 + `DefineVar` 绑定；在 `parse()` 中**不参与**绑定（场/BC 公式只引用 `x/y/z/T/t`）。
-- `natives` — 在各线程解析器构造时通过 `DefineFunUserData()` 绑定；每个 `MuCompiled` 的预留 vector 持有 `NativeFnCtx` 和闭包副本，`MuCompiledTLS` 另持有符号表快照。
+- `natives` — 在各线程解析器构造时通过 `DefineFunUserData()` 绑定；每个 `MuCompiled` 的预留 vector 持有 `NativeFnCtx` 和闭包副本，`MuCompiledTLS` 另持有符号表快照。`reads_temperature` 只服务边界解析路径的选择，不改变求值。
 
 Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void*, const value_type*, int)`) 注册到 muparser 的 `DefineFunUserData()` 槽，muparser 调用时先把所有实参独立求值，再以 `double* + int` 形式回调 `native_fn_bridge` 静态函数，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
 
@@ -89,7 +70,7 @@ Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void
 ## 解析与求值
 
 ```cpp
-namespace mhs::core {
+namespace mhs::numerics {
     // 空串或纯数字字面量 → make_constant；否则初始化当前线程解析器并返回句柄
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
 
@@ -102,15 +83,15 @@ namespace mhs::core {
 
 ```cpp
 // build_model：构造本地 SymbolTable 贯穿 setup 路径
-mhs::core::SymbolTable symbols;
-mhs::sim::register_all_functions(symbols, definition.functions);  // typed Function → FieldEvaluator
+mhs::numerics::SymbolTable symbols;
+// 编译器内部将 typed Function 注册为 FieldEvaluator。
 
 // 几何：此例的变量值以米表示
 symbols.variables["w_top"] = 0.02;
-double half_w = mhs::core::eval_geometry("w_top/2", symbols);
+double half_w = mhs::numerics::eval_geometry("w_top/2", symbols);
 
 // 场
-auto k = mhs::core::parse("400 + 0.01*T", symbols);
+auto k = mhs::numerics::parse("400 + 0.01*T", symbols);
 double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ```
 

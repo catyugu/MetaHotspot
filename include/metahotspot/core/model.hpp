@@ -12,35 +12,35 @@
 
 namespace mhs::core {
 
-    // Boundary integration rectangle on an unchanged topological face.
-    struct BoundaryTerm {
-        FaceId face;
+    // Projected integration patch on an external topological face.
+    struct BoundaryFace {
+        FaceId parent;
         TableIndex condition; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
     struct MaterialProps {
-        CompiledExpression kx;
-        CompiledExpression ky;
-        CompiledExpression kz;
-        CompiledExpression rho;
-        CompiledExpression c;
+        mhs::numerics::CompiledExpression kx;
+        mhs::numerics::CompiledExpression ky;
+        mhs::numerics::CompiledExpression kz;
+        mhs::numerics::CompiledExpression rho;
+        mhs::numerics::CompiledExpression c;
     };
 
     struct Dirichlet {
-        CompiledExpression temperature;
+        mhs::numerics::CompiledExpression temperature;
     };
 
     struct Neumann {
-        CompiledExpression heat_flux;
+        mhs::numerics::CompiledExpression heat_flux;
     };
 
     struct Convection {
-        CompiledExpression coefficient;
-        CompiledExpression ambient_temperature;
+        mhs::numerics::CompiledExpression coefficient;
+        mhs::numerics::CompiledExpression ambient_temperature;
     };
 
-    // Shared compiled laws; per-face BoundaryTerm records store only an index.
+    // Shared compiled laws; per-face BoundaryFace records store only an index.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
@@ -64,10 +64,10 @@ namespace mhs::core {
 
         std::vector<TableIndex> cell_material;
         std::vector<MaterialProps> material_table;
-        std::vector<CompiledExpression> heat_source_table;
+        std::vector<mhs::numerics::CompiledExpression> heat_source_table;
         std::vector<BoundaryCondition> boundary_conditions;
         std::vector<SourceTerm> source_terms;
-        std::vector<BoundaryTerm> boundary_terms;
+        std::vector<BoundaryFace> boundary_faces; // sorted by parent FaceId
         FluidDomain fluid;
 
         double initial_temperature = 300.0;

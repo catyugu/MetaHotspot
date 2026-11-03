@@ -154,39 +154,21 @@ def build_whole_pop(nxy: int = 43, nz: int = 36) -> Domain:
         # filled by low-k encapsulant so the six external contour surfaces are
         # well-defined rectangles.
         if zz < 0.25e-3:
-            return (
-                MAT["substrate"] if _inside_square(xx, yy, 8.0e-3) else MAT["mold"]
-            )
+            return MAT["substrate"] if _inside_square(xx, yy, 8.0e-3) else MAT["mold"]
         if zz < 0.35e-3:
-            return (
-                MAT["die_attach"]
-                if _inside_square(xx, yy, 4.5e-3)
-                else MAT["mold"]
-            )
+            return MAT["die_attach"] if _inside_square(xx, yy, 4.5e-3) else MAT["mold"]
         if zz < 0.55e-3:
             if _inside_square(xx, yy, 4.5e-3):
                 return MAT["si"]
-            return (
-                MAT["die_attach"]
-                if _inside_square(xx, yy, 8.0e-3)
-                else MAT["mold"]
-            )
+            return MAT["die_attach"] if _inside_square(xx, yy, 8.0e-3) else MAT["mold"]
         if zz < 0.75e-3:
             return MAT["mold"]
         if zz < 1.05e-3:
             return MAT["solder"] if _is_bump(xx, yy) else MAT["die_attach"]
         if zz < 1.25e-3:
-            return (
-                MAT["substrate"]
-                if _inside_square(xx, yy, 14.0e-3)
-                else MAT["mold"]
-            )
+            return MAT["substrate"] if _inside_square(xx, yy, 14.0e-3) else MAT["mold"]
         if zz < 1.35e-3:
-            return (
-                MAT["die_attach"]
-                if _inside_square(xx, yy, 4.5e-3)
-                else MAT["mold"]
-            )
+            return MAT["die_attach"] if _inside_square(xx, yy, 4.5e-3) else MAT["mold"]
         if zz < 1.60e-3 and _inside_square(xx, yy, 4.5e-3):
             return MAT["si"]
         return MAT["mold"]
@@ -241,9 +223,7 @@ def boundary_port(domain: Domain, side: str) -> FacePort:
             ids.append(q)
             area.append(a)
             half.append(domain.k[q] * a / (0.5 * dx[i]))
-            rects.append(
-                (domain.y[j], domain.y[j + 1], domain.z[k], domain.z[k + 1])
-            )
+            rects.append((domain.y[j], domain.y[j + 1], domain.z[k], domain.z[k + 1]))
     elif side in {"y-", "y+"}:
         j = 0 if side == "y-" else ny - 1
         for i, k in product(range(nx), range(nz)):
@@ -252,9 +232,7 @@ def boundary_port(domain: Domain, side: str) -> FacePort:
             ids.append(q)
             area.append(a)
             half.append(domain.k[q] * a / (0.5 * dy[j]))
-            rects.append(
-                (domain.x[i], domain.x[i + 1], domain.z[k], domain.z[k + 1])
-            )
+            rects.append((domain.x[i], domain.x[i + 1], domain.z[k], domain.z[k + 1]))
     elif side in {"z-", "z+"}:
         k = 0 if side == "z-" else nz - 1
         for i, j in product(range(nx), range(ny)):
@@ -263,9 +241,7 @@ def boundary_port(domain: Domain, side: str) -> FacePort:
             ids.append(q)
             area.append(a)
             half.append(domain.k[q] * a / (0.5 * dz[k]))
-            rects.append(
-                (domain.x[i], domain.x[i + 1], domain.y[j], domain.y[j + 1])
-            )
+            rects.append((domain.x[i], domain.x[i + 1], domain.y[j], domain.y[j + 1]))
     else:
         raise KeyError(side)
 
@@ -279,9 +255,7 @@ def boundary_port(domain: Domain, side: str) -> FacePort:
 
 def face_term(domain: Domain, port: FacePort) -> sp.csc_matrix:
     """Affine Robin boundary matrix H = integral phi_i phi_j dA for cell traces."""
-    return sp.csc_matrix(
-        (port.area, (port.ids, port.ids)), shape=domain.K.shape
-    )
+    return sp.csc_matrix((port.area, (port.ids, port.ids)), shape=domain.K.shape)
 
 
 def boundary_data(domain: Domain):
@@ -466,9 +440,7 @@ def main() -> None:
     parser.add_argument("--probe-rounds", type=int, default=3)
     parser.add_argument("--nxy", type=int, default=43)
     parser.add_argument("--nz", type=int, default=36)
-    parser.add_argument(
-        "--cases", nargs="*", choices=tuple(CASES), default=list(CASES)
-    )
+    parser.add_argument("--cases", nargs="*", choices=tuple(CASES), default=list(CASES))
     parser.add_argument(
         "--validation-shifts",
         type=float,
@@ -543,9 +515,7 @@ def main() -> None:
     _write_csv(args.out / "comparison.csv", steady_rows)
     _write_csv(args.out / "transfer_validation.csv", transfer_rows)
 
-    contour_rows_formula = int(
-        sum(v["contour_rows"] for v in contour_diag.values())
-    )
+    contour_rows_formula = int(sum(v["contour_rows"] for v in contour_diag.values()))
     summary = {
         "paper_reference": {
             "detailed_dofs": PAPER_DETAILED_DOF,
