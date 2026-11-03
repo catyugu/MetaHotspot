@@ -1,0 +1,25 @@
+name: Build relocatable macOS OpenMP runtime
+description: Build libomp with the same deployment target as the wheel
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7
+      with:
+        repository: llvm/llvm-project
+        ref: llvmorg-21.1.8
+        path: .cache/llvm
+        sparse-checkout: |
+          cmake
+          openmp
+        persist-credentials: false
+    - shell: bash
+      run: |
+        cmake -S .cache/llvm/openmp -B .cache/omp-build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+          -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/openmp" \
+          -DOPENMP_ENABLE_LIBOMPTARGET=OFF -DOPENMP_ENABLE_OMPT_TOOLS=OFF
+        cmake --build .cache/omp-build --parallel 4
+        cmake --install .cache/omp-build
+        echo "OpenMP_ROOT=$RUNNER_TEMP/openmp" >> "$GITHUB_ENV"

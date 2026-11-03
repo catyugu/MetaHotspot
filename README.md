@@ -56,7 +56,7 @@ cpack --config build/CPackConfig.cmake -C Release -B build
 ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
 CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置。
 Windows 官方发行包用 MSVC 构建，随包只带 `tbb12.dll` 和 `vcomp140.dll`。对于启用 MKL 的构建，需要使用者自行处理对应 MKL 运行环境。
-GitHub Actions 为 Linux、macOS 和 Windows 构建、测试、安装并上传 ZIP artifact，下载时选择对应任务。
+预构建产物和验证流程见 [ci/README.md](ci/README.md)。
 
 实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
@@ -71,9 +71,6 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 `include/metahotspot/` 下的头文件都是公开 API，安装时整棵树原样复制；`src/` 下的头文件是实现细节，
 不安装。`mhs::metahotspot` 是主要 C++ 组件的统一入口。
-
-`python ci/check_build.py` 执行构建、现有单元测试、安装和打包；
-可用 `--generator`、`--config` 和 `--build-dir` 选择构建方式。
 
 ## Python 包
 
@@ -143,7 +140,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
 - **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
-- **OpenMP**：muparser 与 AMGCL 的线程后端。
+- **OpenMP**：AMGCL 的线程后端。muparser 关闭其 OpenMP 后端，表达式求值由 TBB 并行调度。
 - **GTest**：单元测试框架，用例由 CTest 发现并运行。
 - **tbb**: 用于并行化和 CPU 资源调度。
 

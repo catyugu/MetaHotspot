@@ -79,6 +79,7 @@ if(NOT TARGET muparser::muparser)
         SYSTEM YES
         OPTIONS
         "ENABLE_SAMPLES OFF"
+        "ENABLE_OPENMP OFF"
         "BUILD_TESTING OFF"
         "BUILD_SHARED_LIBS OFF"
     )
