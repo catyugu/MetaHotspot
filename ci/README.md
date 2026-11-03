@@ -73,8 +73,7 @@ toolchain's Debug OpenMP runtime;
 that non-redistributable DLL is not put into Release SDKs or wheels. Missing
 Release OpenMP is never excused by its presence in System32.
 
-CI helper tests run once in the Linux wheel job, including repair-policy and
-muparser configuration regressions. The Linux wheel job runs a native solver
+The Linux wheel job runs a native solver
 smoke test inside the manylinux baseline container. The macOS wheel job runs the
 same smoke test after hiding the original OpenMP installation. Independent
 Python test jobs have no build tree or OpenMP development setup.
@@ -90,7 +89,6 @@ successes that never exercise the AMG solver.
 Useful checks:
 
 ```sh
-python -m pytest ci -q
 python ci/check_python.py --build-only  # baseline build environment + repair tool
 python ci/check_wheel.py wheelhouse/metahotspot-....whl
 python ci/check_python.py --wheel wheelhouse/metahotspot-....whl
