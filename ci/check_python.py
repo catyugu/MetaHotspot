@@ -51,6 +51,7 @@ def main():
                 "delvewheel",
                 "repair",
                 "--analyze-existing",
+                "--ignore-existing",
                 "--no-mangle",
                 "mhs_c_api.dll",
                 "-w",

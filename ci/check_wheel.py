@@ -112,9 +112,9 @@ def check_pe(binary, root, *, sdk=False):
         if lower in bundled or lower.startswith(("api-ms-", "ext-ms-")):
             continue
         crt = lower.startswith(("vcruntime", "msvcp", "ucrtbase"))
-        if sdk and crt:
-            # SDKs use the installed toolchain/VC Redistributable. Debug CRT is
-            # only for development; Debug ZIPs are never release artifacts.
+        if sdk and (crt or re.fullmatch(r"vcomp[0-9]+d\.dll", lower)):
+            # SDKs use the installed toolchain/VC Redistributable. Debug CRT
+            # and Debug OpenMP belong to the development toolchain.
             continue
         runtime = crt or lower.startswith(("vcomp", "libomp", "libiomp", "tbb"))
         system = Path(os.environ["SYSTEMROOT"]) / "System32" / name

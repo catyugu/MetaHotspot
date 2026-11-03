@@ -1,14 +1,30 @@
 """Exercise the installed native solver alongside NumPy/SciPy in both import orders."""
 
+import ctypes
+import importlib.util
+import os
 import sys
+from pathlib import Path
 
 if sys.argv[1] == "native-first":
-    import metahotspot
-    from metahotspot._lib import get_dll
-
-    get_dll()
+    # Importing the public package already imports NumPy. Load the installed
+    # C API directly first so this really tests the opposite native load order.
+    package = Path(importlib.util.find_spec("metahotspot").origin).parent
+    name = {
+        "linux": "libmhs_c_api.so",
+        "darwin": "libmhs_c_api.dylib",
+        "win32": "mhs_c_api.dll",
+    }[sys.platform]
+    if sys.platform == "win32":
+        vendor = package.parent / "metahotspot.libs"
+        if vendor.is_dir():
+            dll_path = os.add_dll_directory(str(vendor))
+    native = ctypes.CDLL(str(package / name))
+    assert "numpy" not in sys.modules
     import numpy as np
     import scipy.linalg
+
+    import metahotspot
 else:
     import numpy as np
     import scipy.linalg

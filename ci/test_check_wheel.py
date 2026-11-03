@@ -63,3 +63,47 @@ def test_clang_cl_runtime_is_discovered_from_import_library(tmp_path):
         "endif()\n"
     )
     subprocess.run(["cmake", "-P", str(script)], check=True)
+
+
+def test_windows_repair_resolves_existing_wheel_dlls(monkeypatch, tmp_path):
+    import check_python
+
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist/raw.whl").touch()
+    (tmp_path / "wheelhouse").mkdir()
+    (tmp_path / "wheelhouse/repaired.whl").touch()
+    commands = []
+    monkeypatch.setattr(check_python, "__file__", str(tmp_path / "ci/check_python.py"))
+    monkeypatch.setattr(check_python.sys, "argv", ["check_python.py", "--build-only"])
+    monkeypatch.setattr(check_python.sys, "platform", "win32")
+    monkeypatch.setattr(check_python, "run", lambda *args: commands.append(args))
+    check_python.main()
+    repair = next(command for command in commands if "delvewheel" in command)
+    assert "--analyze-existing" in repair
+    assert "--ignore-existing" in repair
+
+
+def test_debug_sdk_allows_toolchain_openmp_but_release_requires_bundling(
+    monkeypatch, tmp_path
+):
+    import sys
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from check_wheel import check_pe
+
+    def pe_for(name):
+        return SimpleNamespace(
+            PE=lambda _: nullcontext(
+                SimpleNamespace(DIRECTORY_ENTRY_IMPORT=[SimpleNamespace(dll=name)])
+            )
+        )
+
+    monkeypatch.setenv("SYSTEMROOT", str(tmp_path))
+    monkeypatch.setitem(sys.modules, "pefile", pe_for(b"VCOMP140D.DLL"))
+    check_pe(tmp_path / "core.dll", tmp_path, sdk=True)
+    with pytest.raises(ValueError, match="VCOMP140D"):
+        check_pe(tmp_path / "core.dll", tmp_path)
+    monkeypatch.setitem(sys.modules, "pefile", pe_for(b"VCOMP140.DLL"))
+    with pytest.raises(ValueError, match="VCOMP140"):
+        check_pe(tmp_path / "core.dll", tmp_path, sdk=True)

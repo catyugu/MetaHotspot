@@ -15,7 +15,7 @@ publishing is configured. There is no cibuildwheel dependency.
 | Platform | Baseline | Repair |
 | --- | --- | --- |
 | Linux x86_64 | manylinux 2.28, glibc 2.28+ | `auditwheel repair --plat manylinux_2_28_x86_64` |
-| Windows x86_64 | MSVC Release | `delvewheel repair --analyze-existing --no-mangle mhs_c_api.dll` |
+| Windows x86_64 | MSVC Release | `delvewheel repair --analyze-existing --ignore-existing --no-mangle mhs_c_api.dll` |
 | macOS ARM64 | macOS 11.0+ | `delocate-wheel --require-archs arm64 --require-target-macos-version 11.0` |
 
 Only the Linux CI build runs in the official manylinux container. Local builds
@@ -41,7 +41,9 @@ delvewheel's runtime bundling and loader patch.
 The C API is loaded through `ctypes`, so delvewheel must analyze DLLs already in
 the wheel. Its dependencies may be renamed, but `mhs_c_api.dll` keeps the name the
 Python loader expects. Linux and macOS repair tools likewise inspect the C API
-shared library, not just CPython extension modules.
+shared library, not just CPython extension modules. `--ignore-existing` lets
+delvewheel resolve the TBB/OpenMP DLLs already bundled by CMake instead of
+searching only the external build environment.
 
 ## Artifact acceptance
 
@@ -54,7 +56,9 @@ shared library, not just CPython extension modules.
 - PE imports and delay imports, including bundled OpenMP, TBB and VC runtimes.
 
 The same PE checker inspects Windows SDK ZIPs, allowing their documented VC
-runtime dependency. Missing OpenMP is never excused by its presence in System32.
+runtime dependency. Debug SDKs also require the toolchain's Debug OpenMP runtime;
+that non-redistributable DLL is not put into Release SDKs or wheels. Missing
+Release OpenMP is never excused by its presence in System32.
 
 The wheel build job installs only the repaired artifact and runs all Python
 tests. On macOS it first hides the original OpenMP installation. Independent
