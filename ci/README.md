@@ -35,8 +35,10 @@ non-system dependencies are fatal. The Linux filter excludes named system
 libraries, never all of `/usr/lib`. Windows stages and installs OpenMP alongside
 TBB: CMake discovers MSVC's redistributable, while clang-cl reads the actual DLL
 name from its OpenMP import library and locates that DLL near the compiler or
-library, or on `PATH`. SDKs use the installed VC runtime; wheels additionally use
-delvewheel's runtime bundling and loader patch.
+library, or on `PATH`. SDKs use the installed VC runtime. For wheels, CMake also
+stages the current compiler's CRT redistributables before dependency collection, so delvewheel
+cannot accidentally select older DLLs bundled with the build Python. Only
+transitively needed DLLs enter the wheel; delvewheel supplies the loader patch.
 
 The C API is loaded through `ctypes`, so delvewheel must analyze DLLs already in
 the wheel. Its dependencies may be renamed, but `mhs_c_api.dll` keeps the name the
@@ -53,7 +55,8 @@ searching only the external build environment.
 - ELF dependency resolution through in-wheel RPATH/RUNPATH, plus the glibc,
   libstdc++ and C++ ABI symbol ceilings for manylinux 2.28;
 - ARM64 Mach-O dependency paths and every dylib's minimum system version;
-- PE imports and delay imports, including bundled OpenMP, TBB and VC runtimes.
+- PE imports and delay imports, including bundled OpenMP, TBB and VC runtimes;
+  bundled VC runtime versions must meet the importing binary's linker toolset.
 
 The same PE checker inspects Windows SDK ZIPs, allowing their documented VC
 runtime dependency. Debug SDKs also require the toolchain's Debug OpenMP runtime;

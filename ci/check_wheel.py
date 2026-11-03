@@ -106,10 +106,21 @@ def check_pe(binary, root, *, sdk=False):
             for kind in ("DIRECTORY_ENTRY_IMPORT", "DIRECTORY_ENTRY_DELAY_IMPORT")
             for entry in getattr(pe, kind, [])
         ]
-    bundled = {p.name.lower() for p in root.rglob("*.dll")}
+    bundled = {p.name.lower(): p for p in root.rglob("*.dll")}
     for name in names:
         lower = name.lower()
-        if lower in bundled or lower.startswith(("api-ms-", "ext-ms-")):
+        if lower in bundled:
+            if not sdk and lower.startswith(("vcruntime", "msvcp")):
+                with pefile.PE(str(bundled[lower])) as runtime:
+                    version = runtime.VS_FIXEDFILEINFO[0].FileVersionMS
+                header = pe.OPTIONAL_HEADER
+                check_version(
+                    f"{header.MajorLinkerVersion}.{header.MinorLinkerVersion}",
+                    f"{version >> 16}.{version & 0xFFFF}",
+                    f"{binary}: {name} toolset",
+                )
+            continue
+        if lower.startswith(("api-ms-", "ext-ms-")):
             continue
         crt = lower.startswith(("vcruntime", "msvcp", "ucrtbase"))
         if sdk and (crt or re.fullmatch(r"vcomp[0-9]+d\.dll", lower)):

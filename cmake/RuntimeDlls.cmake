@@ -3,11 +3,12 @@
 # $<TARGET_RUNTIME_DLLS:> covers imported shared targets in the link closure
 # (oneTBB, and oneMKL when enabled). FindOpenMP exposes an interface target, so
 # its DLL needs separate discovery for both MSVC and clang-cl.
-# The MSVC C runtime is deliberately not bundled; users get it from the Visual
-# C++ Redistributable.
+# SDKs use the Visual C++ Redistributable. Wheels stage the matching compiler
+# redistributables so repair tools cannot select older DLLs from Python itself.
 
 function(_mhs_find_openmp_runtime out)
     set(${out} "" PARENT_SCOPE)
+    set(_mhs_msvc_crt_runtime "" PARENT_SCOPE)
     if(NOT WIN32)
         return()
     endif()
@@ -47,10 +48,11 @@ function(_mhs_find_openmp_runtime out)
     endif()
 
     # Discover compiler redistributables without adding the module's default
-    # install rule; MetaHotspot only app-local deploys the OpenMP runtime.
+    # install rule; SDKs deploy OpenMP and wheels collect the needed CRT DLLs.
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP ON)
     set(CMAKE_INSTALL_OPENMP_LIBRARIES ON)
     include(InstallRequiredSystemLibraries)
+    set(_mhs_msvc_crt_runtime "${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}" PARENT_SCOPE)
 
     set(_openmp "")
     foreach(_runtime IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
@@ -70,6 +72,15 @@ endfunction()
 _mhs_find_openmp_runtime(_mhs_openmp_runtime)
 
 function(mhs_stage_runtime target)
+    if(SKBUILD AND _mhs_msvc_crt_runtime)
+        # Only needed CRT DLLs are collected into the wheel at install time.
+        # Staging these first gives dependency discovery the compiler's runtime
+        # instead of System32 or an older runtime beside python.exe.
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${_mhs_msvc_crt_runtime} "$<TARGET_FILE_DIR:${target}>"
+            COMMAND_EXPAND_LISTS)
+    endif()
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy -t "$<TARGET_FILE_DIR:${target}>"
         $<TARGET_RUNTIME_DLLS:${target}>
