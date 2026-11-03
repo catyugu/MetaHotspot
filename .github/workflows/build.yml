@@ -134,12 +134,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            platform: Linux
             container: quay.io/pypa/manylinux_2_28_x86_64
           - os: windows-latest
-            platform: Windows
           - os: macos-latest
-            platform: macOS
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     env:
@@ -185,7 +182,7 @@ jobs:
           python ci/wheel_smoke.py native-first
       - uses: actions/upload-artifact@v7
         with:
-          name: MetaHotspot-wheel-${{ matrix.platform }}
+          name: MetaHotspot-wheel-${{ runner.os }}
           path: |
             wheelhouse/*.whl
             dist/*.tar.gz
@@ -215,6 +212,4 @@ jobs:
       - name: Test installed wheel without compiler setup
         shell: bash
         run: |
-          python ci/check_python.py --wheel "$(find wheelhouse -name '*.whl')"
-          python ci/wheel_smoke.py native-first
-          python ci/wheel_smoke.py numpy-first
+          python ci/check_python.py --wheel wheelhouse/*.whl

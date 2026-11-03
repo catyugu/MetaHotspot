@@ -67,7 +67,9 @@ runtimes; bundled VC runtime versions must meet the importing binary's linker
 toolset.
 
 The same PE checker inspects Windows SDK ZIPs, allowing their documented VC
-runtime dependency. Debug SDKs also require the toolchain's Debug OpenMP runtime;
+runtime dependency. It scans DLL/EXE/PYD files and builds one DLL index per
+archive, skipping SDK headers and static libraries. Debug SDKs also require the
+toolchain's Debug OpenMP runtime;
 that non-redistributable DLL is not put into Release SDKs or wheels. Missing
 Release OpenMP is never excused by its presence in System32.
 
@@ -75,11 +77,15 @@ CI helper tests run once in the Linux wheel job, including repair-policy and
 muparser configuration regressions. The Linux wheel job runs a native solver
 smoke test inside the manylinux baseline container. The macOS wheel job runs the
 same smoke test after hiding the original OpenMP installation. Independent
-Python test jobs have no build tree or OpenMP development setup. Each also runs
-`ci/wheel_smoke.py` twice, in separate processes, loading native code before and
-after NumPy/SciPy and solving a 15,625-cell thermal problem with two OpenMP
+Python test jobs have no build tree or OpenMP development setup.
+`ci/check_python.py --wheel` installs the artifact, runs the Python tests, then
+runs `ci/wheel_smoke.py` twice in separate processes, loading native code before
+and after NumPy/SciPy and solving a 15,625-cell thermal problem with two OpenMP
 threads. This catches dependency and loader failures as well as import-only
 successes that never exercise the AMG solver.
+
+`python ci/check_build.py` builds, tests, installs and packages the SDK;
+`--generator`, `--config` and `--build-dir` select the build configuration.
 
 Useful checks:
 

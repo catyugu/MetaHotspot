@@ -40,8 +40,8 @@ mhs_stage_runtime(mhs_c_api)
 
 # scikit-build-core wheel: the Python package is a ctypes wrapper, so the
 # library is installed into the package directory with the runtime libraries
-# this build needs (oneTBB, and the MSVC OpenMP runtime). Windows system
-# libraries and the MSVC C runtime stay out, exactly as in the install tree.
+# this build needs (oneTBB, OpenMP and, on Windows, the matching VC runtime).
+# Platform repair tools then bundle and relocate non-system dependencies.
 # Both rules sit in the "python" install component, the only one a wheel
 # installs, so the headers and CMake packages of the CPM dependencies stay out
 # of it.

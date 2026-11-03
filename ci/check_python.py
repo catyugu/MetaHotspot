@@ -65,8 +65,9 @@ def main():
     run(sys.executable, "-m", "pip", "install", "--force-reinstall", wheel)
     # A build-tree override would invalidate the installed-wheel test.
     os.environ.pop("MHS_CAPI_PATH", None)
-    run(sys.executable, "-c", "import metahotspot; print(metahotspot.__version__)")
     run(sys.executable, "-m", "pytest", root / "python/tests")
+    for order in ("native-first", "numpy-first"):
+        run(sys.executable, root / "ci/wheel_smoke.py", order)
 
 
 if __name__ == "__main__":

@@ -90,12 +90,12 @@ def test_debug_sdk_allows_toolchain_openmp_but_release_requires_bundling(
 
     monkeypatch.setenv("SYSTEMROOT", str(tmp_path))
     monkeypatch.setitem(sys.modules, "pefile", pe_for(b"VCOMP140D.DLL"))
-    check_pe(tmp_path / "core.dll", tmp_path, sdk=True)
+    check_pe(tmp_path / "core.dll", {}, sdk=True)
     with pytest.raises(ValueError, match="VCOMP140D"):
-        check_pe(tmp_path / "core.dll", tmp_path)
+        check_pe(tmp_path / "core.dll", {})
     monkeypatch.setitem(sys.modules, "pefile", pe_for(b"VCOMP140.DLL"))
     with pytest.raises(ValueError, match="VCOMP140"):
-        check_pe(tmp_path / "core.dll", tmp_path, sdk=True)
+        check_pe(tmp_path / "core.dll", {}, sdk=True)
 
 
 def test_wheel_rejects_vc_runtime_older_than_build_toolset(monkeypatch, tmp_path):
@@ -122,6 +122,6 @@ def test_wheel_rejects_vc_runtime_older_than_build_toolset(monkeypatch, tmp_path
         ),
     )
     with pytest.raises(ValueError, match=r"14\.51"):
-        check_pe(tmp_path / "core.dll", tmp_path)
+        check_pe(tmp_path / "core.dll", {runtime.name: runtime})
     old.VS_FIXEDFILEINFO[0].FileVersionMS = (14 << 16) + 51
-    check_pe(tmp_path / "core.dll", tmp_path)
+    check_pe(tmp_path / "core.dll", {runtime.name: runtime})

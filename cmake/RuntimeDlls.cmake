@@ -72,48 +72,35 @@ endfunction()
 _mhs_find_openmp_runtime(_mhs_openmp_runtime)
 
 function(mhs_stage_runtime target)
-    if(SKBUILD AND _mhs_msvc_crt_runtime)
-        # Only needed CRT DLLs are collected into the wheel at install time.
-        # Staging these first gives dependency discovery the compiler's runtime
-        # instead of System32 or an older runtime beside python.exe.
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${_mhs_msvc_crt_runtime} "$<TARGET_FILE_DIR:${target}>"
-            COMMAND_EXPAND_LISTS)
+    set(_runtime ${_mhs_openmp_runtime})
+    if(SKBUILD)
+        # Dependency discovery must see this compiler's CRT rather than an
+        # older runtime beside python.exe. Only needed DLLs enter the wheel.
+        list(APPEND _runtime ${_mhs_msvc_crt_runtime})
+        list(REMOVE_DUPLICATES _runtime)
     endif()
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy -t "$<TARGET_FILE_DIR:${target}>"
-        $<TARGET_RUNTIME_DLLS:${target}>
-        COMMAND_EXPAND_LISTS
+        $<TARGET_RUNTIME_DLLS:${target}> ${_runtime}
+        COMMAND_EXPAND_LISTS VERBATIM
     )
-    if(_mhs_openmp_runtime)
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${_mhs_openmp_runtime} "$<TARGET_FILE_DIR:${target}>"
-            COMMAND_EXPAND_LISTS
-        )
-    endif()
 endfunction()
 
 # Installs the runtime DLLs of the given targets next to the installed binaries.
 # On Windows those are oneTBB, oneMKL when enabled, and the OpenMP runtime.
 function(mhs_install_windows_runtime)
-    cmake_parse_arguments(PARSE_ARGV 0 arg "" "DESTINATION;COMPONENT" "TARGETS")
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "DESTINATION" "TARGETS")
     if(NOT WIN32)
         return()
-    endif()
-    set(_component "")
-    if(arg_COMPONENT)
-        set(_component COMPONENT ${arg_COMPONENT})
     endif()
     foreach(_target IN LISTS arg_TARGETS)
         if(TARGET ${_target})
             install(FILES $<TARGET_RUNTIME_DLLS:${_target}>
-                DESTINATION ${arg_DESTINATION} ${_component})
+                DESTINATION ${arg_DESTINATION})
         endif()
     endforeach()
     if(_mhs_openmp_runtime)
         install(FILES ${_mhs_openmp_runtime}
-            DESTINATION ${arg_DESTINATION} ${_component})
+            DESTINATION ${arg_DESTINATION})
     endif()
 endfunction()

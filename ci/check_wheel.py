@@ -21,7 +21,7 @@ def check_version(actual, maximum, binary):
         raise ValueError(f"{binary}: requires {actual}, baseline is {maximum}")
 
 
-def check_pe(binary, root, *, sdk=False):
+def check_pe(binary, bundled, *, sdk=False):
     import pefile
 
     with pefile.PE(str(binary)) as pe:
@@ -30,7 +30,6 @@ def check_pe(binary, root, *, sdk=False):
             for kind in ("DIRECTORY_ENTRY_IMPORT", "DIRECTORY_ENTRY_DELAY_IMPORT")
             for entry in getattr(pe, kind, [])
         ]
-    bundled = {p.name.lower(): p for p in root.rglob("*.dll")}
     for name in names:
         lower = name.lower()
         if lower in bundled:
@@ -58,17 +57,14 @@ def check_pe(binary, root, *, sdk=False):
 
 
 def inspect(root, *, sdk=False):
-    binaries = []
-    for binary in root.rglob("*"):
-        if not binary.is_file():
-            continue
-        with binary.open("rb") as stream:
-            magic = stream.read(4)
-        if magic[:2] == b"MZ":
-            check_pe(binary, root, sdk=sdk)
-        else:
-            continue
-        binaries.append(binary)
+    binaries = [
+        p
+        for p in root.rglob("*")
+        if p.is_file() and p.suffix.lower() in (".dll", ".exe", ".pyd")
+    ]
+    bundled = {p.name.lower(): p for p in binaries if p.suffix.lower() == ".dll"}
+    for binary in binaries:
+        check_pe(binary, bundled, sdk=sdk)
     if not binaries:
         raise ValueError(f"No native libraries in {root}")
     print(f"Verified {len(binaries)} native binaries in {root}")
