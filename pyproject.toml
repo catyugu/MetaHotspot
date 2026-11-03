@@ -19,7 +19,7 @@ dynamic = ["version"]
 [project.urls]
 Homepage = "https://github.com/catyugu/MetaHotspot"
 
-# The pre-commit hook formats and lints with exactly these versions.
+# Pinned development tools, also used by the CI formatting and lint check.
 [dependency-groups]
 dev = [
     "clang-format==23.1.3",

@@ -31,23 +31,16 @@ python -m pip install dist/*.whl
 python -m pytest python/tests
 ```
 
-```bash
-# Formatting and lint of every tracked source.
-python scripts/pre_commit.py
-```
-
-- **Formatting and lint**: `.githooks/pre-commit` runs `scripts/pre_commit.py` on the staged files, so a commit carries no unformatted or unlinted source; enable it once per checkout with `git config core.hooksPath .githooks` and install the pinned tools with `python -m pip install --group dev` (pip 25.1+). clang-format covers `src`, `include` and `tests`, ruff covers `python` and `ci`. CI checks neither.
+- **Formatting and lint**: GitHub Actions checks clang-format for `src`, `include` and `tests`, and ruff for `python` and `.github/scripts`. Local formatting and tests are optional development tools; no commit hook or local CI acceptance is required.
 
 - **Versions**: the library version is defined once, as `MHS_VERSION_*` macros in `include/metahotspot/metahotspot_c_api.h`; CMake and the Python package derive from it.
 
 ## Testing Guidelines
 
-- **Start with verifiable baseline**: run the relevant existing tests before edits, and record the exact command + outcome in the PR/commit notes.
-- **Test updates goes first**: Add or update a failing test first that reproduces the bug or captures the new requirement; implement code only after the test fails for the expected reason.
-- **Keep tests green**:  Never commit if there are failing tests.
-- **Regression test**: Every bug fix must include a regression test that fails before the fix and passes after it.
+- GitHub Actions owns cross-platform build, test and artifact acceptance; see [.github/CI.md](.github/CI.md).
+- Add or update focused regression coverage when changing behavior. Existing CTest and Python tests remain available for local development.
 
 ## Commit & Pull Request Guidelines
 
 - Use Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`) and keep messages imperative.
-- PRs: include a short summary, exact test command(s) run, and call out any changes to on-disk memory formats or `qmd` behavior.
+- PRs: summarize the change, report available validation results, and call out any changes to on-disk memory formats.

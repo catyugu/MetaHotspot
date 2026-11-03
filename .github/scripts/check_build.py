@@ -18,17 +18,24 @@ def main():
     parser.add_argument("--cmake-arg", action="append", default=[])
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     build = Path(args.build_dir).resolve()
     prefix = build / "package"
     flags = ["-G", args.generator, f"-DCMAKE_BUILD_TYPE={args.config}", *args.cmake_arg]
     run("cmake", "-S", root, "-B", build, *flags)
     run("cmake", "--build", build, "--config", args.config, "--parallel", "4")
     run("ctest", "--test-dir", build, "-C", args.config, "--output-on-failure")
-    run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
-    run(
-        "cpack", "--config", build / "CPackConfig.cmake", "-C", args.config, "-B", build
-    )
+    if args.config == "Release":
+        run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
+        run(
+            "cpack",
+            "--config",
+            build / "CPackConfig.cmake",
+            "-C",
+            args.config,
+            "-B",
+            build,
+        )
 
 
 if __name__ == "__main__":

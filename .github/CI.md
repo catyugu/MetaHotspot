@@ -2,7 +2,8 @@
 
 The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC, clang-cl and a
 multi-configuration MSVC generator. Only Release ZIPs are uploaded; Debug and
-sanitizer jobs still build, test, install and package. Windows clang-cl uses
+sanitizer jobs only configure, build and run CTest. Release jobs also install,
+package and check Windows SDK runtime dependencies. Windows clang-cl uses
 Release so its ZIP can be deployed with the
 Visual C++ Redistributable. SDK consumers still need the compiler toolchain and
 CMake dependencies exported by `MetaHotspotConfig.cmake`.
@@ -60,7 +61,7 @@ Platform repair tools enforce their own binary policies: `auditwheel repair
 dependencies; `delocate-wheel` rewrites Mach-O paths and enforces ARM64 and the
 macOS 11 baseline. The project does not duplicate their ELF/Mach-O parsers.
 
-`ci/check_wheel.py` opens the **repaired wheel** and checks the `py3-none`
+`.github/scripts/check_wheel.py` opens the **repaired wheel** and checks the `py3-none`
 platform tag and the library filename used by the ctypes loader. On Windows it
 also checks PE imports and delay imports, including bundled OpenMP, TBB and VC
 runtimes; bundled VC runtime versions must meet the importing binary's linker
@@ -68,30 +69,27 @@ toolset.
 
 The same PE checker inspects Windows SDK ZIPs, allowing their documented VC
 runtime dependency. It scans DLL/EXE/PYD files and builds one DLL index per
-archive, skipping SDK headers and static libraries. Debug SDKs also require the
-toolchain's Debug OpenMP runtime;
-that non-redistributable DLL is not put into Release SDKs or wheels. Missing
-Release OpenMP is never excused by its presence in System32.
+archive, skipping SDK headers and static libraries. Non-redistributable Debug
+runtimes are not put into Release SDKs or wheels. Missing Release OpenMP is never
+excused by its presence in System32.
 
 The Linux wheel job runs a native solver
 smoke test inside the manylinux baseline container. The macOS wheel job runs the
 same smoke test after hiding the original OpenMP installation. Independent
 Python test jobs have no build tree or OpenMP development setup.
-`ci/check_python.py --wheel` installs the artifact, runs the Python tests, then
-runs `ci/wheel_smoke.py` twice in separate processes, loading native code before
+`.github/scripts/check_python.py --wheel` installs the artifact, runs the Python tests, then
+runs `.github/scripts/wheel_smoke.py` twice in separate processes, loading native code before
 and after NumPy/SciPy and solving a 15,625-cell thermal problem with two OpenMP
 threads. This catches dependency and loader failures as well as import-only
 successes that never exercise the AMG solver.
 
-`python ci/check_build.py` builds, tests, installs and packages the SDK;
-`--generator`, `--config` and `--build-dir` select the build configuration.
+## Formatting and lint
 
-Useful checks:
+The Linux GCC job runs clang-format in check mode for `src`, `include` and
+`tests`, plus ruff lint and format checks for `python` and `.github/scripts`,
+using the pinned development tools from `pyproject.toml`. These checks run once
+per workflow and never rewrite sources or the Git index.
 
-```sh
-python ci/check_python.py --build-only  # baseline build environment + repair tool
-python ci/check_wheel.py wheelhouse/metahotspot-....whl
-python ci/check_python.py --wheel wheelhouse/metahotspot-....whl
-OMP_NUM_THREADS=2 python ci/wheel_smoke.py native-first
-OMP_NUM_THREADS=2 python ci/wheel_smoke.py numpy-first
-```
+All CI-specific scripts and acceptance policy live under `.github/` and are
+excluded from the sdist. GitHub Actions runs artifact acceptance; contributors
+are not required to reproduce it locally or install a commit hook.

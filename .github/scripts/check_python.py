@@ -15,7 +15,7 @@ def main():
     )
     parser.add_argument("--build-only", action="store_true")
     args = parser.parse_args()
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     if args.wheel:
         wheel = args.wheel.resolve()
     else:
@@ -59,7 +59,7 @@ def main():
                 raw,
             )
         (wheel,) = repaired.glob("*.whl")
-        run(sys.executable, root / "ci/check_wheel.py", wheel)
+        run(sys.executable, Path(__file__).with_name("check_wheel.py"), wheel)
     if args.build_only:
         return
     run(sys.executable, "-m", "pip", "install", "--force-reinstall", wheel)
@@ -67,7 +67,7 @@ def main():
     os.environ.pop("MHS_CAPI_PATH", None)
     run(sys.executable, "-m", "pytest", root / "python/tests")
     for order in ("native-first", "numpy-first"):
-        run(sys.executable, root / "ci/wheel_smoke.py", order)
+        run(sys.executable, Path(__file__).with_name("wheel_smoke.py"), order)
 
 
 if __name__ == "__main__":
