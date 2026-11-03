@@ -30,15 +30,15 @@ namespace mhs::sim {
             }
         }
 
-        SolverSpec build_solver_spec(const SolveOptions& opts)
+        mhs::numerics::SolverSpec build_solver_spec(const SolveOptions& opts)
         {
-            SolverType type;
+            mhs::numerics::SolverType type;
             switch (opts.linear_solver) {
             case SolveOptions::LinearSolverType::Pardiso:
-                type = SolverType::Pardiso;
+                type = mhs::numerics::SolverType::Pardiso;
                 break;
             case SolveOptions::LinearSolverType::AmgCg:
-                type = SolverType::AmgCg;
+                type = mhs::numerics::SolverType::AmgCg;
                 break;
             default:
                 throw std::invalid_argument("build_solver_spec: unknown linear_solver");
@@ -52,8 +52,8 @@ namespace mhs::sim {
                 opts.nonlinear_absolute_tolerance};
         }
 
-        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state, SolverPtr& solver,
-            const NonLinearConfig& nl_config, const StateObserver& observe)
+        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state,
+            mhs::numerics::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe)
         {
             const auto state_count = state.size();
             mhs::core::Solution result;
@@ -74,8 +74,8 @@ namespace mhs::sim {
         }
 
         mhs::core::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
-            std::vector<double> state, SolverPtr& solver, const SolveOptions& opts, NonLinearConfig nl_config,
-            time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
+            std::vector<double> state, mhs::numerics::SolverPtr& solver, const SolveOptions& opts,
+            NonLinearConfig nl_config, time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
             const StateObserver& observe)
         {
             const auto state_count = state.size();
@@ -199,7 +199,7 @@ namespace mhs::sim {
             && opts.step_strategy != SolveOptions::StepStrategy::Fixed)
             throw std::invalid_argument("unknown step strategy");
 
-        SolverPtr solver = create_solver(solver_spec);
+        mhs::numerics::SolverPtr solver = mhs::numerics::create_solver(solver_spec);
         std::vector<double> state(initial_state.begin(), initial_state.end());
 
         if (study.type == mhs::core::StudyType::Steady) {

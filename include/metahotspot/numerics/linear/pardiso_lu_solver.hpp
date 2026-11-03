@@ -5,7 +5,7 @@
 
 #include <Eigen/PardisoSupport>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     // Direct sparse LU solver backed by Intel MKL Pardiso (general unsymmetric
     // systems). Compiled only when MHS_ENABLE_PARDISO is defined; it is the
@@ -24,6 +24,6 @@ namespace mhs::sim {
         bool analyzed_ = false;
     };
 
-} // namespace mhs::sim
+} // namespace mhs::numerics
 
 #endif

@@ -11,11 +11,11 @@ namespace mhs::hdim {
 
     namespace {
 
-        mhs::sim::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
+        mhs::numerics::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
         {
-            mhs::sim::SolverSpec spec;
+            mhs::numerics::SolverSpec spec;
             spec.config.tolerance = tolerance;
-            auto solver = mhs::sim::create_solver(spec);
+            auto solver = mhs::numerics::create_solver(spec);
             solver->compute(matrix);
             return solver;
         }

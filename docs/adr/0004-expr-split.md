@@ -17,7 +17,7 @@ Conflating them would force geometry constants into every assembly call.
 
 Two separate paths.
 
-**Geometry.** Evaluated by `mhs::core::eval_geometry(formula, symbols)` with muparser against a per-call `SymbolTable` of pre-registered variables.
+**Geometry.** Evaluated by `mhs::numerics::eval_geometry(formula, symbols)` with muparser against a per-call `SymbolTable` of pre-registered variables.
 
 **Field / BC.** Handled by the `expr` module (muparser-backed). Context: `{x, y, z, T, t}`. Material laws, BC parameters, and per-block heat sources all flow through this path.
 
@@ -45,5 +45,5 @@ Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::s
 
 ## Notes
 
-- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `include/metahotspot/numerics/expression/expr.hpp` under namespace `mhs::core`. The dependency arrow is `mhs::sim → mhs::core`, never the reverse.
+- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `include/metahotspot/numerics/expression/expr.hpp` under namespace `mhs::numerics`. The dependency arrows are `mhs::core → mhs::numerics` and `mhs::sim → mhs::numerics`, never the reverse.
 - The runtime model exposes compiled handles; nonconstant handles retain their formula strings internally to construct each thread's parser.

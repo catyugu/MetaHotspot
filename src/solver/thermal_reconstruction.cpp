@@ -14,7 +14,7 @@ namespace mhs::sim {
             double time, int axis)
         {
             const auto p = model.discrete.cells[cell.value].center();
-            const mhs::core::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
+            const mhs::numerics::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
             const auto& m = model.material_table[model.cell_material[cell.value]];
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
@@ -106,6 +106,7 @@ namespace mhs::sim {
         double cell_temperature, double normal_conductivity, double time)
     {
         using namespace mhs::core;
+        using namespace mhs::numerics;
         const auto p = face.center();
         const double conductive = normal_conductivity * face.area / face.owner_distance;
         auto context = [&](double trace) { return FieldContext {p[0], p[1], p[2], trace, time}; };

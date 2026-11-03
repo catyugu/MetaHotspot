@@ -18,7 +18,7 @@ AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND()
 #include <stdexcept>
 #include <tuple>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     namespace {
 
@@ -153,4 +153,4 @@ namespace mhs::sim {
         return x;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

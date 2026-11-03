@@ -99,7 +99,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     transport.boundary_faces.clear();
     transport.source_terms.clear();
     for (auto& material : transport.material_table)
-        material.kx = material.ky = material.kz = mhs::core::CompiledExpression::make_constant(0);
+        material.kx = material.ky = material.kz = mhs::numerics::CompiledExpression::make_constant(0);
     const auto normal = mhs::sim::assemble_thermal(transport, state, 0);
     auto scaled = transport;
     constexpr double factor = 1e-20;

@@ -450,7 +450,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalidIndex);
     int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
 
-    const mhs::core::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
+    const mhs::numerics::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
@@ -488,7 +488,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     ASSERT_NE(cell, mhs::core::invalidIndex);
     const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
-    const mhs::core::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
+    const mhs::numerics::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
     EXPECT_DOUBLE_EQ(condition->coefficient.eval(ctx), 42.0);
     EXPECT_DOUBLE_EQ(condition->ambient_temperature.eval(ctx), 280.0);
 }

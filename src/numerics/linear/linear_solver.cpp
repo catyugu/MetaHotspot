@@ -7,7 +7,7 @@
 
 #include <stdexcept>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     // --- Factory ---
 
@@ -35,4 +35,4 @@ namespace mhs::sim {
         }
     }
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

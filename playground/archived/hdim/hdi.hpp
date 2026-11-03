@@ -42,7 +42,7 @@ namespace mhs::hdim {
     struct LinearHalf {
         int region = kLinearTop;
         RegionSystem system;
-        mhs::sim::SolverPtr solver;
+        mhs::numerics::SolverPtr solver;
         Eigen::VectorXd state; // eq. (4)-(5) with no interface flux
         std::vector<int> global_cell; // cells of the region, in system order
 

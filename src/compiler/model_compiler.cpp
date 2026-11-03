@@ -44,13 +44,13 @@ namespace mhs::sim {
             model.transient_time_step = definition.settings.transient_output_interval;
         }
 
-        mhs::core::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec>& variables,
+        mhs::numerics::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec>& variables,
             const std::vector<mhs::model::NamedFunction>& functions)
         {
-            mhs::core::SymbolTable empty_for_geometry_eval;
-            mhs::core::SymbolTable symbols;
+            mhs::numerics::SymbolTable empty_for_geometry_eval;
+            mhs::numerics::SymbolTable symbols;
             for (const auto& var : variables) {
-                double val = mhs::core::eval_geometry(var.value, empty_for_geometry_eval);
+                double val = mhs::numerics::eval_geometry(var.value, empty_for_geometry_eval);
                 symbols.variables[var.name] = val;
             }
             register_all_functions(symbols, functions);
@@ -58,7 +58,7 @@ namespace mhs::sim {
         }
 
         std::vector<mhs::core::ProbePoint> build_observation_points(
-            const std::vector<mhs::model::ObservationPointSpec>& src, const mhs::core::SymbolTable& symbols,
+            const std::vector<mhs::model::ObservationPointSpec>& src, const mhs::numerics::SymbolTable& symbols,
             double si_scale)
         {
             std::vector<mhs::core::ProbePoint> out;
@@ -66,9 +66,9 @@ namespace mhs::sim {
             for (const auto& s : src) {
                 mhs::core::ProbePoint p;
                 p.name = s.name;
-                p.x = mhs::core::eval_geometry(s.x, symbols) * si_scale;
-                p.y = mhs::core::eval_geometry(s.y, symbols) * si_scale;
-                p.z = mhs::core::eval_geometry(s.z, symbols) * si_scale;
+                p.x = mhs::numerics::eval_geometry(s.x, symbols) * si_scale;
+                p.y = mhs::numerics::eval_geometry(s.y, symbols) * si_scale;
+                p.z = mhs::numerics::eval_geometry(s.z, symbols) * si_scale;
                 out.push_back(std::move(p));
             }
             return out;
@@ -76,9 +76,10 @@ namespace mhs::sim {
 
         mhs::core::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             std::vector<mhs::core::BoundaryCondition>& conditions,
-            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::numerics::SymbolTable& symbols)
         {
             using namespace mhs::core;
+            using namespace mhs::numerics;
             auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
             auto result = std::visit(
                 overloaded {
@@ -106,7 +107,7 @@ namespace mhs::sim {
         std::vector<CompiledBoundaryRegion> compile_boundary_patches(
             const std::vector<mhs::model::BoundaryPatch>& boundaries,
             std::vector<mhs::core::BoundaryCondition>& conditions, double si_scale,
-            const std::function<std::string(const std::string&)>& rewriter, const mhs::core::SymbolTable& symbols)
+            const std::function<std::string(const std::string&)>& rewriter, const mhs::numerics::SymbolTable& symbols)
         {
             std::vector<CompiledBoundaryRegion> compiled;
             for (const auto& boundary : boundaries) {
@@ -163,7 +164,7 @@ namespace mhs::sim {
         for (size_t m = 0; m < definition.materials.size(); m++) {
             const auto& mat = definition.materials[m].value;
             auto compile_mat = [&](const std::string& expr) {
-                return mhs::core::parse(substitute_function_args(expr, "T"), symbols);
+                return mhs::numerics::parse(substitute_function_args(expr, "T"), symbols);
             };
             auto& props = model.material_table[m];
             props.kx = compile_mat(mat.conductivity_x);
@@ -204,7 +205,7 @@ namespace mhs::sim {
                 if (names_function)
                     heat_source += "(x)";
                 model.heat_source_table.push_back(
-                    mhs::core::parse(substitute_function_args(heat_source, "t"), symbols));
+                    mhs::numerics::parse(substitute_function_args(heat_source, "t"), symbols));
             }
         }
 

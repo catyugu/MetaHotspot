@@ -146,7 +146,7 @@ namespace mhs::sim::fluid {
             }
         Eigen::SparseMatrix<double> matrix(n, n);
         matrix.setFromTriplets(entries.begin(), entries.end());
-        auto solver = mhs::sim::create_solver();
+        auto solver = mhs::numerics::create_solver();
         solver->compute(matrix);
         auto pressure = solver->solve(rhs, Eigen::VectorXd::Zero(n));
         if (!solver->success())

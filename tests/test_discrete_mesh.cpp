@@ -82,8 +82,8 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     }
     auto imported = mhs::sim::build_model(definition, mesh);
     for (auto* m : {&model, &imported}) {
-        m->material_table[0].kx = mhs::core::parse("1+T/1000", {});
-        m->heat_source_table[0] = mhs::core::parse("x+2*y+3*z", {});
+        m->material_table[0].kx = mhs::numerics::parse("1+T/1000", {});
+        m->heat_source_table[0] = mhs::numerics::parse("x+2*y+3*z", {});
     }
     std::vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
     std::vector<double> reordered(8);
@@ -129,7 +129,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             // T-dependent laws are evaluated at the surface trace, not at the cell.
             const auto trace
                 = mhs::sim::evaluate_boundary(model.boundary_conditions[patch.condition], face, state[0], 1.0, 0);
-            const mhs::core::FieldContext ctx {
+            const mhs::numerics::FieldContext ctx {
                 face.center()[0], face.center()[1], face.center()[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
             if (std::holds_alternative<mhs::core::Convection>(model.boundary_conditions[patch.condition])) {

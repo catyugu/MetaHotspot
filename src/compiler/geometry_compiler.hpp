@@ -49,7 +49,7 @@ namespace mhs::sim {
     // ──────────────────────────────────────────────────────────────
 
     std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::core::SymbolTable& symbols);
+        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::numerics::SymbolTable& symbols);
 
     std::pair<mhs::core::Index, mhs::core::Index> classify_point(
         const std::vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& point);

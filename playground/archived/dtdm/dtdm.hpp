@@ -87,7 +87,7 @@ namespace mhs::dtdm {
     class System {
     public:
         System(
-            StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver, double linear_tolerance = 1e-8);
+            StackMesh stack, int patches_x, int patches_y, mhs::numerics::SolverType solver, double linear_tolerance = 1e-8);
 
         const StackMesh& stack() const { return stack_; }
 
@@ -110,7 +110,7 @@ namespace mhs::dtdm {
         Eigen::VectorXd steady_state() const;
 
         StackMesh stack_;
-        mhs::sim::SolverType solver_ = mhs::sim::SolverType::AmgCg;
+        mhs::numerics::SolverType solver_ = mhs::numerics::SolverType::AmgCg;
         /// Relative residual of the iterative solves. It is a *residual* bound,
         /// and these operators span ten decades, so the field error it allows is
         /// orders of magnitude larger than the tolerance itself.

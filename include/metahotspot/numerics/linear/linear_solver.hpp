@@ -3,7 +3,7 @@
 #include <Eigen/Sparse>
 #include <memory>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     enum class SolverType { Pardiso, AmgCg };
 
@@ -59,4 +59,4 @@ namespace mhs::sim {
     /// optional direct backend when MKL is enabled.
     SolverPtr create_solver(const SolverSpec& spec = {});
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

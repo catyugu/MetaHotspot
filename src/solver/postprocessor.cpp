@@ -35,7 +35,7 @@ namespace mhs::post {
         for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];
-            const mhs::core::FieldContext ctx {center[0], center[1], center[2], temperature, time};
+            const mhs::numerics::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::core::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto& vertices = model.output.cell_vertices[c];

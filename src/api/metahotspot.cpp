@@ -808,7 +808,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
             const auto p = mesh.cells[cell].center();
             const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
-            const mhs::core::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
+            const mhs::numerics::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);
             values->conductivity_y[cell] = props.ky.eval(context);
             values->conductivity_z[cell] = props.kz.eval(context);

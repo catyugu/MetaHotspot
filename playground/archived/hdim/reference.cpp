@@ -26,7 +26,7 @@ namespace mhs::hdim {
         const std::vector<double> incoming = temperature;
         Eigen::VectorXd solution = Eigen::Map<const Eigen::VectorXd>(temperature.data(), n);
 
-        const mhs::sim::SolverSpec spec;
+        const mhs::numerics::SolverSpec spec;
         for (int sweep = 1; sweep <= max_sweeps; ++sweep) {
             const RegionSystem whole = assemble_whole(model, temperature, dt);
             Eigen::VectorXd rhs = whole.source;
@@ -35,7 +35,7 @@ namespace mhs::hdim {
                 rhs += whole.capacity.cwiseProduct(old) / dt;
             }
 
-            const auto solver = mhs::sim::create_solver(spec);
+            const auto solver = mhs::numerics::create_solver(spec);
             solver->compute(whole.K);
             const Eigen::VectorXd next = solver->solve(rhs, solution);
             ++info.solves;

@@ -32,20 +32,20 @@ namespace {
     const Eigen::VectorXd kExact = Eigen::VectorXd::LinSpaced(kSize, 1.0, 4.0);
 
     // The default thermal linear solver is AMG-preconditioned CG (AmgCg).
-    constexpr auto kAmgSpec = mhs::sim::SolverSpec {mhs::sim::SolverType::AmgCg, {1e-10, 2000}};
+    constexpr auto kAmgSpec = mhs::numerics::SolverSpec {mhs::numerics::SolverType::AmgCg, {1e-10, 2000}};
 
     // Right-hand side and a computed solver over the SPD test system.
     struct SolverFixture {
         Eigen::VectorXd b;
-        mhs::sim::SolverPtr solver;
+        mhs::numerics::SolverPtr solver;
     };
 
-    SolverFixture make_fixture(const mhs::sim::SolverSpec& spec = {})
+    SolverFixture make_fixture(const mhs::numerics::SolverSpec& spec = {})
     {
         const auto A = make_spd_tridiagonal(kSize);
         SolverFixture fixture;
         fixture.b = A * kExact;
-        fixture.solver = mhs::sim::create_solver(spec);
+        fixture.solver = mhs::numerics::create_solver(spec);
         fixture.solver->compute(A);
         return fixture;
     }
@@ -101,7 +101,7 @@ TEST(LinearSolver, DefaultFactoryYieldsWorkingIterativeSolver)
 #ifdef MHS_ENABLE_PARDISO
 TEST(LinearSolver, DirectIgnoresInitialGuess)
 {
-    auto fixture = make_fixture(mhs::sim::SolverSpec {mhs::sim::SolverType::Pardiso, {}});
+    auto fixture = make_fixture(mhs::numerics::SolverSpec {mhs::numerics::SolverType::Pardiso, {}});
 
     const Eigen::VectorXd with_guess = fixture.solver->solve(fixture.b, kExact);
     ASSERT_TRUE(fixture.solver->success());

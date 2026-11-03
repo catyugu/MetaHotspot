@@ -318,11 +318,11 @@ namespace mhs::dtdm {
         for (const auto& m : materials) {
             mhs::core::MaterialProps props;
             // rho * c is what the assembler multiplies by the volume
-            props.kx = mhs::core::CompiledExpression::make_constant(m.k);
+            props.kx = mhs::numerics::CompiledExpression::make_constant(m.k);
             props.ky = props.kx;
             props.kz = props.kx;
-            props.rho = mhs::core::CompiledExpression::make_constant(m.rho_c);
-            props.c = mhs::core::CompiledExpression::make_constant(1.0);
+            props.rho = mhs::numerics::CompiledExpression::make_constant(m.rho_c);
+            props.c = mhs::numerics::CompiledExpression::make_constant(1.0);
             out.model.material_table.push_back(std::move(props));
         }
         out.model.cell_material.assign(mesh.cells.size(), 0);
@@ -336,7 +336,7 @@ namespace mhs::dtdm {
         out.model.heat_source_table.clear();
         for (const auto& c : spec.chiplets) {
             const double volume = c.width * c.height * kStack[3].thickness;
-            out.model.heat_source_table.push_back(mhs::core::CompiledExpression::make_constant(c.power / volume));
+            out.model.heat_source_table.push_back(mhs::numerics::CompiledExpression::make_constant(c.power / volume));
         }
         out.total_power = 0.0;
         for (std::size_t ci = 0; ci < spec.chiplets.size(); ++ci) {
@@ -445,10 +445,10 @@ namespace mhs::dtdm {
         // the initial temperature, so its contribution to the right-hand side is
         // zero and the WLP expansion sees a homogeneous initial value problem
         out.model.boundary_conditions.push_back(
-            mhs::core::Convection {mhs::core::CompiledExpression::make_constant(kHeatSinkH),
-                mhs::core::CompiledExpression::make_constant(0.0)});
+            mhs::core::Convection {mhs::numerics::CompiledExpression::make_constant(kHeatSinkH),
+                mhs::numerics::CompiledExpression::make_constant(0.0)});
         out.model.boundary_conditions.push_back(mhs::core::Convection {
-            mhs::core::CompiledExpression::make_constant(kPcbH), mhs::core::CompiledExpression::make_constant(0.0)});
+            mhs::numerics::CompiledExpression::make_constant(kPcbH), mhs::numerics::CompiledExpression::make_constant(0.0)});
 
         auto add_boundary_face = [&](long face_id, std::size_t condition) {
             const auto& f = faces[static_cast<std::size_t>(face_id)];

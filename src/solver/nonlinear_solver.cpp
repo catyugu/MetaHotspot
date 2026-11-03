@@ -97,8 +97,8 @@ namespace mhs::sim {
 
     } // namespace
 
-    bool nonlinear_solve(
-        LinearSystemProvider ls_provider, std::vector<double>& state, SolverPtr& solver, const NonLinearConfig& cfg)
+    bool nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, mhs::numerics::SolverPtr& solver,
+        const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance;

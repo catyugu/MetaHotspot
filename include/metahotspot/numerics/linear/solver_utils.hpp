@@ -3,7 +3,7 @@
 #include <Eigen/Sparse>
 #include <cstring>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     /// Check whether two sparse matrices have the same nonzero pattern
     /// by comparing their outer and inner index arrays.
@@ -19,4 +19,4 @@ namespace mhs::sim {
             == 0;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

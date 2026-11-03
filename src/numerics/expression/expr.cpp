@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace mhs::core {
+namespace mhs::numerics {
 
     // Bridge state carried alongside every native function registration.
     // muparser hands us a void* to this struct on every native call.
@@ -198,4 +198,4 @@ namespace mhs::core {
         }
     }
 
-} // namespace mhs::core
+} // namespace mhs::numerics

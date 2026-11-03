@@ -9,6 +9,7 @@ namespace mhs::sim {
     Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
+        using namespace mhs::numerics;
         if (temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
         const auto n = static_cast<Eigen::Index>(model.discrete.cells.size());

@@ -88,7 +88,7 @@ namespace mhs::dtdm {
         class ModuleOperator {
         public:
             ModuleOperator() = default;
-            ModuleOperator(const Module& module, double shift, mhs::sim::SolverType type, double tolerance)
+            ModuleOperator(const Module& module, double shift, mhs::numerics::SolverType type, double tolerance)
             {
                 const auto n = static_cast<Eigen::Index>(module.cells.size());
                 for (int k = 0; k < kInterfaceCount; ++k)
@@ -120,7 +120,7 @@ namespace mhs::dtdm {
                 matrix_ = module.K + shift * module.C + boundary;
                 matrix_.makeCompressed();
 
-                solver_ = mhs::sim::create_solver({type, {tolerance, 2000}});
+                solver_ = mhs::numerics::create_solver({type, {tolerance, 2000}});
                 solver_->compute(matrix_);
             }
 
@@ -153,7 +153,7 @@ namespace mhs::dtdm {
                 return warm;
             }
 
-            mhs::sim::SolverPtr solver_;
+            mhs::numerics::SolverPtr solver_;
             Eigen::SparseMatrix<double> matrix_;
             Eigen::SparseMatrix<double> w_;
             Eigen::SparseMatrix<double> wt_;
@@ -180,15 +180,15 @@ namespace mhs::dtdm {
         /// The columns are independent and make up the bulk of the setup, so they
         /// run on the thread pool. An AMG hierarchy owns its work vectors, so every
         /// worker needs its own copy.
-        Macromodel extract_macromodel(const ModuleOperator& op, mhs::sim::SolverType type, double tolerance)
+        Macromodel extract_macromodel(const ModuleOperator& op, mhs::numerics::SolverType type, double tolerance)
         {
             const auto n = op.matrix().rows();
             const std::size_t columns = static_cast<std::size_t>(op.patches());
             const std::size_t workers = std::min(kExtractionWorkers, columns);
-            std::vector<mhs::sim::SolverPtr> pool;
+            std::vector<mhs::numerics::SolverPtr> pool;
             pool.reserve(workers);
             for (std::size_t w = 0; w < workers; ++w) {
-                pool.push_back(mhs::sim::create_solver({type, {tolerance, 2000}}));
+                pool.push_back(mhs::numerics::create_solver({type, {tolerance, 2000}}));
                 pool.back()->compute(op.matrix());
             }
 
@@ -307,7 +307,7 @@ namespace mhs::dtdm {
         /// the field recorded at the probe times. The step never changes, so the
         /// operator is factored once for the whole march.
         std::vector<std::vector<double>> march_backward_euler(const mhs::sim::Operators& operators, int steps,
-            double duration, const std::vector<double>& times, mhs::sim::SolverType type, double tolerance)
+            double duration, const std::vector<double>& times, mhs::numerics::SolverType type, double tolerance)
         {
             const auto n = static_cast<Eigen::Index>(operators.f.size());
             const double dt = duration / static_cast<double>(steps);
@@ -317,7 +317,7 @@ namespace mhs::dtdm {
             Eigen::SparseMatrix<double> matrix = operators.K;
             matrix += (1.0 / dt) * operators.C;
             matrix.makeCompressed();
-            auto solver = mhs::sim::create_solver({type, {tolerance, 2000}});
+            auto solver = mhs::numerics::create_solver({type, {tolerance, 2000}});
             solver->compute(matrix);
 
             std::vector<std::vector<double>> samples(times.size());
@@ -366,7 +366,7 @@ namespace mhs::dtdm {
         }
     } // namespace
 
-    System::System(StackMesh stack, int patches_x, int patches_y, mhs::sim::SolverType solver, double linear_tolerance)
+    System::System(StackMesh stack, int patches_x, int patches_y, mhs::numerics::SolverType solver, double linear_tolerance)
         : stack_(std::move(stack)), solver_(solver), linear_tolerance_(linear_tolerance)
     {
         build_operators();
@@ -503,7 +503,7 @@ namespace mhs::dtdm {
 
     Eigen::VectorXd System::steady_state() const
     {
-        auto solver = mhs::sim::create_solver({solver_, {0.1 * linear_tolerance_, 2000}});
+        auto solver = mhs::numerics::create_solver({solver_, {0.1 * linear_tolerance_, 2000}});
         solver->compute(K_);
         Eigen::VectorXd steady = solver->solve(f_, Eigen::VectorXd::Zero(f_.size()));
         if (!solver->success())
@@ -524,7 +524,7 @@ namespace mhs::dtdm {
         std::fprintf(stderr, "[wlp] nnz K %lld  nnz C %lld  nnz(K + s/2 C) %lld\n",
             static_cast<long long>(K_.nonZeros()), static_cast<long long>(C_.nonZeros()),
             static_cast<long long>(matrix.nonZeros()));
-        auto solver = mhs::sim::create_solver({solver_, {linear_tolerance_, 2000}});
+        auto solver = mhs::numerics::create_solver({solver_, {linear_tolerance_, 2000}});
         solver->compute(matrix);
         report_dc_remainder(orders, scale, sample_times);
 

@@ -20,24 +20,24 @@ namespace mhs::core {
     };
 
     struct MaterialProps {
-        CompiledExpression kx;
-        CompiledExpression ky;
-        CompiledExpression kz;
-        CompiledExpression rho;
-        CompiledExpression c;
+        mhs::numerics::CompiledExpression kx;
+        mhs::numerics::CompiledExpression ky;
+        mhs::numerics::CompiledExpression kz;
+        mhs::numerics::CompiledExpression rho;
+        mhs::numerics::CompiledExpression c;
     };
 
     struct Dirichlet {
-        CompiledExpression temperature;
+        mhs::numerics::CompiledExpression temperature;
     };
 
     struct Neumann {
-        CompiledExpression heat_flux;
+        mhs::numerics::CompiledExpression heat_flux;
     };
 
     struct Convection {
-        CompiledExpression coefficient;
-        CompiledExpression ambient_temperature;
+        mhs::numerics::CompiledExpression coefficient;
+        mhs::numerics::CompiledExpression ambient_temperature;
     };
 
     // Shared compiled laws; per-face BoundaryFace records store only an index.
@@ -64,7 +64,7 @@ namespace mhs::core {
 
         std::vector<TableIndex> cell_material;
         std::vector<MaterialProps> material_table;
-        std::vector<CompiledExpression> heat_source_table;
+        std::vector<mhs::numerics::CompiledExpression> heat_source_table;
         std::vector<BoundaryCondition> boundary_conditions;
         std::vector<SourceTerm> source_terms;
         std::vector<BoundaryFace> boundary_faces; // sorted by parent FaceId

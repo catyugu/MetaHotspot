@@ -109,12 +109,12 @@ namespace {
         return finest;
     }
 
-    mhs::sim::SolverType parse_solver(const std::string& name)
+    mhs::numerics::SolverType parse_solver(const std::string& name)
     {
         if (name == "amg")
-            return mhs::sim::SolverType::AmgCg;
+            return mhs::numerics::SolverType::AmgCg;
         if (name == "pardiso")
-            return mhs::sim::SolverType::Pardiso;
+            return mhs::numerics::SolverType::Pardiso;
         throw std::invalid_argument("unknown solver " + name);
     }
 

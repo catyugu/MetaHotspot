@@ -3,7 +3,7 @@
 
 #include <Eigen/PardisoSupport>
 
-namespace mhs::sim {
+namespace mhs::numerics {
 
     void PardisoLUSolver::compute(const Eigen::SparseMatrix<double>& A)
     {
@@ -40,4 +40,4 @@ namespace mhs::sim {
         return x;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::numerics

@@ -17,53 +17,53 @@ namespace mhs::sim {
     //   - ctx 是当前物理上下文（x, y, z, T, t 的真实值），仅作为参考
     // 单变元函数族（除 make_expression_evaluator 外）不参考 ctx。
 
-    mhs::core::FieldEvaluator make_expression_evaluator(
-        const std::string& inner_expr, const mhs::core::SymbolTable& symbols, bool& reads_temperature)
+    mhs::numerics::FieldEvaluator make_expression_evaluator(
+        const std::string& inner_expr, const mhs::numerics::SymbolTable& symbols, bool& reads_temperature)
     {
         if (inner_expr.empty())
             throw std::invalid_argument("function expression must not be empty");
-        auto ce = mhs::core::parse(inner_expr, symbols);
+        auto ce = mhs::numerics::parse(inner_expr, symbols);
         reads_temperature = ce.depends_on_temperature();
-        return [ce](const double* args, int nargs, const mhs::core::FieldContext& ctx) {
-            mhs::core::FieldContext effective_ctx = ctx;
+        return [ce](const double* args, int nargs, const mhs::numerics::FieldContext& ctx) {
+            mhs::numerics::FieldContext effective_ctx = ctx;
             if (nargs > 0) {
                 effective_ctx.x = args[0];
             }
             return ce.eval(effective_ctx);
         };
     }
-    mhs::core::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
+    mhs::numerics::FieldEvaluator make_double_exp_evaluator(double A, double alpha, double beta)
     {
         if (!std::isfinite(A) || !std::isfinite(alpha) || !std::isfinite(beta))
             throw std::invalid_argument("double exponential function parameters must be finite");
-        return [A, alpha, beta](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+        return [A, alpha, beta](const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * (std::exp(alpha * t_val) - std::exp(beta * t_val));
         };
     }
 
-    mhs::core::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
+    mhs::numerics::FieldEvaluator make_gauss_evaluator(double A, double tau, double x0)
     {
         if (!std::isfinite(A) || !std::isfinite(tau) || tau <= 0.0 || !std::isfinite(x0))
             throw std::invalid_argument("Gaussian function requires finite parameters and positive tau");
-        return [A, tau, x0](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+        return [A, tau, x0](const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*c*/) {
             double t_val = args[0];
             double u = (t_val - x0) / tau;
             return A * std::exp(-u * u);
         };
     }
 
-    mhs::core::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
+    mhs::numerics::FieldEvaluator make_sine_evaluator(double A, double omega, double phi)
     {
         if (!std::isfinite(A) || !std::isfinite(omega) || !std::isfinite(phi))
             throw std::invalid_argument("sine function parameters must be finite");
-        return [A, omega, phi](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+        return [A, omega, phi](const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*c*/) {
             double t_val = args[0];
             return A * std::sin(omega * t_val + phi);
         };
     }
 
-    mhs::core::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
+    mhs::numerics::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
     {
         if (pts.size() < 2)
             throw std::invalid_argument("piecewise function requires at least two points");
@@ -71,7 +71,7 @@ namespace mhs::sim {
             if (!std::isfinite(p.x) || !std::isfinite(p.y))
                 throw std::invalid_argument("piecewise function points must be finite");
         std::sort(pts.begin(), pts.end(), [](const auto& a, const auto& b) { return a.x < b.x; });
-        return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+        return [pts = std::move(pts)](const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*c*/) {
             double x = args[0];
             if (x <= pts.front().x)
                 return pts.front().y;
@@ -86,7 +86,7 @@ namespace mhs::sim {
         };
     }
 
-    mhs::core::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values)
+    mhs::numerics::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values)
     {
         if (!std::isfinite(period) || period <= 0.0 || values.empty())
             throw std::invalid_argument("periodic function requires a positive finite period and nonempty values");
@@ -94,7 +94,7 @@ namespace mhs::sim {
             if (!std::isfinite(value))
                 throw std::invalid_argument("periodic function values must be finite");
         return [period, values = std::move(values)](
-                   const double* args, int /*nargs*/, const mhs::core::FieldContext& /*c*/) {
+                   const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*c*/) {
             double t_val = args[0];
             const std::size_t n = values.size();
             if (n == 1)
@@ -160,10 +160,10 @@ namespace mhs::sim {
     // ---- 写入 SymbolTable -------------------------------------------------
 
     void register_all_functions(
-        mhs::core::SymbolTable& symbols, const std::vector<mhs::model::NamedFunction>& functions)
+        mhs::numerics::SymbolTable& symbols, const std::vector<mhs::model::NamedFunction>& functions)
     {
         for (const auto& function : functions) {
-            mhs::core::FieldEvaluator ev = nullptr;
+            mhs::numerics::FieldEvaluator ev = nullptr;
             // Built-in closures only read their arguments; expression functions
             // inherit whatever the inner expression depends on.
             bool reads_temperature = false;
