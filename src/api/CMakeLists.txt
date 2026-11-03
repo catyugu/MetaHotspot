@@ -70,7 +70,7 @@ if(SKBUILD)
                 ".*[Ss][Yy][Ss][Tt][Ee][Mm]32.*"
                 ".*(^|/)lib(c|m|dl|rt|pthread|gcc_s|stdc\\+\\+)\\.so.*"
                 ".*(^|/)ld-linux.*"
-                "^/usr/lib/.*"
+                "^/usr/lib/.*\\.dylib$"
                 "^/System/.*")
         foreach(_mhs_dep IN LISTS _mhs_wheel_deps)
             # Copy the real file, named the way the loader asks for it: a
@@ -82,7 +82,7 @@ if(SKBUILD)
                 TYPE FILE RENAME "${_mhs_dep_name}" FILES "${_mhs_dep_real}")
         endforeach()
         if(_mhs_wheel_unresolved)
-            message(WARNING "Unresolved runtime dependencies: ${_mhs_wheel_unresolved}")
+            message(FATAL_ERROR "Unresolved runtime dependencies: ${_mhs_wheel_unresolved}")
         endif()
     ]] COMPONENT python)
 endif()

@@ -2,15 +2,46 @@
 #
 # $<TARGET_RUNTIME_DLLS:> covers imported shared targets in the link closure
 # (oneTBB, and oneMKL when enabled). FindOpenMP exposes an interface target, so
-# MSVC's OpenMP DLL is not part of that list. Let CMake's own redistributable
-# discovery locate it instead of depending on Visual Studio's directory layout.
+# its DLL needs separate discovery for both MSVC and clang-cl.
 # The MSVC C runtime is deliberately not bundled; users get it from the Visual
 # C++ Redistributable.
 
-function(_mhs_find_msvc_openmp_runtime out)
+function(_mhs_find_openmp_runtime out)
     set(${out} "" PARENT_SCOPE)
-    # clang-cl uses the MSVC command-line frontend but links LLVM OpenMP,
-    # not the MSVC vcomp redistributable.
+    if(NOT WIN32)
+        return()
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        # FindOpenMP provides import libraries, not a SHARED imported target.
+        # Read the DLL name embedded in each COFF import library rather than
+        # guessing LLVM's versioned DLL name or Visual Studio's layout.
+        get_filename_component(_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        set(_openmp "")
+        foreach(_library IN LISTS OpenMP_CXX_LIBRARIES)
+            if(NOT EXISTS "${_library}")
+                continue()
+            endif()
+            file(STRINGS "${_library}" _names REGEX "[Ll][Ii][Bb].*[Oo][Mm][Pp].*\\.dll")
+            get_filename_component(_lib_dir "${_library}" DIRECTORY)
+            foreach(_name IN LISTS _names)
+                string(REGEX MATCH "[A-Za-z0-9_.-]+\\.dll" _dll_name "${_name}")
+                if(_dll_name)
+                    unset(_dll CACHE)
+                    find_file(_dll NAMES "${_dll_name}"
+                        HINTS "${_compiler_bin}" "${_lib_dir}" "${_lib_dir}/../bin"
+                        ENV PATH REQUIRED)
+                    list(APPEND _openmp "${_dll}")
+                endif()
+            endforeach()
+        endforeach()
+        list(REMOVE_DUPLICATES _openmp)
+        if(NOT _openmp)
+            message(FATAL_ERROR "Cannot locate the LLVM OpenMP runtime from ${OpenMP_CXX_LIBRARIES}")
+        endif()
+        set(${out} "${_openmp}" PARENT_SCOPE)
+        return()
+    endif()
+
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         return()
     endif()
@@ -36,7 +67,7 @@ function(_mhs_find_msvc_openmp_runtime out)
     set(${out} "${_openmp}" PARENT_SCOPE)
 endfunction()
 
-_mhs_find_msvc_openmp_runtime(_mhs_msvc_openmp_runtime)
+_mhs_find_openmp_runtime(_mhs_openmp_runtime)
 
 function(mhs_stage_runtime target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -44,17 +75,17 @@ function(mhs_stage_runtime target)
         $<TARGET_RUNTIME_DLLS:${target}>
         COMMAND_EXPAND_LISTS
     )
-    if(_mhs_msvc_openmp_runtime)
+    if(_mhs_openmp_runtime)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${_mhs_msvc_openmp_runtime} "$<TARGET_FILE_DIR:${target}>"
+            ${_mhs_openmp_runtime} "$<TARGET_FILE_DIR:${target}>"
             COMMAND_EXPAND_LISTS
         )
     endif()
 endfunction()
 
 # Installs the runtime DLLs of the given targets next to the installed binaries.
-# On Windows those are oneTBB, oneMKL when enabled, and the MSVC OpenMP runtime.
+# On Windows those are oneTBB, oneMKL when enabled, and the OpenMP runtime.
 function(mhs_install_windows_runtime)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "DESTINATION;COMPONENT" "TARGETS")
     if(NOT WIN32)
@@ -70,8 +101,8 @@ function(mhs_install_windows_runtime)
                 DESTINATION ${arg_DESTINATION} ${_component})
         endif()
     endforeach()
-    if(_mhs_msvc_openmp_runtime)
-        install(FILES ${_mhs_msvc_openmp_runtime}
+    if(_mhs_openmp_runtime)
+        install(FILES ${_mhs_openmp_runtime}
             DESTINATION ${arg_DESTINATION} ${_component})
     endif()
 endfunction()
