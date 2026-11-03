@@ -52,6 +52,7 @@ interface, a per-cell geometry view, and the declared ambient groups.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -145,7 +146,7 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     by_key = {}
     invalid = np.iinfo(fields.face_neighbor.dtype).max
     for fid, (owner, neighbor) in enumerate(
-        zip(fields.face_owner, fields.face_neighbor)
+        zip(fields.face_owner, fields.face_neighbor, strict=True)
     ):
         for cell, other, sign in (
             (int(owner), int(neighbor), int(fields.face_sign[fid])),
@@ -220,7 +221,7 @@ class Subdomain:
     def internal_operator(self) -> sp.csc_matrix:
         """Full-FVM internal stiffness with the ambient folded at effective p."""
         K = self.K.tocsc()
-        for pk, Hk in zip(self.effective_p, self.ambient_terms):
+        for pk, Hk in zip(self.effective_p, self.ambient_terms, strict=False):
             K = K + float(pk) * Hk.tocsc()
         return K.tocsc()
 
@@ -285,7 +286,7 @@ def build_subdomain(
 
     # Declared ambient groups as local affine terms + effective coefficients.
     ambient_terms, ambient_ranges = [], []
-    for term, h_range in zip(model.boundary_terms, model.h_ranges()):
+    for term, h_range in zip(model.boundary_terms, model.h_ranges(), strict=True):
         diag = np.asarray(term.diagonal()).ravel()[cells]
         ambient_terms.append(sp.diags(diag))
         ambient_ranges.append(list(h_range))
@@ -301,7 +302,7 @@ def build_subdomain(
     outside = np.setdiff1d(np.arange(model.full_cell_count), cells)
     cross = (core.K.tocsc()[cells, :][:, outside]).tocoo()
     phantom = np.zeros(n)
-    for row, value in zip(cross.row, cross.data):
+    for row, value in zip(cross.row, cross.data, strict=True):
         if value < 0.0:
             phantom[row] -= value
     K = (K - sp.diags(phantom)).tocsc()
@@ -358,7 +359,7 @@ class EmbeddableRom:
     def internal_operator(self) -> sp.csc_matrix:
         """Modal effective stiffness: K0_hat + Σ p_k VᵀH_kV, ambient folded."""
         K = self.K0_hat
-        for p, H in zip(self.effective_p, self.ambient_hat):
+        for p, H in zip(self.effective_p, self.ambient_hat, strict=False):
             K = K + float(p) * H
         return K.tocsc()
 
@@ -524,8 +525,8 @@ def common_patches(port_l: FacePort, port_r: FacePort):
     y_edges = np.unique(np.r_[rl[:, (2, 3)], rr[:, (2, 3)]])
 
     areas, li, ri = [], [], []
-    for xl, xr in zip(x_edges[:-1], x_edges[1:]):
-        for yl, yr in zip(y_edges[:-1], y_edges[1:]):
+    for xl, xr in itertools.pairwise(x_edges):
+        for yl, yr in itertools.pairwise(y_edges):
             if (xr - xl) <= 2.0 * _EDGE_TOL or (yr - yl) <= 2.0 * _EDGE_TOL:
                 continue
             lm = _contains(rl, xl, xr, yl, yr)

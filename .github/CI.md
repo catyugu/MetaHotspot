@@ -11,7 +11,7 @@ CMake dependencies exported by `MetaHotspotConfig.cmake`.
 ## Python wheels
 
 One `py3-none` wheel is built per platform/architecture, then the **same artifact**
-is installed on separate runners with Python 3.9 and 3.14. No PyPI or release
+is installed on separate runners with Python 3.10 and 3.14. No PyPI or release
 publishing is configured. There is no cibuildwheel dependency.
 
 | Platform | Baseline | Repair |

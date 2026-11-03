@@ -201,7 +201,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
-        python: ["3.9", "3.14"]
+        python: ["3.10", "3.14"]
     runs-on: ${{ matrix.os }}
     env:
       OMP_NUM_THREADS: "2"

@@ -8,7 +8,7 @@ description = "MetaHotspot — thermal simulation C API Python bindings + model-
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.21",
     "scipy>=1.7",
@@ -58,7 +58,7 @@ regex = '''(?sx)
 result = "{major}.{minor}.{patch}"
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 src = ["python"]
 
 [tool.ruff.lint]

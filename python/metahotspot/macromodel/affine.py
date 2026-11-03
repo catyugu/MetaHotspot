@@ -366,7 +366,7 @@ class AffineParametricModel:
         # physical h -> effective (series-condensed) affine coefficient.
         p = self.physical_to_effective(h_vec)
         K_h = K.copy()
-        for p_k, H_k in zip(p, terms):
+        for p_k, H_k in zip(p, terms, strict=True):
             K_h = K_h + float(p_k) * H_k
 
         started = time.perf_counter()
