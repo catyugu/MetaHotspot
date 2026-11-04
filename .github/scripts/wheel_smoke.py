@@ -45,7 +45,7 @@ layer = model.add_layer("0.01")
 block = model.add_block(layer, "solid", heat_source="1e6")
 model.add_rect(block, GeometryOp.ADD, "0", "0", "0.01", "0.01")
 model.set_default_dirichlet("300")
-solution = model.compile().solve(opts=SolveOptions(linear_solver="AmgCg"))
+solution = model.compile().solve(opts=SolveOptions(linear_solver="Amg"))
 assert solution.state.size == 15625, solution.state.size
 assert np.isfinite(solution.state).all()
 assert solution.state.max() > 300.0

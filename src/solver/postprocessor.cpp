@@ -1,4 +1,5 @@
 #include "solver/postprocessor.hpp"
+#include "core/vector.hpp"
 #include "thermal_reconstruction.hpp"
 #include <algorithm>
 #include <array>
@@ -6,16 +7,15 @@
 #include <limits>
 #include <ranges>
 #include <stdexcept>
-#include <vector>
 
-namespace mhs::post {
+namespace mhs::solver {
 
     namespace {
 
         // Inverse anisotropic thermal distance Δx²/kx + Δy²/ky + Δz²/kz.
         // The epsilon keeps a query point coincident with a cell center finite.
         double anisotropic_weight(
-            const mhs::core::Vec3& center, const mhs::core::Vec3& point, const mhs::core::Vec3& conductivity)
+            const mhs::model::Vec3& center, const mhs::model::Vec3& point, const mhs::model::Vec3& conductivity)
         {
             const double dx = point[0] - center[0], dy = point[1] - center[1], dz = point[2] - center[2];
             return 1.0
@@ -25,19 +25,19 @@ namespace mhs::post {
 
     } // namespace
 
-    std::vector<double> interpolate_cell_to_node(
-        const mhs::core::Model& model, std::span<const double> cell_temperature, double time)
+    mhs::core::Vector<double> interpolate_cell_to_node(
+        const mhs::model::Model& model, std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
-        std::vector<double> node_T(model.output.points.size(), 0.0);
-        std::vector<double> weight(node_T.size(), 0.0);
+        mhs::core::Vector<double> node_T(model.output.points.size(), 0.0);
+        mhs::core::Vector<double> weight(node_T.size(), 0.0);
         for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];
-            const mhs::numerics::FieldContext ctx {center[0], center[1], center[2], temperature, time};
+            const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
-            const mhs::core::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
+            const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto& vertices = model.output.cell_vertices[c];
             std::array<double, 8> sum {}, dirichlet_sum {};
             std::array<unsigned, 8> count {}, dirichlet_count {};
@@ -45,7 +45,7 @@ namespace mhs::post {
                 const auto& face = model.discrete.faces[id.value];
                 if (face.neighbor.valid())
                     continue;
-                for (const auto& term : mhs::sim::boundary_faces_on(model, id)) {
+                for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
                     const auto patch = face.project(term.bounds);
                     const auto& condition = model.boundary_conditions[term.condition];
                     std::optional<double> trace;
@@ -53,12 +53,12 @@ namespace mhs::post {
                         if (!patch.contains(model.output.points[vertices[i]]))
                             continue;
                         if (!trace)
-                            trace = mhs::sim::evaluate_boundary(
+                            trace = mhs::solver::evaluate_boundary(
                                 condition, patch, temperature, conductivity[patch.axis], time)
                                         .temperature;
                         sum[i] += *trace;
                         ++count[i];
-                        if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {
+                        if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
                             dirichlet_sum[i] += *trace;
                             ++dirichlet_count[i];
                         }
@@ -97,4 +97,4 @@ namespace mhs::post {
         return std::ranges::min(filtered);
     }
 
-} // namespace mhs::post
+} // namespace mhs::solver

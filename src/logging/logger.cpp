@@ -1,7 +1,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-#include <vector>
+#include "core/vector.hpp"
 
 #include "logging/logger.hpp"
 
@@ -13,7 +13,7 @@ namespace mhs::logger {
 
     void init(std::string_view log_file, bool console_output)
     {
-        std::vector<spdlog::sink_ptr> sinks;
+        mhs::core::Vector<spdlog::sink_ptr> sinks;
 
         if (console_output) {
             auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

@@ -12,7 +12,7 @@
 #include <Eigen/Sparse>
 
 #include <cmath>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::hdim {
 
@@ -20,7 +20,7 @@ namespace mhs::hdim {
 
     /// In-plane axis: uniform at `h` over the chip outline, then growing outward
     /// by `kGrowth` until the widest footprint is reached.
-    inline std::vector<double> graded_axis(double half_chip, double half_outer, double h)
+    inline mhs::core::Vector<double> graded_axis(double half_chip, double half_outer, double h)
     {
         int inner = static_cast<int>(std::lround(2.0 * half_chip / h));
         if (inner % 2 != 0)
@@ -28,7 +28,7 @@ namespace mhs::hdim {
         inner = std::max(2, inner);
         const double step = 2.0 * half_chip / inner;
 
-        std::vector<double> right {0.0}; // cell edges > 0, ascending
+        mhs::core::Vector<double> right {0.0}; // cell edges > 0, ascending
         for (int i = 1; i <= inner / 2; ++i)
             right.push_back(i * step);
         double edge = right.back();
@@ -39,7 +39,7 @@ namespace mhs::hdim {
             right.push_back(edge);
         }
 
-        std::vector<double> axis;
+        mhs::core::Vector<double> axis;
         for (auto it = right.rbegin(); it != right.rend(); ++it)
             if (*it > 1e-15)
                 axis.push_back(-*it);
@@ -48,15 +48,15 @@ namespace mhs::hdim {
     }
 
     struct Mesh {
-        std::vector<double> x, y; // cell edges
+        mhs::core::Vector<double> x, y; // cell edges
         struct LayerCells {
             int nz = 0;
             double dz = 0.0;
-            std::vector<int> id; // (k * ny + j) * nx + i -> global id, -1 outside
+            mhs::core::Vector<int> id; // (k * ny + j) * nx + i -> global id, -1 outside
         };
-        std::vector<LayerCells> layers;
-        std::vector<int> cell_layer;
-        std::vector<double> volume;
+        mhs::core::Vector<LayerCells> layers;
+        mhs::core::Vector<int> cell_layer;
+        mhs::core::Vector<double> volume;
         int nx = 0, ny = 0, n = 0;
 
         /// Global cell id, or -1 when the index falls outside the layer.

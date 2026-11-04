@@ -1,6 +1,6 @@
 #include "cli.hpp"
 #include "compiler/model_compiler.hpp"
-#include "core/solver.hpp"
+#include "solver/solver.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "logging/logger.hpp"
@@ -41,13 +41,13 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", definition.layers.size(),
             definition.materials.size(), definition.boundaries.size());
 
-        auto model = mhs::sim::build_model(definition);
+        auto model = mhs::compiler::build_model(definition);
 
         MHS_LOG_INFO("Compiled {} cells and {} face patches", model.discrete.cells.size(), model.discrete.faces.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::sim::solve(model);
+        auto result = mhs::solver::solve(model);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;
@@ -58,13 +58,13 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)
-        auto node_temperature = mhs::post::interpolate_cell_to_node(model, solution, result.time);
+        auto node_temperature = mhs::solver::interpolate_cell_to_node(model, solution, result.time);
         mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics
-        double max_T = mhs::post::max_temperature(solution);
-        double min_T = mhs::post::min_temperature(solution);
+        double max_T = mhs::solver::max_temperature(solution);
+        double min_T = mhs::solver::min_temperature(solution);
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);
     }
     catch (const std::exception& e) {

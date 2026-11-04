@@ -1,14 +1,14 @@
 #pragma once
 
+#include "core/vector.hpp"
 #include <string>
-#include <vector>
 
-namespace mhs::core {
+namespace mhs::solver {
 
     // Values follow Solution::snapshot_times; all probes share that timeline.
     struct ProbeTrace {
         std::string name;
-        std::vector<double> values;
+        mhs::core::Vector<double> values;
     };
 
     /// Canonical solution returned by any solve path.
@@ -16,12 +16,12 @@ namespace mhs::core {
     /// Output snapshots are stored row-major in snapshot_states:
     /// snapshot_states[record * state_count + state].
     struct Solution {
-        std::vector<double> state;
+        mhs::core::Vector<double> state;
         double time = 0.0;
         bool converged = true;
-        std::vector<ProbeTrace> probe_traces;
-        std::vector<double> snapshot_times;
-        std::vector<double> snapshot_states;
+        mhs::core::Vector<ProbeTrace> probe_traces;
+        mhs::core::Vector<double> snapshot_times;
+        mhs::core::Vector<double> snapshot_states;
     };
 
-} // namespace mhs::core
+} // namespace mhs::solver

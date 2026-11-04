@@ -1,24 +1,25 @@
 #include "solver/assembler.hpp"
+#include "core/csr_ops.hpp"
+#include "core/vector.hpp"
 #include "thermal_reconstruction.hpp"
-#include <Eigen/Sparse>
 #include <stdexcept>
 #include <type_traits>
-#include <vector>
 
-namespace mhs::sim {
-    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time)
+namespace mhs::solver {
+    Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
-        using namespace mhs::numerics;
+        using namespace mhs::model;
+        using namespace mhs::expression;
         if (temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
-        const auto n = static_cast<Eigen::Index>(model.discrete.cells.size());
-        std::vector<Eigen::Triplet<double>> stiffness, capacity;
+        const auto n = model.discrete.cells.size();
+        mhs::core::Vector<mhs::core::Triplet<double>> stiffness, capacity;
         stiffness.reserve(model.discrete.faces.size() * 4);
         capacity.reserve(model.discrete.cells.size());
-        Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
-        std::vector<Vec3> conductivity(model.discrete.cells.size());
-        std::vector<double> density(model.fluid.fluid_to_global.size()), specific_heat(density.size());
+        mhs::core::Vector<double> rhs(n, 0.0);
+        mhs::core::Vector<Vec3> conductivity(model.discrete.cells.size());
+        mhs::core::Vector<double> density(model.fluid.fluid_to_global.size()), specific_heat(density.size());
         for (Index c = 0; c < model.discrete.cells.size(); ++c) {
             const auto row = c;
             const auto center = model.discrete.cells[c].center();
@@ -103,9 +104,8 @@ namespace mhs::sim {
                 },
                 term.condition);
         }
-        Eigen::SparseMatrix<double> K(n, n), C(n, n);
-        K.setFromTriplets(stiffness.begin(), stiffness.end());
-        C.setFromTriplets(capacity.begin(), capacity.end());
+        auto K = build_csr(n, n, std::move(stiffness));
+        auto C = build_csr(n, n, std::move(capacity));
         return {std::move(K), std::move(C), std::move(rhs)};
     }
-} // namespace mhs::sim
+} // namespace mhs::solver

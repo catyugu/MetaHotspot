@@ -2,22 +2,22 @@
 #include "metahotspot_c_api.h"
 
 #include "compiler/model_compiler.hpp"
-#include "core/model_definition.hpp"
-#include "core/solver.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
+#include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
+#include "solver/solver.hpp"
 
+#include "core/vector.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <string>
-#include <vector>
-
-#include <Eigen/Sparse>
 
 /* ------------------------------------------------------------------ */
 /*  Shared error-buffer helpers                                        */
@@ -62,7 +62,7 @@ const char* mhs_detail_last_error();
 /* ------------------------------------------------------------------ */
 
 /** Convert C-level solver opts to SolveOptions. */
-mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
 
 /* ------------------------------------------------------------------ */
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
@@ -75,21 +75,21 @@ struct BlockLocation {
 
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
-    std::vector<BlockLocation> block_locations;
-    std::optional<mhs::core::DiscreteMesh> external_mesh;
+    mhs::core::Vector<BlockLocation> block_locations;
+    std::optional<mhs::model::DiscreteMesh> external_mesh;
 };
 
 struct mhs_compiled_t {
-    std::shared_ptr<const mhs::core::Model> model;
+    std::shared_ptr<const mhs::model::Model> model;
 };
 
 struct mhs_operators_t {
-    mhs::sim::Operators operators;
+    mhs::solver::Operators operators;
 };
 
 struct mhs_solution_t {
-    mhs::core::Solution sol;
-    std::shared_ptr<const mhs::core::Model> model;
+    mhs::solver::Solution sol;
+    std::shared_ptr<const mhs::model::Model> model;
 };
 
 /* ------------------------------------------------------------------ */
@@ -150,12 +150,12 @@ static mhs::model::LengthUnit _to_unit(mhs_length_unit_t u)
     }
 }
 
-static mhs_study_t _from_core_study(mhs::core::StudyType s)
+static mhs_study_t _from_core_study(mhs::model::StudyType s)
 {
     switch (s) {
-    case mhs::core::StudyType::Steady:
+    case mhs::model::StudyType::Steady:
         return MHS_STUDY_STEADY;
-    case mhs::core::StudyType::Transient:
+    case mhs::model::StudyType::Transient:
         return MHS_STUDY_TRANSIENT;
     default:
         throw std::logic_error("invalid core study type");
@@ -176,35 +176,35 @@ static void _add_boundary_patch(mhs_model_t* m, const mhs_face_region_t* regions
     m->def.boundaries.push_back(std::move(bp));
 }
 
-static mhs::sim::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
+static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
 {
     switch (t) {
     case MHS_SOLVER_PARDISO:
-        return mhs::sim::SolveOptions::LinearSolverType::Pardiso;
+        return mhs::solver::SolveOptions::LinearSolverType::Pardiso;
     case MHS_SOLVER_AMG:
-        return mhs::sim::SolveOptions::LinearSolverType::AmgCg;
+        return mhs::solver::SolveOptions::LinearSolverType::Amg;
     }
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
 
-static mhs::sim::SolveOptions::Integrator _to_integrator(mhs_integrator_t integrator)
+static mhs::solver::SolveOptions::Integrator _to_integrator(mhs_integrator_t integrator)
 {
     switch (integrator) {
     case MHS_INTEGRATOR_BDF1:
-        return mhs::sim::SolveOptions::Integrator::Bdf1;
+        return mhs::solver::SolveOptions::Integrator::Bdf1;
     case MHS_INTEGRATOR_BDF2:
-        return mhs::sim::SolveOptions::Integrator::Bdf2;
+        return mhs::solver::SolveOptions::Integrator::Bdf2;
     }
     throw std::invalid_argument("invalid integrator: " + std::to_string(integrator));
 }
 
-static mhs::sim::SolveOptions::StepStrategy _to_step_strategy(mhs_step_strategy_t strategy)
+static mhs::solver::SolveOptions::StepStrategy _to_step_strategy(mhs_step_strategy_t strategy)
 {
     switch (strategy) {
     case MHS_STEP_ADAPTIVE:
-        return mhs::sim::SolveOptions::StepStrategy::Adaptive;
+        return mhs::solver::SolveOptions::StepStrategy::Adaptive;
     case MHS_STEP_FIXED:
-        return mhs::sim::SolveOptions::StepStrategy::Fixed;
+        return mhs::solver::SolveOptions::StepStrategy::Fixed;
     }
     throw std::invalid_argument("invalid step strategy: " + std::to_string(strategy));
 }
@@ -217,19 +217,21 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 {
     if (!opts)
         return;
-    const mhs::sim::SolveOptions defaults {};
-    opts->solver_type = defaults.linear_solver == mhs::sim::SolveOptions::LinearSolverType::Pardiso ? MHS_SOLVER_PARDISO
-                                                                                                    : MHS_SOLVER_AMG;
+    const mhs::solver::SolveOptions defaults {};
+    opts->solver_type = defaults.linear_solver == mhs::solver::SolveOptions::LinearSolverType::Pardiso
+        ? MHS_SOLVER_PARDISO
+        : MHS_SOLVER_AMG;
     opts->linear_tolerance = defaults.linear_tolerance;
     opts->linear_max_iterations = defaults.linear_max_iterations;
     opts->underrelaxation = defaults.underrelaxation;
     opts->nonlinear_max_iterations = defaults.nonlinear_max_iterations;
     opts->nonlinear_relative_tolerance = defaults.nonlinear_relative_tolerance;
     opts->nonlinear_absolute_tolerance = defaults.nonlinear_absolute_tolerance;
-    opts->integrator
-        = defaults.integrator == mhs::sim::SolveOptions::Integrator::Bdf1 ? MHS_INTEGRATOR_BDF1 : MHS_INTEGRATOR_BDF2;
-    opts->step_strategy
-        = defaults.step_strategy == mhs::sim::SolveOptions::StepStrategy::Adaptive ? MHS_STEP_ADAPTIVE : MHS_STEP_FIXED;
+    opts->integrator = defaults.integrator == mhs::solver::SolveOptions::Integrator::Bdf1 ? MHS_INTEGRATOR_BDF1
+                                                                                          : MHS_INTEGRATOR_BDF2;
+    opts->step_strategy = defaults.step_strategy == mhs::solver::SolveOptions::StepStrategy::Adaptive
+        ? MHS_STEP_ADAPTIVE
+        : MHS_STEP_FIXED;
     opts->error_rel_tol = defaults.error_rel_tol;
     opts->error_safety = defaults.error_safety;
     opts->min_dt = defaults.min_dt;
@@ -326,7 +328,7 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_axis);
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
-        mhs::core::DiscreteMesh mesh;
+        mhs::model::DiscreteMesh mesh;
         mesh.cells.resize(input->cell_count);
         mesh.faces.resize(input->face_count);
         for (size_t c = 0; c < input->cell_count; ++c)
@@ -636,10 +638,10 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     CHECK_NULL(out);
     MHS_TRY({
-        auto core_model
-            = m->external_mesh ? mhs::sim::build_model(m->def, *m->external_mesh) : mhs::sim::build_model(m->def);
+        auto core_model = m->external_mesh ? mhs::compiler::build_model(m->def, *m->external_mesh)
+                                           : mhs::compiler::build_model(m->def);
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = std::make_shared<const mhs::core::Model>(std::move(core_model));
+        c->model = std::make_shared<const mhs::model::Model>(std::move(core_model));
         *out = c.release();
     });
 }
@@ -667,7 +669,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 
 namespace {
     template <typename T>
-    mhs_status_t copy_vector(const std::vector<T>& source, T* out, size_t count, const char* label)
+    mhs_status_t copy_vector(const mhs::core::Vector<T>& source, T* out, size_t count, const char* label)
     {
         if (count != source.size()) {
             SET_ERR(label << " count must equal " << source.size());
@@ -682,11 +684,11 @@ namespace {
         return MHS_OK;
     }
 
-    mhs_status_t copy_csc_matrix(const Eigen::SparseMatrix<double>& matrix, int32_t* outer, size_t outer_count,
+    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, int32_t* outer, size_t outer_count,
         int32_t* inner, size_t inner_count, double* values, size_t value_count)
     {
         const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
-        const auto expected_nnz = static_cast<size_t>(matrix.nonZeros());
+        const auto expected_nnz = static_cast<size_t>(matrix.nnz());
         if (outer_count != expected_outer || inner_count != expected_nnz || value_count != expected_nnz) {
             SET_ERR("CSC buffer sizes do not match operator dimensions");
             return MHS_ERROR;
@@ -695,9 +697,23 @@ namespace {
             SET_ERR("NULL CSC output buffer");
             return MHS_ERROR;
         }
-        std::copy_n(matrix.outerIndexPtr(), expected_outer, outer);
-        std::copy_n(matrix.innerIndexPtr(), expected_nnz, inner);
-        std::copy_n(matrix.valuePtr(), expected_nnz, values);
+        std::fill_n(outer, expected_outer, int32_t {0});
+        for (auto col : matrix.col_idx())
+            ++outer[static_cast<size_t>(col) + 1];
+        for (size_t j = 0; j < matrix.cols(); ++j)
+            outer[j + 1] += outer[j];
+        // Reverse traversal fills from each column end, producing sorted rows.
+        // Restore column offsets after using them as insertion cursors.
+        for (size_t i = matrix.rows(); i-- > 0;)
+            for (auto k = matrix.row_ptr()[i + 1]; k-- > matrix.row_ptr()[i];) {
+                const auto col = static_cast<size_t>(matrix.col_idx()[k]);
+                const auto pos = --outer[col + 1];
+                inner[pos] = static_cast<int32_t>(i);
+                values[pos] = matrix.values()[k];
+            }
+        for (size_t j = 0; j < matrix.cols(); ++j)
+            outer[j] = outer[j + 1];
+        outer[matrix.cols()] = static_cast<int32_t>(expected_nnz);
         mhs_detail_clear_last_error();
         return MHS_OK;
     }
@@ -808,7 +824,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
             const auto p = mesh.cells[cell].center();
             const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
-            const mhs::numerics::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
+            const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);
             values->conductivity_y[cell] = props.ky.eval(context);
             values->conductivity_z[cell] = props.kz.eval(context);
@@ -838,7 +854,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
         *out = nullptr;
         auto result = std::make_unique<mhs_operators_t>();
         result->operators
-            = mhs::sim::assemble_thermal(*c->model, std::span<const double>(temperature, temperature_count), time);
+            = mhs::solver::assemble_thermal(*c->model, std::span<const double>(temperature, temperature_count), time);
         *out = result.release();
     });
 }
@@ -850,8 +866,8 @@ MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mh
     CHECK_NULL(operators);
     CHECK_NULL(out);
     out->state_count = static_cast<size_t>(operators->operators.f.size());
-    out->k_nnz = static_cast<size_t>(operators->operators.K.nonZeros());
-    out->c_nnz = static_cast<size_t>(operators->operators.C.nonZeros());
+    out->k_nnz = static_cast<size_t>(operators->operators.K.nnz());
+    out->c_nnz = static_cast<size_t>(operators->operators.C.nnz());
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
@@ -891,9 +907,9 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  SolveOptions conversion helper                                     */
 /* ------------------------------------------------------------------ */
 
-mhs::sim::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration)
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration)
 {
-    mhs::sim::SolveOptions so;
+    mhs::solver::SolveOptions so;
     if (!opts)
         return so;
     so.linear_solver = _to_solver_type(opts->solver_type);
@@ -931,7 +947,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             init_span = {state, state_count};
         }
 
-        auto sol = mhs::sim::solve(*c->model, init_span, so);
+        auto sol = mhs::solver::solve(*c->model, init_span, so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {

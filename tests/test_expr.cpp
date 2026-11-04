@@ -1,16 +1,16 @@
-#include "numerics/expression/expr.hpp"
+#include "expression/expression.hpp"
 
+#include "core/vector.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <thread>
-#include <vector>
-using namespace mhs::numerics;
+using namespace mhs::expression;
 namespace {
     constexpr double PI = 3.14159265358979323846;
 
     TEST(CompiledExpression, DefaultConstruct)
     {
-        mhs::numerics::CompiledExpression expr;
+        mhs::expression::CompiledExpression expr;
         EXPECT_TRUE(expr.is_constant());
         EXPECT_FALSE(expr.depends_on_temperature());
         EXPECT_EQ(expr.constant_value(), 0.0);
@@ -19,7 +19,7 @@ namespace {
 
     TEST(CompiledExpression, MakeConstant)
     {
-        auto expr = mhs::numerics::CompiledExpression::make_constant(42.0);
+        auto expr = mhs::expression::CompiledExpression::make_constant(42.0);
         EXPECT_TRUE(expr.is_constant());
         EXPECT_FALSE(expr.depends_on_temperature());
         EXPECT_EQ(expr.constant_value(), 42.0);
@@ -29,12 +29,12 @@ namespace {
     TEST(CompiledExpression, MakeEvaluator)
     {
         SymbolTable sym;
-        auto expr = mhs::numerics::parse("x + y", sym);
+        auto expr = mhs::expression::parse("x + y", sym);
         EXPECT_FALSE(expr.is_constant());
         EXPECT_FALSE(expr.depends_on_temperature());
         EXPECT_FALSE(parse("280+10*t+y", sym).depends_on_temperature());
 
-        mhs::numerics::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
+        mhs::expression::FieldContext ctx {1.0, 2.0, 0.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 3.0);
         EXPECT_THROW(CompiledExpression::make_evaluator("x +", sym), std::runtime_error);
     }
@@ -49,7 +49,7 @@ namespace {
         sym.variables["w"] = 10.0;
         sym.variables["h"] = 2.0;
 
-        EXPECT_EQ(mhs::numerics::eval_geometry("(w+h)*2", sym), 24.0);
+        EXPECT_EQ(mhs::expression::eval_geometry("(w+h)*2", sym), 24.0);
     }
 
     TEST(EvalGeometry, UndefinedVariable)
@@ -58,7 +58,7 @@ namespace {
         sym.variables["defined"] = 1.0;
 
         // undefined variable should throw
-        EXPECT_THROW(mhs::numerics::eval_geometry("undefined", sym), std::runtime_error);
+        EXPECT_THROW(mhs::expression::eval_geometry("undefined", sym), std::runtime_error);
     }
 
 } // namespace
@@ -68,7 +68,7 @@ namespace {
     TEST(Parse, SimpleConstant)
     {
         SymbolTable sym;
-        auto expr = mhs::numerics::parse("42", sym);
+        auto expr = mhs::expression::parse("42", sym);
         EXPECT_TRUE(expr.is_constant());
         EXPECT_FALSE(expr.depends_on_temperature());
         EXPECT_EQ(expr.constant_value(), 42.0);
@@ -77,10 +77,10 @@ namespace {
     TEST(Parse, ComplexExpression)
     {
         SymbolTable sym;
-        auto expr = mhs::numerics::parse("(x + y) * z", sym);
+        auto expr = mhs::expression::parse("(x + y) * z", sym);
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::numerics::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
+        mhs::expression::FieldContext ctx {1.0, 2.0, 3.0, 0.0, 0.0};
         EXPECT_EQ(expr.eval(ctx), 9.0);
     }
 
@@ -91,10 +91,10 @@ namespace {
     TEST(Parse, SinFunction)
     {
         SymbolTable sym;
-        auto expr = mhs::numerics::parse("sin(x)", sym);
+        auto expr = mhs::expression::parse("sin(x)", sym);
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::numerics::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expression::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         EXPECT_NEAR(expr.eval(ctx), 0.0, 1e-10);
 
         ctx.x = PI / 2;
@@ -108,11 +108,11 @@ namespace {
     TEST(Parse, CombinedContext)
     {
         SymbolTable sym;
-        auto expr = mhs::numerics::parse("x + y + z + T + t", sym);
+        auto expr = mhs::expression::parse("x + y + z + T + t", sym);
         EXPECT_TRUE(expr.depends_on_temperature());
         EXPECT_FALSE(expr.is_constant());
 
-        mhs::numerics::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
+        mhs::expression::FieldContext ctx {1.0, 2.0, 3.0, 10.0, 100.0};
         EXPECT_EQ(expr.eval(ctx), 116.0);
     }
 
@@ -129,8 +129,8 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 10000;
 
-        std::vector<double> results(num_threads * num_iterations, 0.0);
-        std::vector<std::thread> threads;
+        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             threads.emplace_back([&, thread_id]() {
@@ -170,7 +170,7 @@ namespace {
     TEST(ExprTest, ConcurrentEvaluationDictionary)
     {
         SymbolTable sym;
-        std::vector<CompiledExpression> dict;
+        mhs::core::Vector<CompiledExpression> dict;
         dict.push_back(parse("0.0", sym));
         dict.push_back(parse("x + y", sym));
         dict.push_back(parse("x * y", sym));
@@ -179,8 +179,8 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 5000;
 
-        std::vector<double> results(num_threads * num_iterations, 0.0);
-        std::vector<std::thread> threads;
+        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             threads.emplace_back([&, thread_id]() {
@@ -235,30 +235,31 @@ namespace {
 
     TEST(SymbolTable, EvalGeometryIsolatesPerCall)
     {
-        mhs::numerics::SymbolTable a;
+        mhs::expression::SymbolTable a;
         a.variables["x"] = 1.0;
-        mhs::numerics::SymbolTable b;
+        mhs::expression::SymbolTable b;
         b.variables["x"] = 100.0;
 
-        EXPECT_EQ(mhs::numerics::eval_geometry("x+1", a), 2.0);
-        EXPECT_EQ(mhs::numerics::eval_geometry("x+1", b), 101.0);
+        EXPECT_EQ(mhs::expression::eval_geometry("x+1", a), 2.0);
+        EXPECT_EQ(mhs::expression::eval_geometry("x+1", b), 101.0);
     }
 
     TEST(SymbolTable, ParseCapturesNatives)
     {
-        mhs::numerics::SymbolTable sym;
+        mhs::expression::SymbolTable sym;
         // An unannotated callback is treated as reading the temperature field.
-        sym.natives["twice"] = {
-            [](const double* args, int /*nargs*/, const mhs::numerics::FieldContext& /*ctx*/) { return 2.0 * args[0]; },
+        sym.natives["twice"] = {[](const double* args, int /*nargs*/, const mhs::expression::FieldContext& /*ctx*/) {
+                                    return 2.0 * args[0];
+                                },
             true};
-        auto expr = mhs::numerics::parse("twice(3) + x", sym);
+        auto expr = mhs::expression::parse("twice(3) + x", sym);
         EXPECT_TRUE(expr.depends_on_temperature());
         sym.natives["twice"].reads_temperature = false;
         EXPECT_FALSE(parse("twice(3)+x", sym).depends_on_temperature());
         EXPECT_TRUE(parse("twice(T)", sym).depends_on_temperature());
         EXPECT_FALSE(parse("t+1", sym).depends_on_temperature());
         EXPECT_FALSE(expr.is_constant());
-        mhs::numerics::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
+        mhs::expression::FieldContext ctx {0.0, 0.0, 0.0, 0.0, 0.0};
         ctx.x = 4.0;
         EXPECT_EQ(expr.eval(ctx), 10.0);
     }
@@ -269,14 +270,14 @@ namespace {
         // Two threads construct their own SymbolTable and eval_geometry in parallel —
         // the result must reflect each thread's own table.
         const int N_THREADS = 8;
-        std::vector<std::thread> threads;
-        std::vector<double> results(N_THREADS, 0.0);
+        mhs::core::Vector<std::thread> threads;
+        mhs::core::Vector<double> results(N_THREADS, 0.0);
 
         for (int tid = 0; tid < N_THREADS; ++tid) {
             threads.emplace_back([tid, &results]() {
-                mhs::numerics::SymbolTable sym;
+                mhs::expression::SymbolTable sym;
                 sym.variables["k"] = static_cast<double>(tid + 1);
-                results[tid] = mhs::numerics::eval_geometry("k * 10", sym);
+                results[tid] = mhs::expression::eval_geometry("k * 10", sym);
             });
         }
         for (auto& th : threads)

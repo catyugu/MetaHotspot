@@ -5,7 +5,7 @@
 
 #include "model.hpp"
 
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::hdim {
 
@@ -13,7 +13,7 @@ namespace mhs::hdim {
     /// starts from the ambient). `dt` <= 0 is the steady form of eq. (2), i.e.
     /// eq. (3) without the capacity term. `tolerance` is the largest temperature
     /// change between two sweeps, in K.
-    std::vector<double> solve_reference(const Model& model, const std::vector<double>& previous, double dt,
+    mhs::core::Vector<double> solve_reference(const Model& model, const mhs::core::Vector<double>& previous, double dt,
         double tolerance, int max_sweeps, RunInfo& info);
 
 } // namespace mhs::hdim

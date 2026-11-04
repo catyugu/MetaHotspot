@@ -12,12 +12,12 @@
 #pragma once
 
 #include <cmath>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::dtdm {
 
     /// L_0..L_{order-1} at x, by the forward three-term recurrence.
-    inline void laguerre_values(int order, double x, std::vector<double>& out)
+    inline void laguerre_values(int order, double x, mhs::core::Vector<double>& out)
     {
         out.assign(static_cast<std::size_t>(order), 0.0);
         if (order == 0)
@@ -33,7 +33,7 @@ namespace mhs::dtdm {
     }
 
     /// phi_0..phi_{order-1} at x.
-    inline void phi(int order, double x, std::vector<double>& out)
+    inline void phi(int order, double x, mhs::core::Vector<double>& out)
     {
         laguerre_values(order, x, out);
         const double decay = std::exp(-0.5 * x);

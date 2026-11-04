@@ -1,14 +1,14 @@
 #include "io/face_region_parser.hpp"
 
+#include "core/vector.hpp"
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace mhs::io::detail {
     namespace {
-        std::vector<std::string> split(const std::string& value, char delimiter)
+        mhs::core::Vector<std::string> split(const std::string& value, char delimiter)
         {
-            std::vector<std::string> parts;
+            mhs::core::Vector<std::string> parts;
             std::string current;
             for (char character : value) {
                 if (character == delimiter) {

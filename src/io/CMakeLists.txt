@@ -7,7 +7,7 @@ add_library(mhs_io STATIC
 # The tinyxml2 wrappers are implementation details and stay in this directory.
 target_include_directories(mhs_io PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(mhs_io
-    PUBLIC mhs_expression
+    PUBLIC mhs_model mhs_solver
     PRIVATE tinyxml2::tinyxml2
     PRIVATE $<BUILD_INTERFACE:mhs_options>
 )

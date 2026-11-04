@@ -1,6 +1,9 @@
 #include "compiler/model_compiler.hpp"
+#include "core/vector.hpp"
+#include "core/vector_ops.hpp"
 #include "io/model_io.hpp"
 #include "solver/assembler.hpp"
+#include <numeric>
 
 #include <cmath>
 #include <filesystem>
@@ -9,12 +12,12 @@
 
 namespace {
 
-    mhs::core::Model load_microfluid_case()
+    mhs::model::Model load_microfluid_case()
     {
         const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
-        return mhs::sim::build_model(mhs::io::read_xml(input));
+        return mhs::compiler::build_model(mhs::io::read_xml(input));
     }
 
     mhs::model::ModelDefinition single_fluid_cell()
@@ -45,7 +48,7 @@ namespace {
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
     const std::string input = std::string(MHS_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    auto model = mhs::sim::build_model(mhs::io::read_xml(input));
+    auto model = mhs::compiler::build_model(mhs::io::read_xml(input));
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());
@@ -58,8 +61,8 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
 {
     const auto model = load_microfluid_case();
     ASSERT_EQ(model.fluid.face_volume_flux.size(), model.discrete.faces.size());
-    std::vector<double> balance(model.discrete.cells.size(), 0);
-    auto density = [&](mhs::core::CellId cell) {
+    mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
+    auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell.value].center();
         return model.material_table[model.cell_material[cell.value]].rho.eval(
             {p[0], p[1], p[2], model.initial_temperature, 0});
@@ -80,7 +83,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
             [](const auto& flow) {
                 using T = std::decay_t<decltype(flow)>;
                 EXPECT_GE(flow.mass_flow_rate, 0);
-                if constexpr (std::is_same_v<T, mhs::core::FluidInflow>)
+                if constexpr (std::is_same_v<T, mhs::model::FluidInflow>)
                     return -flow.mass_flow_rate;
                 else
                     return flow.mass_flow_rate;
@@ -93,23 +96,35 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
         EXPECT_NEAR(balance[cell], 0, 1e-12);
     EXPECT_NEAR(boundary_sum, 0, 1e-12);
     EXPECT_TRUE(nonzero);
-    const std::vector<double> state(model.discrete.cells.size(), 300);
+    const mhs::core::Vector<double> state(model.discrete.cells.size(), 300);
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
     transport.boundary_faces.clear();
     transport.source_terms.clear();
     for (auto& material : transport.material_table)
-        material.kx = material.ky = material.kz = mhs::numerics::CompiledExpression::make_constant(0);
-    const auto normal = mhs::sim::assemble_thermal(transport, state, 0);
+        material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);
+    const auto normal = mhs::solver::assemble_thermal(transport, state, 0);
     auto scaled = transport;
     constexpr double factor = 1e-20;
     for (auto& flux : scaled.fluid.face_volume_flux)
         flux *= factor;
     for (auto& term : scaled.fluid.boundary_terms)
         std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);
-    const auto tiny = mhs::sim::assemble_thermal(scaled, state, 0);
-    EXPECT_LE((tiny.K / factor - normal.K).norm(), normal.K.norm() * 1e-12);
-    EXPECT_LE((tiny.f / factor - normal.f).norm(), normal.f.norm() * 1e-12);
+    const auto tiny = mhs::solver::assemble_thermal(scaled, state, 0);
+    auto compare_scaled = [&](std::span<const double> small, std::span<const double> full) {
+        ASSERT_EQ(small.size(), full.size());
+        double error2 = 0, norm2 = 0;
+        for (std::size_t i = 0; i < full.size(); ++i) {
+            const double diff = small[i] / factor - full[i];
+            error2 += diff * diff;
+            norm2 += full[i] * full[i];
+        }
+        EXPECT_LE(std::sqrt(error2), std::sqrt(norm2) * 1e-12);
+    };
+    EXPECT_TRUE(std::equal(tiny.K.row_ptr().begin(), tiny.K.row_ptr().end(), normal.K.row_ptr().begin()));
+    EXPECT_TRUE(std::equal(tiny.K.col_idx().begin(), tiny.K.col_idx().end(), normal.K.col_idx().begin()));
+    compare_scaled(tiny.K.values(), normal.K.values());
+    compare_scaled(tiny.f, normal.f);
 }
 
 // Two disjoint inlet pieces and an outlet share a single control volume.
@@ -121,18 +136,18 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     d.fluid_boundaries = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
         {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
         {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
-    auto verify = [&](const mhs::core::Model& model) {
-        const auto inc = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
+    auto verify = [&](const mhs::model::Model& model) {
+        const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         EXPECT_NEAR(diagonal, 5, 1e-12);
         EXPECT_NEAR(inc.f[0], 2 * 280 + 3 * 320, 1e-10);
     };
-    verify(mhs::sim::build_model(d));
+    verify(mhs::compiler::build_model(d));
     BoundaryPatch thermal;
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {{0, 0.15, 0, 1}}});
     d.boundaries.push_back(thermal);
-    verify(mhs::sim::build_model(d));
+    verify(mhs::compiler::build_model(d));
 }
 
 TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
@@ -143,20 +158,20 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     // outlet supplies fluid when its pressure is higher than the inlet's.
     d.fluid_boundaries = {
         {{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1}}};
-    auto reverse = mhs::sim::build_model(d);
+    auto reverse = mhs::compiler::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
         const auto& face = reverse.discrete.faces[term.face.value];
         if (face.sign > 0) {
-            ASSERT_TRUE(std::holds_alternative<mhs::core::FluidInflow>(term.condition));
-            EXPECT_DOUBLE_EQ(std::get<mhs::core::FluidInflow>(term.condition).temperature, 300);
+            ASSERT_TRUE(std::holds_alternative<mhs::model::FluidInflow>(term.condition));
+            EXPECT_DOUBLE_EQ(std::get<mhs::model::FluidInflow>(term.condition).temperature, 300);
         }
         else {
-            EXPECT_TRUE(std::holds_alternative<mhs::core::FluidOutflow>(term.condition));
+            EXPECT_TRUE(std::holds_alternative<mhs::model::FluidOutflow>(term.condition));
         }
     }
-    auto verify_reverse = [&](const mhs::core::Model& model, double temperature) {
-        const auto inc = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
+    auto verify_reverse = [&](const mhs::model::Model& model, double temperature) {
+        const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         ASSERT_GT(diagonal, 0);
         EXPECT_NEAR(inc.f[0], diagonal * temperature, 1e-10);
@@ -164,8 +179,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     verify_reverse(reverse, 300);
 
     std::get<PressureOutlet>(d.fluid_boundaries.back().condition).pressure = 0;
-    const auto stagnant = mhs::sim::build_model(d);
-    const auto zero = mhs::sim::assemble_thermal(stagnant, std::vector<double> {300}, 0);
+    const auto stagnant = mhs::compiler::build_model(d);
+    const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);
-    EXPECT_DOUBLE_EQ(zero.K.norm(), 0);
+    EXPECT_DOUBLE_EQ(mhs::core::norm_inf(zero.K.values()), 0);
 }
