@@ -19,7 +19,7 @@ namespace {
     {
         const int N = 3;
         mhs::core::CSRMatrix<double> K(N, N);
-        mhs::core::Vector<mhs::numerics::Triplet> triplets;
+        mhs::core::Vector<mhs::core::Triplet<double>> triplets;
         triplets.emplace_back(0, 0, 2.0);
         triplets.emplace_back(1, 1, 4.0);
         triplets.emplace_back(2, 2, 6.0);
@@ -28,7 +28,7 @@ namespace {
         mhs::core::Vector<double> f {10.0, 20.0, 30.0};
 
         mhs::core::CSRMatrix<double> C(N, N);
-        mhs::core::Vector<mhs::numerics::Triplet> capacity_triplets;
+        mhs::core::Vector<mhs::core::Triplet<double>> capacity_triplets;
         capacity_triplets.emplace_back(0, 0, 1.0);
         capacity_triplets.emplace_back(1, 1, 2.0);
         capacity_triplets.emplace_back(2, 2, 3.0);
@@ -76,7 +76,7 @@ namespace {
         // Steady-like: C = 0 => A = K, b = f
         const int N = 2;
         mhs::core::CSRMatrix<double> K(N, N);
-        mhs::core::Vector<mhs::numerics::Triplet> triplets;
+        mhs::core::Vector<mhs::core::Triplet<double>> triplets;
         triplets.emplace_back(0, 0, 5.0);
         triplets.emplace_back(1, 1, 10.0);
         K = mhs::numerics::build_csr(K.rows(), K.cols(), std::move(triplets));
@@ -104,7 +104,7 @@ namespace {
         K = mhs::numerics::build_csr(2, 2, {{0, 0, 1.0}, {1, 1, 1.0}});
 
         mhs::core::CSRMatrix<double> C(2, 2);
-        mhs::core::Vector<mhs::numerics::Triplet> entries {{0, 0, 2.0}, {0, 1, 0.5}, {1, 0, 0.5}, {1, 1, 3.0}};
+        mhs::core::Vector<mhs::core::Triplet<double>> entries {{0, 0, 2.0}, {0, 1, 0.5}, {1, 0, 0.5}, {1, 1, 3.0}};
         C = mhs::numerics::build_csr(C.rows(), C.cols(), std::move(entries));
 
         mhs::core::Vector<double> f = mhs::core::Vector<double>(2, 0.0);

@@ -8,10 +8,9 @@ add_library(mhs_solver STATIC
     time_integration.cpp
 )
 target_link_libraries(mhs_solver
-    PUBLIC
+    PRIVATE
     mhs_expression
     mhs_linear
-    PRIVATE
     $<BUILD_INTERFACE:Eigen3::Eigen>
     mhs_logging
     TBB::tbb

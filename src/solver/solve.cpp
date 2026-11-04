@@ -38,8 +38,8 @@ namespace mhs::sim {
             case SolveOptions::LinearSolverType::Pardiso:
                 type = mhs::numerics::SolverType::Pardiso;
                 break;
-            case SolveOptions::LinearSolverType::AmgCg:
-                type = mhs::numerics::SolverType::AmgCg;
+            case SolveOptions::LinearSolverType::Amg:
+                type = mhs::numerics::SolverType::Amg;
                 break;
             default:
                 throw std::invalid_argument("build_solver_spec: unknown linear_solver");

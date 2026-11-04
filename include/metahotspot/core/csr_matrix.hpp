@@ -3,11 +3,33 @@
 #include "core/vector.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 
 namespace mhs::core {
     using SparseIndex = std::int32_t;
+
+    namespace detail {
+        inline std::size_t checked_sparse_size(std::size_t n)
+        {
+            if (n > static_cast<std::size_t>(std::numeric_limits<SparseIndex>::max()))
+                throw std::length_error("CSR exceeds 32-bit index capacity");
+            return n;
+        }
+    } // namespace detail
+
+    template <class T> struct Triplet {
+        SparseIndex row, col;
+        T value;
+
+        Triplet(std::size_t r, std::size_t c, T v)
+            : row(static_cast<SparseIndex>(detail::checked_sparse_size(r)))
+            , col(static_cast<SparseIndex>(detail::checked_sparse_size(c)))
+            , value(v)
+        {
+        }
+    };
 
     template <class T> struct CSRMatrixView {
         std::size_t rows, cols;
@@ -21,18 +43,18 @@ namespace mhs::core {
     public:
         CSRMatrix() = default;
         CSRMatrix(std::size_t rows, std::size_t cols)
-            : rows_(checked(rows)), cols_(checked(cols)), row_ptr_(rows + 1, 0)
+            : rows_(detail::checked_sparse_size(rows)), cols_(detail::checked_sparse_size(cols)), row_ptr_(rows + 1, 0)
         {
         }
         CSRMatrix(std::size_t rows, std::size_t cols, Vector<SparseIndex> row_ptr, Vector<SparseIndex> col_idx,
             Vector<T> values)
-            : rows_(checked(rows))
-            , cols_(checked(cols))
+            : rows_(detail::checked_sparse_size(rows))
+            , cols_(detail::checked_sparse_size(cols))
             , row_ptr_(std::move(row_ptr))
             , col_idx_(std::move(col_idx))
             , values_(std::move(values))
         {
-            checked(values_.size());
+            detail::checked_sparse_size(values_.size());
             if (row_ptr_.size() != rows + 1 || col_idx_.size() != values_.size() || row_ptr_.front() != 0
                 || row_ptr_.back() != static_cast<SparseIndex>(values_.size()))
                 throw std::invalid_argument("Invalid CSR arrays");
@@ -62,12 +84,6 @@ namespace mhs::core {
             const auto first = col_idx_.begin() + row_ptr_[i], last = col_idx_.begin() + row_ptr_[i + 1];
             const auto pos = std::lower_bound(first, last, j);
             return pos != last && static_cast<std::size_t>(*pos) == j ? values_[pos - col_idx_.begin()] : T {};
-        }
-        static std::size_t checked(std::size_t n)
-        {
-            if (n > static_cast<std::size_t>(std::numeric_limits<SparseIndex>::max()))
-                throw std::length_error("CSR exceeds 32-bit index capacity");
-            return n;
         }
 
     private:

@@ -14,6 +14,10 @@ target_link_libraries(mhs_tests PRIVATE
     GTest::gtest_main
 )
 
+if(MHS_ENABLE_PARDISO)
+    target_compile_definitions(mhs_tests PRIVATE MHS_ENABLE_PARDISO)
+endif()
+
 mhs_stage_runtime(mhs_tests)
 
 # Discovery runs once per build (the default POST_BUILD mode). PRE_TEST re-runs it

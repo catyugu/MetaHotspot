@@ -43,8 +43,8 @@ def check_sdk(prefix, build, config, generator):
         "  dense(0, 0) = a.coeff(0, 0);\n"
         "  mhs::core::Vector<double> b{6.0}, x{0.0};\n"
         "  auto solver = mhs::numerics::create_solver();\n"
-        "  solver->compute(a);\n"
-        "  return solver->solve(b, x, x).success ? 0 : 1;\n"
+        "  solver->compute(a.view());\n"
+        "  return solver->solve(b, x).success ? 0 : 1;\n"
         "}\n",
         encoding="utf-8",
     )

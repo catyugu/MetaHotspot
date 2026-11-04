@@ -112,7 +112,7 @@ namespace mhs::sim::fluid {
         }
         bool reference = false;
         mhs::core::Vector<double> boundary_conductance(projected.size(), 0);
-        mhs::core::Vector<mhs::numerics::Triplet> entries;
+        mhs::core::Vector<mhs::core::Triplet<double>> entries;
         mhs::core::Vector<double> rhs(n, 0.0);
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
@@ -147,9 +147,9 @@ namespace mhs::sim::fluid {
             }
         auto matrix = mhs::numerics::build_csr(n, n, std::move(entries));
         auto solver = mhs::numerics::create_solver();
-        solver->compute(matrix);
+        solver->compute(matrix.view());
         mhs::core::Vector<double> pressure(n, 0.0);
-        const auto result = solver->solve(rhs, pressure, pressure);
+        const auto result = solver->solve(rhs, pressure);
         if (!result.success)
             throw std::runtime_error("fluid pressure solve failed");
         for (Index t = 0; t < projected.size(); ++t) {

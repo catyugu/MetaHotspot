@@ -155,7 +155,7 @@ endif()
 
 # ----------------------------------------------------------------------------
 # Intel oneMKL (optional, provides MKL::MKL). Pardiso is the direct solver; the
-# AMG-preconditioned CG (AmgCg) default does not depend on MKL.
+# AMG-preconditioned CG (Amg) default does not depend on MKL.
 # ----------------------------------------------------------------------------
 set(MHS_ENABLE_PARDISO OFF)
 

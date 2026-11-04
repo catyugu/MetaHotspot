@@ -6,24 +6,26 @@
 
 namespace mhs::numerics {
 
-    enum class SolverType { Pardiso, AmgCg };
+    enum class SolverType { Pardiso, Amg };
 
     // LinearSolver configuration (shared by direct and iterative backends).
     struct SolverConfig {
-        // Iterative knobs (AmgCg).
+        // Iterative knobs (Amg).
         double tolerance = 1e-8;
         int max_iterations = 1000;
     };
 
     struct SolverSpec {
-        SolverType type = SolverType::AmgCg;
+        SolverType type = SolverType::Amg;
         SolverConfig config {};
     };
 
     struct LinearSolveResult {
         bool success = false;
         int iterations = 0;
-        double residual = 0.0;
+        // Backend estimate of ||A*x-b||_2 / ||b||_2; absolute residual
+        // for a numerically zero right-hand side.
+        double relative_residual = 0.0;
     };
 
     class LinearSolver {
@@ -31,15 +33,16 @@ namespace mhs::numerics {
         virtual ~LinearSolver() = default;
         // Build factorization/preconditioner. The backend owns what it retains;
         // the input matrix may be destroyed after compute returns.
-        virtual void compute(const core::CSRMatrix<double>& A) = 0;
-        // All spans have A.rows() elements. x may alias x0, but must
-        // not overlap b. Direct backends ignore x0.
-        virtual LinearSolveResult solve(std::span<const double> b, std::span<const double> x0, std::span<double> x) = 0;
-        void set_config(SolverConfig cfg) { config_ = cfg; }
+        virtual void compute(core::CSRMatrixView<double> A) = 0;
+        // Both spans have A.rows() elements and must not overlap. x is the
+        // initial guess on entry and the solution on return. Direct backends
+        // ignore its initial contents.
+        virtual LinearSolveResult solve(std::span<const double> b, std::span<double> x) = 0;
         const SolverConfig& config() const { return config_; }
 
     protected:
-        SolverConfig config_;
+        explicit LinearSolver(SolverConfig config) : config_(config) { }
+        const SolverConfig config_;
     };
 
     using SolverPtr = std::unique_ptr<LinearSolver>;

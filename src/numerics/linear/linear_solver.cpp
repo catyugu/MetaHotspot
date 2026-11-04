@@ -1,38 +1,26 @@
 #include "numerics/linear/linear_solver.hpp"
-#include "amg_solver.hpp"
-
-#ifdef MHS_ENABLE_PARDISO
-#include "pardiso_lu_solver.hpp"
-#endif
-
 #include <stdexcept>
 
 namespace mhs::numerics {
-
-    // --- Factory ---
+    SolverPtr make_amg_solver(SolverConfig config);
+#ifdef MHS_ENABLE_PARDISO
+    SolverPtr make_pardiso_solver(SolverConfig config);
+#endif
 
     SolverPtr create_solver(const SolverSpec& spec)
     {
         switch (spec.type) {
         case SolverType::Pardiso:
 #ifdef MHS_ENABLE_PARDISO
-        {
-            auto solver = std::make_unique<PardisoLUSolver>();
-            solver->set_config(spec.config);
-            return solver;
-        }
+            return make_pardiso_solver(spec.config);
 #else
             throw std::runtime_error("Pardiso solver requested but MKL/Pardiso is not enabled "
                                      "(build with MHS_USE_MKL=ON)");
 #endif
-        case SolverType::AmgCg: {
-            auto solver = std::make_unique<AmgCgSolver>();
-            solver->set_config(spec.config);
-            return solver;
-        }
+        case SolverType::Amg:
+            return make_amg_solver(spec.config);
         default:
             throw std::invalid_argument("create_solver: unknown solver type");
         }
     }
-
 } // namespace mhs::numerics

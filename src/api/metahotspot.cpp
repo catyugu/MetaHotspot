@@ -182,7 +182,7 @@ static mhs::sim::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_
     case MHS_SOLVER_PARDISO:
         return mhs::sim::SolveOptions::LinearSolverType::Pardiso;
     case MHS_SOLVER_AMG:
-        return mhs::sim::SolveOptions::LinearSolverType::AmgCg;
+        return mhs::sim::SolveOptions::LinearSolverType::Amg;
     }
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }

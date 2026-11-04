@@ -44,9 +44,9 @@ C 接口头文件是 `include/metahotspot/metahotspot_c_api.h`。
 
 ## 构建规则
 
-- C++20，禁用编译器扩展。
+- C++20，禁用编译器扩展。C++ SDK 组件固定构建为静态库，C API 是共享库边界；C++ 容器不通过 C ABI 传递。
 - `mhs_options` 为项目目标配置严格告警；`MHS_WERROR=ON` 时视为错误（顶层默认 ON）。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
-- Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
+- Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现，该宏仅用于内部编译。
 - `mhs::core` 契约是 header-only 的，随 `mhs_expression` 一起被链接；`mhs::model` 类型不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
 - `mhs::core` 的运行期类型保存编译后表达式，因此依赖 muparser/TBB；`mhs_solver` 和可选 PARDISO 实现在内部使用 Eigen，公开头与 SDK 不依赖 Eigen；`mhs_io` 使用 tinyxml2，`mhs_logging` 使用 spdlog。
 - C API 公共头只暴露 C 类型、枚举和 opaque handle；批量结果通过 copy-out API 写入调用方缓冲区。
@@ -59,8 +59,8 @@ C 接口头文件是 `include/metahotspot/metahotspot_c_api.h`。
 
 `core::Vector<T>` 是使用池化分配器的 `std::vector` 别名，项目自有 C++ 数组统一使用它。分配器保存所属资源指针，移动、交换和跨模块释放时沿用原资源；资源采用线程安全的标准内存池，超过池化上限的大块内存交给上游分配器。资源必须存活到其容器释放之后，使用它的动态库同样必须保持加载。
 
-`core::Matrix<T>` 固定连续行主序，`core::CSRMatrix<T>` 固定零基 CSR。CSR 的行指针和列索引使用有符号 32 位整数；尺寸和非零项数量超出容量时抛出异常。每行列索引严格递增，重复装配项由 `numerics::build_csr` 合并，显式零保留。容器负责存储与不变量，矩阵运算属于 `numerics`。向量算法接受 `std::span`，稀疏运算接受 `core::CSRMatrixView`。
+`core::Triplet<T>` 表示稀疏装配项，`core::Matrix<T>` 固定连续行主序，`core::CSRMatrix<T>` 固定零基 CSR。CSR 的行指针和列索引使用有符号 32 位整数；尺寸和非零项数量超出容量时抛出异常。每行列索引严格递增，重复装配项由 `numerics::build_csr` 合并，显式零保留。容器负责存储与不变量，矩阵运算属于 `numerics`。向量算法接受 `std::span`，稀疏运算接受 `core::CSRMatrixView`。
 
-公开的 `numerics/linear` 仅包含 `linear_solver.hpp`。具体 AMGCL/PARDISO 类型位于 `src/numerics/linear`，由工厂创建。`compute` 返回后调用者可以释放输入矩阵；`solve(b, x0, x)` 写入调用者提供的缓冲区，返回本次求解的状态、迭代次数和后端残差。`x` 可以与 `x0` 完全重合，不能与 `b` 重合。AMGCL 直接读取 CSR，Eigen 仅作为内部 QR 和可选 PARDISO 的构建依赖。C/Python API 继续导出 CSC，在复制到调用者缓冲区时完成转换。
+公开的 `numerics/linear` 仅包含 `linear_solver.hpp`。具体 AMGCL/PARDISO 类型仅定义在各自 `.cpp` 中，由工厂按构造期配置创建。`compute(CSRMatrixView)` 返回后调用者可以释放输入矩阵；`solve(b, x)` 以 `x` 的输入内容作为初始猜测并原地写回解，直接后端忽略初值。`x` 与 `b` 不得重叠。返回值包含本次求解的状态、迭代次数和相对二范数残差估计（数值为零的右端项使用绝对残差）。AMGCL 直接读取 CSR，Eigen 仅作为内部 QR 和可选 PARDISO 的构建依赖。C/Python API 继续导出 CSC，在复制到调用者缓冲区时完成转换。
 
-C++ 容器类型和线性求解接口发生不兼容变更，使用旧头文件的消费者需要重新编译。C API 的函数签名与数组布局保持不变。Release CI 安装 SDK 后会检查公开头、导出目标和独立消费者，消费者配置显式禁用 Eigen 查找。
+C++ 容器类型和线性求解接口发生不兼容变更，使用旧头文件的消费者需要重新编译。求解器枚举由 `AmgCg` 改为 `Amg`，Python 字符串选项同步改为 `"Amg"`。C API 的函数签名与数组布局保持不变。Release CI 安装 SDK 后会检查公开头、导出目标和独立消费者，消费者配置显式禁用 Eigen 查找。

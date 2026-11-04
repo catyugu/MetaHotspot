@@ -21,7 +21,6 @@ target_include_directories(mhs_linear PRIVATE ${PROJECT_SOURCE_DIR}/include/meta
 target_compile_definitions(mhs_linear PRIVATE AMGCL_NO_BOOST)
 target_link_libraries(mhs_linear
     PRIVATE
-    $<BUILD_INTERFACE:Eigen3::Eigen>
     $<BUILD_INTERFACE:mhs_options>
     $<BUILD_INTERFACE:amgcl::amgcl>
     OpenMP::OpenMP_CXX
@@ -36,6 +35,6 @@ set_source_files_properties(linear/amg_solver.cpp PROPERTIES
 )
 
 if(MHS_ENABLE_PARDISO)
-    target_link_libraries(mhs_linear PUBLIC MKL::MKL)
-    target_compile_definitions(mhs_linear PUBLIC MHS_ENABLE_PARDISO)
+    target_link_libraries(mhs_linear PRIVATE $<BUILD_INTERFACE:Eigen3::Eigen> MKL::MKL)
+    target_compile_definitions(mhs_linear PRIVATE MHS_ENABLE_PARDISO)
 endif()

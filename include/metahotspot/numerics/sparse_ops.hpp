@@ -1,26 +1,14 @@
 #pragma once
 
 #include "core/csr_matrix.hpp"
-#include <cmath>
-#include <tuple>
 
 namespace mhs::numerics {
-    struct Triplet {
-        core::SparseIndex row, col;
-        Triplet(std::size_t r, std::size_t c, double v)
-            : row(static_cast<core::SparseIndex>(core::CSRMatrix<double>::checked(r)))
-            , col(static_cast<core::SparseIndex>(core::CSRMatrix<double>::checked(c)))
-            , value(v)
-        {
-        }
-        double value;
-    };
-
-    inline core::CSRMatrix<double> build_csr(std::size_t rows, std::size_t cols, core::Vector<Triplet> entries)
+    inline core::CSRMatrix<double> build_csr(
+        std::size_t rows, std::size_t cols, core::Vector<core::Triplet<double>> entries)
     {
-        core::CSRMatrix<double>::checked(rows);
-        core::CSRMatrix<double>::checked(cols);
-        core::CSRMatrix<double>::checked(entries.size());
+        core::detail::checked_sparse_size(rows);
+        core::detail::checked_sparse_size(cols);
+        core::detail::checked_sparse_size(entries.size());
         core::Vector<core::SparseIndex> offsets(rows + 1, 0);
         for (const auto& e : entries) {
             if (e.row < 0 || e.col < 0 || static_cast<std::size_t>(e.row) >= rows
@@ -101,32 +89,9 @@ namespace mhs::numerics {
                     val.push_back(a.values()[ka++] + alpha * b.values()[kb++]);
                 }
             }
-            ptr[i + 1] = static_cast<core::SparseIndex>(core::CSRMatrix<double>::checked(val.size()));
+            ptr[i + 1] = static_cast<core::SparseIndex>(core::detail::checked_sparse_size(val.size()));
         }
         return {a.rows(), a.cols(), std::move(ptr), std::move(col), std::move(val)};
     }
 
-    inline bool numerically_symmetric(const core::CSRMatrix<double>& a, double tolerance)
-    {
-        if (a.rows() != a.cols())
-            return false;
-        double asym2 = 0, scale2 = 0;
-        for (std::size_t i = 0; i < a.rows(); ++i)
-            for (auto k = a.row_ptr()[i]; k < a.row_ptr()[i + 1]; ++k) {
-                const auto j = static_cast<std::size_t>(a.col_idx()[k]);
-                const double v = a.values()[k];
-                const auto columns = a.col_idx().subspan(static_cast<std::size_t>(a.row_ptr()[j]),
-                    static_cast<std::size_t>(a.row_ptr()[j + 1] - a.row_ptr()[j]));
-                const auto pos = std::lower_bound(columns.begin(), columns.end(), i);
-                const bool present = pos != columns.end() && static_cast<std::size_t>(*pos) == i;
-                const double transpose = present ? a.values()[a.row_ptr()[j] + (pos - columns.begin())] : 0.0;
-                scale2 += v * v;
-                const double d = v - transpose;
-                asym2 += d * d;
-                // The missing transpose is a second entry of A - A^T.
-                if (!present)
-                    asym2 += v * v;
-            }
-        return std::sqrt(asym2) <= tolerance * std::sqrt(scale2) + 1e-300;
-    }
 } // namespace mhs::numerics

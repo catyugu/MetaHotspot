@@ -23,7 +23,7 @@ from metahotspot.types import (
 
 # ---- SolveOptions --------------------------------------------------------
 
-_SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "AmgCg": SolverType.AMG}
+_SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "Amg": SolverType.AMG}
 _INTEGRATOR_VALUES = {"Bdf1": IntegratorKind.BDF1, "Bdf2": IntegratorKind.BDF2}
 _STEP_STRATEGY_VALUES = {"Adaptive": StepStrategy.ADAPTIVE, "Fixed": StepStrategy.FIXED}
 

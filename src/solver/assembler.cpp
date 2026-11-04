@@ -13,7 +13,7 @@ namespace mhs::sim {
         if (temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
         const auto n = model.discrete.cells.size();
-        mhs::core::Vector<mhs::numerics::Triplet> stiffness, capacity;
+        mhs::core::Vector<mhs::core::Triplet<double>> stiffness, capacity;
         stiffness.reserve(model.discrete.faces.size() * 4);
         capacity.reserve(model.discrete.cells.size());
         mhs::core::Vector<double> rhs(n, 0.0);

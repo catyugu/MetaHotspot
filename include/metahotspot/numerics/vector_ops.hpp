@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <span>
 
@@ -14,6 +15,7 @@ namespace mhs::numerics {
     }
     inline double distance_inf(std::span<const double> x, std::span<const double> y)
     {
+        assert(x.size() == y.size());
         double result = 0;
         for (std::size_t i = 0; i < x.size(); ++i)
             result = std::max(result, std::abs(x[i] - y[i]));
