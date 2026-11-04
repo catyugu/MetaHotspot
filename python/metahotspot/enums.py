@@ -49,13 +49,3 @@ class FluidBC(enum.IntEnum):
     PRESSURE_INLET = 1
     MASS_FLOW_INLET = 2
     OUTLET = 3
-
-
-class IntegratorKind(enum.IntEnum):
-    BDF1 = 0
-    BDF2 = 1
-
-
-class StepStrategy(enum.IntEnum):
-    ADAPTIVE = 0
-    FIXED = 1

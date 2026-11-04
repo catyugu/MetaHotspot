@@ -26,7 +26,7 @@ namespace mhs::solver {
         // 预解析的探针槽位，避免 record 时重复定位。
         struct ProbeSlot {
             mhs::model::Vec3 point; // SI coordinates
-            mhs::model::CellId cell;
+            mhs::model::CellId cell = mhs::core::invalid_id;
         };
         mhs::core::Vector<ProbeSlot> slots_;
     };

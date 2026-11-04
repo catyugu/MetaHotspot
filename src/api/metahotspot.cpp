@@ -62,15 +62,15 @@ const char* mhs_detail_last_error();
 /* ------------------------------------------------------------------ */
 
 /** Convert C-level solver opts to SolveOptions. */
-mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 
 /* ------------------------------------------------------------------ */
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
 /* ------------------------------------------------------------------ */
 
 struct BlockLocation {
-    uint32_t layer;
-    uint32_t block;
+    mhs_index_t layer;
+    mhs_index_t block;
 };
 
 struct mhs_model_t {
@@ -187,28 +187,6 @@ static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_ty
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
 
-static mhs::solver::SolveOptions::Integrator _to_integrator(mhs_integrator_t integrator)
-{
-    switch (integrator) {
-    case MHS_INTEGRATOR_BDF1:
-        return mhs::solver::SolveOptions::Integrator::Bdf1;
-    case MHS_INTEGRATOR_BDF2:
-        return mhs::solver::SolveOptions::Integrator::Bdf2;
-    }
-    throw std::invalid_argument("invalid integrator: " + std::to_string(integrator));
-}
-
-static mhs::solver::SolveOptions::StepStrategy _to_step_strategy(mhs_step_strategy_t strategy)
-{
-    switch (strategy) {
-    case MHS_STEP_ADAPTIVE:
-        return mhs::solver::SolveOptions::StepStrategy::Adaptive;
-    case MHS_STEP_FIXED:
-        return mhs::solver::SolveOptions::StepStrategy::Fixed;
-    }
-    throw std::invalid_argument("invalid step strategy: " + std::to_string(strategy));
-}
-
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
@@ -227,16 +205,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
     opts->nonlinear_max_iterations = defaults.nonlinear_max_iterations;
     opts->nonlinear_relative_tolerance = defaults.nonlinear_relative_tolerance;
     opts->nonlinear_absolute_tolerance = defaults.nonlinear_absolute_tolerance;
-    opts->integrator = defaults.integrator == mhs::solver::SolveOptions::Integrator::Bdf1 ? MHS_INTEGRATOR_BDF1
-                                                                                          : MHS_INTEGRATOR_BDF2;
-    opts->step_strategy = defaults.step_strategy == mhs::solver::SolveOptions::StepStrategy::Adaptive
-        ? MHS_STEP_ADAPTIVE
-        : MHS_STEP_FIXED;
-    opts->error_rel_tol = defaults.error_rel_tol;
-    opts->error_safety = defaults.error_safety;
-    opts->min_dt = defaults.min_dt;
-    opts->max_dt = defaults.max_dt;
-    opts->fixed_dt = defaults.fixed_dt;
+    opts->time_tolerance = defaults.time_tolerance;
+    opts->max_time_step = defaults.max_time_step.value_or(0.0);
 }
 
 MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
@@ -338,18 +308,23 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             }
         for (size_t id = 0; id < input->face_count; ++id) {
             auto& f = mesh.faces[id];
-            f.owner = {input->face_owner[id]};
-            f.neighbor = {input->face_neighbor[id]};
+            f.owner = static_cast<mhs::model::CellId>(input->face_owner[id]);
+            f.neighbor = input->face_neighbor[id];
             f.axis = input->face_axis[id];
+            if (f.owner >= input->cell_count || (f.neighbor != MHS_INVALID_INDEX && f.neighbor >= input->cell_count))
+                throw std::out_of_range("face cell index outside mesh");
+            if (f.axis < 0 || f.axis > 2)
+                throw std::invalid_argument("face axis must be 0, 1 or 2");
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
             }
             f.area = (f.max[(f.axis + 1) % 3] - f.min[(f.axis + 1) % 3])
                 * (f.max[(f.axis + 2) % 3] - f.min[(f.axis + 2) % 3]);
-            f.owner_distance = std::abs(mesh.cells[f.owner.value].center()[f.axis] - f.min[f.axis]);
-            f.neighbor_distance
-                = f.neighbor.valid() ? std::abs(mesh.cells[f.neighbor.value].center()[f.axis] - f.min[f.axis]) : 0;
+            f.owner_distance = std::abs(mesh.cells[f.owner].center()[f.axis] - f.min[f.axis]);
+            f.neighbor_distance = (f.neighbor != mhs::core::invalid_id)
+                ? std::abs(mesh.cells[f.neighbor].center()[f.axis] - f.min[f.axis])
+                : 0;
         }
         m->external_mesh = std::move(mesh);
         m->def.mesh = {};
@@ -394,7 +369,7 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
 }
 
 MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, uint32_t* out_id)
+    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(thickness);
@@ -402,13 +377,14 @@ MHS_API mhs_status_t mhs_model_add_layer(
     CHECK_NULL(y_offset);
     CHECK_NULL(out_id);
     MHS_TRY({
+        const auto id = static_cast<mhs_index_t>(m->def.layers.size());
         m->def.layers.push_back({thickness, x_offset, y_offset, {}});
-        *out_id = static_cast<uint32_t>(m->def.layers.size() - 1);
+        *out_id = id;
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, uint32_t* out_id)
+MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
+    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(material_name);
@@ -425,14 +401,14 @@ MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const c
         block.y_offset = y_offset ? y_offset : "0.0";
         if (thickness)
             block.thickness = std::string(thickness);
+        const auto block_idx = static_cast<mhs_index_t>(m->def.layers[layer].blocks.size());
         m->def.layers[layer].blocks.push_back(std::move(block));
-        const auto block_idx = static_cast<uint32_t>(m->def.layers[layer].blocks.size() - 1);
         m->block_locations.push_back({layer, block_idx});
-        *out_id = static_cast<uint32_t>(m->block_locations.size() - 1);
+        *out_id = static_cast<mhs_index_t>(m->block_locations.size() - 1);
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geometry_op_t op, const char* x,
+MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
     const char* y, const char* width, const char* height)
 {
     CHECK_NULL(m);
@@ -684,11 +660,11 @@ namespace {
         return MHS_OK;
     }
 
-    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, int32_t* outer, size_t outer_count,
-        int32_t* inner, size_t inner_count, double* values, size_t value_count)
+    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, mhs_sparse_index_t* outer,
+        size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
     {
-        const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
-        const auto expected_nnz = static_cast<size_t>(matrix.nnz());
+        const auto expected_outer = matrix.cols() + 1;
+        const auto expected_nnz = matrix.nnz();
         if (outer_count != expected_outer || inner_count != expected_nnz || value_count != expected_nnz) {
             SET_ERR("CSC buffer sizes do not match operator dimensions");
             return MHS_ERROR;
@@ -697,7 +673,7 @@ namespace {
             SET_ERR("NULL CSC output buffer");
             return MHS_ERROR;
         }
-        std::fill_n(outer, expected_outer, int32_t {0});
+        std::fill_n(outer, expected_outer, mhs_sparse_index_t {0});
         for (auto col : matrix.col_idx())
             ++outer[static_cast<size_t>(col) + 1];
         for (size_t j = 0; j < matrix.cols(); ++j)
@@ -708,12 +684,12 @@ namespace {
             for (auto k = matrix.row_ptr()[i + 1]; k-- > matrix.row_ptr()[i];) {
                 const auto col = static_cast<size_t>(matrix.col_idx()[k]);
                 const auto pos = --outer[col + 1];
-                inner[pos] = static_cast<int32_t>(i);
+                inner[pos] = static_cast<mhs_sparse_index_t>(i);
                 values[pos] = matrix.values()[k];
             }
         for (size_t j = 0; j < matrix.cols(); ++j)
             outer[j] = outer[j + 1];
-        outer[matrix.cols()] = static_cast<int32_t>(expected_nnz);
+        outer[matrix.cols()] = static_cast<mhs_sparse_index_t>(expected_nnz);
         mhs_detail_clear_last_error();
         return MHS_OK;
     }
@@ -756,8 +732,8 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     }
     for (size_t id = 0; id < mesh.faces.size(); ++id) {
         const auto& face = mesh.faces[id];
-        fields->face_owner[id] = face.owner.value;
-        fields->face_neighbor[id] = face.neighbor.value;
+        fields->face_owner[id] = face.owner;
+        fields->face_neighbor[id] = face.neighbor;
         fields->face_axis[id] = face.axis;
         fields->face_sign[id] = face.sign;
         fields->face_area[id] = face.area;
@@ -770,7 +746,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     }
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];
-        fields->projection_cell[id] = term.cell.value;
+        fields->projection_cell[id] = term.cell;
         fields->projection_source[id] = term.source;
         fields->projection_volume[id] = term.weight;
         for (size_t a = 0; a < 3; ++a)
@@ -795,8 +771,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         for (size_t i = 0; i < projection_count; ++i) {
             const auto& term = model.source_terms[i];
             const auto& p = term.point;
-            powers[i] = term.weight
-                * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[term.cell.value], time});
+            powers[i]
+                = term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[term.cell], time});
         }
     });
 }
@@ -820,7 +796,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         return MHS_ERROR;
     }
     MHS_TRY({
-        for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
+        for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
             const auto p = mesh.cells[cell].center();
             const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
@@ -865,22 +841,22 @@ MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mh
 {
     CHECK_NULL(operators);
     CHECK_NULL(out);
-    out->state_count = static_cast<size_t>(operators->operators.f.size());
-    out->k_nnz = static_cast<size_t>(operators->operators.K.nnz());
-    out->c_nnz = static_cast<size_t>(operators->operators.C.nnz());
+    out->state_count = operators->operators.f.size();
+    out->k_nnz = operators->operators.K.nnz();
+    out->c_nnz = operators->operators.C.nnz();
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
 {
     CHECK_NULL(operators);
     return copy_csc_matrix(operators->operators.K, outer, outer_count, inner, inner_count, values, value_count);
 }
 
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
 {
     CHECK_NULL(operators);
     return copy_csc_matrix(operators->operators.C, outer, outer_count, inner, inner_count, values, value_count);
@@ -889,7 +865,7 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int3
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
 {
     CHECK_NULL(operators);
-    const auto expected_count = static_cast<size_t>(operators->operators.f.size());
+    const auto expected_count = operators->operators.f.size();
     if (count != expected_count) {
         SET_ERR("rhs count must equal " << expected_count);
         return MHS_ERROR;
@@ -907,7 +883,7 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  SolveOptions conversion helper                                     */
 /* ------------------------------------------------------------------ */
 
-mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration)
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts)
 {
     mhs::solver::SolveOptions so;
     if (!opts)
@@ -919,13 +895,11 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, doub
     so.nonlinear_max_iterations = opts->nonlinear_max_iterations;
     so.nonlinear_relative_tolerance = opts->nonlinear_relative_tolerance;
     so.nonlinear_absolute_tolerance = opts->nonlinear_absolute_tolerance;
-    so.integrator = _to_integrator(opts->integrator);
-    so.step_strategy = _to_step_strategy(opts->step_strategy);
-    so.error_rel_tol = opts->error_rel_tol;
-    so.error_safety = opts->error_safety;
-    so.min_dt = opts->min_dt;
-    so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;
-    so.fixed_dt = opts->fixed_dt;
+    so.time_tolerance = opts->time_tolerance;
+    if (!std::isfinite(opts->max_time_step) || opts->max_time_step < 0.0)
+        throw std::invalid_argument("max_time_step must be finite and nonnegative (zero selects automatic)");
+    if (opts->max_time_step > 0.0)
+        so.max_time_step = opts->max_time_step;
     return so;
 }
 
@@ -939,7 +913,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY({
-        auto so = to_solve_options(opts, c->model->transient_duration);
+        auto so = to_solve_options(opts);
 
         // Build initial state span
         std::span<const double> init_span;

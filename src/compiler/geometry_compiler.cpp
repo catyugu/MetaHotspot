@@ -19,11 +19,10 @@ namespace mhs::compiler {
             });
         }
 
-        mhs::core::Index find_block_for_cell(
+        std::optional<std::size_t> find_block_for_cell(
             const ResolvedLayerGeometry& resolved_layer, double cx, double cy, double cz)
         {
-            for (mhs::core::Index b = static_cast<mhs::core::Index>(resolved_layer.blocks.size()) - 1;
-                b != mhs::core::invalidIndex; b--) {
+            for (std::size_t b = resolved_layer.blocks.size(); b-- > 0;) {
                 const auto& block = resolved_layer.blocks[b];
                 if (cz < block.z_start - EPS || cz > block.z_end + EPS)
                     continue;
@@ -37,7 +36,7 @@ namespace mhs::compiler {
                 if (is_inside)
                     return b;
             }
-            return mhs::core::invalidIndex;
+            return std::nullopt;
         }
 
     } // anonymous namespace
@@ -45,12 +44,12 @@ namespace mhs::compiler {
     mhs::core::Vector<ResolvedLayerGeometry> resolve_geometry(const mhs::core::Vector<mhs::model::LayerSpec>& layers,
         double si_scale, const mhs::expression::SymbolTable& symbols)
     {
-        mhs::core::Index num_layers = static_cast<mhs::core::Index>(layers.size());
+        const auto num_layers = layers.size();
         mhs::core::Vector<ResolvedLayerGeometry> resolved(num_layers);
 
         mhs::core::Vector<double> thickness(num_layers);
         double z_cursor = 0.0;
-        for (mhs::core::Index l = 0; l < num_layers; l++) {
+        for (std::size_t l = 0; l < num_layers; l++) {
             if (l == 0) {
                 double max_t = 0.0;
                 for (const auto& b : layers[l].blocks) {
@@ -70,13 +69,13 @@ namespace mhs::compiler {
             }
             z_cursor += thickness[l];
         }
-        for (mhs::core::Index l = 0; l < num_layers; l++) {
+        for (std::size_t l = 0; l < num_layers; l++) {
             resolved[l].z_start = z_cursor - thickness[l];
             resolved[l].z_end = z_cursor;
             z_cursor -= thickness[l];
         }
 
-        for (mhs::core::Index l = 0; l < num_layers; l++) {
+        for (std::size_t l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
             double layer_x_off_si = mhs::expression::eval_geometry(layer.x_offset, symbols) * si_scale;
             double layer_y_off_si = mhs::expression::eval_geometry(layer.y_offset, symbols) * si_scale;
@@ -124,17 +123,17 @@ namespace mhs::compiler {
         return resolved;
     }
 
-    std::pair<mhs::core::Index, mhs::core::Index> classify_point(
+    std::optional<std::pair<std::size_t, std::size_t>> classify_point(
         const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::model::Vec3& p)
     {
-        for (mhs::core::Index l = 0; l < layers.size(); ++l) {
+        for (std::size_t l = 0; l < layers.size(); ++l) {
             if (p[2] < layers[l].z_start - EPS || p[2] > layers[l].z_end + EPS)
                 continue;
             auto b = find_block_for_cell(layers[l], p[0], p[1], p[2]);
-            if (b != mhs::core::invalidIndex)
-                return {l, b};
+            if (b)
+                return std::pair {l, *b};
         }
-        return {mhs::core::invalidIndex, mhs::core::invalidIndex};
+        return std::nullopt;
     }
 
     void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers)
@@ -143,8 +142,7 @@ namespace mhs::compiler {
         using namespace mhs::model;
         model.cell_material.clear();
         model.source_terms.clear();
-        constexpr TableIndex invalid_table = std::numeric_limits<TableIndex>::max();
-        for (Index c = 0; c < model.discrete.cells.size(); ++c) {
+        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
             const auto& cell = model.discrete.cells[c];
             std::array<mhs::core::Vector<double>, 3> cuts;
             for (int a = 0; a < 3; ++a)
@@ -173,36 +171,37 @@ namespace mhs::compiler {
                 std::sort(v.begin(), v.end());
                 v.erase(std::unique(v.begin(), v.end()), v.end());
             }
-            TableIndex material = invalid_table;
-            for (Index x = 1; x < cuts[0].size(); ++x)
-                for (Index y = 1; y < cuts[1].size(); ++y)
-                    for (Index z = 1; z < cuts[2].size(); ++z) {
+            MaterialId material = mhs::core::invalid_id;
+            for (std::size_t x = 1; x < cuts[0].size(); ++x)
+                for (std::size_t y = 1; y < cuts[1].size(); ++y)
+                    for (std::size_t z = 1; z < cuts[2].size(); ++z) {
                         Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
                             (cuts[2][z - 1] + cuts[2][z]) / 2};
-                        const auto [l, b] = classify_point(layers, p);
+                        const auto location = classify_point(layers, p);
                         // A block edge can cut a control volume and leave a piece
                         // outside every block. Such a piece carries no source.
-                        if (l == invalidIndex)
+                        if (!location)
                             continue;
+                        const auto [l, b] = *location;
                         const auto& block = layers[l].blocks[b];
                         material = block.material_id;
                         const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                             * (cuts[2][z] - cuts[2][z - 1]);
-                        model.source_terms.push_back({CellId {c}, block.heat_source_idx, volume, p});
+                        model.source_terms.push_back({static_cast<CellId>(c), block.heat_source_idx, volume, p});
                     }
             model.cell_material.push_back(material);
         }
     }
 
     mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::model::TableIndex fallback)
+        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::model::BoundaryConditionId fallback)
     {
         using namespace mhs::core;
         using namespace mhs::model;
         mhs::core::Vector<BoundaryFace> faces;
-        for (Index id = 0; id < mesh.faces.size(); ++id) {
+        for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
-            if (face.neighbor.valid())
+            if (face.neighbor != mhs::core::invalid_id)
                 continue;
             const int a = face.axis == 0 ? 1 : 0, b = face.axis == 2 ? 1 : 2;
             mhs::core::Vector<double> ca {face.min[a], face.max[a]}, cb {face.min[b], face.max[b]};
@@ -226,11 +225,11 @@ namespace mhs::compiler {
             };
             unique(ca);
             unique(cb);
-            for (Index i = 1; i < ca.size(); ++i)
-                for (Index j = 1; j < cb.size(); ++j) {
+            for (std::size_t i = 1; i < ca.size(); ++i)
+                for (std::size_t j = 1; j < cb.size(); ++j) {
                     const auto patch = face.project({ca[i - 1], ca[i], cb[j - 1], cb[j]});
                     const auto p = patch.center();
-                    TableIndex condition = fallback;
+                    BoundaryConditionId condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
                         if (static_cast<int>(it->axis) == face.axis && std::abs(it->coordinate - p[face.axis]) < EPS
                             && point_in_region(*it, p[a], p[b])) {
@@ -238,9 +237,9 @@ namespace mhs::compiler {
                             break;
                         }
                     }
-                    if (condition != invalidTableIndex)
-                        faces.push_back(
-                            {FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    if (condition != mhs::core::invalid_id)
+                        faces.push_back({static_cast<FaceId>(id), condition,
+                            {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
         return faces;

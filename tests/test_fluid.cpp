@@ -63,19 +63,19 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     ASSERT_EQ(model.fluid.face_volume_flux.size(), model.discrete.faces.size());
     mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
     auto density = [&](mhs::model::CellId cell) {
-        const auto p = model.discrete.cells[cell.value].center();
-        return model.material_table[model.cell_material[cell.value]].rho.eval(
+        const auto p = model.discrete.cells[cell].center();
+        return model.material_table[model.cell_material[cell]].rho.eval(
             {p[0], p[1], p[2], model.initial_temperature, 0});
     };
     bool nonzero = false;
-    for (mhs::core::Index id = 0; id < model.discrete.faces.size(); ++id) {
+    for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
         const auto& f = model.discrete.faces[id];
-        if (!f.neighbor.valid())
+        if (f.neighbor == mhs::core::invalid_id)
             continue;
         const double mass = model.fluid.face_volume_flux[id] * (density(f.owner) + density(f.neighbor)) / 2;
         nonzero = nonzero || std::abs(mass) > 1e-20;
-        balance[f.owner.value] += mass;
-        balance[f.neighbor.value] -= mass;
+        balance[f.owner] += mass;
+        balance[f.neighbor] -= mass;
     }
     double boundary_sum = 0;
     for (const auto& term : model.fluid.boundary_terms) {
@@ -89,7 +89,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[model.discrete.faces[term.face.value].owner.value] += mass;
+        balance[model.discrete.faces[term.face].owner] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
@@ -161,7 +161,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto reverse = mhs::compiler::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
-        const auto& face = reverse.discrete.faces[term.face.value];
+        const auto& face = reverse.discrete.faces[term.face];
         if (face.sign > 0) {
             ASSERT_TRUE(std::holds_alternative<mhs::model::FluidInflow>(term.condition));
             EXPECT_DOUBLE_EQ(std::get<mhs::model::FluidInflow>(term.condition).temperature, 300);

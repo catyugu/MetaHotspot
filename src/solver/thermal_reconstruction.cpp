@@ -14,9 +14,9 @@ namespace mhs::solver {
         double conductivity(const mhs::model::Model& model, std::span<const double> temperature,
             mhs::model::CellId cell, double time, int axis)
         {
-            const auto p = model.discrete.cells[cell.value].center();
-            const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
-            const auto& m = model.material_table[model.cell_material[cell.value]];
+            const auto p = model.discrete.cells[cell].center();
+            const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell], time};
+            const auto& m = model.material_table[model.cell_material[cell]];
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
@@ -71,12 +71,12 @@ namespace mhs::solver {
                 conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
-                const auto& f = model.discrete.faces[id.value];
-                if (!f.neighbor.valid()) {
+                const auto& f = model.discrete.faces[id];
+                if (f.neighbor == mhs::core::invalid_id) {
                     for (const auto& term : boundary_faces_on(model, id)) {
                         const auto patch = f.project(term.bounds);
-                        const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], patch,
-                            temperature[cell.value], k[patch.axis], time);
+                        const auto trace = evaluate_boundary(
+                            model.boundary_conditions[term.condition], patch, temperature[cell], k[patch.axis], time);
                         gradient[f.axis] += f.sign * patch.area * trace.temperature;
                     }
                     continue;
@@ -85,10 +85,10 @@ namespace mhs::solver {
                 const double a = (f.owner == cell ? f.owner_distance : f.neighbor_distance) / k[f.axis];
                 const double b = (f.owner == cell ? f.neighbor_distance : f.owner_distance)
                     / conductivity(model, temperature, neighbor, time, f.axis);
-                const double trace = (b * temperature[cell.value] + a * temperature[neighbor.value]) / (a + b);
+                const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
                 gradient[f.axis] += (f.owner == cell ? f.sign : -f.sign) * f.area * trace;
             }
-            const auto volume = model.discrete.cells[cell.value].volume();
+            const auto volume = model.discrete.cells[cell].volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
@@ -98,7 +98,7 @@ namespace mhs::solver {
     {
         const auto& patches = model.boundary_faces;
         auto first = std::lower_bound(patches.begin(), patches.end(), parent,
-            [](const mhs::model::BoundaryFace& patch, mhs::model::FaceId id) { return patch.parent.value < id.value; });
+            [](const mhs::model::BoundaryFace& patch, mhs::model::FaceId id) { return patch.parent < id; });
         auto last = first;
         while (last != patches.end() && last->parent == parent)
             ++last;
@@ -168,14 +168,14 @@ namespace mhs::solver {
     std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
-        if (!cell.valid())
+        if (cell == mhs::core::invalid_id)
             return std::nullopt;
-        const double cell_temperature = temperature[cell.value];
+        const double cell_temperature = temperature[cell];
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
         for (auto id : model.discrete.incident_faces(cell)) {
-            const auto& f = model.discrete.faces[id.value];
-            if (f.neighbor.valid())
+            const auto& f = model.discrete.faces[id];
+            if (f.neighbor != mhs::core::invalid_id)
                 continue;
             for (const auto& term : boundary_faces_on(model, id)) {
                 const auto patch = f.project(term.bounds);
@@ -203,13 +203,13 @@ namespace mhs::solver {
     double sample_point(const mhs::model::Model& model, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
-        if (!cell.valid())
+        if (cell == mhs::core::invalid_id)
             return std::numeric_limits<double>::quiet_NaN();
         if (const auto trace = boundary_value_at(model, temperature, time, cell, p))
             return *trace;
         const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell);
-        const auto center = model.discrete.cells[cell.value].center();
-        return temperature[cell.value] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
+        const auto center = model.discrete.cells[cell].center();
+        return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);
     }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "core/types.hpp"
 
 #include "core/vector.hpp"
 #include <algorithm>
@@ -8,7 +9,6 @@
 #include <stdexcept>
 
 namespace mhs::core {
-    using SparseIndex = std::int32_t;
 
     namespace detail {
         inline std::size_t checked_sparse_size(std::size_t n)
@@ -22,13 +22,6 @@ namespace mhs::core {
     template <class T> struct Triplet {
         SparseIndex row, col;
         T value;
-
-        Triplet(std::size_t r, std::size_t c, T v)
-            : row(static_cast<SparseIndex>(detail::checked_sparse_size(r)))
-            , col(static_cast<SparseIndex>(detail::checked_sparse_size(c)))
-            , value(v)
-        {
-        }
     };
 
     template <class T> struct CSRMatrixView {

@@ -16,6 +16,7 @@ set(MHS_MUPARSER_VERSION 2.3.5)
 set(MHS_TBB_VERSION 2023.0.0)
 set(MHS_AMGCL_VERSION 1.5.0)
 set(MHS_GTEST_VERSION 1.18.0)
+set(MHS_ATSTEP_VERSION 2.1.1)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
@@ -82,6 +83,22 @@ if(NOT TARGET muparser::muparser)
         "ENABLE_OPENMP OFF"
         "BUILD_TESTING OFF"
         "BUILD_SHARED_LIBS OFF"
+    )
+endif()
+
+# ----------------------------------------------------------------------------
+# Adaptive BDF controller. Header only.
+# ----------------------------------------------------------------------------
+if(NOT TARGET AdaptiveTimeStepper::AdaptiveTimeStepper)
+    CPMAddPackage(
+        NAME AdaptiveTimeStepper
+        VERSION ${MHS_ATSTEP_VERSION}
+        FIND_PACKAGE_ARGUMENTS CONFIG
+        GITHUB_REPOSITORY catyugu/AdaptiveTimeStepper
+        GIT_TAG "v${MHS_ATSTEP_VERSION}"
+        SYSTEM YES
+        "ATSTEP_BUILD_TESTS OFF"
+        "ATSTEP_BUILD_EXAMPLES OFF"
     )
 endif()
 
@@ -173,3 +190,4 @@ if(MHS_USE_MKL)
     find_package(MKL CONFIG REQUIRED)
     set(MHS_ENABLE_PARDISO ON)
 endif()
+

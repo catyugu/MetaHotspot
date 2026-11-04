@@ -14,8 +14,8 @@ namespace mhs::model {
 
     // Projected integration patch on an external topological face.
     struct BoundaryFace {
-        FaceId parent;
-        TableIndex condition; // index in the condition table used for this projection
+        FaceId parent = mhs::core::invalid_id;
+        BoundaryConditionId condition = mhs::core::invalid_id; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
@@ -45,8 +45,8 @@ namespace mhs::model {
 
     // Midpoint quadrature on a physical source subvolume.
     struct SourceTerm {
-        CellId cell;
-        TableIndex source;
+        CellId cell = mhs::core::invalid_id;
+        SourceId source = mhs::core::invalid_id;
         double weight;
         Vec3 point;
     };
@@ -62,7 +62,7 @@ namespace mhs::model {
         DiscreteMesh discrete;
         OutputMesh output;
 
-        mhs::core::Vector<TableIndex> cell_material;
+        mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;

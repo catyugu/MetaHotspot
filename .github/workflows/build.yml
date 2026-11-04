@@ -8,7 +8,9 @@ concurrency:
 
 on:
   push:
+    branches: [main, dev, agent/dev]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:

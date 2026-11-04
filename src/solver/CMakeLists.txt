@@ -5,7 +5,6 @@ add_library(mhs_solver STATIC
     probe_recorder.cpp
     solve.cpp
     thermal_reconstruction.cpp
-    time_integration.cpp
 )
 target_link_libraries(mhs_solver
     PUBLIC mhs_model
@@ -13,6 +12,7 @@ target_link_libraries(mhs_solver
     mhs_expression
     mhs_linear
     $<BUILD_INTERFACE:Eigen3::Eigen>
+    $<BUILD_INTERFACE:AdaptiveTimeStepper::AdaptiveTimeStepper>
     mhs_logging
     TBB::tbb
     $<BUILD_INTERFACE:mhs_options>
