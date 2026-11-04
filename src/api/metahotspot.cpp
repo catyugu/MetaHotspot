@@ -69,8 +69,8 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, doub
 /* ------------------------------------------------------------------ */
 
 struct BlockLocation {
-    uint32_t layer;
-    uint32_t block;
+    mhs_index_t layer;
+    mhs_index_t block;
 };
 
 struct mhs_model_t {
@@ -329,6 +329,10 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::model::DiscreteMesh mesh;
+        if (input->cell_count)
+            (void)mhs::model::CellId {input->cell_count - 1};
+        if (input->face_count)
+            (void)mhs::model::FaceId {input->face_count - 1};
         mesh.cells.resize(input->cell_count);
         mesh.faces.resize(input->face_count);
         for (size_t c = 0; c < input->cell_count; ++c)
@@ -338,8 +342,9 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             }
         for (size_t id = 0; id < input->face_count; ++id) {
             auto& f = mesh.faces[id];
-            f.owner = {input->face_owner[id]};
-            f.neighbor = {input->face_neighbor[id]};
+            f.owner = mhs::model::CellId {input->face_owner[id]};
+            f.neighbor = input->face_neighbor[id] == MHS_INVALID_INDEX ? mhs::model::CellId {}
+                                                                       : mhs::model::CellId {input->face_neighbor[id]};
             f.axis = input->face_axis[id];
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
@@ -394,7 +399,7 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
 }
 
 MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, uint32_t* out_id)
+    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(thickness);
@@ -403,12 +408,12 @@ MHS_API mhs_status_t mhs_model_add_layer(
     CHECK_NULL(out_id);
     MHS_TRY({
         m->def.layers.push_back({thickness, x_offset, y_offset, {}});
-        *out_id = static_cast<uint32_t>(m->def.layers.size() - 1);
+        *out_id = mhs::core::checked_id_index(m->def.layers.size() - 1);
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, uint32_t* out_id)
+MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
+    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(material_name);
@@ -426,13 +431,13 @@ MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const c
         if (thickness)
             block.thickness = std::string(thickness);
         m->def.layers[layer].blocks.push_back(std::move(block));
-        const auto block_idx = static_cast<uint32_t>(m->def.layers[layer].blocks.size() - 1);
+        const auto block_idx = mhs::core::checked_id_index(m->def.layers[layer].blocks.size() - 1);
         m->block_locations.push_back({layer, block_idx});
-        *out_id = static_cast<uint32_t>(m->block_locations.size() - 1);
+        *out_id = mhs::core::checked_id_index(m->block_locations.size() - 1);
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geometry_op_t op, const char* x,
+MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
     const char* y, const char* width, const char* height)
 {
     CHECK_NULL(m);
@@ -684,8 +689,8 @@ namespace {
         return MHS_OK;
     }
 
-    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, int32_t* outer, size_t outer_count,
-        int32_t* inner, size_t inner_count, double* values, size_t value_count)
+    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, mhs_sparse_index_t* outer,
+        size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
     {
         const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
         const auto expected_nnz = static_cast<size_t>(matrix.nnz());
@@ -697,7 +702,7 @@ namespace {
             SET_ERR("NULL CSC output buffer");
             return MHS_ERROR;
         }
-        std::fill_n(outer, expected_outer, int32_t {0});
+        std::fill_n(outer, expected_outer, mhs_sparse_index_t {0});
         for (auto col : matrix.col_idx())
             ++outer[static_cast<size_t>(col) + 1];
         for (size_t j = 0; j < matrix.cols(); ++j)
@@ -708,12 +713,12 @@ namespace {
             for (auto k = matrix.row_ptr()[i + 1]; k-- > matrix.row_ptr()[i];) {
                 const auto col = static_cast<size_t>(matrix.col_idx()[k]);
                 const auto pos = --outer[col + 1];
-                inner[pos] = static_cast<int32_t>(i);
+                inner[pos] = static_cast<mhs_sparse_index_t>(i);
                 values[pos] = matrix.values()[k];
             }
         for (size_t j = 0; j < matrix.cols(); ++j)
             outer[j] = outer[j + 1];
-        outer[matrix.cols()] = static_cast<int32_t>(expected_nnz);
+        outer[matrix.cols()] = static_cast<mhs_sparse_index_t>(expected_nnz);
         mhs_detail_clear_last_error();
         return MHS_OK;
     }
@@ -752,7 +757,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
             fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
             fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
         }
-        fields->material_id[cidx] = model.cell_material[cidx];
+        fields->material_id[cidx] = model.cell_material[cidx].value;
     }
     for (size_t id = 0; id < mesh.faces.size(); ++id) {
         const auto& face = mesh.faces[id];
@@ -771,7 +776,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];
         fields->projection_cell[id] = term.cell.value;
-        fields->projection_source[id] = term.source;
+        fields->projection_source[id] = term.source.value;
         fields->projection_volume[id] = term.weight;
         for (size_t a = 0; a < 3; ++a)
             fields->projection_center[3 * id + a] = term.point[a];
@@ -796,7 +801,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             const auto& term = model.source_terms[i];
             const auto& p = term.point;
             powers[i] = term.weight
-                * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[term.cell.value], time});
+                * model.heat_source_table[term.source.value].eval({p[0], p[1], p[2], state[term.cell.value], time});
         }
     });
 }
@@ -820,9 +825,9 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         return MHS_ERROR;
     }
     MHS_TRY({
-        for (mhs::core::Index cell = 0; cell < mesh.cells.size(); ++cell) {
+        for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
             const auto p = mesh.cells[cell].center();
-            const auto& props = model.material_table[model.cell_material[cell]];
+            const auto& props = model.material_table[model.cell_material[cell].value];
             const auto dof = cell;
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);
@@ -872,15 +877,15 @@ MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mh
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
 {
     CHECK_NULL(operators);
     return copy_csc_matrix(operators->operators.K, outer, outer_count, inner, inner_count, values, value_count);
 }
 
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count)
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
 {
     CHECK_NULL(operators);
     return copy_csc_matrix(operators->operators.C, outer, outer_count, inner, inner_count, values, value_count);

@@ -1,5 +1,5 @@
-#include "core/vector.hpp"
 #include "mesh.hpp"
+#include "core/vector.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -81,7 +81,8 @@ namespace mhs::dtdm {
         }
     } // namespace
 
-    long covered_cells(const mhs::core::Vector<double>& x, const mhs::core::Vector<double>& y, const mhs::core::Vector<Chiplet>& chiplets)
+    long covered_cells(const mhs::core::Vector<double>& x, const mhs::core::Vector<double>& y,
+        const mhs::core::Vector<Chiplet>& chiplets)
     {
         long count = 0;
         for (std::size_t i = 0; i + 1 < x.size(); ++i) {
@@ -158,8 +159,8 @@ namespace mhs::dtdm {
         return out;
     }
 
-    mhs::core::Vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const mhs::core::Vector<Chiplet>& chiplets,
-        std::array<int, 4>& group_nz)
+    mhs::core::Vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout,
+        const mhs::core::Vector<Chiplet>& chiplets, std::array<int, 4>& group_nz)
     {
         const auto& x = probe.axes[0];
         const auto& y = probe.axes[1];
@@ -299,7 +300,7 @@ namespace mhs::dtdm {
             out.cells_of_layer.push_back({});
             for (long id : index[l])
                 if (id >= 0)
-                    out.cells_of_layer.back().push_back(static_cast<mhs::core::Index>(id));
+                    out.cells_of_layer.back().push_back(static_cast<std::size_t>(id));
         }
         out.dof = static_cast<long>(mesh.cells.size());
 
@@ -326,12 +327,12 @@ namespace mhs::dtdm {
             props.c = mhs::expression::CompiledExpression::make_constant(1.0);
             out.model.material_table.push_back(std::move(props));
         }
-        out.model.cell_material.assign(mesh.cells.size(), 0);
+        out.model.cell_material.assign(mesh.cells.size(), mhs::model::MaterialId {0});
         for (int l = 0; l < static_cast<int>(kStack.size()); ++l)
             for (long id : index[l])
                 if (id >= 0)
                     out.model.cell_material[static_cast<std::size_t>(id)]
-                        = static_cast<mhs::model::TableIndex>(material_of_layer[l]);
+                        = mhs::model::MaterialId {material_of_layer[l]};
 
         // heat sources: one per chiplet, constant volumetric density
         out.model.heat_source_table.clear();
@@ -350,7 +351,7 @@ namespace mhs::dtdm {
                         continue;
                     const double volume = mesh.cells[static_cast<std::size_t>(id)].volume();
                     out.model.source_terms.push_back(
-                        {{static_cast<mhs::core::Index>(id)}, static_cast<mhs::model::TableIndex>(ci), volume, centre});
+                        {mhs::model::CellId {static_cast<std::size_t>(id)}, mhs::model::SourceId {ci}, volume, centre});
                     out.total_power += density * volume;
                 }
         }
@@ -360,10 +361,10 @@ namespace mhs::dtdm {
         auto& faces = mesh.faces;
         auto emit = [&](long owner, long neighbor, int axis, int side) {
             mhs::model::FacePatch f;
-            f.owner = {static_cast<mhs::core::Index>(owner)};
+            f.owner = mhs::model::CellId {static_cast<std::size_t>(owner)};
             f.neighbor = mhs::model::CellId {};
             if (neighbor >= 0)
-                f.neighbor.value = static_cast<mhs::core::Index>(neighbor);
+                f.neighbor = mhs::model::CellId {static_cast<std::size_t>(neighbor)};
             f.axis = axis;
             const auto& co = mesh.cells[static_cast<std::size_t>(owner)];
             f.owner_distance = 0.5 * co.size()[static_cast<std::size_t>(axis)];
@@ -448,16 +449,17 @@ namespace mhs::dtdm {
         out.model.boundary_conditions.push_back(
             mhs::model::Convection {mhs::expression::CompiledExpression::make_constant(kHeatSinkH),
                 mhs::expression::CompiledExpression::make_constant(0.0)});
-        out.model.boundary_conditions.push_back(mhs::model::Convection {
-            mhs::expression::CompiledExpression::make_constant(kPcbH), mhs::expression::CompiledExpression::make_constant(0.0)});
+        out.model.boundary_conditions.push_back(
+            mhs::model::Convection {mhs::expression::CompiledExpression::make_constant(kPcbH),
+                mhs::expression::CompiledExpression::make_constant(0.0)});
 
         auto add_boundary_face = [&](long face_id, std::size_t condition) {
             const auto& f = faces[static_cast<std::size_t>(face_id)];
             const int axis = f.axis;
             const int a = axis == 0 ? 1 : 0;
             const int b = axis == 2 ? 1 : 2;
-            out.model.boundary_faces.push_back({{static_cast<mhs::core::Index>(face_id)},
-                static_cast<mhs::model::TableIndex>(condition), {f.min[a], f.max[a], f.min[b], f.max[b]}});
+            out.model.boundary_faces.push_back({mhs::model::FaceId {static_cast<std::size_t>(face_id)},
+                mhs::model::BoundaryConditionId {condition}, {f.min[a], f.max[a], f.min[b], f.max[b]}});
         };
         for (long id : sink_top_faces)
             add_boundary_face(id, 0);

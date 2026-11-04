@@ -64,11 +64,11 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell.value].center();
-        return model.material_table[model.cell_material[cell.value]].rho.eval(
+        return model.material_table[model.cell_material[cell.value].value].rho.eval(
             {p[0], p[1], p[2], model.initial_temperature, 0});
     };
     bool nonzero = false;
-    for (mhs::core::Index id = 0; id < model.discrete.faces.size(); ++id) {
+    for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
         const auto& f = model.discrete.faces[id];
         if (!f.neighbor.valid())
             continue;
@@ -93,7 +93,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
-        EXPECT_NEAR(balance[cell], 0, 1e-12);
+        EXPECT_NEAR(balance[cell.value], 0, 1e-12);
     EXPECT_NEAR(boundary_sum, 0, 1e-12);
     EXPECT_TRUE(nonzero);
     const mhs::core::Vector<double> state(model.discrete.cells.size(), 300);

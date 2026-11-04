@@ -1,4 +1,5 @@
 #pragma once
+#include "core/types.hpp"
 
 #include "core/vector.hpp"
 #include <algorithm>
@@ -8,7 +9,6 @@
 #include <stdexcept>
 
 namespace mhs::core {
-    using SparseIndex = std::int32_t;
 
     namespace detail {
         inline std::size_t checked_sparse_size(std::size_t n)

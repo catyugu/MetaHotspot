@@ -5,13 +5,6 @@
 #include <span>
 
 namespace mhs::model {
-    template <class Tag> struct EntityId {
-        Index value = invalidIndex;
-        bool valid() const { return value != invalidIndex; }
-        auto operator<=>(const EntityId&) const = default;
-    };
-    using CellId = EntityId<struct CellTag>;
-    using FaceId = EntityId<struct FaceTag>;
     using Vec3 = std::array<double, 3>;
 
     struct CellGeometry {
@@ -63,7 +56,7 @@ namespace mhs::model {
     struct DiscreteMesh {
         mhs::core::Vector<CellGeometry> cells;
         mhs::core::Vector<FacePatch> faces;
-        mhs::core::Vector<Index> cell_face_offsets;
+        mhs::core::Vector<std::size_t> cell_face_offsets;
         mhs::core::Vector<FaceId> cell_face_ids;
         std::span<const FaceId> incident_faces(CellId c) const
         {

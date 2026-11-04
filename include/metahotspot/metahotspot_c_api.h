@@ -53,6 +53,11 @@ extern "C" {
 /* ------------------------------------------------------------------ */
 /*  Opaque handle forward declarations                                 */
 /* ------------------------------------------------------------------ */
+/** Fixed-width entity references and signed CSR/CSC storage indices. */
+typedef uint32_t mhs_index_t;
+typedef int32_t mhs_sparse_index_t;
+#define MHS_INVALID_INDEX UINT32_MAX
+
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
@@ -141,14 +146,14 @@ typedef struct {
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * face_neighbor == SIZE_MAX denotes exterior; signs are outward from owner. */
+ * face_neighbor == MHS_INVALID_INDEX denotes exterior; signs are outward from owner. */
 typedef struct {
     size_t cell_count, face_count, projection_count;
     double* cell_min;
     double* cell_max;
-    uint32_t* material_id;
-    size_t* face_owner;
-    size_t* face_neighbor;
+    mhs_index_t* material_id;
+    mhs_index_t* face_owner;
+    mhs_index_t* face_neighbor;
     int32_t* face_axis;
     int32_t* face_sign;
     double* face_min;
@@ -156,8 +161,8 @@ typedef struct {
     double* face_area;
     double* owner_distance;
     double* neighbor_distance;
-    size_t* projection_cell;
-    uint32_t* projection_source;
+    mhs_index_t* projection_cell;
+    mhs_index_t* projection_source;
     double* projection_volume;
     double* projection_center;
 } mhs_cell_fields_t;
@@ -169,11 +174,11 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
 /** Caller-owned external mesh, all coordinates in SI metres. No connectivity
  * discovery or validity checking is performed. The caller guarantees positive
  * cells, complete nonoverlapping faces, valid indices, domain/material alignment
- * and orthogonal TPFA geometry. Exterior neighbors use SIZE_MAX. */
+ * and orthogonal TPFA geometry. Exterior neighbors use MHS_INVALID_INDEX. */
 typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
-    const size_t *face_owner, *face_neighbor;
+    const mhs_index_t *face_owner, *face_neighbor;
     const int32_t* face_axis; /* owner normal sign is derived from geometry */
     const double *face_min, *face_max;
 } mhs_mesh_t;
@@ -246,12 +251,12 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
 
 MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, uint32_t* out_id);
+    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, uint32_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, uint32_t* out_id);
+MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
+    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, uint32_t block, mhs_geometry_op_t op, const char* x,
+MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
     const char* y, const char* width, const char* height);
 
 /* ------------------------------------------------------------------ */
@@ -323,10 +328,10 @@ MHS_API mhs_status_t mhs_compiled_assemble(
 
 MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
 MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count);
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, int32_t* outer, size_t outer_count,
-    int32_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
+    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */

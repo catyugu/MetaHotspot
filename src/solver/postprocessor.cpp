@@ -32,25 +32,25 @@ namespace mhs::solver {
             throw std::invalid_argument("node sampling state size mismatch");
         mhs::core::Vector<double> node_T(model.output.points.size(), 0.0);
         mhs::core::Vector<double> weight(node_T.size(), 0.0);
-        for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
+        for (std::size_t c = 0; c < model.output.cell_vertices.size(); ++c) {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
-            const auto& mat = model.material_table[model.cell_material[c]];
+            const auto& mat = model.material_table[model.cell_material[c].value];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto& vertices = model.output.cell_vertices[c];
             std::array<double, 8> sum {}, dirichlet_sum {};
             std::array<unsigned, 8> count {}, dirichlet_count {};
-            for (auto id : model.discrete.incident_faces({c})) {
+            for (auto id : model.discrete.incident_faces(mhs::model::CellId {c})) {
                 const auto& face = model.discrete.faces[id.value];
                 if (face.neighbor.valid())
                     continue;
                 for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
                     const auto patch = face.project(term.bounds);
-                    const auto& condition = model.boundary_conditions[term.condition];
+                    const auto& condition = model.boundary_conditions[term.condition.value];
                     std::optional<double> trace;
                     for (std::size_t i = 0; i < vertices.size(); ++i) {
-                        if (!patch.contains(model.output.points[vertices[i]]))
+                        if (!patch.contains(model.output.points[vertices[i].value]))
                             continue;
                         if (!trace)
                             trace = mhs::solver::evaluate_boundary(
@@ -66,7 +66,7 @@ namespace mhs::solver {
                 }
             }
             for (std::size_t i = 0; i < vertices.size(); ++i) {
-                const auto v = vertices[i];
+                const auto v = vertices[i].value;
                 const auto& p = model.output.points[v];
                 const double sample = dirichlet_count[i] ? dirichlet_sum[i] / dirichlet_count[i]
                     : count[i]                           ? sum[i] / count[i]
@@ -76,7 +76,7 @@ namespace mhs::solver {
                 weight[v] += w;
             }
         }
-        for (mhs::core::Index v = 0; v < node_T.size(); ++v)
+        for (std::size_t v = 0; v < node_T.size(); ++v)
             node_T[v] = weight[v] > 0.0 ? node_T[v] / weight[v] : std::numeric_limits<double>::quiet_NaN();
         return node_T;
     }

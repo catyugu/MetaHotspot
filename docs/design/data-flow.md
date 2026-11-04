@@ -41,7 +41,7 @@
 ## 输入与数组约定
 
 - C++ 的 `build_model(definition, discrete_mesh)`、C 的 `mhs_model_set_discrete_mesh` 和 Python 的 `Model.set_discrete_mesh` 接收完整的控制体与面片连接。外部网格坐标始终使用 SI 米，与物理定义的长度单位无关。
-- Python 网格边界数组为 `(count, 3)`；面片 owner/neighbor、axis 为 `(face_count,)`。外边界 neighbor 为 `SIZE_MAX`，Python 输入也接受有符号 `-1`。输入无需 sign；编译器根据面片位置与 owner 中心推导其外法向，导出字段仍保留 face_sign。
+- Python 网格边界数组为 `(count, 3)`；面片 owner/neighbor、axis 为 `(face_count,)`。外边界 neighbor 为 `MHS_INVALID_INDEX`（`UINT32_MAX`），Python 输入也接受有符号 `-1`。输入无需 sign；编译器根据面片位置与 owner 中心推导其外法向，导出字段仍保留 face_sign。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
@@ -49,3 +49,13 @@
 函数在编译阶段统一构造求值器：分段线性要求至少两个点，按横坐标排序，并拒绝重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。
 
 Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访问时复制几何、材料索引与源投影数组。两者独立缓存；`cell_count` 和 `default_state()` 无需复制网格。
+
+## 索引约定
+
+- `core::Id<Tag>` 保存实体引用，底层为 `uint32_t`，默认无效值为 `UINT32_MAX`。从数组位置显式构造时检查范围；有效 ID 最大为 `UINT32_MAX - 1`。
+- model 定义 `CellId`、`FaceId`、`MaterialId`、`SourceId`、`BoundaryConditionId`、`FluidCellId` 和 `PointId`。读取 `.value` 后才进入普通数组访问；不同实体 ID 不互转。
+- 数量、循环位置和数组 offset 使用 `std::size_t`。编译器内部的可失败几何查找返回 `std::optional`。
+- `core::SparseIndex = int32_t` 专用于 CSR 存储；第三方索引类型留在实现文件中。
+- C ABI 的实体引用使用 `mhs_index_t = uint32_t`，CSR/CSC 数组使用 `mhs_sparse_index_t = int32_t`，buffer count 保留 `size_t`。Python 对应 `np.uint32`、`np.int32`。
+
+这次变更调整了 C++ ID 布局和 C ABI 的拓扑数组元素宽度。C/C++ 消费者需要重新编译；外部网格的 owner/neighbor 数组改为 `uint32_t`，外边界 neighbor 使用 `MHS_INVALID_INDEX`。Python 输入仍接受有符号 `-1`，会转换为 `UINT32_MAX`；超范围整数在转换前拒绝。

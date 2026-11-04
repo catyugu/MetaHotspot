@@ -46,7 +46,7 @@ class CellGeometry:
         sign = -1 if int(face) % 2 == 0 else 1
         f = self.fields
         ids = np.flatnonzero(
-            (f.face_neighbor == np.iinfo(np.uintp).max)
+            (f.face_neighbor == np.iinfo(np.uint32).max)
             & (f.face_axis == axis)
             & (f.face_sign == sign)
         )

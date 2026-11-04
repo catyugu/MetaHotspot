@@ -16,7 +16,7 @@ namespace mhs::solver {
         {
             const auto p = model.discrete.cells[cell.value].center();
             const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
-            const auto& m = model.material_table[model.cell_material[cell.value]];
+            const auto& m = model.material_table[model.cell_material[cell.value].value];
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
@@ -75,7 +75,7 @@ namespace mhs::solver {
                 if (!f.neighbor.valid()) {
                     for (const auto& term : boundary_faces_on(model, id)) {
                         const auto patch = f.project(term.bounds);
-                        const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], patch,
+                        const auto trace = evaluate_boundary(model.boundary_conditions[term.condition.value], patch,
                             temperature[cell.value], k[patch.axis], time);
                         gradient[f.axis] += f.sign * patch.area * trace.temperature;
                     }
@@ -181,7 +181,7 @@ namespace mhs::solver {
                 const auto patch = f.project(term.bounds);
                 if (!patch.contains(p))
                     continue;
-                const auto& condition = model.boundary_conditions[term.condition];
+                const auto& condition = model.boundary_conditions[term.condition.value];
                 const double trace = evaluate_boundary(
                     condition, patch, cell_temperature, conductivity(model, temperature, cell, time, patch.axis), time)
                                          .temperature;

@@ -73,7 +73,7 @@ namespace mhs::compiler {
             return out;
         }
 
-        mhs::model::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
+        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions,
             const std::function<std::string(const std::string&)>& rewriter, const mhs::expression::SymbolTable& symbols)
         {
@@ -99,7 +99,7 @@ namespace mhs::compiler {
                     },
                 },
                 condition);
-            const auto index = static_cast<TableIndex>(conditions.size());
+            const auto index = BoundaryConditionId {conditions.size()};
             conditions.push_back(std::move(result));
             return index;
         }
@@ -195,10 +195,10 @@ namespace mhs::compiler {
                 auto it = name_to_idx.find(bs.material);
                 if (it == name_to_idx.end())
                     throw std::out_of_range("unknown material: " + bs.material);
-                rb.material_id = static_cast<mhs::model::TableIndex>(it->second);
+                rb.material_id = mhs::model::MaterialId {it->second};
 
                 // heat_source_idx: compile the heat source expression, append to table
-                rb.heat_source_idx = static_cast<mhs::model::TableIndex>(model.heat_source_table.size());
+                rb.heat_source_idx = mhs::model::SourceId {model.heat_source_table.size()};
                 std::string heat_source = bs.volumetric_heat_source;
                 const bool names_function = std::any_of(definition.functions.begin(), definition.functions.end(),
                     [&](const mhs::model::NamedFunction& function) { return function.name == heat_source; });

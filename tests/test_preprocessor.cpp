@@ -30,10 +30,10 @@ static const mhs::model::BoundaryFace* find_face_bc(const Model& model, uint32_t
 template <typename Condition> static const Condition* find_condition(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     const auto* term = find_face_bc(model, cell_idx, dir);
-    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition]) : nullptr;
+    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition.value]) : nullptr;
 }
 
-static TableIndex source_id(const Model& model, Index cell)
+static SourceId source_id(const Model& model, std::size_t cell)
 {
     for (const auto& term : model.source_terms)
         if (term.cell.value == cell)
@@ -101,7 +101,7 @@ TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
 
 // Test-only conversion of a supplied Cartesian fixture index to a physical query.
 // Runtime consumers receive neither these indices nor these axes.
-static Index input_cell(const Model& model, const mhs::model::MeshSpec& input, Index flat)
+static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& input, std::size_t flat)
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
@@ -142,11 +142,11 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 
     const auto model = build_model(definition);
 
-    EXPECT_NE(input_cell(model, definition.mesh, 0), mhs::core::invalidIndex)
+    EXPECT_NE(input_cell(model, definition.mesh, 0), CellId::invalid_value)
         << "The initial Add must keep the first cell";
-    EXPECT_EQ(input_cell(model, definition.mesh, 1), mhs::core::invalidIndex)
+    EXPECT_EQ(input_cell(model, definition.mesh, 1), CellId::invalid_value)
         << "The later Subtract must remove the middle cell";
-    EXPECT_NE(input_cell(model, definition.mesh, 2), mhs::core::invalidIndex)
+    EXPECT_NE(input_cell(model, definition.mesh, 2), CellId::invalid_value)
         << "The final Add must restore the last cell";
 }
 
@@ -289,7 +289,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     int nz_bc = (io.mesh.z_vertices.size() - 1);
     int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
     size_t compact = input_cell(model, io.mesh, idx_bc);
-    ASSERT_NE(compact, mhs::core::invalidIndex);
+    ASSERT_NE(compact, CellId::invalid_value);
 
     const auto* condition = find_condition<Dirichlet>(model, (uint32_t)compact, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
@@ -315,7 +315,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     int nz = (io.mesh.z_vertices.size() - 1);
     int idx = 0 * ny * nz + 0 * nz + 0;
     size_t compact = input_cell(model, io.mesh, idx);
-    ASSERT_NE(compact, mhs::core::invalidIndex);
+    ASSERT_NE(compact, CellId::invalid_value);
 
     EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::XM), nullptr);
     EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::YM), nullptr);
@@ -325,7 +325,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // XM, YM, ZM are interior -> no boundary term
     int idx_inner = 1 * ny * nz + 1 * nz + 1;
     size_t compact_inner = input_cell(model, io.mesh, idx_inner);
-    ASSERT_NE(compact_inner, mhs::core::invalidIndex);
+    ASSERT_NE(compact_inner, CellId::invalid_value);
 
     EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::XM), nullptr);
     EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::YM), nullptr);
@@ -448,15 +448,15 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     int idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalidIndex);
+    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), CellId::invalid_value);
     int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
-    EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
+    EXPECT_DOUBLE_EQ(model.material_table[overlap_material.value].kx.eval(ctx), 130.0)
         << "Overlapping cell must get material from the later block";
-    EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source].eval(ctx), 1e7)
+    EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source.value].eval(ctx), 1e7)
         << "Overlapping cell must get heat source from the same later block";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
@@ -464,9 +464,9 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     int c_only_block1 = (int)input_cell(model, io.mesh, idx_only_block1);
     const auto background_material = model.cell_material[c_only_block1];
     const auto background_heat_source = source_id(model, c_only_block1);
-    EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
+    EXPECT_DOUBLE_EQ(model.material_table[background_material.value].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";
-    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 0.0)
+    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source.value].eval(ctx), 0.0)
         << "Cell outside the overlap must retain the earlier block heat source";
 }
 
@@ -486,7 +486,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
 
     const auto model = build_model(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
-    ASSERT_NE(cell, mhs::core::invalidIndex);
+    ASSERT_NE(cell, CellId::invalid_value);
     const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
     const mhs::expression::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
