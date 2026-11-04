@@ -7,13 +7,7 @@
 
 namespace mhs::core {
     namespace detail {
-        inline std::pmr::memory_resource* vector_resource()
-        {
-            // Thread-safe reuse for small/medium buffers. Larger allocations go
-            // upstream rather than remaining in the pool after a large solve.
-            static std::pmr::synchronized_pool_resource pool({16, 65536});
-            return &pool;
-        }
+        std::pmr::memory_resource* vector_resource();
 
         template <class T> class PoolAllocator {
         public:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/vector.hpp"
+#include "model/types.hpp"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -10,7 +11,6 @@ namespace mhs::model {
 
     using Expression = std::string;
 
-    enum class StudyType : uint8_t { Steady, Transient };
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
     enum class Axis : uint8_t { X, Y, Z };

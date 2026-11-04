@@ -1,15 +1,16 @@
 #include "solver/assembler.hpp"
+#include "core/csr_ops.hpp"
 #include "core/vector.hpp"
-#include "numerics/sparse_ops.hpp"
 #include "thermal_reconstruction.hpp"
 #include <stdexcept>
 #include <type_traits>
 
-namespace mhs::sim {
-    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time)
+namespace mhs::solver {
+    Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
-        using namespace mhs::numerics;
+        using namespace mhs::model;
+        using namespace mhs::expression;
         if (temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
         const auto n = model.discrete.cells.size();
@@ -107,4 +108,4 @@ namespace mhs::sim {
         auto C = build_csr(n, n, std::move(capacity));
         return {std::move(K), std::move(C), std::move(rhs)};
     }
-} // namespace mhs::sim
+} // namespace mhs::solver

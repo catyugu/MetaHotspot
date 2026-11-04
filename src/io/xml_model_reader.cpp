@@ -7,9 +7,9 @@
 #include <string_view>
 #include <utility>
 
-#include "core/model_definition.hpp"
 #include "face_region_parser.hpp"
 #include "io/model_io.hpp"
+#include "model/model_definition.hpp"
 #include "xml_helpers.hpp"
 
 namespace mhs::io {

@@ -5,7 +5,7 @@
 #include <span>
 #include <stdexcept>
 
-namespace mhs::core {
+namespace mhs::solver {
 
     /// Ring-buffer of accepted (state, time) snapshots for BDF-k multi-step schemes.
     ///
@@ -86,4 +86,4 @@ namespace mhs::core {
         std::size_t cap_;
     };
 
-} // namespace mhs::core
+} // namespace mhs::solver

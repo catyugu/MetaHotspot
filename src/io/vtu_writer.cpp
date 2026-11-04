@@ -10,7 +10,7 @@
 
 namespace mhs::io {
 
-    void write_vtu(const std::string& path, const mhs::core::Model& model, std::span<const double> cell_temperature)
+    void write_vtu(const std::string& path, const mhs::model::Model& model, std::span<const double> cell_temperature)
     {
         using namespace tinyxml2;
         if (cell_temperature.size() != model.discrete.cells.size())

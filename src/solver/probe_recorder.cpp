@@ -1,8 +1,8 @@
 #include "solver/probe_recorder.hpp"
 #include "thermal_reconstruction.hpp"
 
-namespace mhs::sim {
-    ProbeRecorder::ProbeRecorder(const mhs::core::Model& model) : model_(model)
+namespace mhs::solver {
+    ProbeRecorder::ProbeRecorder(const mhs::model::Model& model) : model_(model)
     {
         for (const auto& p : model.observation_points) {
             traces_.push_back({p.name, {}});
@@ -19,4 +19,4 @@ namespace mhs::sim {
             traces_[i].values.push_back(sample_point(model_, temperature, time, slot.cell, slot.point));
         }
     }
-} // namespace mhs::sim
+} // namespace mhs::solver

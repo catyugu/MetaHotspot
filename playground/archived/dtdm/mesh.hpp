@@ -1,4 +1,4 @@
-// Builds a mhs::core::Model for the chiplet 2.5D stack at one mesh level.
+// Builds a mhs::model::Model for the chiplet 2.5D stack at one mesh level.
 //
 // The mesh is a graded Cartesian grid whose in-plane lines include every chiplet
 // edge, so a chiplet is always a whole set of cells and the integrated power
@@ -6,7 +6,7 @@
 // equals the paper's Table I unknown count exactly.
 #pragma once
 
-#include "core/model.hpp"
+#include "model/model.hpp"
 #include "stack.hpp"
 
 #include <array>
@@ -16,7 +16,7 @@ namespace mhs::dtdm {
 
     /// A model plus the per-cell bookkeeping the DTDM needs.
     struct StackMesh {
-        mhs::core::Model model;
+        mhs::model::Model model;
         std::array<mhs::core::Vector<double>, 3> axes;
         mhs::core::Vector<mhs::core::Index> cells_of_module[kModuleCount];
         mhs::core::Vector<mhs::core::Vector<mhs::core::Index>> cells_of_layer;

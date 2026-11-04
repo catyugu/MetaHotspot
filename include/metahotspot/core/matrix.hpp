@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 namespace mhs::core {
-    // Contiguous row-major owning matrix; algorithms belong to numerics.
+    // Contiguous row-major owning matrix; storage kernels belong to core.
     template <class T> class Matrix {
     public:
         Matrix() = default;

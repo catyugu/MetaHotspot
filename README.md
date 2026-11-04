@@ -60,7 +60,7 @@ Windows 预构建 SDK 提供 MSVC 和 clang-cl Release 版本，随包携带 TBB
 实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
 两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
-通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
+通过 `<model/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<solver/solver.hpp>` 使用现有接口。
 C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
@@ -86,7 +86,7 @@ CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据�
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
+- 命名空间：`mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver`、`mhs::io` 和 `mhs::logger` 按模块组织。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。

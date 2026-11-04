@@ -1,4 +1,5 @@
 #include "thermal_reconstruction.hpp"
+#include <numeric>
 
 #include <algorithm>
 #include <cmath>
@@ -8,13 +9,13 @@
 #include <tuple>
 #include <type_traits>
 
-namespace mhs::sim {
+namespace mhs::solver {
     namespace {
-        double conductivity(const mhs::core::Model& model, std::span<const double> temperature, mhs::core::CellId cell,
-            double time, int axis)
+        double conductivity(const mhs::model::Model& model, std::span<const double> temperature,
+            mhs::model::CellId cell, double time, int axis)
         {
             const auto p = model.discrete.cells[cell.value].center();
-            const mhs::numerics::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
+            const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell.value], time};
             const auto& m = model.material_table[model.cell_material[cell.value]];
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
@@ -61,10 +62,11 @@ namespace mhs::sim {
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
-        mhs::core::Vec3 reconstruct_cell_gradient(
-            const mhs::core::Model& model, std::span<const double> temperature, double time, mhs::core::CellId cell)
+        mhs::model::Vec3 reconstruct_cell_gradient(
+            const mhs::model::Model& model, std::span<const double> temperature, double time, mhs::model::CellId cell)
         {
             using namespace mhs::core;
+            using namespace mhs::model;
             const Vec3 k {conductivity(model, temperature, cell, time, 0),
                 conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
@@ -91,22 +93,24 @@ namespace mhs::sim {
         }
     } // namespace
 
-    std::span<const mhs::core::BoundaryFace> boundary_faces_on(const mhs::core::Model& model, mhs::core::FaceId parent)
+    std::span<const mhs::model::BoundaryFace> boundary_faces_on(
+        const mhs::model::Model& model, mhs::model::FaceId parent)
     {
         const auto& patches = model.boundary_faces;
         auto first = std::lower_bound(patches.begin(), patches.end(), parent,
-            [](const mhs::core::BoundaryFace& patch, mhs::core::FaceId id) { return patch.parent.value < id.value; });
+            [](const mhs::model::BoundaryFace& patch, mhs::model::FaceId id) { return patch.parent.value < id.value; });
         auto last = first;
         while (last != patches.end() && last->parent == parent)
             ++last;
         return {first, last};
     }
 
-    BoundaryTrace evaluate_boundary(const mhs::core::BoundaryCondition& condition, const mhs::core::FacePatch& face,
+    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::FacePatch& face,
         double cell_temperature, double normal_conductivity, double time)
     {
         using namespace mhs::core;
-        using namespace mhs::numerics;
+        using namespace mhs::model;
+        using namespace mhs::expression;
         const auto p = face.center();
         const double conductive = normal_conductivity * face.area / face.owner_distance;
         auto context = [&](double trace) { return FieldContext {p[0], p[1], p[2], trace, time}; };
@@ -161,8 +165,8 @@ namespace mhs::sim {
             condition);
     }
 
-    std::optional<double> boundary_value_at(const mhs::core::Model& model, std::span<const double> temperature,
-        double time, mhs::core::CellId cell, const mhs::core::Vec3& p)
+    std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
+        double time, mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (!cell.valid())
             return std::nullopt;
@@ -183,7 +187,7 @@ namespace mhs::sim {
                                          .temperature;
                 sum += trace;
                 ++count;
-                if (std::holds_alternative<mhs::core::Dirichlet>(condition)) {
+                if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
                     dirichlet_sum += trace;
                     ++dirichlet_count;
                 }
@@ -196,8 +200,8 @@ namespace mhs::sim {
         return std::nullopt;
     }
 
-    double sample_point(const mhs::core::Model& model, std::span<const double> temperature, double time,
-        mhs::core::CellId cell, const mhs::core::Vec3& p)
+    double sample_point(const mhs::model::Model& model, std::span<const double> temperature, double time,
+        mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (!cell.valid())
             return std::numeric_limits<double>::quiet_NaN();
@@ -209,4 +213,4 @@ namespace mhs::sim {
             + gradient[2] * (p[2] - center[2]);
     }
 
-} // namespace mhs::sim
+} // namespace mhs::solver

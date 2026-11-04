@@ -1,10 +1,10 @@
 #pragma once
 
-#include "core/model.hpp"
-#include "core/solution.hpp"
+#include "model/model.hpp"
+#include "solver/solution.hpp"
 #include <span>
 
-namespace mhs::sim {
+namespace mhs::solver {
 
     /// Flattened user-facing solver configuration.
     /// Defaults are defined here — C API and Python convert from this struct.
@@ -41,7 +41,7 @@ namespace mhs::sim {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::core::Solution solve(
-        const mhs::core::Model& model, std::span<const double> initial_state = {}, const SolveOptions& options = {});
+    mhs::solver::Solution solve(
+        const mhs::model::Model& model, std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
-} // namespace mhs::sim
+} // namespace mhs::solver

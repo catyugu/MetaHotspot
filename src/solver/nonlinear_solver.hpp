@@ -1,13 +1,13 @@
 #pragma once
 
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 #include "solver/linear_system.hpp"
 
 #include "core/vector.hpp"
 #include <functional>
 #include <span>
 
-namespace mhs::sim {
+namespace mhs::solver {
 
     struct NonLinearConfig {
         double underrelaxation = 1.0;
@@ -20,6 +20,6 @@ namespace mhs::sim {
     using LinearSystemProvider = std::function<LinearSystem(std::span<const double>)>;
 
     bool nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::Vector<double>& state,
-        mhs::numerics::SolverPtr& solver, const NonLinearConfig& cfg = {});
+        mhs::linear::SolverPtr& solver, const NonLinearConfig& cfg = {});
 
-} // namespace mhs::sim
+} // namespace mhs::solver

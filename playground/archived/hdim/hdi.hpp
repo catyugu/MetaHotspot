@@ -12,7 +12,7 @@
 #pragma once
 
 #include "model.hpp"
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -42,7 +42,7 @@ namespace mhs::hdim {
     struct LinearHalf {
         int region = kLinearTop;
         RegionSystem system;
-        mhs::numerics::SolverPtr solver;
+        mhs::linear::SolverPtr solver;
         Eigen::VectorXd state; // eq. (4)-(5) with no interface flux
         mhs::core::Vector<int> global_cell; // cells of the region, in system order
 

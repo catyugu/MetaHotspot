@@ -14,7 +14,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 ```
 
-`mhs::core` 不依赖 `mhs::sim`、`mhs::io`、`mhs::post` 或 `mhs::logger`。`mhs::numerics` 的线性代数算法依赖 `core` 基础容器；表达式模块只使用基础容器、不依赖领域模型，以便运行期模型保存编译后表达式。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。命名空间规则和目录归属见 [项目结构](docs/design/project-structure.md)。
+`mhs::core` 是编译后的公共内核，提供容器、内存池与低级 kernel；`model` 保存输入定义和运行期领域数据。依赖为 `model → expression → core`、`linear → core`，compiler/solver 在其上工作。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。
 
 ## 求解约定
 
@@ -55,7 +55,7 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 1. POD 与纯函数优先，不建立多层继承体系。
 2. `mhs` 只作品牌命名空间，不重导出或定义类型。
-3. 公共领域接口使用两层命名空间；内部实现包括 `mhs::sim::fluid` 和 `mhs::sim::time_scheme`。
+3. 公共领域接口使用两层命名空间；内部实现包括 `mhs::compiler::fluid` 和 `mhs::solver::time_scheme`。
 4. 头文件禁止 `using namespace`。
 5. 匿名命名空间用于单文件私有实现。
 6. 外部格式字符串止于 IO；运行期模型不保存 XML 表示。

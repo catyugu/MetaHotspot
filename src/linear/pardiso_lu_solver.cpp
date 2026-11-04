@@ -1,15 +1,15 @@
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 #include <Eigen/PardisoSupport>
 #include <algorithm>
 #include <stdexcept>
 
-namespace mhs::numerics {
+namespace mhs::linear {
     namespace {
-        class PardisoLUSolver final : public LinearSolver {
+        class PardisoLUSolver final : public Solver {
         public:
-            explicit PardisoLUSolver(SolverConfig config) : LinearSolver(config) { }
+            explicit PardisoLUSolver(SolverConfig config) : Solver(config) { }
             void compute(core::CSRMatrixView<double> A) override;
-            LinearSolveResult solve(std::span<const double> b, std::span<double> x) override;
+            SolveResult solve(std::span<const double> b, std::span<double> x) override;
 
         private:
             using Sparse = Eigen::SparseMatrix<double, Eigen::RowMajor>;
@@ -36,7 +36,7 @@ namespace mhs::numerics {
             analyzed_ = solver_.info() == Eigen::Success;
         }
 
-        LinearSolveResult PardisoLUSolver::solve(std::span<const double> b, std::span<double> x)
+        SolveResult PardisoLUSolver::solve(std::span<const double> b, std::span<double> x)
         {
             if (b.size() != static_cast<std::size_t>(A_.rows()) || x.size() != b.size())
                 throw std::invalid_argument("PARDISO solve dimension mismatch");
@@ -53,4 +53,4 @@ namespace mhs::numerics {
     } // namespace
 
     SolverPtr make_pardiso_solver(SolverConfig config) { return std::make_unique<PardisoLUSolver>(config); }
-} // namespace mhs::numerics
+} // namespace mhs::linear

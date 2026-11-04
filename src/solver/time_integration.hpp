@@ -1,16 +1,16 @@
 #pragma once
 
-#include "core/solver.hpp"
 #include "solver/assembler.hpp"
 #include "solver/linear_system.hpp"
 #include "solver/solution_history.hpp"
+#include "solver/solver.hpp"
 
-namespace mhs::sim::time_scheme {
+namespace mhs::solver::time_scheme {
 
     using IntegratorKind = SolveOptions::Integrator;
 
     LinearSystem build_system(
-        IntegratorKind kind, const Operators& ops, const mhs::core::SolutionHistory& history, double dt);
+        IntegratorKind kind, const Operators& ops, const mhs::solver::SolutionHistory& history, double dt);
 
     struct ErrorControlConfig {
         double rel_tol = 1e-4;
@@ -22,7 +22,7 @@ namespace mhs::sim::time_scheme {
         double suggested_factor = 1.0;
     };
 
-    ErrorEstimate estimate_error(const mhs::core::SolutionHistory& accepted, std::span<const double> trial_state,
+    ErrorEstimate estimate_error(const mhs::solver::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config);
 
     using StepStrategy = SolveOptions::StepStrategy;
@@ -45,4 +45,4 @@ namespace mhs::sim::time_scheme {
         double next_output_ = 0.0;
     };
 
-} // namespace mhs::sim::time_scheme
+} // namespace mhs::solver::time_scheme

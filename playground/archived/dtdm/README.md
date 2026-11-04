@@ -19,7 +19,7 @@ example; `REPRODUCTION.md` Section 5.1 says why and what follows from it.
 ```text
 stack.hpp   materials, 11-layer stack, chiplet layouts, the four mesh levels
 mesh.hpp    axis generation and integer DoF search per mesh level
-mesh.cpp    builds the mhs::core::Model and the mhs::sim operators
+mesh.cpp    builds the mhs::model::Model and the mhs::solver operators
 wlp.hpp     Laguerre basis and its derivative identity
 dtdm.hpp    modules, interface patches, the three solution methods
 dtdm.cpp    decomposition, macromodel extraction, marching-on-in-order

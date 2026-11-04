@@ -1,11 +1,12 @@
 #include "compiler/model_compiler.hpp"
-#include "core/model.hpp"
-#include "core/model_definition.hpp"
 #include "core/vector.hpp"
+#include "model/model.hpp"
+#include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include <gtest/gtest.h>
 
-using namespace mhs::sim;
+using namespace mhs::solver;
+using namespace mhs::compiler;
 
 // Helper: build a minimal mhs::model::ModelDefinition for a simple uniform cube
 static mhs::model::ModelDefinition make_simple_cube_io()

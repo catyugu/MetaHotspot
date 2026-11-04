@@ -2,10 +2,10 @@
 
 #include "core/csr_matrix.hpp"
 
-#include "core/model.hpp"
+#include "model/model.hpp"
 #include <span>
 
-namespace mhs::sim {
+namespace mhs::solver {
 
     /// Operators K, C, f of the linearised system: C * dx/dt + K * x = f.
     struct Operators {
@@ -15,6 +15,6 @@ namespace mhs::sim {
     };
 
     /// Assemble thermal operators C * dx/dt + K * x = f.
-    Operators assemble_thermal(const mhs::core::Model& model, std::span<const double> temperature, double time);
+    Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time);
 
-} // namespace mhs::sim
+} // namespace mhs::solver

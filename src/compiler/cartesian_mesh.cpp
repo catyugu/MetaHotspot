@@ -2,13 +2,14 @@
 #include "core/vector.hpp"
 #include <map>
 
-namespace mhs::sim {
+namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
-    void compile_cartesian_mesh(mhs::core::Model& model, const mhs::model::MeshSpec& input, double scale,
+    void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input, double scale,
         const mhs::core::Vector<ResolvedLayerGeometry>& layers)
     {
         using namespace mhs::core;
+        using namespace mhs::model;
         std::array<mhs::core::Vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
         std::array<Index, 3> n {};
         for (int a = 0; a < 3; ++a) {
@@ -75,9 +76,10 @@ namespace mhs::sim {
                 }
         model.discrete.build_incidence();
     }
-    void build_external_output_mesh(mhs::core::Model& model)
+    void build_external_output_mesh(mhs::model::Model& model)
     {
         using namespace mhs::core;
+        using namespace mhs::model;
         std::map<Vec3, Index> vertices;
         constexpr int corners[8][3]
             = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
@@ -95,4 +97,4 @@ namespace mhs::sim {
             model.output.cell_vertices.push_back(ids);
         }
     }
-} // namespace mhs::sim
+} // namespace mhs::compiler

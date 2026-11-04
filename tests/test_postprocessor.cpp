@@ -1,12 +1,13 @@
 #include "compiler/model_compiler.hpp"
-#include "core/model.hpp"
-#include "core/model_definition.hpp"
 #include "core/vector.hpp"
+#include "model/model.hpp"
+#include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
 #include "solver/postprocessor.hpp"
 #include <gtest/gtest.h>
 
-using namespace mhs::sim;
+using namespace mhs::solver;
+using namespace mhs::compiler;
 
 // Helper: build a minimal mhs::model::ModelDefinition with a uniform grid
 static mhs::model::ModelDefinition make_simple_uniform_grid_io()
@@ -61,7 +62,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
         cell_T[i] = 300.0 + i * 10.0; // 300, 310, 320, ...
     }
 
-    auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
 
     // On a uniform 5mm grid, the interior node at (vx=1, vy=1, vz=1)
     // is shared by all 8 cells. The node is at the geometric center
@@ -139,7 +140,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> cell_T(N, 400.0);
 
-    auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
 
     const std::size_t node_ny = model.output.cartesian_shape[1];
     const std::size_t node_nz = model.output.cartesian_shape[2];
@@ -213,11 +214,11 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     int node_idx = 1 * node_ny * node_nz + 1 * node_nz + 0;
 
     // t=0 时刻：500 + 100*0 = 500
-    auto node_T_0 = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T_0 = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
     EXPECT_NEAR(node_T_0[node_idx], 500.0, 1e-6) << "At t=0, time-dependent Dirichlet should evaluate to 500";
 
     // t=10 时刻：500 + 100*10 = 1500
-    auto node_T_10 = mhs::post::interpolate_cell_to_node(model, cell_T, 10.0);
+    auto node_T_10 = mhs::solver::interpolate_cell_to_node(model, cell_T, 10.0);
     EXPECT_NEAR(node_T_10[node_idx], 1500.0, 1e-6) << "At t=10, time-dependent Dirichlet should evaluate to 1500";
 
     // 旧实现下两个时刻结果相等；修复后差异必须严格为 1000

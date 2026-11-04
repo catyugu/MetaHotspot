@@ -1,13 +1,13 @@
 #include "compiler/geometry_compiler.hpp"
-#include "core/constants.hpp"
 #include "core/vector.hpp"
+#include "model/constants.hpp"
 
-#include "numerics/expression/expr.hpp"
+#include "expression/expression.hpp"
 #include <algorithm>
 
-namespace mhs::sim {
+namespace mhs::compiler {
 
-    constexpr double EPS = mhs::core::geometry_eps;
+    constexpr double EPS = mhs::model::geometry_eps;
 
     namespace {
 
@@ -43,7 +43,7 @@ namespace mhs::sim {
     } // anonymous namespace
 
     mhs::core::Vector<ResolvedLayerGeometry> resolve_geometry(const mhs::core::Vector<mhs::model::LayerSpec>& layers,
-        double si_scale, const mhs::numerics::SymbolTable& symbols)
+        double si_scale, const mhs::expression::SymbolTable& symbols)
     {
         mhs::core::Index num_layers = static_cast<mhs::core::Index>(layers.size());
         mhs::core::Vector<ResolvedLayerGeometry> resolved(num_layers);
@@ -55,18 +55,18 @@ namespace mhs::sim {
                 double max_t = 0.0;
                 for (const auto& b : layers[l].blocks) {
                     if (b.thickness.has_value()) {
-                        double t = mhs::numerics::eval_geometry(*b.thickness, symbols) * si_scale;
+                        double t = mhs::expression::eval_geometry(*b.thickness, symbols) * si_scale;
                         if (t > max_t)
                             max_t = t;
                     }
                 }
                 double layer_t = layers[l].thickness.empty()
                     ? 0.0
-                    : mhs::numerics::eval_geometry(layers[l].thickness, symbols) * si_scale;
+                    : mhs::expression::eval_geometry(layers[l].thickness, symbols) * si_scale;
                 thickness[l] = std::max(max_t, layer_t);
             }
             else {
-                thickness[l] = mhs::numerics::eval_geometry(layers[l].thickness, symbols) * si_scale;
+                thickness[l] = mhs::expression::eval_geometry(layers[l].thickness, symbols) * si_scale;
             }
             z_cursor += thickness[l];
         }
@@ -78,16 +78,16 @@ namespace mhs::sim {
 
         for (mhs::core::Index l = 0; l < num_layers; l++) {
             const auto& layer = layers[l];
-            double layer_x_off_si = mhs::numerics::eval_geometry(layer.x_offset, symbols) * si_scale;
-            double layer_y_off_si = mhs::numerics::eval_geometry(layer.y_offset, symbols) * si_scale;
+            double layer_x_off_si = mhs::expression::eval_geometry(layer.x_offset, symbols) * si_scale;
+            double layer_y_off_si = mhs::expression::eval_geometry(layer.y_offset, symbols) * si_scale;
 
             for (const auto& block : layer.blocks) {
                 ResolvedBlock rb;
-                double block_x_off_si = mhs::numerics::eval_geometry(block.x_offset, symbols) * si_scale;
-                double block_y_off_si = mhs::numerics::eval_geometry(block.y_offset, symbols) * si_scale;
+                double block_x_off_si = mhs::expression::eval_geometry(block.x_offset, symbols) * si_scale;
+                double block_y_off_si = mhs::expression::eval_geometry(block.y_offset, symbols) * si_scale;
 
                 if (l == 0 && block.thickness.has_value()) {
-                    double b_thick = mhs::numerics::eval_geometry(*block.thickness, symbols) * si_scale;
+                    double b_thick = mhs::expression::eval_geometry(*block.thickness, symbols) * si_scale;
                     rb.z_start = resolved[l].z_start;
                     rb.z_end = resolved[l].z_start + b_thick;
                 }
@@ -100,10 +100,10 @@ namespace mhs::sim {
                     const auto& rect = operation.rect;
                     ResolvedRect rr;
                     rr.operation = operation.operation;
-                    double x_val = mhs::numerics::eval_geometry(rect.x, symbols);
-                    double y_val = mhs::numerics::eval_geometry(rect.y, symbols);
-                    double w_val = mhs::numerics::eval_geometry(rect.width, symbols);
-                    double h_val = mhs::numerics::eval_geometry(rect.height, symbols);
+                    double x_val = mhs::expression::eval_geometry(rect.x, symbols);
+                    double y_val = mhs::expression::eval_geometry(rect.y, symbols);
+                    double w_val = mhs::expression::eval_geometry(rect.width, symbols);
+                    double h_val = mhs::expression::eval_geometry(rect.height, symbols);
                     if (w_val < 0) {
                         x_val += w_val;
                         w_val = -w_val;
@@ -125,7 +125,7 @@ namespace mhs::sim {
     }
 
     std::pair<mhs::core::Index, mhs::core::Index> classify_point(
-        const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& p)
+        const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::model::Vec3& p)
     {
         for (mhs::core::Index l = 0; l < layers.size(); ++l) {
             if (p[2] < layers[l].z_start - EPS || p[2] > layers[l].z_end + EPS)
@@ -137,9 +137,10 @@ namespace mhs::sim {
         return {mhs::core::invalidIndex, mhs::core::invalidIndex};
     }
 
-    void project_cell_regions(mhs::core::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers)
+    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers)
     {
         using namespace mhs::core;
+        using namespace mhs::model;
         model.cell_material.clear();
         model.source_terms.clear();
         constexpr TableIndex invalid_table = std::numeric_limits<TableIndex>::max();
@@ -193,10 +194,11 @@ namespace mhs::sim {
         }
     }
 
-    mhs::core::Vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
-        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
+    mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
+        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::model::TableIndex fallback)
     {
         using namespace mhs::core;
+        using namespace mhs::model;
         mhs::core::Vector<BoundaryFace> faces;
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
@@ -244,4 +246,4 @@ namespace mhs::sim {
         return faces;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::compiler

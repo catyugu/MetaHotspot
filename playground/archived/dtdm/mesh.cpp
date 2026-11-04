@@ -317,13 +317,13 @@ namespace mhs::dtdm {
             material_of_layer[l] = static_cast<int>(it - materials.begin());
         }
         for (const auto& m : materials) {
-            mhs::core::MaterialProps props;
+            mhs::model::MaterialProps props;
             // rho * c is what the assembler multiplies by the volume
-            props.kx = mhs::numerics::CompiledExpression::make_constant(m.k);
+            props.kx = mhs::expression::CompiledExpression::make_constant(m.k);
             props.ky = props.kx;
             props.kz = props.kx;
-            props.rho = mhs::numerics::CompiledExpression::make_constant(m.rho_c);
-            props.c = mhs::numerics::CompiledExpression::make_constant(1.0);
+            props.rho = mhs::expression::CompiledExpression::make_constant(m.rho_c);
+            props.c = mhs::expression::CompiledExpression::make_constant(1.0);
             out.model.material_table.push_back(std::move(props));
         }
         out.model.cell_material.assign(mesh.cells.size(), 0);
@@ -331,13 +331,13 @@ namespace mhs::dtdm {
             for (long id : index[l])
                 if (id >= 0)
                     out.model.cell_material[static_cast<std::size_t>(id)]
-                        = static_cast<mhs::core::TableIndex>(material_of_layer[l]);
+                        = static_cast<mhs::model::TableIndex>(material_of_layer[l]);
 
         // heat sources: one per chiplet, constant volumetric density
         out.model.heat_source_table.clear();
         for (const auto& c : spec.chiplets) {
             const double volume = c.width * c.height * kStack[3].thickness;
-            out.model.heat_source_table.push_back(mhs::numerics::CompiledExpression::make_constant(c.power / volume));
+            out.model.heat_source_table.push_back(mhs::expression::CompiledExpression::make_constant(c.power / volume));
         }
         out.total_power = 0.0;
         for (std::size_t ci = 0; ci < spec.chiplets.size(); ++ci) {
@@ -350,7 +350,7 @@ namespace mhs::dtdm {
                         continue;
                     const double volume = mesh.cells[static_cast<std::size_t>(id)].volume();
                     out.model.source_terms.push_back(
-                        {{static_cast<mhs::core::Index>(id)}, static_cast<mhs::core::TableIndex>(ci), volume, centre});
+                        {{static_cast<mhs::core::Index>(id)}, static_cast<mhs::model::TableIndex>(ci), volume, centre});
                     out.total_power += density * volume;
                 }
         }
@@ -359,9 +359,9 @@ namespace mhs::dtdm {
         // one per exterior side
         auto& faces = mesh.faces;
         auto emit = [&](long owner, long neighbor, int axis, int side) {
-            mhs::core::FacePatch f;
+            mhs::model::FacePatch f;
             f.owner = {static_cast<mhs::core::Index>(owner)};
-            f.neighbor = mhs::core::CellId {};
+            f.neighbor = mhs::model::CellId {};
             if (neighbor >= 0)
                 f.neighbor.value = static_cast<mhs::core::Index>(neighbor);
             f.axis = axis;
@@ -446,10 +446,10 @@ namespace mhs::dtdm {
         // the initial temperature, so its contribution to the right-hand side is
         // zero and the WLP expansion sees a homogeneous initial value problem
         out.model.boundary_conditions.push_back(
-            mhs::core::Convection {mhs::numerics::CompiledExpression::make_constant(kHeatSinkH),
-                mhs::numerics::CompiledExpression::make_constant(0.0)});
-        out.model.boundary_conditions.push_back(mhs::core::Convection {
-            mhs::numerics::CompiledExpression::make_constant(kPcbH), mhs::numerics::CompiledExpression::make_constant(0.0)});
+            mhs::model::Convection {mhs::expression::CompiledExpression::make_constant(kHeatSinkH),
+                mhs::expression::CompiledExpression::make_constant(0.0)});
+        out.model.boundary_conditions.push_back(mhs::model::Convection {
+            mhs::expression::CompiledExpression::make_constant(kPcbH), mhs::expression::CompiledExpression::make_constant(0.0)});
 
         auto add_boundary_face = [&](long face_id, std::size_t condition) {
             const auto& f = faces[static_cast<std::size_t>(face_id)];
@@ -457,19 +457,19 @@ namespace mhs::dtdm {
             const int a = axis == 0 ? 1 : 0;
             const int b = axis == 2 ? 1 : 2;
             out.model.boundary_faces.push_back({{static_cast<mhs::core::Index>(face_id)},
-                static_cast<mhs::core::TableIndex>(condition), {f.min[a], f.max[a], f.min[b], f.max[b]}});
+                static_cast<mhs::model::TableIndex>(condition), {f.min[a], f.max[a], f.min[b], f.max[b]}});
         };
         for (long id : sink_top_faces)
             add_boundary_face(id, 0);
         for (long id : pcb_bottom_faces)
             add_boundary_face(id, 1);
         std::sort(out.model.boundary_faces.begin(), out.model.boundary_faces.end(),
-            [](const mhs::core::BoundaryFace& l, const mhs::core::BoundaryFace& r) {
+            [](const mhs::model::BoundaryFace& l, const mhs::model::BoundaryFace& r) {
                 return l.parent.value < r.parent.value;
             });
 
         out.model.initial_temperature = kAmbient;
-        out.model.study_type = mhs::core::StudyType::Transient;
+        out.model.study_type = mhs::model::StudyType::Transient;
         return out;
     }
 

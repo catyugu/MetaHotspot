@@ -1,7 +1,7 @@
 #include "core/vector.hpp"
 #include "hdi.hpp"
 
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -12,11 +12,11 @@ namespace mhs::hdim {
 
     namespace {
 
-        mhs::numerics::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
+        mhs::linear::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
         {
-            mhs::numerics::SolverSpec spec;
+            mhs::linear::SolverSpec spec;
             spec.config.tolerance = tolerance;
-            auto solver = mhs::numerics::create_solver(spec);
+            auto solver = mhs::linear::create_solver(spec);
             solver->compute(matrix);
             return solver;
         }

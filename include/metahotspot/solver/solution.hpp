@@ -3,7 +3,7 @@
 #include "core/vector.hpp"
 #include <string>
 
-namespace mhs::core {
+namespace mhs::solver {
 
     // Values follow Solution::snapshot_times; all probes share that timeline.
     struct ProbeTrace {
@@ -24,4 +24,4 @@ namespace mhs::core {
         mhs::core::Vector<double> snapshot_states;
     };
 
-} // namespace mhs::core
+} // namespace mhs::solver

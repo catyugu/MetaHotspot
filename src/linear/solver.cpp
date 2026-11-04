@@ -1,7 +1,7 @@
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 #include <stdexcept>
 
-namespace mhs::numerics {
+namespace mhs::linear {
     SolverPtr make_amg_solver(SolverConfig config);
 #ifdef MHS_ENABLE_PARDISO
     SolverPtr make_pardiso_solver(SolverConfig config);
@@ -23,4 +23,4 @@ namespace mhs::numerics {
             throw std::invalid_argument("create_solver: unknown solver type");
         }
     }
-} // namespace mhs::numerics
+} // namespace mhs::linear

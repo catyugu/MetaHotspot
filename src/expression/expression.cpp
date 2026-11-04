@@ -1,5 +1,5 @@
 // muparser-backed expression implementation
-#include "numerics/expression/expr.hpp"
+#include "expression/expression.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
 #include "core/vector.hpp"
@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace mhs::numerics {
+namespace mhs::expression {
 
     // Bridge state carried alongside every native function registration.
     // muparser hands us a void* to this struct on every native call.
@@ -198,4 +198,4 @@ namespace mhs::numerics {
         }
     }
 
-} // namespace mhs::numerics
+} // namespace mhs::expression

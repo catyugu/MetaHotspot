@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/discrete_mesh.hpp"
 #include "core/vector.hpp"
+#include "model/discrete_mesh.hpp"
 
-namespace mhs::core {
+namespace mhs::model {
     // Presentation-only connectivity. Cartesian XML sampling shape belongs here,
     // never in the thermal topology or the algebraic state space.
     struct OutputMesh {
@@ -11,4 +11,4 @@ namespace mhs::core {
         mhs::core::Vector<std::array<Index, 8>> cell_vertices;
         std::array<Index, 3> cartesian_shape {};
     };
-} // namespace mhs::core
+} // namespace mhs::model

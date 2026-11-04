@@ -1,19 +1,18 @@
-#pragma once
-
+#include "core/vector_ops.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <span>
 
-namespace mhs::numerics {
-    inline double norm_inf(std::span<const double> x)
+namespace mhs::core {
+    double norm_inf(std::span<const double> x)
     {
         double result = 0;
         for (double v : x)
             result = std::max(result, std::abs(v));
         return result;
     }
-    inline double distance_inf(std::span<const double> x, std::span<const double> y)
+
+    double distance_inf(std::span<const double> x, std::span<const double> y)
     {
         assert(x.size() == y.size());
         double result = 0;
@@ -21,8 +20,9 @@ namespace mhs::numerics {
             result = std::max(result, std::abs(x[i] - y[i]));
         return result;
     }
-    inline bool all_finite(std::span<const double> x)
+
+    bool all_finite(std::span<const double> x)
     {
         return std::all_of(x.begin(), x.end(), [](double v) { return std::isfinite(v); });
     }
-} // namespace mhs::numerics
+} // namespace mhs::core

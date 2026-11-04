@@ -1,11 +1,12 @@
 #include "compiler/model_compiler.hpp"
-#include "core/model_definition.hpp"
+#include "expression/expression.hpp"
+#include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "numerics/expression/expr.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
-using namespace mhs::sim;
+using namespace mhs::model;
+using namespace mhs::compiler;
 
 enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
@@ -13,7 +14,7 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 /// Find a boundary integration face on `cell_idx` with direction `dir`.
 /// Returns nullptr for an internal face without a boundary face.
-static const mhs::core::BoundaryFace* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+static const mhs::model::BoundaryFace* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
@@ -450,7 +451,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalidIndex);
     int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
 
-    const mhs::numerics::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
+    const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
@@ -488,7 +489,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     ASSERT_NE(cell, mhs::core::invalidIndex);
     const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
-    const mhs::numerics::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
+    const mhs::expression::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
     EXPECT_DOUBLE_EQ(condition->coefficient.eval(ctx), 42.0);
     EXPECT_DOUBLE_EQ(condition->ambient_temperature.eval(ctx), 280.0);
 }

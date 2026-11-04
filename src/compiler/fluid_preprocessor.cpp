@@ -1,19 +1,20 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
+#include "core/csr_ops.hpp"
 #include "core/vector.hpp"
-#include "numerics/linear/linear_solver.hpp"
-#include "numerics/sparse_ops.hpp"
+#include "linear/solver.hpp"
 #include <algorithm>
 #include <limits>
 #include <numeric>
 #include <type_traits>
 
-namespace mhs::sim::fluid {
-    void build_domain(mhs::core::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
+namespace mhs::compiler::fluid {
+    void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
         double scale, const FluidMaterialData& materials)
     {
         using namespace mhs::core;
+        using namespace mhs::model;
         auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
         fluid = {};
@@ -145,8 +146,8 @@ namespace mhs::sim::fluid {
                 entries.emplace_back(i, j, -conductance[id]);
                 entries.emplace_back(j, i, -conductance[id]);
             }
-        auto matrix = mhs::numerics::build_csr(n, n, std::move(entries));
-        auto solver = mhs::numerics::create_solver();
+        auto matrix = mhs::core::build_csr(n, n, std::move(entries));
+        auto solver = mhs::linear::create_solver();
         solver->compute(matrix.view());
         mhs::core::Vector<double> pressure(n, 0.0);
         const auto result = solver->solve(rhs, pressure);

@@ -15,8 +15,8 @@ def check_sdk(prefix, build, config, generator):
     for header in headers.rglob("*.hpp"):
         if "Eigen" in header.read_text(encoding="utf-8"):
             raise RuntimeError(f"Eigen leaked into public header: {header}")
-    linear_headers = {p.name for p in (headers / "numerics/linear").glob("*.hpp")}
-    if linear_headers != {"linear_solver.hpp"}:
+    linear_headers = {p.name for p in (headers / "linear").glob("*.hpp")}
+    if linear_headers != {"solver.hpp"}:
         raise RuntimeError(
             f"Unexpected public linear backend headers: {linear_headers}"
         )
@@ -34,15 +34,15 @@ def check_sdk(prefix, build, config, generator):
         encoding="utf-8",
     )
     (consumer / "main.cpp").write_text(
-        '#include "core/solver.hpp"\n'
+        '#include "solver/solver.hpp"\n'
         '#include "core/matrix.hpp"\n'
-        '#include "numerics/linear/linear_solver.hpp"\n'
+        '#include "linear/solver.hpp"\n'
         "int main() {\n"
         "  mhs::core::CSRMatrix<double> a(1, 1, {0, 1}, {0}, {2.0});\n"
         "  mhs::core::Matrix<double> dense(1, 1);\n"
         "  dense(0, 0) = a.coeff(0, 0);\n"
         "  mhs::core::Vector<double> b{6.0}, x{0.0};\n"
-        "  auto solver = mhs::numerics::create_solver();\n"
+        "  auto solver = mhs::linear::create_solver();\n"
         "  solver->compute(a.view());\n"
         "  return solver->solve(b, x).success ? 0 : 1;\n"
         "}\n",

@@ -13,10 +13,10 @@ Cases include both steady and transient studies. Both use the same nonlinear ite
 The whole system is designed for transient simulation. Steady state is a single nonlinear solve at `t = 0`.
 
 - `solve_system()` branches on an explicit `Study`:
-    - `Steady` — skip the time loop and call `mhs::sim::nonlinear_solve()` once with the required explicit initial state. The public `solve()` entry point supplies a uniform `initial_temperature` vector when the caller omits it.
+    - `Steady` — skip the time loop and call `mhs::solver::nonlinear_solve()` once with the required explicit initial state. The public `solve()` entry point supplies a uniform `initial_temperature` vector when the caller omits it.
     - `Transient` — step from `t = 0` up to `transient_duration`. Each step calls `nonlinear_solve`; each nonlinear iteration runs `assemble → build_system`. Adaptive stepping estimates error after nonlinear convergence; Fixed stepping accepts the converged step directly. On acceptance, `accepted.accept(state, current_time + dt)` records the new state and `current_time += dt` advances time.
 - Time stepping composes three orthogonal pieces:
-    - `mhs::sim::time_scheme::StepController` (strategy: Adaptive / Fixed) drives output-time alignment and step sizing. Both strategies shorten a step at output/final boundaries, even below the nominal `min_dt`, so observers only receive states actually solved at those times.
+    - `mhs::solver::time_scheme::StepController` (strategy: Adaptive / Fixed) drives output-time alignment and step sizing. Both strategies shorten a step at output/final boundaries, even below the nominal `min_dt`, so observers only receive states actually solved at those times.
     - `time_scheme::build_system(kind, …)` is a pure function that injects the BDF1/BDF2 stencil on top of an `Operators`.
     - `time_scheme::estimate_error(…)` is a pure function that estimates error from successive state differences and returns a bounded square-root step-size factor.
 - Nonlinear iteration lives inside each step. The fixed-point iteration in `nonlinear_solve` uses Anderson acceleration with a divergence guard and warm-up; on guard trip it falls back to a damped Picard step.

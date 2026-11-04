@@ -1,15 +1,15 @@
 #include "solver/nonlinear_solver.hpp"
 
+#include "core/csr_ops.hpp"
 #include "core/matrix.hpp"
+#include "core/vector_ops.hpp"
 #include "logging/logger.hpp"
-#include "numerics/sparse_ops.hpp"
-#include "numerics/vector_ops.hpp"
 #include <Eigen/QR>
 #include <deque>
 #include <numeric>
 #include <optional>
 
-namespace mhs::sim {
+namespace mhs::solver {
     namespace {
         using core::Vector;
         struct AndersonMixer {
@@ -60,8 +60,8 @@ namespace mhs::sim {
                         proposal[k] += alpha[j] * G_hist[j][k];
                 }
                 if (max_growth > 0.0) {
-                    const double naive_norm = numerics::distance_inf(G_k, x_k);
-                    if (naive_norm > 0.0 && numerics::distance_inf(proposal, x_k) > max_growth * naive_norm) {
+                    const double naive_norm = core::distance_inf(G_k, x_k);
+                    if (naive_norm > 0.0 && core::distance_inf(proposal, x_k) > max_growth * naive_norm) {
                         if (reset_on_growth) {
                             G_hist.clear();
                             f_hist.clear();
@@ -88,7 +88,7 @@ namespace mhs::sim {
         };
     }
 
-    bool nonlinear_solve(LinearSystemProvider ls_provider, core::Vector<double>& state, numerics::SolverPtr& solver,
+    bool nonlinear_solve(LinearSystemProvider ls_provider, core::Vector<double>& state, linear::SolverPtr& solver,
         const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
@@ -98,9 +98,9 @@ namespace mhs::sim {
         core::Vector<double> residual(state.size()), next(state.size());
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
             auto system = ls_provider(state);
-            numerics::spmv(system.A.view(), state, residual);
-            const double max_residual = numerics::distance_inf(system.b, residual);
-            const double residual_threshold = rel_tol * numerics::norm_inf(system.b) + abs_tol;
+            core::spmv(system.A.view(), state, residual);
+            const double max_residual = core::distance_inf(system.b, residual);
+            const double residual_threshold = rel_tol * core::norm_inf(system.b) + abs_tol;
             if (iter > 0 && max_residual <= residual_threshold)
                 return true;
             solver->compute(system.A.view());
@@ -108,14 +108,14 @@ namespace mhs::sim {
             if (!result.success)
                 throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
             auto proposal = mixer.step(state, G_k);
-            const bool use_aa = proposal.has_value() && numerics::all_finite(*proposal);
+            const bool use_aa = proposal.has_value() && core::all_finite(*proposal);
             if (use_aa)
                 next = std::move(*proposal);
             else
                 for (std::size_t i = 0; i < next.size(); ++i)
                     next[i] = state[i] + omega * (G_k[i] - state[i]);
-            const double max_update = numerics::distance_inf(next, state);
-            const double update_threshold = rel_tol * numerics::norm_inf(next) + abs_tol;
+            const double max_update = core::distance_inf(next, state);
+            const double update_threshold = rel_tol * core::norm_inf(next) + abs_tol;
             mixer.push(state, G_k);
             state.swap(next);
             MHS_LOG_DEBUG("\t->Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e} ({}AA)", iter,
@@ -125,4 +125,4 @@ namespace mhs::sim {
         }
         return false;
     }
-} // namespace mhs::sim
+} // namespace mhs::solver

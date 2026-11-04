@@ -1,10 +1,7 @@
-#pragma once
+#include "core/csr_ops.hpp"
 
-#include "core/csr_matrix.hpp"
-
-namespace mhs::numerics {
-    inline core::CSRMatrix<double> build_csr(
-        std::size_t rows, std::size_t cols, core::Vector<core::Triplet<double>> entries)
+namespace mhs::core {
+    core::CSRMatrix<double> build_csr(std::size_t rows, std::size_t cols, core::Vector<core::Triplet<double>> entries)
     {
         core::detail::checked_sparse_size(rows);
         core::detail::checked_sparse_size(cols);
@@ -49,9 +46,7 @@ namespace mhs::numerics {
         return {rows, cols, std::move(ptr), std::move(col), std::move(val)};
     }
 
-    // y = alpha A x + beta y. x and y must not overlap.
-    inline void spmv(core::CSRMatrixView<double> a, std::span<const double> x, std::span<double> y, double alpha = 1.0,
-        double beta = 0.0)
+    void spmv(core::CSRMatrixView<double> a, std::span<const double> x, std::span<double> y, double alpha, double beta)
     {
         if (x.size() != a.cols || y.size() != a.rows)
             throw std::invalid_argument("spmv dimension mismatch");
@@ -63,8 +58,7 @@ namespace mhs::numerics {
         }
     }
 
-    inline core::CSRMatrix<double> add_scaled(
-        const core::CSRMatrix<double>& a, double alpha, const core::CSRMatrix<double>& b)
+    core::CSRMatrix<double> add_scaled(const core::CSRMatrix<double>& a, double alpha, const core::CSRMatrix<double>& b)
     {
         if (a.rows() != b.rows() || a.cols() != b.cols())
             throw std::invalid_argument("CSR sum dimension mismatch");
@@ -93,5 +87,4 @@ namespace mhs::numerics {
         }
         return {a.rows(), a.cols(), std::move(ptr), std::move(col), std::move(val)};
     }
-
-} // namespace mhs::numerics
+} // namespace mhs::core

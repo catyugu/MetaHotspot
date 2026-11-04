@@ -1,4 +1,4 @@
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 #include <amgcl/adapter/crs_tuple.hpp>
 #include <amgcl/amg.hpp>
 #include <amgcl/backend/builtin.hpp>
@@ -21,7 +21,7 @@ namespace amgcl::backend {
     template <class T, std::size_t Extent> struct is_builtin_vector<std::span<T, Extent>> : std::is_arithmetic<T> { };
 }
 
-namespace mhs::numerics {
+namespace mhs::linear {
 
     namespace {
 
@@ -82,11 +82,11 @@ namespace mhs::numerics {
             return std::sqrt(asym2) <= tolerance * std::sqrt(scale2) + 1e-300;
         }
 
-        class AmgSolver final : public LinearSolver {
+        class AmgSolver final : public Solver {
         public:
-            explicit AmgSolver(SolverConfig config) : LinearSolver(config) { }
+            explicit AmgSolver(SolverConfig config) : Solver(config) { }
             void compute(core::CSRMatrixView<double> A) override;
-            LinearSolveResult solve(std::span<const double> b, std::span<double> x) override;
+            SolveResult solve(std::span<const double> b, std::span<double> x) override;
 
         private:
             bool symmetric_ = true;
@@ -133,7 +133,7 @@ namespace mhs::numerics {
             }
         }
 
-        LinearSolveResult AmgSolver::solve(std::span<const double> b, std::span<double> x)
+        SolveResult AmgSolver::solve(std::span<const double> b, std::span<double> x)
         {
             const bool have_solver = symmetric_ ? static_cast<bool>(cg_) : static_cast<bool>(gmres_);
             if (!have_solver) {
@@ -166,4 +166,4 @@ namespace mhs::numerics {
     } // namespace
 
     SolverPtr make_amg_solver(SolverConfig config) { return std::make_unique<AmgSolver>(config); }
-} // namespace mhs::numerics
+} // namespace mhs::linear
