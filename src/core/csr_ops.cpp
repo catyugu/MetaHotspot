@@ -3,6 +3,35 @@
 #include <tbb/parallel_for.h>
 
 namespace mhs::core {
+    CSRPattern::CSRPattern(std::size_t rows, std::size_t cols)
+        : rows_(detail::checked_sparse_size(rows)), cols_(detail::checked_sparse_size(cols)), row_ptr_(rows + 1, 0)
+    {
+    }
+
+    CSRPattern::CSRPattern(std::size_t rows, std::size_t cols, Vector<SparseIndex> row_ptr, Vector<SparseIndex> col_idx)
+        : rows_(detail::checked_sparse_size(rows))
+        , cols_(detail::checked_sparse_size(cols))
+        , row_ptr_(std::move(row_ptr))
+        , col_idx_(std::move(col_idx))
+    {
+        detail::checked_sparse_size(col_idx_.size());
+        if (row_ptr_.size() != rows + 1 || row_ptr_.front() != 0
+            || row_ptr_.back() != static_cast<SparseIndex>(col_idx_.size()))
+            throw std::invalid_argument("Invalid CSR arrays");
+        for (std::size_t i = 0; i < rows; ++i) {
+            const auto first = row_ptr_[i], last = row_ptr_[i + 1];
+            if (first < 0 || last < first || static_cast<std::size_t>(last) > col_idx_.size())
+                throw std::invalid_argument("Invalid CSR row pointers");
+            SparseIndex previous = -1;
+            for (auto k = first; k < last; ++k) {
+                const auto col = col_idx_[k];
+                if (col <= previous || static_cast<std::size_t>(col) >= cols)
+                    throw std::invalid_argument("CSR columns must be sorted, unique and in range");
+                previous = col;
+            }
+        }
+    }
+
     core::CSRMatrix<double> build_csr(std::size_t rows, std::size_t cols, core::Vector<core::Triplet<double>> entries)
     {
         core::detail::checked_sparse_size(rows);
@@ -60,7 +89,9 @@ namespace mhs::core {
                         val[ptr[i] + k] = entry.value;
                     }
             });
-            return {CSRMatrix<double>::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col), std::move(val)};
+            return {std::shared_ptr<const CSRPattern>(
+                        new CSRPattern(CSRPattern::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col))),
+                std::move(val)};
         }
         core::Vector<core::SparseIndex> ptr(rows + 1, 0), col;
         core::Vector<double> val;
@@ -80,7 +111,9 @@ namespace mhs::core {
             }
             ptr[i + 1] = static_cast<core::SparseIndex>(val.size());
         }
-        return {CSRMatrix<double>::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col), std::move(val)};
+        return {std::shared_ptr<const CSRPattern>(
+                    new CSRPattern(CSRPattern::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col))),
+            std::move(val)};
     }
 
     void spmv(core::CSRMatrixView<double> a, std::span<const double> x, std::span<double> y, double alpha, double beta)
@@ -99,6 +132,12 @@ namespace mhs::core {
     {
         if (a.rows() != b.rows() || a.cols() != b.cols())
             throw std::invalid_argument("CSR sum dimension mismatch");
+        if (a.shared_pattern() == b.shared_pattern()) {
+            CSRMatrix<double> result(a.shared_pattern());
+            for (std::size_t k = 0; k < result.nnz(); ++k)
+                result.values()[k] = a.values()[k] + alpha * b.values()[k];
+            return result;
+        }
         core::Vector<core::SparseIndex> ptr(a.rows() + 1, 0), col;
         core::Vector<double> val;
         col.reserve(a.nnz() + b.nnz());
@@ -122,6 +161,35 @@ namespace mhs::core {
             }
             ptr[i + 1] = static_cast<core::SparseIndex>(core::detail::checked_sparse_size(val.size()));
         }
-        return {CSRMatrix<double>::CanonicalTag {}, a.rows(), a.cols(), std::move(ptr), std::move(col), std::move(val)};
+        if (col.size() == a.nnz())
+            return {a.shared_pattern(), std::move(val)};
+        if (col.size() == b.nnz())
+            return {b.shared_pattern(), std::move(val)};
+        return {std::shared_ptr<const CSRPattern>(
+                    new CSRPattern(CSRPattern::CanonicalTag {}, a.rows(), a.cols(), std::move(ptr), std::move(col))),
+            std::move(val)};
+    }
+    void add_scaled_into(
+        const CSRMatrix<double>& a, double alpha, const CSRMatrix<double>& b, CSRMatrix<double>& result)
+    {
+        if (a.rows() != b.rows() || a.cols() != b.cols() || result.rows() != a.rows() || result.cols() != a.cols())
+            throw std::invalid_argument("CSR sum dimension mismatch");
+        const auto av = a.view(), bv = b.view(), out = result.view();
+        auto values = result.values();
+        for (std::size_t i = 0; i < out.rows; ++i) {
+            auto ka = av.row_ptr[i], kb = bv.row_ptr[i];
+            const auto ea = av.row_ptr[i + 1], eb = bv.row_ptr[i + 1];
+            for (auto k = out.row_ptr[i]; k < out.row_ptr[i + 1]; ++k) {
+                const auto col = out.col_idx[k];
+                double value = 0.0;
+                if (ka < ea && av.col_idx[ka] == col)
+                    value += av.values[ka++];
+                if (kb < eb && bv.col_idx[kb] == col)
+                    value += alpha * bv.values[kb++];
+                values[k] = value;
+            }
+            if (ka != ea || kb != eb)
+                throw std::invalid_argument("CSR output pattern does not contain input patterns");
+        }
     }
 } // namespace mhs::core

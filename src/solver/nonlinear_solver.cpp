@@ -98,12 +98,12 @@ namespace mhs::solver {
         core::Vector<double> residual(state.size()), next(state.size());
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
             auto system = ls_provider(state);
-            core::spmv(system.A.view(), state, residual);
+            core::spmv(system.A, state, residual);
             const double max_residual = core::distance_inf(system.b, residual);
             const double residual_threshold = rel_tol * core::norm_inf(system.b) + abs_tol;
             if (iter > 0 && max_residual <= residual_threshold)
                 return true;
-            solver->compute(system.A.view());
+            solver->compute(system.A);
             const auto result = solver->solve(system.b, G_k);
             if (!result.success)
                 return false;

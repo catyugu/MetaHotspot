@@ -2,25 +2,75 @@
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "thermal_reconstruction.hpp"
+#include <numeric>
 #include <stdexcept>
 #include <type_traits>
 
 namespace mhs::solver {
-    Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time)
+    namespace {
+        std::shared_ptr<const core::CSRPattern> build_thermal_pattern(const model::DiscreteMesh& mesh)
+        {
+            const auto n = mesh.cells.size();
+            core::detail::checked_sparse_size(n);
+            core::Vector<core::SparseIndex> ptr(n + 1, 0), columns, row;
+            for (std::size_t i = 0; i < n; ++i) {
+                row.clear();
+                row.push_back(static_cast<core::SparseIndex>(i));
+                for (const auto id : mesh.incident_faces(static_cast<model::CellId>(i))) {
+                    const auto other = mesh.faces[id].other(static_cast<model::CellId>(i));
+                    if (other != core::invalid_id)
+                        row.push_back(static_cast<core::SparseIndex>(other));
+                }
+                std::sort(row.begin(), row.end());
+                row.erase(std::unique(row.begin(), row.end()), row.end());
+                core::detail::checked_sparse_size(columns.size() + row.size());
+                columns.insert(columns.end(), row.begin(), row.end());
+                ptr[i + 1] = static_cast<core::SparseIndex>(columns.size());
+            }
+            return std::make_shared<const core::CSRPattern>(n, n, std::move(ptr), std::move(columns));
+        }
+        core::CSRMatrix<double> build_capacity(std::size_t n)
+        {
+            core::Vector<core::SparseIndex> ptr(n + 1), columns(n);
+            std::iota(ptr.begin(), ptr.end(), core::SparseIndex {0});
+            std::iota(columns.begin(), columns.end(), core::SparseIndex {0});
+            return {n, n, std::move(ptr), std::move(columns), core::Vector<double>(n)};
+        }
+    }
+
+    ThermalAssembly::ThermalAssembly(const model::Model& model)
+        : operators {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
+              build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
+        , diagonal_positions(operators.K.rows())
+        , conductivity(operators.K.rows())
+        , density(model.fluid.fluid_to_global.size())
+        , specific_heat(density.size())
+    {
+        const auto& A = operators.K;
+        const auto columns = A.col_idx();
+        for (std::size_t i = 0; i < A.rows(); ++i)
+            diagonal_positions[i] = static_cast<core::SparseIndex>(
+                std::lower_bound(columns.begin() + A.row_ptr()[i], columns.begin() + A.row_ptr()[i + 1], i)
+                - columns.begin());
+    }
+
+    void ThermalAssembly::assemble(const model::Model& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
         using namespace mhs::expression;
         if (temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
-        const auto n = model.discrete.cells.size();
-        detail::checked_sparse_size(n);
-        mhs::core::Vector<mhs::core::Triplet<double>> stiffness, capacity;
-        stiffness.reserve(model.discrete.faces.size() * 4);
-        capacity.reserve(model.discrete.cells.size());
-        mhs::core::Vector<double> rhs(n, 0.0);
-        mhs::core::Vector<Vec3> conductivity(model.discrete.cells.size());
-        mhs::core::Vector<double> density(model.fluid.fluid_to_global.size()), specific_heat(density.size());
+        auto& A = operators.K;
+        auto& rhs = operators.f;
+        auto values = A.values();
+        std::fill(values.begin(), values.end(), 0.0);
+        std::fill(rhs.begin(), rhs.end(), 0.0);
+        auto slot = [&](SparseIndex row, SparseIndex col) {
+            const auto columns = A.col_idx();
+            return std::lower_bound(columns.begin() + A.row_ptr()[row], columns.begin() + A.row_ptr()[row + 1], col)
+                - columns.begin();
+        };
         for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
             const auto row = static_cast<SparseIndex>(c);
             const auto center = model.discrete.cells[c].center();
@@ -29,7 +79,7 @@ namespace mhs::solver {
             conductivity[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
-            capacity.emplace_back(row, row, rho * cp * volume);
+            operators.C.values()[c] = rho * cp * volume;
             if (!density.empty()) {
                 const auto fi = model.fluid.global_to_fluid[c];
                 if (fi != mhs::core::invalid_id) {
@@ -67,17 +117,17 @@ namespace mhs::solver {
                     resistance = distance / ksolid + 1.0 / h;
                 }
                 const double g = f.area / resistance;
-                stiffness.emplace_back(row, row, g);
-                stiffness.emplace_back(row, col, -g);
-                stiffness.emplace_back(col, col, g);
-                stiffness.emplace_back(col, row, -g);
+                const auto ij = slot(row, col), ji = slot(col, row);
+                values[diagonal_positions[i]] += g;
+                values[ij] -= g;
+                values[diagonal_positions[j]] += g;
+                values[ji] -= g;
                 if ((fi != mhs::core::invalid_id) && (fj != mhs::core::invalid_id)) {
                     const double mass = model.fluid.face_volume_flux[id] * 0.5 * (density[fi] + density[fj]);
                     if (mass != 0.0) {
-                        const auto upstream = mass > 0 ? row : col;
                         const double enthalpy = mass * specific_heat[(mass > 0 ? fi : fj)];
-                        stiffness.emplace_back(row, upstream, enthalpy);
-                        stiffness.emplace_back(col, upstream, -enthalpy);
+                        values[mass > 0 ? diagonal_positions[i] : ij] += enthalpy;
+                        values[mass > 0 ? ji : diagonal_positions[j]] -= enthalpy;
                     }
                 }
             }
@@ -88,8 +138,7 @@ namespace mhs::solver {
             const auto trace = evaluate_boundary(
                 model.boundary_conditions[term.condition], f, temperature[row], conductivity[f.owner][f.axis], time);
             rhs[row] += trace.load;
-            if (trace.conductance != 0)
-                stiffness.emplace_back(row, row, trace.conductance);
+            values[diagonal_positions[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
             const auto cell = model.discrete.faces[term.face].owner;
@@ -101,12 +150,16 @@ namespace mhs::solver {
                     if constexpr (std::is_same_v<T, FluidInflow>)
                         rhs[row] += flow.mass_flow_rate * cp * flow.temperature;
                     else
-                        stiffness.emplace_back(row, row, flow.mass_flow_rate * cp);
+                        values[diagonal_positions[row]] += flow.mass_flow_rate * cp;
                 },
                 term.condition);
         }
-        auto K = build_csr(n, n, std::move(stiffness));
-        auto C = build_csr(n, n, std::move(capacity));
-        return {std::move(K), std::move(C), std::move(rhs)};
+    }
+
+    Operators assemble_thermal(const model::Model& model, std::span<const double> temperature, double time)
+    {
+        ThermalAssembly workspace(model);
+        workspace.assemble(model, temperature, time);
+        return std::move(workspace.operators);
     }
 } // namespace mhs::solver

@@ -7,8 +7,12 @@
 #include <limits>
 
 namespace {
-    mhs::solver::Operators decay_operators(std::span<const double>, double)
-    { return {mhs::core::build_csr(1, 1, {{0, 0, 1.0}}), mhs::core::build_csr(1, 1, {{0, 0, 1.0}}), {0.0}}; }
+    const mhs::solver::Operators& decay_operators(std::span<const double>, double)
+    {
+        static const mhs::solver::Operators operators {
+            mhs::core::build_csr(1, 1, {{0, 0, 1.0}}), mhs::core::build_csr(1, 1, {{0, 0, 1.0}}), {0.0}};
+        return operators;
+    }
 
     TEST(TimeScheme, AdaptiveDecayAndInterpolatedOutput)
     {

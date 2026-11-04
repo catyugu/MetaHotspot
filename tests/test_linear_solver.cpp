@@ -142,8 +142,8 @@ TEST(Solver, NonlinearSolveWarmStartsIterativeBackend)
     mhs::solver::SolveOptions options;
     options.linear_solver = mhs::solver::SolveOptions::LinearSolverType::Amg;
 
-    mhs::solver::SystemAssembler assemble = [](std::span<const double>, double) {
-        mhs::solver::Operators operators;
+    mhs::solver::Operators operators;
+    mhs::solver::SystemAssembler assemble = [&](std::span<const double>, double) -> const mhs::solver::Operators& {
         operators.K = mhs::core::build_csr(1, 1, {{0, 0, 2.0}});
         operators.C = mhs::core::CSRMatrix<double>(1, 1);
         operators.f = mhs::core::Vector<double>(1, 6.0);

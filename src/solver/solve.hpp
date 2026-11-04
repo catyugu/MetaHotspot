@@ -12,7 +12,9 @@
 
 namespace mhs::solver {
 
-    using SystemAssembler = std::function<Operators(std::span<const double> state, double time)>;
+    // Refresh caller-owned K/C/f storage. References remain valid until the next
+    // call; structural support must remain inside the initial K/C union.
+    using SystemAssembler = std::function<const Operators&(std::span<const double> state, double time)>;
 
     using StateObserver = std::function<void(double time, std::span<const double> state)>;
 

@@ -4,8 +4,8 @@
 
 namespace mhs::solver {
     /// Final linear system: A * x = b
-    struct LinearSystem {
-        mhs::core::CSRMatrix<double> A;
-        mhs::core::Vector<double> b;
+    struct LinearSystemView {
+        mhs::core::CSRMatrixView<double> A;
+        std::span<const double> b;
     };
 } // namespace mhs::solver
