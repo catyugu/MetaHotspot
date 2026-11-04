@@ -3,7 +3,6 @@
 #include "solver/solve.hpp"
 
 #include "core/vector.hpp"
-#include <array>
 #include <cmath>
 #include <gtest/gtest.h>
 
@@ -23,7 +22,7 @@ TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
         return operators;
     };
 
-    const std::array initial {0.0};
+    const mhs::core::Vector<double> initial {0.0};
     const auto solution = mhs::solver::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);
@@ -49,7 +48,7 @@ TEST(SolutionHistoryTest, SteadySolveProducesOneSnapshot)
         return operators;
     };
 
-    const std::array initial {0.0};
+    const mhs::core::Vector<double> initial {0.0};
     const auto solution = mhs::solver::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);

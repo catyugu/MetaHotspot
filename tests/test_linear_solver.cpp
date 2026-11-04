@@ -7,7 +7,6 @@
 #include <gtest/gtest.h>
 
 #include "core/vector.hpp"
-#include <array>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -150,7 +149,7 @@ TEST(Solver, NonlinearSolveWarmStartsIterativeBackend)
         return operators;
     };
 
-    const std::array initial {0.0};
+    const mhs::core::Vector<double> initial {0.0};
     const auto solution = mhs::solver::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);

@@ -3,6 +3,7 @@
 /* Internal solve driver — NOT part of the public API.  Shared between the
    standard solver (solve.cpp) and the callback-driven solve_system. */
 
+#include "core/vector.hpp"
 #include "solver/linear_system.hpp"
 #include "solver/solution.hpp"
 #include "solver/solver.hpp"
@@ -25,8 +26,8 @@ namespace mhs::solver {
     };
 
     /// Generalized callback-driven solver. Standard solve() calls this
-    /// internally.
-    mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble,
-        std::span<const double> initial_state, const SolveOptions& opts = {}, const StateObserver& observe = {});
+    /// internally, transferring ownership of its state buffer.
+    mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
+        const SolveOptions& opts = {}, const StateObserver& observe = {});
 
 } // namespace mhs::solver

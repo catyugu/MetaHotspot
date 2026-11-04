@@ -170,16 +170,15 @@ namespace mhs::solver {
 
     } // namespace
 
-    Solution solve_system(const Study& study, const SystemAssembler& assemble, std::span<const double> initial_state,
+    Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
         const SolveOptions& opts, const StateObserver& observe)
     {
         if (!assemble)
             throw std::invalid_argument("solve_system: assembler is empty");
-        if (initial_state.empty())
+        if (state.empty())
             throw std::invalid_argument("solve_system: initial_state is empty");
         auto solver = linear::create_solver(build_solver_spec(opts));
         const auto nl_config = build_nonlinear_config(opts);
-        core::Vector<double> state(initial_state.begin(), initial_state.end());
         if (study.type == model::StudyType::Steady)
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
@@ -215,7 +214,7 @@ namespace mhs::solver {
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 
-        auto sol = solve_system(study, assemble, state, options, observe);
+        auto sol = solve_system(study, assemble, std::move(state), options, observe);
         sol.probe_traces = std::move(probe_recorder).take_traces();
         return sol;
     }
