@@ -40,7 +40,7 @@ namespace mhs::compiler {
             model.study_type = definition.settings.study_type;
             model.initial_temperature = definition.settings.initial_temperature;
             model.transient_duration = definition.settings.transient_duration;
-            model.transient_time_step = definition.settings.transient_output_interval;
+            model.transient_output_interval = definition.settings.transient_output_interval;
         }
 
         mhs::expression::SymbolTable build_symbol_table(const mhs::core::Vector<mhs::model::VariableSpec>& variables,

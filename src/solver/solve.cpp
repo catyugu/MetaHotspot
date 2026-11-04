@@ -54,10 +54,10 @@ namespace mhs::solver {
         {
             const auto state_count = state.size();
             mhs::solver::Solution result;
-            LinearSystemProvider build_ls = [&](std::span<const double> current_state) -> LinearSystem {
-                auto ops = assemble(current_state, 0.0);
+            LinearSystemProvider build_ls = [&](std::span<const double> current_state) -> LinearSystemView {
+                const auto& ops = assemble(current_state, 0.0);
                 validate_operator_dimensions(ops, state_count);
-                return {std::move(ops.K), std::move(ops.f)};
+                return {ops.K.view(), ops.f};
             };
             auto nonlinear_result = nonlinear_solve(build_ls, state, solver, nl_config);
             result.state = std::move(state);
@@ -90,24 +90,13 @@ namespace mhs::solver {
             settings.error.scaled = false;
             settings.storage = study.output_interval > 0.0 ? atstep::Storage::interpolate : atstep::Storage::steps;
 
-            atstep::TimeStepper<State> stepper(settings, [&](const atstep::StepRequest<State>& request, State& trial) {
-                LinearSystemProvider provider = [&](std::span<const double> iterate) -> LinearSystem {
-                    auto ops = assemble(iterate, request.time);
-                    validate_operator_dimensions(ops, state_count);
-                    auto A = core::add_scaled(ops.K, request.derivative_weight(), ops.C);
-                    core::spmv(ops.C.view(), request.derivative_history(), ops.f, -1.0, 1.0);
-                    return {std::move(A), std::move(ops.f)};
-                };
-                return nonlinear_solve(provider, trial, solver, nl_config);
-            });
-
-            // Thermal capacities are diagonal: preserve the supplied T(0) exactly.
-            // General callback systems with algebraic or coupled capacity retain
-            // the stepper's consistent initialization.
-            auto initial_ops = assemble(state, 0.0);
+            const auto& initial_ops = assemble(state, 0.0);
             validate_operator_dimensions(initial_ops, state_count);
-            State derivative = std::move(initial_ops.f);
-            core::spmv(initial_ops.K.view(), state, derivative, -1.0, 1.0);
+            // Establish the union once. K, C and A may share structure, while
+            // retaining independent numerical storage and arbitrary sparse C.
+            auto A = core::add_scaled(initial_ops.K, 0.0, initial_ops.C);
+            State rhs(state_count);
+            State derivative(state_count);
             bool positive_diagonal = true;
             const auto C = initial_ops.C.view();
             for (std::size_t i = 0; i < state_count; ++i) {
@@ -120,11 +109,30 @@ namespace mhs::solver {
                 }
                 if (!std::isfinite(capacity) || capacity <= 0.0)
                     positive_diagonal = false;
-                else
-                    derivative[i] /= capacity;
+                derivative[i] = capacity;
             }
-            if (positive_diagonal)
+
+            atstep::TimeStepper<State> stepper(settings, [&](const atstep::StepRequest<State>& request, State& trial) {
+                LinearSystemProvider provider = [&](std::span<const double> iterate) -> LinearSystemView {
+                    const auto& ops = assemble(iterate, request.time);
+                    validate_operator_dimensions(ops, state_count);
+                    core::add_scaled_into(ops.K, request.derivative_weight(), ops.C, A);
+                    std::copy(ops.f.begin(), ops.f.end(), rhs.begin());
+                    core::spmv(ops.C.view(), request.derivative_history(), rhs, -1.0, 1.0);
+                    return {A.view(), rhs};
+                };
+                return nonlinear_solve(provider, trial, solver, nl_config);
+            });
+
+            // Preserve the supplied T(0) for positive diagonal capacity.
+            // Algebraic or coupled capacity retains consistent initialization.
+            if (positive_diagonal) {
+                std::copy(initial_ops.f.begin(), initial_ops.f.end(), rhs.begin());
+                core::spmv(initial_ops.K.view(), state, rhs, -1.0, 1.0);
+                for (std::size_t i = 0; i < state_count; ++i)
+                    derivative[i] = rhs[i] / derivative[i];
                 stepper.start(0.0, state, derivative, study.duration);
+            }
             else
                 stepper.start(0.0, state, study.duration);
 
@@ -162,25 +170,17 @@ namespace mhs::solver {
 
     } // namespace
 
-    mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble,
-        std::span<const double> initial_state, const SolveOptions& opts, const StateObserver& observe)
+    Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
+        const SolveOptions& opts, const StateObserver& observe)
     {
-        if (!assemble) {
+        if (!assemble)
             throw std::invalid_argument("solve_system: assembler is empty");
-        }
-        if (initial_state.empty()) {
+        if (state.empty())
             throw std::invalid_argument("solve_system: initial_state is empty");
-        }
-
-        auto solver_spec = build_solver_spec(opts);
-        auto nl_config = build_nonlinear_config(opts);
-
-        mhs::linear::SolverPtr solver = mhs::linear::create_solver(solver_spec);
-        mhs::core::Vector<double> state(initial_state.begin(), initial_state.end());
-
-        if (study.type == mhs::model::StudyType::Steady) {
+        auto solver = linear::create_solver(build_solver_spec(opts));
+        const auto nl_config = build_nonlinear_config(opts);
+        if (study.type == model::StudyType::Steady)
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
-        }
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
@@ -204,15 +204,17 @@ namespace mhs::solver {
             state.assign(initial_state.begin(), initial_state.end());
         }
 
-        Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        SystemAssembler assemble
-            = [&](std::span<const double> s, double t) { return mhs::solver::assemble_thermal(model, s, t); };
+        Study study {model.study_type, model.transient_duration, model.transient_output_interval};
+        ThermalAssembler assembler(model);
+        SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
+            return assembler.assemble(current, time);
+        };
 
         ProbeRecorder probe_recorder(model);
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 
-        auto sol = solve_system(study, assemble, state, options, observe);
+        auto sol = solve_system(study, assemble, std::move(state), options, observe);
         sol.probe_traces = std::move(probe_recorder).take_traces();
         return sol;
     }

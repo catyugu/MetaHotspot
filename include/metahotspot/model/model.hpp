@@ -73,7 +73,7 @@ namespace mhs::model {
         double initial_temperature = 300.0;
         StudyType study_type = StudyType::Steady;
         double transient_duration = 0.0;
-        double transient_time_step = 1.0;
+        double transient_output_interval = 1.0;
 
         mhs::core::Vector<ProbePoint> observation_points;
     };
