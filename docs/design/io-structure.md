@@ -10,14 +10,14 @@ XML reader 和外部代码都直接填充 `ModelDefinition` 结构，随后调�
 struct ModelDefinition {
     ModelSettings settings;
     MeshSpec mesh;
-    std::vector<VariableSpec> variables;
-    std::vector<NamedFunction> functions;
-    std::vector<NamedMaterial> materials;
-    std::vector<LayerSpec> layers;
-    std::vector<BoundaryPatch> boundaries;
+    mhs::core::Vector<VariableSpec> variables;
+    mhs::core::Vector<NamedFunction> functions;
+    mhs::core::Vector<NamedMaterial> materials;
+    mhs::core::Vector<LayerSpec> layers;
+    mhs::core::Vector<BoundaryPatch> boundaries;
     ThermalBoundary default_boundary;
-    std::vector<ObservationPointSpec> observation_points;
-    std::vector<FluidBoundarySpec> fluid_boundaries;
+    mhs::core::Vector<ObservationPointSpec> observation_points;
+    mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
 };
 ```
 
@@ -37,14 +37,14 @@ struct BlockSpec {
     Expression x_offset;
     Expression y_offset;
     std::optional<Expression> thickness;
-    std::vector<RectOperation> geometry;
+    mhs::core::Vector<RectOperation> geometry;
 };
 
 struct LayerSpec {
     Expression thickness;
     Expression x_offset;
     Expression y_offset;
-    std::vector<BlockSpec> blocks;
+    mhs::core::Vector<BlockSpec> blocks;
 };
 ```
 
@@ -66,11 +66,11 @@ struct LayerSpec {
 struct FaceRegion {
     Axis axis;
     double coordinate;
-    std::vector<RegionRect> rectangles;
+    mhs::core::Vector<RegionRect> rectangles;
 };
 
 struct BoundaryPatch {
-    std::vector<FaceRegion> regions;
+    mhs::core::Vector<FaceRegion> regions;
     ThermalBoundary condition;
 };
 ```

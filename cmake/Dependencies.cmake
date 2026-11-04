@@ -21,8 +21,8 @@ find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 # ----------------------------------------------------------------------------
 # Eigen - header-only linear algebra. SYSTEM keeps a dependency's headers out of
-# this project's warning policy. The CMake package is only generated when it is
-# going to be installed next to us. Sourced from the GitHub mirror: anonymous
+# this project's warning policy. It is a build-only implementation dependency.
+# Sourced from the GitHub mirror: anonymous
 # clones of gitlab.com fail from CI runners while GitLab is under load.
 # ----------------------------------------------------------------------------
 if(NOT TARGET Eigen3::Eigen)
@@ -33,7 +33,7 @@ if(NOT TARGET Eigen3::Eigen)
         GITHUB_REPOSITORY eigen-mirror/eigen
         GIT_TAG ${MHS_EIGEN_VERSION}
         SYSTEM YES
-        OPTIONS "EIGEN_BUILD_CMAKE_PACKAGE ${MHS_INSTALL}"
+        OPTIONS "EIGEN_BUILD_CMAKE_PACKAGE OFF"
     )
 endif()
 

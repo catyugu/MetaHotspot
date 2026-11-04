@@ -10,7 +10,7 @@
 #include <array>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::hdim {
 
@@ -34,14 +34,14 @@ namespace mhs::hdim {
 
     struct Model {
         Mesh mesh;
-        std::vector<int> region_cells[kRegionCount];
-        std::vector<int> cell_region;
-        std::vector<int> local; // global cell -> index inside its region
-        std::vector<double> power; // W per cell
+        mhs::core::Vector<int> region_cells[kRegionCount];
+        mhs::core::Vector<int> cell_region;
+        mhs::core::Vector<int> local; // global cell -> index inside its region
+        mhs::core::Vector<double> power; // W per cell
         /// Per die: the cells it dissipates in and the wattage of each, so that
         /// the alternating workload of Sec. III-B can be switched on and off.
-        std::array<std::vector<int>, 2> chip_cell; // 0: chip1, 1: chip2
-        std::array<std::vector<double>, 2> chip_watt;
+        std::array<mhs::core::Vector<int>, 2> chip_cell; // 0: chip1, 1: chip2
+        std::array<mhs::core::Vector<double>, 2> chip_watt;
     };
 
     /// The linear system of one region: K = C / dt + G, with the convection
@@ -54,7 +54,7 @@ namespace mhs::hdim {
 
     struct Assembled {
         RegionSystem region[kRegionCount];
-        std::vector<InterfaceFace> interfaces; // both interfaces, in face order
+        mhs::core::Vector<InterfaceFace> interfaces; // both interfaces, in face order
     };
 
     /// Counters shared by the reference FVM and by the HDI method, so that their
@@ -99,7 +99,7 @@ namespace mhs::hdim {
             const int layer_index = die_layer[static_cast<std::size_t>(chip)];
             const auto& cells_of_layer = mesh.layers[static_cast<std::size_t>(layer_index)];
             for (const Chiplet& ch : chips[static_cast<std::size_t>(chip)].chiplets) {
-                std::vector<int> cells;
+                mhs::core::Vector<int> cells;
                 double volume = 0.0;
                 for (int k = 0; k < cells_of_layer.nz; ++k)
                     for (int j = 0; j < mesh.ny; ++j) {
@@ -144,11 +144,11 @@ namespace mhs::hdim {
     /// the couplings to one region; the interface faces are always produced, and
     /// the other regions come back empty.
     inline Assembled assemble(
-        const Model& model, const std::vector<double>& temperature, double dt, int only_region = -1)
+        const Model& model, const mhs::core::Vector<double>& temperature, double dt, int only_region = -1)
     {
         const Mesh& mesh = model.mesh;
         Assembled out;
-        std::array<std::vector<Eigen::Triplet<double>>, kRegionCount> triplets;
+        std::array<mhs::core::Vector<Eigen::Triplet<double>>, kRegionCount> triplets;
         for (int r = 0; r < kRegionCount; ++r) {
             const auto n = static_cast<Eigen::Index>(model.region_cells[r].size());
             out.region[r].capacity = Eigen::VectorXd::Zero(n);
@@ -307,7 +307,7 @@ namespace mhs::hdim {
     /// The same discretisation as one global operator: the three region matrices
     /// plus the series conductance of every interface face. This is the standard
     /// FVM of Sec. III, i.e. the baseline the HDI method is measured against.
-    inline RegionSystem assemble_whole(const Model& model, const std::vector<double>& temperature, double dt)
+    inline RegionSystem assemble_whole(const Model& model, const mhs::core::Vector<double>& temperature, double dt)
     {
         const Assembled assembled = assemble(model, temperature, dt);
         const int n = model.mesh.n;
@@ -315,7 +315,7 @@ namespace mhs::hdim {
         whole.capacity = Eigen::VectorXd::Zero(n);
         whole.source = Eigen::VectorXd::Zero(n);
 
-        std::vector<Eigen::Triplet<double>> triplets;
+        mhs::core::Vector<Eigen::Triplet<double>> triplets;
         triplets.reserve(static_cast<std::size_t>(n) * 8);
         for (int r = 0; r < kRegionCount; ++r) {
             const RegionSystem& region = assembled.region[r];

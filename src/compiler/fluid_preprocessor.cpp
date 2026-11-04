@@ -1,15 +1,16 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
 #include "compiler/geometry_compiler.hpp"
+#include "core/vector.hpp"
 #include "numerics/linear/linear_solver.hpp"
-#include <Eigen/Sparse>
+#include "numerics/sparse_ops.hpp"
 #include <algorithm>
 #include <limits>
 #include <numeric>
 #include <type_traits>
 
 namespace mhs::sim::fluid {
-    void build_domain(mhs::core::Model& model, const std::vector<mhs::model::FluidBoundarySpec>& boundaries,
+    void build_domain(mhs::core::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
         double scale, const FluidMaterialData& materials)
     {
         using namespace mhs::core;
@@ -17,7 +18,7 @@ namespace mhs::sim::fluid {
         const auto& mesh = model.discrete;
         fluid = {};
         fluid.global_to_fluid.assign(mesh.cells.size(), invalidIndex);
-        std::vector<double> viscosity;
+        mhs::core::Vector<double> viscosity;
         for (Index c = 0; c < mesh.cells.size(); ++c) {
             const auto mat = model.cell_material[c];
             if (mat >= materials.initial_viscosity.size() || !materials.initial_viscosity[mat])
@@ -33,10 +34,10 @@ namespace mhs::sim::fluid {
         }
         fluid.face_volume_flux.assign(mesh.faces.size(), 0);
         fluid.interface_heat_transfer_factor.resize(n);
-        std::vector<Vec3> extents(n);
+        mhs::core::Vector<Vec3> extents(n);
         // Rectangular-channel extents from connected fluid runs along each axis.
         for (int axis = 0; axis < 3; ++axis) {
-            std::vector<Index> parent(n);
+            mhs::core::Vector<Index> parent(n);
             std::iota(parent.begin(), parent.end(), 0);
             auto root = [&](Index i) {
                 while (parent[i] != i) {
@@ -52,7 +53,7 @@ namespace mhs::sim::fluid {
                 if (i != invalidIndex && j != invalidIndex)
                     parent[root(i)] = root(j);
             }
-            std::vector<double> lo(n, std::numeric_limits<double>::infinity()),
+            mhs::core::Vector<double> lo(n, std::numeric_limits<double>::infinity()),
                 hi(n, -std::numeric_limits<double>::infinity());
             for (Index i = 0; i < n; ++i) {
                 auto r = root(i);
@@ -63,7 +64,7 @@ namespace mhs::sim::fluid {
             for (Index i = 0; i < n; ++i)
                 extents[i][axis] = hi[root(i)] - lo[root(i)];
         }
-        std::vector<double> mobility(n), rho(n);
+        mhs::core::Vector<double> mobility(n), rho(n);
         for (Index i = 0; i < n; ++i) {
             auto lengths = extents[i];
             std::sort(lengths.begin(), lengths.end());
@@ -77,7 +78,7 @@ namespace mhs::sim::fluid {
         }
         // Use the same rectangle intersection algorithm as thermal projection,
         // against the original mesh and an independent set of regions.
-        std::vector<CompiledBoundaryRegion> regions;
+        mhs::core::Vector<CompiledBoundaryRegion> regions;
         for (TableIndex id = 0; id < boundaries.size(); ++id)
             for (const auto& r : boundaries[id].regions) {
                 CompiledBoundaryRegion region;
@@ -93,10 +94,10 @@ namespace mhs::sim::fluid {
         std::erase_if(projected, [&](const auto& term) {
             return fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == invalidIndex;
         });
-        std::vector<double> total_area(boundaries.size(), 0);
+        mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
             total_area[term.condition] += mesh.faces[term.parent.value].project(term.bounds).area;
-        std::vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
+        mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
             if (!f.neighbor.valid())
@@ -110,9 +111,9 @@ namespace mhs::sim::fluid {
             diagonal[j] += g;
         }
         bool reference = false;
-        std::vector<double> boundary_conductance(projected.size(), 0);
-        std::vector<Eigen::Triplet<double>> entries;
-        Eigen::VectorXd rhs = Eigen::VectorXd::Zero(n);
+        mhs::core::Vector<double> boundary_conductance(projected.size(), 0);
+        mhs::core::Vector<mhs::numerics::Triplet> entries;
+        mhs::core::Vector<double> rhs(n, 0.0);
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto f = mesh.faces[term.parent.value].project(term.bounds);
@@ -144,12 +145,12 @@ namespace mhs::sim::fluid {
                 entries.emplace_back(i, j, -conductance[id]);
                 entries.emplace_back(j, i, -conductance[id]);
             }
-        Eigen::SparseMatrix<double> matrix(n, n);
-        matrix.setFromTriplets(entries.begin(), entries.end());
+        auto matrix = mhs::numerics::build_csr(n, n, std::move(entries));
         auto solver = mhs::numerics::create_solver();
         solver->compute(matrix);
-        auto pressure = solver->solve(rhs, Eigen::VectorXd::Zero(n));
-        if (!solver->success())
+        mhs::core::Vector<double> pressure(n, 0.0);
+        const auto result = solver->solve(rhs, pressure, pressure);
+        if (!result.success)
             throw std::runtime_error("fluid pressure solve failed");
         for (Index t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];

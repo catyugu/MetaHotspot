@@ -6,9 +6,9 @@
 #include "core/types.hpp"
 #include "numerics/expression/expr.hpp"
 
+#include "core/vector.hpp"
 #include <string>
 #include <variant>
-#include <vector>
 
 namespace mhs::core {
 
@@ -62,12 +62,12 @@ namespace mhs::core {
         DiscreteMesh discrete;
         OutputMesh output;
 
-        std::vector<TableIndex> cell_material;
-        std::vector<MaterialProps> material_table;
-        std::vector<mhs::numerics::CompiledExpression> heat_source_table;
-        std::vector<BoundaryCondition> boundary_conditions;
-        std::vector<SourceTerm> source_terms;
-        std::vector<BoundaryFace> boundary_faces; // sorted by parent FaceId
+        mhs::core::Vector<TableIndex> cell_material;
+        mhs::core::Vector<MaterialProps> material_table;
+        mhs::core::Vector<mhs::numerics::CompiledExpression> heat_source_table;
+        mhs::core::Vector<BoundaryCondition> boundary_conditions;
+        mhs::core::Vector<SourceTerm> source_terms;
+        mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by parent FaceId
         FluidDomain fluid;
 
         double initial_temperature = 300.0;
@@ -75,7 +75,7 @@ namespace mhs::core {
         double transient_duration = 0.0;
         double transient_time_step = 1.0;
 
-        std::vector<ProbePoint> observation_points;
+        mhs::core::Vector<ProbePoint> observation_points;
     };
 
 } // namespace mhs::core

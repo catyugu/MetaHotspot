@@ -1,6 +1,7 @@
 #include "compiler/model_compiler.hpp"
 #include "core/model.hpp"
 #include "core/model_definition.hpp"
+#include "core/vector.hpp"
 #include "solver/assembler.hpp"
 #include <gtest/gtest.h>
 
@@ -53,13 +54,13 @@ TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
     auto model = build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
-    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
 
     EXPECT_EQ(ops.C.rows(), N);
     EXPECT_EQ(ops.C.cols(), N);
-    EXPECT_EQ(ops.C.nonZeros(), N);
+    EXPECT_EQ(ops.C.nnz(), N);
     // Each cell: rho=8920, c=385, vol = (5e-3)^3 = 1.25e-7
     // C(i,i) = 8920 * 385 * 1.25e-7 = 0.4293
     double expected = 8920.0 * 385.0 * 1.25e-7;
@@ -107,19 +108,13 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     int N = static_cast<int>(model.cell_material.size());
 
-    std::vector<double> T300(static_cast<std::size_t>(N), 300.0);
-    std::vector<double> T500(static_cast<std::size_t>(N), 500.0);
+    mhs::core::Vector<double> T300(static_cast<std::size_t>(N), 300.0);
+    mhs::core::Vector<double> T500(static_cast<std::size_t>(N), 500.0);
     auto k1 = assemble_thermal(model, T300, 0.0).K;
     auto k2 = assemble_thermal(model, T500, 0.0).K;
 
-    bool differs = false;
-    for (int k = 0; k < k1.outerSize() && !differs; ++k) {
-        for (typename Eigen::SparseMatrix<double>::InnerIterator it(k1, k); it && !differs; ++it) {
-            if (std::abs(it.value() - k2.coeff(it.row(), it.col())) > 1e-9) {
-                differs = true;
-            }
-        }
-    }
+    const bool differs = !std::equal(k1.values().begin(), k1.values().end(), k2.values().begin(),
+        [](double a, double b) { return std::abs(a - b) <= 1e-9; });
     EXPECT_TRUE(differs) << "T-dependent k should produce different K for different T";
 }
 
@@ -129,14 +124,14 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto model = build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
-    std::vector<double> T(static_cast<std::size_t>(N), 300.0);
+    mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
 
     // Adiabatic Neumann(0) on all faces with no source => b = 0 everywhere.
     for (int i = 0; i < N; ++i) {
-        EXPECT_NEAR(ops.f(i), 0.0, 1e-12);
+        EXPECT_NEAR(ops.f[i], 0.0, 1e-12);
     }
     // And K should be non-empty.
-    EXPECT_GT(ops.K.nonZeros(), 0);
+    EXPECT_GT(ops.K.nnz(), 0);
 }

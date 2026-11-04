@@ -137,7 +137,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，作为静态库的私有链接依赖，安装包仍通过 `find_dependency` 查找。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
-- **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
+- **Eigen**：仅供内部小规模 QR 与可选 MKL/Pardiso 实现使用，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。
 - **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
 - **OpenMP**：AMGCL 的线程后端。muparser 关闭其 OpenMP 后端，表达式求值由 TBB 并行调度。
 - **GTest**：单元测试框架，用例由 CTest 发现并运行。

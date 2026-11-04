@@ -1,9 +1,9 @@
 #include "numerics/expression/expr.hpp"
 
+#include "core/vector.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 #include <thread>
-#include <vector>
 using namespace mhs::numerics;
 namespace {
     constexpr double PI = 3.14159265358979323846;
@@ -129,8 +129,8 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 10000;
 
-        std::vector<double> results(num_threads * num_iterations, 0.0);
-        std::vector<std::thread> threads;
+        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             threads.emplace_back([&, thread_id]() {
@@ -170,7 +170,7 @@ namespace {
     TEST(ExprTest, ConcurrentEvaluationDictionary)
     {
         SymbolTable sym;
-        std::vector<CompiledExpression> dict;
+        mhs::core::Vector<CompiledExpression> dict;
         dict.push_back(parse("0.0", sym));
         dict.push_back(parse("x + y", sym));
         dict.push_back(parse("x * y", sym));
@@ -179,8 +179,8 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 5000;
 
-        std::vector<double> results(num_threads * num_iterations, 0.0);
-        std::vector<std::thread> threads;
+        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
             threads.emplace_back([&, thread_id]() {
@@ -269,8 +269,8 @@ namespace {
         // Two threads construct their own SymbolTable and eval_geometry in parallel —
         // the result must reflect each thread's own table.
         const int N_THREADS = 8;
-        std::vector<std::thread> threads;
-        std::vector<double> results(N_THREADS, 0.0);
+        mhs::core::Vector<std::thread> threads;
+        mhs::core::Vector<double> results(N_THREADS, 0.0);
 
         for (int tid = 0; tid < N_THREADS; ++tid) {
             threads.emplace_back([tid, &results]() {

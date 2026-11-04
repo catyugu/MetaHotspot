@@ -3,9 +3,9 @@
 #include "numerics/linear/linear_solver.hpp"
 #include "solver/linear_system.hpp"
 
+#include "core/vector.hpp"
 #include <functional>
 #include <span>
-#include <vector>
 
 namespace mhs::sim {
 
@@ -19,7 +19,7 @@ namespace mhs::sim {
     /// Per-iteration linear-system factory evaluated at the current state (read-only).
     using LinearSystemProvider = std::function<LinearSystem(std::span<const double>)>;
 
-    bool nonlinear_solve(LinearSystemProvider ls_provider, std::vector<double>& state, mhs::numerics::SolverPtr& solver,
-        const NonLinearConfig& cfg = {});
+    bool nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::Vector<double>& state,
+        mhs::numerics::SolverPtr& solver, const NonLinearConfig& cfg = {});
 
 } // namespace mhs::sim

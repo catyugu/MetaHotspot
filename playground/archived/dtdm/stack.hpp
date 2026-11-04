@@ -13,7 +13,7 @@
 
 #include <array>
 #include <string>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::dtdm {
 
@@ -93,7 +93,7 @@ namespace mhs::dtdm {
     struct SystemSpec {
         const char* name;
         double interposer;
-        std::vector<Chiplet> chiplets;
+        mhs::core::Vector<Chiplet> chiplets;
     };
 
     // REF-28 Table II chiplet sizes. The paper's Fig. 4 fixes which chiplet sits

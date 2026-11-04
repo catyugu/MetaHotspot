@@ -20,8 +20,8 @@ target_include_directories(mhs_linear PRIVATE ${PROJECT_SOURCE_DIR}/include/meta
 # happens to have Boost installed.
 target_compile_definitions(mhs_linear PRIVATE AMGCL_NO_BOOST)
 target_link_libraries(mhs_linear
-    PUBLIC Eigen3::Eigen
     PRIVATE
+    $<BUILD_INTERFACE:Eigen3::Eigen>
     $<BUILD_INTERFACE:mhs_options>
     $<BUILD_INTERFACE:amgcl::amgcl>
     OpenMP::OpenMP_CXX

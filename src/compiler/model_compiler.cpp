@@ -2,6 +2,7 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
+#include "core/vector.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include <algorithm>
@@ -44,8 +45,8 @@ namespace mhs::sim {
             model.transient_time_step = definition.settings.transient_output_interval;
         }
 
-        mhs::numerics::SymbolTable build_symbol_table(const std::vector<mhs::model::VariableSpec>& variables,
-            const std::vector<mhs::model::NamedFunction>& functions)
+        mhs::numerics::SymbolTable build_symbol_table(const mhs::core::Vector<mhs::model::VariableSpec>& variables,
+            const mhs::core::Vector<mhs::model::NamedFunction>& functions)
         {
             mhs::numerics::SymbolTable empty_for_geometry_eval;
             mhs::numerics::SymbolTable symbols;
@@ -57,11 +58,11 @@ namespace mhs::sim {
             return symbols;
         }
 
-        std::vector<mhs::core::ProbePoint> build_observation_points(
-            const std::vector<mhs::model::ObservationPointSpec>& src, const mhs::numerics::SymbolTable& symbols,
+        mhs::core::Vector<mhs::core::ProbePoint> build_observation_points(
+            const mhs::core::Vector<mhs::model::ObservationPointSpec>& src, const mhs::numerics::SymbolTable& symbols,
             double si_scale)
         {
-            std::vector<mhs::core::ProbePoint> out;
+            mhs::core::Vector<mhs::core::ProbePoint> out;
             out.reserve(src.size());
             for (const auto& s : src) {
                 mhs::core::ProbePoint p;
@@ -75,7 +76,7 @@ namespace mhs::sim {
         }
 
         mhs::core::TableIndex compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            std::vector<mhs::core::BoundaryCondition>& conditions,
+            mhs::core::Vector<mhs::core::BoundaryCondition>& conditions,
             const std::function<std::string(const std::string&)>& rewriter, const mhs::numerics::SymbolTable& symbols)
         {
             using namespace mhs::core;
@@ -104,12 +105,12 @@ namespace mhs::sim {
             return index;
         }
 
-        std::vector<CompiledBoundaryRegion> compile_boundary_patches(
-            const std::vector<mhs::model::BoundaryPatch>& boundaries,
-            std::vector<mhs::core::BoundaryCondition>& conditions, double si_scale,
+        mhs::core::Vector<CompiledBoundaryRegion> compile_boundary_patches(
+            const mhs::core::Vector<mhs::model::BoundaryPatch>& boundaries,
+            mhs::core::Vector<mhs::core::BoundaryCondition>& conditions, double si_scale,
             const std::function<std::string(const std::string&)>& rewriter, const mhs::numerics::SymbolTable& symbols)
         {
-            std::vector<CompiledBoundaryRegion> compiled;
+            mhs::core::Vector<CompiledBoundaryRegion> compiled;
             for (const auto& boundary : boundaries) {
                 const auto condition = compile_thermal_boundary(boundary.condition, conditions, rewriter, symbols);
                 for (const auto& region : boundary.regions) {
@@ -130,7 +131,7 @@ namespace mhs::sim {
 
         // Build name-to-index from ModelDefinition::materials (insertion order).
         std::unordered_map<std::string, size_t> build_name_to_idx(
-            const std::vector<mhs::model::NamedMaterial>& materials)
+            const mhs::core::Vector<mhs::model::NamedMaterial>& materials)
         {
             std::unordered_map<std::string, size_t> map;
             map.reserve(materials.size());

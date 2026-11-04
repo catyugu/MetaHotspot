@@ -1,17 +1,17 @@
 #pragma once
 
+#include "core/csr_matrix.hpp"
+
 #include "core/model.hpp"
-#include <Eigen/Core>
-#include <Eigen/SparseCore>
 #include <span>
 
 namespace mhs::sim {
 
     /// Operators K, C, f of the linearised system: C * dx/dt + K * x = f.
     struct Operators {
-        Eigen::SparseMatrix<double> K;
-        Eigen::SparseMatrix<double> C;
-        Eigen::VectorXd f;
+        mhs::core::CSRMatrix<double> K;
+        mhs::core::CSRMatrix<double> C;
+        mhs::core::Vector<double> f;
     };
 
     /// Assemble thermal operators C * dx/dt + K * x = f.

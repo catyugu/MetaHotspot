@@ -3,8 +3,8 @@
 
 #include "gtest/gtest.h"
 
+#include "core/vector.hpp"
 #include <cmath>
-#include <vector>
 
 using namespace mhs::numerics;
 using namespace mhs::sim;
@@ -16,7 +16,7 @@ namespace {
     TEST(EndToEnd, ParseTakesRegisteredNative)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         fns.push_back({"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}});
         register_all_functions(sym, fns);
 
@@ -35,7 +35,7 @@ namespace {
     TEST(EndToEnd, NativeReadsTheBoundSymbol)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         fns.push_back({"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}});
         register_all_functions(sym, fns);
 
@@ -54,7 +54,7 @@ namespace {
     TEST(EndToEnd, GaussEvaluator)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         fns.push_back({"mygauss", mhs::model::GaussFunctionSpec {1.0, 1.0, 0.0}});
         register_all_functions(sym, fns);
 
@@ -68,7 +68,7 @@ namespace {
     TEST(EndToEnd, SineEvaluator)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         fns.push_back({"mysine", mhs::model::SineFunctionSpec {5.0, 200.0, 1.57}});
         register_all_functions(sym, fns);
 
@@ -80,7 +80,7 @@ namespace {
     TEST(EndToEnd, DoubleExpEvaluator)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         fns.push_back({"mydexp", mhs::model::DoubleExponentialFunctionSpec {1.0, 0.5, 0.1}});
         register_all_functions(sym, fns);
 
@@ -92,7 +92,7 @@ namespace {
     TEST(EndToEnd, PiecewiseEvaluator)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         EXPECT_THROW(
             register_all_functions(sym, {{"empty", mhs::model::PiecewiseFunctionSpec {}}}), std::invalid_argument);
         mhs::model::PiecewiseFunctionSpec pw;
@@ -112,7 +112,7 @@ namespace {
     TEST(EndToEnd, PeriodicPiecewiseConstant)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
         ppc.period = 10.0;
         ppc.values = {1.0, 2.0, 3.0};
@@ -137,7 +137,7 @@ namespace {
     TEST(PeriodicPiecewiseConstant, Empty)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
         ppc.period = 10.0;
         fns.push_back({"emptyppc", std::move(ppc)});
@@ -153,7 +153,7 @@ namespace {
     TEST(PeriodicPiecewiseConstant, SingleValue)
     {
         mhs::numerics::SymbolTable sym;
-        std::vector<mhs::model::NamedFunction> fns;
+        mhs::core::Vector<mhs::model::NamedFunction> fns;
         mhs::model::PeriodicPiecewiseConstantFunctionSpec ppc;
         ppc.period = 10.0;
         ppc.values = {42.0};

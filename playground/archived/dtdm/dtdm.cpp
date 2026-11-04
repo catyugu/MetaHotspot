@@ -1,3 +1,4 @@
+#include "core/vector.hpp"
 #include "dtdm.hpp"
 
 #include "solver/assembler.hpp"
@@ -33,18 +34,18 @@ namespace mhs::dtdm {
             tbb::parallel_for(0, kModuleCount, [&task](int m) { task(m); });
         }
 
-        std::vector<double> to_vector(const Eigen::VectorXd& field)
-        { return std::vector<double>(field.data(), field.data() + field.size()); }
+        mhs::core::Vector<double> to_vector(const Eigen::VectorXd& field)
+        { return mhs::core::Vector<double>(field.data(), field.data() + field.size()); }
 
         /// The paper excites every order with f_q = 2 P (-1)^q and lets the series
         /// carry the constant. This implementation carries it exactly and the series
         /// carries theta - theta_ss, so the two reconstructions differ by
         /// theta_ss (1 - 2 sum_{q<N} (-1)^q phi_q(s t)), which vanishes as N grows.
         /// The factor is printed so the difference is not left implicit.
-        void report_dc_remainder(int orders, double scale, const std::vector<double>& times)
+        void report_dc_remainder(int orders, double scale, const mhs::core::Vector<double>& times)
         {
             std::fprintf(stderr, "[dc] paper form minus this form, in units of theta_ss:");
-            std::vector<double> weights;
+            mhs::core::Vector<double> weights;
             for (const double t : times) {
                 phi(orders, scale * t, weights);
                 double alternating = 0.0;
@@ -57,9 +58,9 @@ namespace mhs::dtdm {
 
         template <class Storage>
         Eigen::SparseMatrix<double> principal_submatrix(
-            const Storage& matrix, const std::vector<int>& cells, const std::vector<int>& global_to_local)
+            const Storage& matrix, const mhs::core::Vector<int>& cells, const mhs::core::Vector<int>& global_to_local)
         {
-            std::vector<Eigen::Triplet<double>> triplets;
+            mhs::core::Vector<Eigen::Triplet<double>> triplets;
             for (std::size_t b = 0; b < cells.size(); ++b) {
                 const auto column = static_cast<Eigen::Index>(cells[b]);
                 for (typename Storage::InnerIterator it(matrix, column); it; ++it) {
@@ -96,7 +97,7 @@ namespace mhs::dtdm {
                 half_conductance_ = Eigen::VectorXd::Zero(patches_);
 
                 Eigen::VectorXd correction = Eigen::VectorXd::Zero(n);
-                std::vector<Eigen::Triplet<double>> triplets;
+                mhs::core::Vector<Eigen::Triplet<double>> triplets;
                 int offset = 0;
                 for (int k = 0; k < kInterfaceCount; ++k)
                     for (int p = 0; p < static_cast<int>(module.patches[k].size()); ++p, ++offset)
@@ -111,7 +112,7 @@ namespace mhs::dtdm {
                 w_.makeCompressed();
                 wt_ = Eigen::SparseMatrix<double>(w_.transpose());
 
-                std::vector<Eigen::Triplet<double>> diagonal;
+                mhs::core::Vector<Eigen::Triplet<double>> diagonal;
                 for (Eigen::Index i = 0; i < n; ++i)
                     if (correction(i) != 0.0)
                         diagonal.emplace_back(i, i, correction(i));
@@ -185,7 +186,7 @@ namespace mhs::dtdm {
             const auto n = op.matrix().rows();
             const std::size_t columns = static_cast<std::size_t>(op.patches());
             const std::size_t workers = std::min(kExtractionWorkers, columns);
-            std::vector<mhs::numerics::SolverPtr> pool;
+            mhs::core::Vector<mhs::numerics::SolverPtr> pool;
             pool.reserve(workers);
             for (std::size_t w = 0; w < workers; ++w) {
                 pool.push_back(mhs::numerics::create_solver({type, {tolerance, 2000}}));
@@ -194,7 +195,7 @@ namespace mhs::dtdm {
 
             Macromodel out;
             out.G = Eigen::MatrixXd::Zero(op.patches(), op.patches());
-            std::vector<long long> iterations(workers, 0);
+            mhs::core::Vector<long long> iterations(workers, 0);
             tbb::parallel_for(std::size_t(0), workers, [&](std::size_t w) {
                 auto& solver = *pool[w];
                 const auto begin = columns * w / workers;
@@ -262,13 +263,13 @@ namespace mhs::dtdm {
         /// decomposition, scattered to its global cell ids.
         class Series {
         public:
-            Series(int orders, double scale, const std::vector<double>& times) : weights_(times.size())
+            Series(int orders, double scale, const mhs::core::Vector<double>& times) : weights_(times.size())
             {
                 for (std::size_t k = 0; k < times.size(); ++k)
                     phi(orders, scale * times[k], weights_[k]);
             }
 
-            void start_from(const std::vector<double>& field) { fields_.assign(weights_.size(), field); }
+            void start_from(const mhs::core::Vector<double>& field) { fields_.assign(weights_.size(), field); }
 
             void add(int q, const Eigen::VectorXd& state)
             {
@@ -280,7 +281,7 @@ namespace mhs::dtdm {
                 }
             }
 
-            void add(int q, const Eigen::VectorXd& state, const std::vector<int>& cells)
+            void add(int q, const Eigen::VectorXd& state, const mhs::core::Vector<int>& cells)
             {
                 for (std::size_t k = 0; k < weights_.size(); ++k) {
                     const double weight = weights_[k][static_cast<std::size_t>(q)];
@@ -290,14 +291,14 @@ namespace mhs::dtdm {
                 }
             }
 
-            std::vector<std::vector<double>> take() { return std::move(fields_); }
+            mhs::core::Vector<mhs::core::Vector<double>> take() { return std::move(fields_); }
 
         private:
-            std::vector<std::vector<double>> weights_; // [probe][order]
-            std::vector<std::vector<double>> fields_; // [probe][dof]
+            mhs::core::Vector<mhs::core::Vector<double>> weights_; // [probe][order]
+            mhs::core::Vector<mhs::core::Vector<double>> fields_; // [probe][dof]
         };
 
-        void require_samples(const std::vector<double>& sample_times)
+        void require_samples(const mhs::core::Vector<double>& sample_times)
         {
             if (sample_times.empty())
                 throw std::invalid_argument("at least one probe time is required");
@@ -306,8 +307,8 @@ namespace mhs::dtdm {
         /// One fixed-step backward-Euler march of eq. (1) from a cold start, with
         /// the field recorded at the probe times. The step never changes, so the
         /// operator is factored once for the whole march.
-        std::vector<std::vector<double>> march_backward_euler(const mhs::sim::Operators& operators, int steps,
-            double duration, const std::vector<double>& times, mhs::numerics::SolverType type, double tolerance)
+        mhs::core::Vector<mhs::core::Vector<double>> march_backward_euler(const mhs::sim::Operators& operators, int steps,
+            double duration, const mhs::core::Vector<double>& times, mhs::numerics::SolverType type, double tolerance)
         {
             const auto n = static_cast<Eigen::Index>(operators.f.size());
             const double dt = duration / static_cast<double>(steps);
@@ -320,7 +321,7 @@ namespace mhs::dtdm {
             auto solver = mhs::numerics::create_solver({type, {tolerance, 2000}});
             solver->compute(matrix);
 
-            std::vector<std::vector<double>> samples(times.size());
+            mhs::core::Vector<mhs::core::Vector<double>> samples(times.size());
             Eigen::VectorXd state = Eigen::VectorXd::Zero(n);
             std::size_t next = 0;
             // A probe at t = 0 is the initial condition itself.
@@ -345,8 +346,8 @@ namespace mhs::dtdm {
 
         /// 2 fine - coarse: removes the first-order term of two fields that differ
         /// only in their step.
-        std::vector<std::vector<double>> richardson(
-            const std::vector<std::vector<double>>& coarse, const std::vector<std::vector<double>>& fine)
+        mhs::core::Vector<mhs::core::Vector<double>> richardson(
+            const mhs::core::Vector<mhs::core::Vector<double>>& coarse, const mhs::core::Vector<mhs::core::Vector<double>>& fine)
         {
             auto out = fine;
             for (std::size_t k = 0; k < out.size(); ++k)
@@ -356,7 +357,7 @@ namespace mhs::dtdm {
         }
 
         double max_field_difference(
-            const std::vector<std::vector<double>>& a, const std::vector<std::vector<double>>& b)
+            const mhs::core::Vector<mhs::core::Vector<double>>& a, const mhs::core::Vector<mhs::core::Vector<double>>& b)
         {
             double worst = 0.0;
             for (std::size_t k = 0; k < a.size(); ++k)
@@ -376,7 +377,7 @@ namespace mhs::dtdm {
 
     void System::build_operators()
     {
-        const std::vector<double> state(static_cast<std::size_t>(stack_.dof), 0.0);
+        const mhs::core::Vector<double> state(static_cast<std::size_t>(stack_.dof), 0.0);
         auto operators = mhs::sim::assemble_thermal(stack_.model, state, 0.0);
         K_ = std::move(operators.K);
         C_ = std::move(operators.C);
@@ -427,8 +428,8 @@ namespace mhs::dtdm {
             const auto& a = modules_[static_cast<std::size_t>(m0)];
             const auto& b = modules_[static_cast<std::size_t>(m1)];
 
-            std::vector<double> xs, ys;
-            std::vector<std::tuple<int, int>> couplings;
+            mhs::core::Vector<double> xs, ys;
+            mhs::core::Vector<std::tuple<int, int>> couplings;
             for (const int ca : a.cells)
                 for (Eigen::SparseMatrix<double>::InnerIterator it(K_, ca); it; ++it) {
                     const int cb = static_cast<int>(it.row());
@@ -448,7 +449,7 @@ namespace mhs::dtdm {
             const double spany = std::max(*std::max_element(ys.begin(), ys.end()) - ymin, 1e-30);
 
             const auto slots = static_cast<std::size_t>(per_face ? couplings.size() : nx * ny);
-            std::vector<Patch> side_a(slots), side_b(slots);
+            mhs::core::Vector<Patch> side_a(slots), side_b(slots);
             for (std::size_t c = 0; c < couplings.size(); ++c) {
                 const auto [ca, cb] = couplings[c];
                 const auto found = face_of_pair.find({ca, cb});
@@ -475,7 +476,7 @@ namespace mhs::dtdm {
             }
 
             // A coarse grid leaves some patch ids unused; number the used ones.
-            std::vector<int> used;
+            mhs::core::Vector<int> used;
             for (std::size_t p = 0; p < slots; ++p)
                 if (!side_a[p].faces.empty())
                     used.push_back(static_cast<int>(p));
@@ -511,7 +512,7 @@ namespace mhs::dtdm {
         return steady;
     }
 
-    MarchResult System::monolithic_wlp(double scale, int orders, const std::vector<double>& sample_times) const
+    MarchResult System::monolithic_wlp(double scale, int orders, const mhs::core::Vector<double>& sample_times) const
     {
         require_samples(sample_times);
         const auto start = Clock::now();
@@ -558,7 +559,7 @@ namespace mhs::dtdm {
         return out;
     }
 
-    MarchResult System::dtdm(double scale, int orders, const std::vector<double>& sample_times) const
+    MarchResult System::dtdm(double scale, int orders, const mhs::core::Vector<double>& sample_times) const
     {
         require_samples(sample_times);
         const auto start = Clock::now();
@@ -651,7 +652,7 @@ namespace mhs::dtdm {
         return out;
     }
 
-    MarchResult System::reference(int steps, double duration, const std::vector<double>& sample_times) const
+    MarchResult System::reference(int steps, double duration, const mhs::core::Vector<double>& sample_times) const
     {
         require_samples(sample_times);
         const auto start = Clock::now();

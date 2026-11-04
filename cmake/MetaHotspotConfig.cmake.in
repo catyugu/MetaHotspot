@@ -5,7 +5,6 @@ include(CMakeFindDependencyMacro)
 # The same packages cmake/Dependencies.cmake acquires, at the versions declared
 # there: every one of them is linked into an installed library, so a consumer
 # has to be able to find it.
-find_dependency(Eigen3 @MHS_EIGEN_VERSION@ CONFIG)
 find_dependency(spdlog @MHS_SPDLOG_VERSION@ CONFIG)
 find_dependency(tinyxml2 @MHS_TINYXML2_VERSION@ CONFIG)
 find_dependency(muparser @MHS_MUPARSER_VERSION@ CONFIG)

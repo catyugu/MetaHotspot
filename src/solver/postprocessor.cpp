@@ -1,4 +1,5 @@
 #include "solver/postprocessor.hpp"
+#include "core/vector.hpp"
 #include "thermal_reconstruction.hpp"
 #include <algorithm>
 #include <array>
@@ -6,7 +7,6 @@
 #include <limits>
 #include <ranges>
 #include <stdexcept>
-#include <vector>
 
 namespace mhs::post {
 
@@ -25,13 +25,13 @@ namespace mhs::post {
 
     } // namespace
 
-    std::vector<double> interpolate_cell_to_node(
+    mhs::core::Vector<double> interpolate_cell_to_node(
         const mhs::core::Model& model, std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
-        std::vector<double> node_T(model.output.points.size(), 0.0);
-        std::vector<double> weight(node_T.size(), 0.0);
+        mhs::core::Vector<double> node_T(model.output.points.size(), 0.0);
+        mhs::core::Vector<double> weight(node_T.size(), 0.0);
         for (mhs::core::Index c = 0; c < model.output.cell_vertices.size(); ++c) {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];

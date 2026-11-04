@@ -1,7 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "core/solver.hpp"
 #include "model_test_utils.hpp"
-#include <Eigen/LU>
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <string>

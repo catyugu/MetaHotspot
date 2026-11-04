@@ -8,16 +8,16 @@
 #include "io/result_io.hpp"
 #include "solver/assembler.hpp"
 
+#include "core/vector.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <string>
-#include <vector>
-
-#include <Eigen/Sparse>
 
 /* ------------------------------------------------------------------ */
 /*  Shared error-buffer helpers                                        */
@@ -75,7 +75,7 @@ struct BlockLocation {
 
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
-    std::vector<BlockLocation> block_locations;
+    mhs::core::Vector<BlockLocation> block_locations;
     std::optional<mhs::core::DiscreteMesh> external_mesh;
 };
 
@@ -667,7 +667,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 
 namespace {
     template <typename T>
-    mhs_status_t copy_vector(const std::vector<T>& source, T* out, size_t count, const char* label)
+    mhs_status_t copy_vector(const mhs::core::Vector<T>& source, T* out, size_t count, const char* label)
     {
         if (count != source.size()) {
             SET_ERR(label << " count must equal " << source.size());
@@ -682,11 +682,11 @@ namespace {
         return MHS_OK;
     }
 
-    mhs_status_t copy_csc_matrix(const Eigen::SparseMatrix<double>& matrix, int32_t* outer, size_t outer_count,
+    mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, int32_t* outer, size_t outer_count,
         int32_t* inner, size_t inner_count, double* values, size_t value_count)
     {
         const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
-        const auto expected_nnz = static_cast<size_t>(matrix.nonZeros());
+        const auto expected_nnz = static_cast<size_t>(matrix.nnz());
         if (outer_count != expected_outer || inner_count != expected_nnz || value_count != expected_nnz) {
             SET_ERR("CSC buffer sizes do not match operator dimensions");
             return MHS_ERROR;
@@ -695,9 +695,23 @@ namespace {
             SET_ERR("NULL CSC output buffer");
             return MHS_ERROR;
         }
-        std::copy_n(matrix.outerIndexPtr(), expected_outer, outer);
-        std::copy_n(matrix.innerIndexPtr(), expected_nnz, inner);
-        std::copy_n(matrix.valuePtr(), expected_nnz, values);
+        std::fill_n(outer, expected_outer, int32_t {0});
+        for (auto col : matrix.col_idx())
+            ++outer[static_cast<size_t>(col) + 1];
+        for (size_t j = 0; j < matrix.cols(); ++j)
+            outer[j + 1] += outer[j];
+        // Reverse traversal fills from each column end, producing sorted rows.
+        // Restore column offsets after using them as insertion cursors.
+        for (size_t i = matrix.rows(); i-- > 0;)
+            for (auto k = matrix.row_ptr()[i + 1]; k-- > matrix.row_ptr()[i];) {
+                const auto col = static_cast<size_t>(matrix.col_idx()[k]);
+                const auto pos = --outer[col + 1];
+                inner[pos] = static_cast<int32_t>(i);
+                values[pos] = matrix.values()[k];
+            }
+        for (size_t j = 0; j < matrix.cols(); ++j)
+            outer[j] = outer[j + 1];
+        outer[matrix.cols()] = static_cast<int32_t>(expected_nnz);
         mhs_detail_clear_last_error();
         return MHS_OK;
     }
@@ -850,8 +864,8 @@ MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mh
     CHECK_NULL(operators);
     CHECK_NULL(out);
     out->state_count = static_cast<size_t>(operators->operators.f.size());
-    out->k_nnz = static_cast<size_t>(operators->operators.K.nonZeros());
-    out->c_nnz = static_cast<size_t>(operators->operators.C.nonZeros());
+    out->k_nnz = static_cast<size_t>(operators->operators.K.nnz());
+    out->c_nnz = static_cast<size_t>(operators->operators.C.nnz());
     mhs_detail_clear_last_error();
     return MHS_OK;
 }

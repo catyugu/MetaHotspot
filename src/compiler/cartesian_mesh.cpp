@@ -1,14 +1,15 @@
 #include "compiler/geometry_compiler.hpp"
+#include "core/vector.hpp"
 #include <map>
 
 namespace mhs::sim {
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
     void compile_cartesian_mesh(mhs::core::Model& model, const mhs::model::MeshSpec& input, double scale,
-        const std::vector<ResolvedLayerGeometry>& layers)
+        const mhs::core::Vector<ResolvedLayerGeometry>& layers)
     {
         using namespace mhs::core;
-        std::array<std::vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
+        std::array<mhs::core::Vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
         std::array<Index, 3> n {};
         for (int a = 0; a < 3; ++a) {
             for (auto& coordinate : axes[a])
@@ -17,7 +18,7 @@ namespace mhs::sim {
         }
         auto flatten = [&](Index x, Index y, Index z) { return (x * n[1] + y) * n[2] + z; };
         auto vertex = [&](Index x, Index y, Index z) { return (x * (n[1] + 1) + y) * (n[2] + 1) + z; };
-        std::vector<Index> active(n[0] * n[1] * n[2], invalidIndex);
+        mhs::core::Vector<Index> active(n[0] * n[1] * n[2], invalidIndex);
         model.output.cartesian_shape = {n[0] + 1, n[1] + 1, n[2] + 1};
         for (auto x : axes[0])
             for (auto y : axes[1])

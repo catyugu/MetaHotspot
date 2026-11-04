@@ -14,7 +14,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 ```
 
-`mhs::core` 不依赖 `mhs::sim`、`mhs::io`、`mhs::post` 或 `mhs::logger`。`mhs::numerics` 只依赖第三方库（muparser、TBB、Eigen、AMGCL），不依赖本项目其他命名空间。命名空间规则和目录归属见 [项目结构](docs/design/project-structure.md)。
+`mhs::core` 不依赖 `mhs::sim`、`mhs::io`、`mhs::post` 或 `mhs::logger`。`mhs::numerics` 的线性代数算法依赖 `core` 基础容器；表达式模块只使用基础容器、不依赖领域模型，以便运行期模型保存编译后表达式。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。命名空间规则和目录归属见 [项目结构](docs/design/project-structure.md)。
 
 ## 求解约定
 

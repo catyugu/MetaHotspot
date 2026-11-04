@@ -1,6 +1,7 @@
 #include "solver/solve.hpp"
 #include "core/constants.hpp"
 #include "core/solver.hpp"
+#include "core/vector.hpp"
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
@@ -52,7 +53,7 @@ namespace mhs::sim {
                 opts.nonlinear_absolute_tolerance};
         }
 
-        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state,
+        mhs::core::Solution solve_steady(const SystemAssembler& assemble, mhs::core::Vector<double> state,
             mhs::numerics::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe)
         {
             const auto state_count = state.size();
@@ -74,7 +75,7 @@ namespace mhs::sim {
         }
 
         mhs::core::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
-            std::vector<double> state, mhs::numerics::SolverPtr& solver, const SolveOptions& opts,
+            mhs::core::Vector<double> state, mhs::numerics::SolverPtr& solver, const SolveOptions& opts,
             NonLinearConfig nl_config, time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
             const StateObserver& observe)
         {
@@ -200,7 +201,7 @@ namespace mhs::sim {
             throw std::invalid_argument("unknown step strategy");
 
         mhs::numerics::SolverPtr solver = mhs::numerics::create_solver(solver_spec);
-        std::vector<double> state(initial_state.begin(), initial_state.end());
+        mhs::core::Vector<double> state(initial_state.begin(), initial_state.end());
 
         if (study.type == mhs::core::StudyType::Steady) {
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
@@ -217,7 +218,7 @@ namespace mhs::sim {
             throw std::invalid_argument("solve: model has zero cells");
         }
 
-        std::vector<double> state;
+        mhs::core::Vector<double> state;
         if (initial_state.empty()) {
             state.assign(cell_count, model.initial_temperature);
         }

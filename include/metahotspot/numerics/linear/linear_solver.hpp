@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Eigen/Sparse>
+#include "core/csr_matrix.hpp"
 #include <memory>
+#include <span>
 
 namespace mhs::numerics {
 
@@ -19,36 +20,26 @@ namespace mhs::numerics {
         SolverConfig config {};
     };
 
-    /// Base for all solver backends. Every solver accepts an initial guess x0:
-    ///   - Iterative backends (AmgCg) warm-start from it.
-    ///   - Direct backends (Pardiso) silently ignore it (caller may pass
-    ///     VectorXd::Zero(n) for a cold start).
+    struct LinearSolveResult {
+        bool success = false;
+        int iterations = 0;
+        double residual = 0.0;
+    };
+
     class LinearSolver {
     public:
         virtual ~LinearSolver() = default;
-
-        /// Factorize (direct) or build preconditioner (iterative).
-        /// Must be called before solve(...).
-        virtual void compute(const Eigen::SparseMatrix<double>& A) = 0;
-
-        /// Solve A * x = b. The initial guess x0 is accepted by all backends;
-        /// direct backends ignore it, iterative backends use it as warm-start.
-        virtual Eigen::VectorXd solve(const Eigen::VectorXd& b, Eigen::Ref<const Eigen::VectorXd> x0) = 0;
-
-        // Configuration
+        // Build factorization/preconditioner. The backend owns what it retains;
+        // the input matrix may be destroyed after compute returns.
+        virtual void compute(const core::CSRMatrix<double>& A) = 0;
+        // All spans have A.rows() elements. x may alias x0, but must
+        // not overlap b. Direct backends ignore x0.
+        virtual LinearSolveResult solve(std::span<const double> b, std::span<const double> x0, std::span<double> x) = 0;
         void set_config(SolverConfig cfg) { config_ = cfg; }
         const SolverConfig& config() const { return config_; }
 
-        // Diagnostics from the last solve()
-        bool success() const { return success_; }
-        int iterations() const { return iterations_; }
-        double residual() const { return residual_; }
-
     protected:
         SolverConfig config_;
-        bool success_ = false;
-        int iterations_ = 0;
-        double residual_ = 0.0;
     };
 
     using SolverPtr = std::unique_ptr<LinearSolver>;

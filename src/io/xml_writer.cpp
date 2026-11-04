@@ -1,3 +1,4 @@
+#include "core/vector.hpp"
 #include "io/result_io.hpp"
 #include <tinyxml2.h>
 
@@ -52,7 +53,7 @@ namespace mhs::io {
     } // namespace
 
     void write_xml(const std::string& input_path, const std::string& output_path, const mhs::core::Model& model,
-        std::span<const double> node_temperature, const std::vector<mhs::core::ProbeTrace>& observation_traces,
+        std::span<const double> node_temperature, const mhs::core::Vector<mhs::core::ProbeTrace>& observation_traces,
         std::span<const double> observation_times)
     {
         using namespace tinyxml2;

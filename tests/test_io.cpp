@@ -1,4 +1,5 @@
 #include "core/model_definition.hpp"
+#include "core/vector.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include <filesystem>
@@ -187,12 +188,12 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
-    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
+    mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<mhs::core::ProbeTrace> traces;
+    mhs::core::Vector<mhs::core::ProbeTrace> traces;
     mhs::core::ProbeTrace t1;
     t1.name = "probe_a";
-    const std::vector<double> times {0.0, 1.0, 2.0};
+    const mhs::core::Vector<double> times {0.0, 1.0, 2.0};
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
@@ -214,7 +215,7 @@ TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
     const auto out_path = tmp_dir() / "io_dimensions_output.xml";
     mhs::core::Model model;
     model.output.cartesian_shape = {2, 3, 4};
-    const std::vector<double> temperatures(24, 300.0);
+    const mhs::core::Vector<double> temperatures(24, 300.0);
 
     mhs::io::write_xml(in_path.string(), out_path.string(), model, temperatures, {});
 
@@ -258,10 +259,10 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
-    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
+    mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<mhs::core::ProbeTrace> traces;
-    const std::vector<double> times;
+    mhs::core::Vector<mhs::core::ProbeTrace> traces;
+    const mhs::core::Vector<double> times;
     mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);

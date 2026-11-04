@@ -1,10 +1,11 @@
+#include "numerics/sparse_ops.hpp"
+#include "numerics/vector_ops.hpp"
 #include "solver/solution_history.hpp"
 #include "solver/solve.hpp"
 
-#include <Eigen/Sparse>
+#include "core/vector.hpp"
 #include <array>
 #include <gtest/gtest.h>
-#include <vector>
 
 TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 {
@@ -21,11 +22,9 @@ TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 
     mhs::sim::SystemAssembler assemble = [](std::span<const double>, double) {
         mhs::sim::Operators operators;
-        operators.K.resize(1, 1);
-        operators.K.insert(0, 0) = 1.0;
-        operators.C.resize(1, 1);
-        operators.C.insert(0, 0) = 1.0;
-        operators.f = Eigen::VectorXd::Ones(1);
+        operators.K = mhs::numerics::build_csr(1, 1, {{0, 0, 1.0}});
+        operators.C = mhs::numerics::build_csr(1, 1, {{0, 0, 1.0}});
+        operators.f = mhs::core::Vector<double>(1, 1.0);
         return operators;
     };
 
@@ -33,7 +32,7 @@ TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
     const auto solution = mhs::sim::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);
-    ASSERT_EQ(solution.snapshot_times, (std::vector<double> {0.0, 0.25, 0.5}));
+    ASSERT_EQ(solution.snapshot_times, (mhs::core::Vector<double> {0.0, 0.25, 0.5}));
     ASSERT_EQ(solution.snapshot_states.size(), 3u);
     EXPECT_NEAR(solution.snapshot_states[0], 0.0, 1e-14);
     EXPECT_NEAR(solution.snapshot_states[1], 0.2, 1e-14);
@@ -49,10 +48,9 @@ TEST(SolutionHistoryTest, SteadySolveProducesOneSnapshot)
 
     mhs::sim::SystemAssembler assemble = [](std::span<const double>, double) {
         mhs::sim::Operators operators;
-        operators.K.resize(1, 1);
-        operators.K.insert(0, 0) = 2.0;
-        operators.C.resize(1, 1);
-        operators.f = Eigen::VectorXd::Constant(1, 6.0);
+        operators.K = mhs::numerics::build_csr(1, 1, {{0, 0, 2.0}});
+        operators.C = mhs::core::CSRMatrix<double>(1, 1);
+        operators.f = mhs::core::Vector<double>(1, 6.0);
         return operators;
     };
 
@@ -60,7 +58,7 @@ TEST(SolutionHistoryTest, SteadySolveProducesOneSnapshot)
     const auto solution = mhs::sim::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);
-    ASSERT_EQ(solution.snapshot_times, (std::vector<double> {0.0}));
+    ASSERT_EQ(solution.snapshot_times, (mhs::core::Vector<double> {0.0}));
     ASSERT_EQ(solution.snapshot_states.size(), 1u);
     EXPECT_NEAR(solution.snapshot_states[0], 3.0, 1e-14);
 }

@@ -1,8 +1,8 @@
 #include "numerics/linear/linear_solver.hpp"
-#include "numerics/linear/amg_solver.hpp"
+#include "amg_solver.hpp"
 
 #ifdef MHS_ENABLE_PARDISO
-#include "numerics/linear/pardiso_lu_solver.hpp"
+#include "pardiso_lu_solver.hpp"
 #endif
 
 #include <stdexcept>

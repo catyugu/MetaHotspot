@@ -1,5 +1,6 @@
-#include "numerics/linear/amg_solver.hpp"
-#include <amgcl/adapter/eigen.hpp>
+#include "amg_solver.hpp"
+#include "numerics/sparse_ops.hpp"
+#include <amgcl/adapter/crs_tuple.hpp>
 #include <amgcl/amg.hpp>
 #include <amgcl/backend/builtin.hpp>
 #include <amgcl/coarsening/smoothed_aggregation.hpp>
@@ -8,15 +9,17 @@
 #include <amgcl/solver/cg.hpp>
 #include <amgcl/solver/gmres.hpp>
 
-// Let the builtin backend operate on Eigen::VectorXd directly (zero copy).
-AMGCL_USE_EIGEN_VECTORS_WITH_BUILTIN_BACKEND()
-
-#include <Eigen/Sparse>
 #include <algorithm>
 #include <exception>
 #include <omp.h>
 #include <stdexcept>
 #include <tuple>
+
+// Enable AMGCL's existing indexed builtin kernels for borrowed contiguous
+// buffers. No allocation or copy is required at the solve boundary.
+namespace amgcl::backend {
+    template <class T, std::size_t Extent> struct is_builtin_vector<std::span<T, Extent>> : std::is_arithmetic<T> { };
+}
 
 namespace mhs::numerics {
 
@@ -33,7 +36,7 @@ namespace mhs::numerics {
         constexpr unsigned kGmresRestart = 64;
 
         // The performance sweet point
-        constexpr Eigen::Index kRowsPerThread = 8192;
+        constexpr std::ptrdiff_t kRowsPerThread = 8192;
         constexpr int kMaxThreads = 6;
 
         /// amgcl reads the team size from OpenMP itself, so the only handle on it
@@ -41,11 +44,11 @@ namespace mhs::numerics {
         /// scope exit, leaving MKL's own threading untouched.
         class ScopedTeam {
         public:
-            explicit ScopedTeam(Eigen::Index rows) : previous_(omp_get_max_threads())
+            explicit ScopedTeam(std::ptrdiff_t rows) : previous_(omp_get_max_threads())
             {
-                const Eigen::Index wanted = (rows + kRowsPerThread - 1) / kRowsPerThread;
-                const Eigen::Index limit = std::min<Eigen::Index>(kMaxThreads, previous_);
-                omp_set_num_threads(static_cast<int>(std::clamp(wanted, Eigen::Index {1}, limit)));
+                const std::ptrdiff_t wanted = (rows + kRowsPerThread - 1) / kRowsPerThread;
+                const std::ptrdiff_t limit = std::min<std::ptrdiff_t>(kMaxThreads, previous_);
+                omp_set_num_threads(static_cast<int>(std::clamp(wanted, std::ptrdiff_t {1}, limit)));
             }
             ScopedTeam(const ScopedTeam&) = delete;
             ScopedTeam& operator=(const ScopedTeam&) = delete;
@@ -59,8 +62,7 @@ namespace mhs::numerics {
 
     struct AmgCgSolver::Impl {
         bool symmetric = true;
-        int max_iterations = 1000;
-        Eigen::Index rows = 0;
+        std::ptrdiff_t rows = 0;
         std::shared_ptr<CgSolver> cg;
         std::shared_ptr<GmresSolver> gmres;
     };
@@ -69,30 +71,26 @@ namespace mhs::numerics {
 
     AmgCgSolver::~AmgCgSolver() = default;
 
-    void AmgCgSolver::compute(const Eigen::SparseMatrix<double>& A)
+    void AmgCgSolver::compute(const core::CSRMatrix<double>& A)
     {
         // Detect symmetry once: pure conduction/convection stays symmetric,
         // fluid-coupled cases with upwind advection introduce asymmetric
         // off-diagonal terms (thermal assembly). CG needs SPD, so route any
         // non-symmetric operator to GMRES.
-        const double asym = (A - Eigen::SparseMatrix<double>(A.transpose())).norm();
-        const double scale = A.norm();
-        impl_->symmetric = (asym <= 1e-6 * scale + 1e-300);
-        impl_->max_iterations = config_.max_iterations;
+        impl_->symmetric = numerically_symmetric(A, 1e-6);
         impl_->rows = A.rows();
         const ScopedTeam team(impl_->rows);
 
-        // AMGCL reads the operator by rows, so hand it a row-major copy. The
-        // AMG hierarchy is built eagerly here and the copy can go out of scope.
-        Eigen::SparseMatrix<double, Eigen::RowMajor> row_major(A);
-        row_major.makeCompressed();
+        if (A.rows() != A.cols() || A.rows() == 0)
+            throw std::invalid_argument("AMG requires a nonempty square matrix");
+        const auto matrix = std::make_tuple(A.rows(), A.row_ptr(), A.col_idx(), A.values());
 
         try {
             if (impl_->symmetric) {
                 CgSolver::params prm;
                 prm.solver.tol = config_.tolerance;
                 prm.solver.maxiter = static_cast<std::size_t>(config_.max_iterations);
-                impl_->cg = std::make_shared<CgSolver>(row_major, prm);
+                impl_->cg = std::make_shared<CgSolver>(matrix, prm);
                 impl_->gmres.reset();
             }
             else {
@@ -100,32 +98,30 @@ namespace mhs::numerics {
                 prm.solver.tol = config_.tolerance;
                 prm.solver.maxiter = static_cast<unsigned>(config_.max_iterations);
                 prm.solver.M = kGmresRestart;
-                impl_->gmres = std::make_shared<GmresSolver>(row_major, prm);
+                impl_->gmres = std::make_shared<GmresSolver>(matrix, prm);
                 impl_->cg.reset();
             }
         }
         catch (const std::exception& e) {
             impl_->cg.reset();
             impl_->gmres.reset();
-            success_ = false;
-            iterations_ = 0;
-            residual_ = 0.0;
             throw std::runtime_error(std::string("AMG preconditioner setup failed: ") + e.what());
         }
     }
 
-    Eigen::VectorXd AmgCgSolver::solve(const Eigen::VectorXd& b, Eigen::Ref<const Eigen::VectorXd> x0)
+    LinearSolveResult AmgCgSolver::solve(std::span<const double> b, std::span<const double> x0, std::span<double> x)
     {
         const bool have_solver = impl_->symmetric ? static_cast<bool>(impl_->cg) : static_cast<bool>(impl_->gmres);
         if (!have_solver) {
             throw std::logic_error("AmgCgSolver::solve called before compute()");
         }
-        if (b.size() != x0.size()) {
+        if (b.size() != x0.size() || b.size() != x.size() || b.size() != static_cast<std::size_t>(impl_->rows)) {
             throw std::invalid_argument("AmgCgSolver::solve: initial guess size must match b ("
                 + std::to_string(x0.size()) + " != " + std::to_string(b.size()) + ")");
         }
 
-        Eigen::VectorXd x = x0; // warm start
+        if (x.data() != x0.data())
+            std::copy(x0.begin(), x0.end(), x.begin());
         std::size_t iters = 0;
         double residual = 0.0;
         const ScopedTeam team(impl_->rows);
@@ -138,19 +134,13 @@ namespace mhs::numerics {
             }
         }
         catch (const std::exception& e) {
-            success_ = false;
-            iterations_ = 0;
-            residual_ = 0.0;
             throw std::runtime_error(std::string("AMG solve failed: ") + e.what());
         }
 
-        iterations_ = static_cast<int>(iters);
-        residual_ = residual;
-        // Converged unless the iteration budget was exhausted (fall back to a
-        // residual check so that convergence on the very last step still counts).
-        const double b_norm = b.norm();
-        success_ = (static_cast<int>(iters) < impl_->max_iterations) || residual <= config_.tolerance * b_norm + 1e-300;
-        return x;
+        // AMGCL reports the relative residual, including a zero-RHS fallback.
+        return {std::isfinite(residual)
+                && (iters < static_cast<std::size_t>(config_.max_iterations) || residual <= config_.tolerance),
+            static_cast<int>(iters), residual};
     }
 
 } // namespace mhs::numerics

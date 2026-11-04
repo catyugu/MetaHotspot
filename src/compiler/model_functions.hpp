@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/vector.hpp"
+
 #include "core/model_definition.hpp"
 #include "numerics/expression/expr.hpp"
 
@@ -14,6 +16,6 @@ namespace mhs::sim {
     // 把 mhs::model::ModelDefinition 的所有 NamedFunction 注册为 SymbolTable 的 natives。
     // 不写任何全局状态；调用方持有 SymbolTable，函数闭包按值存于其中。
     void register_all_functions(
-        mhs::numerics::SymbolTable& symbols, const std::vector<mhs::model::NamedFunction>& functions);
+        mhs::numerics::SymbolTable& symbols, const mhs::core::Vector<mhs::model::NamedFunction>& functions);
 
 } // namespace mhs::sim

@@ -10,7 +10,7 @@
 | `src/compiler/`            | `mhs_compiler`     | 给定网格适配、几何投影、表达式编译和冻结流场构建            |
 | `src/solver/`              | `mhs_solver`       | 组装、非线性迭代、线性求解、时间推进、探针和后处理          |
 | `src/numerics/expression/` | `mhs_expression`   | muparser 与 TBB 表达式封装；`mhs::numerics` 表达式契约归它     |
-| `src/numerics/linear/`     | `mhs_linear`       | AMGCL/Eigen AMG 迭代求解、求解器工厂和可选 MKL/Pardiso 封装   |
+| `src/numerics/linear/`     | `mhs_linear`       | AMGCL CSR 迭代求解、求解器工厂和可选 MKL/Pardiso 封装   |
 | `src/io/`                  | `mhs_io`           | tinyxml2 适配及 XML/VTU 输出                                |
 | `src/logging/`             | `mhs_logging`      | spdlog 封装                                                 |
 | `src/api/`                 | `mhs_c_api`        | opaque handle 与 C ABI 适配                                 |
@@ -48,9 +48,19 @@ C 接口头文件是 `include/metahotspot/metahotspot_c_api.h`。
 - `mhs_options` 为项目目标配置严格告警；`MHS_WERROR=ON` 时视为错误（顶层默认 ON）。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - Pardiso 代码只能在 `MHS_ENABLE_PARDISO` 边界内出现。
 - `mhs::core` 契约是 header-only 的，随 `mhs_expression` 一起被链接；`mhs::model` 类型不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
-- `mhs::core` 的运行期类型保存编译后表达式，因此依赖 muparser/TBB；`mhs_solver` 和 `mhs_linear` 使用 Eigen，`mhs_io` 使用 tinyxml2，`mhs_logging` 使用 spdlog。
+- `mhs::core` 的运行期类型保存编译后表达式，因此依赖 muparser/TBB；`mhs_solver` 和可选 PARDISO 实现在内部使用 Eigen，公开头与 SDK 不依赖 Eigen；`mhs_io` 使用 tinyxml2，`mhs_logging` 使用 spdlog。
 - C API 公共头只暴露 C 类型、枚举和 opaque handle；批量结果通过 copy-out API 写入调用方缓冲区。
 
 具体选项和依赖声明以根 `CMakeLists.txt`、`cmake/Dependencies.cmake` 与各目标 `CMakeLists.txt` 为准，不在本文复制。
 
 `include/metahotspot/compiler/model_compiler.hpp` 是公开编译入口；求解入口位于 `core/solver.hpp`。其余 compiler/solver 实现头文件位于各自 `src/` 目录，只通过 PRIVATE include 路径供组件和白盒测试使用，不随包安装。
+
+## 基础数值容器与求解边界
+
+`core::Vector<T>` 是使用池化分配器的 `std::vector` 别名，项目自有 C++ 数组统一使用它。分配器保存所属资源指针，移动、交换和跨模块释放时沿用原资源；资源采用线程安全的标准内存池，超过池化上限的大块内存交给上游分配器。资源必须存活到其容器释放之后，使用它的动态库同样必须保持加载。
+
+`core::Matrix<T>` 固定连续行主序，`core::CSRMatrix<T>` 固定零基 CSR。CSR 的行指针和列索引使用有符号 32 位整数；尺寸和非零项数量超出容量时抛出异常。每行列索引严格递增，重复装配项由 `numerics::build_csr` 合并，显式零保留。容器负责存储与不变量，矩阵运算属于 `numerics`。向量算法接受 `std::span`，稀疏运算接受 `core::CSRMatrixView`。
+
+公开的 `numerics/linear` 仅包含 `linear_solver.hpp`。具体 AMGCL/PARDISO 类型位于 `src/numerics/linear`，由工厂创建。`compute` 返回后调用者可以释放输入矩阵；`solve(b, x0, x)` 写入调用者提供的缓冲区，返回本次求解的状态、迭代次数和后端残差。`x` 可以与 `x0` 完全重合，不能与 `b` 重合。AMGCL 直接读取 CSR，Eigen 仅作为内部 QR 和可选 PARDISO 的构建依赖。C/Python API 继续导出 CSC，在复制到调用者缓冲区时完成转换。
+
+C++ 容器类型和线性求解接口发生不兼容变更，使用旧头文件的消费者需要重新编译。C API 的函数签名与数组布局保持不变。Release CI 安装 SDK 后会检查公开头、导出目标和独立消费者，消费者配置显式禁用 Eigen 查找。

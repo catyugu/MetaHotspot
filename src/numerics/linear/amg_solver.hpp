@@ -26,8 +26,8 @@ namespace mhs::numerics {
         AmgCgSolver();
         ~AmgCgSolver() override;
 
-        void compute(const Eigen::SparseMatrix<double>& A) override;
-        Eigen::VectorXd solve(const Eigen::VectorXd& b, Eigen::Ref<const Eigen::VectorXd> x0) override;
+        void compute(const core::CSRMatrix<double>& A) override;
+        LinearSolveResult solve(std::span<const double> b, std::span<const double> x0, std::span<double> x) override;
 
     private:
         struct Impl;

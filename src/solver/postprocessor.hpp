@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/model.hpp"
+#include "core/vector.hpp"
 #include <span>
-#include <vector>
 
 namespace mhs::post {
 
@@ -10,7 +10,7 @@ namespace mhs::post {
     // Result order follows OutputMesh::points; no Cartesian topology is assumed.
     // `time` 注入到 FieldContext.t，使时间依赖的 BC 表达式（如 "500 + 100*t"）
     // 在正确的时刻被求值。
-    std::vector<double> interpolate_cell_to_node(
+    mhs::core::Vector<double> interpolate_cell_to_node(
         const mhs::core::Model& model, std::span<const double> cell_temperature, double time);
 
     double max_temperature(std::span<const double> T);

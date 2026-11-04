@@ -1,10 +1,12 @@
 #include "compiler/model_compiler.hpp"
 #include "core/discrete_mesh.hpp"
+#include "core/vector.hpp"
 #include "solver/assembler.hpp"
 #include "solver/postprocessor.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <numeric>
 
 using namespace mhs::core;
 
@@ -68,9 +70,9 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
     auto model = mhs::sim::build_model(definition);
-    const std::vector<Index> order {7, 5, 3, 1, 6, 4, 2, 0};
+    const mhs::core::Vector<Index> order {7, 5, 3, 1, 6, 4, 2, 0};
     auto mesh = model.discrete;
-    std::vector<Index> inverse(order.size());
+    mhs::core::Vector<Index> inverse(order.size());
     for (Index i = 0; i < order.size(); ++i) {
         mesh.cells[i] = model.discrete.cells[order[i]];
         inverse[order[i]] = i;
@@ -85,8 +87,8 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         m->material_table[0].kx = mhs::numerics::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::numerics::parse("x+2*y+3*z", {});
     }
-    std::vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
-    std::vector<double> reordered(8);
+    mhs::core::Vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
+    mhs::core::Vector<double> reordered(8);
     for (Index i = 0; i < order.size(); ++i)
         reordered[i] = original[order[i]];
     const auto baseline = mhs::sim::assemble_thermal(model, original, 0);
@@ -122,7 +124,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         // The solver's patch lookup binary-searches this order.
         EXPECT_TRUE(
             std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent.value; }));
-        const std::vector<double> state {350};
+        const mhs::core::Vector<double> state {350};
         for (const auto& patch : model.boundary_faces) {
             const auto face = model.discrete.faces[patch.parent.value].project(patch.bounds);
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
@@ -177,8 +179,8 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         EXPECT_EQ(model.discrete.faces[i].min, base.faces[i].min);
         EXPECT_EQ(model.discrete.faces[i].max, base.faces[i].max);
     }
-    const auto ops = mhs::sim::assemble_thermal(model, std::vector<double>(8, 300), 0);
-    EXPECT_NEAR(ops.f.sum(), 0.1, 1e-14);
+    const auto ops = mhs::sim::assemble_thermal(model, mhs::core::Vector<double>(8, 300), 0);
+    EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 0.1, 1e-14);
 }
 
 TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
@@ -193,8 +195,8 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     second.volumetric_heat_source = "8*z";
     d.layers[0].blocks.push_back(second);
     const auto model = mhs::sim::build_model(d);
-    const auto ops = mhs::sim::assemble_thermal(model, std::vector<double> {300}, 0);
-    EXPECT_NEAR(ops.f.sum(), 3.5, 1e-13);
+    const auto ops = mhs::sim::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+    EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
     EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
     EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);
@@ -209,7 +211,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     bc.regions.push_back({mhs::model::Axis::X, 1, {{0.1, 0.2, 0.1, 0.2}}});
     d.boundaries.push_back(bc);
     const auto model = mhs::sim::build_model(d);
-    const std::vector<double> state {300};
+    const mhs::core::Vector<double> state {300};
     const auto ops = mhs::sim::assemble_thermal(model, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
@@ -243,7 +245,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
             }
             for (double time : {2.0, 3.0}) {
                 const double T = 280 + 10 * time;
-                const std::vector<double> state {T};
+                const mhs::core::Vector<double> state {T};
                 const auto ops = mhs::sim::assemble_thermal(model, state, time);
                 // The cell is a unit cube with unit conductivity, so the
                 // condensed patch coefficients follow from the trace alone.

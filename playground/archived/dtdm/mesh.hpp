@@ -10,17 +10,17 @@
 #include "stack.hpp"
 
 #include <array>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::dtdm {
 
     /// A model plus the per-cell bookkeeping the DTDM needs.
     struct StackMesh {
         mhs::core::Model model;
-        std::array<std::vector<double>, 3> axes;
-        std::vector<mhs::core::Index> cells_of_module[kModuleCount];
-        std::vector<std::vector<mhs::core::Index>> cells_of_layer;
-        std::vector<double> cell_k; // conductivity per cell
+        std::array<mhs::core::Vector<double>, 3> axes;
+        mhs::core::Vector<mhs::core::Index> cells_of_module[kModuleCount];
+        mhs::core::Vector<mhs::core::Vector<mhs::core::Index>> cells_of_layer;
+        mhs::core::Vector<double> cell_k; // conductivity per cell
         std::array<int, kModuleCount> nz_per_layer {{0, 0, 0}};
         long dof = 0;
         double total_power = 0.0;
@@ -29,10 +29,10 @@ namespace mhs::dtdm {
 
     /// Graded axis over the sink footprint with the chiplet edges as grid lines.
     /// ``axis`` is 0 for x and 1 for y: the two axes have different chiplet edges.
-    std::vector<double> build_axis(const Layout& layout, const std::vector<Chiplet>& chiplets, int axis);
+    mhs::core::Vector<double> build_axis(const Layout& layout, const mhs::core::Vector<Chiplet>& chiplets, int axis);
 
     /// Per-layer z cell counts whose total cell count equals ``layout.target``.
-    std::vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const std::vector<Chiplet>& chiplets,
+    mhs::core::Vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const mhs::core::Vector<Chiplet>& chiplets,
         std::array<int, 4>& group_nz);
 
     /// Build the full model for one level. Throws if the DoF count misses.
@@ -40,6 +40,6 @@ namespace mhs::dtdm {
 
     /// In-plane cell count covered by the union of the chiplet rectangles.
     long covered_cells(
-        const std::vector<double>& x, const std::vector<double>& y, const std::vector<Chiplet>& chiplets);
+        const mhs::core::Vector<double>& x, const mhs::core::Vector<double>& y, const mhs::core::Vector<Chiplet>& chiplets);
 
 } // namespace mhs::dtdm

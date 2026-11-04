@@ -1,6 +1,7 @@
 #include "compiler/model_compiler.hpp"
 #include "core/model.hpp"
 #include "core/model_definition.hpp"
+#include "core/vector.hpp"
 #include "model_test_utils.hpp"
 #include "solver/postprocessor.hpp"
 #include <gtest/gtest.h>
@@ -55,7 +56,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
 
     int N = static_cast<int>(model.cell_material.size());
     // Set cell temperatures to known values
-    std::vector<double> cell_T(N);
+    mhs::core::Vector<double> cell_T(N);
     for (int i = 0; i < N; i++) {
         cell_T[i] = 300.0 + i * 10.0; // 300, 310, 320, ...
     }
@@ -136,7 +137,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     // Set all cell temperatures to something different from 500
     int N = static_cast<int>(model.cell_material.size());
-    std::vector<double> cell_T(N, 400.0);
+    mhs::core::Vector<double> cell_T(N, 400.0);
 
     auto node_T = mhs::post::interpolate_cell_to_node(model, cell_T, 0.0);
 
@@ -204,7 +205,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     auto model = build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
-    std::vector<double> cell_T(N, 400.0);
+    mhs::core::Vector<double> cell_T(N, 400.0);
 
     int node_ny = (model.output.cartesian_shape[1] - 1) + 1;
     int node_nz = (model.output.cartesian_shape[2] - 1) + 1;

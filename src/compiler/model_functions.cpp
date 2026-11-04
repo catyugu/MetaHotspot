@@ -1,4 +1,5 @@
 #include "compiler/model_functions.hpp"
+#include "core/vector.hpp"
 #include "numerics/expression/expr.hpp"
 
 #include <algorithm>
@@ -63,7 +64,8 @@ namespace mhs::sim {
         };
     }
 
-    mhs::numerics::FieldEvaluator make_piecewise_evaluator(std::vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
+    mhs::numerics::FieldEvaluator make_piecewise_evaluator(
+        mhs::core::Vector<mhs::model::PiecewiseFunctionSpec::Point> pts)
     {
         if (pts.size() < 2)
             throw std::invalid_argument("piecewise function requires at least two points");
@@ -86,7 +88,8 @@ namespace mhs::sim {
         };
     }
 
-    mhs::numerics::FieldEvaluator make_periodic_piecewise_constant_evaluator(double period, std::vector<double> values)
+    mhs::numerics::FieldEvaluator make_periodic_piecewise_constant_evaluator(
+        double period, mhs::core::Vector<double> values)
     {
         if (!std::isfinite(period) || period <= 0.0 || values.empty())
             throw std::invalid_argument("periodic function requires a positive finite period and nonempty values");
@@ -160,7 +163,7 @@ namespace mhs::sim {
     // ---- 写入 SymbolTable -------------------------------------------------
 
     void register_all_functions(
-        mhs::numerics::SymbolTable& symbols, const std::vector<mhs::model::NamedFunction>& functions)
+        mhs::numerics::SymbolTable& symbols, const mhs::core::Vector<mhs::model::NamedFunction>& functions)
     {
         for (const auto& function : functions) {
             mhs::numerics::FieldEvaluator ev = nullptr;

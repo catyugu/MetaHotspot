@@ -1,9 +1,9 @@
 #pragma once
 #include "core/types.hpp"
+#include "core/vector.hpp"
 #include <array>
 #include <numeric>
 #include <span>
-#include <vector>
 
 namespace mhs::core {
     template <class Tag> struct EntityId {
@@ -62,10 +62,10 @@ namespace mhs::core {
     };
     // Geometry, connectivity and TPFA orthogonality are caller preconditions.
     struct DiscreteMesh {
-        std::vector<CellGeometry> cells;
-        std::vector<FacePatch> faces;
-        std::vector<Index> cell_face_offsets;
-        std::vector<FaceId> cell_face_ids;
+        mhs::core::Vector<CellGeometry> cells;
+        mhs::core::Vector<FacePatch> faces;
+        mhs::core::Vector<Index> cell_face_offsets;
+        mhs::core::Vector<FaceId> cell_face_ids;
         std::span<const FaceId> incident_faces(CellId c) const
         {
             return std::span(cell_face_ids)

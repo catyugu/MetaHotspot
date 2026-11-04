@@ -3,7 +3,7 @@
 #include "core/model.hpp"
 #include "core/model_definition.hpp"
 
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::sim {
 
@@ -22,7 +22,7 @@ namespace mhs::sim {
 
     /// Pre-resolved geometry for a single block
     struct ResolvedBlock {
-        std::vector<ResolvedRect> rects;
+        mhs::core::Vector<ResolvedRect> rects;
         mhs::core::TableIndex material_id = 0;
         mhs::core::TableIndex heat_source_idx = 0;
         double z_start = 0.0;
@@ -31,7 +31,7 @@ namespace mhs::sim {
 
     /// Pre-resolved geometry for a single layer
     struct ResolvedLayerGeometry {
-        std::vector<ResolvedBlock> blocks;
+        mhs::core::Vector<ResolvedBlock> blocks;
         double z_start; // SI z coordinate of layer bottom
         double z_end; // SI z coordinate of layer top
     };
@@ -40,7 +40,7 @@ namespace mhs::sim {
     struct CompiledBoundaryRegion {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
-        std::vector<mhs::model::RegionRect> rectangles;
+        mhs::core::Vector<mhs::model::RegionRect> rectangles;
         mhs::core::TableIndex condition_index = 0;
     };
 
@@ -48,18 +48,18 @@ namespace mhs::sim {
     //  Internal compiler operations
     // ──────────────────────────────────────────────────────────────
 
-    std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::numerics::SymbolTable& symbols);
+    mhs::core::Vector<ResolvedLayerGeometry> resolve_geometry(const mhs::core::Vector<mhs::model::LayerSpec>& layers,
+        double si_scale, const mhs::numerics::SymbolTable& symbols);
 
     std::pair<mhs::core::Index, mhs::core::Index> classify_point(
-        const std::vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& point);
-    void project_cell_regions(mhs::core::Model& model, const std::vector<ResolvedLayerGeometry>& layers);
+        const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& point);
+    void project_cell_regions(mhs::core::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers);
     void compile_cartesian_mesh(mhs::core::Model& model, const mhs::model::MeshSpec& input, double scale,
-        const std::vector<ResolvedLayerGeometry>& layers);
+        const mhs::core::Vector<ResolvedLayerGeometry>& layers);
     void build_external_output_mesh(mhs::core::Model& model);
 
     // An invalid fallback omits uncovered surface patches.
-    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
-        const std::vector<CompiledBoundaryRegion>& boundaries,
+    mhs::core::Vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries,
         mhs::core::TableIndex fallback = mhs::core::invalidTableIndex);
 } // namespace mhs::sim

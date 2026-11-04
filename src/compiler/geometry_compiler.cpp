@@ -1,5 +1,6 @@
 #include "compiler/geometry_compiler.hpp"
 #include "core/constants.hpp"
+#include "core/vector.hpp"
 
 #include "numerics/expression/expr.hpp"
 #include <algorithm>
@@ -41,13 +42,13 @@ namespace mhs::sim {
 
     } // anonymous namespace
 
-    std::vector<ResolvedLayerGeometry> resolve_geometry(
-        const std::vector<mhs::model::LayerSpec>& layers, double si_scale, const mhs::numerics::SymbolTable& symbols)
+    mhs::core::Vector<ResolvedLayerGeometry> resolve_geometry(const mhs::core::Vector<mhs::model::LayerSpec>& layers,
+        double si_scale, const mhs::numerics::SymbolTable& symbols)
     {
         mhs::core::Index num_layers = static_cast<mhs::core::Index>(layers.size());
-        std::vector<ResolvedLayerGeometry> resolved(num_layers);
+        mhs::core::Vector<ResolvedLayerGeometry> resolved(num_layers);
 
-        std::vector<double> thickness(num_layers);
+        mhs::core::Vector<double> thickness(num_layers);
         double z_cursor = 0.0;
         for (mhs::core::Index l = 0; l < num_layers; l++) {
             if (l == 0) {
@@ -124,7 +125,7 @@ namespace mhs::sim {
     }
 
     std::pair<mhs::core::Index, mhs::core::Index> classify_point(
-        const std::vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& p)
+        const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::core::Vec3& p)
     {
         for (mhs::core::Index l = 0; l < layers.size(); ++l) {
             if (p[2] < layers[l].z_start - EPS || p[2] > layers[l].z_end + EPS)
@@ -136,7 +137,7 @@ namespace mhs::sim {
         return {mhs::core::invalidIndex, mhs::core::invalidIndex};
     }
 
-    void project_cell_regions(mhs::core::Model& model, const std::vector<ResolvedLayerGeometry>& layers)
+    void project_cell_regions(mhs::core::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers)
     {
         using namespace mhs::core;
         model.cell_material.clear();
@@ -144,7 +145,7 @@ namespace mhs::sim {
         constexpr TableIndex invalid_table = std::numeric_limits<TableIndex>::max();
         for (Index c = 0; c < model.discrete.cells.size(); ++c) {
             const auto& cell = model.discrete.cells[c];
-            std::array<std::vector<double>, 3> cuts;
+            std::array<mhs::core::Vector<double>, 3> cuts;
             for (int a = 0; a < 3; ++a)
                 cuts[a] = {cell.min[a], cell.max[a]};
             auto cut = [&](int a, double v) {
@@ -192,17 +193,17 @@ namespace mhs::sim {
         }
     }
 
-    std::vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
-        const std::vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
+    mhs::core::Vector<mhs::core::BoundaryFace> project_surface_regions(const mhs::core::DiscreteMesh& mesh,
+        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::core::TableIndex fallback)
     {
         using namespace mhs::core;
-        std::vector<BoundaryFace> faces;
+        mhs::core::Vector<BoundaryFace> faces;
         for (Index id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
             if (face.neighbor.valid())
                 continue;
             const int a = face.axis == 0 ? 1 : 0, b = face.axis == 2 ? 1 : 2;
-            std::vector<double> ca {face.min[a], face.max[a]}, cb {face.min[b], face.max[b]};
+            mhs::core::Vector<double> ca {face.min[a], face.max[a]}, cb {face.min[b], face.max[b]};
             for (const auto& region : boundaries) {
                 if (static_cast<int>(region.axis) != face.axis
                     || std::abs(region.coordinate - face.min[face.axis]) >= EPS)
