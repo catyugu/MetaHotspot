@@ -1,5 +1,5 @@
-#include "core/vector.hpp"
 #include "dtdm.hpp"
+#include "core/vector.hpp"
 
 #include "solver/assembler.hpp"
 #include "wlp.hpp"
@@ -56,8 +56,7 @@ namespace mhs::dtdm {
             std::fprintf(stderr, "\n");
         }
 
-        template <class Storage>
-        Eigen::SparseMatrix<double> principal_submatrix(
+        template <class Storage> Eigen::SparseMatrix<double> principal_submatrix(
             const Storage& matrix, const mhs::core::Vector<int>& cells, const mhs::core::Vector<int>& global_to_local)
         {
             mhs::core::Vector<Eigen::Triplet<double>> triplets;
@@ -307,8 +306,9 @@ namespace mhs::dtdm {
         /// One fixed-step backward-Euler march of eq. (1) from a cold start, with
         /// the field recorded at the probe times. The step never changes, so the
         /// operator is factored once for the whole march.
-        mhs::core::Vector<mhs::core::Vector<double>> march_backward_euler(const mhs::solver::Operators& operators, int steps,
-            double duration, const mhs::core::Vector<double>& times, mhs::linear::SolverType type, double tolerance)
+        mhs::core::Vector<mhs::core::Vector<double>> march_backward_euler(const mhs::solver::Operators& operators,
+            int steps, double duration, const mhs::core::Vector<double>& times, mhs::linear::SolverType type,
+            double tolerance)
         {
             const auto n = static_cast<Eigen::Index>(operators.f.size());
             const double dt = duration / static_cast<double>(steps);
@@ -347,7 +347,8 @@ namespace mhs::dtdm {
         /// 2 fine - coarse: removes the first-order term of two fields that differ
         /// only in their step.
         mhs::core::Vector<mhs::core::Vector<double>> richardson(
-            const mhs::core::Vector<mhs::core::Vector<double>>& coarse, const mhs::core::Vector<mhs::core::Vector<double>>& fine)
+            const mhs::core::Vector<mhs::core::Vector<double>>& coarse,
+            const mhs::core::Vector<mhs::core::Vector<double>>& fine)
         {
             auto out = fine;
             for (std::size_t k = 0; k < out.size(); ++k)
@@ -356,8 +357,8 @@ namespace mhs::dtdm {
             return out;
         }
 
-        double max_field_difference(
-            const mhs::core::Vector<mhs::core::Vector<double>>& a, const mhs::core::Vector<mhs::core::Vector<double>>& b)
+        double max_field_difference(const mhs::core::Vector<mhs::core::Vector<double>>& a,
+            const mhs::core::Vector<mhs::core::Vector<double>>& b)
         {
             double worst = 0.0;
             for (std::size_t k = 0; k < a.size(); ++k)
@@ -367,7 +368,8 @@ namespace mhs::dtdm {
         }
     } // namespace
 
-    System::System(StackMesh stack, int patches_x, int patches_y, mhs::linear::SolverType solver, double linear_tolerance)
+    System::System(
+        StackMesh stack, int patches_x, int patches_y, mhs::linear::SolverType solver, double linear_tolerance)
         : stack_(std::move(stack)), solver_(solver), linear_tolerance_(linear_tolerance)
     {
         build_operators();
@@ -416,10 +418,10 @@ namespace mhs::dtdm {
         // face geometry gives each side its own half conductance.
         std::map<std::pair<int, int>, const mhs::model::FacePatch*> face_of_pair;
         for (const auto& face : stack_.model.discrete.faces) {
-            if (!face.neighbor.valid())
+            if (face.neighbor == mhs::core::invalid_id)
                 continue;
-            face_of_pair[{static_cast<int>(face.owner.value), static_cast<int>(face.neighbor.value)}] = &face;
-            face_of_pair[{static_cast<int>(face.neighbor.value), static_cast<int>(face.owner.value)}] = &face;
+            face_of_pair[{static_cast<int>(face.owner), static_cast<int>(face.neighbor)}] = &face;
+            face_of_pair[{static_cast<int>(face.neighbor), static_cast<int>(face.owner)}] = &face;
         }
 
         int next = 0;

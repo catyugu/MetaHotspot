@@ -2,13 +2,13 @@
 #include "core/types.hpp"
 
 namespace mhs::model {
-    using CellId = core::Id<struct CellTag>;
-    using FaceId = core::Id<struct FaceTag>;
-    using MaterialId = core::Id<struct MaterialTag>;
-    using SourceId = core::Id<struct SourceTag>;
-    using BoundaryConditionId = core::Id<struct BoundaryConditionTag>;
-    using FluidCellId = core::Id<struct FluidCellTag>;
-    using PointId = core::Id<struct OutputPointTag>;
+    using CellId = core::EntityIndex;
+    using FaceId = core::EntityIndex;
+    using MaterialId = core::EntityIndex;
+    using SourceId = core::EntityIndex;
+    using BoundaryConditionId = core::EntityIndex;
+    using FluidCellId = core::EntityIndex;
+    using PointId = core::EntityIndex;
 
     enum class StudyType : std::uint8_t { Steady, Transient };
 } // namespace mhs::model

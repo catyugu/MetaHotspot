@@ -16,9 +16,10 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 /// Returns nullptr for an internal face without a boundary face.
 static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
-        const auto& f = model.discrete.faces[id.value];
-        if (f.neighbor.valid() || f.axis != static_cast<int>(dir) / 2 || f.sign != (static_cast<int>(dir) % 2 ? 1 : -1))
+    for (auto id : model.discrete.incident_faces(static_cast<CellId>(cell_idx))) {
+        const auto& f = model.discrete.faces[id];
+        if ((f.neighbor != mhs::core::invalid_id) || f.axis != static_cast<int>(dir) / 2
+            || f.sign != (static_cast<int>(dir) % 2 ? 1 : -1))
             continue;
         for (const auto& patch : model.boundary_faces)
             if (patch.parent == id)
@@ -31,13 +32,13 @@ template <typename Condition>
 static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
     const auto* term = find_face_bc(model, cell_idx, dir);
-    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition.value]) : nullptr;
+    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition]) : nullptr;
 }
 
 static SourceId source_id(const Model& model, std::size_t cell)
 {
     for (const auto& term : model.source_terms)
-        if (term.cell.value == cell)
+        if (term.cell == cell)
             return term.source;
     throw std::logic_error("missing source projection");
 }
@@ -106,11 +107,9 @@ static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& in
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
-    return model.discrete
-        .locate({(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
-            (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
-            (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005})
-        .value;
+    return model.discrete.locate({(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
+        (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
+        (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005});
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
@@ -143,11 +142,11 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 
     const auto model = build_model(definition);
 
-    EXPECT_NE(input_cell(model, definition.mesh, 0), CellId::invalid_value)
+    EXPECT_NE(input_cell(model, definition.mesh, 0), mhs::core::invalid_id)
         << "The initial Add must keep the first cell";
-    EXPECT_EQ(input_cell(model, definition.mesh, 1), CellId::invalid_value)
+    EXPECT_EQ(input_cell(model, definition.mesh, 1), mhs::core::invalid_id)
         << "The later Subtract must remove the middle cell";
-    EXPECT_NE(input_cell(model, definition.mesh, 2), CellId::invalid_value)
+    EXPECT_NE(input_cell(model, definition.mesh, 2), mhs::core::invalid_id)
         << "The final Add must restore the last cell";
 }
 
@@ -232,9 +231,9 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     auto model = build_model(io);
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
-    EXPECT_TRUE(model.discrete.locate({0.025, 0.075, 0.001}).valid());
-    EXPECT_TRUE(model.discrete.locate({0.025, 0.025, 0.0125}).valid());
-    EXPECT_FALSE(model.discrete.locate({0.025, 0.025, 0.009}).valid());
+    EXPECT_TRUE((model.discrete.locate({0.025, 0.075, 0.001}) != mhs::core::invalid_id));
+    EXPECT_TRUE((model.discrete.locate({0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
+    EXPECT_FALSE((model.discrete.locate({0.025, 0.025, 0.009}) != mhs::core::invalid_id));
 }
 
 // ---- Structured boundary-region tests ----
@@ -290,7 +289,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     const auto nz_bc = (io.mesh.z_vertices.size() - 1);
     const auto idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
     const auto compact = input_cell(model, io.mesh, idx_bc);
-    ASSERT_NE(compact, CellId::invalid_value);
+    ASSERT_NE(compact, mhs::core::invalid_id);
 
     const auto* condition = find_condition<Dirichlet>(model, compact, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
@@ -316,7 +315,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     const auto nz = (io.mesh.z_vertices.size() - 1);
     const auto idx = 0 * ny * nz + 0 * nz + 0;
     const auto compact = input_cell(model, io.mesh, idx);
-    ASSERT_NE(compact, CellId::invalid_value);
+    ASSERT_NE(compact, mhs::core::invalid_id);
 
     EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::XM), nullptr);
     EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::YM), nullptr);
@@ -326,7 +325,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // XM, YM, ZM are interior -> no boundary term
     const auto idx_inner = 1 * ny * nz + 1 * nz + 1;
     const auto compact_inner = input_cell(model, io.mesh, idx_inner);
-    ASSERT_NE(compact_inner, CellId::invalid_value);
+    ASSERT_NE(compact_inner, mhs::core::invalid_id);
 
     EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::XM), nullptr);
     EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::YM), nullptr);
@@ -449,15 +448,15 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     const auto idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), CellId::invalid_value);
+    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalid_id);
     const auto c_overlap = input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
-    EXPECT_DOUBLE_EQ(model.material_table[overlap_material.value].kx.eval(ctx), 130.0)
+    EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
         << "Overlapping cell must get material from the later block";
-    EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source.value].eval(ctx), 1e7)
+    EXPECT_DOUBLE_EQ(model.heat_source_table[overlap_heat_source].eval(ctx), 1e7)
         << "Overlapping cell must get heat source from the same later block";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
@@ -465,9 +464,9 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     const auto c_only_block1 = input_cell(model, io.mesh, idx_only_block1);
     const auto background_material = model.cell_material[c_only_block1];
     const auto background_heat_source = source_id(model, c_only_block1);
-    EXPECT_DOUBLE_EQ(model.material_table[background_material.value].kx.eval(ctx), 400.0)
+    EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";
-    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source.value].eval(ctx), 0.0)
+    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 0.0)
         << "Cell outside the overlap must retain the earlier block heat source";
 }
 
@@ -487,7 +486,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
 
     const auto model = build_model(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
-    ASSERT_NE(cell, CellId::invalid_value);
+    ASSERT_NE(cell, mhs::core::invalid_id);
     const auto* condition = find_condition<Convection>(model, cell, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
     const mhs::expression::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};

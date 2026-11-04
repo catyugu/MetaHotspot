@@ -150,3 +150,34 @@ def test_native_mesh_input_rejects_invalid_indices():
         invalid[0] = 0.5
         with pytest.raises(ValueError):
             _model().set_discrete_mesh(**{**inputs, name: invalid})
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "error"),
+    [
+        ("face_owner", 1, "face cell index outside mesh"),
+        ("face_owner", 2**32 - 1, "face cell index outside mesh"),
+        ("face_neighbor", 1, "face cell index outside mesh"),
+        ("face_axis", -1, "face axis must be"),
+        ("face_axis", 3, "face axis must be"),
+    ],
+)
+def test_native_mesh_rejects_representable_invalid_references(name, value, error):
+    from metahotspot._error import MetaHotspotError
+
+    fields = _model().compile().fields
+    inputs = {
+        key: getattr(fields, key).copy()
+        for key in (
+            "cell_min",
+            "cell_max",
+            "face_owner",
+            "face_neighbor",
+            "face_axis",
+            "face_min",
+            "face_max",
+        )
+    }
+    inputs[name][0] = value
+    with pytest.raises(MetaHotspotError, match=error):
+        _model().set_discrete_mesh(**inputs)

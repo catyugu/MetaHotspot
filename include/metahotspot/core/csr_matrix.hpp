@@ -22,13 +22,6 @@ namespace mhs::core {
     template <class T> struct Triplet {
         SparseIndex row, col;
         T value;
-
-        Triplet(std::size_t r, std::size_t c, T v)
-            : row(static_cast<SparseIndex>(detail::checked_sparse_size(r)))
-            , col(static_cast<SparseIndex>(detail::checked_sparse_size(c)))
-            , value(v)
-        {
-        }
     };
 
     template <class T> struct CSRMatrixView {

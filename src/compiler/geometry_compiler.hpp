@@ -24,8 +24,8 @@ namespace mhs::compiler {
     /// Pre-resolved geometry for a single block
     struct ResolvedBlock {
         mhs::core::Vector<ResolvedRect> rects;
-        mhs::model::MaterialId material_id {};
-        mhs::model::SourceId heat_source_idx {};
+        mhs::model::MaterialId material_id = mhs::core::invalid_id;
+        mhs::model::SourceId heat_source_idx = mhs::core::invalid_id;
         double z_start = 0.0;
         double z_end = 0.0;
     };
@@ -42,7 +42,7 @@ namespace mhs::compiler {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
         mhs::core::Vector<mhs::model::RegionRect> rectangles;
-        mhs::model::BoundaryConditionId condition_index {};
+        mhs::model::BoundaryConditionId condition_index = mhs::core::invalid_id;
     };
 
     // ──────────────────────────────────────────────────────────────
@@ -61,5 +61,6 @@ namespace mhs::compiler {
 
     // An invalid fallback omits uncovered surface patches.
     mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::model::BoundaryConditionId fallback = {});
+        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries,
+        mhs::model::BoundaryConditionId fallback = mhs::core::invalid_id);
 } // namespace mhs::compiler

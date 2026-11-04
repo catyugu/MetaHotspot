@@ -21,7 +21,7 @@ namespace mhs::model {
     using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
 
     struct FluidBoundaryTerm {
-        FaceId face;
+        FaceId face = mhs::core::invalid_id;
         FluidTransportCondition condition;
     };
 

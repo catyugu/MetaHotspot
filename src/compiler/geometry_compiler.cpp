@@ -171,7 +171,7 @@ namespace mhs::compiler {
                 std::sort(v.begin(), v.end());
                 v.erase(std::unique(v.begin(), v.end()), v.end());
             }
-            MaterialId material;
+            MaterialId material = mhs::core::invalid_id;
             for (std::size_t x = 1; x < cuts[0].size(); ++x)
                 for (std::size_t y = 1; y < cuts[1].size(); ++y)
                     for (std::size_t z = 1; z < cuts[2].size(); ++z) {
@@ -187,7 +187,7 @@ namespace mhs::compiler {
                         material = block.material_id;
                         const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                             * (cuts[2][z] - cuts[2][z - 1]);
-                        model.source_terms.push_back({CellId {c}, block.heat_source_idx, volume, p});
+                        model.source_terms.push_back({static_cast<CellId>(c), block.heat_source_idx, volume, p});
                     }
             model.cell_material.push_back(material);
         }
@@ -201,7 +201,7 @@ namespace mhs::compiler {
         mhs::core::Vector<BoundaryFace> faces;
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
-            if (face.neighbor.valid())
+            if (face.neighbor != mhs::core::invalid_id)
                 continue;
             const int a = face.axis == 0 ? 1 : 0, b = face.axis == 2 ? 1 : 2;
             mhs::core::Vector<double> ca {face.min[a], face.max[a]}, cb {face.min[b], face.max[b]};
@@ -237,9 +237,9 @@ namespace mhs::compiler {
                             break;
                         }
                     }
-                    if (condition.valid())
-                        faces.push_back(
-                            {FaceId {id}, condition, {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                    if (condition != mhs::core::invalid_id)
+                        faces.push_back({static_cast<FaceId>(id), condition,
+                            {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
                 }
         }
         return faces;

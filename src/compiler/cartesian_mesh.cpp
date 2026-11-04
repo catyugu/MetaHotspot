@@ -22,15 +22,15 @@ namespace mhs::compiler {
         // Bound the Cartesian product before allocating or multiplying offsets.
         std::size_t point_count = 1;
         for (const auto& axis : axes) {
-            if (axis.size() > PointId::invalid_value / point_count)
+            if (axis.size() > mhs::core::invalid_id / point_count)
                 throw std::length_error("output mesh exceeds 32-bit entity capacity");
             point_count *= axis.size();
         }
         auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
         auto vertex = [&](std::size_t x, std::size_t y, std::size_t z) {
-            return PointId {(x * (n[1] + 1) + y) * (n[2] + 1) + z};
+            return static_cast<PointId>((x * (n[1] + 1) + y) * (n[2] + 1) + z);
         };
-        mhs::core::Vector<CellId> active(n[0] * n[1] * n[2]);
+        mhs::core::Vector<CellId> active(n[0] * n[1] * n[2], invalid_id);
         model.output.cartesian_shape = {n[0] + 1, n[1] + 1, n[2] + 1};
         for (auto x : axes[0])
             for (auto y : axes[1])
@@ -43,7 +43,7 @@ namespace mhs::compiler {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
                     if (!classify_point(layers, cell.center()))
                         continue;
-                    active[flatten(x, y, z)] = CellId {model.discrete.cells.size()};
+                    active[flatten(x, y, z)] = static_cast<CellId>(model.discrete.cells.size());
                     model.discrete.cells.push_back(cell);
                     model.output.cell_vertices.push_back({vertex(x, y, z), vertex(x + 1, y, z), vertex(x + 1, y + 1, z),
                         vertex(x, y + 1, z), vertex(x, y, z + 1), vertex(x + 1, y, z + 1), vertex(x + 1, y + 1, z + 1),
@@ -53,12 +53,12 @@ namespace mhs::compiler {
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
                     const auto c = active[flatten(x, y, z)];
-                    if (!c.valid())
+                    if (c == mhs::core::invalid_id)
                         continue;
                     for (int a = 0; a < 3; ++a)
                         for (int sign : {-1, 1}) {
                             std::array<std::size_t, 3> v {x, y, z};
-                            CellId neighbor;
+                            CellId neighbor = mhs::core::invalid_id;
                             if ((sign < 0 && v[a] > 0) || (sign > 0 && v[a] + 1 < n[a])) {
                                 if (sign < 0)
                                     --v[a];
@@ -66,9 +66,9 @@ namespace mhs::compiler {
                                     ++v[a];
                                 neighbor = active[flatten(v[0], v[1], v[2])];
                             }
-                            if (neighbor.valid() && neighbor < c)
+                            if ((neighbor != mhs::core::invalid_id) && neighbor < c)
                                 continue;
-                            const auto& cell = model.discrete.cells[c.value];
+                            const auto& cell = model.discrete.cells[c];
                             FacePatch f;
                             f.owner = c;
                             f.neighbor = neighbor;
@@ -80,8 +80,9 @@ namespace mhs::compiler {
                             auto d = cell.size();
                             f.area = d[(a + 1) % 3] * d[(a + 2) % 3];
                             f.owner_distance = d[a] / 2;
-                            f.neighbor_distance
-                                = !neighbor.valid() ? 0 : model.discrete.cells[neighbor.value].size()[a] / 2;
+                            f.neighbor_distance = (neighbor == mhs::core::invalid_id)
+                                ? 0
+                                : model.discrete.cells[neighbor].size()[a] / 2;
                             model.discrete.faces.push_back(f);
                         }
                 }
@@ -100,9 +101,12 @@ namespace mhs::compiler {
                 Vec3 p {};
                 for (int a = 0; a < 3; ++a)
                     p[a] = corners[i][a] ? cell.max[a] : cell.min[a];
-                auto [it, inserted] = vertices.emplace(p, PointId {model.output.points.size()});
-                if (inserted)
+                auto [it, inserted] = vertices.try_emplace(p, invalid_id);
+                if (inserted) {
+                    require_entity_count(model.output.points.size() + 1);
+                    it->second = static_cast<PointId>(model.output.points.size());
                     model.output.points.push_back(p);
+                }
                 ids[i] = it->second;
             }
             model.output.cell_vertices.push_back(ids);

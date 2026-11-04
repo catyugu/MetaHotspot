@@ -299,10 +299,8 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::model::DiscreteMesh mesh;
-        if (input->cell_count)
-            (void)mhs::model::CellId {input->cell_count - 1};
-        if (input->face_count)
-            (void)mhs::model::FaceId {input->face_count - 1};
+        mhs::core::require_entity_count(input->cell_count);
+        mhs::core::require_entity_count(input->face_count);
         mesh.cells.resize(input->cell_count);
         mesh.faces.resize(input->face_count);
         for (size_t c = 0; c < input->cell_count; ++c)
@@ -312,19 +310,23 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             }
         for (size_t id = 0; id < input->face_count; ++id) {
             auto& f = mesh.faces[id];
-            f.owner = mhs::model::CellId {input->face_owner[id]};
-            f.neighbor = input->face_neighbor[id] == MHS_INVALID_INDEX ? mhs::model::CellId {}
-                                                                       : mhs::model::CellId {input->face_neighbor[id]};
+            f.owner = static_cast<mhs::model::CellId>(input->face_owner[id]);
+            f.neighbor = input->face_neighbor[id];
             f.axis = input->face_axis[id];
+            if (f.owner >= input->cell_count || (f.neighbor != MHS_INVALID_INDEX && f.neighbor >= input->cell_count))
+                throw std::out_of_range("face cell index outside mesh");
+            if (f.axis < 0 || f.axis > 2)
+                throw std::invalid_argument("face axis must be 0, 1 or 2");
             for (size_t a = 0; a < 3; ++a) {
                 f.min[a] = input->face_min[3 * id + a];
                 f.max[a] = input->face_max[3 * id + a];
             }
             f.area = (f.max[(f.axis + 1) % 3] - f.min[(f.axis + 1) % 3])
                 * (f.max[(f.axis + 2) % 3] - f.min[(f.axis + 2) % 3]);
-            f.owner_distance = std::abs(mesh.cells[f.owner.value].center()[f.axis] - f.min[f.axis]);
-            f.neighbor_distance
-                = f.neighbor.valid() ? std::abs(mesh.cells[f.neighbor.value].center()[f.axis] - f.min[f.axis]) : 0;
+            f.owner_distance = std::abs(mesh.cells[f.owner].center()[f.axis] - f.min[f.axis]);
+            f.neighbor_distance = (f.neighbor != mhs::core::invalid_id)
+                ? std::abs(mesh.cells[f.neighbor].center()[f.axis] - f.min[f.axis])
+                : 0;
         }
         m->external_mesh = std::move(mesh);
         m->def.mesh = {};
@@ -377,8 +379,10 @@ MHS_API mhs_status_t mhs_model_add_layer(
     CHECK_NULL(y_offset);
     CHECK_NULL(out_id);
     MHS_TRY({
+        mhs::core::require_entity_count(m->def.layers.size() + 1);
+        const auto id = static_cast<mhs_index_t>(m->def.layers.size());
         m->def.layers.push_back({thickness, x_offset, y_offset, {}});
-        *out_id = mhs::core::checked_id_index(m->def.layers.size() - 1);
+        *out_id = id;
     });
 }
 
@@ -400,10 +404,12 @@ MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, cons
         block.y_offset = y_offset ? y_offset : "0.0";
         if (thickness)
             block.thickness = std::string(thickness);
+        mhs::core::require_entity_count(m->def.layers[layer].blocks.size() + 1);
+        mhs::core::require_entity_count(m->block_locations.size() + 1);
+        const auto block_idx = static_cast<mhs_index_t>(m->def.layers[layer].blocks.size());
         m->def.layers[layer].blocks.push_back(std::move(block));
-        const auto block_idx = mhs::core::checked_id_index(m->def.layers[layer].blocks.size() - 1);
         m->block_locations.push_back({layer, block_idx});
-        *out_id = mhs::core::checked_id_index(m->block_locations.size() - 1);
+        *out_id = static_cast<mhs_index_t>(m->block_locations.size() - 1);
     });
 }
 
@@ -727,12 +733,12 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
             fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
             fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
         }
-        fields->material_id[cidx] = model.cell_material[cidx].value;
+        fields->material_id[cidx] = model.cell_material[cidx];
     }
     for (size_t id = 0; id < mesh.faces.size(); ++id) {
         const auto& face = mesh.faces[id];
-        fields->face_owner[id] = face.owner.value;
-        fields->face_neighbor[id] = face.neighbor.value;
+        fields->face_owner[id] = face.owner;
+        fields->face_neighbor[id] = face.neighbor;
         fields->face_axis[id] = face.axis;
         fields->face_sign[id] = face.sign;
         fields->face_area[id] = face.area;
@@ -745,8 +751,8 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     }
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];
-        fields->projection_cell[id] = term.cell.value;
-        fields->projection_source[id] = term.source.value;
+        fields->projection_cell[id] = term.cell;
+        fields->projection_source[id] = term.source;
         fields->projection_volume[id] = term.weight;
         for (size_t a = 0; a < 3; ++a)
             fields->projection_center[3 * id + a] = term.point[a];
@@ -770,8 +776,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         for (size_t i = 0; i < projection_count; ++i) {
             const auto& term = model.source_terms[i];
             const auto& p = term.point;
-            powers[i] = term.weight
-                * model.heat_source_table[term.source.value].eval({p[0], p[1], p[2], state[term.cell.value], time});
+            powers[i]
+                = term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[term.cell], time});
         }
     });
 }
@@ -797,7 +803,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     MHS_TRY({
         for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
             const auto p = mesh.cells[cell].center();
-            const auto& props = model.material_table[model.cell_material[cell].value];
+            const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);

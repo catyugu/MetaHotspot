@@ -161,7 +161,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
     double time, double* powers, size_t projection_count);
 
 /** Caller-owned external mesh, all coordinates in SI metres. No connectivity
- * discovery or validity checking is performed. The caller guarantees positive
+ * discovery is performed. Entity capacity, cell references and face axes are
+ * checked. The caller guarantees positive
  * cells, complete nonoverlapping faces, valid indices, domain/material alignment
  * and orthogonal TPFA geometry. Exterior neighbors use MHS_INVALID_INDEX. */
 typedef struct {

@@ -47,16 +47,16 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
     std::size_t internal = 0;
     for (const auto& face : mesh.faces) {
         EXPECT_GT(face.area, 0);
-        if (face.neighbor.valid())
+        if (face.neighbor != mhs::core::invalid_id)
             ++internal;
     }
     EXPECT_EQ(internal, 12u);
     for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
         Vec3 closure {};
         double surface = 0;
-        for (const auto id : mesh.incident_faces(CellId {c})) {
-            const auto& face = mesh.faces[id.value];
-            const double sign = face.owner.value == c ? face.sign : -face.sign;
+        for (const auto id : mesh.incident_faces(static_cast<CellId>(c))) {
+            const auto& face = mesh.faces[id];
+            const double sign = face.owner == c ? face.sign : -face.sign;
             closure[face.axis] += sign * face.area;
             surface += face.area;
         }
@@ -79,9 +79,9 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         inverse[order[i]] = i;
     }
     for (auto& face : mesh.faces) {
-        face.owner.value = inverse[face.owner.value];
-        if (face.neighbor.valid())
-            face.neighbor.value = inverse[face.neighbor.value];
+        face.owner = inverse[face.owner];
+        if (face.neighbor != mhs::core::invalid_id)
+            face.neighbor = inverse[face.neighbor];
     }
     auto imported = mhs::compiler::build_model(definition, mesh);
     for (auto* m : {&model, &imported}) {
@@ -123,20 +123,19 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const auto model = mhs::compiler::build_model(d);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // The solver's patch lookup binary-searches this order.
-        EXPECT_TRUE(
-            std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent.value; }));
+        EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent; }));
         const mhs::core::Vector<double> state {350};
         for (const auto& patch : model.boundary_faces) {
-            const auto face = model.discrete.faces[patch.parent.value].project(patch.bounds);
+            const auto face = model.discrete.faces[patch.parent].project(patch.bounds);
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
-            const auto trace = mhs::solver::evaluate_boundary(
-                model.boundary_conditions[patch.condition.value], face, state[0], 1.0, 0);
+            const auto trace
+                = mhs::solver::evaluate_boundary(model.boundary_conditions[patch.condition], face, state[0], 1.0, 0);
             const mhs::expression::FieldContext ctx {
                 face.center()[0], face.center()[1], face.center()[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
-            if (std::holds_alternative<mhs::model::Convection>(model.boundary_conditions[patch.condition.value])) {
-                const auto& law = std::get<mhs::model::Convection>(model.boundary_conditions[patch.condition.value]);
+            if (std::holds_alternative<mhs::model::Convection>(model.boundary_conditions[patch.condition])) {
+                const auto& law = std::get<mhs::model::Convection>(model.boundary_conditions[patch.condition]);
                 const double h = law.coefficient.eval(ctx);
                 const double ambient = law.ambient_temperature.eval(ctx);
                 EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);
@@ -145,14 +144,15 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
                 EXPECT_NEAR(trace.load, condensed * ambient, 1e-9);
             }
             else {
-                const auto& law = std::get<mhs::model::Neumann>(model.boundary_conditions[patch.condition.value]);
+                const auto& law = std::get<mhs::model::Neumann>(model.boundary_conditions[patch.condition]);
                 // Positive q is inward: the trace conducts q out of the cell.
                 EXPECT_NEAR(conductive_flux, -law.heat_flux.eval(ctx), 1e-4);
                 EXPECT_DOUBLE_EQ(trace.conductance, 0.0);
                 EXPECT_NEAR(trace.load, -conductive_flux, 1e-5);
             }
             // Sampling and assembly read the same surface trace.
-            EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, face.center()), trace.temperature);
+            EXPECT_DOUBLE_EQ(
+                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), face.center()), trace.temperature);
         }
     }
 }
@@ -218,11 +218,11 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
     // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
     // so an interior probe moves at exactly that rate along x.
-    const auto left = mhs::solver::sample_point(model, state, 0, CellId {0}, {0.2, 0.5, 0.5});
-    const auto right = mhs::solver::sample_point(model, state, 0, CellId {0}, {0.8, 0.5, 0.5});
+    const auto left = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
+    const auto right = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
     EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
@@ -239,9 +239,9 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
-            const auto face = model.discrete.faces[term.parent.value].project(term.bounds);
+            const auto face = model.discrete.faces[term.parent].project(term.bounds);
             if (face.axis != 0 || face.sign != 1) {
-                EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition.value]));
+                EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
                 continue;
             }
             for (double time : {2.0, 3.0}) {
@@ -250,11 +250,11 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const auto ops = mhs::solver::assemble_thermal(model, state, time);
                 // The cell is a unit cube with unit conductivity, so the
                 // condensed patch coefficients follow from the trace alone.
-                const auto condensed = mhs::solver::evaluate_boundary(
-                    model.boundary_conditions[term.condition.value], face, T, 1.0, time);
+                const auto condensed
+                    = mhs::solver::evaluate_boundary(model.boundary_conditions[term.condition], face, T, 1.0, time);
                 double g, load;
                 if (kind == 0) {
-                    const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition.value]);
+                    const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);
                     const double prescribed = 280 + 10 * time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.temperature.eval({1, 0.5, 0.5, T, time}), prescribed);
                     EXPECT_NEAR(condensed.temperature, prescribed, 1e-12);
@@ -267,10 +267,11 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                             EXPECT_NEAR(nodes[v], prescribed, 1e-10);
                     }
                     EXPECT_DOUBLE_EQ(
-                        mhs::solver::sample_point(model, state, time, CellId {0}, {1, 0.5, 0.5}), prescribed);
+                        mhs::solver::sample_point(model, state, time, static_cast<CellId>(0), {1, 0.5, 0.5}),
+                        prescribed);
                 }
                 else if (kind == 1) {
-                    const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition.value]);
+                    const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
                     const double q = (T / 100 + time + 0.5) / (1 - 0.5 / 100);
                     const double trace = T + q * 0.5;
                     EXPECT_NEAR(bc.heat_flux.eval({1, 0.5, 0.5, trace, time}), q, 1e-12);
@@ -281,7 +282,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     load = q;
                 }
                 else {
-                    const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition.value]);
+                    const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition]);
                     const double trace = condensed.temperature;
                     const double h = trace / 100 + time + 0.5, ambient = 280 + time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, trace, time}), h);
@@ -298,4 +299,34 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
             }
         }
     }
+}
+
+TEST(DiscreteMesh, MissingReferencesRemainInvalid)
+{
+    DiscreteMesh mesh;
+    mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
+    FacePatch face;
+    EXPECT_EQ(face.owner, invalid_id);
+    EXPECT_EQ(face.neighbor, invalid_id);
+    face.owner = 0;
+    mesh.faces.push_back(face);
+    mesh.build_incidence();
+    EXPECT_EQ(mesh.incident_faces(0).size(), 1u);
+    EXPECT_EQ(mesh.locate({2, 2, 2}), invalid_id);
+    EXPECT_EQ(mesh.locate({0.5, 0.5, 0.5}), 0u);
+}
+
+TEST(DiscreteMesh, ImportedReferencesAreValidatedBeforeUse)
+{
+    auto definition = cube_definition();
+    const auto valid = mhs::compiler::build_model(definition).discrete;
+    auto mesh = valid;
+    mesh.faces[0].owner = static_cast<CellId>(mesh.cells.size());
+    EXPECT_THROW(mhs::compiler::build_model(definition, mesh), std::out_of_range);
+    mesh = valid;
+    mesh.faces[0].neighbor = static_cast<CellId>(mesh.cells.size());
+    EXPECT_THROW(mesh.build_incidence(), std::out_of_range);
+    mesh = valid;
+    mesh.faces[0].axis = 3;
+    EXPECT_THROW(mhs::compiler::build_model(definition, mesh), std::invalid_argument);
 }

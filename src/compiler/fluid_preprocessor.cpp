@@ -18,17 +18,19 @@ namespace mhs::compiler::fluid {
         auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
         fluid = {};
-        fluid.global_to_fluid.assign(mesh.cells.size(), FluidCellId {});
+        mhs::core::require_entity_count(mesh.cells.size());
+        fluid.global_to_fluid.assign(mesh.cells.size(), mhs::core::invalid_id);
         mhs::core::Vector<double> viscosity;
         for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
-            const auto mat = model.cell_material[c].value;
+            const auto mat = model.cell_material[c];
             if (mat >= materials.initial_viscosity.size() || !materials.initial_viscosity[mat])
                 continue;
-            fluid.global_to_fluid[c] = FluidCellId {fluid.fluid_to_global.size()};
-            fluid.fluid_to_global.push_back(CellId {c});
+            fluid.global_to_fluid[c] = static_cast<FluidCellId>(fluid.fluid_to_global.size());
+            fluid.fluid_to_global.push_back(static_cast<CellId>(c));
             viscosity.push_back(*materials.initial_viscosity[mat]);
         }
         const auto n = fluid.fluid_to_global.size();
+        mhs::core::detail::checked_sparse_size(n);
         if (n == 0) {
             fluid.global_to_fluid.clear();
             return;
@@ -48,17 +50,17 @@ namespace mhs::compiler::fluid {
                 return i;
             };
             for (const auto& f : mesh.faces) {
-                if (f.axis != axis || !f.neighbor.valid())
+                if (f.axis != axis || (f.neighbor == mhs::core::invalid_id))
                     continue;
-                auto i = fluid.global_to_fluid[f.owner.value], j = fluid.global_to_fluid[f.neighbor.value];
-                if (i.valid() && j.valid())
-                    parent[root(i.value)] = root(j.value);
+                auto i = fluid.global_to_fluid[f.owner], j = fluid.global_to_fluid[f.neighbor];
+                if ((i != mhs::core::invalid_id) && (j != mhs::core::invalid_id))
+                    parent[root(i)] = root(j);
             }
             mhs::core::Vector<double> lo(n, std::numeric_limits<double>::infinity()),
                 hi(n, -std::numeric_limits<double>::infinity());
             for (std::size_t i = 0; i < n; ++i) {
                 auto r = root(i);
-                const auto& c = mesh.cells[fluid.fluid_to_global[i].value];
+                const auto& c = mesh.cells[fluid.fluid_to_global[i]];
                 lo[r] = std::min(lo[r], c.min[axis]);
                 hi[r] = std::max(hi[r], c.max[axis]);
             }
@@ -72,20 +74,21 @@ namespace mhs::compiler::fluid {
             double w = lengths[0], h = lengths[1], diameter = 2 * w * h / (w + h);
             fluid.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
-            const auto c = fluid.fluid_to_global[i].value;
+            const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cell_material[c].value].rho.eval(
+            rho[i] = model.material_table[model.cell_material[c]].rho.eval(
                 {p[0], p[1], p[2], model.initial_temperature, 0});
         }
         // Use the same rectangle intersection algorithm as thermal projection,
         // against the original mesh and an independent set of regions.
         mhs::core::Vector<CompiledBoundaryRegion> regions;
+        mhs::core::require_entity_count(boundaries.size());
         for (std::size_t id = 0; id < boundaries.size(); ++id)
             for (const auto& r : boundaries[id].regions) {
                 CompiledBoundaryRegion region;
                 region.axis = r.axis;
                 region.coordinate = r.coordinate * scale;
-                region.condition_index = BoundaryConditionId {id};
+                region.condition_index = static_cast<BoundaryConditionId>(id);
                 for (const auto& rect : r.rectangles)
                     region.rectangles.push_back(
                         {rect.a_min * scale, rect.a_max * scale, rect.b_min * scale, rect.b_max * scale});
@@ -93,20 +96,20 @@ namespace mhs::compiler::fluid {
             }
         auto projected = project_surface_regions(mesh, regions);
         std::erase_if(projected, [&](const auto& term) {
-            return fluid.global_to_fluid[mesh.faces[term.parent.value].owner.value] == FluidCellId {};
+            return fluid.global_to_fluid[mesh.faces[term.parent].owner] == mhs::core::invalid_id;
         });
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition.value] += mesh.faces[term.parent.value].project(term.bounds).area;
+            total_area[term.condition] += mesh.faces[term.parent].project(term.bounds).area;
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
-            if (!f.neighbor.valid())
+            if (f.neighbor == mhs::core::invalid_id)
                 continue;
-            auto i = fluid.global_to_fluid[f.owner.value], j = fluid.global_to_fluid[f.neighbor.value];
-            if (!i.valid() || !j.valid())
+            auto i = fluid.global_to_fluid[f.owner], j = fluid.global_to_fluid[f.neighbor];
+            if ((i == mhs::core::invalid_id) || (j == mhs::core::invalid_id))
                 continue;
-            const auto ii = i.value, jj = j.value;
+            const auto ii = i, jj = j;
             auto g = f.area / (f.owner_distance / mobility[ii] + f.neighbor_distance / mobility[jj]);
             conductance[id] = g;
             diagonal[ii] += g;
@@ -118,13 +121,13 @@ namespace mhs::compiler::fluid {
         mhs::core::Vector<double> rhs(n, 0.0);
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = mesh.faces[term.parent.value].project(term.bounds);
-            const auto i = fluid.global_to_fluid[f.owner.value].value;
+            const auto f = mesh.faces[term.parent].project(term.bounds);
+            const auto i = fluid.global_to_fluid[f.owner];
             std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                        rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition.value] / rho[i];
+                        rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition] / rho[i];
                     else {
                         reference = true;
                         const double g = f.area * mobility[i] / f.owner_distance;
@@ -133,19 +136,19 @@ namespace mhs::compiler::fluid {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                boundaries[term.condition.value].condition);
+                boundaries[term.condition].condition);
         }
         if (!reference)
             throw std::runtime_error(
                 "fluid domain has no pressure reference; a pressure inlet or an outlet is required");
         for (std::size_t i = 0; i < n; ++i)
-            entries.emplace_back(i, i, diagonal[i]);
+            entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(i), diagonal[i]);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {
                 const auto& f = mesh.faces[id];
-                auto i = fluid.global_to_fluid[f.owner.value], j = fluid.global_to_fluid[f.neighbor.value];
-                entries.emplace_back(i.value, j.value, -conductance[id]);
-                entries.emplace_back(j.value, i.value, -conductance[id]);
+                auto i = fluid.global_to_fluid[f.owner], j = fluid.global_to_fluid[f.neighbor];
+                entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(j), -conductance[id]);
+                entries.emplace_back(static_cast<SparseIndex>(j), static_cast<SparseIndex>(i), -conductance[id]);
             }
         auto matrix = mhs::core::build_csr(n, n, std::move(entries));
         auto solver = mhs::linear::create_solver();
@@ -156,14 +159,14 @@ namespace mhs::compiler::fluid {
             throw std::runtime_error("fluid pressure solve failed");
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = mesh.faces[term.parent.value].project(term.bounds);
-            const auto i = fluid.global_to_fluid[f.owner.value].value;
-            const auto& condition = boundaries[term.condition.value].condition;
+            const auto f = mesh.faces[term.parent].project(term.bounds);
+            const auto i = fluid.global_to_fluid[f.owner];
+            const auto& condition = boundaries[term.condition].condition;
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                        return -bc.mass_flow_rate * f.area / total_area[term.condition.value];
+                        return -bc.mass_flow_rate * f.area / total_area[term.condition];
                     else
                         return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
                 },
@@ -187,8 +190,8 @@ namespace mhs::compiler::fluid {
         for (std::size_t id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {
                 const auto& f = mesh.faces[id];
-                auto i = fluid.global_to_fluid[f.owner.value], j = fluid.global_to_fluid[f.neighbor.value];
-                fluid.face_volume_flux[id] = (pressure[i.value] - pressure[j.value]) * conductance[id];
+                auto i = fluid.global_to_fluid[f.owner], j = fluid.global_to_fluid[f.neighbor];
+                fluid.face_volume_flux[id] = (pressure[i] - pressure[j]) * conductance[id];
             }
     }
 }

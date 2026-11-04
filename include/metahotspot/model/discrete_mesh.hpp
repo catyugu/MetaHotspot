@@ -27,7 +27,7 @@ namespace mhs::model {
     // Rectangular axis-aligned patches. The sign is the outward owner normal.
     // Geometry only: coefficients and boundary assignments live in Model.
     struct FacePatch {
-        CellId owner, neighbor;
+        CellId owner = core::invalid_id, neighbor = core::invalid_id;
         int axis = 0, sign = 1;
         Vec3 min {}, max {};
         double area = 0, owner_distance = 0, neighbor_distance = 0;
@@ -61,7 +61,7 @@ namespace mhs::model {
         std::span<const FaceId> incident_faces(CellId c) const
         {
             return std::span(cell_face_ids)
-                .subspan(cell_face_offsets[c.value], cell_face_offsets[c.value + 1] - cell_face_offsets[c.value]);
+                .subspan(cell_face_offsets[c], cell_face_offsets[c + 1] - cell_face_offsets[c]);
         }
         void build_incidence();
         CellId locate(const Vec3& p) const;

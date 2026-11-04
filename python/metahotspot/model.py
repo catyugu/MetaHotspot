@@ -198,7 +198,7 @@ class Model(OwnedHandle):
 
         Owner normals are derived from face coordinates and owner centers.
         Geometry and connectivity must be valid, complete and TPFA-orthogonal.
-        No mesh validity checking, generation or refinement is performed.
+        Entity capacity, cell references and face axes are checked.
         """
         from metahotspot.types import MhsMesh
 

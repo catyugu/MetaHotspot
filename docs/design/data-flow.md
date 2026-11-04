@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | 几何解析 | Layer / Block / Rect 和几何表达式 | SI 米下的区域；同层后出现的 Block 覆盖前者 |
 | 网格输入 | Cartesian 坐标轴或调用方提供的控制体、面片 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
-| 网格契约 | 控制体与面片几何、连接 | 调用者保证有效性；编译器不校验网格，只建立 CSR 关联 |
+| 网格契约 | 控制体与面片几何、连接 | 构建时验证实体容量、面片单元引用与轴编号，并建立 CSR 关联；其余几何与拓扑有效性由调用者保证 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；调用者保证控制体与材料及物理域边界对齐，编译器不校验 |
 | 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成连续编号的 `boundary_faces`；每片引用原始 FaceId 和 `BoundaryCondition`，不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
@@ -52,8 +52,8 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 
 ## 索引约定
 
-- `core::Id<Tag>` 保存实体引用，底层为 `uint32_t`，默认无效值为 `UINT32_MAX`。从数组位置显式构造时检查范围；有效 ID 最大为 `UINT32_MAX - 1`。
-- model 定义 `CellId`、`FaceId`、`MaterialId`、`SourceId`、`BoundaryConditionId`、`FluidCellId` 和 `PointId`。读取 `.value` 后才进入普通数组访问；不同实体 ID 不互转。
+- `core::EntityIndex = uint32_t` 保存实体引用，`core::invalid_id = UINT32_MAX` 表示无效值；有效索引最大为 `UINT32_MAX - 1`。容量在实体表与网格构建边界验证，内部遍历直接转换。
+- model 的 `CellId`、`FaceId`、`MaterialId`、`SourceId`、`BoundaryConditionId`、`FluidCellId` 和 `PointId` 均为 `EntityIndex` 的语义别名，可直接用于数组访问；默认无效引用显式初始化为 `invalid_id`。
 - 数量、循环位置和数组 offset 使用 `std::size_t`。编译器内部的可失败几何查找返回 `std::optional`。
-- `core::SparseIndex = int32_t` 专用于 CSR 存储；第三方索引类型留在实现文件中。
+- `core::SparseIndex = int32_t` 专用于 CSR 存储。装配入口验证自由度容量后直接生成聚合 `Triplet`；`build_csr` 检查维度、三元组数量与行列范围，稀疏合并保留非零元容量检查。第三方索引类型留在实现文件中。
 - C ABI 的实体引用使用 `mhs_index_t = uint32_t`，CSR/CSC 数组使用 `mhs_sparse_index_t = int32_t`，buffer count 保留 `size_t`。Python 对应 `np.uint32`、`np.int32`。

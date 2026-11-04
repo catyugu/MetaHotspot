@@ -30,7 +30,7 @@
 
 ## 数据模型与计算流程
 
-`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`OutputMesh`、`FluidModel`、材料、边界和编译后表达式。`OutputMesh` 继续由 Model 持有。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；通用 Index 和稀疏索引归 core。
+`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`OutputMesh`、`FluidModel`、材料、边界和编译后表达式。`OutputMesh` 继续由 Model 持有。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；实体索引表示与稀疏索引归 core。
 
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、重建、后处理、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 

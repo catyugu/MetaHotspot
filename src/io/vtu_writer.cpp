@@ -16,19 +16,19 @@ namespace mhs::io {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("VTU state size mismatch");
         const auto& output = model.output;
-        mhs::core::Vector<mhs::model::PointId> node_remap(output.points.size());
+        mhs::core::Vector<mhs::model::PointId> node_remap(output.points.size(), mhs::core::invalid_id);
         for (const auto& cell : output.cell_vertices)
             for (auto v : cell)
-                node_remap[v.value] = mhs::model::PointId {0};
+                node_remap[v] = static_cast<mhs::model::PointId>(0);
         std::size_t compact = 0;
         for (auto& v : node_remap)
-            if (v.valid())
-                v = mhs::model::PointId {compact++};
+            if (v != mhs::core::invalid_id)
+                v = static_cast<mhs::model::PointId>(compact++);
         const auto num_points = static_cast<uint64_t>(compact);
         char buf[256];
         std::string coords_str, conn_str, off_str, type_str, cell_temp_str;
         for (size_t v = 0; v < output.points.size(); ++v) {
-            if (!node_remap[v].valid())
+            if (node_remap[v] == mhs::core::invalid_id)
                 continue;
             const auto p = output.points[v];
             std::snprintf(buf, sizeof(buf), "%.17g %.17g %.17g\n", p[0], p[1], p[2]);
@@ -37,7 +37,7 @@ namespace mhs::io {
         uint64_t cell_num = 0;
         for (size_t c = 0; c < output.cell_vertices.size(); ++c) {
             for (auto v : output.cell_vertices[c]) {
-                conn_str += std::to_string(node_remap[v.value].value);
+                conn_str += std::to_string(node_remap[v]);
                 conn_str += ' ';
             }
             conn_str += '\n';

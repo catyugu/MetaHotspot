@@ -275,7 +275,7 @@ namespace mhs::dtdm {
         auto& mesh = out.model.discrete;
         mhs::core::Vector<mhs::core::Vector<mhs::model::CellId>> index(kStack.size());
         for (int l = 0; l < static_cast<int>(kStack.size()); ++l) {
-            index[l].assign(static_cast<std::size_t>(nx) * ny * nz[l], mhs::model::CellId {});
+            index[l].assign(static_cast<std::size_t>(nx) * ny * nz[l], mhs::core::invalid_id);
             for (int k = 0; k < nz[l]; ++k)
                 for (int i = 0; i < nx; ++i) {
                     const double cx = 0.5 * (x[i] + x[i + 1]);
@@ -290,17 +290,18 @@ namespace mhs::dtdm {
                                 }
                         if (!hit)
                             continue;
-                        const mhs::model::CellId id {mesh.cells.size()};
+                        mhs::core::require_entity_count(mesh.cells.size() + 1);
+                        const auto id = static_cast<mhs::model::CellId>(mesh.cells.size());
                         mesh.cells.push_back({{x[i], y[j], z[l][k]}, {x[i + 1], y[j + 1], z[l][k + 1]}});
                         index[l][(static_cast<std::size_t>(k) * nx + i) * ny + j] = id;
-                        out.cells_of_module[kStack[l].module].push_back(id.value);
+                        out.cells_of_module[kStack[l].module].push_back(id);
                         out.cell_k.push_back(kStack[l].material.k);
                     }
                 }
             out.cells_of_layer.push_back({});
             for (auto id : index[l])
-                if (id.valid())
-                    out.cells_of_layer.back().push_back(id.value);
+                if (id != mhs::core::invalid_id)
+                    out.cells_of_layer.back().push_back(id);
         }
         out.dof = mesh.cells.size();
 
@@ -315,7 +316,8 @@ namespace mhs::dtdm {
                 materials.push_back(m);
                 it = materials.end() - 1;
             }
-            material_of_layer[l] = mhs::model::MaterialId {static_cast<std::size_t>(it - materials.begin())};
+            material_of_layer[l]
+                = static_cast<mhs::model::MaterialId>(static_cast<std::size_t>(it - materials.begin()));
         }
         for (const auto& m : materials) {
             mhs::model::MaterialProps props;
@@ -327,13 +329,14 @@ namespace mhs::dtdm {
             props.c = mhs::expression::CompiledExpression::make_constant(1.0);
             out.model.material_table.push_back(std::move(props));
         }
-        out.model.cell_material.assign(mesh.cells.size(), mhs::model::MaterialId {0});
+        out.model.cell_material.assign(mesh.cells.size(), static_cast<mhs::model::MaterialId>(0));
         for (int l = 0; l < static_cast<int>(kStack.size()); ++l)
             for (auto id : index[l])
-                if (id.valid())
-                    out.model.cell_material[id.value] = material_of_layer[l];
+                if (id != mhs::core::invalid_id)
+                    out.model.cell_material[id] = material_of_layer[l];
 
         // heat sources: one per chiplet, constant volumetric density
+        mhs::core::require_entity_count(spec.chiplets.size());
         out.model.heat_source_table.clear();
         for (const auto& c : spec.chiplets) {
             const double volume = c.width * c.height * kStack[3].thickness;
@@ -344,12 +347,12 @@ namespace mhs::dtdm {
             const auto& c = spec.chiplets[ci];
             const double density = c.power / (c.width * c.height * kStack[3].thickness);
             for (auto id : index[3])
-                if (id.valid()) {
-                    const auto centre = mesh.cells[id.value].center();
+                if (id != mhs::core::invalid_id) {
+                    const auto centre = mesh.cells[id].center();
                     if (!inside(c, centre[0], centre[1]))
                         continue;
-                    const double volume = mesh.cells[id.value].volume();
-                    out.model.source_terms.push_back({id, mhs::model::SourceId {ci}, volume, centre});
+                    const double volume = mesh.cells[id].volume();
+                    out.model.source_terms.push_back({id, static_cast<mhs::model::SourceId>(ci), volume, centre});
                     out.total_power += density * volume;
                 }
         }
@@ -362,12 +365,12 @@ namespace mhs::dtdm {
             f.owner = owner;
             f.neighbor = neighbor;
             f.axis = axis;
-            const auto& co = mesh.cells[owner.value];
+            const auto& co = mesh.cells[owner];
             f.owner_distance = 0.5 * co.size()[static_cast<std::size_t>(axis)];
             f.min = co.min;
             f.max = co.max;
-            if (neighbor.valid()) {
-                const auto& cn = mesh.cells[neighbor.value];
+            if (neighbor != mhs::core::invalid_id) {
+                const auto& cn = mesh.cells[neighbor];
                 f.neighbor_distance = 0.5 * cn.size()[static_cast<std::size_t>(axis)];
                 const double plane
                     = 0.5 * (co.center()[static_cast<std::size_t>(axis)] + cn.center()[static_cast<std::size_t>(axis)]);
@@ -386,13 +389,13 @@ namespace mhs::dtdm {
                 = (co.max[(axis + 1) % 3] - co.min[(axis + 1) % 3]) * (co.max[(axis + 2) % 3] - co.min[(axis + 2) % 3]);
             f.sign = side;
             faces.push_back(f);
-            return mhs::model::FaceId {faces.size() - 1};
+            return static_cast<mhs::model::FaceId>(faces.size() - 1);
         };
 
         mhs::core::Vector<mhs::model::FaceId> sink_top_faces, pcb_bottom_faces;
         auto lookup = [&](int l, int k, int i, int j) -> mhs::model::CellId {
             if (k < 0 || k >= nz[l] || i < 0 || i >= nx || j < 0 || j >= ny)
-                return {};
+                return mhs::core::invalid_id;
             return index[l][(static_cast<std::size_t>(k) * nx + i) * ny + j];
         };
         for (int l = 0; l < static_cast<int>(kStack.size()); ++l) {
@@ -400,24 +403,24 @@ namespace mhs::dtdm {
                 for (int i = 0; i < nx; ++i)
                     for (int j = 0; j < ny; ++j) {
                         const auto self = lookup(l, k, i, j);
-                        if (!self.valid())
+                        if (self == mhs::core::invalid_id)
                             continue;
                         // z neighbours, possibly in an adjacent layer
                         for (int dir = -1; dir <= 1; dir += 2) {
                             auto other = lookup(l, k + dir, i, j);
-                            if (!other.valid()) {
+                            if (other == mhs::core::invalid_id) {
                                 const int nl = l - dir; // layer below (+1) or above (-1)
                                 if (nl >= 0 && nl < static_cast<int>(kStack.size())) {
                                     const int nk = dir > 0 ? 0 : nz[nl] - 1;
                                     other = lookup(nl, nk, i, j);
                                 }
                             }
-                            if (other.valid()) {
+                            if (other != mhs::core::invalid_id) {
                                 if (other > self)
                                     emit(self, other, 2, dir);
                             }
                             else {
-                                const auto id = emit(self, {}, 2, dir);
+                                const auto id = emit(self, mhs::core::invalid_id, 2, dir);
                                 if (l == 0 && dir > 0)
                                     sink_top_faces.push_back(id);
                                 if (l == static_cast<int>(kStack.size()) - 1 && dir < 0)
@@ -427,12 +430,12 @@ namespace mhs::dtdm {
                         for (int axis = 0; axis < 2; ++axis)
                             for (int dir = -1; dir <= 1; dir += 2) {
                                 const auto other = axis == 0 ? lookup(l, k, i + dir, j) : lookup(l, k, i, j + dir);
-                                if (other.valid()) {
+                                if (other != mhs::core::invalid_id) {
                                     if (other > self)
                                         emit(self, other, axis, dir);
                                 }
                                 else {
-                                    emit(self, {}, axis, dir);
+                                    emit(self, mhs::core::invalid_id, axis, dir);
                                 }
                             }
                     }
@@ -450,21 +453,19 @@ namespace mhs::dtdm {
                 mhs::expression::CompiledExpression::make_constant(0.0)});
 
         auto add_boundary_face = [&](mhs::model::FaceId face_id, std::size_t condition) {
-            const auto& f = faces[face_id.value];
+            const auto& f = faces[face_id];
             const int axis = f.axis;
             const int a = axis == 0 ? 1 : 0;
             const int b = axis == 2 ? 1 : 2;
-            out.model.boundary_faces.push_back(
-                {face_id, mhs::model::BoundaryConditionId {condition}, {f.min[a], f.max[a], f.min[b], f.max[b]}});
+            out.model.boundary_faces.push_back({face_id, static_cast<mhs::model::BoundaryConditionId>(condition),
+                {f.min[a], f.max[a], f.min[b], f.max[b]}});
         };
         for (auto id : sink_top_faces)
             add_boundary_face(id, 0);
         for (auto id : pcb_bottom_faces)
             add_boundary_face(id, 1);
         std::sort(out.model.boundary_faces.begin(), out.model.boundary_faces.end(),
-            [](const mhs::model::BoundaryFace& l, const mhs::model::BoundaryFace& r) {
-                return l.parent.value < r.parent.value;
-            });
+            [](const mhs::model::BoundaryFace& l, const mhs::model::BoundaryFace& r) { return l.parent < r.parent; });
 
         out.model.initial_temperature = kAmbient;
         out.model.study_type = mhs::model::StudyType::Transient;

@@ -36,21 +36,21 @@ namespace mhs::solver {
             const auto center = model.discrete.cells[c].center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
-            const auto& mat = model.material_table[model.cell_material[c].value];
+            const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto& vertices = model.output.cell_vertices[c];
             std::array<double, 8> sum {}, dirichlet_sum {};
             std::array<unsigned, 8> count {}, dirichlet_count {};
-            for (auto id : model.discrete.incident_faces(mhs::model::CellId {c})) {
-                const auto& face = model.discrete.faces[id.value];
-                if (face.neighbor.valid())
+            for (auto id : model.discrete.incident_faces(static_cast<mhs::model::CellId>(c))) {
+                const auto& face = model.discrete.faces[id];
+                if (face.neighbor != mhs::core::invalid_id)
                     continue;
                 for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
                     const auto patch = face.project(term.bounds);
-                    const auto& condition = model.boundary_conditions[term.condition.value];
+                    const auto& condition = model.boundary_conditions[term.condition];
                     std::optional<double> trace;
                     for (std::size_t i = 0; i < vertices.size(); ++i) {
-                        if (!patch.contains(model.output.points[vertices[i].value]))
+                        if (!patch.contains(model.output.points[vertices[i]]))
                             continue;
                         if (!trace)
                             trace = mhs::solver::evaluate_boundary(
@@ -66,7 +66,7 @@ namespace mhs::solver {
                 }
             }
             for (std::size_t i = 0; i < vertices.size(); ++i) {
-                const auto v = vertices[i].value;
+                const auto v = vertices[i];
                 const auto& p = model.output.points[v];
                 const double sample = dirichlet_count[i] ? dirichlet_sum[i] / dirichlet_count[i]
                     : count[i]                           ? sum[i] / count[i]
