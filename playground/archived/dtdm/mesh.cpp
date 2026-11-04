@@ -290,7 +290,6 @@ namespace mhs::dtdm {
                                 }
                         if (!hit)
                             continue;
-                        mhs::core::require_entity_count(mesh.cells.size() + 1);
                         const auto id = static_cast<mhs::model::CellId>(mesh.cells.size());
                         mesh.cells.push_back({{x[i], y[j], z[l][k]}, {x[i + 1], y[j + 1], z[l][k + 1]}});
                         index[l][(static_cast<std::size_t>(k) * nx + i) * ny + j] = id;
@@ -336,7 +335,6 @@ namespace mhs::dtdm {
                     out.model.cell_material[id] = material_of_layer[l];
 
         // heat sources: one per chiplet, constant volumetric density
-        mhs::core::require_entity_count(spec.chiplets.size());
         out.model.heat_source_table.clear();
         for (const auto& c : spec.chiplets) {
             const double volume = c.width * c.height * kStack[3].thickness;

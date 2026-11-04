@@ -1,6 +1,7 @@
 #include "compiler/geometry_compiler.hpp"
 #include "core/vector.hpp"
 #include <map>
+#include <stdexcept>
 
 namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
@@ -18,13 +19,6 @@ namespace mhs::compiler {
             for (auto& coordinate : axes[a])
                 coordinate *= scale;
             n[a] = axes[a].size() - 1;
-        }
-        // Bound the Cartesian product before allocating or multiplying offsets.
-        std::size_t point_count = 1;
-        for (const auto& axis : axes) {
-            if (axis.size() > mhs::core::invalid_id / point_count)
-                throw std::length_error("output mesh exceeds 32-bit entity capacity");
-            point_count *= axis.size();
         }
         auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
         auto vertex = [&](std::size_t x, std::size_t y, std::size_t z) {
@@ -103,7 +97,6 @@ namespace mhs::compiler {
                     p[a] = corners[i][a] ? cell.max[a] : cell.min[a];
                 auto [it, inserted] = vertices.try_emplace(p, invalid_id);
                 if (inserted) {
-                    require_entity_count(model.output.points.size() + 1);
                     it->second = static_cast<PointId>(model.output.points.size());
                     model.output.points.push_back(p);
                 }

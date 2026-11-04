@@ -299,8 +299,6 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_min);
         CHECK_NULL(input->face_max);
         mhs::model::DiscreteMesh mesh;
-        mhs::core::require_entity_count(input->cell_count);
-        mhs::core::require_entity_count(input->face_count);
         mesh.cells.resize(input->cell_count);
         mesh.faces.resize(input->face_count);
         for (size_t c = 0; c < input->cell_count; ++c)
@@ -379,7 +377,6 @@ MHS_API mhs_status_t mhs_model_add_layer(
     CHECK_NULL(y_offset);
     CHECK_NULL(out_id);
     MHS_TRY({
-        mhs::core::require_entity_count(m->def.layers.size() + 1);
         const auto id = static_cast<mhs_index_t>(m->def.layers.size());
         m->def.layers.push_back({thickness, x_offset, y_offset, {}});
         *out_id = id;
@@ -404,8 +401,6 @@ MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, cons
         block.y_offset = y_offset ? y_offset : "0.0";
         if (thickness)
             block.thickness = std::string(thickness);
-        mhs::core::require_entity_count(m->def.layers[layer].blocks.size() + 1);
-        mhs::core::require_entity_count(m->block_locations.size() + 1);
         const auto block_idx = static_cast<mhs_index_t>(m->def.layers[layer].blocks.size());
         m->def.layers[layer].blocks.push_back(std::move(block));
         m->block_locations.push_back({layer, block_idx});

@@ -1,11 +1,10 @@
 #include "model/discrete_mesh.hpp"
 #include <numeric>
+#include <stdexcept>
 
 namespace mhs::model {
     void DiscreteMesh::build_incidence()
     {
-        core::require_entity_count(cells.size());
-        core::require_entity_count(faces.size());
         cell_face_offsets.assign(cells.size() + 1, 0);
         for (const auto& f : faces) {
             if (f.owner >= cells.size() || (f.neighbor != core::invalid_id && f.neighbor >= cells.size()))

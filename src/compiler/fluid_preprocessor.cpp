@@ -18,7 +18,6 @@ namespace mhs::compiler::fluid {
         auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
         fluid = {};
-        mhs::core::require_entity_count(mesh.cells.size());
         fluid.global_to_fluid.assign(mesh.cells.size(), mhs::core::invalid_id);
         mhs::core::Vector<double> viscosity;
         for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
@@ -82,7 +81,6 @@ namespace mhs::compiler::fluid {
         // Use the same rectangle intersection algorithm as thermal projection,
         // against the original mesh and an independent set of regions.
         mhs::core::Vector<CompiledBoundaryRegion> regions;
-        mhs::core::require_entity_count(boundaries.size());
         for (std::size_t id = 0; id < boundaries.size(); ++id)
             for (const auto& r : boundaries[id].regions) {
                 CompiledBoundaryRegion region;

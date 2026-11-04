@@ -99,7 +99,6 @@ namespace mhs::compiler {
                     },
                 },
                 condition);
-            mhs::core::require_entity_count(conditions.size() + 1);
             const auto index = static_cast<BoundaryConditionId>(conditions.size());
             conditions.push_back(std::move(result));
             return index;
@@ -158,7 +157,6 @@ namespace mhs::compiler {
         auto name_to_idx = build_name_to_idx(definition.materials);
 
         // Compile material properties in ModelDefinition::materials order.
-        mhs::core::require_entity_count(definition.materials.size());
         model.material_table.resize(definition.materials.size());
         mhs::compiler::fluid::FluidMaterialData fluid_materials;
         fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
@@ -200,7 +198,6 @@ namespace mhs::compiler {
                 rb.material_id = static_cast<mhs::model::MaterialId>(it->second);
 
                 // heat_source_idx: compile the heat source expression, append to table
-                mhs::core::require_entity_count(model.heat_source_table.size() + 1);
                 rb.heat_source_idx = static_cast<mhs::model::SourceId>(model.heat_source_table.size());
                 std::string heat_source = bs.volumetric_heat_source;
                 const bool names_function = std::any_of(definition.functions.begin(), definition.functions.end(),
