@@ -192,11 +192,13 @@ class Model(OwnedHandle):
         face_min,
         face_max,
     ):
-        """Copy a supplied box/face mesh in SI metres; exterior neighbors are SIZE_MAX.
+        """Copy a supplied box/face mesh in SI metres.
+
+        Exterior neighbors use UINT32_MAX (signed -1 is also accepted).
 
         Owner normals are derived from face coordinates and owner centers.
         Geometry and connectivity must be valid, complete and TPFA-orthogonal.
-        No mesh validity checking, generation or refinement is performed.
+        Cell references and face axes are checked.
         """
         from metahotspot.types import MhsMesh
 
@@ -214,7 +216,7 @@ class Model(OwnedHandle):
             dtype = (
                 np.float64
                 if name in {"cell_min", "cell_max", "face_min", "face_max"}
-                else (np.int32 if name == "face_axis" else np.uintp)
+                else (np.int32 if name == "face_axis" else np.uint32)
             )
             arrays[name] = (
                 np.ascontiguousarray(value, dtype=dtype)
@@ -234,7 +236,7 @@ class Model(OwnedHandle):
                 raise ValueError(f"{name} must have shape {shape}")
         types = {
             np.dtype(np.float64): ctypes.c_double,
-            np.dtype(np.uintp): ctypes.c_size_t,
+            np.dtype(np.uint32): ctypes.c_uint32,
             np.dtype(np.int32): ctypes.c_int32,
         }
         native = MhsMesh(

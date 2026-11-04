@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -23,8 +24,8 @@ namespace mhs::compiler {
     /// Pre-resolved geometry for a single block
     struct ResolvedBlock {
         mhs::core::Vector<ResolvedRect> rects;
-        mhs::model::TableIndex material_id = 0;
-        mhs::model::TableIndex heat_source_idx = 0;
+        mhs::model::MaterialId material_id = mhs::core::invalid_id;
+        mhs::model::SourceId heat_source_idx = mhs::core::invalid_id;
         double z_start = 0.0;
         double z_end = 0.0;
     };
@@ -41,7 +42,7 @@ namespace mhs::compiler {
         mhs::model::Axis axis = mhs::model::Axis::Z;
         double coordinate = 0.0;
         mhs::core::Vector<mhs::model::RegionRect> rectangles;
-        mhs::model::TableIndex condition_index = 0;
+        mhs::model::BoundaryConditionId condition_index = mhs::core::invalid_id;
     };
 
     // ──────────────────────────────────────────────────────────────
@@ -51,7 +52,7 @@ namespace mhs::compiler {
     mhs::core::Vector<ResolvedLayerGeometry> resolve_geometry(const mhs::core::Vector<mhs::model::LayerSpec>& layers,
         double si_scale, const mhs::expression::SymbolTable& symbols);
 
-    std::pair<mhs::core::Index, mhs::core::Index> classify_point(
+    std::optional<std::pair<std::size_t, std::size_t>> classify_point(
         const mhs::core::Vector<ResolvedLayerGeometry>& layers, const mhs::model::Vec3& point);
     void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<ResolvedLayerGeometry>& layers);
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input, double scale,
@@ -61,5 +62,5 @@ namespace mhs::compiler {
     // An invalid fallback omits uncovered surface patches.
     mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
         const mhs::core::Vector<CompiledBoundaryRegion>& boundaries,
-        mhs::model::TableIndex fallback = mhs::model::invalidTableIndex);
+        mhs::model::BoundaryConditionId fallback = mhs::core::invalid_id);
 } // namespace mhs::compiler

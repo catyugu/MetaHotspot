@@ -21,15 +21,15 @@ namespace mhs::model {
     using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
 
     struct FluidBoundaryTerm {
-        FaceId face;
+        FaceId face = mhs::core::invalid_id;
         FluidTransportCondition condition;
     };
 
     struct FluidModel {
         // Runtime topology. fluid_to_global enables fluid-only assembly;
         // global_to_fluid also acts as the fluid membership map.
-        mhs::core::Vector<Index> fluid_to_global;
-        mhs::core::Vector<Index> global_to_fluid;
+        mhs::core::Vector<CellId> fluid_to_global;
+        mhs::core::Vector<FluidCellId> global_to_fluid;
 
         // Frozen hydraulic volume flux by FaceId, positive out of the face owner.
         // Non-fluid and exterior faces carry zero.

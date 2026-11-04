@@ -36,7 +36,7 @@ namespace mhs::linear {
         constexpr unsigned kGmresRestart = 64;
 
         // The performance sweet point
-        constexpr std::ptrdiff_t kRowsPerThread = 8192;
+        constexpr std::size_t kRowsPerThread = 8192;
         constexpr int kMaxThreads = 6;
 
         /// amgcl reads the team size from OpenMP itself, so the only handle on it
@@ -44,11 +44,11 @@ namespace mhs::linear {
         /// scope exit, leaving MKL's own threading untouched.
         class ScopedTeam {
         public:
-            explicit ScopedTeam(std::ptrdiff_t rows) : previous_(omp_get_max_threads())
+            explicit ScopedTeam(std::size_t rows) : previous_(omp_get_max_threads())
             {
-                const std::ptrdiff_t wanted = (rows + kRowsPerThread - 1) / kRowsPerThread;
-                const std::ptrdiff_t limit = std::min<std::ptrdiff_t>(kMaxThreads, previous_);
-                omp_set_num_threads(static_cast<int>(std::clamp(wanted, std::ptrdiff_t {1}, limit)));
+                const std::size_t wanted = (rows + kRowsPerThread - 1) / kRowsPerThread;
+                const std::size_t limit = std::min<std::size_t>(kMaxThreads, previous_);
+                omp_set_num_threads(static_cast<int>(std::clamp(wanted, std::size_t {1}, limit)));
             }
             ScopedTeam(const ScopedTeam&) = delete;
             ScopedTeam& operator=(const ScopedTeam&) = delete;
@@ -90,7 +90,7 @@ namespace mhs::linear {
 
         private:
             bool symmetric_ = true;
-            std::ptrdiff_t rows_ = 0;
+            std::size_t rows_ = 0;
             std::unique_ptr<CgSolver> cg_;
             std::unique_ptr<GmresSolver> gmres_;
         };
@@ -102,7 +102,7 @@ namespace mhs::linear {
             // off-diagonal terms (thermal assembly). CG needs SPD, so route any
             // non-symmetric operator to GMRES.
             symmetric_ = numerically_symmetric(A, 1e-6);
-            rows_ = static_cast<std::ptrdiff_t>(A.rows);
+            rows_ = A.rows;
             const ScopedTeam team(rows_);
 
             if (A.rows != A.cols || A.rows == 0)
@@ -139,7 +139,7 @@ namespace mhs::linear {
             if (!have_solver) {
                 throw std::logic_error("AmgSolver::solve called before compute()");
             }
-            if (b.size() != x.size() || b.size() != static_cast<std::size_t>(rows_))
+            if (b.size() != x.size() || b.size() != rows_)
                 throw std::invalid_argument("AmgSolver::solve dimension mismatch");
 
             std::size_t iters = 0;

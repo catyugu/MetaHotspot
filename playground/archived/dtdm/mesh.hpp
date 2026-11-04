@@ -8,9 +8,10 @@
 
 #include "model/model.hpp"
 #include "stack.hpp"
+#include <cstdint>
 
-#include <array>
 #include "core/vector.hpp"
+#include <array>
 
 namespace mhs::dtdm {
 
@@ -18,11 +19,11 @@ namespace mhs::dtdm {
     struct StackMesh {
         mhs::model::Model model;
         std::array<mhs::core::Vector<double>, 3> axes;
-        mhs::core::Vector<mhs::core::Index> cells_of_module[kModuleCount];
-        mhs::core::Vector<mhs::core::Vector<mhs::core::Index>> cells_of_layer;
+        mhs::core::Vector<std::size_t> cells_of_module[kModuleCount];
+        mhs::core::Vector<mhs::core::Vector<std::size_t>> cells_of_layer;
         mhs::core::Vector<double> cell_k; // conductivity per cell
         std::array<int, kModuleCount> nz_per_layer {{0, 0, 0}};
-        long dof = 0;
+        std::size_t dof = 0;
         double total_power = 0.0;
         std::array<int, 4> group_nz {{0, 0, 0, 0}};
     };
@@ -32,14 +33,14 @@ namespace mhs::dtdm {
     mhs::core::Vector<double> build_axis(const Layout& layout, const mhs::core::Vector<Chiplet>& chiplets, int axis);
 
     /// Per-layer z cell counts whose total cell count equals ``layout.target``.
-    mhs::core::Vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout, const mhs::core::Vector<Chiplet>& chiplets,
-        std::array<int, 4>& group_nz);
+    mhs::core::Vector<int> solve_layer_nz(const StackMesh& probe, const Layout& layout,
+        const mhs::core::Vector<Chiplet>& chiplets, std::array<int, 4>& group_nz);
 
     /// Build the full model for one level. Throws if the DoF count misses.
     StackMesh build_stack_mesh(const SystemSpec& spec, const Layout& layout);
 
     /// In-plane cell count covered by the union of the chiplet rectangles.
-    long covered_cells(
-        const mhs::core::Vector<double>& x, const mhs::core::Vector<double>& y, const mhs::core::Vector<Chiplet>& chiplets);
+    std::int64_t covered_cells(const mhs::core::Vector<double>& x, const mhs::core::Vector<double>& y,
+        const mhs::core::Vector<Chiplet>& chiplets);
 
 } // namespace mhs::dtdm

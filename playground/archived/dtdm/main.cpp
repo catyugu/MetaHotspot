@@ -4,15 +4,16 @@
 #include "mesh.hpp"
 #include "stack.hpp"
 
+#include "core/vector.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cinttypes>
 #include <cmath>
 #include <cstdio>
 #include <exception>
 #include <stdexcept>
 #include <string>
-#include "core/vector.hpp"
 
 namespace {
 
@@ -185,8 +186,9 @@ int run(int argc, char** argv)
     StackMesh mesh = build_stack_mesh(spec, layout);
     const double build_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-    const double miss = 100.0 * static_cast<double>(mesh.dof - layout.target) / static_cast<double>(layout.target);
-    std::printf("level %s  cells %ld (paper %ld, %+.2f%%)  power %.3f W  build %.2f s\n", layout.name, mesh.dof,
+    const double miss = 100.0 * (static_cast<double>(mesh.dof) - static_cast<double>(layout.target))
+        / static_cast<double>(layout.target);
+    std::printf("level %s  cells %zu (paper %" PRId64 ", %+.2f%%)  power %.3f W  build %.2f s\n", layout.name, mesh.dof,
         layout.target, miss, mesh.total_power, build_seconds);
     std::printf("  in-plane %zu x %zu cells, finest %.4f mm\n", mesh.axes[0].size() - 1, mesh.axes[1].size() - 1,
         1e3 * finest_cell(mesh.axes));

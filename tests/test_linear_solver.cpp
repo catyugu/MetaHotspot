@@ -8,7 +8,9 @@
 
 #include "core/vector.hpp"
 #include <array>
+#include <limits>
 #include <stdexcept>
+#include <type_traits>
 
 namespace {
     double error_norm(std::span<const double> x, std::span<const double> y)
@@ -154,4 +156,16 @@ TEST(Solver, NonlinearSolveWarmStartsIterativeBackend)
     ASSERT_TRUE(solution.converged);
     ASSERT_EQ(solution.snapshot_states.size(), 1u);
     EXPECT_NEAR(solution.snapshot_states[0], 3.0, 1e-10);
+}
+
+TEST(CoreIndex, SparseCapacityAndTripletBounds)
+{
+    using namespace mhs::core;
+    static_assert(sizeof(SparseIndex) == 4);
+    static_assert(std::is_aggregate_v<Triplet<double>>);
+    const auto sparse_max = static_cast<std::size_t>(std::numeric_limits<SparseIndex>::max());
+    EXPECT_NO_THROW(detail::checked_sparse_size(sparse_max));
+    EXPECT_THROW(build_csr(sparse_max + 1, 1, {}), std::length_error);
+    EXPECT_THROW(build_csr(1, 1, {{-1, 0, 1.0}}), std::out_of_range);
+    EXPECT_THROW(build_csr(1, 1, {{0, 1, 1.0}}), std::out_of_range);
 }

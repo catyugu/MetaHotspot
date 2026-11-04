@@ -13,12 +13,12 @@
 | `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression | 项目编译选项 |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
 | `compiler` / `mhs_compiler` | `mhs::compiler`：几何投影、表达式编译、冻结流场 | model | linear |
-| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与后处理 | model | expression、linear、logging、Eigen、TBB |
+| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与后处理 | model | expression、linear、logging、Eigen、TBB、AdaptiveTimeStepper |
 | `io` / `mhs_io` | `mhs::io`：XML/VTU 读写 | model、solver | tinyxml2 |
 | `logging` / `mhs_logging` | `mhs::logger`：日志服务 | spdlog | 项目编译选项 |
 | `api` / `mhs_c_api` | C ABI 与 opaque handle | 无 | compiler、solver、io、logging |
 
-每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。内部 `compiler::fluid`、`solver::time_scheme` 不再单独建库。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖新增组件。
+每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。内部 `compiler::fluid` 不再单独建库；AdaptiveTimeStepper 是 solver 的私有头文件依赖。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖新增组件。
 
 ## 公共内核
 
@@ -30,10 +30,8 @@
 
 ## 数据模型与计算流程
 
-`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`OutputMesh`、`FluidModel`、材料、边界和编译后表达式。`OutputMesh` 继续由 Model 持有。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；通用 Index 和稀疏索引归 core。
+`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`OutputMesh`、`FluidModel`、材料、边界和编译后表达式。`OutputMesh` 继续由 Model 持有。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；实体索引表示与稀疏索引归 core。
 
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、重建、后处理、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 
 `linear/solver.hpp` 只公开 Solver、配置、结果与工厂。`compute(CSRMatrixView)` 后允许调用方释放输入；`solve(b, x)` 以 x 为初始猜测并原地写回，直接后端忽略初值。b 和 x 不得重叠。AMGCL 直接读取 CSR；Eigen 只用于内部 QR 和可选 PARDISO，不属于 SDK 公开头或查找依赖。
-
-C++ 头路径、命名空间和静态组件构成发生不兼容变更，消费者需要更新引用并重新编译。C/Python API、求解入口参数语义和数组布局保持不变。没有旧命名空间转发层。

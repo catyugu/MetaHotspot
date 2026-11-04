@@ -32,10 +32,10 @@ def test_empty_solve_options_match_native_defaults():
 def test_solve_options_only_override_explicit_fields():
     dll = get_dll()
     expected = _native_defaults(dll)
-    actual = _build(dll, SolveOptions(linear_tolerance=2.5e-10, fixed_dt=0.25))
+    actual = _build(dll, SolveOptions(linear_tolerance=2.5e-10, max_time_step=0.25))
 
     assert actual.linear_tolerance == 2.5e-10
-    assert actual.fixed_dt == 0.25
+    assert actual.max_time_step == 0.25
     for name, _ in _SolveOptionsCStruct._fields_:
-        if name not in {"linear_tolerance", "fixed_dt"}:
+        if name not in {"linear_tolerance", "max_time_step"}:
             assert getattr(actual, name) == getattr(expected, name), name

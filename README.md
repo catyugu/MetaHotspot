@@ -82,6 +82,22 @@ Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，�
 CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据和 `metahotspot.__version__`
 都由它派生，不要另建版本号副本。
 
+瞬态求解采用自适应 BDF1/2，仅需两个时间控制参数：
+
+```python
+from metahotspot import SolveOptions
+
+solution = compiled.solve(opts=SolveOptions(
+    time_tolerance=1e-4,
+    max_time_step=None,
+))
+```
+
+`time_tolerance` 控制时间离散误差；`max_time_step` 可设为正数（秒），用于解析窄脉冲等快速激励，
+`None` 表示自动。模型的输出间隔控制结果采样，求解器独立选择步长并插值生成中间输出；
+终点始终由实际求解步给出。C++ 对应 `SolveOptions` 的同名字段，C API 以 `max_time_step = 0`
+表示自动。更多数值策略见 [ADR-0001](docs/adr/0001-transient-first.md)。
+
 ## 规范
 
 - 语言：C++20
@@ -100,7 +116,7 @@ CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据�
 
 构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，每个外边界积分片具有局部温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格有效性（坐标、拓扑、覆盖、材料对齐与 TPFA 正交性）由调用者保证，程序不做校验。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，每个外边界积分片具有局部温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格构建时校验面片单元引用范围和轴编号；坐标、拓扑、覆盖、材料对齐与 TPFA 正交性由调用者保证。
 
 当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 

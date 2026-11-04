@@ -1,12 +1,12 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 
 namespace mhs::core {
-
-    using Index = std::size_t;
-    inline constexpr Index invalidIndex = std::numeric_limits<Index>::max();
-
+    // Entity references have a platform-independent representation. Array sizes
+    // and offsets remain std::size_t; CSR storage uses SparseIndex.
+    using EntityIndex = std::uint32_t;
+    using SparseIndex = std::int32_t;
+    inline constexpr EntityIndex invalid_id = std::numeric_limits<EntityIndex>::max();
 } // namespace mhs::core

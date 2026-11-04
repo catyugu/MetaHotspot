@@ -16,25 +16,25 @@ namespace mhs::io {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("VTU state size mismatch");
         const auto& output = model.output;
-        mhs::core::Vector<mhs::core::Index> node_remap(output.points.size(), mhs::core::invalidIndex);
+        mhs::core::Vector<mhs::model::PointId> node_remap(output.points.size(), mhs::core::invalid_id);
         for (const auto& cell : output.cell_vertices)
             for (auto v : cell)
-                node_remap[v] = 0;
-        mhs::core::Index compact = 0;
+                node_remap[v] = static_cast<mhs::model::PointId>(0);
+        std::size_t compact = 0;
         for (auto& v : node_remap)
-            if (v != mhs::core::invalidIndex)
-                v = compact++;
-        const auto num_points = static_cast<int>(compact);
+            if (v != mhs::core::invalid_id)
+                v = static_cast<mhs::model::PointId>(compact++);
+        const auto num_points = static_cast<uint64_t>(compact);
         char buf[256];
         std::string coords_str, conn_str, off_str, type_str, cell_temp_str;
         for (size_t v = 0; v < output.points.size(); ++v) {
-            if (node_remap[v] == mhs::core::invalidIndex)
+            if (node_remap[v] == mhs::core::invalid_id)
                 continue;
             const auto p = output.points[v];
             std::snprintf(buf, sizeof(buf), "%.17g %.17g %.17g\n", p[0], p[1], p[2]);
             coords_str += buf;
         }
-        int cell_num = 0;
+        uint64_t cell_num = 0;
         for (size_t c = 0; c < output.cell_vertices.size(); ++c) {
             for (auto v : output.cell_vertices[c]) {
                 conn_str += std::to_string(node_remap[v]);
@@ -89,14 +89,14 @@ namespace mhs::io {
         piece_elem->InsertEndChild(cells_elem);
 
         XMLElement* conn_arr_el = doc.NewElement("DataArray");
-        conn_arr_el->SetAttribute("type", "Int32");
+        conn_arr_el->SetAttribute("type", "Int64");
         conn_arr_el->SetAttribute("Name", "connectivity");
         conn_arr_el->SetAttribute("format", "ascii");
         conn_arr_el->SetText(conn_str.c_str());
         cells_elem->InsertEndChild(conn_arr_el);
 
         XMLElement* offsets_arr = doc.NewElement("DataArray");
-        offsets_arr->SetAttribute("type", "Int32");
+        offsets_arr->SetAttribute("type", "Int64");
         offsets_arr->SetAttribute("Name", "offsets");
         offsets_arr->SetAttribute("format", "ascii");
         offsets_arr->SetText(off_str.c_str());

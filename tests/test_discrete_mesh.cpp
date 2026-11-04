@@ -44,19 +44,19 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.faces.size(), 36u);
     ASSERT_EQ(model.cell_material.size(), 8u);
-    Index internal = 0;
+    std::size_t internal = 0;
     for (const auto& face : mesh.faces) {
         EXPECT_GT(face.area, 0);
-        if (face.neighbor.valid())
+        if (face.neighbor != mhs::core::invalid_id)
             ++internal;
     }
     EXPECT_EQ(internal, 12u);
-    for (Index c = 0; c < mesh.cells.size(); ++c) {
+    for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
         Vec3 closure {};
         double surface = 0;
-        for (const auto id : mesh.incident_faces(CellId {c})) {
-            const auto& face = mesh.faces[id.value];
-            const double sign = face.owner.value == c ? face.sign : -face.sign;
+        for (const auto id : mesh.incident_faces(static_cast<CellId>(c))) {
+            const auto& face = mesh.faces[id];
+            const double sign = face.owner == c ? face.sign : -face.sign;
             closure[face.axis] += sign * face.area;
             surface += face.area;
         }
@@ -71,17 +71,17 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
     auto model = mhs::compiler::build_model(definition);
-    const mhs::core::Vector<Index> order {7, 5, 3, 1, 6, 4, 2, 0};
+    const mhs::core::Vector<std::size_t> order {7, 5, 3, 1, 6, 4, 2, 0};
     auto mesh = model.discrete;
-    mhs::core::Vector<Index> inverse(order.size());
-    for (Index i = 0; i < order.size(); ++i) {
+    mhs::core::Vector<std::size_t> inverse(order.size());
+    for (std::size_t i = 0; i < order.size(); ++i) {
         mesh.cells[i] = model.discrete.cells[order[i]];
         inverse[order[i]] = i;
     }
     for (auto& face : mesh.faces) {
-        face.owner.value = inverse[face.owner.value];
-        if (face.neighbor.valid())
-            face.neighbor.value = inverse[face.neighbor.value];
+        face.owner = inverse[face.owner];
+        if (face.neighbor != mhs::core::invalid_id)
+            face.neighbor = inverse[face.neighbor];
     }
     auto imported = mhs::compiler::build_model(definition, mesh);
     for (auto* m : {&model, &imported}) {
@@ -90,20 +90,20 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     }
     mhs::core::Vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
     mhs::core::Vector<double> reordered(8);
-    for (Index i = 0; i < order.size(); ++i)
+    for (std::size_t i = 0; i < order.size(); ++i)
         reordered[i] = original[order[i]];
     const auto baseline = mhs::solver::assemble_thermal(model, original, 0);
     const auto result = mhs::solver::assemble_thermal(imported, reordered, 0);
-    for (Index i = 0; i < 8; ++i) {
+    for (std::size_t i = 0; i < 8; ++i) {
         EXPECT_NEAR(result.f[i], baseline.f[order[i]], 1e-14);
-        for (Index j = 0; j < 8; ++j) {
+        for (std::size_t j = 0; j < 8; ++j) {
             EXPECT_NEAR(result.K.coeff(i, j), baseline.K.coeff(order[i], order[j]), 1e-14);
             EXPECT_NEAR(result.C.coeff(i, j), baseline.C.coeff(order[i], order[j]), 1e-14);
         }
     }
     const auto vertices = mhs::solver::interpolate_cell_to_node(model, original, 0);
     const auto nodes = mhs::solver::interpolate_cell_to_node(imported, reordered, 0);
-    for (Index v = 0; v < imported.output.points.size(); ++v) {
+    for (std::size_t v = 0; v < imported.output.points.size(); ++v) {
         auto found = std::find(model.output.points.begin(), model.output.points.end(), imported.output.points[v]);
         ASSERT_NE(found, model.output.points.end());
         EXPECT_NEAR(nodes[v], vertices[found - model.output.points.begin()], 1e-12);
@@ -123,11 +123,10 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const auto model = mhs::compiler::build_model(d);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // The solver's patch lookup binary-searches this order.
-        EXPECT_TRUE(
-            std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent.value; }));
+        EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent; }));
         const mhs::core::Vector<double> state {350};
         for (const auto& patch : model.boundary_faces) {
-            const auto face = model.discrete.faces[patch.parent.value].project(patch.bounds);
+            const auto face = model.discrete.faces[patch.parent].project(patch.bounds);
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
             const auto trace
@@ -152,7 +151,8 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
                 EXPECT_NEAR(trace.load, -conductive_flux, 1e-5);
             }
             // Sampling and assembly read the same surface trace.
-            EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, face.center()), trace.temperature);
+            EXPECT_DOUBLE_EQ(
+                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), face.center()), trace.temperature);
         }
     }
 }
@@ -176,7 +176,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
     EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
     EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
-    for (Index i = 0; i < base.faces.size(); ++i) {
+    for (std::size_t i = 0; i < base.faces.size(); ++i) {
         EXPECT_EQ(model.discrete.faces[i].min, base.faces[i].min);
         EXPECT_EQ(model.discrete.faces[i].max, base.faces[i].max);
     }
@@ -218,11 +218,11 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
     // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
     // so an interior probe moves at exactly that rate along x.
-    const auto left = mhs::solver::sample_point(model, state, 0, CellId {0}, {0.2, 0.5, 0.5});
-    const auto right = mhs::solver::sample_point(model, state, 0, CellId {0}, {0.8, 0.5, 0.5});
+    const auto left = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
+    const auto right = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
     EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, CellId {0}, {1, 0.8, 0.8}), 300);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
@@ -239,7 +239,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
-            const auto face = model.discrete.faces[term.parent.value].project(term.bounds);
+            const auto face = model.discrete.faces[term.parent].project(term.bounds);
             if (face.axis != 0 || face.sign != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
                 continue;
@@ -261,13 +261,14 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     g = 2;
                     load = g * prescribed;
                     const auto nodes = mhs::solver::interpolate_cell_to_node(model, state, time);
-                    for (Index v = 0; v < nodes.size(); ++v) {
+                    for (std::size_t v = 0; v < nodes.size(); ++v) {
                         const auto& p = model.output.points[v];
                         if (p[0] == 1)
                             EXPECT_NEAR(nodes[v], prescribed, 1e-10);
                     }
                     EXPECT_DOUBLE_EQ(
-                        mhs::solver::sample_point(model, state, time, CellId {0}, {1, 0.5, 0.5}), prescribed);
+                        mhs::solver::sample_point(model, state, time, static_cast<CellId>(0), {1, 0.5, 0.5}),
+                        prescribed);
                 }
                 else if (kind == 1) {
                     const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
@@ -298,4 +299,34 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
             }
         }
     }
+}
+
+TEST(DiscreteMesh, MissingReferencesRemainInvalid)
+{
+    DiscreteMesh mesh;
+    mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
+    FacePatch face;
+    EXPECT_EQ(face.owner, invalid_id);
+    EXPECT_EQ(face.neighbor, invalid_id);
+    face.owner = 0;
+    mesh.faces.push_back(face);
+    mesh.build_incidence();
+    EXPECT_EQ(mesh.incident_faces(0).size(), 1u);
+    EXPECT_EQ(mesh.locate({2, 2, 2}), invalid_id);
+    EXPECT_EQ(mesh.locate({0.5, 0.5, 0.5}), 0u);
+}
+
+TEST(DiscreteMesh, ImportedReferencesAreValidatedBeforeUse)
+{
+    auto definition = cube_definition();
+    const auto valid = mhs::compiler::build_model(definition).discrete;
+    auto mesh = valid;
+    mesh.faces[0].owner = static_cast<CellId>(mesh.cells.size());
+    EXPECT_THROW(mhs::compiler::build_model(definition, mesh), std::out_of_range);
+    mesh = valid;
+    mesh.faces[0].neighbor = static_cast<CellId>(mesh.cells.size());
+    EXPECT_THROW(mesh.build_incidence(), std::out_of_range);
+    mesh = valid;
+    mesh.faces[0].axis = 3;
+    EXPECT_THROW(mhs::compiler::build_model(definition, mesh), std::invalid_argument);
 }

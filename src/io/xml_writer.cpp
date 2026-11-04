@@ -94,13 +94,13 @@ namespace mhs::io {
             data_elem->DeleteChild(child);
         }
 
-        const mhs::core::Index node_nx = model.output.cartesian_shape[0];
-        const mhs::core::Index node_ny = model.output.cartesian_shape[1];
-        const mhs::core::Index node_nz = model.output.cartesian_shape[2];
+        const std::size_t node_nx = model.output.cartesian_shape[0];
+        const std::size_t node_ny = model.output.cartesian_shape[1];
+        const std::size_t node_nz = model.output.cartesian_shape[2];
 
-        for (mhs::core::Index vx = 0; vx < node_nx; vx++) {
-            for (mhs::core::Index vy = 0; vy < node_ny; vy++) {
-                for (mhs::core::Index vz = 0; vz < node_nz; vz++) {
+        for (std::size_t vx = 0; vx < node_nx; vx++) {
+            for (std::size_t vy = 0; vy < node_ny; vy++) {
+                for (std::size_t vz = 0; vz < node_nz; vz++) {
                     const double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
 
                     XMLElement* double_elem = doc.NewElement("a:double");
