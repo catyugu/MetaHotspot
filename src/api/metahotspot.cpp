@@ -62,7 +62,7 @@ const char* mhs_detail_last_error();
 /* ------------------------------------------------------------------ */
 
 /** Convert C-level solver opts to SolveOptions. */
-mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration = 0.0);
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 
 /* ------------------------------------------------------------------ */
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
@@ -187,28 +187,6 @@ static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_ty
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
 
-static mhs::solver::SolveOptions::Integrator _to_integrator(mhs_integrator_t integrator)
-{
-    switch (integrator) {
-    case MHS_INTEGRATOR_BDF1:
-        return mhs::solver::SolveOptions::Integrator::Bdf1;
-    case MHS_INTEGRATOR_BDF2:
-        return mhs::solver::SolveOptions::Integrator::Bdf2;
-    }
-    throw std::invalid_argument("invalid integrator: " + std::to_string(integrator));
-}
-
-static mhs::solver::SolveOptions::StepStrategy _to_step_strategy(mhs_step_strategy_t strategy)
-{
-    switch (strategy) {
-    case MHS_STEP_ADAPTIVE:
-        return mhs::solver::SolveOptions::StepStrategy::Adaptive;
-    case MHS_STEP_FIXED:
-        return mhs::solver::SolveOptions::StepStrategy::Fixed;
-    }
-    throw std::invalid_argument("invalid step strategy: " + std::to_string(strategy));
-}
-
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
@@ -227,16 +205,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
     opts->nonlinear_max_iterations = defaults.nonlinear_max_iterations;
     opts->nonlinear_relative_tolerance = defaults.nonlinear_relative_tolerance;
     opts->nonlinear_absolute_tolerance = defaults.nonlinear_absolute_tolerance;
-    opts->integrator = defaults.integrator == mhs::solver::SolveOptions::Integrator::Bdf1 ? MHS_INTEGRATOR_BDF1
-                                                                                          : MHS_INTEGRATOR_BDF2;
-    opts->step_strategy = defaults.step_strategy == mhs::solver::SolveOptions::StepStrategy::Adaptive
-        ? MHS_STEP_ADAPTIVE
-        : MHS_STEP_FIXED;
-    opts->error_rel_tol = defaults.error_rel_tol;
-    opts->error_safety = defaults.error_safety;
-    opts->min_dt = defaults.min_dt;
-    opts->max_dt = defaults.max_dt;
-    opts->fixed_dt = defaults.fixed_dt;
+    opts->time_tolerance = defaults.time_tolerance;
+    opts->max_time_step = defaults.max_time_step.value_or(0.0);
 }
 
 MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
@@ -912,7 +882,7 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  SolveOptions conversion helper                                     */
 /* ------------------------------------------------------------------ */
 
-mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, double transient_duration)
+mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts)
 {
     mhs::solver::SolveOptions so;
     if (!opts)
@@ -924,13 +894,11 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts, doub
     so.nonlinear_max_iterations = opts->nonlinear_max_iterations;
     so.nonlinear_relative_tolerance = opts->nonlinear_relative_tolerance;
     so.nonlinear_absolute_tolerance = opts->nonlinear_absolute_tolerance;
-    so.integrator = _to_integrator(opts->integrator);
-    so.step_strategy = _to_step_strategy(opts->step_strategy);
-    so.error_rel_tol = opts->error_rel_tol;
-    so.error_safety = opts->error_safety;
-    so.min_dt = opts->min_dt;
-    so.max_dt = (opts->max_dt > 0.0) ? opts->max_dt : (transient_duration > 0.0) ? transient_duration : 1.0;
-    so.fixed_dt = opts->fixed_dt;
+    so.time_tolerance = opts->time_tolerance;
+    if (!std::isfinite(opts->max_time_step) || opts->max_time_step < 0.0)
+        throw std::invalid_argument("max_time_step must be finite and nonnegative (zero selects automatic)");
+    if (opts->max_time_step > 0.0)
+        so.max_time_step = opts->max_time_step;
     return so;
 }
 
@@ -944,7 +912,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY({
-        auto so = to_solve_options(opts, c->model->transient_duration);
+        auto so = to_solve_options(opts);
 
         // Build initial state span
         std::span<const double> init_span;

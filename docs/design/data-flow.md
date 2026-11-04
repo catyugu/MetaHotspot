@@ -34,7 +34,7 @@
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态使用 BDF1/BDF2，`StepController` 控制 Adaptive/Fixed 步长并截短到输出时刻，observer 接收真实积分状态。全局状态不做时间插值。
+公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
 探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
 

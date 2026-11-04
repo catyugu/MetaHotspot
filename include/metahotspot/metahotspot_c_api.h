@@ -84,12 +84,6 @@ enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
 
-typedef int32_t mhs_integrator_t;
-enum { MHS_INTEGRATOR_BDF1 = 0, MHS_INTEGRATOR_BDF2 = 1 };
-
-typedef int32_t mhs_step_strategy_t;
-enum { MHS_STEP_ADAPTIVE = 0, MHS_STEP_FIXED = 1 };
-
 typedef int32_t mhs_face_t;
 enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_FACE_ZM = 4, MHS_FACE_ZP = 5 };
 
@@ -129,13 +123,8 @@ typedef struct {
     int32_t nonlinear_max_iterations;
     double nonlinear_relative_tolerance;
     double nonlinear_absolute_tolerance;
-    mhs_integrator_t integrator;
-    mhs_step_strategy_t step_strategy;
-    double error_rel_tol;
-    double error_safety;
-    double min_dt;
-    double max_dt;
-    double fixed_dt;
+    double time_tolerance;
+    double max_time_step; /**< Seconds; zero selects automatic. */
 } mhs_solve_options_t;
 
 /** Explicit compiled geometry sizes. State order is CellId order. */

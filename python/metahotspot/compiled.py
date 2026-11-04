@@ -11,7 +11,7 @@ import numpy as np
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.enums import IntegratorKind, SolverType, StepStrategy
+from metahotspot.enums import SolverType
 from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
@@ -24,15 +24,9 @@ from metahotspot.types import (
 # ---- SolveOptions --------------------------------------------------------
 
 _SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "Amg": SolverType.AMG}
-_INTEGRATOR_VALUES = {"Bdf1": IntegratorKind.BDF1, "Bdf2": IntegratorKind.BDF2}
-_STEP_STRATEGY_VALUES = {"Adaptive": StepStrategy.ADAPTIVE, "Fixed": StepStrategy.FIXED}
-
-# SolveOptions dataclass field -> C struct field name, with an enum coercer for
-# the three enum-typed fields.
+# SolveOptions field -> C field name, with enum coercion for the solver.
 _ENUM_FIELDS = {
     "linear_solver": (SolverType, _SOLVER_VALUES, "solver_type"),
-    "integrator": (IntegratorKind, _INTEGRATOR_VALUES, "integrator"),
-    "step_strategy": (StepStrategy, _STEP_STRATEGY_VALUES, "step_strategy"),
 }
 
 
@@ -52,6 +46,9 @@ class SolveOptions:
     """Solver configuration options.
 
     ``None`` fields fall back to the C++ defaults (via ``mhs_solve_options_default``).
+    ``time_tolerance`` controls adaptive BDF1/2 error (default 1e-4).
+    ``max_time_step=None`` selects an automatic limit; positive values are seconds.
+    Output sampling is configured on the model independently of solver steps.
     """
 
     linear_solver: SolverType | str | None = None
@@ -61,13 +58,8 @@ class SolveOptions:
     nonlinear_max_iterations: int | None = None
     nonlinear_relative_tolerance: float | None = None
     nonlinear_absolute_tolerance: float | None = None
-    integrator: IntegratorKind | str | None = None
-    step_strategy: StepStrategy | str | None = None
-    error_rel_tol: float | None = None
-    error_safety: float | None = None
-    min_dt: float | None = None
-    max_dt: float | None = None
-    fixed_dt: float | None = None
+    time_tolerance: float | None = None
+    max_time_step: float | None = None
 
     def _overrides(self) -> dict:
         """Present non-``None`` values as C solve-options struct field overrides."""

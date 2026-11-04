@@ -16,6 +16,7 @@ set(MHS_MUPARSER_VERSION 2.3.5)
 set(MHS_TBB_VERSION 2023.0.0)
 set(MHS_AMGCL_VERSION 1.5.0)
 set(MHS_GTEST_VERSION 1.18.0)
+set(MHS_ATSTEP_VERSION 2.1.0)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
@@ -173,3 +174,13 @@ if(MHS_USE_MKL)
     find_package(MKL CONFIG REQUIRED)
     set(MHS_ENABLE_PARDISO ON)
 endif()
+
+
+# Adaptive BDF controller, private to mhs_solver. No upstream targets are exported.
+CPMAddPackage(
+    NAME AdaptiveTimeStepper
+    VERSION ${MHS_ATSTEP_VERSION}
+    GITHUB_REPOSITORY catyugu/AdaptiveTimeStepper
+    GIT_TAG "v${MHS_ATSTEP_VERSION}"
+    DOWNLOAD_ONLY YES
+)

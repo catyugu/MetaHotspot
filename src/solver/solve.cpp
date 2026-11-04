@@ -1,16 +1,15 @@
 #include "solver/solve.hpp"
+#include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "logging/logger.hpp"
-#include "model/constants.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
-#include "solver/solution_history.hpp"
 #include "solver/solver.hpp"
-#include "solver/time_integration.hpp"
+#include <atstep/stepper.hpp>
 
-#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -73,107 +72,91 @@ namespace mhs::solver {
 
         mhs::solver::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
             mhs::core::Vector<double> state, mhs::linear::SolverPtr& solver, const SolveOptions& opts,
-            NonLinearConfig nl_config, time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
-            const StateObserver& observe)
+            const NonLinearConfig& nl_config, const StateObserver& observe)
         {
+            using State = core::Vector<double>;
             const auto state_count = state.size();
-            mhs::solver::Solution result;
-            const double duration = study.duration;
-            const double output_dt = study.output_interval;
-            time_scheme::StepController step_ctrl {
-                step_strategy, opts.min_dt, opts.max_dt, duration, output_dt, opts.fixed_dt};
-            mhs::solver::SolutionHistory accepted {state_count, 2};
-            double current_time = 0.0;
-            accepted.initialize(state, current_time);
-            result.snapshot_times.push_back(current_time);
-            result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
-            if (observe)
-                observe(current_time, state);
+            if (!std::isfinite(study.duration) || study.duration <= 0.0 || !std::isfinite(study.output_interval)
+                || study.output_interval < 0.0)
+                throw std::invalid_argument("transient duration must be positive and output interval nonnegative");
 
-            double dt_sug = std::clamp(output_dt, opts.min_dt, opts.max_dt);
-            while (current_time < duration - mhs::model::zero_guard) {
-                double dt = step_ctrl.prepare(dt_sug, current_time);
-                if (dt <= 0.0)
-                    throw std::logic_error("time-step controller returned non-positive dt before completion");
+            atstep::Settings settings;
+            auto& steps = std::get<atstep::AdaptiveSteps>(settings.steps);
+            steps.max_order = 2;
+            steps.interpolate_end_time = false;
+            if (opts.max_time_step)
+                steps.max_step = atstep::ConstantMaxStep {*opts.max_time_step};
+            settings.error.relative = opts.time_tolerance;
+            settings.error.scaled = false;
+            settings.storage = study.output_interval > 0.0 ? atstep::Storage::interpolate : atstep::Storage::steps;
 
-                LinearSystemProvider ls_provider = [&](std::span<const double> iter_state) -> LinearSystem {
-                    auto ops = assemble(iter_state, current_time + dt);
+            atstep::TimeStepper<State> stepper(settings, [&](const atstep::StepRequest<State>& request, State& trial) {
+                LinearSystemProvider provider = [&](std::span<const double> iterate) -> LinearSystem {
+                    auto ops = assemble(iterate, request.time);
                     validate_operator_dimensions(ops, state_count);
-                    return time_scheme::build_system(integrator, ops, accepted, dt);
+                    auto A = core::add_scaled(ops.K, request.derivative_weight(), ops.C);
+                    core::spmv(ops.C.view(), request.derivative_history(), ops.f, -1.0, 1.0);
+                    return {std::move(A), std::move(ops.f)};
                 };
+                return nonlinear_solve(provider, trial, solver, nl_config);
+            });
 
-                auto saved_state = state;
-                auto nl = nonlinear_solve(ls_provider, state, solver, nl_config);
-
-                if (!nl) {
-                    state = std::move(saved_state);
-                    dt_sug = dt * 0.5;
-                    MHS_LOG_DEBUG("Step rejected at t={} (nonlinear), retry dt={}", current_time, dt_sug);
-
-                    if (dt <= opts.min_dt * 1.0001) {
-                        MHS_LOG_WARN("Nonlinear solver diverged at minimum dt t={}", current_time);
-                        result.state = std::move(state);
-                        result.time = current_time;
-                        result.converged = false;
-                        return result;
-                    }
-                    continue;
+            // Thermal capacities are diagonal: preserve the supplied T(0) exactly.
+            // General callback systems with algebraic or coupled capacity retain
+            // the stepper's consistent initialization.
+            auto initial_ops = assemble(state, 0.0);
+            validate_operator_dimensions(initial_ops, state_count);
+            State derivative = std::move(initial_ops.f);
+            core::spmv(initial_ops.K.view(), state, derivative, -1.0, 1.0);
+            bool positive_diagonal = true;
+            const auto C = initial_ops.C.view();
+            for (std::size_t i = 0; i < state_count; ++i) {
+                double capacity = 0.0;
+                for (auto j = C.row_ptr[i]; j < C.row_ptr[i + 1]; ++j) {
+                    if (static_cast<std::size_t>(C.col_idx[j]) == i)
+                        capacity = C.values[j];
+                    else if (C.values[j] != 0.0)
+                        positive_diagonal = false;
                 }
+                if (!std::isfinite(capacity) || capacity <= 0.0)
+                    positive_diagonal = false;
+                else
+                    derivative[i] /= capacity;
+            }
+            if (positive_diagonal)
+                stepper.start(0.0, state, derivative, study.duration);
+            else
+                stepper.start(0.0, state, study.duration);
 
-                bool accepted_step = true;
-                bool forced_minimum_step = false;
-                double suggested_dt_factor = 1.0;
-
-                if (step_strategy == time_scheme::StepStrategy::Fixed) {
-                    accepted.accept(state, current_time + dt);
-                }
-                else {
-                    auto est
-                        = time_scheme::estimate_error(accepted, state, dt, {opts.error_rel_tol, opts.error_safety});
-                    suggested_dt_factor = est.suggested_factor;
-                    forced_minimum_step = est.error_ratio > 1.0 && dt <= opts.min_dt * 1.0001;
-                    accepted_step = (est.error_ratio <= 1.0) || forced_minimum_step;
-
-                    if (accepted_step)
-                        accepted.accept(state, current_time + dt);
-                }
-
-                if (accepted_step) {
-                    current_time += dt;
-                    MHS_LOG_DEBUG("Time: {} solved (dt={})", current_time, dt);
-
-                    if (step_ctrl.output_due(current_time)) {
-                        result.snapshot_times.push_back(current_time);
-                        result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
-                        if (observe)
-                            observe(current_time, state);
-                    }
-
-                    dt_sug = (step_strategy == time_scheme::StepStrategy::Fixed)
-                        ? opts.fixed_dt
-                        // Probe upward after a forced floor acceptance; otherwise
-                        // the preceding shrink request makes min_dt absorbing.
-                        : std::clamp(dt * (forced_minimum_step ? 2.0 : suggested_dt_factor), opts.min_dt, opts.max_dt);
-                }
-                else {
-                    state = std::move(saved_state);
-                    dt_sug = dt * 0.5;
-                    MHS_LOG_DEBUG("Step rejected at t={} (LTE), retry dt={}", current_time, dt_sug);
+            State output_times {0.0};
+            if (study.output_interval > 0.0) {
+                for (std::size_t i = 1;; ++i) {
+                    const double time = static_cast<double>(i) * study.output_interval;
+                    if (time >= study.duration
+                        || study.duration - time <= 8.0 * std::numeric_limits<double>::epsilon() * study.duration)
+                        break;
+                    if (!(time > output_times.back()))
+                        throw std::length_error("output interval cannot advance the output timeline");
+                    output_times.push_back(time);
                 }
             }
-
-            // A duration that is not an exact output interval must still expose its
-            // final accepted state exactly once.
-            if (result.snapshot_times.empty()
-                || std::abs(result.snapshot_times.back() - current_time) > mhs::model::zero_guard) {
-                result.snapshot_times.push_back(current_time);
-                result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
+            output_times.push_back(study.duration);
+            mhs::solver::Solution result;
+            atstep::RunHooks<State> hooks;
+            hooks.on_store = [&](double time, const State& value, bool) {
+                const auto& stored = time == study.duration ? stepper.state() : value;
+                result.snapshot_times.push_back(time);
+                result.snapshot_states.insert(result.snapshot_states.end(), stored.begin(), stored.end());
                 if (observe)
-                    observe(current_time, state);
-            }
-            result.state = std::move(state);
-            result.time = current_time;
-            result.converged = current_time >= duration - mhs::model::zero_guard;
+                    observe(time, stored);
+            };
+            hooks.on_step = [](const atstep::StepRecord& record, const State&) {
+                MHS_LOG_DEBUG("Time: {} solved (dt={}, order={})", record.time, record.step, record.order);
+            };
+            stepper.run(output_times, std::move(hooks));
+            result.state = stepper.state();
+            result.time = stepper.time();
+            result.converged = stepper.finished();
             return result;
         }
 
@@ -191,11 +174,6 @@ namespace mhs::solver {
 
         auto solver_spec = build_solver_spec(opts);
         auto nl_config = build_nonlinear_config(opts);
-        if (opts.integrator != SolveOptions::Integrator::Bdf1 && opts.integrator != SolveOptions::Integrator::Bdf2)
-            throw std::invalid_argument("unknown integrator");
-        if (opts.step_strategy != SolveOptions::StepStrategy::Adaptive
-            && opts.step_strategy != SolveOptions::StepStrategy::Fixed)
-            throw std::invalid_argument("unknown step strategy");
 
         mhs::linear::SolverPtr solver = mhs::linear::create_solver(solver_spec);
         mhs::core::Vector<double> state(initial_state.begin(), initial_state.end());
@@ -203,8 +181,7 @@ namespace mhs::solver {
         if (study.type == mhs::model::StudyType::Steady) {
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         }
-        return solve_transient(
-            study, assemble, std::move(state), solver, opts, nl_config, opts.integrator, opts.step_strategy, observe);
+        return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
     mhs::solver::Solution solve(

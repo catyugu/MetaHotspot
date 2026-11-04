@@ -2,6 +2,7 @@
 
 #include "model/model.hpp"
 #include "solver/solution.hpp"
+#include <optional>
 #include <span>
 
 namespace mhs::solver {
@@ -21,18 +22,9 @@ namespace mhs::solver {
         double nonlinear_relative_tolerance = 1e-6;
         double nonlinear_absolute_tolerance = 1e-12;
 
-        // Time integration
-        enum class Integrator : int { Bdf1, Bdf2 };
-        Integrator integrator = Integrator::Bdf1;
-
-        enum class StepStrategy : int { Adaptive, Fixed };
-        StepStrategy step_strategy = StepStrategy::Adaptive;
-
-        double error_rel_tol = 1e-4;
-        double error_safety = 0.9;
-        double min_dt = 1e-12;
-        double max_dt = 1.0;
-        double fixed_dt = 1.0;
+        // Adaptive BDF1/2 time integration. Output sampling is set by the model.
+        double time_tolerance = 1e-4;
+        std::optional<double> max_time_step; // seconds; unset selects automatic
     };
 
     /// Standard thermal solve entry point.

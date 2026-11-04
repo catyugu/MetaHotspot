@@ -106,7 +106,7 @@ namespace mhs::solver {
             solver->compute(system.A.view());
             const auto result = solver->solve(system.b, G_k);
             if (!result.success)
-                throw std::runtime_error("linear solver failed at iteration " + std::to_string(iter));
+                return false;
             auto proposal = mixer.step(state, G_k);
             const bool use_aa = proposal.has_value() && core::all_finite(*proposal);
             if (use_aa)

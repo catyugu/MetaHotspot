@@ -13,12 +13,12 @@
 | `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression | 项目编译选项 |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
 | `compiler` / `mhs_compiler` | `mhs::compiler`：几何投影、表达式编译、冻结流场 | model | linear |
-| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与后处理 | model | expression、linear、logging、Eigen、TBB |
+| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与后处理 | model | expression、linear、logging、Eigen、TBB、AdaptiveTimeStepper |
 | `io` / `mhs_io` | `mhs::io`：XML/VTU 读写 | model、solver | tinyxml2 |
 | `logging` / `mhs_logging` | `mhs::logger`：日志服务 | spdlog | 项目编译选项 |
 | `api` / `mhs_c_api` | C ABI 与 opaque handle | 无 | compiler、solver、io、logging |
 
-每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。内部 `compiler::fluid`、`solver::time_scheme` 不再单独建库。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖新增组件。
+每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。内部 `compiler::fluid` 不再单独建库；AdaptiveTimeStepper 是 solver 的私有头文件依赖。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖新增组件。
 
 ## 公共内核
 

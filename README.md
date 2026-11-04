@@ -82,6 +82,22 @@ Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，�
 CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据和 `metahotspot.__version__`
 都由它派生，不要另建版本号副本。
 
+瞬态求解采用自适应 BDF1/2，仅需两个时间控制参数：
+
+```python
+from metahotspot import SolveOptions
+
+solution = compiled.solve(opts=SolveOptions(
+    time_tolerance=1e-4,
+    max_time_step=None,
+))
+```
+
+`time_tolerance` 控制时间离散误差；`max_time_step` 可设为正数（秒），用于解析窄脉冲等快速激励，
+`None` 表示自动。模型的输出间隔控制结果采样，求解器独立选择步长并插值生成中间输出；
+终点始终由实际求解步给出。C++ 对应 `SolveOptions` 的同名字段，C API 以 `max_time_step = 0`
+表示自动。更多数值策略见 [ADR-0001](docs/adr/0001-transient-first.md)。
+
 ## 规范
 
 - 语言：C++20
