@@ -8,7 +8,7 @@
 
 | 目录 / 目标 | 命名空间与职责 | PUBLIC 依赖 | PRIVATE 依赖 |
 | --- | --- | --- | --- |
-| `core` / `mhs_core` | `mhs::core`：容器、内存池、CSR/vector kernels | 无 | 项目编译选项 |
+| `core` / `mhs_core` | `mhs::core`：容器、内存池、CSR/vector kernels | 无 | TBB、项目编译选项 |
 | `expression` / `mhs_expression` | `mhs::expression`：表达式编译与求值 | 无 | core、muparser、TBB |
 | `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression | 项目编译选项 |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
@@ -26,7 +26,7 @@
 
 容器保留模板与轻量 inline 访问器，固定 `double` 的重 kernel 在 `.cpp` 中实现。`Vector<T>` 是采用池化分配器的 `std::vector` 别名；唯一资源实现位于 `src/core/memory.cpp`，线程安全的小块复用和大块上游分配策略保持不变。分配器保存资源指针，移动、交换、释放沿用原资源；资源及其所在动态库必须存活到容器释放之后。
 
-`Matrix<T>` 是连续行主序矩阵。`CSRMatrix<T>` 使用零基、有符号 32 位稀疏索引；每行列号严格递增、无重复，显式零保留。公开数组构造检查不变量，`build_csr` 合并重复项。向量操作接受 `std::span`，SpMV 接受只读 `CSRMatrixView`。第三方类型不出现在这些公开头中。
+`Matrix<T>` 是连续行主序矩阵。`CSRMatrix<T>` 使用零基、有符号 32 位稀疏索引；每行列号严格递增、无重复，显式零保留。公开数组构造检查不变量；仅 `build_csr` 和 `add_scaled` 两个友元构造 kernel 可使用私有 canonical 构造，消除重复扫描。`build_csr` 串行分桶，小输入逐行排序并追加输出；大输入按行并行排序及原地合并，再前缀求和并按最终 nnz 分配、并行写出。显式零与每行累加顺序保持一致。向量操作接受 `std::span`，SpMV 接受只读 `CSRMatrixView`。第三方类型不出现在这些公开头中。
 
 ## 数据模型与计算流程
 

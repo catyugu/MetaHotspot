@@ -87,6 +87,21 @@ namespace mhs::core {
         }
 
     private:
+        // Only construction kernels that already establish the canonical
+        // invariant may bypass the public array constructor's validation.
+        struct CanonicalTag { };
+        CSRMatrix(CanonicalTag, std::size_t rows, std::size_t cols, Vector<SparseIndex> row_ptr,
+            Vector<SparseIndex> col_idx, Vector<T> values)
+            : rows_(rows)
+            , cols_(cols)
+            , row_ptr_(std::move(row_ptr))
+            , col_idx_(std::move(col_idx))
+            , values_(std::move(values))
+        {
+        }
+        friend CSRMatrix<double> build_csr(std::size_t, std::size_t, Vector<Triplet<double>>);
+        friend CSRMatrix<double> add_scaled(const CSRMatrix<double>&, double, const CSRMatrix<double>&);
+
         std::size_t rows_ = 0, cols_ = 0;
         Vector<SparseIndex> row_ptr_ {0};
         Vector<SparseIndex> col_idx_;

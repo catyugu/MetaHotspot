@@ -1,4 +1,6 @@
 #include "core/csr_ops.hpp"
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
 
 namespace mhs::core {
     core::CSRMatrix<double> build_csr(std::size_t rows, std::size_t cols, core::Vector<core::Triplet<double>> entries)
@@ -25,6 +27,41 @@ namespace mhs::core {
                 else
                     std::swap(entries[next[i]], entries[next[row]++]);
             }
+        // Row-independent sorting/reduction starts only after serial bucketing.
+        // Small assemblies retain the single-pass append path below.
+        if (entries.size() >= 262144 && rows >= 512) {
+            tbb::parallel_for(tbb::blocked_range<std::size_t>(0, rows, 256), [&](const auto& range) {
+                for (auto i = range.begin(); i != range.end(); ++i) {
+                    auto first = entries.begin() + offsets[i], last = entries.begin() + offsets[i + 1];
+                    std::sort(first, last, [](const auto& a, const auto& b) { return a.col < b.col; });
+                    auto out = first;
+                    while (first != last) {
+                        const auto column = first->col;
+                        double value = 0;
+                        do {
+                            value += (first++)->value;
+                        } while (first != last && first->col == column);
+                        out->col = column;
+                        (out++)->value = value;
+                    }
+                    next[i] = static_cast<SparseIndex>(out - (entries.begin() + offsets[i]));
+                }
+            });
+            Vector<SparseIndex> ptr(rows + 1, 0);
+            for (std::size_t i = 0; i < rows; ++i)
+                ptr[i + 1] = ptr[i] + next[i];
+            Vector<SparseIndex> col(ptr.back());
+            Vector<double> val(ptr.back());
+            tbb::parallel_for(tbb::blocked_range<std::size_t>(0, rows, 256), [&](const auto& range) {
+                for (auto i = range.begin(); i != range.end(); ++i)
+                    for (SparseIndex k = 0; k < next[i]; ++k) {
+                        const auto& entry = entries[offsets[i] + k];
+                        col[ptr[i] + k] = entry.col;
+                        val[ptr[i] + k] = entry.value;
+                    }
+            });
+            return {CSRMatrix<double>::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col), std::move(val)};
+        }
         core::Vector<core::SparseIndex> ptr(rows + 1, 0), col;
         core::Vector<double> val;
         col.reserve(entries.size());
@@ -43,7 +80,7 @@ namespace mhs::core {
             }
             ptr[i + 1] = static_cast<core::SparseIndex>(val.size());
         }
-        return {rows, cols, std::move(ptr), std::move(col), std::move(val)};
+        return {CSRMatrix<double>::CanonicalTag {}, rows, cols, std::move(ptr), std::move(col), std::move(val)};
     }
 
     void spmv(core::CSRMatrixView<double> a, std::span<const double> x, std::span<double> y, double alpha, double beta)
@@ -85,6 +122,6 @@ namespace mhs::core {
             }
             ptr[i + 1] = static_cast<core::SparseIndex>(core::detail::checked_sparse_size(val.size()));
         }
-        return {a.rows(), a.cols(), std::move(ptr), std::move(col), std::move(val)};
+        return {CSRMatrix<double>::CanonicalTag {}, a.rows(), a.cols(), std::move(ptr), std::move(col), std::move(val)};
     }
 } // namespace mhs::core
