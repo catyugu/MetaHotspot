@@ -102,7 +102,7 @@ namespace mhs::linear {
             // off-diagonal terms (thermal assembly). CG needs SPD, so route any
             // non-symmetric operator to GMRES.
             symmetric_ = numerically_symmetric(A, 1e-6);
-            rows_ = static_cast<std::size_t>(A.rows);
+            rows_ = A.rows;
             const ScopedTeam team(rows_);
 
             if (A.rows != A.cols || A.rows == 0)
@@ -139,7 +139,7 @@ namespace mhs::linear {
             if (!have_solver) {
                 throw std::logic_error("AmgSolver::solve called before compute()");
             }
-            if (b.size() != x.size() || b.size() != static_cast<std::size_t>(rows_))
+            if (b.size() != x.size() || b.size() != rows_)
                 throw std::invalid_argument("AmgSolver::solve dimension mismatch");
 
             std::size_t iters = 0;

@@ -35,5 +35,3 @@
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、重建、后处理、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 
 `linear/solver.hpp` 只公开 Solver、配置、结果与工厂。`compute(CSRMatrixView)` 后允许调用方释放输入；`solve(b, x)` 以 x 为初始猜测并原地写回，直接后端忽略初值。b 和 x 不得重叠。AMGCL 直接读取 CSR；Eigen 只用于内部 QR 和可选 PARDISO，不属于 SDK 公开头或查找依赖。
-
-C++ 头路径、命名空间和静态组件构成发生不兼容变更，消费者需要更新引用并重新编译。C/Python API、求解入口参数语义和数组布局保持不变。没有旧命名空间转发层。

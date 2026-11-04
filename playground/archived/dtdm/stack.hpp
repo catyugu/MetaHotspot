@@ -11,9 +11,10 @@
 // over three categories, and the module assignment of every layer.
 #pragma once
 
-#include <array>
-#include <string>
 #include "core/vector.hpp"
+#include <array>
+#include <cstdint>
+#include <string>
 
 namespace mhs::dtdm {
 
@@ -166,7 +167,7 @@ namespace mhs::dtdm {
     struct Layout {
         const char* name;
         int n_fine; // cells across the widest chiplet
-        long target; // the paper's Table I DoF count
+        std::int64_t target; // the paper's Table I DoF count
     };
 
     // The z distribution is solved for at build time (see mesh.cpp), inside the

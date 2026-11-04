@@ -49,7 +49,7 @@ namespace mhs::solver::time_scheme {
     ErrorEstimate estimate_error(const mhs::solver::SolutionHistory& accepted, std::span<const double> trial_state,
         double trial_dt, const ErrorControlConfig& config)
     {
-        const std::size_t count = static_cast<std::size_t>(trial_state.size());
+        const std::size_t count = trial_state.size();
         if (count == 0)
             return {0.0, 1.0};
         const auto current = accepted.current();

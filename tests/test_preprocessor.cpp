@@ -14,7 +14,7 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 /// Find a boundary integration face on `cell_idx` with direction `dir`.
 /// Returns nullptr for an internal face without a boundary face.
-static const mhs::model::BoundaryFace* find_face_bc(const Model& model, uint32_t cell_idx, FaceDir dir)
+static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_faces(CellId {cell_idx})) {
         const auto& f = model.discrete.faces[id.value];
@@ -27,7 +27,8 @@ static const mhs::model::BoundaryFace* find_face_bc(const Model& model, uint32_t
     return nullptr;
 }
 
-template <typename Condition> static const Condition* find_condition(const Model& model, uint32_t cell_idx, FaceDir dir)
+template <typename Condition>
+static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
     const auto* term = find_face_bc(model, cell_idx, dir);
     return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition.value]) : nullptr;
@@ -285,13 +286,13 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
     // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> Dirichlet on ZM
-    int ny_bc = (io.mesh.y_vertices.size() - 1);
-    int nz_bc = (io.mesh.z_vertices.size() - 1);
-    int idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    size_t compact = input_cell(model, io.mesh, idx_bc);
+    const auto ny_bc = (io.mesh.y_vertices.size() - 1);
+    const auto nz_bc = (io.mesh.z_vertices.size() - 1);
+    const auto idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
+    const auto compact = input_cell(model, io.mesh, idx_bc);
     ASSERT_NE(compact, CellId::invalid_value);
 
-    const auto* condition = find_condition<Dirichlet>(model, (uint32_t)compact, FaceDir::ZM);
+    const auto* condition = find_condition<Dirichlet>(model, compact, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
     EXPECT_TRUE(condition->temperature.is_constant());
     EXPECT_NEAR(condition->temperature.constant_value(), 500.0, 1e-10);
@@ -311,28 +312,28 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // YM (y=0 face): domain boundary -> Neumann
     // ZM (z=0 face): domain boundary -> Neumann
     // XP, YP, ZP: interior or domain boundary
-    int ny = (io.mesh.y_vertices.size() - 1);
-    int nz = (io.mesh.z_vertices.size() - 1);
-    int idx = 0 * ny * nz + 0 * nz + 0;
-    size_t compact = input_cell(model, io.mesh, idx);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
+    const auto idx = 0 * ny * nz + 0 * nz + 0;
+    const auto compact = input_cell(model, io.mesh, idx);
     ASSERT_NE(compact, CellId::invalid_value);
 
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::XM), nullptr);
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::YM), nullptr);
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact, FaceDir::ZM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::XM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::YM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::ZM), nullptr);
 
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> no boundary term
-    int idx_inner = 1 * ny * nz + 1 * nz + 1;
-    size_t compact_inner = input_cell(model, io.mesh, idx_inner);
+    const auto idx_inner = 1 * ny * nz + 1 * nz + 1;
+    const auto compact_inner = input_cell(model, io.mesh, idx_inner);
     ASSERT_NE(compact_inner, CellId::invalid_value);
 
-    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::XM), nullptr);
-    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::YM), nullptr);
-    EXPECT_EQ(find_face_bc(model, (uint32_t)compact_inner, FaceDir::ZM), nullptr);
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::XP), nullptr);
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::YP), nullptr);
-    EXPECT_NE(find_condition<Neumann>(model, (uint32_t)compact_inner, FaceDir::ZP), nullptr);
+    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::XM), nullptr);
+    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::YM), nullptr);
+    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::ZM), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::XP), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::YP), nullptr);
+    EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::ZP), nullptr);
 }
 
 // ---- Full Case1 Integration Test ----
@@ -442,14 +443,14 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     auto model = build_model(io);
 
-    int ny = (io.mesh.y_vertices.size() - 1);
-    int nz = (io.mesh.z_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
-    int idx_overlap = 0 * ny * nz + 0 * nz + 0;
+    const auto idx_overlap = 0 * ny * nz + 0 * nz + 0;
     EXPECT_NE(input_cell(model, io.mesh, idx_overlap), CellId::invalid_value);
-    int c_overlap = (int)input_cell(model, io.mesh, idx_overlap);
+    const auto c_overlap = input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
@@ -460,8 +461,8 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
         << "Overlapping cell must get heat source from the same later block";
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
-    int idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    int c_only_block1 = (int)input_cell(model, io.mesh, idx_only_block1);
+    const auto idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
+    const auto c_only_block1 = input_cell(model, io.mesh, idx_only_block1);
     const auto background_material = model.cell_material[c_only_block1];
     const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material.value].kx.eval(ctx), 400.0)
@@ -487,7 +488,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     const auto model = build_model(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, CellId::invalid_value);
-    const auto* condition = find_condition<Convection>(model, static_cast<uint32_t>(cell), FaceDir::ZM);
+    const auto* condition = find_condition<Convection>(model, cell, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
     const mhs::expression::FieldContext ctx {0.0025, 0.0025, 0.0, 300.0, 0.0};
     EXPECT_DOUBLE_EQ(condition->coefficient.eval(ctx), 42.0);
@@ -546,20 +547,20 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Cells with iz=0 (cz=2.5) are inside the rect and get Convection.
     // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
     // the default boundary (Neumann).
-    int ny = (io.mesh.y_vertices.size() - 1);
-    int nz = (io.mesh.z_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
     for (int ix = 0; ix < 2; ++ix) {
-        int idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
-        int compact = (int)input_cell(model, io.mesh, idx);
-        EXPECT_NE(find_condition<Convection>(model, (uint32_t)compact, FaceDir::YP), nullptr)
+        const auto idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
+        const auto compact = input_cell(model, io.mesh, idx);
+        EXPECT_NE(find_condition<Convection>(model, compact, FaceDir::YP), nullptr)
             << "Y region should assign Convection to YP face at (" << ix << ",1,0)";
     }
 
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the default boundary (Neumann).
-    int idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
-    int compact_out = (int)input_cell(model, io.mesh, idx_outside);
-    EXPECT_EQ(find_condition<Convection>(model, (uint32_t)compact_out, FaceDir::YP), nullptr)
+    const auto idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
+    const auto compact_out = input_cell(model, io.mesh, idx_outside);
+    EXPECT_EQ(find_condition<Convection>(model, compact_out, FaceDir::YP), nullptr)
         << "Cell outside rect must not get the Convection BC";
 }
 
@@ -614,16 +615,16 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
 
     auto model = build_model(io);
 
-    int ny = (io.mesh.y_vertices.size() - 1);
-    int nz = (io.mesh.z_vertices.size() - 1);
-    int nx = (io.mesh.x_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
+    const auto nx = (io.mesh.x_vertices.size() - 1);
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
     // and specifically the three faces the keys target must be Convection.
-    auto check_face = [&](int ix, int iy, int iz, FaceDir dir) {
-        int idx = ix * ny * nz + iy * nz + iz;
-        int compact = (int)input_cell(model, io.mesh, idx);
-        EXPECT_NE(find_condition<Convection>(model, (uint32_t)compact, dir), nullptr)
+    auto check_face = [&](std::size_t ix, std::size_t iy, std::size_t iz, FaceDir dir) {
+        const auto idx = ix * ny * nz + iy * nz + iz;
+        const auto compact = input_cell(model, io.mesh, idx);
+        EXPECT_NE(find_condition<Convection>(model, compact, dir), nullptr)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be Convection from one of the boundary regions";
     };

@@ -692,8 +692,8 @@ namespace {
     mhs_status_t copy_csc_matrix(const mhs::core::CSRMatrix<double>& matrix, mhs_sparse_index_t* outer,
         size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count)
     {
-        const auto expected_outer = static_cast<size_t>(matrix.cols()) + 1;
-        const auto expected_nnz = static_cast<size_t>(matrix.nnz());
+        const auto expected_outer = matrix.cols() + 1;
+        const auto expected_nnz = matrix.nnz();
         if (outer_count != expected_outer || inner_count != expected_nnz || value_count != expected_nnz) {
             SET_ERR("CSC buffer sizes do not match operator dimensions");
             return MHS_ERROR;
@@ -870,9 +870,9 @@ MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mh
 {
     CHECK_NULL(operators);
     CHECK_NULL(out);
-    out->state_count = static_cast<size_t>(operators->operators.f.size());
-    out->k_nnz = static_cast<size_t>(operators->operators.K.nnz());
-    out->c_nnz = static_cast<size_t>(operators->operators.C.nnz());
+    out->state_count = operators->operators.f.size();
+    out->k_nnz = operators->operators.K.nnz();
+    out->c_nnz = operators->operators.C.nnz();
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
@@ -894,7 +894,7 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
 {
     CHECK_NULL(operators);
-    const auto expected_count = static_cast<size_t>(operators->operators.f.size());
+    const auto expected_count = operators->operators.f.size();
     if (count != expected_count) {
         SET_ERR("rhs count must equal " << expected_count);
         return MHS_ERROR;

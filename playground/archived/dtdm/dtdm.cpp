@@ -377,7 +377,7 @@ namespace mhs::dtdm {
 
     void System::build_operators()
     {
-        const mhs::core::Vector<double> state(static_cast<std::size_t>(stack_.dof), 0.0);
+        const mhs::core::Vector<double> state(stack_.dof, 0.0);
         auto operators = mhs::solver::assemble_thermal(stack_.model, state, 0.0);
         K_ = std::move(operators.K);
         C_ = std::move(operators.C);
@@ -390,7 +390,7 @@ namespace mhs::dtdm {
             auto& module = modules_[static_cast<std::size_t>(m)];
             module.cells.assign(stack_.cells_of_module[m].begin(), stack_.cells_of_module[m].end());
             std::sort(module.cells.begin(), module.cells.end());
-            module.to_local.assign(static_cast<std::size_t>(stack_.dof), -1);
+            module.to_local.assign(stack_.dof, -1);
             for (std::size_t i = 0; i < module.cells.size(); ++i)
                 module.to_local[static_cast<std::size_t>(module.cells[i])] = static_cast<int>(i);
             module.K = principal_submatrix(K_, module.cells, module.to_local);
@@ -400,7 +400,7 @@ namespace mhs::dtdm {
         for (int m = 0; m < kModuleCount; ++m)
             std::fprintf(stderr, " %s %zu", kModuleNames[static_cast<std::size_t>(m)],
                 modules_[static_cast<std::size_t>(m)].cells.size());
-        std::fprintf(stderr, "  (total %zu)\n", static_cast<std::size_t>(stack_.dof));
+        std::fprintf(stderr, "  (total %zu)\n", stack_.dof);
     }
 
     void System::build_patches(int nx, int ny)

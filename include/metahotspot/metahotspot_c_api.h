@@ -129,8 +129,8 @@ typedef struct {
     int32_t nonlinear_max_iterations;
     double nonlinear_relative_tolerance;
     double nonlinear_absolute_tolerance;
-    int32_t integrator; // mhs_integrator_t
-    int32_t step_strategy; // mhs_step_strategy_t
+    mhs_integrator_t integrator;
+    mhs_step_strategy_t step_strategy;
     double error_rel_tol;
     double error_safety;
     double min_dt;
@@ -154,7 +154,7 @@ typedef struct {
     mhs_index_t* material_id;
     mhs_index_t* face_owner;
     mhs_index_t* face_neighbor;
-    int32_t* face_axis;
+    mhs_axis_t* face_axis;
     int32_t* face_sign;
     double* face_min;
     double* face_max;
@@ -179,7 +179,7 @@ typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
     const mhs_index_t *face_owner, *face_neighbor;
-    const int32_t* face_axis; /* owner normal sign is derived from geometry */
+    const mhs_axis_t* face_axis; /* owner normal sign is derived from geometry */
     const double *face_min, *face_max;
 } mhs_mesh_t;
 

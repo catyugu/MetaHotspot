@@ -20,11 +20,8 @@ namespace mhs::solver {
 
         void validate_operator_dimensions(const Operators& ops, std::size_t state_count)
         {
-            if (static_cast<std::size_t>(ops.K.rows()) != state_count
-                || static_cast<std::size_t>(ops.K.cols()) != state_count
-                || static_cast<std::size_t>(ops.C.rows()) != state_count
-                || static_cast<std::size_t>(ops.C.cols()) != state_count
-                || static_cast<std::size_t>(ops.f.size()) != state_count) {
+            if (ops.K.rows() != state_count || ops.K.cols() != state_count || ops.C.rows() != state_count
+                || ops.C.cols() != state_count || ops.f.size() != state_count) {
                 throw std::invalid_argument(
                     "solve_system: SystemAssembler returned Operators with mismatched K/C/f dimensions (expected "
                     + std::to_string(state_count) + ")");

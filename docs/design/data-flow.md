@@ -57,5 +57,3 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 - 数量、循环位置和数组 offset 使用 `std::size_t`。编译器内部的可失败几何查找返回 `std::optional`。
 - `core::SparseIndex = int32_t` 专用于 CSR 存储；第三方索引类型留在实现文件中。
 - C ABI 的实体引用使用 `mhs_index_t = uint32_t`，CSR/CSC 数组使用 `mhs_sparse_index_t = int32_t`，buffer count 保留 `size_t`。Python 对应 `np.uint32`、`np.int32`。
-
-这次变更调整了 C++ ID 布局和 C ABI 的拓扑数组元素宽度。C/C++ 消费者需要重新编译；外部网格的 owner/neighbor 数组改为 `uint32_t`，外边界 neighbor 使用 `MHS_INVALID_INDEX`。Python 输入仍接受有符号 `-1`，会转换为 `UINT32_MAX`；超范围整数在转换前拒绝。
