@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `ModelDefinition` | 几何、材料、热源、边界、探针和 study 设置 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
 | `mhs::model::Model` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `build_model` 的独立结果；供重复装配和求解使用 |
-| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 每次装配的值对象 |
+| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
 | `Solution` | 最终单元状态、状态历史和探针记录 | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
@@ -34,7 +34,7 @@
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 请求完整算子，执行非线性迭代和时间推进。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
+公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
 探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
 

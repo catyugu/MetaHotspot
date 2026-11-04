@@ -98,12 +98,14 @@ namespace mhs::solver {
         core::Vector<double> residual(state.size()), next(state.size());
         for (int iter = 0; iter < cfg.max_iterations; ++iter) {
             auto system = ls_provider(state);
-            core::spmv(system.A.view(), state, residual);
+            core::spmv(system.A, state, residual);
             const double max_residual = core::distance_inf(system.b, residual);
             const double residual_threshold = rel_tol * core::norm_inf(system.b) + abs_tol;
+            // Transient history terms can make the initial residual tolerance loose.
+            // Perform one linear solve before accepting the iterate.
             if (iter > 0 && max_residual <= residual_threshold)
                 return true;
-            solver->compute(system.A.view());
+            solver->compute(system.A);
             const auto result = solver->solve(system.b, G_k);
             if (!result.success)
                 return false;
@@ -115,13 +117,10 @@ namespace mhs::solver {
                 for (std::size_t i = 0; i < next.size(); ++i)
                     next[i] = state[i] + omega * (G_k[i] - state[i]);
             const double max_update = core::distance_inf(next, state);
-            const double update_threshold = rel_tol * core::norm_inf(next) + abs_tol;
             mixer.push(state, G_k);
             state.swap(next);
             MHS_LOG_DEBUG("\t->Non-Linear iteration {}: max_update={:.6e}, max_residual={:.6e} ({}AA)", iter,
                 max_update, max_residual, use_aa ? "" : "no ");
-            if (max_update <= update_threshold && max_residual <= residual_threshold)
-                return true;
         }
         return false;
     }
