@@ -16,7 +16,7 @@ set(MHS_MUPARSER_VERSION 2.3.5)
 set(MHS_TBB_VERSION 2023.0.0)
 set(MHS_AMGCL_VERSION 1.5.0)
 set(MHS_GTEST_VERSION 1.18.0)
-set(MHS_ATSTEP_VERSION 2.1.0)
+set(MHS_ATSTEP_VERSION 2.1.1)
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
@@ -97,6 +97,8 @@ if(NOT TARGET AdaptiveTimeStepper::AdaptiveTimeStepper)
         GITHUB_REPOSITORY catyugu/AdaptiveTimeStepper
         GIT_TAG "v${MHS_ATSTEP_VERSION}"
         SYSTEM YES
+        "ATSTEP_BUILD_TESTS OFF"
+        "ATSTEP_BUILD_EXAMPLES OFF"
     )
 endif()
 
