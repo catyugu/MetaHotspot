@@ -3,7 +3,7 @@
 /* Internal solve driver — NOT part of the public API.  Shared between the
    standard solver (solve.cpp) and the callback-driven solve_system. */
 
-#include "solver/assembler.hpp"
+#include "solver/linear_system.hpp"
 #include "solver/solution.hpp"
 #include "solver/solver.hpp"
 

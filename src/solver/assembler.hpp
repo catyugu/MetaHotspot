@@ -1,31 +1,28 @@
 #pragma once
 
-#include "core/csr_matrix.hpp"
+#include "solver/linear_system.hpp"
 
 #include "model/model.hpp"
 #include <span>
+#include <utility>
 
 namespace mhs::solver {
 
-    /// Operators K, C, f of the linearised system: C * dx/dt + K * x = f.
-    struct Operators {
-        mhs::core::CSRMatrix<double> K;
-        mhs::core::CSRMatrix<double> C;
-        mhs::core::Vector<double> f;
-    };
+    // Binds an immutable model for the workspace lifetime. Each assembly
+    // overwrites numerical buffers, including explicit zero coefficients.
+    class ThermalAssembler {
+    public:
+        explicit ThermalAssembler(const mhs::model::Model& model);
+        const Operators& assemble(std::span<const double> temperature, double time);
 
-    // One workspace per solve, for a fixed model topology. Numerical buffers
-    // are overwritten on every assembly, including explicit zero coefficients.
-    struct ThermalAssembly {
-        explicit ThermalAssembly(const mhs::model::Model& model);
-        void assemble(const mhs::model::Model& model, std::span<const double> temperature, double time);
-
-        Operators operators;
-        mhs::core::Vector<mhs::core::SparseIndex> diagonal_positions;
+        Operators take_operators() && { return std::move(operators_); }
 
     private:
-        mhs::core::Vector<mhs::model::Vec3> conductivity;
-        mhs::core::Vector<double> density, specific_heat;
+        const mhs::model::Model& model_;
+        Operators operators_;
+        mhs::core::Vector<mhs::core::SparseIndex> diagonal_positions_;
+        mhs::core::Vector<mhs::model::Vec3> conductivity_;
+        mhs::core::Vector<double> density_, specific_heat_;
     };
 
     // Owning export for the C API and standalone operator inspection.

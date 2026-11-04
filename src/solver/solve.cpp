@@ -96,8 +96,7 @@ namespace mhs::solver {
             // retaining independent numerical storage and arbitrary sparse C.
             auto A = core::add_scaled(initial_ops.K, 0.0, initial_ops.C);
             State rhs(state_count);
-            State derivative = initial_ops.f;
-            core::spmv(initial_ops.K.view(), state, derivative, -1.0, 1.0);
+            State derivative(state_count);
             bool positive_diagonal = true;
             const auto C = initial_ops.C.view();
             for (std::size_t i = 0; i < state_count; ++i) {
@@ -110,8 +109,7 @@ namespace mhs::solver {
                 }
                 if (!std::isfinite(capacity) || capacity <= 0.0)
                     positive_diagonal = false;
-                else
-                    derivative[i] /= capacity;
+                derivative[i] = capacity;
             }
 
             atstep::TimeStepper<State> stepper(settings, [&](const atstep::StepRequest<State>& request, State& trial) {
@@ -128,8 +126,13 @@ namespace mhs::solver {
 
             // Preserve the supplied T(0) for positive diagonal capacity.
             // Algebraic or coupled capacity retains consistent initialization.
-            if (positive_diagonal)
+            if (positive_diagonal) {
+                std::copy(initial_ops.f.begin(), initial_ops.f.end(), rhs.begin());
+                core::spmv(initial_ops.K.view(), state, rhs, -1.0, 1.0);
+                for (std::size_t i = 0; i < state_count; ++i)
+                    derivative[i] = rhs[i] / derivative[i];
                 stepper.start(0.0, state, derivative, study.duration);
+            }
             else
                 stepper.start(0.0, state, study.duration);
 
@@ -202,11 +205,10 @@ namespace mhs::solver {
             state.assign(initial_state.begin(), initial_state.end());
         }
 
-        Study study {model.study_type, model.transient_duration, model.transient_time_step};
-        ThermalAssembly workspace(model);
+        Study study {model.study_type, model.transient_duration, model.transient_output_interval};
+        ThermalAssembler assembler(model);
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
-            workspace.assemble(model, current, time);
-            return workspace.operators;
+            return assembler.assemble(current, time);
         };
 
         ProbeRecorder probe_recorder(model);
