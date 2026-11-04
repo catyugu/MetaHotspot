@@ -1,11 +1,10 @@
 #pragma once
-#include "core/types.hpp"
+#include "core/vector.hpp"
+#include "model/types.hpp"
 #include <array>
-#include <numeric>
 #include <span>
-#include <vector>
 
-namespace mhs::core {
+namespace mhs::model {
     template <class Tag> struct EntityId {
         Index value = invalidIndex;
         bool valid() const { return value != invalidIndex; }
@@ -62,42 +61,16 @@ namespace mhs::core {
     };
     // Geometry, connectivity and TPFA orthogonality are caller preconditions.
     struct DiscreteMesh {
-        std::vector<CellGeometry> cells;
-        std::vector<FacePatch> faces;
-        std::vector<Index> cell_face_offsets;
-        std::vector<FaceId> cell_face_ids;
+        mhs::core::Vector<CellGeometry> cells;
+        mhs::core::Vector<FacePatch> faces;
+        mhs::core::Vector<Index> cell_face_offsets;
+        mhs::core::Vector<FaceId> cell_face_ids;
         std::span<const FaceId> incident_faces(CellId c) const
         {
             return std::span(cell_face_ids)
                 .subspan(cell_face_offsets[c.value], cell_face_offsets[c.value + 1] - cell_face_offsets[c.value]);
         }
-        void build_incidence()
-        {
-            cell_face_offsets.assign(cells.size() + 1, 0);
-            for (const auto& f : faces) {
-                ++cell_face_offsets[f.owner.value + 1];
-                if (f.neighbor.valid())
-                    ++cell_face_offsets[f.neighbor.value + 1];
-            }
-            std::partial_sum(cell_face_offsets.begin(), cell_face_offsets.end(), cell_face_offsets.begin());
-            cell_face_ids.resize(cell_face_offsets.back());
-            auto next = cell_face_offsets;
-            for (Index i = 0; i < faces.size(); ++i) {
-                const auto& f = faces[i];
-                cell_face_ids[next[f.owner.value]++] = {i};
-                if (f.neighbor.valid())
-                    cell_face_ids[next[f.neighbor.value]++] = {i};
-            }
-        }
-        CellId locate(const Vec3& p) const
-        {
-            // Cache once per probe. Shared-face ties select the lexicographically
-            // greatest lower corner, independent of cell storage/DOF ordering.
-            CellId result;
-            for (Index i = 0; i < cells.size(); ++i)
-                if (cells[i].contains(p) && (!result.valid() || cells[i].min > cells[result.value].min))
-                    result = {i};
-            return result;
-        }
+        void build_incidence();
+        CellId locate(const Vec3& p) const;
     };
-} // namespace mhs::core
+} // namespace mhs::model

@@ -6,7 +6,7 @@ add_library(mhs_compiler STATIC
     model_functions.cpp
 )
 target_link_libraries(mhs_compiler
-    PUBLIC mhs_expression
+    PUBLIC mhs_model
     PRIVATE mhs_linear
     PRIVATE $<BUILD_INTERFACE:mhs_options>
 )

@@ -1,21 +1,29 @@
-#include "numerics/linear/linear_solver.hpp"
+#include "core/csr_ops.hpp"
+#include "core/vector_ops.hpp"
+#include "linear/solver.hpp"
 #include "solver/solve.hpp"
+#include <cmath>
 
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
 #include <gtest/gtest.h>
 
+#include "core/vector.hpp"
 #include <array>
 #include <stdexcept>
-#include <vector>
 
 namespace {
+    double error_norm(std::span<const double> x, std::span<const double> y)
+    {
+        double norm = 0;
+        for (std::size_t i = 0; i < x.size(); ++i)
+            norm = std::hypot(norm, x[i] - y[i]);
+        return norm;
+    }
 
     // 1D Laplacian stencil: tridiagonal, symmetric positive definite.
-    Eigen::SparseMatrix<double> make_spd_tridiagonal(int n)
+    mhs::core::CSRMatrix<double> make_spd_tridiagonal(int n)
     {
-        Eigen::SparseMatrix<double> A(n, n);
-        std::vector<Eigen::Triplet<double>> triplets;
+        mhs::core::CSRMatrix<double> A(n, n);
+        mhs::core::Vector<mhs::core::Triplet<double>> triplets;
         triplets.reserve(static_cast<std::size_t>(3 * n));
         for (int i = 0; i < n; ++i) {
             triplets.emplace_back(i, i, 2.0);
@@ -24,114 +32,124 @@ namespace {
             if (i < n - 1)
                 triplets.emplace_back(i, i + 1, -1.0);
         }
-        A.setFromTriplets(triplets.begin(), triplets.end());
+        A = mhs::core::build_csr(A.rows(), A.cols(), std::move(triplets));
         return A;
     }
 
     constexpr int kSize = 16;
-    const Eigen::VectorXd kExact = Eigen::VectorXd::LinSpaced(kSize, 1.0, 4.0);
+    const auto kExact = [] {
+        mhs::core::Vector<double> x(kSize);
+        for (int i = 0; i < kSize; ++i)
+            x[i] = 1.0 + 3.0 * i / (kSize - 1);
+        return x;
+    }();
 
-    // The default thermal linear solver is AMG-preconditioned CG (AmgCg).
-    constexpr auto kAmgSpec = mhs::numerics::SolverSpec {mhs::numerics::SolverType::AmgCg, {1e-10, 2000}};
+    // The default thermal linear solver is AMG-preconditioned CG (Amg).
+    constexpr auto kAmgSpec = mhs::linear::SolverSpec {mhs::linear::SolverType::Amg, {1e-10, 2000}};
 
     // Right-hand side and a computed solver over the SPD test system.
     struct SolverFixture {
-        Eigen::VectorXd b;
-        mhs::numerics::SolverPtr solver;
+        mhs::core::Vector<double> b;
+        mhs::linear::SolverPtr solver;
     };
 
-    SolverFixture make_fixture(const mhs::numerics::SolverSpec& spec = {})
+    SolverFixture make_fixture(const mhs::linear::SolverSpec& spec = {})
     {
         const auto A = make_spd_tridiagonal(kSize);
         SolverFixture fixture;
-        fixture.b = A * kExact;
-        fixture.solver = mhs::numerics::create_solver(spec);
-        fixture.solver->compute(A);
+        fixture.b.resize(kSize);
+        mhs::core::spmv(A.view(), kExact, fixture.b);
+        fixture.solver = mhs::linear::create_solver(spec);
+        fixture.solver->compute(A.view());
         return fixture;
     }
 
 } // namespace
 
 // The iterative backend accepts an initial guess and warm-starts from it.
-TEST(LinearSolver, IterativeWarmStartConvergesFromGuess)
+TEST(Solver, IterativeWarmStartConvergesFromGuess)
 {
     auto cold_fixture = make_fixture(kAmgSpec);
 
     // Cold start (zero guess).
-    const Eigen::VectorXd x_cold = cold_fixture.solver->solve(cold_fixture.b, Eigen::VectorXd::Zero(kSize));
-    const int cold_iters = cold_fixture.solver->iterations();
-    ASSERT_TRUE(cold_fixture.solver->success());
+    mhs::core::Vector<double> x_cold(kSize);
+    const auto x_cold_result = cold_fixture.solver->solve(cold_fixture.b, x_cold);
+    const int cold_iters = x_cold_result.iterations;
+    ASSERT_TRUE(x_cold_result.success);
 
     // Warm start (exact guess): should converge in very few iterations.
     auto warm_fixture = make_fixture(kAmgSpec);
-    const Eigen::VectorXd x_warm = warm_fixture.solver->solve(warm_fixture.b, kExact);
-    const int warm_iters = warm_fixture.solver->iterations();
-    ASSERT_TRUE(warm_fixture.solver->success());
+    mhs::core::Vector<double> x_warm = kExact;
+    const auto x_warm_result = warm_fixture.solver->solve(warm_fixture.b, x_warm);
+    const int warm_iters = x_warm_result.iterations;
+    ASSERT_TRUE(x_warm_result.success);
 
-    EXPECT_NEAR((x_cold - kExact).norm(), 0.0, 1e-7);
-    EXPECT_NEAR((x_warm - kExact).norm(), 0.0, 1e-7);
+    EXPECT_NEAR(error_norm(x_cold, kExact), 0.0, 1e-7);
+    EXPECT_NEAR(error_norm(x_warm, kExact), 0.0, 1e-7);
     // Warm start must not cost more Krylov iterations than a cold start.
     EXPECT_LE(warm_iters, cold_iters);
     EXPECT_LE(warm_iters, 5);
 }
 
 // The iterative interface requires a matching-size initial guess.
-TEST(LinearSolver, IterativeRejectsMismatchedInitialGuess)
+TEST(Solver, IterativeRejectsMismatchedInitialGuess)
 {
     auto fixture = make_fixture(kAmgSpec);
 
-    Eigen::VectorXd wrong_size(3);
-    wrong_size.setZero();
+    mhs::core::Vector<double> wrong_size(3);
+
     EXPECT_THROW(fixture.solver->solve(fixture.b, wrong_size), std::invalid_argument);
 }
 
-// The default factory returns a working self-tuning AMG solver (AmgCg),
+// The default factory returns a working self-tuning AMG solver (Amg),
 // which is iterative (no MKL needed) and warm-starts from a zero guess.
-TEST(LinearSolver, DefaultFactoryYieldsWorkingIterativeSolver)
+TEST(Solver, DefaultFactoryYieldsWorkingIterativeSolver)
 {
-    auto fixture = make_fixture(); // default spec = AmgCg
+    auto fixture = make_fixture(); // default spec = Amg
 
-    const Eigen::VectorXd x = fixture.solver->solve(fixture.b, Eigen::VectorXd::Zero(kSize));
+    mhs::core::Vector<double> x(kSize);
+    const auto x_result = fixture.solver->solve(fixture.b, x);
 
-    ASSERT_TRUE(fixture.solver->success());
-    EXPECT_NEAR((x - kExact).norm(), 0.0, 1e-8);
+    ASSERT_TRUE(x_result.success);
+    EXPECT_NEAR(error_norm(x, kExact), 0.0, 1e-8);
 }
 
 // The direct backend ignores the initial guess entirely.
 #ifdef MHS_ENABLE_PARDISO
-TEST(LinearSolver, DirectIgnoresInitialGuess)
+TEST(Solver, DirectIgnoresInitialGuess)
 {
-    auto fixture = make_fixture(mhs::numerics::SolverSpec {mhs::numerics::SolverType::Pardiso, {}});
+    auto fixture = make_fixture(mhs::linear::SolverSpec {mhs::linear::SolverType::Pardiso, {}});
 
-    const Eigen::VectorXd with_guess = fixture.solver->solve(fixture.b, kExact);
-    ASSERT_TRUE(fixture.solver->success());
-    const Eigen::VectorXd no_guess = fixture.solver->solve(fixture.b, Eigen::VectorXd::Zero(kSize));
-    ASSERT_TRUE(fixture.solver->success());
+    mhs::core::Vector<double> with_guess = kExact;
+    const auto with_guess_result = fixture.solver->solve(fixture.b, with_guess);
+    ASSERT_TRUE(with_guess_result.success);
+    mhs::core::Vector<double> no_guess(kSize);
+    const auto no_guess_result = fixture.solver->solve(fixture.b, no_guess);
+    ASSERT_TRUE(no_guess_result.success);
 
-    EXPECT_NEAR((with_guess - kExact).norm(), 0.0, 1e-8);
-    EXPECT_NEAR((no_guess - kExact).norm(), 0.0, 1e-8);
+    EXPECT_NEAR(error_norm(with_guess, kExact), 0.0, 1e-8);
+    EXPECT_NEAR(error_norm(no_guess, kExact), 0.0, 1e-8);
 }
 #endif // MHS_ENABLE_PARDISO
 
 // End-to-end: the nonlinear solver drives an iterative backend through the
 // direct backend calls and seeds each linear solve with the previous iterate.
-TEST(LinearSolver, NonlinearSolveWarmStartsIterativeBackend)
+TEST(Solver, NonlinearSolveWarmStartsIterativeBackend)
 {
-    mhs::sim::Study study {mhs::core::StudyType::Steady, 0.0, 1.0};
-    mhs::sim::SolveOptions options;
-    options.linear_solver = mhs::sim::SolveOptions::LinearSolverType::AmgCg;
+    mhs::solver::Study study {mhs::model::StudyType::Steady, 0.0, 1.0};
+    mhs::solver::SolveOptions options;
+    options.linear_solver = mhs::solver::SolveOptions::LinearSolverType::Amg;
 
-    mhs::sim::SystemAssembler assemble = [](std::span<const double>, double) {
-        mhs::sim::Operators operators;
-        operators.K.resize(1, 1);
-        operators.K.insert(0, 0) = 2.0;
-        operators.C.resize(1, 1);
-        operators.f = Eigen::VectorXd::Constant(1, 6.0);
+    mhs::solver::SystemAssembler assemble = [](std::span<const double>, double) {
+        mhs::solver::Operators operators;
+        operators.K = mhs::core::build_csr(1, 1, {{0, 0, 2.0}});
+        operators.C = mhs::core::CSRMatrix<double>(1, 1);
+        operators.f = mhs::core::Vector<double>(1, 6.0);
         return operators;
     };
 
     const std::array initial {0.0};
-    const auto solution = mhs::sim::solve_system(study, assemble, initial, options);
+    const auto solution = mhs::solver::solve_system(study, assemble, initial, options);
 
     ASSERT_TRUE(solution.converged);
     ASSERT_EQ(solution.snapshot_states.size(), 1u);

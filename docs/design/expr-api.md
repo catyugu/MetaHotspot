@@ -1,15 +1,15 @@
 # expr 模块接口
 
-封装 muparser。`include/metahotspot/numerics/expression/expr.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
+封装 muparser。`include/metahotspot/expression/expression.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
 
 ---
 
 ## FieldContext 与 FieldEvaluator
 
-**定义**：`mhs::numerics` (`include/metahotspot/numerics/expression/expr.hpp`)。依赖方向 `mhs::core → mhs::numerics`、`mhs::sim → mhs::numerics`，`mhs::numerics` 不反向依赖本项目其他命名空间。
+**定义**：`mhs::expression` (`include/metahotspot/expression/expression.hpp`)。依赖方向 `mhs::model → mhs::expression`、`mhs::solver → mhs::expression`，`mhs::expression` 不反向依赖本项目其他命名空间。
 
 ```cpp
-namespace mhs::numerics {
+namespace mhs::expression {
     struct FieldContext { double x = 0.0, y = 0.0, z = 0.0, T = 0.0, t = 0.0; };
     // args = muparser 已先行求值好的实参列表（如 fn(a, b) 中的 a, b）；
     // ctx  = 当前物理上下文（x, y, z, T, t 的真实值），供 native 参考。
@@ -40,7 +40,7 @@ namespace mhs::numerics {
 `SymbolTable` 是 `parse()` / `eval_geometry()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
 
 ```cpp
-namespace mhs::numerics {
+namespace mhs::expression {
     struct NativeFunction {
         FieldEvaluator evaluate;
         bool reads_temperature = true; // 未标注的 native 保守视为读取温度
@@ -70,7 +70,7 @@ Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void
 ## 解析与求值
 
 ```cpp
-namespace mhs::numerics {
+namespace mhs::expression {
     // 空串或纯数字字面量 → make_constant；否则初始化当前线程解析器并返回句柄
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
 
@@ -83,15 +83,15 @@ namespace mhs::numerics {
 
 ```cpp
 // build_model：构造本地 SymbolTable 贯穿 setup 路径
-mhs::numerics::SymbolTable symbols;
+mhs::expression::SymbolTable symbols;
 // 编译器内部将 typed Function 注册为 FieldEvaluator。
 
 // 几何：此例的变量值以米表示
 symbols.variables["w_top"] = 0.02;
-double half_w = mhs::numerics::eval_geometry("w_top/2", symbols);
+double half_w = mhs::expression::eval_geometry("w_top/2", symbols);
 
 // 场
-auto k = mhs::numerics::parse("400 + 0.01*T", symbols);
+auto k = mhs::expression::parse("400 + 0.01*T", symbols);
 double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 ```
 

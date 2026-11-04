@@ -1,16 +1,16 @@
 // muparser-backed expression implementation
-#include "numerics/expression/expr.hpp"
+#include "expression/expression.hpp"
 #include <tbb/enumerable_thread_specific.h>
 
+#include "core/vector.hpp"
 #include <cctype>
 #include <memory>
 #include <muParser.h>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
-namespace mhs::numerics {
+namespace mhs::expression {
 
     // Bridge state carried alongside every native function registration.
     // muparser hands us a void* to this struct on every native call.
@@ -107,7 +107,7 @@ namespace mhs::numerics {
     private:
         FieldContext current_ctx_; // single TLS-backing state for x/y/z/T/t
 
-        std::vector<NativeFnCtx> native_slots_;
+        mhs::core::Vector<NativeFnCtx> native_slots_;
         mu::Parser parser_;
     };
 
@@ -179,7 +179,7 @@ namespace mhs::numerics {
         }
 
         mu::Parser parser;
-        std::vector<std::pair<std::string, double>> active_vars;
+        mhs::core::Vector<std::pair<std::string, double>> active_vars;
         active_vars.reserve(vars.size());
 
         for (const auto& [name, val] : vars) {
@@ -198,4 +198,4 @@ namespace mhs::numerics {
         }
     }
 
-} // namespace mhs::numerics
+} // namespace mhs::expression

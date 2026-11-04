@@ -12,7 +12,7 @@
 #include <array>
 #include <cmath>
 #include <string>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::hdim {
 
@@ -84,7 +84,7 @@ namespace mhs::hdim {
     struct ChipSpec {
         const char* name;
         double total_power;
-        std::vector<Chiplet> chiplets;
+        mhs::core::Vector<Chiplet> chiplets;
     };
 
     /// Fig. 4: multi-GPU chip, 125.8 W, GPU 78.1 % / CPU 13.9 % / HBM 8.0 %.

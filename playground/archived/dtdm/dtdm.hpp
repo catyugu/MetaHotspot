@@ -11,13 +11,13 @@
 #pragma once
 
 #include "mesh.hpp"
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 
 #include <Eigen/Sparse>
 #include <array>
 #include <string>
 #include <utility>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::dtdm {
 
@@ -42,28 +42,28 @@ namespace mhs::dtdm {
     /// One unknown interface temperature ("NI" of the paper): the face elements
     /// that share it. One patch per face is the exact limit of the model.
     struct Patch {
-        std::vector<PatchFace> faces;
+        mhs::core::Vector<PatchFace> faces;
     };
 
     /// One composable module: its cells, its operators and its interface patches.
     struct Module {
-        std::vector<int> cells; // global cell ids, ascending
-        std::vector<int> to_local; // global id -> local index, -1 elsewhere
+        mhs::core::Vector<int> cells; // global cell ids, ascending
+        mhs::core::Vector<int> to_local; // global id -> local index, -1 elsewhere
         Eigen::SparseMatrix<double> K;
         Eigen::SparseMatrix<double> C;
-        std::vector<Patch> patches[kInterfaceCount];
+        mhs::core::Vector<Patch> patches[kInterfaceCount];
     };
 
     struct PatchLayout {
-        std::vector<int> global_id[kModuleCount]; // per module, its patches' global ids
+        mhs::core::Vector<int> global_id[kModuleCount]; // per module, its patches' global ids
         int interface_patch_count[kInterfaceCount] {0, 0};
         int total = 0;
     };
 
     /// Temperature field of one method plus what it cost.
     struct MarchResult {
-        std::vector<double> sample_times;
-        std::vector<std::vector<double>> samples;
+        mhs::core::Vector<double> sample_times;
+        mhs::core::Vector<mhs::core::Vector<double>> samples;
         /// Orders marched by the transform, steps taken by the reference.
         int count = 0;
         /// Largest Laguerre coefficient of the last order.
@@ -87,18 +87,18 @@ namespace mhs::dtdm {
     class System {
     public:
         System(
-            StackMesh stack, int patches_x, int patches_y, mhs::numerics::SolverType solver, double linear_tolerance = 1e-8);
+            StackMesh stack, int patches_x, int patches_y, mhs::linear::SolverType solver, double linear_tolerance = 1e-8);
 
         const StackMesh& stack() const { return stack_; }
 
         /// Thermal-WLP: one system for the whole stack, one solve per order.
-        MarchResult monolithic_wlp(double scale, int orders, const std::vector<double>& sample_times) const;
+        MarchResult monolithic_wlp(double scale, int orders, const mhs::core::Vector<double>& sample_times) const;
         /// DTDM: the macromodels of eq. (11) plus one interface system.
-        MarchResult dtdm(double scale, int orders, const std::vector<double>& sample_times) const;
+        MarchResult dtdm(double scale, int orders, const mhs::core::Vector<double>& sample_times) const;
         /// The reference: backward Euler on the same mesh and operators, with the
         /// step refined until two successive Richardson extrapolants agree. It
         /// throws rather than return a field it could not refine.
-        MarchResult reference(int steps, double duration, const std::vector<double>& sample_times) const;
+        MarchResult reference(int steps, double duration, const mhs::core::Vector<double>& sample_times) const;
 
     private:
         void build_operators();
@@ -110,7 +110,7 @@ namespace mhs::dtdm {
         Eigen::VectorXd steady_state() const;
 
         StackMesh stack_;
-        mhs::numerics::SolverType solver_ = mhs::numerics::SolverType::AmgCg;
+        mhs::linear::SolverType solver_ = mhs::linear::SolverType::AmgCg;
         /// Relative residual of the iterative solves. It is a *residual* bound,
         /// and these operators span ten decades, so the field error it allows is
         /// orders of magnitude larger than the tolerance itself.

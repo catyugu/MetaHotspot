@@ -1,11 +1,12 @@
 #include "solver/solve.hpp"
-#include "core/constants.hpp"
-#include "core/solver.hpp"
+#include "core/vector.hpp"
 #include "logging/logger.hpp"
+#include "model/constants.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/solution_history.hpp"
+#include "solver/solver.hpp"
 #include "solver/time_integration.hpp"
 
 #include <algorithm>
@@ -13,7 +14,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::sim {
+namespace mhs::solver {
 
     namespace {
 
@@ -30,15 +31,15 @@ namespace mhs::sim {
             }
         }
 
-        mhs::numerics::SolverSpec build_solver_spec(const SolveOptions& opts)
+        mhs::linear::SolverSpec build_solver_spec(const SolveOptions& opts)
         {
-            mhs::numerics::SolverType type;
+            mhs::linear::SolverType type;
             switch (opts.linear_solver) {
             case SolveOptions::LinearSolverType::Pardiso:
-                type = mhs::numerics::SolverType::Pardiso;
+                type = mhs::linear::SolverType::Pardiso;
                 break;
-            case SolveOptions::LinearSolverType::AmgCg:
-                type = mhs::numerics::SolverType::AmgCg;
+            case SolveOptions::LinearSolverType::Amg:
+                type = mhs::linear::SolverType::Amg;
                 break;
             default:
                 throw std::invalid_argument("build_solver_spec: unknown linear_solver");
@@ -52,11 +53,11 @@ namespace mhs::sim {
                 opts.nonlinear_absolute_tolerance};
         }
 
-        mhs::core::Solution solve_steady(const SystemAssembler& assemble, std::vector<double> state,
-            mhs::numerics::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe)
+        mhs::solver::Solution solve_steady(const SystemAssembler& assemble, mhs::core::Vector<double> state,
+            mhs::linear::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe)
         {
             const auto state_count = state.size();
-            mhs::core::Solution result;
+            mhs::solver::Solution result;
             LinearSystemProvider build_ls = [&](std::span<const double> current_state) -> LinearSystem {
                 auto ops = assemble(current_state, 0.0);
                 validate_operator_dimensions(ops, state_count);
@@ -73,18 +74,18 @@ namespace mhs::sim {
             return result;
         }
 
-        mhs::core::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
-            std::vector<double> state, mhs::numerics::SolverPtr& solver, const SolveOptions& opts,
+        mhs::solver::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
+            mhs::core::Vector<double> state, mhs::linear::SolverPtr& solver, const SolveOptions& opts,
             NonLinearConfig nl_config, time_scheme::IntegratorKind integrator, time_scheme::StepStrategy step_strategy,
             const StateObserver& observe)
         {
             const auto state_count = state.size();
-            mhs::core::Solution result;
+            mhs::solver::Solution result;
             const double duration = study.duration;
             const double output_dt = study.output_interval;
             time_scheme::StepController step_ctrl {
                 step_strategy, opts.min_dt, opts.max_dt, duration, output_dt, opts.fixed_dt};
-            mhs::core::SolutionHistory accepted {state_count, 2};
+            mhs::solver::SolutionHistory accepted {state_count, 2};
             double current_time = 0.0;
             accepted.initialize(state, current_time);
             result.snapshot_times.push_back(current_time);
@@ -93,7 +94,7 @@ namespace mhs::sim {
                 observe(current_time, state);
 
             double dt_sug = std::clamp(output_dt, opts.min_dt, opts.max_dt);
-            while (current_time < duration - mhs::core::zero_guard) {
+            while (current_time < duration - mhs::model::zero_guard) {
                 double dt = step_ctrl.prepare(dt_sug, current_time);
                 if (dt <= 0.0)
                     throw std::logic_error("time-step controller returned non-positive dt before completion");
@@ -167,7 +168,7 @@ namespace mhs::sim {
             // A duration that is not an exact output interval must still expose its
             // final accepted state exactly once.
             if (result.snapshot_times.empty()
-                || std::abs(result.snapshot_times.back() - current_time) > mhs::core::zero_guard) {
+                || std::abs(result.snapshot_times.back() - current_time) > mhs::model::zero_guard) {
                 result.snapshot_times.push_back(current_time);
                 result.snapshot_states.insert(result.snapshot_states.end(), state.begin(), state.end());
                 if (observe)
@@ -175,13 +176,13 @@ namespace mhs::sim {
             }
             result.state = std::move(state);
             result.time = current_time;
-            result.converged = current_time >= duration - mhs::core::zero_guard;
+            result.converged = current_time >= duration - mhs::model::zero_guard;
             return result;
         }
 
     } // namespace
 
-    mhs::core::Solution solve_system(const Study& study, const SystemAssembler& assemble,
+    mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble,
         std::span<const double> initial_state, const SolveOptions& opts, const StateObserver& observe)
     {
         if (!assemble) {
@@ -199,25 +200,25 @@ namespace mhs::sim {
             && opts.step_strategy != SolveOptions::StepStrategy::Fixed)
             throw std::invalid_argument("unknown step strategy");
 
-        mhs::numerics::SolverPtr solver = mhs::numerics::create_solver(solver_spec);
-        std::vector<double> state(initial_state.begin(), initial_state.end());
+        mhs::linear::SolverPtr solver = mhs::linear::create_solver(solver_spec);
+        mhs::core::Vector<double> state(initial_state.begin(), initial_state.end());
 
-        if (study.type == mhs::core::StudyType::Steady) {
+        if (study.type == mhs::model::StudyType::Steady) {
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         }
         return solve_transient(
             study, assemble, std::move(state), solver, opts, nl_config, opts.integrator, opts.step_strategy, observe);
     }
 
-    mhs::core::Solution solve(
-        const mhs::core::Model& model, std::span<const double> initial_state, const SolveOptions& options)
+    mhs::solver::Solution solve(
+        const mhs::model::Model& model, std::span<const double> initial_state, const SolveOptions& options)
     {
         const auto cell_count = model.discrete.cells.size();
         if (cell_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }
 
-        std::vector<double> state;
+        mhs::core::Vector<double> state;
         if (initial_state.empty()) {
             state.assign(cell_count, model.initial_temperature);
         }
@@ -231,7 +232,7 @@ namespace mhs::sim {
 
         Study study {model.study_type, model.transient_duration, model.transient_time_step};
         SystemAssembler assemble
-            = [&](std::span<const double> s, double t) { return mhs::sim::assemble_thermal(model, s, t); };
+            = [&](std::span<const double> s, double t) { return mhs::solver::assemble_thermal(model, s, t); };
 
         ProbeRecorder probe_recorder(model);
         StateObserver observe
@@ -242,4 +243,4 @@ namespace mhs::sim {
         return sol;
     }
 
-} // namespace mhs::sim
+} // namespace mhs::solver

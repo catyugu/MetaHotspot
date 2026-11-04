@@ -1,6 +1,7 @@
-#include "core/model_definition.hpp"
+#include "core/vector.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
+#include "model/model_definition.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -13,9 +14,9 @@ static std::string make_xml_with_observe_points(const std::string& obs_block)
 {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <mhs::core::StudyType>Transient</mhs::core::StudyType>
+    <mhs::model::StudyType>Transient</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
+    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -156,9 +157,9 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
 {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <mhs::core::StudyType>Transient</mhs::core::StudyType>
+    <mhs::model::StudyType>Transient</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
+    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -183,16 +184,16 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto in_path = write_tmp_xml("io_write_input.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_output.xml";
 
-    mhs::core::Model model;
+    mhs::model::Model model;
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
-    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
+    mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<mhs::core::ProbeTrace> traces;
-    mhs::core::ProbeTrace t1;
+    mhs::core::Vector<mhs::solver::ProbeTrace> traces;
+    mhs::solver::ProbeTrace t1;
     t1.name = "probe_a";
-    const std::vector<double> times {0.0, 1.0, 2.0};
+    const mhs::core::Vector<double> times {0.0, 1.0, 2.0};
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
@@ -212,9 +213,9 @@ TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
 {
     const auto in_path = write_tmp_xml("io_dimensions.xml", make_xml_with_observe_points(""));
     const auto out_path = tmp_dir() / "io_dimensions_output.xml";
-    mhs::core::Model model;
+    mhs::model::Model model;
     model.output.cartesian_shape = {2, 3, 4};
-    const std::vector<double> temperatures(24, 300.0);
+    const mhs::core::Vector<double> temperatures(24, 300.0);
 
     mhs::io::write_xml(in_path.string(), out_path.string(), model, temperatures, {});
 
@@ -230,9 +231,9 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 {
     std::string input_xml = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <mhs::core::StudyType>Steady</mhs::core::StudyType>
+    <mhs::model::StudyType>Steady</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
+    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondType"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -254,14 +255,14 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto in_path = write_tmp_xml("io_write_steady.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
-    mhs::core::Model model;
+    mhs::model::Model model;
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
-    std::vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
+    mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    std::vector<mhs::core::ProbeTrace> traces;
-    const std::vector<double> times;
+    mhs::core::Vector<mhs::solver::ProbeTrace> traces;
+    const mhs::core::Vector<double> times;
     mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
@@ -278,9 +279,9 @@ static std::string make_xml_with_thermal_conductivity(const std::string& conduct
 {
     std::string body = R"(<?xml version="1.0" encoding="utf-8"?>
 <Structure>
-    <mhs::core::StudyType>Steady</mhs::core::StudyType>
+    <mhs::model::StudyType>Steady</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::core::LengthUnit>Mm</mhs::core::LengthUnit>
+    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondTypeThermalBoundary"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -329,6 +330,6 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 
 TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape)
 {
-    const mhs::core::Model model;
+    const mhs::model::Model model;
     EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model, {}, {}), std::invalid_argument);
 }

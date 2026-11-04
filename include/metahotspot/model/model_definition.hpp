@@ -1,16 +1,16 @@
 #pragma once
 
+#include "core/vector.hpp"
+#include "model/types.hpp"
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
-#include <vector>
 
 namespace mhs::model {
 
     using Expression = std::string;
 
-    enum class StudyType : uint8_t { Steady, Transient };
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
     enum class Axis : uint8_t { X, Y, Z };
@@ -24,9 +24,9 @@ namespace mhs::model {
     };
 
     struct MeshSpec {
-        std::vector<double> x_vertices;
-        std::vector<double> y_vertices;
-        std::vector<double> z_vertices;
+        mhs::core::Vector<double> x_vertices;
+        mhs::core::Vector<double> y_vertices;
+        mhs::core::Vector<double> z_vertices;
     };
 
     struct VariableSpec {
@@ -52,14 +52,14 @@ namespace mhs::model {
         Expression x_offset;
         Expression y_offset;
         std::optional<Expression> thickness;
-        std::vector<RectOperation> geometry;
+        mhs::core::Vector<RectOperation> geometry;
     };
 
     struct LayerSpec {
         Expression thickness;
         Expression x_offset;
         Expression y_offset;
-        std::vector<BlockSpec> blocks;
+        mhs::core::Vector<BlockSpec> blocks;
     };
 
     struct DirichletBoundary {
@@ -87,11 +87,11 @@ namespace mhs::model {
     struct FaceRegion {
         Axis axis = Axis::Z;
         double coordinate = 0.0;
-        std::vector<RegionRect> rectangles;
+        mhs::core::Vector<RegionRect> rectangles;
     };
 
     struct BoundaryPatch {
-        std::vector<FaceRegion> regions;
+        mhs::core::Vector<FaceRegion> regions;
         ThermalBoundary condition;
     };
 
@@ -137,12 +137,12 @@ namespace mhs::model {
             double x = 0.0;
             double y = 0.0;
         };
-        std::vector<Point> points;
+        mhs::core::Vector<Point> points;
     };
 
     struct PeriodicPiecewiseConstantFunctionSpec {
         double period = 0.0;
-        std::vector<double> values;
+        mhs::core::Vector<double> values;
     };
 
     using FunctionSpec = std::variant<ExpressionFunctionSpec, DoubleExponentialFunctionSpec, GaussFunctionSpec,
@@ -174,21 +174,21 @@ namespace mhs::model {
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     struct FluidBoundarySpec {
-        std::vector<FaceRegion> regions;
+        mhs::core::Vector<FaceRegion> regions;
         FluidBoundaryCondition condition;
     };
 
     struct ModelDefinition {
         ModelSettings settings;
         MeshSpec mesh;
-        std::vector<VariableSpec> variables;
-        std::vector<NamedFunction> functions;
-        std::vector<NamedMaterial> materials;
-        std::vector<LayerSpec> layers;
-        std::vector<BoundaryPatch> boundaries;
+        mhs::core::Vector<VariableSpec> variables;
+        mhs::core::Vector<NamedFunction> functions;
+        mhs::core::Vector<NamedMaterial> materials;
+        mhs::core::Vector<LayerSpec> layers;
+        mhs::core::Vector<BoundaryPatch> boundaries;
         ThermalBoundary default_boundary = NeumannBoundary {};
-        std::vector<ObservationPointSpec> observation_points;
-        std::vector<FluidBoundarySpec> fluid_boundaries;
+        mhs::core::Vector<ObservationPointSpec> observation_points;
+        mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 
 } // namespace mhs::model

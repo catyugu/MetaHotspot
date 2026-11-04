@@ -60,7 +60,7 @@ Windows 预构建 SDK 提供 MSVC 和 clang-cl Release 版本，随包携带 TBB
 实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
 `CMAKE_PREFIX_PATH` 后调用 `find_package(MetaHotspot 1 CONFIG REQUIRED)`。
 两种方式均使用 `target_link_libraries(your_target PRIVATE mhs::metahotspot)` 接入 C++ 库，
-通过 `<core/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<core/solver.hpp>` 使用现有接口。
+通过 `<model/model_definition.hpp>`、`<compiler/model_compiler.hpp>`、`<solver/solver.hpp>` 使用现有接口。
 C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 各 C++ 组件也可分别链接，源码接入与安装后的目标名称相同。每个目标会传递自身所需的
@@ -86,7 +86,7 @@ CMake 的 `project(VERSION)`、安装的 CMake 包版本、Python 包元数据�
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：主命名空间为 `mhs`, 领域子命名空间为 `mhs::model` / `mhs::core` / `mhs::sim` / `mhs::io` / `mhs::post` / `mhs::logger`。命名空间与目录解耦。模块内部，无需暴露的实现应该用匿名空间。
+- 命名空间：`mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver`、`mhs::io` 和 `mhs::logger` 按模块组织。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -137,7 +137,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，作为静态库的私有链接依赖，安装包仍通过 `find_dependency` 查找。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
-- **Eigen**：稠密向量、稀疏矩阵及 AMGCL 的 Eigen 后端；可选提供 MKL/Pardiso 直接求解器。
+- **Eigen**：仅供内部小规模 QR 与可选 MKL/Pardiso 实现使用，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。
 - **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
 - **OpenMP**：AMGCL 的线程后端。muparser 关闭其 OpenMP 后端，表达式求值由 TBB 并行调度。
 - **GTest**：单元测试框架，用例由 CTest 发现并运行。

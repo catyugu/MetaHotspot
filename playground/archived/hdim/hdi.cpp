@@ -1,6 +1,7 @@
+#include "core/vector.hpp"
 #include "hdi.hpp"
 
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -11,18 +12,18 @@ namespace mhs::hdim {
 
     namespace {
 
-        mhs::numerics::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
+        mhs::linear::SolverPtr make_solver(const Eigen::SparseMatrix<double>& matrix, double tolerance)
         {
-            mhs::numerics::SolverSpec spec;
+            mhs::linear::SolverSpec spec;
             spec.config.tolerance = tolerance;
-            auto solver = mhs::numerics::create_solver(spec);
+            auto solver = mhs::linear::create_solver(spec);
             solver->compute(matrix);
             return solver;
         }
 
     } // namespace
 
-    Partition Partition::build(const std::vector<InterfaceFace>& faces, double step)
+    Partition Partition::build(const mhs::core::Vector<InterfaceFace>& faces, double step)
     {
         Partition partition;
         partition.block.resize(faces.size());
@@ -52,7 +53,7 @@ namespace mhs::hdim {
         system = assembled.region[region];
         global_cell = model.region_cells[region];
 
-        std::vector<InterfaceFace> own; // this interface, in mesh order
+        mhs::core::Vector<InterfaceFace> own; // this interface, in mesh order
         for (std::size_t f = 0; f < assembled.interfaces.size(); ++f)
             if (assembled.interfaces[f].linear_region == region) {
                 own.push_back(assembled.interfaces[f]);
@@ -73,7 +74,7 @@ namespace mhs::hdim {
         // area, read back as the area-averaged interface temperature of a block.
         const auto n = system.capacity.size();
         const Eigen::VectorXd zero = Eigen::VectorXd::Zero(n);
-        std::vector<std::vector<int>> members(static_cast<std::size_t>(partition.count));
+        mhs::core::Vector<mhs::core::Vector<int>> members(static_cast<std::size_t>(partition.count));
         Eigen::VectorXd block_area = Eigen::VectorXd::Zero(partition.count);
         for (std::size_t f = 0; f < own.size(); ++f) {
             members[static_cast<std::size_t>(partition.block[f])].push_back(static_cast<int>(f));
@@ -102,7 +103,7 @@ namespace mhs::hdim {
         R = 0.5 * (R + R.transpose());
     }
 
-    void LinearHalf::solve_state(const std::vector<double>& previous, double dt)
+    void LinearHalf::solve_state(const mhs::core::Vector<double>& previous, double dt)
     {
         Eigen::VectorXd rhs = system.source;
         if (dt > 0.0)
@@ -117,7 +118,7 @@ namespace mhs::hdim {
         // Eq. (7)'s T0: with no flux through the interface the interface
         // temperature is the one of the first cell behind the block.
         load.setZero(partition.count);
-        std::vector<double> block_area(static_cast<std::size_t>(partition.count), 0.0);
+        mhs::core::Vector<double> block_area(static_cast<std::size_t>(partition.count), 0.0);
         for (std::size_t f = 0; f < face.size(); ++f) {
             load(partition.block[f]) += area[f] * state(cell[f]);
             block_area[static_cast<std::size_t>(partition.block[f])] += area[f];
@@ -127,7 +128,7 @@ namespace mhs::hdim {
                 load(b) /= block_area[static_cast<std::size_t>(b)];
     }
 
-    Eigen::VectorXd LinearHalf::solve_flux(const std::vector<double>& flux) const
+    Eigen::VectorXd LinearHalf::solve_flux(const mhs::core::Vector<double>& flux) const
     {
         Eigen::VectorXd rhs = Eigen::VectorXd::Zero(system.capacity.size());
         for (std::size_t f = 0; f < face.size(); ++f)
@@ -150,7 +151,7 @@ namespace mhs::hdim {
 
     int Hdi::interface_blocks() const { return half_[0].partition.count + half_[1].partition.count; }
 
-    void Hdi::interface_flux(const Assembled& assembled, const std::vector<double>& field)
+    void Hdi::interface_flux(const Assembled& assembled, const mhs::core::Vector<double>& field)
     {
         flux_.assign(assembled.interfaces.size(), 0.0);
         for (int i = 0; i < kInterfaceCount; ++i) {
@@ -171,7 +172,7 @@ namespace mhs::hdim {
         }
     }
 
-    double Hdi::sweep(std::vector<double>& field, RunInfo& info)
+    double Hdi::sweep(mhs::core::Vector<double>& field, RunInfo& info)
     {
         const Assembled assembled = assemble(model_, field, dt_, kNonlinear);
         interface_flux(assembled, field);
@@ -201,7 +202,7 @@ namespace mhs::hdim {
             }
         }
 
-        std::vector<Eigen::Triplet<double>> triplets;
+        mhs::core::Vector<Eigen::Triplet<double>> triplets;
         triplets.reserve(static_cast<std::size_t>(nonlinear.K.nonZeros()) + static_cast<std::size_t>(n));
         for (int k = 0; k < nonlinear.K.outerSize(); ++k)
             for (Eigen::SparseMatrix<double>::InnerIterator it(nonlinear.K, k); it; ++it)
@@ -229,13 +230,13 @@ namespace mhs::hdim {
         return change;
     }
 
-    std::vector<double> Hdi::advance(
-        const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
+    mhs::core::Vector<double> Hdi::advance(
+        const mhs::core::Vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
     {
         const auto start = std::chrono::steady_clock::now();
         info = RunInfo {};
 
-        std::vector<double> field = previous;
+        mhs::core::Vector<double> field = previous;
         if (field.empty())
             field.assign(static_cast<std::size_t>(model_.mesh.n), kAmbient);
         incoming_ = field; // the memory term of eq. (3) must not follow the sweeps
@@ -271,10 +272,10 @@ namespace mhs::hdim {
         return field;
     }
 
-    std::vector<double> Hdi::steady(double tolerance, int max_sweeps, RunInfo& info)
+    mhs::core::Vector<double> Hdi::steady(double tolerance, int max_sweeps, RunInfo& info)
     { return advance({}, tolerance, max_sweeps, info); }
 
-    std::vector<double> Hdi::step(const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
+    mhs::core::Vector<double> Hdi::step(const mhs::core::Vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info)
     { return advance(previous, tolerance, max_sweeps, info); }
 
 } // namespace mhs::hdim

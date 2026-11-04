@@ -12,14 +12,14 @@
 #pragma once
 
 #include "model.hpp"
-#include "numerics/linear/linear_solver.hpp"
+#include "linear/solver.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
 #include <array>
 #include <memory>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace mhs::hdim {
 
@@ -30,10 +30,10 @@ namespace mhs::hdim {
         int nx = 0;
         int ny = 0;
         int count = 0;
-        std::vector<int> block; // per interface face
+        mhs::core::Vector<int> block; // per interface face
 
         /// `step` in mm; step <= 0 gives one block per face.
-        static Partition build(const std::vector<InterfaceFace>& faces, double step);
+        static Partition build(const mhs::core::Vector<InterfaceFace>& faces, double step);
     };
 
     /// One interface of Sec. II-C together with the linear region behind it: the
@@ -42,13 +42,13 @@ namespace mhs::hdim {
     struct LinearHalf {
         int region = kLinearTop;
         RegionSystem system;
-        mhs::numerics::SolverPtr solver;
+        mhs::linear::SolverPtr solver;
         Eigen::VectorXd state; // eq. (4)-(5) with no interface flux
-        std::vector<int> global_cell; // cells of the region, in system order
+        mhs::core::Vector<int> global_cell; // cells of the region, in system order
 
-        std::vector<int> face; // interface faces, indices into Assembled::interfaces
-        std::vector<int> cell; // per face, position inside `system`
-        std::vector<double> area; // per face, m^2
+        mhs::core::Vector<int> face; // interface faces, indices into Assembled::interfaces
+        mhs::core::Vector<int> cell; // per face, position inside `system`
+        mhs::core::Vector<double> area; // per face, m^2
         Partition partition;
         Eigen::MatrixXd R; // eq. (8), blocks x blocks, K/W
         Eigen::VectorXd load; // eq. (7)'s T0, per block, K
@@ -57,9 +57,9 @@ namespace mhs::hdim {
         /// per interface block.
         void build(const Model& model, const Assembled& assembled, int region, double interface_step, double tolerance);
         /// Eq. (4)-(5) for the given previous field, refreshing `state` and `load`.
-        void solve_state(const std::vector<double>& previous, double dt);
+        void solve_state(const mhs::core::Vector<double>& previous, double dt);
         /// Eq. (5) with the interface flux, i.e. what has to be added to `state`.
-        Eigen::VectorXd solve_flux(const std::vector<double>& flux) const;
+        Eigen::VectorXd solve_flux(const mhs::core::Vector<double>& flux) const;
     };
 
     /// The HDI method of Sec. II for one time step: the pre-simulation that
@@ -74,22 +74,22 @@ namespace mhs::hdim {
         int interface_blocks() const;
 
         /// Steady state of eq. (2) from the ambient.
-        std::vector<double> steady(double tolerance, int max_sweeps, RunInfo& info);
+        mhs::core::Vector<double> steady(double tolerance, int max_sweeps, RunInfo& info);
         /// One step of eq. (3) from `previous` (empty starts at the ambient).
-        std::vector<double> step(const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info);
+        mhs::core::Vector<double> step(const mhs::core::Vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info);
         /// The last step's interface temperatures, per block, for both interfaces.
         const std::array<Eigen::VectorXd, kInterfaceCount>& interface_temperature() const { return ti_; }
 
     private:
         /// One pass of Sec. II-D: eq. (7)-(10) for both interfaces, then one
         /// fixed-point update of the nonlinear region with that Robin condition.
-        double sweep(std::vector<double>& field, RunInfo& info);
+        double sweep(mhs::core::Vector<double>& field, RunInfo& info);
         /// Eq. (7)-(10): the interface temperature of every block and the flux
         /// through every interface face, from the current nonlinear temperatures.
-        void interface_flux(const Assembled& assembled, const std::vector<double>& field);
+        void interface_flux(const Assembled& assembled, const mhs::core::Vector<double>& field);
         /// The shared body of `steady` and `step`.
-        std::vector<double> advance(
-            const std::vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info);
+        mhs::core::Vector<double> advance(
+            const mhs::core::Vector<double>& previous, double tolerance, int max_sweeps, RunInfo& info);
 
         const Model& model_;
         double dt_ = 0.0;
@@ -97,9 +97,9 @@ namespace mhs::hdim {
         double presimulation_seconds_ = 0.0;
         std::array<LinearHalf, kInterfaceCount> half_;
         std::array<Eigen::VectorXd, kInterfaceCount> ti_;
-        std::array<std::vector<double>, kInterfaceCount> gain_; // per interface face, W/K
-        std::vector<double> flux_; // per interface face, W
-        std::vector<double> incoming_; // the field eq. (3) steps from, K
+        std::array<mhs::core::Vector<double>, kInterfaceCount> gain_; // per interface face, W/K
+        mhs::core::Vector<double> flux_; // per interface face, W
+        mhs::core::Vector<double> incoming_; // the field eq. (3) steps from, K
         Eigen::VectorXd nonlinear_state_; // warm start of the nonlinear solve
     };
 

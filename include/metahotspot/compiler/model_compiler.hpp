@@ -1,14 +1,14 @@
 #pragma once
 
-#include "core/model.hpp"
-#include "core/model_definition.hpp"
-namespace mhs::sim {
+#include "model/model.hpp"
+#include "model/model_definition.hpp"
+namespace mhs::compiler {
 
     /// Convert a model definition into the compiled runtime model.
-    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition);
+    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition);
 
     // External geometry is already in SI. No mesh generation or neighbor discovery.
     // Face signs are derived from face coordinates and owner centers.
-    mhs::core::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::core::DiscreteMesh& mesh);
+    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::DiscreteMesh& mesh);
 
-} // namespace mhs::sim
+} // namespace mhs::compiler

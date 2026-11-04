@@ -1,8 +1,10 @@
+#include "core/csr_ops.hpp"
+#include "core/vector.hpp"
+#include "core/vector_ops.hpp"
 #include "solver/linear_system.hpp"
 #include "solver/solution_history.hpp"
 #include "solver/time_integration.hpp"
 
-#include <Eigen/Sparse>
 #include <gtest/gtest.h>
 
 // ============================================================================
@@ -13,27 +15,26 @@ namespace {
 
     /// Helper: build a simple 3-DOF Operators with known values.
     /// K = diag(2, 4, 6), f = (10, 20, 30), C = diag(1, 2, 3)
-    mhs::sim::Operators make_known_3dof_ops()
+    mhs::solver::Operators make_known_3dof_ops()
     {
         const int N = 3;
-        Eigen::SparseMatrix<double> K(N, N);
-        std::vector<Eigen::Triplet<double>> triplets;
+        mhs::core::CSRMatrix<double> K(N, N);
+        mhs::core::Vector<mhs::core::Triplet<double>> triplets;
         triplets.emplace_back(0, 0, 2.0);
         triplets.emplace_back(1, 1, 4.0);
         triplets.emplace_back(2, 2, 6.0);
-        K.setFromTriplets(triplets.begin(), triplets.end());
+        K = mhs::core::build_csr(K.rows(), K.cols(), std::move(triplets));
 
-        Eigen::VectorXd f(N);
-        f << 10.0, 20.0, 30.0;
+        mhs::core::Vector<double> f {10.0, 20.0, 30.0};
 
-        Eigen::SparseMatrix<double> C(N, N);
-        std::vector<Eigen::Triplet<double>> capacity_triplets;
+        mhs::core::CSRMatrix<double> C(N, N);
+        mhs::core::Vector<mhs::core::Triplet<double>> capacity_triplets;
         capacity_triplets.emplace_back(0, 0, 1.0);
         capacity_triplets.emplace_back(1, 1, 2.0);
         capacity_triplets.emplace_back(2, 2, 3.0);
-        C.setFromTriplets(capacity_triplets.begin(), capacity_triplets.end());
+        C = mhs::core::build_csr(C.rows(), C.cols(), std::move(capacity_triplets));
 
-        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
+        mhs::solver::Operators ops {std::move(K), std::move(C), std::move(f)};
         return ops;
     }
 
@@ -43,11 +44,11 @@ namespace {
         const double dt = 0.5;
 
         // SolutionHistory with a single snapshot (t=0).
-        mhs::core::SolutionHistory hist(3, 2);
-        std::vector<double> T0 = {100.0, 200.0, 300.0};
+        mhs::solver::SolutionHistory hist(3, 2);
+        mhs::core::Vector<double> T0 = {100.0, 200.0, 300.0};
         hist.initialize(T0, 0.0);
 
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, dt);
+        auto ls = mhs::solver::time_scheme::build_system(mhs::solver::time_scheme::IntegratorKind::Bdf1, ops, hist, dt);
 
         ASSERT_EQ(ls.A.rows(), 3);
         ASSERT_EQ(ls.A.cols(), 3);
@@ -65,62 +66,62 @@ namespace {
         // b[0] = 10 + 1*100/0.5 = 210
         // b[1] = 20 + 2*200/0.5 = 820
         // b[2] = 30 + 3*300/0.5 = 1830
-        EXPECT_DOUBLE_EQ(ls.b(0), 210.0);
-        EXPECT_DOUBLE_EQ(ls.b(1), 820.0);
-        EXPECT_DOUBLE_EQ(ls.b(2), 1830.0);
+        EXPECT_DOUBLE_EQ(ls.b[0], 210.0);
+        EXPECT_DOUBLE_EQ(ls.b[1], 820.0);
+        EXPECT_DOUBLE_EQ(ls.b[2], 1830.0);
     }
 
     TEST(TimeSchemeBdf1, ZeroMassMatrix)
     {
         // Steady-like: C = 0 => A = K, b = f
         const int N = 2;
-        Eigen::SparseMatrix<double> K(N, N);
-        std::vector<Eigen::Triplet<double>> triplets;
+        mhs::core::CSRMatrix<double> K(N, N);
+        mhs::core::Vector<mhs::core::Triplet<double>> triplets;
         triplets.emplace_back(0, 0, 5.0);
         triplets.emplace_back(1, 1, 10.0);
-        K.setFromTriplets(triplets.begin(), triplets.end());
+        K = mhs::core::build_csr(K.rows(), K.cols(), std::move(triplets));
 
-        Eigen::VectorXd f(N);
-        f << 1.0, 2.0;
+        mhs::core::Vector<double> f {1.0, 2.0};
 
-        Eigen::SparseMatrix<double> C(N, N);
+        mhs::core::CSRMatrix<double> C(N, N);
 
-        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
+        mhs::solver::Operators ops {std::move(K), std::move(C), std::move(f)};
 
-        mhs::core::SolutionHistory hist(2, 2);
-        hist.initialize(std::vector {50.0, 60.0}, 0.0);
+        mhs::solver::SolutionHistory hist(2, 2);
+        hist.initialize(mhs::core::Vector<double> {50.0, 60.0}, 0.0);
 
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, hist, 0.5);
+        auto ls
+            = mhs::solver::time_scheme::build_system(mhs::solver::time_scheme::IntegratorKind::Bdf1, ops, hist, 0.5);
 
         EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 5.0);
         EXPECT_DOUBLE_EQ(ls.A.coeff(1, 1), 10.0);
-        EXPECT_DOUBLE_EQ(ls.b(0), 1.0);
-        EXPECT_DOUBLE_EQ(ls.b(1), 2.0);
+        EXPECT_DOUBLE_EQ(ls.b[0], 1.0);
+        EXPECT_DOUBLE_EQ(ls.b[1], 2.0);
     }
 
     TEST(TimeSchemeBdf1, SupportsCoupledCapacityMatrix)
     {
-        Eigen::SparseMatrix<double> K(2, 2);
-        K.setIdentity();
+        mhs::core::CSRMatrix<double> K(2, 2);
+        K = mhs::core::build_csr(2, 2, {{0, 0, 1.0}, {1, 1, 1.0}});
 
-        Eigen::SparseMatrix<double> C(2, 2);
-        std::vector<Eigen::Triplet<double>> entries {{0, 0, 2.0}, {0, 1, 0.5}, {1, 0, 0.5}, {1, 1, 3.0}};
-        C.setFromTriplets(entries.begin(), entries.end());
+        mhs::core::CSRMatrix<double> C(2, 2);
+        mhs::core::Vector<mhs::core::Triplet<double>> entries {{0, 0, 2.0}, {0, 1, 0.5}, {1, 0, 0.5}, {1, 1, 3.0}};
+        C = mhs::core::build_csr(C.rows(), C.cols(), std::move(entries));
 
-        Eigen::VectorXd f = Eigen::VectorXd::Zero(2);
-        mhs::sim::Operators ops {std::move(K), std::move(C), std::move(f)};
-        mhs::core::SolutionHistory history(2, 2);
-        history.initialize(std::vector {10.0, 20.0}, 0.0);
+        mhs::core::Vector<double> f = mhs::core::Vector<double>(2, 0.0);
+        mhs::solver::Operators ops {std::move(K), std::move(C), std::move(f)};
+        mhs::solver::SolutionHistory history(2, 2);
+        history.initialize(mhs::core::Vector<double> {10.0, 20.0}, 0.0);
 
         auto system
-            = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf1, ops, history, 2.0);
+            = mhs::solver::time_scheme::build_system(mhs::solver::time_scheme::IntegratorKind::Bdf1, ops, history, 2.0);
 
         EXPECT_DOUBLE_EQ(system.A.coeff(0, 0), 2.0);
         EXPECT_DOUBLE_EQ(system.A.coeff(0, 1), 0.25);
         EXPECT_DOUBLE_EQ(system.A.coeff(1, 0), 0.25);
         EXPECT_DOUBLE_EQ(system.A.coeff(1, 1), 2.5);
-        EXPECT_DOUBLE_EQ(system.b(0), 15.0);
-        EXPECT_DOUBLE_EQ(system.b(1), 32.5);
+        EXPECT_DOUBLE_EQ(system.b[0], 15.0);
+        EXPECT_DOUBLE_EQ(system.b[1], 32.5);
     }
 
 } // namespace
@@ -137,13 +138,13 @@ namespace {
         const double dt = 0.5;
 
         // Initialize with 2 snapshots: T at t=0 and t=0.4
-        mhs::core::SolutionHistory hist(3, 2);
-        std::vector<double> T0 = {100.0, 200.0, 300.0}; // t=0
-        std::vector<double> T1 = {110.0, 205.0, 305.0}; // t=0.4
+        mhs::solver::SolutionHistory hist(3, 2);
+        mhs::core::Vector<double> T0 = {100.0, 200.0, 300.0}; // t=0
+        mhs::core::Vector<double> T1 = {110.0, 205.0, 305.0}; // t=0.4
         hist.initialize(T0, 0.0);
         hist.accept(T1, 0.4);
 
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, dt);
+        auto ls = mhs::solver::time_scheme::build_system(mhs::solver::time_scheme::IntegratorKind::Bdf2, ops, hist, dt);
 
         ASSERT_EQ(ls.A.rows(), 3);
         ASSERT_EQ(ls.b.size(), 3);
@@ -164,16 +165,9 @@ namespace {
 
         // b = f - C * (alpha1*x_n + alpha2*x_nm1)
         // T_n = T1 (latest), T_nm1 = T0
-        Eigen::Vector3d M_vec(1.0, 2.0, 3.0);
-        Eigen::Vector3d T_n(110.0, 205.0, 305.0);
-        Eigen::Vector3d T_nm1(100.0, 200.0, 300.0);
-        Eigen::Vector3d expected_b;
-        expected_b << 10.0, 20.0, 30.0;
-        expected_b -= M_vec.cwiseProduct(alpha1 * T_n + alpha2 * T_nm1);
-
-        EXPECT_DOUBLE_EQ(ls.b(0), expected_b(0));
-        EXPECT_DOUBLE_EQ(ls.b(1), expected_b(1));
-        EXPECT_DOUBLE_EQ(ls.b(2), expected_b(2));
+        const std::array mass {1.0, 2.0, 3.0};
+        for (std::size_t i = 0; i < 3; ++i)
+            EXPECT_DOUBLE_EQ(ls.b[i], ops.f[i] - mass[i] * (alpha1 * T1[i] + alpha2 * T0[i]));
     }
 
 } // namespace
@@ -188,14 +182,15 @@ namespace {
     {
         auto ops = make_known_3dof_ops();
         // Only 1 snapshot — not enough for BDF2.
-        mhs::core::SolutionHistory hist(3, 2);
-        hist.initialize(std::vector {100.0, 200.0, 300.0}, 0.0);
+        mhs::solver::SolutionHistory hist(3, 2);
+        hist.initialize(mhs::core::Vector<double> {100.0, 200.0, 300.0}, 0.0);
 
-        auto ls = mhs::sim::time_scheme::build_system(mhs::sim::time_scheme::IntegratorKind::Bdf2, ops, hist, 1.0);
+        auto ls
+            = mhs::solver::time_scheme::build_system(mhs::solver::time_scheme::IntegratorKind::Bdf2, ops, hist, 1.0);
 
         // Should be BDF1: A[0,0] = 2 + 1/1 = 3
         EXPECT_DOUBLE_EQ(ls.A.coeff(0, 0), 3.0);
-        EXPECT_DOUBLE_EQ(ls.b(0), 110.0);
+        EXPECT_DOUBLE_EQ(ls.b[0], 110.0);
     }
 
 } // namespace
@@ -206,10 +201,10 @@ namespace {
 
 namespace {
 
-    mhs::core::SolutionHistory make_hist(
+    mhs::solver::SolutionHistory make_hist(
         std::span<const double> T_init, std::span<const double> T_prev, double dt_prev, double t0 = 0.0)
     {
-        mhs::core::SolutionHistory hist(static_cast<int>(T_init.size()), 2);
+        mhs::solver::SolutionHistory hist(static_cast<int>(T_init.size()), 2);
         hist.initialize(T_init, t0);
         hist.accept(T_prev, t0 + dt_prev);
         return hist;
@@ -218,14 +213,14 @@ namespace {
     TEST(TimeSchemeErrorEstimate, ExactSteadyStateReturnsZero)
     {
         // If the trial state equals the previous solution, LTE should be zero.
-        std::vector<double> state = {300.0, 300.0, 300.0};
+        mhs::core::Vector<double> state = {300.0, 300.0, 300.0};
         auto hist = make_hist(state, state, 0.5);
 
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
+        mhs::solver::time_scheme::ErrorControlConfig cfg;
         cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
-        auto est = mhs::sim::time_scheme::estimate_error(hist, state, 0.5, cfg);
+        auto est = mhs::solver::time_scheme::estimate_error(hist, state, 0.5, cfg);
 
         // error_ratio should be near 0 (steady state).
         EXPECT_LT(est.error_ratio, 1e-10);
@@ -236,16 +231,16 @@ namespace {
     TEST(TimeSchemeErrorEstimate, LargeErrorReducesStep)
     {
         // Trial T differs drastically from history → large LTE → suggested_factor < 1.
-        std::vector<double> T0 = {300.0, 300.0};
-        std::vector<double> T1 = {300.0, 300.0};
+        mhs::core::Vector<double> T0 = {300.0, 300.0};
+        mhs::core::Vector<double> T1 = {300.0, 300.0};
         auto hist = make_hist(T0, T1, 0.5);
 
-        std::vector<double> trial_state = {1000.0, 2000.0};
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
+        mhs::core::Vector<double> trial_state = {1000.0, 2000.0};
+        mhs::solver::time_scheme::ErrorControlConfig cfg;
         cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
+        auto est = mhs::solver::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
 
         EXPECT_GT(est.error_ratio, 1.0); // Should exceed tolerance
         EXPECT_LT(est.suggested_factor, 1.0); // Should suggest smaller step
@@ -254,18 +249,18 @@ namespace {
     TEST(TimeSchemeErrorEstimate, Bdf2ErrorWithPrevious)
     {
         // With 2 prior snapshots, the BDF2 error estimate uses second differences.
-        std::vector<double> T0 = {300.0};
-        std::vector<double> T1 = {310.0};
+        mhs::core::Vector<double> T0 = {300.0};
+        mhs::core::Vector<double> T1 = {310.0};
         auto hist = make_hist(T0, T1, 0.5);
 
-        std::vector<double> trial_state = {315.0};
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
+        mhs::core::Vector<double> trial_state = {315.0};
+        mhs::solver::time_scheme::ErrorControlConfig cfg;
         cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
         // Before recording trial_state into hist, size() == 2 → 2 prior snapshots
         // Actually hist has T0 and T1 = size 2
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
+        auto est = mhs::solver::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
 
         // Manually: T_curr=315, T_prev=310, T_prev2=300
         // ratio = 0.5/0.5 = 1.0
@@ -281,17 +276,17 @@ namespace {
     TEST(TimeSchemeErrorEstimate, SingleSnapshotUsesFirstDifference)
     {
         // With exactly 1 snapshot (startup), the error estimate uses |T_curr - T_prev| only.
-        std::vector<double> T0 = {300.0};
-        mhs::core::SolutionHistory hist(1, 2);
+        mhs::core::Vector<double> T0 = {300.0};
+        mhs::solver::SolutionHistory hist(1, 2);
         hist.initialize(T0, 0.0);
         // size() == 1 → single snapshot path in estimate_error
 
-        std::vector<double> trial_state = {310.0};
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
+        mhs::core::Vector<double> trial_state = {310.0};
+        mhs::solver::time_scheme::ErrorControlConfig cfg;
         cfg.rel_tol = 1e-4;
         cfg.safety = 0.9;
 
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
+        auto est = mhs::solver::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
 
         // err_vec = |310-300| = 10, relative error = 10/310 → 0.03225
         // error_ratio = 0.03225 / 1e-4 = 322.5
@@ -302,11 +297,11 @@ namespace {
 
     TEST(TimeSchemeErrorEstimate, EmptySolution)
     {
-        mhs::core::SolutionHistory hist(0, 2);
-        std::vector<double> trial_state;
+        mhs::solver::SolutionHistory hist(0, 2);
+        mhs::core::Vector<double> trial_state;
 
-        mhs::sim::time_scheme::ErrorControlConfig cfg;
-        auto est = mhs::sim::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
+        mhs::solver::time_scheme::ErrorControlConfig cfg;
+        auto est = mhs::solver::time_scheme::estimate_error(hist, trial_state, 0.5, cfg);
 
         EXPECT_DOUBLE_EQ(est.error_ratio, 0.0);
         EXPECT_DOUBLE_EQ(est.suggested_factor, 1.0);
@@ -322,8 +317,8 @@ namespace {
 
     TEST(StepController, AdaptiveReturnsSuggestedDtBeforeNextOutput)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 10.0, 10.0, 0.5);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Adaptive, 1e-6, 10.0, 10.0, 0.5);
 
         double dt = ctrl.prepare(0.3, 0.0);
         EXPECT_DOUBLE_EQ(dt, 0.3);
@@ -331,8 +326,8 @@ namespace {
 
     TEST(StepController, FixedReturnsFixedDt)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 10.0, 0.5, 0.05);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 10.0, 0.5, 0.05);
 
         double dt = ctrl.prepare(0.3, 0.0);
         EXPECT_DOUBLE_EQ(dt, 0.05); // fixed_dt overrides suggested
@@ -340,8 +335,8 @@ namespace {
 
     TEST(StepController, FixedRespectsRemainingDuration)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 1.0, 0.5, 0.5);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 1.0, 0.5, 0.5);
 
         // At t=0.9, remaining = 0.1 < fixed_dt=0.5 → should clamp to 0.1
         double dt = ctrl.prepare(0.5, 0.9);
@@ -350,7 +345,8 @@ namespace {
 
     TEST(StepController, AdaptiveClipsAtOutputBoundaryEvenBelowMinDt)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.5, 10.0, 1.0, 0.25);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Adaptive, 0.5, 10.0, 1.0, 0.25);
 
         EXPECT_DOUBLE_EQ(ctrl.prepare(1.0, 0.0), 0.25);
         EXPECT_TRUE(ctrl.output_due(0.25));
@@ -359,8 +355,8 @@ namespace {
 
     TEST(StepController, FixedUsesNominalDtAndClipsAtOutputBoundary)
     {
-        mhs::sim::time_scheme::StepController ctrl(
-            mhs::sim::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 2.0, 1.0, 0.6);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Fixed, 1e-6, 10.0, 2.0, 1.0, 0.6);
 
         EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 0.0), 0.6);
         EXPECT_DOUBLE_EQ(ctrl.prepare(99.0, 0.6), 0.4);
@@ -372,11 +368,12 @@ namespace {
 
     TEST(StepController, AdaptiveEnsuresExactOutputTimes)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 1e-6, 5.0, 3.0, 1.0);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Adaptive, 1e-6, 5.0, 3.0, 1.0);
 
         // Run through a sequence and verify dt always lands exactly on grid.
         double t = 0.0;
-        std::vector<double> output_times;
+        mhs::core::Vector<double> output_times;
         while (t < 3.0 - 1e-12) {
             double dt = ctrl.prepare(0.3, t);
             t += dt;
@@ -392,7 +389,8 @@ namespace {
 
     TEST(StepController, DtClampedToBounds)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 10.0, 1.0);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 10.0, 1.0);
 
         // Suggested dt above max → clamped to max_dt.
         double dt = ctrl.prepare(100.0, 0.0);
@@ -405,7 +403,8 @@ namespace {
 
     TEST(StepController, WithoutOutputGridEveryAcceptedStateIsOutput)
     {
-        mhs::sim::time_scheme::StepController ctrl(mhs::sim::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 1.0, 0.0);
+        mhs::solver::time_scheme::StepController ctrl(
+            mhs::solver::time_scheme::StepStrategy::Adaptive, 0.01, 0.5, 1.0, 0.0);
 
         EXPECT_TRUE(ctrl.output_due(0.3));
         EXPECT_TRUE(ctrl.output_due(0.6));

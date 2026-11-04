@@ -13,7 +13,7 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace {
 
@@ -75,7 +75,7 @@ namespace {
         int cell = -1;
     };
 
-    Hotspot hotspot(const Model& model, const std::vector<double>& field)
+    Hotspot hotspot(const Model& model, const mhs::core::Vector<double>& field)
     {
         Hotspot out;
         for (int c = 0; c < model.mesh.n; ++c)
@@ -86,7 +86,7 @@ namespace {
         return out;
     }
 
-    void print_hotspot(const Model& model, const std::vector<double>& field)
+    void print_hotspot(const Model& model, const mhs::core::Vector<double>& field)
     {
         const Hotspot hot = hotspot(model, field);
         const int layer = model.mesh.cell_layer[static_cast<std::size_t>(hot.cell)];
@@ -109,7 +109,7 @@ namespace {
     }
 
     /// Largest temperature inside one layer, for the two dies of Fig. 7.
-    void print_die_peak(const Model& model, const std::vector<double>& field, const char* name, int layer)
+    void print_die_peak(const Model& model, const mhs::core::Vector<double>& field, const char* name, int layer)
     {
         double peak = 0.0;
         const auto& cells = model.mesh.layers[static_cast<std::size_t>(layer)];
@@ -123,7 +123,7 @@ namespace {
         std::printf("  %s %.2f K", name, peak);
     }
 
-    void print_difference(const Model& model, const std::vector<double>& a, const std::vector<double>& b)
+    void print_difference(const Model& model, const mhs::core::Vector<double>& a, const mhs::core::Vector<double>& b)
     {
         double worst = 0.0;
         double squares = 0.0;
@@ -143,16 +143,16 @@ namespace {
         int hotspot_step = 0;
         double seconds = 0.0;
         long long solves = 0;
-        std::vector<double> field;
+        mhs::core::Vector<double> field;
     };
 
-    March march(Model& model, const Settings& settings, const std::vector<int>& observer, Hdi* hdi, bool chip1_first,
+    March march(Model& model, const Settings& settings, const mhs::core::Vector<int>& observer, Hdi* hdi, bool chip1_first,
         bool verbose)
     {
         March out;
         const int steps = settings.steps;
         const int half = steps / 2;
-        std::vector<double> field;
+        mhs::core::Vector<double> field;
 
         const auto start = std::chrono::steady_clock::now();
         for (int step = 1; step <= steps; ++step) {
@@ -252,13 +252,13 @@ int main(int argc, char** argv)
         std::printf("  interface faces %zu (top %zu, bottom %zu)  power %.3f W\n", assembled.interfaces.size(), top,
             assembled.interfaces.size() - top, total);
 
-        std::vector<int> observer;
+        mhs::core::Vector<int> observer;
         for (const Observation& point : kObservation)
             observer.push_back(nearest_cell(model.mesh, point.layer, point.x, point.y));
 
         if (settings.steady) {
             RunInfo reference_info;
-            const std::vector<double> expected
+            const mhs::core::Vector<double> expected
                 = solve_reference(model, {}, 0.0, settings.tolerance, settings.max_sweeps, reference_info);
             std::printf("[steady] ref   sweeps %2d  %6.2f s  solves %6lld  hotspot ", reference_info.sweeps,
                 reference_info.seconds, reference_info.solves);
@@ -271,7 +271,7 @@ int main(int argc, char** argv)
                 std::printf(
                     "[steady] hdi   presim %.2f s  blocks %d\n", hdi.presimulation_seconds(), hdi.interface_blocks());
                 RunInfo info;
-                const std::vector<double> field = hdi.steady(settings.tolerance, settings.max_sweeps, info);
+                const mhs::core::Vector<double> field = hdi.steady(settings.tolerance, settings.max_sweeps, info);
                 std::printf("[steady] hdi   sweeps %2d  %6.2f s  solves %6lld  hotspot ", info.sweeps, info.seconds,
                     info.solves);
                 print_hotspot(model, field);

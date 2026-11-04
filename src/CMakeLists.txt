@@ -1,4 +1,7 @@
-add_subdirectory(numerics)
+add_subdirectory(core)
+add_subdirectory(expression)
+add_subdirectory(model)
+add_subdirectory(linear)
 add_subdirectory(logging)
 add_subdirectory(compiler)
 add_subdirectory(solver)
@@ -9,12 +12,12 @@ endif()
 
 # Every component exposes the public headers under include/metahotspot; a
 # component's own directory is only for its implementation headers.
-foreach(_component expression linear compiler solver io logging)
+foreach(_component core model expression linear compiler solver io logging)
     add_library(mhs::${_component} ALIAS mhs_${_component})
     set_target_properties(mhs_${_component} PROPERTIES EXPORT_NAME ${_component})
     target_compile_features(mhs_${_component} PUBLIC cxx_std_20)
     target_include_directories(mhs_${_component} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    target_include_directories(mhs_${_component} INTERFACE
+    target_include_directories(mhs_${_component} PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/metahotspot>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/metahotspot>
     )

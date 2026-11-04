@@ -12,7 +12,7 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include "core/vector.hpp"
 
 namespace {
 
@@ -78,9 +78,9 @@ namespace {
     /// field at t_d. The first probe is the initial condition: the reference holds
     /// it exactly, so whatever the transform reports at t = 0 is representation
     /// error and nothing else.
-    std::vector<double> probe_times(double duration)
+    mhs::core::Vector<double> probe_times(double duration)
     {
-        std::vector<double> times;
+        mhs::core::Vector<double> times;
         for (const double t : {0.0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 35.0})
             if (t < duration)
                 times.push_back(t);
@@ -88,7 +88,7 @@ namespace {
         return times;
     }
 
-    double max_difference(const std::vector<double>& a, const std::vector<double>& b)
+    double max_difference(const mhs::core::Vector<double>& a, const mhs::core::Vector<double>& b)
     {
         const std::size_t n = std::min(a.size(), b.size());
         double worst = 0.0;
@@ -98,9 +98,9 @@ namespace {
     }
 
     /// The hottest cell of a field: the waveform the paper plots.
-    double peak(const std::vector<double>& field) { return *std::max_element(field.begin(), field.end()); }
+    double peak(const mhs::core::Vector<double>& field) { return *std::max_element(field.begin(), field.end()); }
 
-    double finest_cell(const std::array<std::vector<double>, 3>& axes)
+    double finest_cell(const std::array<mhs::core::Vector<double>, 3>& axes)
     {
         double finest = 1e9;
         for (const auto& axis : axes)
@@ -109,12 +109,12 @@ namespace {
         return finest;
     }
 
-    mhs::numerics::SolverType parse_solver(const std::string& name)
+    mhs::linear::SolverType parse_solver(const std::string& name)
     {
         if (name == "amg")
-            return mhs::numerics::SolverType::AmgCg;
+            return mhs::linear::SolverType::AmgCg;
         if (name == "pardiso")
-            return mhs::numerics::SolverType::Pardiso;
+            return mhs::linear::SolverType::Pardiso;
         throw std::invalid_argument("unknown solver " + name);
     }
 
@@ -137,7 +137,7 @@ namespace {
     void report_transient(
         const mhs::dtdm::MarchResult& wlp, const mhs::dtdm::MarchResult& dtdm, const mhs::dtdm::MarchResult* reference)
     {
-        const std::vector<double>& times = wlp.sample_times;
+        const mhs::core::Vector<double>& times = wlp.sample_times;
         std::printf("  max abs difference over the field, K");
         if (reference)
             std::printf(" (reference: %d steps, %.1e K left in it)\n", reference->count, reference->estimated_error);
@@ -204,7 +204,7 @@ int run(int argc, char** argv)
         return 0;
     }
 
-    const std::vector<double> sample_times = probe_times(options.duration);
+    const mhs::core::Vector<double> sample_times = probe_times(options.duration);
     const double scale = options.scale_over_duration / options.duration;
     System system(
         std::move(mesh), options.patches, options.patches, parse_solver(options.solver), options.linear_tolerance);

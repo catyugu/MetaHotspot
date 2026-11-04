@@ -2,21 +2,21 @@
 
 #include <tinyxml2.h>
 
+#include "core/vector.hpp"
 #include <cstdio>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace mhs::io {
 
-    void write_vtu(const std::string& path, const mhs::core::Model& model, std::span<const double> cell_temperature)
+    void write_vtu(const std::string& path, const mhs::model::Model& model, std::span<const double> cell_temperature)
     {
         using namespace tinyxml2;
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("VTU state size mismatch");
         const auto& output = model.output;
-        std::vector<mhs::core::Index> node_remap(output.points.size(), mhs::core::invalidIndex);
+        mhs::core::Vector<mhs::core::Index> node_remap(output.points.size(), mhs::core::invalidIndex);
         for (const auto& cell : output.cell_vertices)
             for (auto v : cell)
                 node_remap[v] = 0;

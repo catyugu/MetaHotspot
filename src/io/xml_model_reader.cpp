@@ -1,15 +1,15 @@
 #include <tinyxml2.h>
 
+#include "core/vector.hpp"
 #include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
-#include "core/model_definition.hpp"
 #include "face_region_parser.hpp"
 #include "io/model_io.hpp"
+#include "model/model_definition.hpp"
 #include "xml_helpers.hpp"
 
 namespace mhs::io {
@@ -41,9 +41,9 @@ namespace mhs::io {
         }
     }
 
-    static std::vector<mhs::model::FaceRegion> read_face_key_regions(const XMLElement* source)
+    static mhs::core::Vector<mhs::model::FaceRegion> read_face_key_regions(const XMLElement* source)
     {
-        std::vector<mhs::model::FaceRegion> regions;
+        mhs::core::Vector<mhs::model::FaceRegion> regions;
         const XMLElement* face_keys = child_by_local_name(source, "FaceKeys");
         if (!face_keys)
             return regions;
@@ -77,9 +77,9 @@ namespace mhs::io {
     }
 
     /// Split a comma-separated list of expressions, trimming whitespace around each token.
-    static std::vector<std::string> split_csv(const std::string& raw)
+    static mhs::core::Vector<std::string> split_csv(const std::string& raw)
     {
-        std::vector<std::string> segs;
+        mhs::core::Vector<std::string> segs;
         size_t start = 0;
         while (true) {
             size_t end = raw.find(',', start);
@@ -529,7 +529,7 @@ namespace mhs::io {
         }
         if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
-                const auto read_vertices = [&](const char* axis, std::vector<double>& vertices) {
+                const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
                     if (!array)
                         return;

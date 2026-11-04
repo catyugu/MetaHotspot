@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
+#include "core/csr_matrix.hpp"
 
-namespace mhs::sim {
+namespace mhs::solver {
     /// Final linear system: A * x = b
     struct LinearSystem {
-        Eigen::SparseMatrix<double> A;
-        Eigen::VectorXd b;
+        mhs::core::CSRMatrix<double> A;
+        mhs::core::Vector<double> b;
     };
-} // namespace mhs::sim
+} // namespace mhs::solver

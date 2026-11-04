@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace mhs::numerics {
+namespace mhs::expression {
 
     // FieldContext is the data contract that the expression engine exposes
     // to its callers: at eval time the caller must supply (x, y, z, T, t).
@@ -68,4 +68,4 @@ namespace mhs::numerics {
     // Evaluate a geometry expression against the supplied SymbolTable's variables.
     double eval_geometry(const std::string& formula, const SymbolTable& symbols);
 
-} // namespace mhs::numerics
+} // namespace mhs::expression

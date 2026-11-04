@@ -1,11 +1,11 @@
 #pragma once
 
+#include "core/vector.hpp"
 #include <cstddef>
 #include <span>
 #include <stdexcept>
-#include <vector>
 
-namespace mhs::core {
+namespace mhs::solver {
 
     /// Ring-buffer of accepted (state, time) snapshots for BDF-k multi-step schemes.
     ///
@@ -19,7 +19,7 @@ namespace mhs::core {
     class SolutionHistory {
     public:
         explicit SolutionHistory(std::size_t state_count, std::size_t capacity)
-            : slots_(capacity, std::vector<double>(state_count)), times_(capacity, 0.0), cap_(capacity)
+            : slots_(capacity, mhs::core::Vector<double>(state_count)), times_(capacity, 0.0), cap_(capacity)
         {
         }
 
@@ -79,11 +79,11 @@ namespace mhs::core {
             return (tail + cap_ - i) % cap_;
         }
 
-        std::vector<std::vector<double>> slots_;
-        std::vector<double> times_;
+        mhs::core::Vector<mhs::core::Vector<double>> slots_;
+        mhs::core::Vector<double> times_;
         std::size_t head_ = 0; // next write position (ring)
         std::size_t stored_ = 0; // how many valid snapshots
         std::size_t cap_;
     };
 
-} // namespace mhs::core
+} // namespace mhs::solver

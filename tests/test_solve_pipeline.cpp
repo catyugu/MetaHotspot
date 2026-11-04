@@ -1,7 +1,6 @@
 #include "compiler/model_compiler.hpp"
-#include "core/solver.hpp"
 #include "model_test_utils.hpp"
-#include <Eigen/LU>
+#include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
@@ -48,9 +47,9 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::sim::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::sim::solve(model);
+    auto result = mhs::solver::solve(model);
 
     EXPECT_EQ(result.state.size(), model.discrete.cells.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
@@ -119,9 +118,9 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = mhs::sim::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::sim::solve(model);
+    auto result = mhs::solver::solve(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -196,9 +195,9 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = mhs::sim::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::sim::solve(model);
+    auto result = mhs::solver::solve(model);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);
