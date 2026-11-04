@@ -87,6 +87,20 @@ if(NOT TARGET muparser::muparser)
 endif()
 
 # ----------------------------------------------------------------------------
+# Adaptive BDF controller. Header only.
+# ----------------------------------------------------------------------------
+if(NOT TARGET AdaptiveTimeStepper::AdaptiveTimeStepper)
+    CPMAddPackage(
+        NAME AdaptiveTimeStepper
+        VERSION ${MHS_ATSTEP_VERSION}
+        FIND_PACKAGE_ARGUMENTS CONFIG
+        GITHUB_REPOSITORY catyugu/AdaptiveTimeStepper
+        GIT_TAG "v${MHS_ATSTEP_VERSION}"
+        SYSTEM YES
+    )
+endif()
+
+# ----------------------------------------------------------------------------
 # oneTBB - parallel assembly.
 # ----------------------------------------------------------------------------
 if(NOT TARGET TBB::tbb)
@@ -175,12 +189,3 @@ if(MHS_USE_MKL)
     set(MHS_ENABLE_PARDISO ON)
 endif()
 
-
-# Adaptive BDF controller, private to mhs_solver. No upstream targets are exported.
-CPMAddPackage(
-    NAME AdaptiveTimeStepper
-    VERSION ${MHS_ATSTEP_VERSION}
-    GITHUB_REPOSITORY catyugu/AdaptiveTimeStepper
-    GIT_TAG "v${MHS_ATSTEP_VERSION}"
-    DOWNLOAD_ONLY YES
-)
