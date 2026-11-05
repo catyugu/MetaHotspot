@@ -45,24 +45,23 @@ class CellGeometry:
         axis = int(face) // 2
         sign = -1 if int(face) % 2 == 0 else 1
         f = self.fields
-        ids = np.flatnonzero(
-            (f.face_neighbor == np.iinfo(np.uint32).max)
-            & (f.face_axis == axis)
-            & (f.face_sign == sign)
-        )
+        invalid = np.iinfo(f.face_minus.dtype).max
+        cells = f.face_minus if sign > 0 else f.face_plus
+        missing = f.face_plus if sign > 0 else f.face_minus
+        ids = np.flatnonzero((missing == invalid) & (f.face_axis == axis))
         if coordinate is None:
             coordinate = (
                 f.cell_min[:, axis].min() if sign < 0 else f.cell_max[:, axis].max()
             )
-        ids = ids[np.isclose(f.face_min[ids, axis], coordinate, atol=1e-12, rtol=0)]
-        areas = f.face_area[ids].copy()
+        planes = f.cell_max if sign > 0 else f.cell_min
+        ids = ids[np.isclose(planes[cells[ids], axis], coordinate, atol=1e-12, rtol=0)]
+        bounds = f.face_bounds[ids]
+        areas = (bounds[:, 1] - bounds[:, 0]) * (bounds[:, 3] - bounds[:, 2])
         if z_range is not None and axis != 2:
-            lo = np.maximum(f.face_min[ids, 2], z_range[0])
-            hi = np.minimum(f.face_max[ids, 2], z_range[1])
-            areas *= np.maximum(hi - lo, 0) / (f.face_max[ids, 2] - f.face_min[ids, 2])
+            lo = np.maximum(bounds[:, 2], z_range[0])
+            hi = np.minimum(bounds[:, 3], z_range[1])
+            areas *= np.maximum(hi - lo, 0) / (bounds[:, 3] - bounds[:, 2])
             keep = areas > 0
             ids = ids[keep]
             areas = areas[keep]
-        return BoundarySurface(
-            f.face_owner[ids].astype(np.int64), areas, ids.astype(np.int64)
-        )
+        return BoundarySurface(cells[ids].astype(np.int64), areas, ids.astype(np.int64))

@@ -186,17 +186,17 @@ class Model(OwnedHandle):
         *,
         cell_min,
         cell_max,
-        face_owner,
-        face_neighbor,
+        face_minus,
+        face_plus,
         face_axis,
-        face_min,
-        face_max,
+        face_bounds,
     ):
         """Copy a supplied box/face mesh in SI metres.
 
-        Exterior neighbors use UINT32_MAX (signed -1 is also accepted).
-
-        Owner normals are derived from face coordinates and owner centers.
+        Flux is positive from face_minus to face_plus along face_axis.
+        An exterior face has exactly one missing cell, UINT32_MAX (or signed -1).
+        Face bounds have shape (face_count, 4), with [a_min, a_max, b_min, b_max]
+        along ascending tangential axes (YZ for X, XZ for Y, XY for Z).
         Geometry and connectivity must be valid, complete and TPFA-orthogonal.
         Cell references and face axes are checked.
         """
@@ -205,33 +205,39 @@ class Model(OwnedHandle):
         inputs = {
             "cell_min": cell_min,
             "cell_max": cell_max,
-            "face_owner": face_owner,
-            "face_neighbor": face_neighbor,
+            "face_minus": face_minus,
+            "face_plus": face_plus,
             "face_axis": face_axis,
-            "face_min": face_min,
-            "face_max": face_max,
+            "face_bounds": face_bounds,
         }
         arrays = {}
         for name, value in inputs.items():
             dtype = (
                 np.float64
-                if name in {"cell_min", "cell_max", "face_min", "face_max"}
+                if name in {"cell_min", "cell_max", "face_bounds"}
                 else (np.int32 if name == "face_axis" else np.uint32)
             )
             arrays[name] = (
                 np.ascontiguousarray(value, dtype=dtype)
                 if dtype == np.float64
                 else _integer_array(
-                    value, dtype, name, exterior_sentinel=name == "face_neighbor"
+                    value,
+                    dtype,
+                    name,
+                    exterior_sentinel=name in {"face_minus", "face_plus"},
                 )
             )
         if arrays["cell_min"].ndim != 2:
             raise ValueError("cell_min must have shape (cell_count, 3)")
         n = arrays["cell_min"].shape[0]
-        m = arrays["face_owner"].size
+        m = arrays["face_minus"].size
         for name, array in arrays.items():
             count = n if name.startswith("cell_") else m
-            shape = (count, 3) if name.endswith(("_min", "_max")) else (count,)
+            shape = (
+                (count, 3)
+                if name.startswith("cell_")
+                else ((count, 4) if name == "face_bounds" else (count,))
+            )
             if array.shape != shape:
                 raise ValueError(f"{name} must have shape {shape}")
         types = {

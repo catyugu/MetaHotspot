@@ -10,5 +10,7 @@ namespace mhs::model {
     using FluidCellId = core::EntityIndex;
     using PointId = core::EntityIndex;
 
+    enum class Axis : std::uint8_t { X, Y, Z };
+
     enum class StudyType : std::uint8_t { Steady, Transient };
 } // namespace mhs::model

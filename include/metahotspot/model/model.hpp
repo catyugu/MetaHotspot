@@ -12,9 +12,11 @@
 
 namespace mhs::model {
 
-    // Projected integration patch on an external topological face.
+    // Projected external boundary integration term; independent of mesh face IDs.
     struct BoundaryFace {
-        FaceId parent = mhs::core::invalid_id;
+        CellId cell = mhs::core::invalid_id;
+        Axis axis = Axis::X;
+        std::int8_t sign = 1;
         BoundaryConditionId condition = mhs::core::invalid_id; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
@@ -67,7 +69,7 @@ namespace mhs::model {
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by parent FaceId
+        mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
         FluidModel fluid;
 
         double initial_temperature = 300.0;

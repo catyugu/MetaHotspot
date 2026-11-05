@@ -8,6 +8,8 @@
 
 namespace mhs::compiler {
 
+    void build_cell_face_incidence(mhs::model::DiscreteMesh& mesh);
+
     // ──────────────────────────────────────────────────────────────
     //  Pre-resolved geometry types (internal to the compiler library)
     // ──────────────────────────────────────────────────────────────

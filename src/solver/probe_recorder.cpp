@@ -8,7 +8,7 @@ namespace mhs::solver {
             traces_.push_back({p.name, {}});
             ProbeSlot slot;
             slot.point = {p.x, p.y, p.z};
-            slot.cell = model.discrete.locate({p.x, p.y, p.z});
+            slot.cell = mhs::solver::locate_cell(model.discrete, {p.x, p.y, p.z});
             slots_.push_back(slot);
         }
     }

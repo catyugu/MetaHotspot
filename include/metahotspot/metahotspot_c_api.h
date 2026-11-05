@@ -42,7 +42,7 @@ extern "C" {
 /* The single source of the library version: CMake reads project(VERSION)
  * from these macros, the Python package takes its metadata version from
  * them, and mhs_version_string() reports them at run time. */
-#define MHS_VERSION_MAJOR 1
+#define MHS_VERSION_MAJOR 0
 #define MHS_VERSION_MINOR 0
 #define MHS_VERSION_PATCH 0
 
@@ -83,9 +83,6 @@ enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
-
-typedef int32_t mhs_face_t;
-enum { MHS_FACE_XM = 0, MHS_FACE_XP = 1, MHS_FACE_YM = 2, MHS_FACE_YP = 3, MHS_FACE_ZM = 4, MHS_FACE_ZP = 5 };
 
 typedef int32_t mhs_status_t;
 enum {
@@ -135,21 +132,19 @@ typedef struct {
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * face_neighbor == MHS_INVALID_INDEX denotes exterior; signs are outward from owner. */
+ * Face bounds are (face_count,4) in ascending
+ * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
+ * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
+ * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
 typedef struct {
     size_t cell_count, face_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* face_owner;
-    mhs_index_t* face_neighbor;
+    mhs_index_t* face_minus;
+    mhs_index_t* face_plus;
     mhs_axis_t* face_axis;
-    int32_t* face_sign;
-    double* face_min;
-    double* face_max;
-    double* face_area;
-    double* owner_distance;
-    double* neighbor_distance;
+    double* face_bounds;
     mhs_index_t* projection_cell;
     mhs_index_t* projection_source;
     double* projection_volume;
@@ -163,13 +158,14 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
 /** Caller-owned external mesh, all coordinates in SI metres. No connectivity
  * discovery is performed. Cell references and face axes are checked. The caller
  * guarantees positive cells, complete nonoverlapping faces, valid indices, domain/material alignment
- * and orthogonal TPFA geometry. Exterior neighbors use MHS_INVALID_INDEX. */
+ * and orthogonal TPFA geometry. Exterior patches have one missing cell, MHS_INVALID_INDEX.
+ * Face topology and tangential bounds use the layout of mhs_cell_fields_t. */
 typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
-    const mhs_index_t *face_owner, *face_neighbor;
-    const mhs_axis_t* face_axis; /* owner normal sign is derived from geometry */
-    const double *face_min, *face_max;
+    const mhs_index_t *face_minus, *face_plus;
+    const mhs_axis_t* face_axis;
+    const double* face_bounds;
 } mhs_mesh_t;
 
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */
