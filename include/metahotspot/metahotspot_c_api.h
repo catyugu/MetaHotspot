@@ -42,7 +42,7 @@ extern "C" {
 /* The single source of the library version: CMake reads project(VERSION)
  * from these macros, the Python package takes its metadata version from
  * them, and mhs_version_string() reports them at run time. */
-#define MHS_VERSION_MAJOR 2
+#define MHS_VERSION_MAJOR 0
 #define MHS_VERSION_MINOR 0
 #define MHS_VERSION_PATCH 0
 

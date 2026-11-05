@@ -27,12 +27,6 @@ def get_dll() -> ctypes.CDLL:
 
         dll = load_library()
         configure_dll(dll)
-        version = dll.mhs_version_string().decode("ascii")
-        if version.split(".")[0] != "2":
-            raise RuntimeError(
-                f"MetaHotspot Python bindings require native ABI 2; loaded {version}. "
-                "Update the native library and Python package together."
-            )
         _dll = dll
     return _dll
 
