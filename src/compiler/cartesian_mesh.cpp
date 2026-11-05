@@ -64,16 +64,15 @@ namespace mhs::compiler {
                                 continue;
                             const auto& cell = model.discrete.cells[c];
                             FacePatch f;
-                            f.owner = c;
-                            f.neighbor = neighbor;
+                            f.minus = sign > 0 ? c : neighbor;
+                            f.plus = sign > 0 ? neighbor : c;
                             f.axis = static_cast<Axis>(a);
-                            f.coordinate = sign < 0 ? cell.min[a] : cell.max[a];
                             const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;
                             f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
                             model.discrete.faces.push_back(f);
                         }
                 }
-        prepare_discrete_mesh(model.discrete);
+        build_cell_face_incidence(model.discrete);
     }
     void build_external_output_mesh(mhs::model::Model& model)
     {

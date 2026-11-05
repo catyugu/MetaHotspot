@@ -132,18 +132,18 @@ typedef struct {
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * Face coordinates are (face_count,), bounds (face_count,4) in ascending
+ * Face bounds are (face_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
- * face_neighbor == MHS_INVALID_INDEX denotes exterior. */
+ * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
+ * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
 typedef struct {
     size_t cell_count, face_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* face_owner;
-    mhs_index_t* face_neighbor;
+    mhs_index_t* face_minus;
+    mhs_index_t* face_plus;
     mhs_axis_t* face_axis;
-    double* face_coordinate;
     double* face_bounds;
     mhs_index_t* projection_cell;
     mhs_index_t* projection_source;
@@ -158,14 +158,14 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
 /** Caller-owned external mesh, all coordinates in SI metres. No connectivity
  * discovery is performed. Cell references and face axes are checked. The caller
  * guarantees positive cells, complete nonoverlapping faces, valid indices, domain/material alignment
- * and orthogonal TPFA geometry. Exterior neighbors use MHS_INVALID_INDEX.
- * Face coordinates and tangential bounds use the layout of mhs_cell_fields_t. */
+ * and orthogonal TPFA geometry. Exterior patches have one missing cell, MHS_INVALID_INDEX.
+ * Face topology and tangential bounds use the layout of mhs_cell_fields_t. */
 typedef struct {
     size_t cell_count, face_count;
     const double *cell_min, *cell_max;
-    const mhs_index_t *face_owner, *face_neighbor;
-    const mhs_axis_t* face_axis; /* owner normal sign is derived from geometry */
-    const double *face_coordinate, *face_bounds;
+    const mhs_index_t *face_minus, *face_plus;
+    const mhs_axis_t* face_axis;
+    const double* face_bounds;
 } mhs_mesh_t;
 
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */

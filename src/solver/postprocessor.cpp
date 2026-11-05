@@ -43,17 +43,18 @@ namespace mhs::solver {
             std::array<unsigned, 8> count {}, dirichlet_count {};
             for (auto id : model.discrete.incident_faces(static_cast<mhs::model::CellId>(c))) {
                 const auto& face = model.discrete.faces[id];
-                if (face.neighbor != mhs::core::invalid_id)
+                if (!face.exterior())
                     continue;
                 for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
                     const auto& condition = model.boundary_conditions[term.condition];
                     std::optional<double> trace;
                     for (std::size_t i = 0; i < vertices.size(); ++i) {
-                        if (!face.contains(model.output.points[vertices[i]], term.bounds))
+                        if (!face.contains(model.discrete.cells, model.output.points[vertices[i]], term.bounds))
                             continue;
                         if (!trace)
-                            trace = mhs::solver::evaluate_boundary(condition, face.center(term.bounds),
-                                face.area(term.bounds), face.distance(model.discrete.cells[face.owner]), temperature,
+                            trace = mhs::solver::evaluate_boundary(condition,
+                                face.center(model.discrete.cells, term.bounds), face.area(term.bounds),
+                                face.distance(model.discrete.cells[face.cell()]), temperature,
                                 conductivity[static_cast<std::size_t>(face.axis)], time)
                                         .temperature;
                         sum[i] += *trace;

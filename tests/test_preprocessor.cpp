@@ -19,8 +19,8 @@ static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::siz
 {
     for (auto id : model.discrete.incident_faces(static_cast<CellId>(cell_idx))) {
         const auto& f = model.discrete.faces[id];
-        if ((f.neighbor != mhs::core::invalid_id) || static_cast<int>(f.axis) != static_cast<int>(dir) / 2
-            || f.normal_sign(model.discrete.cells[f.owner]) != (static_cast<int>(dir) % 2 ? 1 : -1))
+        if ((!f.exterior()) || static_cast<int>(f.axis) != static_cast<int>(dir) / 2
+            || f.normal_sign(f.cell()) != (static_cast<int>(dir) % 2 ? 1 : -1))
             continue;
         for (const auto& patch : model.boundary_faces)
             if (patch.parent == id)

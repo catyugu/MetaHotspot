@@ -41,8 +41,8 @@
 ## 输入与数组约定
 
 - C++ 的 `build_model(definition, discrete_mesh)`、C 的 `mhs_model_set_discrete_mesh` 和 Python 的 `Model.set_discrete_mesh` 接收完整的控制体与面片连接。外部网格坐标始终使用 SI 米，与物理定义的长度单位无关。
-- C/Python 输入和导出统一使用紧凑面几何：`face_owner`、`face_neighbor`、`face_axis`、`face_coordinate` 为 `(face_count,)`，`face_bounds` 为 `(face_count, 4)`。边界按升序切向轴排列，X 面使用 YZ，Y 面使用 XZ，Z 面使用 XY；每行为 `[a_min, a_max, b_min, b_max]`。cell 的 min/max 仍为 `(cell_count, 3)`。外边界 neighbor 为 `MHS_INVALID_INDEX`（`UINT32_MAX`），Python 输入也接受有符号 `-1`。
-- 面积由两个切向区间长度之积得到；单元至面的距离为 `abs(face_coordinate - cell_center[axis])`，法向符号由该有向距离推导。求解器直接使用边界积分子区域的 bounds，不再复制或投影拓扑面。cell→faces CSR 保留为编译时构建的拓扑索引；空间点定位属于求解器查询路径。
+- C/Python 输入和导出统一使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`，Python 输入也接受有符号 `-1`。
+- 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建；外部 C/Python 输入在 API 边界检查索引和 axis。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。

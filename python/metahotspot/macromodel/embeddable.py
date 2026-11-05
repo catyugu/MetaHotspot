@@ -144,15 +144,13 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
         int(f) for group in model.boundary_groups() for f in group.face_ids
     }
     by_key = {}
-    invalid = np.iinfo(fields.face_neighbor.dtype).max
-    owner_centers = full.centers[fields.face_owner, fields.face_axis]
-    signs = np.where(fields.face_coordinate > owner_centers, 1, -1)
-    for fid, (owner, neighbor) in enumerate(
-        zip(fields.face_owner, fields.face_neighbor, strict=True)
+    invalid = np.iinfo(fields.face_plus.dtype).max
+    for fid, (minus, plus) in enumerate(
+        zip(fields.face_minus, fields.face_plus, strict=True)
     ):
         for cell, other, sign in (
-            (int(owner), int(neighbor), int(signs[fid])),
-            (int(neighbor), int(owner), -int(signs[fid])),
+            (int(minus), int(plus), 1),
+            (int(plus), int(minus), -1),
         ):
             if cell == invalid or cell not in local or other in local:
                 continue
@@ -168,7 +166,7 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
         fc = cells[rows]
         t1, t2 = _tangent_pair(axis)
         rects = fields.face_bounds[face_ids]
-        distances = np.abs(fields.face_coordinate[face_ids] - full.centers[fc, axis])
+        distances = full.half_sizes[fc, axis]
         ports.append(
             FacePort(
                 label=f"{_AXES[axis]}{_DIR[direction]}",

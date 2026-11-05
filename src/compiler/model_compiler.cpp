@@ -220,7 +220,7 @@ namespace mhs::compiler {
 
         if (external) {
             model.discrete = *external;
-            prepare_discrete_mesh(model.discrete);
+            build_cell_face_incidence(model.discrete);
             build_external_output_mesh(model);
         }
         else

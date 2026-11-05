@@ -90,13 +90,14 @@ namespace mhs::solver {
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id];
-                if (f.neighbor == mhs::core::invalid_id) {
+                if (f.exterior()) {
                     for (const auto& term : boundary_faces_on(model, id)) {
                         const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                            f.center(term.bounds), f.area(term.bounds), f.distance(model.discrete.cells[f.owner]),
-                            temperature[cell], k[static_cast<std::size_t>(f.axis)], time);
+                            f.center(model.discrete.cells, term.bounds), f.area(term.bounds),
+                            f.distance(model.discrete.cells[f.cell()]), temperature[cell],
+                            k[static_cast<std::size_t>(f.axis)], time);
                         gradient[static_cast<std::size_t>(f.axis)]
-                            += f.normal_sign(model.discrete.cells[f.owner]) * f.area(term.bounds) * trace.temperature;
+                            += f.normal_sign(f.cell()) * f.area(term.bounds) * trace.temperature;
                     }
                     continue;
                 }
@@ -105,8 +106,7 @@ namespace mhs::solver {
                 const double b = f.distance(model.discrete.cells[neighbor])
                     / conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
                 const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
-                gradient[static_cast<std::size_t>(f.axis)]
-                    += f.normal_sign(model.discrete.cells[cell]) * f.area() * trace;
+                gradient[static_cast<std::size_t>(f.axis)] += f.normal_sign(cell) * f.area() * trace;
             }
             const auto volume = model.discrete.cells[cell].volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
@@ -194,14 +194,14 @@ namespace mhs::solver {
         size_t count = 0, dirichlet_count = 0;
         for (auto id : model.discrete.incident_faces(cell)) {
             const auto& f = model.discrete.faces[id];
-            if (f.neighbor != mhs::core::invalid_id)
+            if (!f.exterior())
                 continue;
             for (const auto& term : boundary_faces_on(model, id)) {
-                if (!f.contains(p, term.bounds))
+                if (!f.contains(model.discrete.cells, p, term.bounds))
                     continue;
                 const auto& condition = model.boundary_conditions[term.condition];
-                const double trace = evaluate_boundary(condition, f.center(term.bounds), f.area(term.bounds),
-                    f.distance(model.discrete.cells[f.owner]), cell_temperature,
+                const double trace = evaluate_boundary(condition, f.center(model.discrete.cells, term.bounds),
+                    f.area(term.bounds), f.distance(model.discrete.cells[f.cell()]), cell_temperature,
                     conductivity(model, temperature, cell, time, static_cast<int>(f.axis)), time)
                                          .temperature;
                 sum += trace;

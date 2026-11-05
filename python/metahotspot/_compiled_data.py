@@ -23,10 +23,9 @@ class CompiledFields:
     cell_min: np.ndarray
     cell_max: np.ndarray
     material_id: np.ndarray
-    face_owner: np.ndarray
-    face_neighbor: np.ndarray
+    face_minus: np.ndarray
+    face_plus: np.ndarray
     face_axis: np.ndarray
-    face_coordinate: np.ndarray
     face_bounds: np.ndarray
     projection_cell: np.ndarray
     projection_source: np.ndarray

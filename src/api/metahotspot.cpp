@@ -293,10 +293,9 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
     MHS_TRY({
         CHECK_NULL(input->cell_min);
         CHECK_NULL(input->cell_max);
-        CHECK_NULL(input->face_owner);
-        CHECK_NULL(input->face_neighbor);
+        CHECK_NULL(input->face_minus);
+        CHECK_NULL(input->face_plus);
         CHECK_NULL(input->face_axis);
-        CHECK_NULL(input->face_coordinate);
         CHECK_NULL(input->face_bounds);
         mhs::model::DiscreteMesh mesh;
         mesh.cells.resize(input->cell_count);
@@ -308,14 +307,15 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             }
         for (size_t id = 0; id < input->face_count; ++id) {
             auto& f = mesh.faces[id];
-            f.owner = static_cast<mhs::model::CellId>(input->face_owner[id]);
-            f.neighbor = input->face_neighbor[id];
+            f.minus = static_cast<mhs::model::CellId>(input->face_minus[id]);
+            f.plus = input->face_plus[id];
             f.axis = static_cast<mhs::model::Axis>(input->face_axis[id]);
-            if (f.owner >= input->cell_count || (f.neighbor != MHS_INVALID_INDEX && f.neighbor >= input->cell_count))
+            if ((f.minus != MHS_INVALID_INDEX && f.minus >= input->cell_count)
+                || (f.plus != MHS_INVALID_INDEX && f.plus >= input->cell_count)
+                || (f.minus == MHS_INVALID_INDEX && f.plus == MHS_INVALID_INDEX))
                 throw std::out_of_range("face cell index outside mesh");
             if (input->face_axis[id] < 0 || input->face_axis[id] > 2)
                 throw std::invalid_argument("face axis must be 0, 1 or 2");
-            f.coordinate = input->face_coordinate[id];
             for (size_t a = 0; a < 4; ++a)
                 f.bounds[a] = input->face_bounds[4 * id + a];
         }
@@ -704,8 +704,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         return MHS_ERROR;
     }
     if (fields->face_count
-        && (!fields->face_owner || !fields->face_neighbor || !fields->face_axis || !fields->face_coordinate
-            || !fields->face_bounds)) {
+        && (!fields->face_minus || !fields->face_plus || !fields->face_axis || !fields->face_bounds)) {
         SET_ERR("NULL face field buffer");
         return MHS_ERROR;
     }
@@ -724,10 +723,9 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     }
     for (size_t id = 0; id < mesh.faces.size(); ++id) {
         const auto& face = mesh.faces[id];
-        fields->face_owner[id] = face.owner;
-        fields->face_neighbor[id] = face.neighbor;
+        fields->face_minus[id] = face.minus;
+        fields->face_plus[id] = face.plus;
         fields->face_axis[id] = static_cast<mhs_axis_t>(face.axis);
-        fields->face_coordinate[id] = face.coordinate;
         for (size_t a = 0; a < 4; ++a)
             fields->face_bounds[4 * id + a] = face.bounds[a];
     }

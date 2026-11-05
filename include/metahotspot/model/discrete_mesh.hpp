@@ -2,7 +2,6 @@
 #include "core/vector.hpp"
 #include "model/types.hpp"
 #include <array>
-#include <cmath>
 #include <span>
 
 namespace mhs::model {
@@ -19,24 +18,30 @@ namespace mhs::model {
         }
     };
 
-    // One physical rectangular flux interface, including coarse/fine subfaces.
+    // One rectangular flux integration patch; positive flux runs minus -> plus.
+    // An exterior patch has exactly one invalid cell; its outward sign follows from that side.
     // Bounds follow ascending tangential axes: YZ for X, XZ for Y, XY for Z.
     struct FacePatch {
-        CellId owner = core::invalid_id, neighbor = core::invalid_id;
+        CellId minus = core::invalid_id, plus = core::invalid_id;
         Axis axis = Axis::X;
-        double coordinate = 0;
         std::array<double, 4> bounds {};
 
-        CellId other(CellId c) const { return c == owner ? neighbor : owner; }
+        bool exterior() const { return minus == core::invalid_id || plus == core::invalid_id; }
+        CellId cell() const { return minus != core::invalid_id ? minus : plus; }
+        CellId other(CellId c) const { return c == minus ? plus : minus; }
+        int normal_sign(CellId c) const { return c == minus ? 1 : -1; }
+        double coordinate(std::span<const CellGeometry> cells) const
+        {
+            return minus != core::invalid_id ? cells[minus].max[static_cast<std::size_t>(axis)]
+                                             : cells[plus].min[static_cast<std::size_t>(axis)];
+        }
         static double area(const std::array<double, 4>& b) { return (b[1] - b[0]) * (b[3] - b[2]); }
         double area() const { return area(bounds); }
-        Vec3 center(const std::array<double, 4>& b) const;
-        Vec3 center() const { return center(bounds); }
-        double distance(const CellGeometry& cell) const
-        { return std::abs(coordinate - cell.center()[static_cast<std::size_t>(axis)]); }
-        int normal_sign(const CellGeometry& cell) const
-        { return coordinate > cell.center()[static_cast<std::size_t>(axis)] ? 1 : -1; }
-        bool contains(const Vec3& point, const std::array<double, 4>& b, double eps = 1e-12) const;
+        Vec3 center(std::span<const CellGeometry> cells, const std::array<double, 4>& b) const;
+        Vec3 center(std::span<const CellGeometry> cells) const { return center(cells, bounds); }
+        double distance(const CellGeometry& cell) const { return cell.size()[static_cast<std::size_t>(axis)] / 2; }
+        bool contains(std::span<const CellGeometry> cells, const Vec3& point, const std::array<double, 4>& b,
+            double eps = 1e-12) const;
     };
 
     // Compiled geometry and connectivity; compilers build the incidence index.

@@ -201,12 +201,12 @@ namespace mhs::compiler {
         mhs::core::Vector<BoundaryFace> faces;
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
-            if (face.neighbor != mhs::core::invalid_id)
+            if (!face.exterior())
                 continue;
             const int a = face.axis == Axis::X ? 1 : 0, b = face.axis == Axis::Z ? 1 : 2;
             mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
             for (const auto& region : boundaries) {
-                if (region.axis != face.axis || std::abs(region.coordinate - face.coordinate) >= EPS)
+                if (region.axis != face.axis || std::abs(region.coordinate - face.coordinate(mesh.cells)) >= EPS)
                     continue;
                 for (const auto& r : region.rectangles) {
                     if (r.a_max <= face.bounds[0] || r.a_min >= face.bounds[1] || r.b_max <= face.bounds[2]
@@ -227,10 +227,10 @@ namespace mhs::compiler {
             for (std::size_t i = 1; i < ca.size(); ++i)
                 for (std::size_t j = 1; j < cb.size(); ++j) {
                     const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
-                    const auto p = face.center(bounds);
+                    const auto p = face.center(mesh.cells, bounds);
                     BoundaryConditionId condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (it->axis == face.axis && std::abs(it->coordinate - face.coordinate) < EPS
+                        if (it->axis == face.axis && std::abs(it->coordinate - face.coordinate(mesh.cells)) < EPS
                             && point_in_region(*it, p[a], p[b])) {
                             condition = it->condition_index;
                             break;
