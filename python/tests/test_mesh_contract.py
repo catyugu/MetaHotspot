@@ -68,8 +68,8 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
         face_owner=inverse[fields.face_owner],
         face_neighbor=neighbors,
         face_axis=fields.face_axis,
-        face_min=fields.face_min,
-        face_max=fields.face_max,
+        face_coordinate=fields.face_coordinate,
+        face_bounds=fields.face_bounds,
     )
     imported = model.compile()
     result = imported.assemble()
@@ -126,7 +126,11 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
             return (boundary,)
 
     fields = compiled.fields
-    half = fields.owner_distance[boundary.face_ids]
+    axes = fields.face_axis[boundary.face_ids]
+    half = np.abs(
+        fields.face_coordinate[boundary.face_ids]
+        - CellGeometry(fields).centers[boundary.cells, axes]
+    )
     expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
@@ -141,8 +145,8 @@ def test_native_mesh_input_rejects_invalid_indices():
             "face_owner",
             "face_neighbor",
             "face_axis",
-            "face_min",
-            "face_max",
+            "face_coordinate",
+            "face_bounds",
         )
     }
     for name in ("face_owner", "face_neighbor", "face_axis"):
@@ -174,8 +178,8 @@ def test_native_mesh_rejects_representable_invalid_references(name, value, error
             "face_owner",
             "face_neighbor",
             "face_axis",
-            "face_min",
-            "face_max",
+            "face_coordinate",
+            "face_bounds",
         )
     }
     inputs[name][0] = value

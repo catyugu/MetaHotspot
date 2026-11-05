@@ -189,13 +189,16 @@ class Model(OwnedHandle):
         face_owner,
         face_neighbor,
         face_axis,
-        face_min,
-        face_max,
+        face_coordinate,
+        face_bounds,
     ):
         """Copy a supplied box/face mesh in SI metres.
 
         Exterior neighbors use UINT32_MAX (signed -1 is also accepted).
 
+        face_coordinate has shape (face_count,); face_bounds has shape
+        (face_count, 4), with [a_min, a_max, b_min, b_max] along ascending
+        tangential axes (YZ for X, XZ for Y, XY for Z).
         Owner normals are derived from face coordinates and owner centers.
         Geometry and connectivity must be valid, complete and TPFA-orthogonal.
         Cell references and face axes are checked.
@@ -208,14 +211,14 @@ class Model(OwnedHandle):
             "face_owner": face_owner,
             "face_neighbor": face_neighbor,
             "face_axis": face_axis,
-            "face_min": face_min,
-            "face_max": face_max,
+            "face_coordinate": face_coordinate,
+            "face_bounds": face_bounds,
         }
         arrays = {}
         for name, value in inputs.items():
             dtype = (
                 np.float64
-                if name in {"cell_min", "cell_max", "face_min", "face_max"}
+                if name in {"cell_min", "cell_max", "face_coordinate", "face_bounds"}
                 else (np.int32 if name == "face_axis" else np.uint32)
             )
             arrays[name] = (
@@ -231,7 +234,11 @@ class Model(OwnedHandle):
         m = arrays["face_owner"].size
         for name, array in arrays.items():
             count = n if name.startswith("cell_") else m
-            shape = (count, 3) if name.endswith(("_min", "_max")) else (count,)
+            shape = (
+                (count, 3)
+                if name.startswith("cell_")
+                else ((count, 4) if name == "face_bounds" else (count,))
+            )
             if array.shape != shape:
                 raise ValueError(f"{name} must have shape {shape}")
         types = {

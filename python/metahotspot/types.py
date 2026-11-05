@@ -62,8 +62,8 @@ class MhsMesh(ctypes.Structure):
         ("face_owner", ctypes.POINTER(ctypes.c_uint32)),
         ("face_neighbor", ctypes.POINTER(ctypes.c_uint32)),
         ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_min", ctypes.POINTER(ctypes.c_double)),
-        ("face_max", ctypes.POINTER(ctypes.c_double)),
+        ("face_coordinate", ctypes.POINTER(ctypes.c_double)),
+        ("face_bounds", ctypes.POINTER(ctypes.c_double)),
     ]
 
 
@@ -89,12 +89,8 @@ class MhsCellFields(ctypes.Structure):
         ("face_owner", ctypes.POINTER(ctypes.c_uint32)),
         ("face_neighbor", ctypes.POINTER(ctypes.c_uint32)),
         ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_sign", ctypes.POINTER(ctypes.c_int32)),
-        ("face_min", ctypes.POINTER(ctypes.c_double)),
-        ("face_max", ctypes.POINTER(ctypes.c_double)),
-        ("face_area", ctypes.POINTER(ctypes.c_double)),
-        ("owner_distance", ctypes.POINTER(ctypes.c_double)),
-        ("neighbor_distance", ctypes.POINTER(ctypes.c_double)),
+        ("face_coordinate", ctypes.POINTER(ctypes.c_double)),
+        ("face_bounds", ctypes.POINTER(ctypes.c_double)),
         ("projection_cell", ctypes.POINTER(ctypes.c_uint32)),
         ("projection_source", ctypes.POINTER(ctypes.c_uint32)),
         ("projection_volume", ctypes.POINTER(ctypes.c_double)),

@@ -63,24 +63,17 @@ namespace mhs::compiler {
                             if ((neighbor != mhs::core::invalid_id) && neighbor < c)
                                 continue;
                             const auto& cell = model.discrete.cells[c];
-                            FacePatch f;
+                            Face f;
                             f.owner = c;
                             f.neighbor = neighbor;
-                            f.axis = a;
-                            f.sign = sign;
-                            f.min = cell.min;
-                            f.max = cell.max;
-                            f.min[a] = f.max[a] = sign < 0 ? cell.min[a] : cell.max[a];
-                            auto d = cell.size();
-                            f.area = d[(a + 1) % 3] * d[(a + 2) % 3];
-                            f.owner_distance = d[a] / 2;
-                            f.neighbor_distance = (neighbor == mhs::core::invalid_id)
-                                ? 0
-                                : model.discrete.cells[neighbor].size()[a] / 2;
+                            f.axis = static_cast<Axis>(a);
+                            f.coordinate = sign < 0 ? cell.min[a] : cell.max[a];
+                            const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;
+                            f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
                             model.discrete.faces.push_back(f);
                         }
                 }
-        model.discrete.build_incidence();
+        prepare_discrete_mesh(model.discrete);
     }
     void build_external_output_mesh(mhs::model::Model& model)
     {

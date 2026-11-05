@@ -296,8 +296,8 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
         CHECK_NULL(input->face_owner);
         CHECK_NULL(input->face_neighbor);
         CHECK_NULL(input->face_axis);
-        CHECK_NULL(input->face_min);
-        CHECK_NULL(input->face_max);
+        CHECK_NULL(input->face_coordinate);
+        CHECK_NULL(input->face_bounds);
         mhs::model::DiscreteMesh mesh;
         mesh.cells.resize(input->cell_count);
         mesh.faces.resize(input->face_count);
@@ -310,21 +310,14 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
             auto& f = mesh.faces[id];
             f.owner = static_cast<mhs::model::CellId>(input->face_owner[id]);
             f.neighbor = input->face_neighbor[id];
-            f.axis = input->face_axis[id];
+            f.axis = static_cast<mhs::model::Axis>(input->face_axis[id]);
             if (f.owner >= input->cell_count || (f.neighbor != MHS_INVALID_INDEX && f.neighbor >= input->cell_count))
                 throw std::out_of_range("face cell index outside mesh");
-            if (f.axis < 0 || f.axis > 2)
+            if (input->face_axis[id] < 0 || input->face_axis[id] > 2)
                 throw std::invalid_argument("face axis must be 0, 1 or 2");
-            for (size_t a = 0; a < 3; ++a) {
-                f.min[a] = input->face_min[3 * id + a];
-                f.max[a] = input->face_max[3 * id + a];
-            }
-            f.area = (f.max[(f.axis + 1) % 3] - f.min[(f.axis + 1) % 3])
-                * (f.max[(f.axis + 2) % 3] - f.min[(f.axis + 2) % 3]);
-            f.owner_distance = std::abs(mesh.cells[f.owner].center()[f.axis] - f.min[f.axis]);
-            f.neighbor_distance = (f.neighbor != mhs::core::invalid_id)
-                ? std::abs(mesh.cells[f.neighbor].center()[f.axis] - f.min[f.axis])
-                : 0;
+            f.coordinate = input->face_coordinate[id];
+            for (size_t a = 0; a < 4; ++a)
+                f.bounds[a] = input->face_bounds[4 * id + a];
         }
         m->external_mesh = std::move(mesh);
         m->def.mesh = {};
@@ -711,9 +704,8 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         return MHS_ERROR;
     }
     if (fields->face_count
-        && (!fields->face_owner || !fields->face_neighbor || !fields->face_axis || !fields->face_sign
-            || !fields->face_min || !fields->face_max || !fields->face_area || !fields->owner_distance
-            || !fields->neighbor_distance)) {
+        && (!fields->face_owner || !fields->face_neighbor || !fields->face_axis || !fields->face_coordinate
+            || !fields->face_bounds)) {
         SET_ERR("NULL face field buffer");
         return MHS_ERROR;
     }
@@ -734,15 +726,10 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         const auto& face = mesh.faces[id];
         fields->face_owner[id] = face.owner;
         fields->face_neighbor[id] = face.neighbor;
-        fields->face_axis[id] = face.axis;
-        fields->face_sign[id] = face.sign;
-        fields->face_area[id] = face.area;
-        fields->owner_distance[id] = face.owner_distance;
-        fields->neighbor_distance[id] = face.neighbor_distance;
-        for (size_t a = 0; a < 3; ++a) {
-            fields->face_min[3 * id + a] = face.min[a];
-            fields->face_max[3 * id + a] = face.max[a];
-        }
+        fields->face_axis[id] = static_cast<mhs_axis_t>(face.axis);
+        fields->face_coordinate[id] = face.coordinate;
+        for (size_t a = 0; a < 4; ++a)
+            fields->face_bounds[4 * id + a] = face.bounds[a];
     }
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];

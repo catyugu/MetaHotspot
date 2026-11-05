@@ -145,12 +145,14 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     }
     by_key = {}
     invalid = np.iinfo(fields.face_neighbor.dtype).max
+    owner_centers = full.centers[fields.face_owner, fields.face_axis]
+    signs = np.where(fields.face_coordinate > owner_centers, 1, -1)
     for fid, (owner, neighbor) in enumerate(
         zip(fields.face_owner, fields.face_neighbor, strict=True)
     ):
         for cell, other, sign in (
-            (int(owner), int(neighbor), int(fields.face_sign[fid])),
-            (int(neighbor), int(owner), -int(fields.face_sign[fid])),
+            (int(owner), int(neighbor), int(signs[fid])),
+            (int(neighbor), int(owner), -int(signs[fid])),
         ):
             if cell == invalid or cell not in local or other in local:
                 continue
@@ -165,21 +167,15 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
         face_ids = np.asarray([f for _, f in entries], dtype=np.int64)
         fc = cells[rows]
         t1, t2 = _tangent_pair(axis)
-        lo = fields.face_min[face_ids]
-        hi = fields.face_max[face_ids]
-        rects = np.column_stack((lo[:, t1], hi[:, t1], lo[:, t2], hi[:, t2]))
-        distances = np.where(
-            fields.face_owner[face_ids] == fc,
-            fields.owner_distance[face_ids],
-            fields.neighbor_distance[face_ids],
-        )
+        rects = fields.face_bounds[face_ids]
+        distances = np.abs(fields.face_coordinate[face_ids] - full.centers[fc, axis])
         ports.append(
             FacePort(
                 label=f"{_AXES[axis]}{_DIR[direction]}",
                 axis=axis,
                 direction=direction,
                 cells=rows,
-                areas=fields.face_area[face_ids],
+                areas=(rects[:, 1] - rects[:, 0]) * (rects[:, 3] - rects[:, 2]),
                 k=layout.conductivity[fc, axis],
                 half=distances,
                 t1=t1,

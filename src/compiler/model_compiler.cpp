@@ -220,9 +220,7 @@ namespace mhs::compiler {
 
         if (external) {
             model.discrete = *external;
-            model.discrete.build_incidence();
-            for (auto& face : model.discrete.faces)
-                face.sign = face.min[face.axis] > model.discrete.cells[face.owner].center()[face.axis] ? 1 : -1;
+            prepare_discrete_mesh(model.discrete);
             build_external_output_mesh(model);
         }
         else

@@ -49,7 +49,7 @@ namespace mhs::compiler::fluid {
                 return i;
             };
             for (const auto& f : mesh.faces) {
-                if (f.axis != axis || (f.neighbor == mhs::core::invalid_id))
+                if (static_cast<int>(f.axis) != axis || (f.neighbor == mhs::core::invalid_id))
                     continue;
                 auto i = fluid.global_to_fluid[f.owner], j = fluid.global_to_fluid[f.neighbor];
                 if ((i != mhs::core::invalid_id) && (j != mhs::core::invalid_id))
@@ -98,7 +98,7 @@ namespace mhs::compiler::fluid {
         });
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition] += mesh.faces[term.parent].project(term.bounds).area;
+            total_area[term.condition] += Face::area(term.bounds);
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -108,7 +108,8 @@ namespace mhs::compiler::fluid {
             if ((i == mhs::core::invalid_id) || (j == mhs::core::invalid_id))
                 continue;
             const auto ii = i, jj = j;
-            auto g = f.area / (f.owner_distance / mobility[ii] + f.neighbor_distance / mobility[jj]);
+            auto g = f.area()
+                / (f.distance(mesh.cells[f.owner]) / mobility[ii] + f.distance(mesh.cells[f.neighbor]) / mobility[jj]);
             conductance[id] = g;
             diagonal[ii] += g;
             diagonal[jj] += g;
@@ -119,16 +120,16 @@ namespace mhs::compiler::fluid {
         mhs::core::Vector<double> rhs(n, 0.0);
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = mesh.faces[term.parent].project(term.bounds);
+            const auto& f = mesh.faces[term.parent];
             const auto i = fluid.global_to_fluid[f.owner];
             std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                        rhs[i] += bc.mass_flow_rate * f.area / total_area[term.condition] / rho[i];
+                        rhs[i] += bc.mass_flow_rate * f.area(term.bounds) / total_area[term.condition] / rho[i];
                     else {
                         reference = true;
-                        const double g = f.area * mobility[i] / f.owner_distance;
+                        const double g = f.area(term.bounds) * mobility[i] / f.distance(mesh.cells[f.owner]);
                         boundary_conductance[t] = g;
                         diagonal[i] += g;
                         rhs[i] += g * bc.pressure;
@@ -157,14 +158,14 @@ namespace mhs::compiler::fluid {
             throw std::runtime_error("fluid pressure solve failed");
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
-            const auto f = mesh.faces[term.parent].project(term.bounds);
+            const auto& f = mesh.faces[term.parent];
             const auto i = fluid.global_to_fluid[f.owner];
             const auto& condition = boundaries[term.condition].condition;
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
-                        return -bc.mass_flow_rate * f.area / total_area[term.condition];
+                        return -bc.mass_flow_rate * f.area(term.bounds) / total_area[term.condition];
                     else
                         return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
                 },

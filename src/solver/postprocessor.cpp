@@ -46,15 +46,15 @@ namespace mhs::solver {
                 if (face.neighbor != mhs::core::invalid_id)
                     continue;
                 for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
-                    const auto patch = face.project(term.bounds);
                     const auto& condition = model.boundary_conditions[term.condition];
                     std::optional<double> trace;
                     for (std::size_t i = 0; i < vertices.size(); ++i) {
-                        if (!patch.contains(model.output.points[vertices[i]]))
+                        if (!face.contains(model.output.points[vertices[i]], term.bounds))
                             continue;
                         if (!trace)
-                            trace = mhs::solver::evaluate_boundary(
-                                condition, patch, temperature, conductivity[patch.axis], time)
+                            trace = mhs::solver::evaluate_boundary(condition, face.center(term.bounds),
+                                face.area(term.bounds), face.distance(model.discrete.cells[face.owner]), temperature,
+                                conductivity[static_cast<std::size_t>(face.axis)], time)
                                         .temperature;
                         sum[i] += *trace;
                         ++count[i];

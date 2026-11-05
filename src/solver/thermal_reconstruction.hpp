@@ -13,6 +13,8 @@
 
 namespace mhs::solver {
 
+    mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& point);
+
     // Boundary patches sorted by their parent face in the compiled model.
     std::span<const mhs::model::BoundaryFace> boundary_faces_on(
         const mhs::model::Model& model, mhs::model::FaceId parent);
@@ -24,10 +26,10 @@ namespace mhs::solver {
         double load = 0.0;
     };
 
-    // Solve the local boundary law on an already projected patch and return the
+    // Solve the local boundary law on a boundary integration region and return the
     // trace temperature with its condensed conductance and load.
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::FacePatch& face,
-        double cell_temperature, double normal_conductivity, double time);
+    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& center,
+        double area, double normal_distance, double cell_temperature, double normal_conductivity, double time);
 
     // Trace temperature where `point` lies on one of `cell`'s external boundary
     // patches, averaged over coincident patches with Dirichlet precedence.

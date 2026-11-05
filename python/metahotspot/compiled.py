@@ -114,12 +114,8 @@ _CELL_FIELD_SPECS = (
     ("face_owner", ctypes.c_uint32, np.uint32, "face_count", 1),
     ("face_neighbor", ctypes.c_uint32, np.uint32, "face_count", 1),
     ("face_axis", ctypes.c_int32, np.int32, "face_count", 1),
-    ("face_sign", ctypes.c_int32, np.int32, "face_count", 1),
-    ("face_min", ctypes.c_double, np.float64, "face_count", 3),
-    ("face_max", ctypes.c_double, np.float64, "face_count", 3),
-    ("face_area", ctypes.c_double, np.float64, "face_count", 1),
-    ("owner_distance", ctypes.c_double, np.float64, "face_count", 1),
-    ("neighbor_distance", ctypes.c_double, np.float64, "face_count", 1),
+    ("face_coordinate", ctypes.c_double, np.float64, "face_count", 1),
+    ("face_bounds", ctypes.c_double, np.float64, "face_count", 4),
     ("projection_cell", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
@@ -150,7 +146,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
 def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
     arrays = {
         name: np.empty(
-            (int(getattr(info, count)), 3) if dim == 3 else int(getattr(info, count)),
+            (int(getattr(info, count)), dim) if dim > 1 else int(getattr(info, count)),
             dtype=dtype,
         )
         for name, _, dtype, count, dim in _CELL_FIELD_SPECS

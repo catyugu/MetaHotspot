@@ -162,7 +162,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
         const auto& face = reverse.discrete.faces[term.face];
-        if (face.sign > 0) {
+        if (face.normal_sign(reverse.discrete.cells[face.owner]) > 0) {
             ASSERT_TRUE(std::holds_alternative<mhs::model::FluidInflow>(term.condition));
             EXPECT_DOUBLE_EQ(std::get<mhs::model::FluidInflow>(term.condition).temperature, 300);
         }

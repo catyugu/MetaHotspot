@@ -8,6 +8,8 @@
 
 namespace mhs::compiler {
 
+    void prepare_discrete_mesh(mhs::model::DiscreteMesh& mesh);
+
     // ──────────────────────────────────────────────────────────────
     //  Pre-resolved geometry types (internal to the compiler library)
     // ──────────────────────────────────────────────────────────────

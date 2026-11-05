@@ -10,6 +10,24 @@
 #include <type_traits>
 
 namespace mhs::solver {
+    mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& p)
+    {
+        using namespace mhs::model;
+        const auto& cells = mesh.cells;
+        // Cache once per probe. Shared-face ties select the lexicographically
+        // greatest lower corner, independent of cell storage/DOF ordering.
+        CellId result = mhs::core::invalid_id;
+        for (std::size_t i = 0; i < cells.size(); ++i) {
+            const auto& cell = cells[i];
+            bool contains = true;
+            for (std::size_t axis = 0; axis < 3; ++axis)
+                contains = contains && p[axis] >= cell.min[axis] && p[axis] <= cell.max[axis];
+            if (contains && (result == mhs::core::invalid_id || cell.min > cells[result].min))
+                result = static_cast<CellId>(i);
+        }
+        return result;
+    }
+
     namespace {
         double conductivity(const mhs::model::Model& model, std::span<const double> temperature,
             mhs::model::CellId cell, double time, int axis)
@@ -74,19 +92,21 @@ namespace mhs::solver {
                 const auto& f = model.discrete.faces[id];
                 if (f.neighbor == mhs::core::invalid_id) {
                     for (const auto& term : boundary_faces_on(model, id)) {
-                        const auto patch = f.project(term.bounds);
-                        const auto trace = evaluate_boundary(
-                            model.boundary_conditions[term.condition], patch, temperature[cell], k[patch.axis], time);
-                        gradient[f.axis] += f.sign * patch.area * trace.temperature;
+                        const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
+                            f.center(term.bounds), f.area(term.bounds), f.distance(model.discrete.cells[f.owner]),
+                            temperature[cell], k[static_cast<std::size_t>(f.axis)], time);
+                        gradient[static_cast<std::size_t>(f.axis)]
+                            += f.normal_sign(model.discrete.cells[f.owner]) * f.area(term.bounds) * trace.temperature;
                     }
                     continue;
                 }
                 const auto neighbor = f.other(cell);
-                const double a = (f.owner == cell ? f.owner_distance : f.neighbor_distance) / k[f.axis];
-                const double b = (f.owner == cell ? f.neighbor_distance : f.owner_distance)
-                    / conductivity(model, temperature, neighbor, time, f.axis);
+                const double a = f.distance(model.discrete.cells[cell]) / k[static_cast<std::size_t>(f.axis)];
+                const double b = f.distance(model.discrete.cells[neighbor])
+                    / conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
                 const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
-                gradient[f.axis] += (f.owner == cell ? f.sign : -f.sign) * f.area * trace;
+                gradient[static_cast<std::size_t>(f.axis)]
+                    += f.normal_sign(model.discrete.cells[cell]) * f.area() * trace;
             }
             const auto volume = model.discrete.cells[cell].volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
@@ -105,14 +125,13 @@ namespace mhs::solver {
         return {first, last};
     }
 
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::FacePatch& face,
-        double cell_temperature, double normal_conductivity, double time)
+    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& p,
+        double area, double normal_distance, double cell_temperature, double normal_conductivity, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
         using namespace mhs::expression;
-        const auto p = face.center();
-        const double conductive = normal_conductivity * face.area / face.owner_distance;
+        const double conductive = normal_conductivity * area / normal_distance;
         auto context = [&](double trace) { return FieldContext {p[0], p[1], p[2], trace, time}; };
         return std::visit(
             [&](const auto& law) -> BoundaryTrace {
@@ -126,14 +145,14 @@ namespace mhs::solver {
                 else if constexpr (std::is_same_v<C, Neumann>) {
                     auto flux = [&](double trace) { return law.heat_flux.eval(context(trace)); };
                     const double initial_flux = flux(cell_temperature);
-                    double trace = cell_temperature + face.area * initial_flux / conductive;
+                    double trace = cell_temperature + area * initial_flux / conductive;
                     if (!law.heat_flux.depends_on_temperature())
-                        return {trace, 0.0, face.area * initial_flux};
+                        return {trace, 0.0, area * initial_flux};
                     trace = solve_trace(
-                        [&](double value) { return conductive * (cell_temperature - value) + face.area * flux(value); },
+                        [&](double value) { return conductive * (cell_temperature - value) + area * flux(value); },
                         trace, cell_temperature);
                     const double q = flux(trace);
-                    return {trace, 0.0, face.area * q};
+                    return {trace, 0.0, area * q};
                 }
                 else {
                     static_assert(std::is_same_v<C, Convection>);
@@ -142,7 +161,7 @@ namespace mhs::solver {
                         return std::pair {law.coefficient.eval(ctx), law.ambient_temperature.eval(ctx)};
                     };
                     auto [h, ambient] = values(cell_temperature);
-                    double convective = h * face.area;
+                    double convective = h * area;
                     double trace = (conductive * cell_temperature + convective * ambient) / (conductive + convective);
                     if (!law.coefficient.depends_on_temperature()
                         && !law.ambient_temperature.depends_on_temperature()) {
@@ -153,11 +172,11 @@ namespace mhs::solver {
                         [&](double value) {
                             const auto [coefficient, external_temperature] = values(value);
                             return conductive * (cell_temperature - value)
-                                - face.area * coefficient * (value - external_temperature);
+                                - area * coefficient * (value - external_temperature);
                         },
                         trace, cell_temperature);
                     std::tie(h, ambient) = values(trace);
-                    convective = h * face.area;
+                    convective = h * area;
                     const double condensed = conductive * convective / (conductive + convective);
                     return {trace, condensed, condensed * ambient};
                 }
@@ -178,12 +197,12 @@ namespace mhs::solver {
             if (f.neighbor != mhs::core::invalid_id)
                 continue;
             for (const auto& term : boundary_faces_on(model, id)) {
-                const auto patch = f.project(term.bounds);
-                if (!patch.contains(p))
+                if (!f.contains(p, term.bounds))
                     continue;
                 const auto& condition = model.boundary_conditions[term.condition];
-                const double trace = evaluate_boundary(
-                    condition, patch, cell_temperature, conductivity(model, temperature, cell, time, patch.axis), time)
+                const double trace = evaluate_boundary(condition, f.center(term.bounds), f.area(term.bounds),
+                    f.distance(model.discrete.cells[f.owner]), cell_temperature,
+                    conductivity(model, temperature, cell, time, static_cast<int>(f.axis)), time)
                                          .temperature;
                 sum += trace;
                 ++count;

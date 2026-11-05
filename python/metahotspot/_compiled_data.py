@@ -26,12 +26,8 @@ class CompiledFields:
     face_owner: np.ndarray
     face_neighbor: np.ndarray
     face_axis: np.ndarray
-    face_sign: np.ndarray
-    face_min: np.ndarray
-    face_max: np.ndarray
-    face_area: np.ndarray
-    owner_distance: np.ndarray
-    neighbor_distance: np.ndarray
+    face_coordinate: np.ndarray
+    face_bounds: np.ndarray
     projection_cell: np.ndarray
     projection_source: np.ndarray
     projection_volume: np.ndarray

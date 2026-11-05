@@ -103,22 +103,24 @@ namespace mhs::solver {
             const auto& f = model.discrete.faces[id];
             const auto i = f.owner;
             const auto row = static_cast<SparseIndex>(f.owner);
-            const auto ki = conductivity_[i][f.axis];
+            const auto ki = conductivity_[i][static_cast<std::size_t>(f.axis)];
             if (f.neighbor != mhs::core::invalid_id) {
                 const auto j = f.neighbor;
                 const auto col = static_cast<SparseIndex>(f.neighbor);
-                const auto kj = conductivity_[j][f.axis];
-                auto resistance = f.owner_distance / ki + f.neighbor_distance / kj;
+                const auto kj = conductivity_[j][static_cast<std::size_t>(f.axis)];
+                auto resistance = f.distance(model.discrete.cells[f.owner]) / ki
+                    + f.distance(model.discrete.cells[f.neighbor]) / kj;
                 const auto fi = fluid_index(f.owner), fj = fluid_index(f.neighbor);
                 if ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id)) {
                     const auto fluid = (fi != mhs::core::invalid_id) ? fi : fj;
                     const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
                     const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
-                    const double distance = (fi != mhs::core::invalid_id) ? f.neighbor_distance : f.owner_distance;
+                    const double distance = (fi != mhs::core::invalid_id) ? f.distance(model.discrete.cells[f.neighbor])
+                                                                          : f.distance(model.discrete.cells[f.owner]);
                     const double h = model.fluid.interface_heat_transfer_factor[fluid] * kfluid;
                     resistance = distance / ksolid + 1.0 / h;
                 }
-                const double g = f.area / resistance;
+                const double g = f.area() / resistance;
                 const auto ij = slot(row, col), ji = slot(col, row);
                 values[diagonal_positions_[i]] += g;
                 values[ij] -= g;
@@ -135,10 +137,11 @@ namespace mhs::solver {
             }
         }
         for (const auto& term : model.boundary_faces) {
-            const auto f = model.discrete.faces[term.parent].project(term.bounds);
+            const auto& f = model.discrete.faces[term.parent];
             const auto row = static_cast<SparseIndex>(f.owner);
-            const auto trace = evaluate_boundary(
-                model.boundary_conditions[term.condition], f, temperature[row], conductivity_[f.owner][f.axis], time);
+            const auto trace = evaluate_boundary(model.boundary_conditions[term.condition], f.center(term.bounds),
+                f.area(term.bounds), f.distance(model.discrete.cells[f.owner]), temperature[row],
+                conductivity_[f.owner][static_cast<std::size_t>(f.axis)], time);
             rhs[row] += trace.load;
             values[diagonal_positions_[row]] += trace.conductance;
         }

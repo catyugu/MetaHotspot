@@ -203,20 +203,19 @@ namespace mhs::compiler {
             const auto& face = mesh.faces[id];
             if (face.neighbor != mhs::core::invalid_id)
                 continue;
-            const int a = face.axis == 0 ? 1 : 0, b = face.axis == 2 ? 1 : 2;
-            mhs::core::Vector<double> ca {face.min[a], face.max[a]}, cb {face.min[b], face.max[b]};
+            const int a = face.axis == Axis::X ? 1 : 0, b = face.axis == Axis::Z ? 1 : 2;
+            mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
             for (const auto& region : boundaries) {
-                if (static_cast<int>(region.axis) != face.axis
-                    || std::abs(region.coordinate - face.min[face.axis]) >= EPS)
+                if (region.axis != face.axis || std::abs(region.coordinate - face.coordinate) >= EPS)
                     continue;
                 for (const auto& r : region.rectangles) {
-                    if (r.a_max <= face.min[a] || r.a_min >= face.max[a] || r.b_max <= face.min[b]
-                        || r.b_min >= face.max[b])
+                    if (r.a_max <= face.bounds[0] || r.a_min >= face.bounds[1] || r.b_max <= face.bounds[2]
+                        || r.b_min >= face.bounds[3])
                         continue;
-                    ca.push_back(std::clamp(r.a_min, face.min[a], face.max[a]));
-                    ca.push_back(std::clamp(r.a_max, face.min[a], face.max[a]));
-                    cb.push_back(std::clamp(r.b_min, face.min[b], face.max[b]));
-                    cb.push_back(std::clamp(r.b_max, face.min[b], face.max[b]));
+                    ca.push_back(std::clamp(r.a_min, face.bounds[0], face.bounds[1]));
+                    ca.push_back(std::clamp(r.a_max, face.bounds[0], face.bounds[1]));
+                    cb.push_back(std::clamp(r.b_min, face.bounds[2], face.bounds[3]));
+                    cb.push_back(std::clamp(r.b_max, face.bounds[2], face.bounds[3]));
                 }
             }
             auto unique = [](auto& cuts) {
@@ -227,19 +226,18 @@ namespace mhs::compiler {
             unique(cb);
             for (std::size_t i = 1; i < ca.size(); ++i)
                 for (std::size_t j = 1; j < cb.size(); ++j) {
-                    const auto patch = face.project({ca[i - 1], ca[i], cb[j - 1], cb[j]});
-                    const auto p = patch.center();
+                    const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
+                    const auto p = face.center(bounds);
                     BoundaryConditionId condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (static_cast<int>(it->axis) == face.axis && std::abs(it->coordinate - p[face.axis]) < EPS
+                        if (it->axis == face.axis && std::abs(it->coordinate - face.coordinate) < EPS
                             && point_in_region(*it, p[a], p[b])) {
                             condition = it->condition_index;
                             break;
                         }
                     }
                     if (condition != mhs::core::invalid_id)
-                        faces.push_back({static_cast<FaceId>(id), condition,
-                            {patch.min[a], patch.max[a], patch.min[b], patch.max[b]}});
+                        faces.push_back({static_cast<FaceId>(id), condition, bounds});
                 }
         }
         return faces;

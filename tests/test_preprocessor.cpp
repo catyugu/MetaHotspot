@@ -2,6 +2,7 @@
 #include "expression/expression.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
+#include "solver/thermal_reconstruction.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
@@ -18,8 +19,8 @@ static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::siz
 {
     for (auto id : model.discrete.incident_faces(static_cast<CellId>(cell_idx))) {
         const auto& f = model.discrete.faces[id];
-        if ((f.neighbor != mhs::core::invalid_id) || f.axis != static_cast<int>(dir) / 2
-            || f.sign != (static_cast<int>(dir) % 2 ? 1 : -1))
+        if ((f.neighbor != mhs::core::invalid_id) || static_cast<int>(f.axis) != static_cast<int>(dir) / 2
+            || f.normal_sign(model.discrete.cells[f.owner]) != (static_cast<int>(dir) % 2 ? 1 : -1))
             continue;
         for (const auto& patch : model.boundary_faces)
             if (patch.parent == id)
@@ -107,9 +108,10 @@ static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& in
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
-    return model.discrete.locate({(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
-        (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
-        (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005});
+    return mhs::solver::locate_cell(model.discrete,
+        {(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
+            (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
+            (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005});
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
@@ -231,9 +233,9 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     auto model = build_model(io);
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
-    EXPECT_TRUE((model.discrete.locate({0.025, 0.075, 0.001}) != mhs::core::invalid_id));
-    EXPECT_TRUE((model.discrete.locate({0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
-    EXPECT_FALSE((model.discrete.locate({0.025, 0.025, 0.009}) != mhs::core::invalid_id));
+    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.075, 0.001}) != mhs::core::invalid_id));
+    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
+    EXPECT_FALSE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.009}) != mhs::core::invalid_id));
 }
 
 // ---- Structured boundary-region tests ----
