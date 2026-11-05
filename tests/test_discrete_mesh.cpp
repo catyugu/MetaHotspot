@@ -55,7 +55,7 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
         double surface = 0;
         for (const auto id : mesh.incident_faces(static_cast<CellId>(c))) {
             const auto& face = mesh.faces[id];
-            const double sign = face.normal_sign(static_cast<CellId>(c));
+            const double sign = (face.minus == c ? 1 : -1);
             closure[static_cast<std::size_t>(face.axis)] += sign * face.area();
             surface += face.area();
         }
@@ -123,18 +123,17 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         d.default_boundary = condition;
         const auto model = mhs::compiler::build_model(d);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
-        // The solver's patch lookup binary-searches this order.
-        EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.parent; }));
+        // Boundary sampling looks up terms by cell.
+        EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.cell; }));
         const mhs::core::Vector<double> state {350};
         for (const auto& patch : model.boundary_faces) {
-            const auto& face = model.discrete.faces[patch.parent];
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
-            const auto trace = mhs::solver::evaluate_boundary(model.boundary_conditions[patch.condition],
-                face.center(model.discrete.cells, patch.bounds), face.area(patch.bounds),
-                face.distance(model.discrete.cells[face.cell()]), state[0], 1.0, 0);
-            const mhs::expression::FieldContext ctx {face.center(model.discrete.cells)[0],
-                face.center(model.discrete.cells)[1], face.center(model.discrete.cells)[2], trace.temperature, 0};
+            const auto center = mhs::solver::boundary_center(model.discrete.cells[patch.cell], patch);
+            const auto trace = mhs::solver::evaluate_boundary(model.boundary_conditions[patch.condition], center,
+                ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
+                (model.discrete.cells[patch.cell].size()[static_cast<std::size_t>(patch.axis)] / 2), state[0], 1.0, 0);
+            const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
             if (std::holds_alternative<mhs::model::Convection>(model.boundary_conditions[patch.condition])) {
                 const auto& law = std::get<mhs::model::Convection>(model.boundary_conditions[patch.condition]);
@@ -154,8 +153,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             }
             // Sampling and assembly read the same surface trace.
             EXPECT_DOUBLE_EQ(
-                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), face.center(model.discrete.cells)),
-                trace.temperature);
+                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), center), trace.temperature);
         }
     }
 }
@@ -243,8 +241,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
-            const auto& face = model.discrete.faces[term.parent];
-            if (face.axis != Axis::X || face.normal_sign(face.cell()) != 1) {
+            if (term.axis != Axis::X || term.sign != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
                 continue;
             }
@@ -255,8 +252,9 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 // The cell is a unit cube with unit conductivity, so the
                 // condensed patch coefficients follow from the trace alone.
                 const auto condensed = mhs::solver::evaluate_boundary(model.boundary_conditions[term.condition],
-                    face.center(model.discrete.cells, term.bounds), face.area(term.bounds),
-                    face.distance(model.discrete.cells[face.cell()]), T, 1.0, time);
+                    mhs::solver::boundary_center(model.discrete.cells[term.cell], term),
+                    ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2])),
+                    (model.discrete.cells[term.cell].size()[static_cast<std::size_t>(term.axis)] / 2), T, 1.0, time);
                 double g, load;
                 if (kind == 0) {
                     const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);

@@ -17,7 +17,7 @@ namespace mhs::solver {
                 row.clear();
                 row.push_back(static_cast<core::SparseIndex>(i));
                 for (const auto id : mesh.incident_faces(static_cast<model::CellId>(i))) {
-                    const auto other = mesh.faces[id].other(static_cast<model::CellId>(i));
+                    const auto other = (mesh.faces[id].minus == i ? mesh.faces[id].plus : mesh.faces[id].minus);
                     if (other != core::invalid_id)
                         row.push_back(static_cast<core::SparseIndex>(other));
                 }
@@ -109,15 +109,16 @@ namespace mhs::solver {
             const auto j = f.plus;
             const auto col = static_cast<SparseIndex>(f.plus);
             const auto kj = conductivity_[j][static_cast<std::size_t>(f.axis)];
-            auto resistance
-                = f.distance(model.discrete.cells[f.minus]) / ki + f.distance(model.discrete.cells[f.plus]) / kj;
+            const auto axis = static_cast<std::size_t>(f.axis);
+            const double d_minus = model.discrete.cells[f.minus].size()[axis] / 2;
+            const double d_plus = model.discrete.cells[f.plus].size()[axis] / 2;
+            auto resistance = d_minus / ki + d_plus / kj;
             const auto fi = fluid_index(f.minus), fj = fluid_index(f.plus);
             if ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id)) {
                 const auto fluid = (fi != mhs::core::invalid_id) ? fi : fj;
                 const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
                 const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
-                const double distance = (fi != mhs::core::invalid_id) ? f.distance(model.discrete.cells[f.plus])
-                                                                      : f.distance(model.discrete.cells[f.minus]);
+                const double distance = (fi != mhs::core::invalid_id) ? d_plus : d_minus;
                 const double h = model.fluid.interface_heat_transfer_factor[fluid] * kfluid;
                 resistance = distance / ksolid + 1.0 / h;
             }
@@ -137,17 +138,18 @@ namespace mhs::solver {
             }
         }
         for (const auto& term : model.boundary_faces) {
-            const auto& f = model.discrete.faces[term.parent];
-            const auto row = static_cast<SparseIndex>(f.cell());
+            const auto axis = static_cast<std::size_t>(term.axis);
+            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
+            const auto row = static_cast<SparseIndex>(term.cell);
             const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                f.center(model.discrete.cells, term.bounds), f.area(term.bounds),
-                f.distance(model.discrete.cells[f.cell()]), temperature[row],
-                conductivity_[f.cell()][static_cast<std::size_t>(f.axis)], time);
+                boundary_center(model.discrete.cells[term.cell], term), area,
+                (model.discrete.cells[term.cell].size()[axis] / 2), temperature[row], conductivity_[term.cell][axis],
+                time);
             rhs[row] += trace.load;
             values[diagonal_positions_[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.discrete.faces[term.face].cell();
+            const auto cell = term.cell;
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(

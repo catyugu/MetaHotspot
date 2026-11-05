@@ -41,28 +41,24 @@ namespace mhs::solver {
             const auto& vertices = model.output.cell_vertices[c];
             std::array<double, 8> sum {}, dirichlet_sum {};
             std::array<unsigned, 8> count {}, dirichlet_count {};
-            for (auto id : model.discrete.incident_faces(static_cast<mhs::model::CellId>(c))) {
-                const auto& face = model.discrete.faces[id];
-                if (!face.exterior())
-                    continue;
-                for (const auto& term : mhs::solver::boundary_faces_on(model, id)) {
-                    const auto& condition = model.boundary_conditions[term.condition];
-                    std::optional<double> trace;
-                    for (std::size_t i = 0; i < vertices.size(); ++i) {
-                        if (!face.contains(model.discrete.cells, model.output.points[vertices[i]], term.bounds))
-                            continue;
-                        if (!trace)
-                            trace = mhs::solver::evaluate_boundary(condition,
-                                face.center(model.discrete.cells, term.bounds), face.area(term.bounds),
-                                face.distance(model.discrete.cells[face.cell()]), temperature,
-                                conductivity[static_cast<std::size_t>(face.axis)], time)
-                                        .temperature;
-                        sum[i] += *trace;
-                        ++count[i];
-                        if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
-                            dirichlet_sum[i] += *trace;
-                            ++dirichlet_count[i];
-                        }
+            for (const auto& term : boundary_faces_on_cell(model, static_cast<mhs::model::CellId>(c))) {
+                const auto axis = static_cast<std::size_t>(term.axis);
+                const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
+                const auto& condition = model.boundary_conditions[term.condition];
+                std::optional<double> trace;
+                for (std::size_t i = 0; i < vertices.size(); ++i) {
+                    if (!boundary_contains(model.discrete.cells[term.cell], term, model.output.points[vertices[i]]))
+                        continue;
+                    if (!trace)
+                        trace = mhs::solver::evaluate_boundary(condition,
+                            boundary_center(model.discrete.cells[term.cell], term), area,
+                            (model.discrete.cells[term.cell].size()[axis] / 2), temperature, conductivity[axis], time)
+                                    .temperature;
+                    sum[i] += *trace;
+                    ++count[i];
+                    if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
+                        dirichlet_sum[i] += *trace;
+                        ++dirichlet_count[i];
                     }
                 }
             }

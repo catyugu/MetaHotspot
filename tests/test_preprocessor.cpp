@@ -17,15 +17,10 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 /// Returns nullptr for an internal face without a boundary face.
 static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.discrete.incident_faces(static_cast<CellId>(cell_idx))) {
-        const auto& f = model.discrete.faces[id];
-        if ((!f.exterior()) || static_cast<int>(f.axis) != static_cast<int>(dir) / 2
-            || f.normal_sign(f.cell()) != (static_cast<int>(dir) % 2 ? 1 : -1))
-            continue;
-        for (const auto& patch : model.boundary_faces)
-            if (patch.parent == id)
-                return &patch;
-    }
+    for (const auto& term : model.boundary_faces)
+        if (term.cell == cell_idx && static_cast<int>(term.axis) == static_cast<int>(dir) / 2
+            && term.sign == (static_cast<int>(dir) % 2 ? 1 : -1))
+            return &term;
     return nullptr;
 }
 

@@ -203,10 +203,13 @@ namespace mhs::compiler {
             const auto& face = mesh.faces[id];
             if (!face.exterior())
                 continue;
-            const int a = face.axis == Axis::X ? 1 : 0, b = face.axis == Axis::Z ? 1 : 2;
+            const auto cell = face.minus != invalid_id ? face.minus : face.plus;
+            const auto axis = static_cast<std::size_t>(face.axis);
+            const std::int8_t sign = face.minus != invalid_id ? 1 : -1;
+            const double coordinate = sign > 0 ? mesh.cells[cell].max[axis] : mesh.cells[cell].min[axis];
             mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
             for (const auto& region : boundaries) {
-                if (region.axis != face.axis || std::abs(region.coordinate - face.coordinate(mesh.cells)) >= EPS)
+                if (region.axis != face.axis || std::abs(region.coordinate - coordinate) >= EPS)
                     continue;
                 for (const auto& r : region.rectangles) {
                     if (r.a_max <= face.bounds[0] || r.a_min >= face.bounds[1] || r.b_max <= face.bounds[2]
@@ -227,19 +230,21 @@ namespace mhs::compiler {
             for (std::size_t i = 1; i < ca.size(); ++i)
                 for (std::size_t j = 1; j < cb.size(); ++j) {
                     const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
-                    const auto p = face.center(mesh.cells, bounds);
+                    const double center_a = (bounds[0] + bounds[1]) / 2;
+                    const double center_b = (bounds[2] + bounds[3]) / 2;
                     BoundaryConditionId condition = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (it->axis == face.axis && std::abs(it->coordinate - face.coordinate(mesh.cells)) < EPS
-                            && point_in_region(*it, p[a], p[b])) {
+                        if (it->axis == face.axis && std::abs(it->coordinate - coordinate) < EPS
+                            && point_in_region(*it, center_a, center_b)) {
                             condition = it->condition_index;
                             break;
                         }
                     }
                     if (condition != mhs::core::invalid_id)
-                        faces.push_back({static_cast<FaceId>(id), condition, bounds});
+                        faces.push_back({cell, face.axis, sign, condition, bounds});
                 }
         }
+        std::stable_sort(faces.begin(), faces.end(), [](const auto& a, const auto& b) { return a.cell < b.cell; });
         return faces;
     }
 

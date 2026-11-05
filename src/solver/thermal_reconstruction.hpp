@@ -15,9 +15,13 @@ namespace mhs::solver {
 
     mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& point);
 
-    // Boundary patches sorted by their parent face in the compiled model.
-    std::span<const mhs::model::BoundaryFace> boundary_faces_on(
-        const mhs::model::Model& model, mhs::model::FaceId parent);
+    // Boundary terms sorted by cell in the compiled model.
+    std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
+        const mhs::model::Model& model, mhs::model::CellId cell);
+
+    mhs::model::Vec3 boundary_center(const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term);
+    bool boundary_contains(
+        const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term, const mhs::model::Vec3& point);
 
     // Condensed contributions of one external boundary patch to its owner cell.
     struct BoundaryTrace {

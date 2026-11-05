@@ -90,39 +90,60 @@ namespace mhs::solver {
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id];
-                if (f.exterior()) {
-                    for (const auto& term : boundary_faces_on(model, id)) {
-                        const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                            f.center(model.discrete.cells, term.bounds), f.area(term.bounds),
-                            f.distance(model.discrete.cells[f.cell()]), temperature[cell],
-                            k[static_cast<std::size_t>(f.axis)], time);
-                        gradient[static_cast<std::size_t>(f.axis)]
-                            += f.normal_sign(f.cell()) * f.area(term.bounds) * trace.temperature;
-                    }
+                if (f.exterior())
                     continue;
-                }
-                const auto neighbor = f.other(cell);
-                const double a = f.distance(model.discrete.cells[cell]) / k[static_cast<std::size_t>(f.axis)];
-                const double b = f.distance(model.discrete.cells[neighbor])
+                const auto axis = static_cast<std::size_t>(f.axis);
+                const auto neighbor = f.minus == cell ? f.plus : f.minus;
+                const double a = (model.discrete.cells[cell].size()[axis] / 2) / k[axis];
+                const double b = (model.discrete.cells[neighbor].size()[axis] / 2)
                     / conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
                 const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
-                gradient[static_cast<std::size_t>(f.axis)] += f.normal_sign(cell) * f.area() * trace;
+                gradient[axis] += (f.minus == cell ? 1 : -1) * f.area() * trace;
+            }
+            for (const auto& term : boundary_faces_on_cell(model, cell)) {
+                const auto axis = static_cast<std::size_t>(term.axis);
+                const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
+                const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
+                    boundary_center(model.discrete.cells[cell], term), area,
+                    model.discrete.cells[cell].size()[axis] / 2, temperature[cell], k[axis], time);
+                gradient[axis] += term.sign * area * trace.temperature;
             }
             const auto volume = model.discrete.cells[cell].volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
 
-    std::span<const mhs::model::BoundaryFace> boundary_faces_on(
-        const mhs::model::Model& model, mhs::model::FaceId parent)
+    std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
+        const mhs::model::Model& model, mhs::model::CellId cell)
     {
         const auto& patches = model.boundary_faces;
-        auto first = std::lower_bound(patches.begin(), patches.end(), parent,
-            [](const mhs::model::BoundaryFace& patch, mhs::model::FaceId id) { return patch.parent < id; });
+        auto first = std::lower_bound(patches.begin(), patches.end(), cell,
+            [](const mhs::model::BoundaryFace& patch, mhs::model::CellId id) { return patch.cell < id; });
         auto last = first;
-        while (last != patches.end() && last->parent == parent)
+        while (last != patches.end() && last->cell == cell)
             ++last;
         return {first, last};
+    }
+
+    mhs::model::Vec3 boundary_center(const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term)
+    {
+        mhs::model::Vec3 point {};
+        const auto axis = static_cast<std::size_t>(term.axis);
+        point[axis] = term.sign > 0 ? cell.max[axis] : cell.min[axis];
+        point[axis == 0 ? 1 : 0] = (term.bounds[0] + term.bounds[1]) / 2;
+        point[axis == 2 ? 1 : 2] = (term.bounds[2] + term.bounds[3]) / 2;
+        return point;
+    }
+
+    bool boundary_contains(
+        const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term, const mhs::model::Vec3& point)
+    {
+        constexpr double eps = 1e-12;
+        const auto axis = static_cast<std::size_t>(term.axis);
+        const auto a = axis == 0 ? 1 : 0, b = axis == 2 ? 1 : 2;
+        const double coordinate = term.sign > 0 ? cell.max[axis] : cell.min[axis];
+        return std::abs(point[axis] - coordinate) <= eps && point[a] >= term.bounds[0] - eps
+            && point[a] <= term.bounds[1] + eps && point[b] >= term.bounds[2] - eps && point[b] <= term.bounds[3] + eps;
     }
 
     BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& p,
@@ -192,24 +213,21 @@ namespace mhs::solver {
         const double cell_temperature = temperature[cell];
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
-        for (auto id : model.discrete.incident_faces(cell)) {
-            const auto& f = model.discrete.faces[id];
-            if (!f.exterior())
+        for (const auto& term : boundary_faces_on_cell(model, cell)) {
+            const auto axis = static_cast<std::size_t>(term.axis);
+            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
+            if (!boundary_contains(model.discrete.cells[term.cell], term, p))
                 continue;
-            for (const auto& term : boundary_faces_on(model, id)) {
-                if (!f.contains(model.discrete.cells, p, term.bounds))
-                    continue;
-                const auto& condition = model.boundary_conditions[term.condition];
-                const double trace = evaluate_boundary(condition, f.center(model.discrete.cells, term.bounds),
-                    f.area(term.bounds), f.distance(model.discrete.cells[f.cell()]), cell_temperature,
-                    conductivity(model, temperature, cell, time, static_cast<int>(f.axis)), time)
-                                         .temperature;
-                sum += trace;
-                ++count;
-                if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
-                    dirichlet_sum += trace;
-                    ++dirichlet_count;
-                }
+            const auto& condition = model.boundary_conditions[term.condition];
+            const double trace = evaluate_boundary(condition, boundary_center(model.discrete.cells[term.cell], term),
+                area, (model.discrete.cells[cell].size()[axis] / 2), cell_temperature,
+                conductivity(model, temperature, cell, time, static_cast<int>(term.axis)), time)
+                                     .temperature;
+            sum += trace;
+            ++count;
+            if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
+                dirichlet_sum += trace;
+                ++dirichlet_count;
             }
         }
         if (dirichlet_count)

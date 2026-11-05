@@ -5,6 +5,7 @@
 #include "solver/assembler.hpp"
 #include <numeric>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -89,7 +90,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[model.discrete.faces[term.face].cell()] += mass;
+        balance[term.cell] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
@@ -161,15 +162,12 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto reverse = mhs::compiler::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
-        const auto& face = reverse.discrete.faces[term.face];
-        if (face.normal_sign(face.cell()) > 0) {
-            ASSERT_TRUE(std::holds_alternative<mhs::model::FluidInflow>(term.condition));
-            EXPECT_DOUBLE_EQ(std::get<mhs::model::FluidInflow>(term.condition).temperature, 300);
-        }
-        else {
-            EXPECT_TRUE(std::holds_alternative<mhs::model::FluidOutflow>(term.condition));
-        }
+        if (const auto* inflow = std::get_if<mhs::model::FluidInflow>(&term.condition))
+            EXPECT_DOUBLE_EQ(inflow->temperature, 300);
     }
+    EXPECT_EQ(std::ranges::count_if(reverse.fluid.boundary_terms,
+                  [](const auto& term) { return std::holds_alternative<mhs::model::FluidInflow>(term.condition); }),
+        1);
     auto verify_reverse = [&](const mhs::model::Model& model, double temperature) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
