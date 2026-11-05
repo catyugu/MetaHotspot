@@ -120,11 +120,13 @@ jobs:
         run: |
           $archive = (Get-ChildItem build/MetaHotspot-*.zip).FullName
           python .github/scripts/check_wheel.py --sdk $archive
+      # Actions artifacts are already ZIP archives. Upload the installed SDK
+      # files directly so downloads do not contain another CPack ZIP.
       - uses: actions/upload-artifact@v7
         if: matrix.config == 'Release'
         with:
           name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
-          path: build/MetaHotspot-*.zip
+          path: build/package/
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v7
