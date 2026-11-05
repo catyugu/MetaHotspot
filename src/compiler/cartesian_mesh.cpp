@@ -63,7 +63,7 @@ namespace mhs::compiler {
                             if ((neighbor != mhs::core::invalid_id) && neighbor < c)
                                 continue;
                             const auto& cell = model.discrete.cells[c];
-                            Face f;
+                            FacePatch f;
                             f.owner = c;
                             f.neighbor = neighbor;
                             f.axis = static_cast<Axis>(a);

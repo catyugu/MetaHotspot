@@ -308,7 +308,7 @@ TEST(DiscreteMesh, MissingReferencesRemainInvalid)
 {
     DiscreteMesh mesh;
     mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
-    Face face;
+    FacePatch face;
     EXPECT_EQ(face.owner, invalid_id);
     EXPECT_EQ(face.neighbor, invalid_id);
     face.owner = 0;

@@ -1,7 +1,7 @@
 #include "model/discrete_mesh.hpp"
 
 namespace mhs::model {
-    Vec3 Face::center(const std::array<double, 4>& b) const
+    Vec3 FacePatch::center(const std::array<double, 4>& b) const
     {
         Vec3 p {};
         const auto n = static_cast<std::size_t>(axis);
@@ -11,7 +11,7 @@ namespace mhs::model {
         return p;
     }
 
-    bool Face::contains(const Vec3& p, const std::array<double, 4>& b, double eps) const
+    bool FacePatch::contains(const Vec3& p, const std::array<double, 4>& b, double eps) const
     {
         const auto n = static_cast<std::size_t>(axis);
         const auto a = n == 0 ? 1 : 0, t = n == 2 ? 1 : 2;

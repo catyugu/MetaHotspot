@@ -98,7 +98,7 @@ namespace mhs::compiler::fluid {
         });
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition] += Face::area(term.bounds);
+            total_area[term.condition] += FacePatch::area(term.bounds);
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];

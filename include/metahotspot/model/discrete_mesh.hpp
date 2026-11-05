@@ -21,7 +21,7 @@ namespace mhs::model {
 
     // One physical rectangular flux interface, including coarse/fine subfaces.
     // Bounds follow ascending tangential axes: YZ for X, XZ for Y, XY for Z.
-    struct Face {
+    struct FacePatch {
         CellId owner = core::invalid_id, neighbor = core::invalid_id;
         Axis axis = Axis::X;
         double coordinate = 0;
@@ -43,7 +43,7 @@ namespace mhs::model {
     // Geometry, connectivity and TPFA orthogonality are caller preconditions.
     struct DiscreteMesh {
         mhs::core::Vector<CellGeometry> cells;
-        mhs::core::Vector<Face> faces;
+        mhs::core::Vector<FacePatch> faces;
         mhs::core::Vector<std::size_t> cell_face_offsets;
         mhs::core::Vector<FaceId> cell_face_ids;
         std::span<const FaceId> incident_faces(CellId c) const
