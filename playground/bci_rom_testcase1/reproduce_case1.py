@@ -267,17 +267,17 @@ def run():
         ):
             f.write(f"  {key} = {rec_acc[key]:.6g}\n")
 
-    return dict(
-        junc_full_ss=junc_full_ss,
-        junc_rom_ss=junc_rom_ss,
-        junc_fl_ss=junc_fl_ss,
-        junc_full_hist=junc_full_hist,
-        junc_rom_hist=junc_rom_hist,
-        junc_fl_hist=junc_fl_hist,
-        times=full.times,
-        basis=basis,
-        summary=summary,
-    )
+    return {
+        "junc_full_ss": junc_full_ss,
+        "junc_rom_ss": junc_rom_ss,
+        "junc_fl_ss": junc_fl_ss,
+        "junc_full_hist": junc_full_hist,
+        "junc_rom_hist": junc_rom_hist,
+        "junc_fl_hist": junc_fl_hist,
+        "times": full.times,
+        "basis": basis,
+        "summary": summary,
+    }
 
 
 if __name__ == "__main__":
