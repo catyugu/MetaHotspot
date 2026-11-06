@@ -12,7 +12,8 @@ CMake dependencies exported by `MetaHotspotConfig.cmake`.
 The GCC, Clang 18 and sanitizer SDK jobs run on `ubuntu-latest` inside a
 prebuilt Ubuntu 24.04 image stored in GitHub Container Registry (GHCR). Its
 Dockerfile lives at `.github/docker/ubuntu-ci.Dockerfile` and includes the
-compilers, sanitizer runtime, OpenMP headers/runtime and build utilities.
+compilers, sanitizer runtime, OpenMP headers/runtime, the OpenSSL and Python
+shared libraries required by `actions/setup-python`, and build utilities.
 No SDK job runs `apt-get`.
 
 The `prepare_image` job derives a tag from the Dockerfile hash, authenticates

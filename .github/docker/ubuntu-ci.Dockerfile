@@ -13,6 +13,11 @@ RUN apt-get update \
       curl \
       git \
       libclang-rt-18-dev \
+      libbz2-1.0 \
+      libffi8 \
+      liblzma5 \
+      libsqlite3-0 \
+      libssl3t64 \
       libomp-18-dev \
       pkg-config \
       python3 \
