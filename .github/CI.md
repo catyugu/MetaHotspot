@@ -9,29 +9,18 @@ CMake dependencies exported by `MetaHotspotConfig.cmake`.
 
 ## Ubuntu SDK build image
 
-The GCC, Clang 18 and sanitizer SDK jobs run on `ubuntu-latest` inside a
-prebuilt Ubuntu 24.04 image stored in GitHub Container Registry (GHCR). Its
-Dockerfile lives at `.github/docker/ubuntu-ci.Dockerfile` and includes the
-compilers, sanitizer runtime, OpenMP headers/runtime and build utilities.
-It also creates an isolated Python 3.12 virtual environment with pip, CMake
-and Ninja during image construction. Linux SDK jobs use that environment
-directly instead of `actions/setup-python` and runner-hosted toolcache binaries;
-the latter can have missing or incompatible shared libraries in a minimal
-Ubuntu container. No SDK job runs `apt-get`, and Linux SDK jobs do not
-reinstall CMake or Ninja on every run.
+Linux GCC, Clang 18, sanitizer and lint run in the pinned Ubuntu 24.04 image
+`ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f`, verified by CI run #255. The image is defined in
+`.github/docker/ubuntu-ci.Dockerfile` and includes the compiler toolchains,
+OpenMP, sanitizer libraries and a Python environment with CMake and Ninja.
+Linux SDK jobs neither install apt packages nor use runner-hosted Python.
 
-The `prepare_image` job derives a tag from the Dockerfile hash, authenticates
-with `GITHUB_TOKEN`, and reuses a matching image if it already exists.
-Otherwise a push to a trusted branch builds and publishes the image once.
-Pull requests only consume published images; a pull request that changes the
-Dockerfile requires that version to be published from a trusted branch first.
-The package is linked to this repository, so the build jobs can pull it with
-`packages: read` even if the GHCR package is private. To refresh dependencies
-or the Ubuntu base image, change the Dockerfile to produce a new tag.
-
-The image applies only to the Linux SDK builds. Python wheels retain their
-separate manylinux baseline container. Linux wheel creation and Python wheel
-installation checks both use `ubuntu-latest` hosts.
+To update the image, manually run `.github/workflows/image.yml` on the default
+branch with a new tag (such as `ubuntu24.04-v1`), then update both image references
+in `.github/workflows/ci.yml`. This separates image publishing from everyday CI
+and keeps the build environment reproducible. The private GHCR image is pulled
+with `packages: read` credentials. The Linux wheel still uses the official
+manylinux 2.28 container on an `ubuntu-latest` host.
 
 ## Python wheels
 
@@ -110,7 +99,7 @@ successes that never exercise the AMG solver.
 
 ## Formatting and lint
 
-The Linux GCC job runs clang-format in check mode for `src`, `include` and
+The independent lint job runs clang-format in check mode for `src`, `include` and
 `tests`, plus ruff lint and format checks for `python` and `.github/scripts`,
 using the pinned development tools from `pyproject.toml`. These checks run once
 per workflow and never rewrite sources or the Git index.
