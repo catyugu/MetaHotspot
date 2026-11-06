@@ -17,73 +17,79 @@ env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
 
 jobs:
-  build:
+  prepare_image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.image.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select versioned Ubuntu build image
+        id: image
+        shell: bash
+        run: |
+          hash="$(sha256sum .github/docker/ubuntu-ci.Dockerfile | cut -c1-16)"
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY,,}-ci:ubuntu24.04-${hash}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check image in GHCR
+        id: image_check
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@v3
+        if: steps.image_check.outputs.exists == 'false' && github.event_name != 'pull_request'
+      - name: Publish image once per Dockerfile version
+        if: steps.image_check.outputs.exists == 'false' && github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .github/docker/ubuntu-ci.Dockerfile
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+      - name: Require prebuilt image for pull requests
+        if: steps.image_check.outputs.exists == 'false' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          echo "::error::Ubuntu CI image is not published. Publish this Dockerfile version from a trusted branch first."
+          exit 1
+
+  build_linux:
+    needs: prepare_image
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare_image.outputs.ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {
-              os: ubuntu-latest,
-              cc: gcc,
-              cxx: g++,
-              config: Release,
-              generator: Ninja,
-              label: linux-gcc,
-            }
-          - {
-              os: ubuntu-latest,
-              cc: clang-18,
-              cxx: clang++-18,
-              config: Debug,
-              generator: Ninja,
-              label: linux-clang,
-            }
-          - {
-              os: ubuntu-latest,
-              cc: clang-18,
-              cxx: clang++-18,
-              config: Debug,
-              generator: Ninja,
-              label: linux-sanitize,
-              extra: "--cmake-arg=-DMHS_SANITIZE=ON",
-            }
-          - {
-              os: macos-latest,
-              cc: clang,
-              cxx: clang++,
-              config: Release,
-              generator: Ninja,
-              label: macos-clang,
-            }
-          - {
-              os: windows-latest,
-              cc: cl,
-              cxx: cl,
-              config: Release,
-              generator: Ninja,
-              label: windows-msvc,
-            }
-          - {
-              os: windows-latest,
-              cc: clang-cl,
-              cxx: clang-cl,
-              config: Release,
-              generator: Ninja,
-              label: windows-clang,
-            }
-          - {
-              os: windows-2022,
-              cc: cl,
-              cxx: cl,
-              config: Debug,
-              generator: "Visual Studio 17 2022",
-              label: windows-multiconfig,
-            }
-    runs-on: ${{ matrix.os }}
+          - {cc: gcc, cxx: g++, config: Release, generator: Ninja, label: linux-gcc}
+          - {cc: clang-18, cxx: clang++-18, config: Debug, generator: Ninja, label: linux-clang}
+          - {cc: clang-18, cxx: clang++-18, config: Debug, generator: Ninja, label: linux-sanitize, extra: "--cmake-arg=-DMHS_SANITIZE=ON"}
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
-    steps:
+    steps: &sdk_build_steps
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
@@ -93,14 +99,12 @@ jobs:
       - run: python -m pip install 'cmake>=3.30' ninja
       - if: runner.os == 'Windows' && matrix.config == 'Release'
         run: python -m pip install pefile
-      - if: matrix.cxx == 'clang++-18'
-        run: sudo apt-get update && sudo apt-get install -y clang-18 libomp-18-dev
       - if: runner.os == 'macOS'
         run: |
           brew install libomp
           echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
       # Configure fetches every dependency over the network, so a run that keeps
-      # no copy pays the whole clone cost in all seven jobs.
+      # no copy pays the whole clone cost in each SDK job.
       - uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
@@ -137,6 +141,21 @@ jobs:
             build/**/CMakeFiles/CMakeError.log
             build/**/Testing/Temporary/*
           if-no-files-found: ignore
+
+
+  build_native:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: macos-latest, cc: clang, cxx: clang++, config: Release, generator: Ninja, label: macos-clang}
+          - {os: windows-latest, cc: cl, cxx: cl, config: Release, generator: Ninja, label: windows-msvc}
+          - {os: windows-latest, cc: clang-cl, cxx: clang-cl, config: Release, generator: Ninja, label: windows-clang}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps: *sdk_build_steps
 
   # Build each py3-none wheel once. Linux uses a fixed glibc baseline;
   # Windows and macOS build natively. No release publishing is added here.
@@ -204,7 +223,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.10", "3.14"]
     runs-on: ${{ matrix.os }}
     env:

@@ -1,12 +1,32 @@
 # Build and distribution checks
 
-The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC, clang-cl and a
-multi-configuration MSVC generator. Only Release ZIPs are uploaded; Debug and
+The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC and clang-cl. Only Release ZIPs are uploaded; Debug and
 sanitizer jobs only configure, build and run CTest. Release jobs also install,
 package and check Windows SDK runtime dependencies. Windows clang-cl uses
 Release so its ZIP can be deployed with the
 Visual C++ Redistributable. SDK consumers still need the compiler toolchain and
 CMake dependencies exported by `MetaHotspotConfig.cmake`.
+
+## Ubuntu SDK build image
+
+The GCC, Clang 18 and sanitizer SDK jobs run on `ubuntu-latest` inside a
+prebuilt Ubuntu 24.04 image stored in GitHub Container Registry (GHCR). Its
+Dockerfile lives at `.github/docker/ubuntu-ci.Dockerfile` and includes the
+compilers, sanitizer runtime, OpenMP headers/runtime and build utilities.
+No SDK job runs `apt-get`.
+
+The `prepare_image` job derives a tag from the Dockerfile hash, authenticates
+with `GITHUB_TOKEN`, and reuses a matching image if it already exists.
+Otherwise a push to a trusted branch builds and publishes the image once.
+Pull requests only consume published images; a pull request that changes the
+Dockerfile requires that version to be published from a trusted branch first.
+The package is linked to this repository, so the build jobs can pull it with
+`packages: read` even if the GHCR package is private. To refresh dependencies
+or the Ubuntu base image, change the Dockerfile to produce a new tag.
+
+The image applies only to the Linux SDK builds. Python wheels retain their
+separate manylinux baseline container. Linux wheel creation and Python wheel
+installation checks both use `ubuntu-latest` hosts.
 
 ## Python wheels
 
