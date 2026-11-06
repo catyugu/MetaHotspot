@@ -12,9 +12,13 @@ CMake dependencies exported by `MetaHotspotConfig.cmake`.
 The GCC, Clang 18 and sanitizer SDK jobs run on `ubuntu-latest` inside a
 prebuilt Ubuntu 24.04 image stored in GitHub Container Registry (GHCR). Its
 Dockerfile lives at `.github/docker/ubuntu-ci.Dockerfile` and includes the
-compilers, sanitizer runtime, OpenMP headers/runtime, the OpenSSL and Python
-shared libraries required by `actions/setup-python`, and build utilities.
-No SDK job runs `apt-get`.
+compilers, sanitizer runtime, OpenMP headers/runtime and build utilities.
+It also creates an isolated Python 3.12 virtual environment with pip, CMake
+and Ninja during image construction. Linux SDK jobs use that environment
+directly instead of `actions/setup-python` and runner-hosted toolcache binaries;
+the latter can have missing or incompatible shared libraries in a minimal
+Ubuntu container. No SDK job runs `apt-get`, and Linux SDK jobs do not
+reinstall CMake or Ninja on every run.
 
 The `prepare_image` job derives a tag from the Dockerfile hash, authenticates
 with `GITHUB_TOKEN`, and reuses a matching image if it already exists.

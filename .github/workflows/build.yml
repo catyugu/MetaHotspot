@@ -92,11 +92,13 @@ jobs:
     steps: &sdk_build_steps
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
+        if: runner.os != 'Linux'
         with:
           python-version: "3.12"
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
       - run: python -m pip install 'cmake>=3.30' ninja
+        if: runner.os != 'Linux'
       - if: runner.os == 'Windows' && matrix.config == 'Release'
         run: python -m pip install pefile
       - if: runner.os == 'macOS'
