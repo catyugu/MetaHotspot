@@ -2,7 +2,7 @@ name: Build and package
 
 on:
   push:
-    branches: [main, dev, agent/dev]
+    branches: [main, dev]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -57,9 +57,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {cc: gcc, cxx: g++, config: Release, sanitize: "OFF", label: linux-gcc}
-          - {cc: clang-18, cxx: clang++-18, config: Debug, sanitize: "OFF", label: linux-clang}
-          - {cc: clang-18, cxx: clang++-18, config: Debug, sanitize: "ON", label: linux-sanitize}
+          - {
+              cc: gcc,
+              cxx: g++,
+              config: Release,
+              sanitize: "OFF",
+              label: linux-gcc,
+            }
+          - {
+              cc: clang-18,
+              cxx: clang++-18,
+              config: Debug,
+              sanitize: "OFF",
+              label: linux-clang,
+            }
+          - {
+              cc: clang-18,
+              cxx: clang++-18,
+              config: Debug,
+              sanitize: "ON",
+              label: linux-sanitize,
+            }
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -92,8 +110,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {compiler: cl, label: windows-msvc}
-          - {compiler: clang-cl, label: windows-clang}
+          - { compiler: cl, label: windows-msvc }
+          - { compiler: clang-cl, label: windows-clang }
     env:
       CC: ${{ matrix.compiler }}
       CXX: ${{ matrix.compiler }}
@@ -171,9 +189,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-latest, container: quay.io/pypa/manylinux_2_28_x86_64, repair: "auditwheel patchelf"}
-          - {os: windows-latest, repair: "delvewheel pefile"}
-          - {os: macos-latest, repair: "delocate"}
+          - {
+              os: ubuntu-latest,
+              container: quay.io/pypa/manylinux_2_28_x86_64,
+              repair: "auditwheel patchelf",
+            }
+          - { os: windows-latest, repair: "delvewheel pefile" }
+          - { os: macos-latest, repair: "delocate" }
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       CMAKE_BUILD_PARALLEL_LEVEL: "4"
