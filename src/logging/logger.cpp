@@ -5,7 +5,6 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <memory>
@@ -22,13 +21,18 @@ namespace mhs::logger {
                 std::shared_ptr<const LogCallback> next;
                 if (callback)
                     next = std::make_shared<const LogCallback>(std::move(callback));
-                callback_.store(std::move(next));
+                std::lock_guard lock(callback_mutex_);
+                callback_ = std::move(next);
             }
 
         protected:
             void sink_it_(const spdlog::details::log_msg& msg) override
             {
-                auto callback = callback_.load();
+                std::shared_ptr<const LogCallback> callback;
+                {
+                    std::lock_guard lock(callback_mutex_);
+                    callback = callback_;
+                }
                 if (callback) {
                     const std::string message(msg.payload.data(), msg.payload.size());
                     try {
@@ -42,7 +46,8 @@ namespace mhs::logger {
             void flush_() override { }
 
         private:
-            std::atomic<std::shared_ptr<const LogCallback>> callback_;
+            std::mutex callback_mutex_;
+            std::shared_ptr<const LogCallback> callback_;
         };
 
         std::once_flag config_once;
