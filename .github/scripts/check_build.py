@@ -85,6 +85,7 @@ def main():
         if sys.platform == "win32":
             executable = executable.with_suffix(".exe")
         os.environ["MHS_EXECUTABLE"] = str(executable)
+        os.environ["PYTHONIOENCODING"] = "utf-8"
         run(sys.executable, root / "run_cases.py")
         run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
         check_sdk(prefix, build, args.config, args.generator)

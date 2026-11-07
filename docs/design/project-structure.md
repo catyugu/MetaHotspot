@@ -34,3 +34,5 @@
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、物理场重建、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 
 `linear/solver.hpp` 只公开 Solver、配置、结果与工厂。`compute(CSRMatrixView)` 后允许调用方释放输入；`solve(b, x)` 以 x 为初始猜测并原地写回，直接后端忽略初值。b 和 x 不得重叠。AMGCL 直接读取 CSR；Eigen 只用于内部 QR 和可选 PARDISO，不属于 SDK 公开头或查找依赖。
+
+PTA 兼容、XML/VTU 输出、节点采样及真实 XML 流体案例测试位于 `apps/metahotspot/tests`，使用私有 `mhs_app_tests`。`tests` 下的 `mhs_tests` 直接构造 SI 通用模型，仅链接内核库；两者共用 `MHS_BUILD_TESTS` 和 CTest。

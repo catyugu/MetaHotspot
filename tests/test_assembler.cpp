@@ -2,42 +2,25 @@
 #include "core/vector.hpp"
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
-#include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::solver;
 using namespace mhs::compiler;
 
-// Helper: build a minimal mhs::app::pta::Definition for a simple uniform cube
-static mhs::app::pta::Definition make_simple_cube_io()
+// Helper: build a minimal SI ModelDefinition for a simple uniform cube
+static mhs::model::ModelDefinition make_simple_cube_io()
 {
-    mhs::app::pta::Definition io;
+    mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    mhs::app::pta::LayerSpec layer;
-    layer.thickness = "10";
-
-    mhs::app::pta::BlockSpec block;
-    block.material = "copper";
-    block.volumetric_heat_source = "0";
-
-    mhs::app::pta::RectOperation rect;
-    rect.operation = mhs::model::GeometryOperation::Add;
-    rect.rect.x = "0";
-    rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
-    block.geometry.push_back(rect);
-
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
+    io.sources = {"0"};
+    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -53,7 +36,7 @@ static mhs::app::pta::Definition make_simple_cube_io()
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    auto model = test_pta::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
@@ -75,30 +58,16 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
-    mhs::app::pta::Definition io;
+    mhs::model::ModelDefinition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    mhs::app::pta::LayerSpec layer;
-    layer.thickness = "10";
-    mhs::app::pta::BlockSpec block;
-    block.material = "mat";
-    block.volumetric_heat_source = "0";
-
-    mhs::app::pta::RectOperation rect;
-    rect.operation = mhs::model::GeometryOperation::Add;
-    rect.rect.x = "0";
-    rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
-    block.geometry.push_back(rect);
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
+    io.sources = {"0"};
+    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
@@ -106,7 +75,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
 
@@ -123,7 +92,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
     auto io = make_simple_cube_io();
-    auto model = test_pta::build_model(io);
+    auto model = mhs::compiler::build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);

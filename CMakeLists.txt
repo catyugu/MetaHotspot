@@ -61,14 +61,15 @@ add_library(mhs::metahotspot ALIAS mhs_metahotspot)
 set_target_properties(mhs_metahotspot PROPERTIES EXPORT_NAME metahotspot)
 target_link_libraries(mhs_metahotspot INTERFACE mhs_compiler mhs_solver mhs_logging)
 
+if(MHS_BUILD_TESTS AND PROJECT_IS_TOP_LEVEL)
+    enable_testing()
+endif()
+
 if(MHS_BUILD_APPS OR MHS_BUILD_TESTS)
     add_subdirectory(apps/metahotspot)
 endif()
 
 if(MHS_BUILD_TESTS)
-    if(PROJECT_IS_TOP_LEVEL)
-        enable_testing()
-    endif()
     add_subdirectory(tests)
 endif()
 if(MHS_INSTALL)

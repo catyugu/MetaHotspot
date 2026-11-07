@@ -13,3 +13,7 @@ elseif(UNIX)
     set_property(TARGET metahotspot PROPERTY INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
 endif()
+
+if(MHS_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
