@@ -61,6 +61,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 ## C API 契约
 
 - 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
+- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
 - `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
 - 流体边界与热边界使用相同的区域数组；入口温度用可空指针表示，NULL 取初始温度。Python 保留原有单区域调用和 `None`。删除无操作的流体边界类型；空区域条件报错。
