@@ -209,22 +209,22 @@ def _assembled_operators(dll, handle, state: np.ndarray, time: float):
         n = int(info.state_count)
 
         def copy_matrix(function, nnz: int):
-            outer = np.empty(n + 1, dtype=np.int32)
-            inner = np.empty(nnz, dtype=np.int32)
+            row_ptr = np.empty(n + 1, dtype=np.int32)
+            col_idx = np.empty(nnz, dtype=np.int32)
             values = np.empty(nnz, dtype=np.float64)
             check(
                 function(
                     out,
-                    _int32_ptr(outer),
-                    outer.size,
-                    _int32_ptr(inner),
-                    inner.size,
+                    _int32_ptr(row_ptr),
+                    row_ptr.size,
+                    _int32_ptr(col_idx),
+                    col_idx.size,
                     _double_ptr(values),
                     values.size,
                 ),
                 "operators_copy",
             )
-            return scipy.sparse.csc_matrix((values, inner, outer), shape=(n, n))
+            return scipy.sparse.csr_matrix((values, col_idx, row_ptr), shape=(n, n))
 
         rhs = np.empty(n, dtype=np.float64)
         check(

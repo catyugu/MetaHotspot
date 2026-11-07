@@ -24,12 +24,10 @@ static mhs::model::ModelDefinition cube_definition()
     return d;
 }
 
-TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
+TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
 {
     auto definition = cube_definition();
-    auto supplied = mhs::compiler::build_model(definition).discrete;
-    definition.mesh = {};
-    const auto model = mhs::compiler::build_model(definition, supplied);
+    const auto model = mhs::compiler::build_model(definition);
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.faces.size(), 36u);

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 import metahotspot
+from metahotspot._error import MetaHotspotError
 from metahotspot.enums import Axis, Study
 
 
@@ -41,6 +42,7 @@ def test_model_native_calls_compile_and_assemble():
 
     assert compiled.cell_count == 1
     assert compiled.info.face_count == 6
+    assert operators.K.format == operators.C.format == "csr"
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)
@@ -67,7 +69,8 @@ def test_model_native_boundary_and_function_calls():
         "periodic", np.array([0.0, 0.001]), 1.0
     )
     model.add_probe("center", 0.0005, 0.0005, 0.0005)
-    model.add_fluid_boundary(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0, 0, 0.0)
+    with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
+        model.add_fluid_boundary(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0, 0, 0.0)
 
     compiled = model.compile()
     assert compiled.cell_count == 1
@@ -80,6 +83,7 @@ def test_solution_views_derive_from_one_native_snapshot():
 
     solution = model.compile().solve(state=np.array([300, -1], dtype=np.float32)[::2])
 
+    assert solution.converged
     assert solution.state.size == 1
     assert solution.state_history.shape == (solution.history_times.size, 1)
     assert solution.state_history[0][0] == pytest.approx(300.0)

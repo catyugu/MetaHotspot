@@ -36,7 +36,6 @@ class SolverType(enum.IntEnum):
 
 
 class FluidBC(enum.IntEnum):
-    NONE = 0
     PRESSURE_INLET = 1
     MASS_FLOW_INLET = 2
     OUTLET = 3

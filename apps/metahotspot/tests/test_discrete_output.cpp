@@ -1,3 +1,4 @@
+#include "compiler/geometry_compiler.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -35,7 +36,17 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         if (face.plus != invalid_id)
             face.plus = inverse[face.plus];
     }
-    auto imported = test_pta::build_model(definition, mesh);
+    auto imported = test_pta::build_model(definition);
+    imported.discrete = std::move(mesh);
+    mhs::compiler::build_cell_face_incidence(imported.discrete);
+    for (size_t c = 0; c < order.size(); ++c)
+        imported.cell_material[c] = model.cell_material[order[c]];
+    for (auto& term : imported.source_terms)
+        term.cell = inverse[term.cell];
+    for (auto& face : imported.boundary_faces)
+        face.cell = inverse[face.cell];
+    std::stable_sort(imported.boundary_faces.begin(), imported.boundary_faces.end(),
+        [](const auto& a, const auto& b) { return a.cell < b.cell; });
     for (auto* m : {&model, &imported}) {
         m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});

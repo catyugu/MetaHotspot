@@ -4,14 +4,21 @@
 /*
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
- * Three opaque handles, three life-cycle phases:
+ * Four independently owned opaque handles:
  *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
+ *   mhs_operators_t — owned K/C/f snapshot
  *
  * All functions that can fail return mhs_status_t; detailed error messages
  * are available via mhs_last_error(), which is thread-local and reset on
- * every API call.  Destroy functions are void and NULL-safe.
+ * each successful status-returning call. Other calls preserve the error.
+ * Destroy functions are void and NULL-safe. Create/compile/assemble/solve
+ * initialize a non-NULL output handle address to NULL before validation.
+ * Input arrays/strings are copied; outputs use caller-owned exact-size buffers.
+ * Zero-size output arrays may be NULL. Handles are independent; destroying a
+ * model or compiled handle does not invalidate its existing snapshots.
+ * Concurrent use of a mutable handle requires caller synchronization.
  */
 
 #include <stddef.h>
@@ -53,7 +60,7 @@ extern "C" {
 /* ------------------------------------------------------------------ */
 /*  Opaque handle forward declarations                                 */
 /* ------------------------------------------------------------------ */
-/** Fixed-width entity references and signed CSR/CSC storage indices. */
+/** Fixed-width entity references and signed CSR storage indices. */
 typedef uint32_t mhs_index_t;
 typedef int32_t mhs_sparse_index_t;
 #define MHS_INVALID_INDEX UINT32_MAX
@@ -79,7 +86,7 @@ typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
-enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
+enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
 
 typedef int32_t mhs_status_t;
 enum {
@@ -162,19 +169,6 @@ typedef struct {
 MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
     double time, double* powers, size_t projection_count);
 
-/** Caller-owned external mesh, all coordinates in SI metres. No connectivity
- * discovery is performed. Cell references and face axes are checked. The caller
- * guarantees positive cells, complete nonoverlapping faces, valid indices, domain/material alignment
- * and orthogonal TPFA geometry. Exterior patches have one missing cell, MHS_INVALID_INDEX.
- * Face topology and tangential bounds use the layout of mhs_cell_fields_t. */
-typedef struct {
-    size_t cell_count, face_count;
-    const double *cell_min, *cell_max;
-    const mhs_index_t *face_minus, *face_plus;
-    const mhs_axis_t* face_axis;
-    const double* face_bounds;
-} mhs_mesh_t;
-
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */
 typedef struct {
     double* conductivity_x;
@@ -198,6 +192,7 @@ typedef struct {
     size_t record_count;
     size_t probe_count;
     double time;
+    int32_t converged; /**< 1 on convergence, 0 otherwise. */
 } mhs_solution_info_t;
 
 /* ------------------------------------------------------------------ */
@@ -213,7 +208,7 @@ MHS_API mhs_log_level_t mhs_log_get_level(void);
 /** Library version, e.g. "1.0.0". */
 MHS_API const char* mhs_version_string(void);
 
-/** Thread-local last error message. Reset on every API call. */
+/** Thread-local error; valid until the next status-returning call on this thread. */
 MHS_API const char* mhs_last_error(void);
 
 /* ------------------------------------------------------------------ */
@@ -230,10 +225,10 @@ MHS_API void mhs_model_destroy(mhs_model_t* m);
 MHS_API mhs_status_t mhs_model_set_settings(
     mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
 
+/** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
+ * increasing and contain at least two entries. All axes are replaced atomically. */
 MHS_API mhs_status_t mhs_model_set_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
-
-MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_t* mesh);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
@@ -291,9 +286,10 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
-/* inlet_temperature applies only to inlets and is ignored for MHS_FLUID_OUTLET. */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
-    mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature);
+/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
+ * initial temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
@@ -315,30 +311,29 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Evaluate K, C, f at *temperature* and return a new owned operator handle. */
+/** Evaluate K, C, f at *temperature* (cell_count values) and return an owned snapshot. */
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
 
 MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
 MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
-    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
-    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
+/** Export native CSR: row_ptr[state_count+1], col_idx[nnz], values[nnz]. */
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* row_ptr,
+    size_t row_ptr_count, mhs_sparse_index_t* col_idx, size_t col_idx_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* row_ptr,
+    size_t row_ptr_count, mhs_sparse_index_t* col_idx, size_t col_idx_count, double* values, size_t value_count);
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
+/** state is NULL/0 for model defaults, otherwise exactly cell_count entries.
+ * opts may be NULL to select defaults. Check solution.converged separately. */
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
     const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 MHS_API void mhs_solution_destroy(mhs_solution_t* s);
-
-/* ------------------------------------------------------------------ */
-/*  VTU export                                                         */
-/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /*  Solution copy-out accessors                                        */

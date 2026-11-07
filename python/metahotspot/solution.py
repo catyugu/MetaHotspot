@@ -24,6 +24,7 @@ class ProbeSnapshot:
 @dataclass(frozen=True)
 class SolutionSnapshot:
     time: float
+    converged: bool
     state: np.ndarray
     history_times: np.ndarray
     state_history: np.ndarray
@@ -31,10 +32,6 @@ class SolutionSnapshot:
 
 
 # ---- low-level ctypes marshalling helpers --------------------------------
-
-
-def _text(value: str | None) -> bytes | None:
-    return None if value is None else value.encode("utf-8")
 
 
 def _double_ptr(array: np.ndarray):
@@ -128,6 +125,7 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
 
     return SolutionSnapshot(
         time=float(info.time),
+        converged=bool(info.converged),
         state=state,
         history_times=history_times,
         state_history=history_states.reshape(
@@ -166,6 +164,11 @@ class Solution(OwnedHandle):
     def data(self) -> SolutionSnapshot:
         """Snapshot native results into independent Python-owned arrays."""
         return _solution_snapshot(self._dll, self._handle)
+
+    @property
+    def converged(self) -> bool:
+        """Whether the native solve converged."""
+        return self.data.converged
 
     @property
     def time(self) -> float:
