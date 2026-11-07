@@ -1,0 +1,237 @@
+name: Build and package
+
+on:
+  push:
+    branches: [main, dev, agent/dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: python -m pip install --group dev
+      - name: Check formatting and lint
+        run: |
+          find src include tests -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format --dry-run --Werror
+          ruff check python .github/scripts
+          ruff format --check python .github/scripts
+
+  linux:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {cc: gcc, cxx: g++, config: Release, sanitize: "OFF", label: linux-gcc}
+          - {cc: clang-18, cxx: clang++-18, config: Debug, sanitize: "OFF", label: linux-clang}
+          - {cc: clang-18, cxx: clang++-18, config: Debug, sanitize: "ON", label: linux-sanitize}
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+      - run: python .github/scripts/check_build.py --config ${{ matrix.config }} --cmake-arg=-DMHS_SANITIZE=${{ matrix.sanitize }}
+      - uses: actions/upload-artifact@v7
+        if: matrix.config == 'Release'
+        with:
+          name: MetaHotspot-${{ matrix.label }}-${{ matrix.config }}
+          path: build/package/
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: logs-${{ matrix.label }}-${{ matrix.config }}
+          path: |
+            build/**/CMakeFiles/CMakeConfigureLog.yaml
+            build/**/CMakeFiles/CMakeError.log
+            build/**/Testing/Temporary/*
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {compiler: cl, label: windows-msvc}
+          - {compiler: clang-cl, label: windows-clang}
+    env:
+      CC: ${{ matrix.compiler }}
+      CXX: ${{ matrix.compiler }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+      - run: python -m pip install 'cmake>=3.30' ninja pefile
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+      - run: python .github/scripts/check_build.py --config Release
+      - name: Check SDK dependencies
+        shell: pwsh
+        run: |
+          $archive = (Get-ChildItem build/MetaHotspot-*.zip).FullName
+          python .github/scripts/check_wheel.py --sdk $archive
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MetaHotspot-${{ matrix.label }}-Release
+          path: build/package/
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: logs-${{ matrix.label }}-Release
+          path: |
+            build/**/CMakeFiles/CMakeConfigureLog.yaml
+            build/**/CMakeFiles/CMakeError.log
+            build/**/Testing/Temporary/*
+          if-no-files-found: ignore
+
+  macos:
+    runs-on: macos-latest
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install 'cmake>=3.30' ninja
+      - run: |
+          brew install libomp
+          echo "OpenMP_ROOT=$(brew --prefix libomp)" >> "$GITHUB_ENV"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+      - run: python .github/scripts/check_build.py --config Release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MetaHotspot-macos-clang-Release
+          path: build/package/
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: logs-macos-clang-Release
+          path: |
+            build/**/CMakeFiles/CMakeConfigureLog.yaml
+            build/**/CMakeFiles/CMakeError.log
+            build/**/Testing/Temporary/*
+          if-no-files-found: ignore
+
+  # One repaired wheel per platform, retaining the manylinux 2.28 baseline.
+  wheel:
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, container: quay.io/pypa/manylinux_2_28_x86_64, repair: "auditwheel patchelf"}
+          - {os: windows-latest, repair: "delvewheel pefile"}
+          - {os: macos-latest, repair: "delocate"}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CMAKE_BUILD_PARALLEL_LEVEL: "4"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        if: runner.os != 'Linux'
+        with:
+          python-version: "3.12"
+      - if: runner.os == 'Linux'
+        run: echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - run: python -m pip install build 'cmake>=3.30' ninja ${{ matrix.repair }}
+      - uses: ./.github/actions/setup-macos-openmp
+        if: runner.os == 'macOS'
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+      - run: python .github/scripts/check_python.py --build-only
+      - if: runner.os == 'macOS'
+        run: mv "$OpenMP_ROOT" "$OpenMP_ROOT.hidden"
+      - name: Exercise wheel with bundled runtime
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          OMP_NUM_THREADS: "2"
+        run: |
+          python -m pip install wheelhouse/*.whl
+          python .github/scripts/wheel_smoke.py native-first
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MetaHotspot-wheel-${{ runner.os }}
+          path: |
+            wheelhouse/*.whl
+            dist/*.tar.gz
+
+  # Test the same wheel on Python 3.10 and 3.14 without a compiler environment.
+  python:
+    needs: wheel
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.14"]
+    env:
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: MetaHotspot-wheel-${{ runner.os }}
+      - run: python -m pip install pytest
+      - shell: bash
+        run: python .github/scripts/check_python.py --wheel wheelhouse/*.whl

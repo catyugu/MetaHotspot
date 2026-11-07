@@ -1,12 +1,26 @@
 # Build and distribution checks
 
-The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC, clang-cl and a
-multi-configuration MSVC generator. Only Release ZIPs are uploaded; Debug and
+The workflow builds C++ SDK ZIPs with GCC, Clang, MSVC and clang-cl. Only Release ZIPs are uploaded; Debug and
 sanitizer jobs only configure, build and run CTest. Release jobs also install,
 package and check Windows SDK runtime dependencies. Windows clang-cl uses
 Release so its ZIP can be deployed with the
 Visual C++ Redistributable. SDK consumers still need the compiler toolchain and
 CMake dependencies exported by `MetaHotspotConfig.cmake`.
+
+## Ubuntu SDK build image
+
+Linux GCC, Clang 18, sanitizer and lint run in the pinned Ubuntu 24.04 image
+`ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f`, verified by CI run #255. The image is defined in
+`.github/docker/ubuntu-ci.Dockerfile` and includes the compiler toolchains,
+OpenMP, sanitizer libraries and a Python environment with CMake and Ninja.
+Linux SDK jobs neither install apt packages nor use runner-hosted Python.
+
+To update the image, manually run `.github/workflows/image.yml` on the default
+branch with a new tag (such as `ubuntu24.04-v1`), then update both image references
+in `.github/workflows/ci.yml`. This separates image publishing from everyday CI
+and keeps the build environment reproducible. The private GHCR image is pulled
+with `packages: read` credentials. The Linux wheel still uses the official
+manylinux 2.28 container on an `ubuntu-latest` host.
 
 ## Python wheels
 
@@ -85,7 +99,7 @@ successes that never exercise the AMG solver.
 
 ## Formatting and lint
 
-The Linux GCC job runs clang-format in check mode for `src`, `include` and
+The independent lint job runs clang-format in check mode for `src`, `include` and
 `tests`, plus ruff lint and format checks for `python` and `.github/scripts`,
 using the pinned development tools from `pyproject.toml`. These checks run once
 per workflow and never rewrite sources or the Git index.
