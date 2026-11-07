@@ -21,7 +21,7 @@ namespace mhs::model {
     using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
 
     struct FluidBoundaryTerm {
-        FaceId face = mhs::core::invalid_id;
+        CellId cell = mhs::core::invalid_id;
         FluidTransportCondition condition;
     };
 
@@ -31,7 +31,7 @@ namespace mhs::model {
         mhs::core::Vector<CellId> fluid_to_global;
         mhs::core::Vector<FluidCellId> global_to_fluid;
 
-        // Frozen hydraulic volume flux by FaceId, positive out of the face owner.
+        // Frozen hydraulic volume flux by FaceId, positive from minus to plus along the face axis.
         // Non-fluid and exterior faces carry zero.
         mhs::core::Vector<double> face_volume_flux;
 

@@ -13,7 +13,6 @@ namespace mhs::model {
 
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
-    enum class Axis : uint8_t { X, Y, Z };
 
     struct ModelSettings {
         StudyType study_type = StudyType::Steady;

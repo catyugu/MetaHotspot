@@ -16,42 +16,21 @@ namespace mhs::model {
             auto d = size();
             return d[0] * d[1] * d[2];
         }
-        bool contains(const Vec3& p, double eps = 0) const
-        {
-            for (int a = 0; a < 3; ++a)
-                if (p[a] < min[a] - eps || p[a] > max[a] + eps)
-                    return false;
-            return true;
-        }
     };
-    // Rectangular axis-aligned patches. The sign is the outward owner normal.
-    // Geometry only: coefficients and boundary assignments live in Model.
+
+    // One rectangular flux integration patch; positive flux runs minus -> plus.
+    // An exterior patch has exactly one invalid cell; its outward sign follows from that side.
+    // Bounds follow ascending tangential axes: YZ for X, XZ for Y, XY for Z.
     struct FacePatch {
-        CellId owner = core::invalid_id, neighbor = core::invalid_id;
-        int axis = 0, sign = 1;
-        Vec3 min {}, max {};
-        double area = 0, owner_distance = 0, neighbor_distance = 0;
-        Vec3 center() const { return {(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2}; }
-        FacePatch project(const std::array<double, 4>& bounds) const
-        {
-            auto patch = *this;
-            const int a = axis == 0 ? 1 : 0, b = axis == 2 ? 1 : 2;
-            patch.min[a] = bounds[0];
-            patch.max[a] = bounds[1];
-            patch.min[b] = bounds[2];
-            patch.max[b] = bounds[3];
-            patch.area = (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]);
-            return patch;
-        }
-        CellId other(CellId c) const { return c == owner ? neighbor : owner; }
-        bool contains(const Vec3& p, double eps = 1e-12) const
-        {
-            for (int a = 0; a < 3; ++a)
-                if (p[a] < min[a] - eps || p[a] > max[a] + eps)
-                    return false;
-            return true;
-        }
+        CellId minus = core::invalid_id, plus = core::invalid_id;
+        Axis axis = Axis::X;
+        std::array<double, 4> bounds {};
+
+        bool exterior() const { return minus == core::invalid_id || plus == core::invalid_id; }
+        double area() const { return (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]); }
     };
+
+    // Compiled geometry and connectivity; compilers build the incidence index.
     // Geometry, connectivity and TPFA orthogonality are caller preconditions.
     struct DiscreteMesh {
         mhs::core::Vector<CellGeometry> cells;
@@ -63,7 +42,5 @@ namespace mhs::model {
             return std::span(cell_face_ids)
                 .subspan(cell_face_offsets[c], cell_face_offsets[c + 1] - cell_face_offsets[c]);
         }
-        void build_incidence();
-        CellId locate(const Vec3& p) const;
     };
 } // namespace mhs::model

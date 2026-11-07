@@ -57,19 +57,22 @@ def test_production_external_mesh_decouples_cell_and_state_order(case):
     order = np.random.default_rng(44).permutation(original.cell_count)
     inverse = np.empty_like(order)
     inverse[order] = np.arange(order.size)
-    neighbors = fields.face_neighbor.copy()
-    internal = neighbors != np.iinfo(neighbors.dtype).max
-    neighbors[internal] = inverse[neighbors[internal]]
+
+    def reorder(ids):
+        result = ids.copy()
+        valid = result != np.iinfo(result.dtype).max
+        result[valid] = inverse[result[valid]]
+        return result
+
     model = metahotspot.Model()
     model.read_xml(str(path))
     model.set_discrete_mesh(
         cell_min=fields.cell_min[order],
         cell_max=fields.cell_max[order],
-        face_owner=inverse[fields.face_owner],
-        face_neighbor=neighbors,
+        face_minus=reorder(fields.face_minus),
+        face_plus=reorder(fields.face_plus),
         face_axis=fields.face_axis,
-        face_min=fields.face_min,
-        face_max=fields.face_max,
+        face_bounds=fields.face_bounds,
     )
     imported = model.compile()
     result = imported.assemble()
@@ -126,7 +129,8 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
             return (boundary,)
 
     fields = compiled.fields
-    half = fields.owner_distance[boundary.face_ids]
+    axes = fields.face_axis[boundary.face_ids]
+    half = CellGeometry(fields).half_sizes[boundary.cells, axes]
     expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
@@ -138,14 +142,13 @@ def test_native_mesh_input_rejects_invalid_indices():
         for name in (
             "cell_min",
             "cell_max",
-            "face_owner",
-            "face_neighbor",
+            "face_minus",
+            "face_plus",
             "face_axis",
-            "face_min",
-            "face_max",
+            "face_bounds",
         )
     }
-    for name in ("face_owner", "face_neighbor", "face_axis"):
+    for name in ("face_minus", "face_plus", "face_axis"):
         invalid = inputs[name].astype(float)
         invalid[0] = 0.5
         with pytest.raises(ValueError):
@@ -155,9 +158,8 @@ def test_native_mesh_input_rejects_invalid_indices():
 @pytest.mark.parametrize(
     ("name", "value", "error"),
     [
-        ("face_owner", 1, "face cell index outside mesh"),
-        ("face_owner", 2**32 - 1, "face cell index outside mesh"),
-        ("face_neighbor", 1, "face cell index outside mesh"),
+        ("face_minus", 1, "face cell index outside mesh"),
+        ("face_plus", 1, "face cell index outside mesh"),
         ("face_axis", -1, "face axis must be"),
         ("face_axis", 3, "face axis must be"),
     ],
@@ -171,11 +173,10 @@ def test_native_mesh_rejects_representable_invalid_references(name, value, error
         for key in (
             "cell_min",
             "cell_max",
-            "face_owner",
-            "face_neighbor",
+            "face_minus",
+            "face_plus",
             "face_axis",
-            "face_min",
-            "face_max",
+            "face_bounds",
         )
     }
     inputs[name][0] = value

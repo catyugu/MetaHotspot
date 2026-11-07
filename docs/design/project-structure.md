@@ -1,6 +1,6 @@
 # 项目结构
 
-公开头位于 `include/metahotspot/<模块>/`，整棵树随 SDK 安装；实现及内部头位于 `src/<模块>/`，不安装。两者的包含路径一致。C++20 组件使用静态库，C API 使用共享库；统一入口为 `mhs::metahotspot`。
+公开头位于 `include/metahotspot/<模块>/`，整棵树随 SDK 安装；实现及内部头位于 `src/<模块>/`，不安装。两者的包含路径一致。`model` 是仅含头文件的 INTERFACE 目标，其余 C++20 组件使用静态库，C API 使用共享库；统一入口为 `mhs::metahotspot`。
 
 ## 模块与依赖
 
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | `core` / `mhs_core` | `mhs::core`：容器、内存池、CSR/vector kernels | 无 | TBB、项目编译选项 |
 | `expression` / `mhs_expression` | `mhs::expression`：表达式编译与求值 | 无 | core、muparser、TBB |
-| `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression | 项目编译选项 |
+| `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression（INTERFACE） | 无 |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
 | `compiler` / `mhs_compiler` | `mhs::compiler`：几何投影、表达式编译、冻结流场 | model | linear |
 | `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与后处理 | model | expression、linear、logging、Eigen、TBB、AdaptiveTimeStepper |

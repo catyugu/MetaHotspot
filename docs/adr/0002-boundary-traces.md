@@ -10,7 +10,7 @@ Boundary laws act at the physical surface. Using the adjacent cell-center temper
 
 ## Decision
 
-Each compiled external `BoundaryFace` stored in `Model::boundary_faces` has an algebraically independent temperature trace. `BoundaryFace` is a projection record: it references a parent topological `FaceId`, a shared `BoundaryCondition`, and tangential bounds; subdividing a boundary does not modify `DiscreteMesh`.
+Each compiled external `BoundaryFace` stored in `Model::boundary_faces` has an algebraically independent temperature trace. `BoundaryFace` is a projection record: it stores the adjacent `CellId`, normal axis and outward sign, a shared `BoundaryCondition` index, and tangential bounds. Records are sorted by cell and do not reference mesh faces; subdividing a boundary does not modify `DiscreteMesh`.
 
 For cell temperature `T`, trace `lambda`, normal conductivity `k`, owner distance `d`, and area `A`, the conductive flux is
 

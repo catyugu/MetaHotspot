@@ -299,7 +299,7 @@ class AffineParametricModel:
         cells = np.asarray(group.cells, dtype=np.intp)
         axes = fields.face_axis[faces]
         k = self.cell_layout.conductivity[cells, axes]
-        half = fields.owner_distance[faces]
+        half = self.geometry.half_sizes[cells, axes]
         h = float(h_phys)
         return k * h / (k + h * half)
 

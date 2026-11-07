@@ -16,6 +16,7 @@ from metahotspot._compiled_data import Operators
 from metahotspot._error import MetaHotspotError
 from metahotspot._lib import library_version
 from metahotspot.compiled import Compiled, SolveOptions
+from metahotspot.logging import get_log_level, set_log_level
 from metahotspot.model import Model
 from metahotspot.solution import Solution
 
@@ -30,4 +31,6 @@ __all__ = [
     "Solution",
     "SolveOptions",
     "enums",
+    "get_log_level",
+    "set_log_level",
 ]
