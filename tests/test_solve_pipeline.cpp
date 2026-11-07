@@ -1,5 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "model_test_utils.hpp"
+#include "pta_test_utils.hpp"
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -8,23 +9,23 @@
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
-    mhs::model::ModelDefinition io;
+    mhs::app::pta::Definition io;
     io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.mesh.y_vertices = {0.0, 5.0, 10.0};
     io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
 
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "1e6"; // heat source
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -47,7 +48,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::build_model(io);
+    auto model = test_pta::build_model(io);
 
     auto result = mhs::solver::solve(model);
 
@@ -64,22 +65,22 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
-    mhs::model::ModelDefinition io;
+    mhs::app::pta::Definition io;
     io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.mesh.y_vertices = {0.0, 5.0, 10.0};
     io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "1e8";
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -100,13 +101,13 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::model::ObservationPointSpec op1;
+    mhs::app::pta::ObservationPointSpec op1;
     op1.name = "center";
     op1.x = "5";
     op1.y = "5";
     op1.z = "5";
     io.observation_points.push_back(op1);
-    mhs::model::ObservationPointSpec op2;
+    mhs::app::pta::ObservationPointSpec op2;
     op2.name = "z0";
     op2.x = "5";
     op2.y = "5";
@@ -118,7 +119,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::build_model(io);
+    auto model = test_pta::build_model(io);
 
     auto result = mhs::solver::solve(model);
 
@@ -149,22 +150,22 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
-    mhs::model::ModelDefinition io;
+    mhs::app::pta::Definition io;
     io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
+    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
     io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.mesh.y_vertices = {0.0, 5.0, 10.0};
     io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "0";
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -183,7 +184,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::model::ObservationPointSpec op;
+    mhs::app::pta::ObservationPointSpec op;
     op.name = "z0_dirichlet";
     op.x = "5";
     op.y = "5";
@@ -195,7 +196,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::build_model(io);
+    auto model = test_pta::build_model(io);
 
     auto result = mhs::solver::solve(model);
 

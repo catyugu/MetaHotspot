@@ -10,7 +10,7 @@ target_compile_definitions(mhs_tests PRIVATE MHS_SOURCE_DIR="${PROJECT_SOURCE_DI
 target_include_directories(mhs_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(mhs_tests PRIVATE
-    mhs_metahotspot
+    mhs_app_support
     GTest::gtest_main
 )
 

@@ -2,8 +2,9 @@
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "model/discrete_mesh.hpp"
+#include "postprocessor.hpp"
+#include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
-#include "solver/postprocessor.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -15,30 +16,22 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
-    d.settings.length_unit = mhs::model::LengthUnit::Meter;
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    mhs::model::LayerSpec layer;
-    layer.thickness = "1";
-    mhs::model::BlockSpec block;
-    block.material = "solid";
-    block.volumetric_heat_source = "0";
-    block.geometry.push_back({mhs::model::GeometryOperation::Add, {"0", "0", "1", "1"}});
-    layer.blocks.push_back(block);
-    d.layers.push_back(layer);
-    d.default_boundary = mhs::model::NeumannBoundary {};
+    d.sources = {"0"};
+    d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
 
 TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
 {
     auto definition = cube_definition();
-    auto supplied = mhs::compiler::build_model(definition).discrete;
+    auto supplied = test_pta::build_model(definition).discrete;
     definition.mesh = {};
-    const auto model = mhs::compiler::build_model(definition, supplied);
+    const auto model = test_pta::build_model(definition, supplied);
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.faces.size(), 36u);
@@ -69,7 +62,7 @@ TEST(DiscreteMesh, ImportedTopologyHasUniqueFacesAndClosedCellIncidence)
 TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
-    auto model = mhs::compiler::build_model(definition);
+    auto model = test_pta::build_model(definition);
     const mhs::core::Vector<std::size_t> order {7, 5, 3, 1, 6, 4, 2, 0};
     auto mesh = model.discrete;
     mhs::core::Vector<std::size_t> inverse(order.size());
@@ -83,7 +76,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         if (face.plus != invalid_id)
             face.plus = inverse[face.plus];
     }
-    auto imported = mhs::compiler::build_model(definition, mesh);
+    auto imported = test_pta::build_model(definition, mesh);
     for (auto* m : {&model, &imported}) {
         m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});
@@ -101,8 +94,8 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
             EXPECT_NEAR(result.C.coeff(i, j), baseline.C.coeff(order[i], order[j]), 1e-14);
         }
     }
-    const auto vertices = mhs::solver::interpolate_cell_to_node(model, original, 0);
-    const auto nodes = mhs::solver::interpolate_cell_to_node(imported, reordered, 0);
+    const auto vertices = test_pta::interpolate_cell_to_node(model, original, 0);
+    const auto nodes = test_pta::interpolate_cell_to_node(imported, reordered, 0);
     for (std::size_t v = 0; v < imported.output.points.size(); ++v) {
         auto found = std::find(model.output.points.begin(), model.output.points.end(), imported.output.points[v]);
         ASSERT_NE(found, model.output.points.end());
@@ -121,7 +114,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         auto d = cube_definition();
         d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
         d.default_boundary = condition;
-        const auto model = mhs::compiler::build_model(d);
+        const auto model = test_pta::build_model(d);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // Boundary sampling looks up terms by cell.
         EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.cell; }));
@@ -162,7 +155,7 @@ TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
     d.boundaries = {{{{mhs::model::Axis::X, 1, {{0, 1, 0, 1}}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
-    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    EXPECT_THROW(test_pta::build_model(d), std::invalid_argument);
 }
 
 TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
@@ -172,8 +165,8 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {{0.1, 0.2, 0.1, 0.2}}});
     d.boundaries.push_back(bc);
-    const auto base = mhs::compiler::build_model(cube_definition()).discrete;
-    const auto model = mhs::compiler::build_model(d);
+    const auto base = test_pta::build_model(cube_definition()).discrete;
+    const auto model = test_pta::build_model(d);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
     EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
     EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
@@ -190,14 +183,15 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-    auto& first = d.layers[0].blocks[0];
-    first.geometry = {{mhs::model::GeometryOperation::Add, {"0", "0", "0.25", "1"}}};
-    first.volumetric_heat_source = "4*z";
+    auto& first = d.volumes[0];
+    first.geometry = {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}};
+    d.sources[0] = "4*z";
     auto second = first;
-    second.geometry = {{mhs::model::GeometryOperation::Add, {"0.25", "0", "0.75", "1"}}};
-    second.volumetric_heat_source = "8*z";
-    d.layers[0].blocks.push_back(second);
-    const auto model = mhs::compiler::build_model(d);
+    second.geometry = {{mhs::model::GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}};
+    d.sources.push_back("8*z");
+    second.source = 1;
+    d.volumes.push_back(second);
+    const auto model = test_pta::build_model(d);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
@@ -213,7 +207,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {{0.1, 0.2, 0.1, 0.2}}});
     d.boundaries.push_back(bc);
-    const auto model = mhs::compiler::build_model(d);
+    const auto model = test_pta::build_model(d);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(model, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
@@ -232,11 +226,11 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
     const std::array<mhs::model::ThermalBoundary, 3> conditions {mhs::model::DirichletBoundary {"280+10*t+y"},
-        mhs::model::NeumannBoundary {"x/100+t+y"}, mhs::model::ConvectionBoundary {"x/100+t+y", "280+t+z"}};
+        mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
         d.boundaries = {{{{mhs::model::Axis::X, 1, {{0, 1, 0, 1}}}}, conditions[kind]}};
-        const auto model = mhs::compiler::build_model(d);
+        const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
@@ -263,7 +257,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     EXPECT_NEAR(condensed.temperature, prescribed, 1e-12);
                     g = 2;
                     load = g * prescribed;
-                    const auto nodes = mhs::solver::interpolate_cell_to_node(model, state, time);
+                    const auto nodes = test_pta::interpolate_cell_to_node(model, state, time);
                     for (std::size_t v = 0; v < nodes.size(); ++v) {
                         const auto& p = model.output.points[v];
                         if (p[0] == 1)

@@ -1,11 +1,15 @@
-# The CLI is part of this project, so it builds under the same warning policy.
+add_library(mhs_app_support STATIC
+    pta_definition.cpp output_mesh.cpp postprocessor.cpp
+    io/xml_model_reader.cpp io/xml_writer.cpp io/vtu_writer.cpp io/face_region_parser.cpp)
+target_link_libraries(mhs_app_support PUBLIC mhs_metahotspot PRIVATE tinyxml2::tinyxml2 mhs_options)
+target_include_directories(mhs_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+if(MHS_BUILD_APPS)
 add_executable(metahotspot main.cpp cli.cpp cli.hpp)
-target_link_libraries(metahotspot PRIVATE mhs_metahotspot mhs_options)
-target_include_directories(metahotspot PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(metahotspot PRIVATE mhs_app_support mhs_options)
 mhs_stage_runtime(metahotspot)
-
 if(APPLE)
     set_property(TARGET metahotspot PROPERTY INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 elseif(UNIX)
     set_property(TARGET metahotspot PROPERTY INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
 endif()

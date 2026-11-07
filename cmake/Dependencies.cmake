@@ -56,7 +56,7 @@ endif()
 # ----------------------------------------------------------------------------
 # tinyxml2 - XML model reader/writer.
 # ----------------------------------------------------------------------------
-if(NOT TARGET tinyxml2::tinyxml2)
+if((MHS_BUILD_APPS OR MHS_BUILD_TESTS) AND NOT TARGET tinyxml2::tinyxml2)
     CPMFindPackage(
         NAME tinyxml2
         VERSION ${MHS_TINYXML2_VERSION}

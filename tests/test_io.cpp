@@ -2,6 +2,7 @@
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
 #include "model/model_definition.hpp"
+#include "pta_test_utils.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -16,7 +17,7 @@ static std::string make_xml_with_observe_points(const std::string& obs_block)
 <Structure>
     <mhs::model::StudyType>Transient</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
+    <LengthUnit>Mm</LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -76,22 +77,22 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     </ObservePoints3D>)";
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
-    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    auto io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.observation_points.size(), 2u);
     EXPECT_EQ(io_structure.observation_points[0].name, "p1");
-    // 坐标保留为 muparser 表达式字符串，由 build_model() 统一求值。
-    EXPECT_EQ(io_structure.observation_points[0].x, "1.5");
-    EXPECT_EQ(io_structure.observation_points[0].y, "2.5");
-    EXPECT_EQ(io_structure.observation_points[0].z, "3.5");
+    // PTA adapter resolves observation coordinates to SI metres.
+    EXPECT_EQ(io_structure.observation_points[0].x, 0.0015);
+    EXPECT_EQ(io_structure.observation_points[0].y, 0.0025);
+    EXPECT_EQ(io_structure.observation_points[0].z, 0.0035);
     EXPECT_EQ(io_structure.observation_points[1].name, "p2");
-    EXPECT_EQ(io_structure.observation_points[1].x, "0.1");
+    EXPECT_EQ(io_structure.observation_points[1].x, 0.0001);
     std::filesystem::remove(path);
 }
 
 TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
-    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    auto io_structure = mhs::io::read_xml(path.string());
     EXPECT_TRUE(io_structure.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
@@ -103,6 +104,10 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     <StudyType>Steady</StudyType>
     <LengthUnit>Mm</LengthUnit>
     <InitialTemperature>300</InitialTemperature>
+    <Materials>
+        <Entry><Key>background</Key><Value><FluidMaterial>false</FluidMaterial></Value></Entry>
+        <Entry><Key>foreground</Key><Value><FluidMaterial>false</FluidMaterial></Value></Entry>
+    </Materials>
     <Layers>
         <Layer>
             <ThicknessExpression>10</ThicknessExpression>
@@ -141,13 +146,12 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     const auto definition = mhs::io::read_xml(path.string());
     std::filesystem::remove(path);
 
-    ASSERT_EQ(definition.layers.size(), 1u);
-    ASSERT_EQ(definition.layers[0].blocks.size(), 2u);
-    EXPECT_EQ(definition.layers[0].blocks[0].material, "background");
-    EXPECT_EQ(definition.layers[0].blocks[1].material, "foreground");
-    ASSERT_EQ(definition.layers[0].blocks[0].geometry.size(), 2u);
-    EXPECT_EQ(definition.layers[0].blocks[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
-    EXPECT_EQ(definition.layers[0].blocks[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.volumes.size(), 2u);
+    EXPECT_EQ(definition.materials[definition.volumes[0].material].name, "background");
+    EXPECT_EQ(definition.materials[definition.volumes[1].material].name, "foreground");
+    ASSERT_EQ(definition.volumes[0].geometry.size(), 2u);
+    EXPECT_EQ(definition.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
+    EXPECT_EQ(definition.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
     ASSERT_EQ(definition.boundaries.size(), 2u);
     EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.boundaries[0].condition));
     EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.boundaries[1].condition));
@@ -159,7 +163,7 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
 <Structure>
     <mhs::model::StudyType>Transient</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
+    <LengthUnit>Mm</LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <TransientStudyDuration>10</TransientStudyDuration>
@@ -184,7 +188,7 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     auto in_path = write_tmp_xml("io_write_input.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_output.xml";
 
-    mhs::model::Model model;
+    test_pta::Model model;
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
@@ -197,7 +201,7 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
-    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
+    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_NE(out_xml.find("Result0DTransient"), std::string::npos);
@@ -213,11 +217,11 @@ TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
 {
     const auto in_path = write_tmp_xml("io_dimensions.xml", make_xml_with_observe_points(""));
     const auto out_path = tmp_dir() / "io_dimensions_output.xml";
-    mhs::model::Model model;
+    test_pta::Model model;
     model.output.cartesian_shape = {2, 3, 4};
     const mhs::core::Vector<double> temperatures(24, 300.0);
 
-    mhs::io::write_xml(in_path.string(), out_path.string(), model, temperatures, {});
+    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, temperatures, {});
 
     const auto xml = read_file(out_path);
     EXPECT_NE(xml.find("<SizeX>2</SizeX>"), std::string::npos);
@@ -233,7 +237,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 <Structure>
     <mhs::model::StudyType>Steady</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
+    <LengthUnit>Mm</LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondType"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -255,7 +259,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     auto in_path = write_tmp_xml("io_write_steady.xml", input_xml);
     auto out_path = tmp_dir() / "io_write_steady_output.xml";
 
-    mhs::model::Model model;
+    test_pta::Model model;
     model.output.cartesian_shape[0] = 2;
     model.output.cartesian_shape[1] = 2;
     model.output.cartesian_shape[2] = 2;
@@ -263,7 +267,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 
     mhs::core::Vector<mhs::solver::ProbeTrace> traces;
     const mhs::core::Vector<double> times;
-    mhs::io::write_xml(in_path.string(), out_path.string(), model, node_temperature, traces, times);
+    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_EQ(out_xml.find("Result0DTransient"), std::string::npos)
@@ -281,7 +285,7 @@ static std::string make_xml_with_thermal_conductivity(const std::string& conduct
 <Structure>
     <mhs::model::StudyType>Steady</mhs::model::StudyType>
     <mhs::core::Dimension>Dimension3D</mhs::core::Dimension>
-    <mhs::model::LengthUnit>Mm</mhs::model::LengthUnit>
+    <LengthUnit>Mm</LengthUnit>
     <AmbientTemperature>300</AmbientTemperature>
     <InitialTemperature>300</InitialTemperature>
     <OtherThermalBondary i:type="SecondTypeThermalBoundary"><a:HeatFlux>0</a:HeatFlux></OtherThermalBondary>
@@ -306,7 +310,7 @@ static std::string make_xml_with_thermal_conductivity(const std::string& conduct
 TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
 {
     auto path = write_tmp_xml("io_thermal_conductivity_trim.xml", make_xml_with_thermal_conductivity("  5  "));
-    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    auto io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
     EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "5");
@@ -319,7 +323,7 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 {
     auto path
         = write_tmp_xml("io_thermal_conductivity_3trim.xml", make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
-    mhs::model::ModelDefinition io_structure = mhs::io::read_xml(path.string());
+    auto io_structure = mhs::io::read_xml(path.string());
     ASSERT_EQ(io_structure.materials.size(), 1u);
     EXPECT_EQ(io_structure.materials[0].name, "mat");
     EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "1.5e2");
@@ -330,6 +334,6 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 
 TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape)
 {
-    const mhs::model::Model model;
-    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model, {}, {}), std::invalid_argument);
+    const test_pta::Model model;
+    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model.output, {}, {}), std::invalid_argument);
 }

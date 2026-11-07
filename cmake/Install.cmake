@@ -4,7 +4,7 @@
 include(CMakePackageConfigHelpers)
 
 set(_mhs_targets mhs_metahotspot mhs_core mhs_model mhs_expression mhs_linear
-    mhs_compiler mhs_solver mhs_io mhs_logging)
+    mhs_compiler mhs_solver mhs_logging)
 if(MHS_BUILD_C_API)
     list(APPEND _mhs_targets mhs_c_api)
 endif()

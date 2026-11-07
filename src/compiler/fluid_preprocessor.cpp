@@ -11,7 +11,7 @@
 
 namespace mhs::compiler::fluid {
     void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        double scale, const FluidMaterialData& materials)
+        const FluidMaterialData& materials)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -85,11 +85,10 @@ namespace mhs::compiler::fluid {
             for (const auto& r : boundaries[id].regions) {
                 CompiledBoundaryRegion region;
                 region.axis = r.axis;
-                region.coordinate = r.coordinate * scale;
+                region.coordinate = r.coordinate;
                 region.condition_index = static_cast<BoundaryConditionId>(id);
                 for (const auto& rect : r.rectangles)
-                    region.rectangles.push_back(
-                        {rect.a_min * scale, rect.a_max * scale, rect.b_min * scale, rect.b_max * scale});
+                    region.rectangles.push_back({rect.a_min, rect.a_max, rect.b_min, rect.b_max});
                 regions.push_back(std::move(region));
             }
         auto projected = project_surface_regions(mesh, regions);

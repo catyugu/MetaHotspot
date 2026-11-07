@@ -167,7 +167,6 @@ def build_model(
 
     m.set_settings(
         study=enums.Study.STEADY,
-        length_unit=enums.LengthUnit.METER,
         initial_temperature_K=T_AMB,
     )
 
@@ -188,55 +187,43 @@ def build_model(
     z_verts = np.concatenate([z_chip, z_interface, z_spreader, z_sink])
     m.set_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
 
-    # -- Materials --
-    m.add_material("silicon", kx="130", ky="130", kz="130", rho="2330", c="700")
-    m.add_material("tim", kx="4", ky="4", kz="4", rho="1200", c="3333.33")
-    m.add_material("aluminum", kx="237", ky="237", kz="237", rho="2700", c="897")
-
-    # -- Layers (first-added = top) --
-    lid_sink = m.add_layer(thickness=str(T_SINK))
-    lid_spreader = m.add_layer(thickness=str(T_SPREADER))
-    lid_tim = m.add_layer(thickness=str(T_INTERFACE))
-    lid_chip = m.add_layer(thickness=str(T_CHIP))
-
-    # Sink: full sink XY extent
-    bid = m.add_block(lid_sink, "aluminum")
-    m.add_rect(
-        bid,
-        x=str(-(S_SINK - CHIP_L) / 2),
-        y=str(-(S_SINK - CHIP_L) / 2),
-        width=str(S_SINK),
-        height=str(S_SINK),
+    # Material IDs and explicit SI volumes.
+    silicon = m.add_material(
+        "silicon", kx="130", ky="130", kz="130", rho="2330", c="700"
+    )
+    tim = m.add_material("tim", kx="4", ky="4", kz="4", rho="1200", c="3333.33")
+    aluminum = m.add_material(
+        "aluminum", kx="237", ky="237", kz="237", rho="2700", c="897"
     )
 
-    # Spreader: spreader extent
-    bid = m.add_block(lid_spreader, "aluminum")
-    m.add_rect(
-        bid,
-        x=str(-(S_SPREADER - CHIP_L) / 2),
-        y=str(-(S_SPREADER - CHIP_L) / 2),
-        width=str(S_SPREADER),
-        height=str(S_SPREADER),
-    )
+    def box(material, lo, hi, source=None):
+        volume = m.add_volume(
+            material, m.add_source(source) if source is not None else 0xFFFFFFFF
+        )
+        m.add_box(volume, lo, hi)
 
-    # TIM: chip footprint [0, 0.016] x [0, 0.016]
-    bid = m.add_block(lid_tim, "tim")
-    m.add_rect(
-        bid,
-        x="0",
-        y="0",
-        width=str(CHIP_X_MAX - CHIP_X_MIN),
-        height=str(CHIP_Y_MAX - CHIP_Y_MIN),
+    z = T_CHIP + T_INTERFACE
+    spreader_lo = -(S_SPREADER - CHIP_L) / 2
+    sink_lo = -(S_SINK - CHIP_L) / 2
+    box(
+        aluminum,
+        [sink_lo, sink_lo, z + T_SPREADER],
+        [sink_lo + S_SINK, sink_lo + S_SINK, TOTAL_Z],
     )
-
-    # Chip: one block per functional unit
+    box(
+        aluminum,
+        [spreader_lo, spreader_lo, z],
+        [spreader_lo + S_SPREADER, spreader_lo + S_SPREADER, z + T_SPREADER],
+    )
+    box(tim, [CHIP_X_MIN, CHIP_Y_MIN, T_CHIP], [CHIP_X_MAX, CHIP_Y_MAX, z])
     for name in EV6_NAMES:
         w, h, lx, by = EV6_DIM[name]
-        hs = heat_sources.get(name, "0") if heat_sources else "0"
-        bid = m.add_block(
-            lid_chip, "silicon", heat_source=hs, x_offset=str(lx), y_offset=str(by)
+        box(
+            silicon,
+            [lx, by, 0],
+            [lx + w, by + h, T_CHIP],
+            heat_sources.get(name, "0") if heat_sources else "0",
         )
-        m.add_rect(bid, x="0", y="0", width=str(w), height=str(h))
 
     # -- Convection at sink top (z = TOTAL_Z) --
     _regions = [
@@ -331,7 +318,53 @@ def main():
 
     # -- Export steady-state VTU --
     vtu_path = HOTSPOT_DIR / "example2_steady.vtu"
-    sol_steady.write_vtu(str(vtu_path))
+    # Application-side serialization from public raw geometry/state.
+    from xml.etree import ElementTree as ET
+
+    cells = c_steady.fields
+    corners = np.array(
+        [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+        ]
+    )
+    points = np.where(
+        corners[None, :, :], cells.cell_max[:, None, :], cells.cell_min[:, None, :]
+    )
+    root = ET.Element(
+        "VTKFile", type="UnstructuredGrid", version="0.1", byte_order="LittleEndian"
+    )
+    piece = ET.SubElement(
+        ET.SubElement(root, "UnstructuredGrid"),
+        "Piece",
+        NumberOfPoints=str(points.size // 3),
+        NumberOfCells=str(c_steady.cell_count),
+    )
+
+    def array(parent, name, values, kind="Float64", components="1"):
+        node = ET.SubElement(
+            parent,
+            "DataArray",
+            Name=name,
+            type=kind,
+            NumberOfComponents=components,
+            format="ascii",
+        )
+        node.text = " ".join(map(str, np.asarray(values).ravel()))
+
+    array(ET.SubElement(piece, "Points"), "Points", points, components="3")
+    topology = ET.SubElement(piece, "Cells")
+    array(topology, "connectivity", np.arange(points.size // 3), "Int64")
+    array(topology, "offsets", np.arange(1, c_steady.cell_count + 1) * 8, "Int64")
+    array(topology, "types", np.full(c_steady.cell_count, 12), "UInt8")
+    array(ET.SubElement(piece, "CellData"), "Temperature", steady_temp)
+    ET.ElementTree(root).write(vtu_path, encoding="utf-8", xml_declaration=True)
     print(f"  VTU exported: {vtu_path}")
 
     sol_steady.close()
@@ -366,7 +399,6 @@ def main():
     # Override to TRANSIENT study
     transient_model.set_settings(
         study=enums.Study.TRANSIENT,
-        length_unit=enums.LengthUnit.METER,
         initial_temperature_K=T_AMB,
         duration=DURATION,
         output_interval=OUTPUT_INTERVAL,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ctypes
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,7 +10,7 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, LengthUnit, Study
+from metahotspot.enums import Axis, FluidBC, GeometryOp, Study
 from metahotspot.types import MhsFaceRegion, MhsModel, Point2D, Rect2D
 
 if TYPE_CHECKING:
@@ -57,41 +56,6 @@ def _set_mesh(dll, handle, x, y, z) -> None:
             )
         )
     check(dll.mhs_model_set_mesh(handle, *args), "set_mesh")
-
-
-def _add_layer(dll, handle, thickness, x_offset, y_offset) -> int:
-    identifier = ctypes.c_uint32()
-    check(
-        dll.mhs_model_add_layer(
-            handle,
-            _text(thickness),
-            _text(x_offset),
-            _text(y_offset),
-            ctypes.byref(identifier),
-        ),
-        "add_layer",
-    )
-    return identifier.value
-
-
-def _add_block(
-    dll, handle, layer, material_name, heat_source, x_offset, y_offset, thickness
-):
-    identifier = ctypes.c_uint32()
-    check(
-        dll.mhs_model_add_block(
-            handle,
-            layer,
-            _text(material_name),
-            _text(heat_source),
-            _text(x_offset),
-            _text(y_offset),
-            _text(thickness),
-            ctypes.byref(identifier),
-        ),
-        "add_block",
-    )
-    return identifier.value
 
 
 def _face_regions(regions) -> tuple[object, int]:
@@ -141,7 +105,7 @@ class Model(OwnedHandle):
     Usage::
 
         m = Model()
-        m.read_xml("case.xml")
+        # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
         sol = c.solve()
 
@@ -158,14 +122,9 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def read_xml(self, path: str | Path) -> None:
-        """Load a MetaHotspot XML case file."""
-        self._call("mhs_model_read_xml", _text(str(path)), ctx="read_xml")
-
     def set_settings(
         self,
         study: Study = Study.STEADY,
-        length_unit: LengthUnit = LengthUnit.MILLIMETER,
         initial_temperature_K: float = 300.0,
         duration: float = 0.0,
         output_interval: float = 0.0,
@@ -174,7 +133,6 @@ class Model(OwnedHandle):
         self._call(
             "mhs_model_set_settings",
             int(study),
-            int(length_unit),
             initial_temperature_K,
             duration,
             output_interval,
@@ -267,7 +225,7 @@ class Model(OwnedHandle):
         _set_mesh(self._dll, self._handle, x, y, z)
 
     def add_variable(self, name: str, expression: str) -> None:
-        """Add a geometry variable."""
+        """Add an expression constant."""
         self._call(
             "mhs_model_add_variable", _text(name), _text(expression), ctx="add_variable"
         )
@@ -281,62 +239,58 @@ class Model(OwnedHandle):
         rho: str,
         c: str,
         dynamic_viscosity: str | None = None,
-    ) -> None:
-        """Register a material."""
+    ) -> int:
+        """Register a material and return its ID. Laws use canonical T."""
+        identifier = ctypes.c_uint32()
         text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
         self._call(
             "mhs_model_add_material",
             *text_args,
             _text(dynamic_viscosity),
+            ctypes.byref(identifier),
             ctx="add_material",
         )
 
-    def add_layer(
-        self, thickness: str, x_offset: str = "0", y_offset: str = "0"
-    ) -> int:
-        """Add a layer.  Returns the layer ID."""
-        return _add_layer(self._dll, self._handle, thickness, x_offset, y_offset)
+        return identifier.value
 
-    def add_block(
-        self,
-        layer: int,
-        material_name: str,
-        heat_source: str = "0",
-        x_offset: str = "0",
-        y_offset: str = "0",
-        thickness: str | None = None,
-    ) -> int:
-        """Add a block to a layer.  Returns the block ID."""
-        return _add_block(
-            self._dll,
-            self._handle,
-            layer,
-            material_name,
-            heat_source,
-            x_offset,
-            y_offset,
-            thickness,
-        )
-
-    def add_rect(
-        self,
-        block: int,
-        op: GeometryOp = GeometryOp.ADD,
-        x: str = "0",
-        y: str = "0",
-        width: str = "1",
-        height: str = "1",
-    ) -> None:
-        """Add a rectangular geometry operation (add or subtract)."""
+    def add_source(self, expression: str) -> int:
+        """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
+        identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_rect",
-            block,
+            "mhs_model_add_source",
+            _text(expression),
+            ctypes.byref(identifier),
+            ctx="add_source",
+        )
+        return identifier.value
+
+    def add_volume(self, material: int, source: int = 0xFFFFFFFF) -> int:
+        """Return a volume ID. Later volumes override earlier volumes."""
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_volume",
+            material,
+            source,
+            ctypes.byref(identifier),
+            ctx="add_volume",
+        )
+        return identifier.value
+
+    def add_box(
+        self, volume: int, minimum, maximum, op: GeometryOp = GeometryOp.ADD
+    ) -> None:
+        """Append an axis-aligned box operation in SI metres."""
+        lo = np.ascontiguousarray(minimum, dtype=np.float64)
+        hi = np.ascontiguousarray(maximum, dtype=np.float64)
+        if lo.shape != (3,) or hi.shape != (3,):
+            raise ValueError("box bounds must each contain three coordinates")
+        self._call(
+            "mhs_model_volume_add_box",
+            volume,
             int(op),
-            _text(x),
-            _text(y),
-            _text(width),
-            _text(height),
-            ctx="add_rect",
+            _double_ptr(lo),
+            _double_ptr(hi),
+            ctx="add_box",
         )
 
     # ---- Atomic boundary conditions ----

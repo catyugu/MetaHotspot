@@ -1,5 +1,6 @@
 #include "compiler/model_functions.hpp"
 #include "expression/expression.hpp"
+#include "pta_definition.hpp"
 
 #include "gtest/gtest.h"
 
@@ -21,7 +22,7 @@ namespace {
         register_all_functions(sym, fns);
 
         // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
-        auto out = substitute_function_args("test_gaussian(x)", "T");
+        auto out = mhs::app::pta::rewrite_formal_argument("test_gaussian(x)", "T");
         EXPECT_EQ(out, "test_gaussian(T)");
 
         auto compiled = mhs::expression::parse(out, sym);
@@ -172,43 +173,43 @@ namespace {
 
     TEST(Substitute, BasicCallReplacesXForT)
     {
-        auto out = substitute_function_args("test_gaussian(x)", "T");
+        auto out = mhs::app::pta::rewrite_formal_argument("test_gaussian(x)", "T");
         EXPECT_EQ(out, "test_gaussian(T)");
     }
 
     TEST(Substitute, MultipleXReplaced)
     {
-        auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t");
+        auto out = mhs::app::pta::rewrite_formal_argument("test_gaussian(x)/(x*0.01+1)", "t");
         EXPECT_EQ(out, "test_gaussian(t)/(t*0.01+1)");
     }
 
     TEST(Substitute, XFollowedByUnderscoreNotReplaced)
     {
-        auto out = substitute_function_args("2*x + x_next", "t");
+        auto out = mhs::app::pta::rewrite_formal_argument("2*x + x_next", "t");
         EXPECT_EQ(out, "2*t + x_next");
     }
 
     TEST(Substitute, XBetweenLettersNotReplaced)
     {
-        auto out = substitute_function_args("xx + axb", "t");
+        auto out = mhs::app::pta::rewrite_formal_argument("xx + axb", "t");
         EXPECT_EQ(out, "xx + axb");
     }
 
     TEST(Substitute, NoFunctionsNoChange)
     {
-        auto out = substitute_function_args("x+1", "T");
+        auto out = mhs::app::pta::rewrite_formal_argument("x+1", "T");
         EXPECT_EQ(out, "T+1");
     }
 
     TEST(Substitute, BareFunctionCallNotRewritten)
     {
-        auto out = substitute_function_args("foo(x)", "T");
+        auto out = mhs::app::pta::rewrite_formal_argument("foo(x)", "T");
         EXPECT_EQ(out, "foo(T)");
     }
 
     TEST(Substitute, NestedWithOtherVariables)
     {
-        auto out = substitute_function_args("y + z + T + t + pi", "T");
+        auto out = mhs::app::pta::rewrite_formal_argument("y + z + T + t + pi", "T");
         EXPECT_EQ(out, "y + z + T + t + pi");
     }
 

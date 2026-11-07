@@ -15,6 +15,6 @@ namespace mhs::compiler::fluid {
     // Build the assembly-ready frozen flow domain. Geometry, pressure-system,
     // and boundary-parameter scratch data remain private to the implementation.
     void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        double si_scale, const FluidMaterialData& materials);
+        const FluidMaterialData& materials);
 
 } // namespace mhs::compiler::fluid

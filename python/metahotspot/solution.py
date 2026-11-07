@@ -191,7 +191,3 @@ class Solution(OwnedHandle):
     def probes(self) -> list[ProbeSnapshot]:
         """Return all probe traces as Python-owned snapshots."""
         return self.data.probes
-
-    def write_vtu(self, path: str) -> None:
-        """Export the final FVM temperature field to a VTU file."""
-        self._call("mhs_solution_write_vtu", _text(str(path)), ctx="write_vtu")

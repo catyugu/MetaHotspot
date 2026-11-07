@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python"))
 
 import metahotspot
-from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
+from metahotspot.enums import Face, Study
 from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.utils import normalized_operators
 
@@ -93,36 +93,16 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     model = metahotspot.Model()
     model.set_settings(
         study=Study.STEADY,
-        length_unit=LengthUnit.MILLIMETER,
         initial_temperature_K=AMBIENT_K,
     )
     grid_mm = current_grid_axis_mm()
-    model.set_mesh(grid_mm, grid_mm, grid_mm)
-    model.add_material(name, k, k, k, rho, c)
-
-    # The neutral ecxml describes a 3-D sourceBlock.  MetaHotspot's 2-D block
-    # rectangles are layer-wide, so represent the same 25/50/25 mm z split
-    # explicitly instead of overlaying a full-height source block.
-    x0 = base_pos[0] * 1000.0
-    y0 = base_pos[1] * 1000.0
-    width = base_size[0] * 1000.0
-    height = base_size[1] * 1000.0
-    sx0 = src_pos[0] * 1000.0
-    sy0 = src_pos[1] * 1000.0
-    sw = src_size[0] * 1000.0
-    sh = src_size[1] * 1000.0
-    source_volume = src_size[0] * src_size[1] * src_size[2]
-    heat = 100.0 / source_volume
-
-    for thickness, add_source in ((25.0, False), (50.0, True), (25.0, False)):
-        layer = model.add_layer(str(thickness))
-        body = model.add_block(layer, name)
-        model.add_rect(body, GeometryOp.ADD, str(x0), str(y0), str(width), str(height))
-        if add_source:
-            source_block = model.add_block(layer, name, heat_source=f"{heat:.17g}")
-            model.add_rect(
-                source_block, GeometryOp.ADD, str(sx0), str(sy0), str(sw), str(sh)
-            )
+    model.set_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
+    material_id = model.add_material(name, k, k, k, rho, c)
+    body = model.add_volume(material_id)
+    model.add_box(body, base_pos, np.array(base_pos) + base_size)
+    heat = 100.0 / np.prod(src_size)
+    source = model.add_volume(material_id, model.add_source(f"{heat:.17g}"))
+    model.add_box(source, src_pos, np.array(src_pos) + src_size)
     model.set_default_neumann("0")
     compiled = model.compile()
     return normalized_operators(*compiled.assemble()), compiled

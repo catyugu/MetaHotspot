@@ -5,7 +5,7 @@ Usage::
     import metahotspot
 
     model = metahotspot.Model()
-    model.read_xml("case.xml")
+    # Construct SI volumes and mesh axes before compiling.
     compiled = model.compile()
     solution = compiled.solve()
     temperatures = solution.state

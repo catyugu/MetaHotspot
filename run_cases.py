@@ -15,13 +15,18 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
-EXE = os.path.join(REPO_ROOT, "build", "apps", "metahotspot", "metahotspot")
+EXE = os.environ.get(
+    "MHS_EXECUTABLE",
+    os.path.join(REPO_ROOT, "build", "apps", "metahotspot", "metahotspot"),
+)
 
 # (case_dir, results_subdir, kind)
 CASE_GROUPS = [
     ("cases/simple_steady_cases", "simple_steady_cases", "steady"),
     ("cases/nonlinear_steady_cases", "nonlinear_steady_cases", "steady"),
     ("cases/simple_transient_cases", "simple_transient_cases", "transient"),
+    # These inputs have no reference field; solver assertions live in test_fluid.cpp.
+    ("cases/microfluid_cases", "microfluid_cases", "run"),
 ]
 
 
@@ -39,7 +44,9 @@ def _run_one(input_path, vtu_path, xml_path):
         ],
         check=False,
     )
-    return result.returncode == 0
+    return (
+        result.returncode == 0 and os.path.isfile(vtu_path) and os.path.isfile(xml_path)
+    )
 
 
 def _run_group(case_dir, results_subdir, _kind=""):
@@ -58,7 +65,7 @@ def _run_group(case_dir, results_subdir, _kind=""):
 
 
 def _compare_group(case_dir, results_subdir, kind):
-    if not os.path.isdir(case_dir):
+    if not os.path.isdir(case_dir) or kind == "run":
         return True
     return (
         subprocess.run(
