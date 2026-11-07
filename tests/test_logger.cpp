@@ -12,6 +12,10 @@ namespace {
         std::remove(test_log.c_str());
 
         mhs::logger::init(test_log, true, mhs::logger::LogLevel::info);
+        mhs::logger::set_level(mhs::logger::LogLevel::warn);
+        int evaluated = 0;
+        MHS_LOG_INFO("Disabled message {}", ++evaluated);
+        EXPECT_EQ(evaluated, 0);
         mhs::logger::set_level(mhs::logger::LogLevel::info);
         MHS_LOG_INFO("Log message to file");
 
