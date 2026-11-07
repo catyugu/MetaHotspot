@@ -19,8 +19,10 @@ namespace mhs::logger {
         public:
             void set_callback(LogCallback callback)
             {
-                std::atomic_store(&callback_, callback ? std::make_shared<const LogCallback>(std::move(callback))
-                                                       : std::shared_ptr<const LogCallback> {});
+                std::shared_ptr<const LogCallback> next;
+                if (callback)
+                    next = std::make_shared<const LogCallback>(std::move(callback));
+                std::atomic_store(&callback_, std::move(next));
             }
 
         protected:
@@ -37,7 +39,7 @@ namespace mhs::logger {
                     }
                 }
             }
-            void flush_() override {}
+            void flush_() override { }
 
         private:
             std::shared_ptr<const LogCallback> callback_;
