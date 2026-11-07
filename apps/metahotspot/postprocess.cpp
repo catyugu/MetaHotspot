@@ -1,6 +1,6 @@
 #include "postprocess.hpp"
 #include "core/vector.hpp"
-#include "solver/sampling.hpp"
+#include "solver/solver.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>

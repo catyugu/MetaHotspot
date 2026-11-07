@@ -6,7 +6,7 @@
 // The external boundary trace is a local algebraic unknown eliminated by static
 // condensation, so nothing here is persistent state: every entry point takes the
 // converged cell state and re-evaluates the local law on demand.
-#include "solver/sampling.hpp"
+#include "solver/solver.hpp"
 
 #include <optional>
 #include <span>
