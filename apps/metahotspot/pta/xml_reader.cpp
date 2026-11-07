@@ -8,10 +8,10 @@
 #include <type_traits>
 #include <utility>
 
+#include "definition.hpp"
 #include "face_region_parser.hpp"
 #include "io.hpp"
 #include "model/model_definition.hpp"
-#include "definition.hpp"
 #include "xml_helpers.hpp"
 
 namespace mhs::app::pta {
