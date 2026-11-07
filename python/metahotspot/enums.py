@@ -49,3 +49,12 @@ class FluidBC(enum.IntEnum):
     PRESSURE_INLET = 1
     MASS_FLOW_INLET = 2
     OUTLET = 3
+
+class LogLevel(enum.IntEnum):
+    TRACE = 0
+    DEBUG = 1
+    INFO = 2
+    WARN = 3
+    ERROR = 4
+    CRITICAL = 5
+    OFF = 6

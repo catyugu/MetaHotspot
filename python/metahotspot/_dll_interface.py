@@ -28,6 +28,9 @@ from metahotspot.types import (
 # (name, restype, argtypes) table — drives configure_dll().
 _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Global helpers ----
+    ("mhs_log_set_level", ctypes.c_int32, [ctypes.c_int32]),
+    ("mhs_log_get_level", ctypes.c_int32, []),
+    ("mhs_log_set_callback", None, [ctypes.c_void_p, ctypes.c_void_p]),
     ("mhs_solve_options_default", None, [ctypes.POINTER(_SolveOptionsCStruct)]),
     ("mhs_last_error", ctypes.c_char_p, []),
     ("mhs_version_string", ctypes.c_char_p, []),

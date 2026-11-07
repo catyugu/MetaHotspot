@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
     const std::string& output_xml = opts.output_xml;
 
     // Initialize logger
-    mhs::logger::init(opts.log_file, opts.console_log);
+    mhs::logger::init(opts.log_file, opts.console_log, mhs::logger::Level::info);
 
     MHS_LOG_INFO("Starting MetaHotspot simulation");
     MHS_LOG_INFO("Input: {}", input_path);

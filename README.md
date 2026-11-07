@@ -40,7 +40,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
 | `MHS_SANITIZE` | OFF | 用 ASan/UBSan 编译并链接全部本项目目标（仅 GCC/Clang） |
-| `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
+| `MHS_LOG_COMPILED_LEVEL` | `DEBUG` | 编译时保留的最低级别（TRACE/DEBUG/INFO/WARN/ERROR/CRITICAL/OFF） |
 | `MHS_USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
@@ -109,7 +109,7 @@ solution = compiled.solve(opts=SolveOptions(
 - 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
 - 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
-- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`MHS_VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
+- 日志：`mhs_logging` 封装 spdlog，SDK 默认 `WARN`，CLI 默认 `INFO`；`MHS_LOG_LEVEL` 环境变量或 `mhs::logger::set_log_level()` 可覆盖运行时级别。编译期由 `MHS_LOG_COMPILED_LEVEL` 裁剪低级别调用及其参数计算。热循环诊断使用 `DEBUG`。
 - 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
 
 ## 架构
@@ -166,3 +166,13 @@ metahotspot --output-vtu /tmp/out.vtu \
 几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列。Python 暴露 `Solution.state` 与 `Solution.state_history` 两组结果。
 
 层从上（高 Z）到下（低 Z）排列：Layer 0 在顶部，Layer N-1 在底部。
+
+### 日志控制
+
+`MHS_LOG_COMPILED_LEVEL` 设定编译期下限（默认 `DEBUG`）；被裁剪的日志调用完全不计算参数。
+`MHS_LOG_LEVEL` 在首次使用日志时读取一次，接受 `trace/debug/info/warn/error/critical/off`（大小写不敏感），
+缺省时 C++ SDK 为 `WARN`，CLI 为 `INFO`。程序化的 `mhs::logger::set_log_level()`
+及 C/Python `set_log_level()` 可以运行时覆盖环境配置。日志级别修改是进程全局的，
+回调也在日志产生日志的线程中同步执行。C++ SDK 可通过 `mhs::logger::set_log_callback()`
+接管日志；C API 对应 `mhs_log_set_callback()`，Python 对应 `set_log_callback()`。
+`set_log_callback({})` 或 `set_log_callback(None)` 可撤销回调。

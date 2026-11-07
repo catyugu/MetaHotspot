@@ -12,6 +12,7 @@ namespace {
         std::remove(test_log.c_str());
 
         mhs::logger::init(test_log, true);
+        mhs::logger::set_log_level(mhs::logger::Level::info);
         MHS_LOG_INFO("Log message to file");
 
         // 强制刷新以确保立即可读
