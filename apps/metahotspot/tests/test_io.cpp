@@ -1,12 +1,11 @@
 #include "core/vector.hpp"
-#include "pta/io.hpp"
 #include "model/model_definition.hpp"
+#include "pta/io.hpp"
 #include "pta_test_utils.hpp"
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <string>
-
 
 // Build a small in-memory XML string with/without ObservePoints3D block.
 static std::string make_xml_with_observe_points(const std::string& obs_block)
