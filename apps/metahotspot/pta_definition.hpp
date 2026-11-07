@@ -36,14 +36,13 @@ namespace mhs::app::pta {
         Expression x, y, z;
     };
     enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
-    struct ModelSettings : mhs::model::ModelSettings {
+    // Parsing scratch state. PTA syntax never enters the library definition.
+    struct Definition {
+        mhs::model::ModelDefinition model;
         LengthUnit length_unit = LengthUnit::Meter;
-    };
-    struct Definition : mhs::model::ModelDefinition {
-        ModelSettings settings;
         mhs::core::Vector<LayerSpec> layers;
         mhs::core::Vector<ObservationPointSpec> observation_points;
     };
     std::string rewrite_formal_argument(const std::string&, std::string_view);
-    mhs::model::ModelDefinition normalize(const Definition& input);
+    mhs::model::ModelDefinition normalize(Definition input);
 } // namespace mhs::app::pta

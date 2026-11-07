@@ -1,10 +1,11 @@
 #include "postprocessor.hpp"
 #include "core/vector.hpp"
-#include "solver/thermal_reconstruction.hpp"
+#include "solver/sampling.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <ranges>
 #include <stdexcept>
 
@@ -26,53 +27,39 @@ namespace mhs::app {
 
     } // namespace
 
-    mhs::core::Vector<double> interpolate_cell_to_node(
-        const mhs::model::Model& model, const OutputMesh& output, std::span<const double> cell_temperature, double time)
+    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model, const mhs::model::MeshSpec& grid,
+        std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
-        mhs::core::Vector<double> node_T(output.points.size(), 0.0);
-        mhs::core::Vector<double> weight(node_T.size(), 0.0);
-        for (std::size_t c = 0; c < output.cell_vertices.size(); ++c) {
-            const auto center = model.discrete.cells[c].center();
+        std::map<mhs::model::Vec3, std::size_t> nodes;
+        for (double x : grid.x_vertices)
+            for (double y : grid.y_vertices)
+                for (double z : grid.z_vertices)
+                    nodes.emplace(mhs::model::Vec3 {x, y, z}, nodes.size());
+        mhs::core::Vector<double> node_T(nodes.size(), 0.0), weight(nodes.size(), 0.0);
+        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
+            const auto& cell = model.discrete.cells[c];
+            const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-            const auto& vertices = output.cell_vertices[c];
-            std::array<double, 8> sum {}, dirichlet_sum {};
-            std::array<unsigned, 8> count {}, dirichlet_count {};
-            for (const auto& term : boundary_faces_on_cell(model, static_cast<mhs::model::CellId>(c))) {
-                const auto axis = static_cast<std::size_t>(term.axis);
-                const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-                const auto& condition = model.boundary_conditions[term.condition];
-                std::optional<double> trace;
-                for (std::size_t i = 0; i < vertices.size(); ++i) {
-                    if (!boundary_contains(model.discrete.cells[term.cell], term, output.points[vertices[i]]))
-                        continue;
-                    if (!trace)
-                        trace = mhs::solver::evaluate_boundary(condition,
-                            boundary_center(model.discrete.cells[term.cell], term), area,
-                            (model.discrete.cells[term.cell].size()[axis] / 2), temperature, conductivity[axis], time)
-                                    .temperature;
-                    sum[i] += *trace;
-                    ++count[i];
-                    if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {
-                        dirichlet_sum[i] += *trace;
-                        ++dirichlet_count[i];
+            for (double x : {cell.min[0], cell.max[0]})
+                for (double y : {cell.min[1], cell.max[1]})
+                    for (double z : {cell.min[2], cell.max[2]}) {
+                        const mhs::model::Vec3 point {x, y, z};
+                        const auto it = nodes.find(point);
+                        if (it == nodes.end())
+                            continue;
+                        const auto v = it->second;
+                        const double sample = boundary_value_at(
+                            model, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
+                                                  .value_or(temperature);
+                        const double w = anisotropic_weight(center, point, conductivity);
+                        node_T[v] += w * sample;
+                        weight[v] += w;
                     }
-                }
-            }
-            for (std::size_t i = 0; i < vertices.size(); ++i) {
-                const auto v = vertices[i];
-                const auto& p = output.points[v];
-                const double sample = dirichlet_count[i] ? dirichlet_sum[i] / dirichlet_count[i]
-                    : count[i]                           ? sum[i] / count[i]
-                                                         : temperature;
-                const double w = anisotropic_weight(center, p, conductivity);
-                node_T[v] += w * sample;
-                weight[v] += w;
-            }
         }
         for (std::size_t v = 0; v < node_T.size(); ++v)
             node_T[v] = weight[v] > 0.0 ? node_T[v] / weight[v] : std::numeric_limits<double>::quiet_NaN();

@@ -52,16 +52,16 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;
 
-        const auto output = mhs::app::build_output_mesh(model, &definition.mesh);
+        const auto& grid = definition.mesh;
+        const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
-        mhs::io::write_vtu(output_vtu, model, output, solution);
+        mhs::io::write_vtu(output_vtu, model.discrete, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)
-        auto node_temperature = mhs::app::interpolate_cell_to_node(model, output, solution, result.time);
-        mhs::io::write_xml(
-            input_path, output_xml, output, node_temperature, result.probe_traces, result.snapshot_times);
+        auto node_temperature = mhs::app::interpolate_cell_to_node(model, grid, solution, result.time);
+        mhs::io::write_xml(input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics

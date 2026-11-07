@@ -201,7 +201,8 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     t1.values = {300.0, 310.0, 320.0};
     traces.push_back(t1);
 
-    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, node_temperature, traces, times);
+    mhs::io::write_xml(
+        in_path.string(), out_path.string(), model.output.cartesian_shape, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_NE(out_xml.find("Result0DTransient"), std::string::npos);
@@ -221,7 +222,7 @@ TEST(IoTest, WriteXmlUpdatesSamplingDimensions)
     model.output.cartesian_shape = {2, 3, 4};
     const mhs::core::Vector<double> temperatures(24, 300.0);
 
-    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, temperatures, {});
+    mhs::io::write_xml(in_path.string(), out_path.string(), model.output.cartesian_shape, temperatures, {});
 
     const auto xml = read_file(out_path);
     EXPECT_NE(xml.find("<SizeX>2</SizeX>"), std::string::npos);
@@ -267,7 +268,8 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
 
     mhs::core::Vector<mhs::solver::ProbeTrace> traces;
     const mhs::core::Vector<double> times;
-    mhs::io::write_xml(in_path.string(), out_path.string(), model.output, node_temperature, traces, times);
+    mhs::io::write_xml(
+        in_path.string(), out_path.string(), model.output.cartesian_shape, node_temperature, traces, times);
 
     std::string out_xml = read_file(out_path);
     EXPECT_EQ(out_xml.find("Result0DTransient"), std::string::npos)
@@ -335,5 +337,6 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
 TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape)
 {
     const test_pta::Model model;
-    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model.output, {}, {}), std::invalid_argument);
+    EXPECT_THROW(mhs::io::write_xml("unused.xml", "unused-output.xml", model.output.cartesian_shape, {}, {}),
+        std::invalid_argument);
 }

@@ -1,5 +1,5 @@
 #include "pta_definition.hpp"
-#include "compiler/model_functions.hpp"
+#include "compiler/model_compiler.hpp"
 #include "expression/expression.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -54,7 +54,7 @@ namespace mhs::app::pta {
 
     static void normalize_pta_expressions(Definition& def)
     {
-        for (auto& named : def.materials) {
+        for (auto& named : def.model.materials) {
             auto& material = named.value;
             material.conductivity_x = rewrite_formal_argument(material.conductivity_x, "T");
             material.conductivity_y = rewrite_formal_argument(material.conductivity_y, "T");
@@ -82,14 +82,14 @@ namespace mhs::app::pta {
                 },
                 boundary);
         };
-        normalize_boundary(def.default_boundary);
-        for (auto& boundary : def.boundaries)
+        normalize_boundary(def.model.default_boundary);
+        for (auto& boundary : def.model.boundaries)
             normalize_boundary(boundary.condition);
 
         for (auto& layer : def.layers)
             for (auto& block : layer.blocks) {
-                const bool names_function = std::any_of(
-                    def.functions.begin(), def.functions.end(), [&](const mhs::model::NamedFunction& function) {
+                const bool names_function = std::any_of(def.model.functions.begin(), def.model.functions.end(),
+                    [&](const mhs::model::NamedFunction& function) {
                         return function.name == block.volumetric_heat_source;
                     });
                 if (names_function)
@@ -99,17 +99,12 @@ namespace mhs::app::pta {
             }
     }
 
-    mhs::model::ModelDefinition normalize(const Definition& input)
+    mhs::model::ModelDefinition normalize(Definition pta)
     {
-        auto pta = input;
         normalize_pta_expressions(pta);
-        mhs::model::ModelDefinition out = pta;
-        out.settings = pta.settings;
-        const double scale = length_unit_to_si(pta.settings.length_unit);
-        mhs::expression::SymbolTable symbols, empty;
-        for (const auto& v : pta.variables)
-            symbols.variables[v.name] = mhs::expression::eval_geometry(v.value, empty);
-        mhs::compiler::register_all_functions(symbols, pta.functions);
+        auto out = std::move(pta.model);
+        const double scale = length_unit_to_si(pta.length_unit);
+        auto symbols = mhs::compiler::build_symbol_table(out);
         auto eval = [&](const auto& e) { return mhs::expression::eval_geometry(e, symbols) * scale; };
         mhs::core::Vector<double> thickness;
         double z = 0;

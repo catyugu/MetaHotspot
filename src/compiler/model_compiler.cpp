@@ -25,19 +25,6 @@ namespace mhs::compiler {
             model.transient_output_interval = definition.settings.transient_output_interval;
         }
 
-        mhs::expression::SymbolTable build_symbol_table(const mhs::core::Vector<mhs::model::VariableSpec>& variables,
-            const mhs::core::Vector<mhs::model::NamedFunction>& functions)
-        {
-            mhs::expression::SymbolTable empty_for_geometry_eval;
-            mhs::expression::SymbolTable symbols;
-            for (const auto& var : variables) {
-                double val = mhs::expression::eval_geometry(var.value, empty_for_geometry_eval);
-                symbols.variables[var.name] = val;
-            }
-            register_all_functions(symbols, functions);
-            return symbols;
-        }
-
         mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
@@ -98,7 +85,7 @@ namespace mhs::compiler {
         mhs::model::Model model;
         copy_scalar_parameters(model, definition);
 
-        auto symbols = build_symbol_table(definition.variables, definition.functions);
+        auto symbols = build_symbol_table(definition);
         for (const auto& p : definition.observation_points)
             model.observation_points.push_back({p.name, p.x, p.y, p.z});
 

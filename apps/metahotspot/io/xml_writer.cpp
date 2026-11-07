@@ -1,6 +1,6 @@
 #include "core/vector.hpp"
 #include "io/result_io.hpp"
-#include "output_mesh.hpp"
+
 #include "xml_helpers.hpp"
 #include <tinyxml2.h>
 
@@ -54,13 +54,12 @@ namespace mhs::io {
 
     } // namespace
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::app::OutputMesh& output,
-        std::span<const double> node_temperature, const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces,
-        std::span<const double> observation_times)
+    void write_xml(const std::string& input_path, const std::string& output_path,
+        const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
+        const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces, std::span<const double> observation_times)
     {
         using namespace tinyxml2;
 
-        const auto shape = output.cartesian_shape;
         if (shape[0] == 0 || shape[1] == 0 || shape[2] == 0)
             throw std::invalid_argument("XML output requires a Cartesian sampling grid; use VTU for imported meshes");
         if (node_temperature.size() != shape[0] * shape[1] * shape[2])
@@ -110,32 +109,8 @@ namespace mhs::io {
         for (const auto* name : {"SizeX", "SizeY", "SizeZ"})
             ensure(values_elem, name);
 
-        while (XMLElement* child = data_elem->FirstChildElement("a:double")) {
-            data_elem->DeleteChild(child);
-        }
-
-        const std::size_t node_nx = output.cartesian_shape[0];
-        const std::size_t node_ny = output.cartesian_shape[1];
-        const std::size_t node_nz = output.cartesian_shape[2];
-
-        for (std::size_t vx = 0; vx < node_nx; vx++) {
-            for (std::size_t vy = 0; vy < node_ny; vy++) {
-                for (std::size_t vz = 0; vz < node_nz; vz++) {
-                    const double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
-
-                    XMLElement* double_elem = doc.NewElement("a:double");
-                    if (std::isnan(val)) {
-                        double_elem->SetText("NaN");
-                    }
-                    else {
-                        char buf[64];
-                        std::snprintf(buf, sizeof(buf), "%.6f", val);
-                        double_elem->SetText(buf);
-                    }
-                    data_elem->InsertEndChild(double_elem);
-                }
-            }
-        }
+        refill_double_list(doc, data_elem, node_temperature, true);
+        const auto [node_nx, node_ny, node_nz] = shape;
 
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
         if (sx)

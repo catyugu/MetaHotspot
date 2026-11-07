@@ -6,7 +6,7 @@
 // The external boundary trace is a local algebraic unknown eliminated by static
 // condensation, so nothing here is persistent state: every entry point takes the
 // converged cell state and re-evaluates the local law on demand.
-#include "model/model.hpp"
+#include "solver/sampling.hpp"
 
 #include <optional>
 #include <span>
@@ -34,12 +34,6 @@ namespace mhs::solver {
     // trace temperature with its condensed conductance and load.
     BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& center,
         double area, double normal_distance, double cell_temperature, double normal_conductivity, double time);
-
-    // Trace temperature where `point` lies on one of `cell`'s external boundary
-    // patches, averaged over coincident patches with Dirichlet precedence.
-    // Empty when the point is interior to the cell.
-    std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
-        double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
 
     // Temperature at an arbitrary point: the boundary trace on an external
     // patch, otherwise a Green-Gauss gradient extrapolation from the center.

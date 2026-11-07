@@ -1,5 +1,5 @@
 #pragma once
-#include "output_mesh.hpp"
+#include "model/model_definition.hpp"
 
 #include "core/vector.hpp"
 #include "model/model.hpp"
@@ -8,10 +8,10 @@
 namespace mhs::app {
 
     // 从 cell 中心温度场与边界迹通过各向异性距离反比加权插值到节点温度场。
-    // Result order follows OutputMesh::points; no Cartesian topology is assumed.
+    // Result order is x-major, then y, then z on the supplied Cartesian sampling grid.
     // `time` 注入到 FieldContext.t，使时间依赖的 BC 表达式（如 "500 + 100*t"）
     // 在正确的时刻被求值。
-    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model, const OutputMesh& output,
+    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model, const mhs::model::MeshSpec& grid,
         std::span<const double> cell_temperature, double time);
 
     double max_temperature(std::span<const double> T);

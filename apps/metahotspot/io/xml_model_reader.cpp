@@ -143,17 +143,17 @@ namespace mhs::io {
 
         // StudyType (child element only)
         if (const XMLElement* study_elem = root->FirstChildElement("StudyType")) {
-            def.settings.study_type = parse_study_type(get_text(study_elem));
+            def.model.settings.study_type = parse_study_type(get_text(study_elem));
         }
 
         // LengthUnit (child element only)
         if (const XMLElement* unit_elem = root->FirstChildElement("LengthUnit")) {
-            def.settings.length_unit = parse_length_unit(get_text(unit_elem));
+            def.length_unit = parse_length_unit(get_text(unit_elem));
         }
 
         // Temperature settings
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
-            def.settings.initial_temperature = parse_double(get_text(init));
+            def.model.settings.initial_temperature = parse_double(get_text(init));
         }
         else {
             throw std::runtime_error("missing required element <InitialTemperature>");
@@ -161,15 +161,15 @@ namespace mhs::io {
 
         // Transient settings
         if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
-            def.settings.transient_duration = parse_double(get_text(trans));
+            def.model.settings.transient_duration = parse_double(get_text(trans));
         }
-        else if (def.settings.study_type == mhs::model::StudyType::Transient) {
+        else if (def.model.settings.study_type == mhs::model::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyDuration>");
         }
         if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
-            def.settings.transient_output_interval = parse_double(get_text(step));
+            def.model.settings.transient_output_interval = parse_double(get_text(step));
         }
-        else if (def.settings.study_type == mhs::model::StudyType::Transient) {
+        else if (def.model.settings.study_type == mhs::model::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyTimeStep>");
         }
 
@@ -214,7 +214,7 @@ namespace mhs::io {
                     var.value = get_text(val);
                 }
                 if (!var.name.empty()) {
-                    def.variables.push_back(std::move(var));
+                    def.model.variables.push_back(std::move(var));
                 }
             }
         }
@@ -282,7 +282,7 @@ namespace mhs::io {
                     }
                 }
                 if (!name.empty()) {
-                    def.materials.push_back({std::move(name), std::move(mat)});
+                    def.model.materials.push_back({std::move(name), std::move(mat)});
                 }
             }
         }
@@ -356,7 +356,7 @@ namespace mhs::io {
                     }
                 }
                 if (!name.empty()) {
-                    def.functions.push_back({std::move(name), std::move(fn)});
+                    def.model.functions.push_back({std::move(name), std::move(fn)});
                 }
             }
         }
@@ -466,7 +466,7 @@ namespace mhs::io {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
-                    def.fluid_boundaries.push_back(std::move(fluid_boundary));
+                    def.model.fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
                 boundary.regions = std::move(regions);
@@ -502,7 +502,7 @@ namespace mhs::io {
                     }
                 }
 
-                def.boundaries.push_back(std::move(boundary));
+                def.model.boundaries.push_back(std::move(boundary));
             }
         }
 
@@ -513,25 +513,26 @@ namespace mhs::io {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.mesh.x_vertices.push_back(parse_double(get_text(val)));
+                            def.model.mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.mesh.y_vertices.push_back(parse_double(get_text(val)));
+                            def.model.mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.mesh.z_vertices.push_back(parse_double(get_text(val)));
+                            def.model.mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                 }
             }
         }
-        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
+        if (def.model.mesh.x_vertices.empty() || def.model.mesh.y_vertices.empty()
+            || def.model.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
@@ -547,9 +548,9 @@ namespace mhs::io {
                             vertices.push_back(parse_double(get_text(value)));
                     }
                 };
-                read_vertices("XArray", def.mesh.x_vertices);
-                read_vertices("YArray", def.mesh.y_vertices);
-                read_vertices("ZArray", def.mesh.z_vertices);
+                read_vertices("XArray", def.model.mesh.x_vertices);
+                read_vertices("YArray", def.model.mesh.y_vertices);
+                read_vertices("ZArray", def.model.mesh.z_vertices);
             }
         }
 
@@ -574,8 +575,8 @@ namespace mhs::io {
             }
         }
 
-        def.default_boundary = std::move(default_boundary);
-        return pta::normalize(def);
+        def.model.default_boundary = std::move(default_boundary);
+        return pta::normalize(std::move(def));
     }
 
 } // namespace mhs::io

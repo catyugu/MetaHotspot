@@ -14,13 +14,13 @@ using namespace mhs::compiler;
 static mhs::app::pta::Definition make_simple_uniform_grid_io()
 {
     mhs::app::pta::Definition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -42,9 +42,9 @@ static mhs::app::pta::Definition make_simple_uniform_grid_io()
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
-    io.materials.push_back({"copper", mat});
+    io.model.materials.push_back({"copper", mat});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -96,13 +96,13 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
     // With Dirichlet priority, the result must be exactly 500K.
     mhs::app::pta::Definition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -124,16 +124,16 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     mhs::model::MaterialSpec copper;
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
-    io.materials.push_back({"copper", copper});
+    io.model.materials.push_back({"copper", copper});
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
     mhs::model::BoundaryPatch boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
     boundary_dirichlet.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary_dirichlet);
+    io.model.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -166,13 +166,13 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 本测试对 z=0 面上 Dirichlet 表达式 "500 + 100*t" 在 t=0 和 t=10
     // 两个时间点分别求值，验证两者差异严格为 1000K（旧实现会得到 0K 差异）。
     mhs::app::pta::Definition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -194,15 +194,15 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     mhs::model::MaterialSpec copper;
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
-    io.materials.push_back({"copper", copper});
+    io.model.materials.push_back({"copper", copper});
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary);
+    io.model.boundaries.push_back(boundary);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 

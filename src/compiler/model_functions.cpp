@@ -1,4 +1,5 @@
 #include "compiler/model_functions.hpp"
+#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
@@ -9,6 +10,15 @@
 #include <type_traits>
 
 namespace mhs::compiler {
+
+    mhs::expression::SymbolTable build_symbol_table(const mhs::model::ModelDefinition& definition)
+    {
+        mhs::expression::SymbolTable symbols, empty;
+        for (const auto& variable : definition.variables)
+            symbols.variables[variable.name] = mhs::expression::eval_geometry(variable.value, empty);
+        register_all_functions(symbols, definition.functions);
+        return symbols;
+    }
 
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
