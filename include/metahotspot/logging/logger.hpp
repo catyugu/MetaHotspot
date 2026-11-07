@@ -47,6 +47,7 @@ namespace mhs::logger {
 #endif
 
 // The level check precedes the evaluation of formatting arguments.
+// clang-format off
 #if MHS_LOG_COMPILED_LEVEL <= 0
 #define MHS_LOG_TRACE(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::trace)) ::mhs::logger::trace(__VA_ARGS__); } while (false)
 #else
@@ -82,3 +83,4 @@ namespace mhs::logger {
 #else
 #define MHS_LOG_CRITICAL(...) ((void)0)
 #endif
+// clang-format on
