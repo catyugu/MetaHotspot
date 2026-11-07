@@ -1,10 +1,10 @@
-#include "io/face_region_parser.hpp"
+#include "face_region_parser.hpp"
 
 #include "core/vector.hpp"
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io::detail {
+namespace mhs::app::pta::detail {
     namespace {
         mhs::core::Vector<std::string> split(const std::string& value, char delimiter)
         {
@@ -66,4 +66,4 @@ namespace mhs::io::detail {
         return region;
     }
 
-} // namespace mhs::io::detail
+} // namespace mhs::app::pta::detail

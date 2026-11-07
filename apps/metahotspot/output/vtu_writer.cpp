@@ -1,4 +1,4 @@
-#include "io/result_io.hpp"
+#include "vtu.hpp"
 #include <map>
 
 #include <tinyxml2.h>
@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io {
+namespace mhs::app::output {
 
     void write_vtu(
         const std::string& path, const mhs::model::DiscreteMesh& mesh, std::span<const double> cell_temperature)
@@ -114,4 +114,4 @@ namespace mhs::io {
             throw std::runtime_error("failed to write VTU: " + path);
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::output

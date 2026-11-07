@@ -1,4 +1,4 @@
-#include "pta_definition.hpp"
+#include "definition.hpp"
 #include "compiler/model_compiler.hpp"
 #include "expression/expression.hpp"
 #include <algorithm>
@@ -118,19 +118,19 @@ namespace mhs::app::pta {
             z += t;
         }
         // Reverse the layer order so the first PTA layer wins at a shared plane.
-        mhs::core::Vector<mhs::core::Vector<VolumeSpec>> layers;
+        mhs::core::Vector<mhs::core::Vector<mhs::model::VolumeSpec>> layers;
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
             z -= thickness[l];
             const auto& layer = pta.layers[l];
-            mhs::core::Vector<VolumeSpec> volumes;
+            mhs::core::Vector<mhs::model::VolumeSpec> volumes;
             for (const auto& b : layer.blocks) {
                 auto mat = std::find_if(
                     out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
                 if (mat == out.materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
-                VolumeSpec v;
-                v.material = static_cast<MaterialId>(mat - out.materials.begin());
-                v.source = static_cast<SourceId>(out.sources.size());
+                mhs::model::VolumeSpec v;
+                v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
+                v.source = static_cast<mhs::model::SourceId>(out.sources.size());
                 out.sources.push_back(b.volumetric_heat_source);
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);

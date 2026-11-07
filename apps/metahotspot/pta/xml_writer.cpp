@@ -1,5 +1,5 @@
 #include "core/vector.hpp"
-#include "io/result_io.hpp"
+#include "io.hpp"
 
 #include "xml_helpers.hpp"
 #include <tinyxml2.h>
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io {
+namespace mhs::app::pta {
 
     namespace {
 
@@ -172,4 +172,4 @@ namespace mhs::io {
             throw std::runtime_error("failed to write XML: " + output_path);
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::pta

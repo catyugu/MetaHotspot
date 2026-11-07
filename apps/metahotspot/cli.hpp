@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace mhs::cli {
+namespace mhs::app::cli {
 
     // Named, order-independent flags; positional arguments are not accepted.
     struct Options {
@@ -35,4 +35,4 @@ namespace mhs::cli {
 
     std::string usage_text(std::string_view program_name);
 
-} // namespace mhs::cli
+} // namespace mhs::app::cli
