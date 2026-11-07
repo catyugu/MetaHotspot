@@ -5,7 +5,7 @@
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
  * Three opaque handles, three life-cycle phases:
- *   mhs_model_t     — mutable construction (add layers, blocks, BCs, materials)
+ *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
  *
@@ -68,9 +68,6 @@ typedef struct mhs_operators_t mhs_operators_t;
 /* ------------------------------------------------------------------ */
 typedef int32_t mhs_study_t;
 enum { MHS_STUDY_STEADY = 0, MHS_STUDY_TRANSIENT = 1 };
-
-typedef int32_t mhs_length_unit_t;
-enum { MHS_UNIT_METER = 0, MHS_UNIT_MILLIMETER, MHS_UNIT_MICROMETER, MHS_UNIT_NANOMETER, MHS_UNIT_INCH, MHS_UNIT_MIL };
 
 typedef int32_t mhs_axis_t;
 enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
@@ -225,14 +222,13 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
-MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
-    double initial_temperature_K, double duration, double output_interval);
+MHS_API mhs_status_t mhs_model_set_settings(
+    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
 
 MHS_API mhs_status_t mhs_model_set_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
@@ -242,20 +238,19 @@ MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  materials, layers, blocks, rects           */
+/*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
+    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id);
-
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id);
-
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
-    const char* y, const char* width, const char* height);
+/** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
+ * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
+MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_volume(
+    mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_volume_add_box(
+    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */
@@ -344,8 +339,6 @@ MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
-
-MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Solution copy-out accessors                                        */

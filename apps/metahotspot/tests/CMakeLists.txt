@@ -1,0 +1,8 @@
+include(GoogleTest)
+file(GLOB app_test_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+add_executable(mhs_app_tests ${app_test_sources})
+target_link_libraries(mhs_app_tests PRIVATE mhs_app_support GTest::gtest_main)
+target_include_directories(mhs_app_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(mhs_app_tests PRIVATE MHS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+mhs_stage_runtime(mhs_app_tests)
+gtest_discover_tests(mhs_app_tests TEST_PREFIX "mhs.app." DISCOVERY_TIMEOUT 60)

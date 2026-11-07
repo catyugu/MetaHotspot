@@ -2,8 +2,6 @@
 #include "metahotspot_c_api.h"
 
 #include "compiler/model_compiler.hpp"
-#include "io/model_io.hpp"
-#include "io/result_io.hpp"
 #include "logging/logger.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -69,14 +67,8 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
 /* ------------------------------------------------------------------ */
 
-struct BlockLocation {
-    mhs_index_t layer;
-    mhs_index_t block;
-};
-
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
-    mhs::core::Vector<BlockLocation> block_locations;
     std::optional<mhs::model::DiscreteMesh> external_mesh;
 };
 
@@ -90,7 +82,6 @@ struct mhs_operators_t {
 
 struct mhs_solution_t {
     mhs::solver::Solution sol;
-    std::shared_ptr<const mhs::model::Model> model;
 };
 
 /* ------------------------------------------------------------------ */
@@ -128,26 +119,6 @@ static mhs::model::StudyType _to_model_study(mhs_study_t s)
         return mhs::model::StudyType::Transient;
     default:
         throw std::invalid_argument("invalid study type: " + std::to_string(s));
-    }
-}
-
-static mhs::model::LengthUnit _to_unit(mhs_length_unit_t u)
-{
-    switch (u) {
-    case MHS_UNIT_METER:
-        return mhs::model::LengthUnit::Meter;
-    case MHS_UNIT_MILLIMETER:
-        return mhs::model::LengthUnit::Millimeter;
-    case MHS_UNIT_MICROMETER:
-        return mhs::model::LengthUnit::Micrometer;
-    case MHS_UNIT_NANOMETER:
-        return mhs::model::LengthUnit::Nanometer;
-    case MHS_UNIT_INCH:
-        return mhs::model::LengthUnit::Inch;
-    case MHS_UNIT_MIL:
-        return mhs::model::LengthUnit::Mil;
-    default:
-        throw std::invalid_argument("invalid length unit: " + std::to_string(u));
     }
 }
 
@@ -235,28 +206,16 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 
-MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(path);
-    MHS_TRY({
-        m->def = mhs::io::read_xml(path);
-        m->block_locations.clear();
-        m->external_mesh.reset();
-    });
-}
-
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
-    double initial_temperature_K, double duration, double output_interval)
+MHS_API mhs_status_t mhs_model_set_settings(
+    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval)
 {
     CHECK_NULL(m);
     MHS_TRY({
         m->def.settings.study_type = _to_model_study(study);
-        m->def.settings.length_unit = _to_unit(length_unit);
         m->def.settings.initial_temperature = initial_temperature_K;
         m->def.settings.transient_duration = duration;
         m->def.settings.transient_output_interval = output_interval;
@@ -334,14 +293,15 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  materials, layers, blocks, rects           */
+/*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity)
+    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
+    CHECK_NULL(out_id);
     MHS_TRY({
         mhs::model::MaterialSpec spec;
         if (kx)
@@ -358,69 +318,53 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
             spec.is_fluid = true;
         }
+        *out_id = static_cast<mhs_index_t>(m->def.materials.size());
         m->def.materials.push_back({name, std::move(spec)});
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
-    CHECK_NULL(thickness);
-    CHECK_NULL(x_offset);
-    CHECK_NULL(y_offset);
+    CHECK_NULL(expression);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto id = static_cast<mhs_index_t>(m->def.layers.size());
-        m->def.layers.push_back({thickness, x_offset, y_offset, {}});
-        *out_id = id;
+        *out_id = static_cast<mhs_index_t>(m->def.sources.size());
+        m->def.sources.push_back(expression);
     });
 }
-
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
-    CHECK_NULL(material_name);
     CHECK_NULL(out_id);
-    if (layer >= m->def.layers.size()) {
-        SET_ERR("layer ID out of range");
-        return MHS_ERROR;
-    }
     MHS_TRY({
-        mhs::model::BlockSpec block;
-        block.material = material_name;
-        block.volumetric_heat_source = heat_source ? heat_source : "0.0";
-        block.x_offset = x_offset ? x_offset : "0.0";
-        block.y_offset = y_offset ? y_offset : "0.0";
-        if (thickness)
-            block.thickness = std::string(thickness);
-        const auto block_idx = static_cast<mhs_index_t>(m->def.layers[layer].blocks.size());
-        m->def.layers[layer].blocks.push_back(std::move(block));
-        m->block_locations.push_back({layer, block_idx});
-        *out_id = static_cast<mhs_index_t>(m->block_locations.size() - 1);
+        if (material >= m->def.materials.size())
+            throw std::out_of_range("material ID out of range");
+        if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
+            throw std::out_of_range("source ID out of range");
+        *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
+        m->def.volumes.push_back({material, source, {}});
     });
 }
-
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
-    const char* y, const char* width, const char* height)
+MHS_API mhs_status_t mhs_model_volume_add_box(
+    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
 {
     CHECK_NULL(m);
-    CHECK_NULL(x);
-    CHECK_NULL(y);
-    CHECK_NULL(width);
-    CHECK_NULL(height);
-    if (block >= m->block_locations.size()) {
-        SET_ERR("block ID out of range");
-        return MHS_ERROR;
-    }
+    CHECK_NULL(min_xyz);
+    CHECK_NULL(max_xyz);
     MHS_TRY({
-        const auto loc = m->block_locations[block];
-        mhs::model::RectOperation rect_op;
-        rect_op.operation
-            = (op == MHS_GEOM_SUB) ? mhs::model::GeometryOperation::Subtract : mhs::model::GeometryOperation::Add;
-        rect_op.rect = {x, y, width, height};
-        m->def.layers[loc.layer].blocks[loc.block].geometry.push_back(std::move(rect_op));
+        if (volume >= m->def.volumes.size())
+            throw std::out_of_range("volume ID out of range");
+        if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
+            throw std::invalid_argument("invalid geometry operation");
+        mhs::model::BoxOperation box;
+        box.operation
+            = op == MHS_GEOM_ADD ? mhs::model::GeometryOperation::Add : mhs::model::GeometryOperation::Subtract;
+        for (int a = 0; a < 3; ++a) {
+            box.min[a] = min_xyz[a];
+            box.max[a] = max_xyz[a];
+        }
+        m->def.volumes[volume].geometry.push_back(box);
     });
 }
 
@@ -567,7 +511,7 @@ MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, doubl
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY({ m->def.observation_points.push_back({name, std::to_string(x), std::to_string(y), std::to_string(z)}); });
+    MHS_TRY({ m->def.observation_points.push_back({name, x, y, z}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
@@ -916,7 +860,6 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             return MHS_ERROR;
         }
         s->sol = std::move(sol);
-        s->model = c->model;
         *out = s;
     });
 }
@@ -926,13 +869,6 @@ MHS_API void mhs_solution_destroy(mhs_solution_t* s) { delete s; }
 /* ------------------------------------------------------------------ */
 /*  VTU export                                                         */
 /* ------------------------------------------------------------------ */
-
-MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path)
-{
-    CHECK_NULL(s);
-    CHECK_NULL(path);
-    MHS_TRY({ mhs::io::write_vtu(path, *s->model, s->sol.state); });
-}
 
 /* ------------------------------------------------------------------ */
 /*  Solution copy-out accessors                                        */

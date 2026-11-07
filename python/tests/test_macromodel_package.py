@@ -14,22 +14,22 @@ import scipy.sparse as sp
 
 import metahotspot
 from metahotspot import macromodel as mm
-from metahotspot.enums import Face, LengthUnit, Study
+from metahotspot.enums import Face, Study
 from metahotspot.macromodel.geometry import CellGeometry
 
 
 def _build_operators(nx=2, ny=2, nz=3):
     model = metahotspot.Model()
-    model.set_settings(study=Study.STEADY, length_unit=LengthUnit.MILLIMETER)
+    model.set_settings(study=Study.STEADY)
     model.set_mesh(
-        np.linspace(0.0, float(nx), nx + 1),
-        np.linspace(0.0, float(ny), ny + 1),
-        np.linspace(0.0, float(nz), nz + 1),
+        np.linspace(0.0, float(nx) * 1e-3, nx + 1),
+        np.linspace(0.0, float(ny) * 1e-3, ny + 1),
+        np.linspace(0.0, float(nz) * 1e-3, nz + 1),
     )
-    model.add_material("solid", "1", "1", "1", "1000", "500")
-    layer = model.add_layer(str(float(nz)))
-    block = model.add_block(layer, "solid", heat_source="1e6")
-    model.add_rect(block, 0, "0", "0", f"{nx}", f"{ny}")
+    material = model.add_material("solid", "1", "1", "1", "1000", "500")
+    source = model.add_source("1e6")
+    volume = model.add_volume(material, source)
+    model.add_box(volume, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
     model.set_default_neumann("0")
     compiled = model.compile()
     ops = compiled.assemble()

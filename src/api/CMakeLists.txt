@@ -4,7 +4,6 @@ add_library(mhs_c_api SHARED
 target_link_libraries(mhs_c_api PRIVATE
     mhs_compiler
     mhs_solver
-    mhs_io
     mhs_logging
 )
 target_include_directories(mhs_c_api

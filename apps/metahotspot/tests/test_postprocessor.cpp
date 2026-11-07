@@ -3,32 +3,33 @@
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
 #include "model_test_utils.hpp"
-#include "solver/postprocessor.hpp"
+#include "postprocessor.hpp"
+#include "pta_test_utils.hpp"
 #include <gtest/gtest.h>
 
 using namespace mhs::solver;
 using namespace mhs::compiler;
 
-// Helper: build a minimal mhs::model::ModelDefinition with a uniform grid
-static mhs::model::ModelDefinition make_simple_uniform_grid_io()
+// Helper: build a minimal mhs::app::pta::Definition with a uniform grid
+static mhs::app::pta::Definition make_simple_uniform_grid_io()
 {
-    mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    mhs::app::pta::Definition io;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
 
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "0";
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -41,9 +42,9 @@ static mhs::model::ModelDefinition make_simple_uniform_grid_io()
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
-    io.materials.push_back({"copper", mat});
+    io.model.materials.push_back({"copper", mat});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -53,7 +54,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     // On a uniform grid, distance-weighted interpolation should
     // produce the same result as a simple arithmetic mean.
     auto io = make_simple_uniform_grid_io();
-    auto model = build_model(io);
+    auto model = test_pta::build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
     // Set cell temperatures to known values
@@ -62,7 +63,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
         cell_T[i] = 300.0 + i * 10.0; // 300, 310, 320, ...
     }
 
-    auto node_T = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T = test_pta::interpolate_cell_to_node(model, cell_T, 0.0);
 
     // On a uniform 5mm grid, the interior node at (vx=1, vy=1, vz=1)
     // is shared by all 8 cells. The node is at the geometric center
@@ -94,23 +95,23 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // touches both. Without Dirichlet priority, the result would be an
     // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
     // With Dirichlet priority, the result must be exactly 500K.
-    mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    mhs::app::pta::Definition io;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
 
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "0";
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -123,24 +124,24 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
 
     mhs::model::MaterialSpec copper;
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
-    io.materials.push_back({"copper", copper});
+    io.model.materials.push_back({"copper", copper});
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
     mhs::model::BoundaryPatch boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
     boundary_dirichlet.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary_dirichlet);
+    io.model.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = build_model(io);
+    auto model = test_pta::build_model(io);
 
     // Set all cell temperatures to something different from 500
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> cell_T(N, 400.0);
 
-    auto node_T = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T = test_pta::interpolate_cell_to_node(model, cell_T, 0.0);
 
     const std::size_t node_ny = model.output.cartesian_shape[1];
     const std::size_t node_nz = model.output.cartesian_shape[2];
@@ -164,23 +165,23 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 导致时间依赖的 BC 表达式在任意时刻都被求值成 t=0 时的结果。
     // 本测试对 z=0 面上 Dirichlet 表达式 "500 + 100*t" 在 t=0 和 t=10
     // 两个时间点分别求值，验证两者差异严格为 1000K（旧实现会得到 0K 差异）。
-    mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
+    mhs::app::pta::Definition io;
+    io.model.settings.study_type = mhs::model::StudyType::Steady;
+    io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
+    io.model.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
 
-    mhs::model::LayerSpec layer;
+    mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
 
-    mhs::model::BlockSpec block;
+    mhs::app::pta::BlockSpec block;
     block.material = "copper";
     block.volumetric_heat_source = "0";
 
-    mhs::model::RectOperation rect;
+    mhs::app::pta::RectOperation rect;
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
@@ -193,17 +194,17 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     mhs::model::MaterialSpec copper;
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
-    io.materials.push_back({"copper", copper});
+    io.model.materials.push_back({"copper", copper});
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary);
+    io.model.boundaries.push_back(boundary);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = build_model(io);
+    auto model = test_pta::build_model(io);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> cell_T(N, 400.0);
@@ -214,11 +215,11 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     int node_idx = 1 * node_ny * node_nz + 1 * node_nz + 0;
 
     // t=0 时刻：500 + 100*0 = 500
-    auto node_T_0 = mhs::solver::interpolate_cell_to_node(model, cell_T, 0.0);
+    auto node_T_0 = test_pta::interpolate_cell_to_node(model, cell_T, 0.0);
     EXPECT_NEAR(node_T_0[node_idx], 500.0, 1e-6) << "At t=0, time-dependent Dirichlet should evaluate to 500";
 
     // t=10 时刻：500 + 100*10 = 1500
-    auto node_T_10 = mhs::solver::interpolate_cell_to_node(model, cell_T, 10.0);
+    auto node_T_10 = test_pta::interpolate_cell_to_node(model, cell_T, 10.0);
     EXPECT_NEAR(node_T_10[node_idx], 1500.0, 1e-6) << "At t=10, time-dependent Dirichlet should evaluate to 1500";
 
     // 旧实现下两个时刻结果相等；修复后差异必须严格为 1000

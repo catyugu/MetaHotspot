@@ -53,14 +53,12 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     # ---- Model life-cycle ----
     ("mhs_model_create", ctypes.c_int32, [ctypes.POINTER(ctypes.POINTER(MhsModel))]),
     ("mhs_model_destroy", None, [ctypes.POINTER(MhsModel)]),
-    ("mhs_model_read_xml", ctypes.c_int32, [ctypes.POINTER(MhsModel), ctypes.c_char_p]),
     # ---- Settings / mesh / variables ----
     (
         "mhs_model_set_settings",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
-            ctypes.c_int32,
             ctypes.c_int32,
             ctypes.c_double,
             ctypes.c_double,
@@ -98,47 +96,36 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
             ctypes.c_char_p,
             ctypes.c_char_p,
             ctypes.c_char_p,
-        ],
-    ),
-    (
-        "mhs_model_add_layer",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
             ctypes.POINTER(ctypes.c_uint32),
         ],
     ),
+    # ---- Atomic boundary conditions ----
     (
-        "mhs_model_add_block",
+        "mhs_model_add_source",
+        ctypes.c_int32,
+        [ctypes.POINTER(MhsModel), ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32)],
+    ),
+    (
+        "mhs_model_add_volume",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_uint32,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
+            ctypes.c_uint32,
             ctypes.POINTER(ctypes.c_uint32),
         ],
     ),
     (
-        "mhs_model_add_rect",
+        "mhs_model_volume_add_box",
         ctypes.c_int32,
         [
             ctypes.POINTER(MhsModel),
             ctypes.c_uint32,
             ctypes.c_int32,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
         ],
     ),
-    # ---- Atomic boundary conditions ----
     (
         "mhs_model_add_dirichlet",
         ctypes.c_int32,
@@ -366,11 +353,6 @@ _CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
     ),
     ("mhs_solution_destroy", None, [ctypes.POINTER(MhsSolution)]),
     # ---- VTU ----
-    (
-        "mhs_solution_write_vtu",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.c_char_p],
-    ),
     # ---- Solution copy-out accessors ----
     (
         "mhs_solution_get_info",

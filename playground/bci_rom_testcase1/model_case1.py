@@ -44,7 +44,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 import metahotspot
-from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
+from metahotspot.enums import Face, Study
 
 from metahotspot.macromodel.affine import (  # noqa: E402
     AffineParametricModel,
@@ -208,65 +208,45 @@ def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool)
     transient = study == Study.TRANSIENT
     model.set_settings(
         study=study,
-        length_unit=LengthUnit.MILLIMETER,
         initial_temperature_K=cfg.ambient_K,
         duration=cfg.duration_s if transient else 0.0,
         output_interval=cfg.dt_s if transient else 0.0,
     )
-    model.set_mesh(cfg.x_vertices_mm, cfg.y_vertices_mm, cfg.z_vertices_mm)
-    for name, (kx, ky, kz, rho, c) in MATERIALS.items():
-        model.add_material(name, kx, ky, kz, rho, c)
-    model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
+    model.set_mesh(
+        cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
+    )
+    materials = {
+        name: model.add_material(name, *props) for name, props in MATERIALS.items()
+    }
+    air = model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
 
-    def add_air_background(layer):
-        xlo, xhi = A2_MIN_X, A2_MAX_X
-        ylo, yhi = A2_MIN_Y, A2_MAX_Y
-        air_block = model.add_block(layer, AIR_MATERIAL)
-        model.add_rect(
-            air_block,
-            GeometryOp.ADD,
-            f"{xlo:.17g}",
-            f"{ylo:.17g}",
-            f"{xhi - xlo:.17g}",
-            f"{yhi - ylo:.17g}",
+    def add_box(material, lo, hi, power=0):
+        source = (
+            model.add_source(f"{power / (np.prod(np.array(hi) - lo) * 1e-9):.17g}")
+            if power > 0
+            else 0xFFFFFFFF
         )
+        volume = model.add_volume(material, source)
+        model.add_box(volume, np.array(lo) * 1e-3, np.array(hi) * 1e-3)
 
-    layer = model.add_layer(str(DIE_THICKNESS_MM))
-    add_air_background(layer)
+    z = 0.0
+    for thickness, material, sx, sy, cx, cy, power in LAYERS:
+        add_box(air, [A2_MIN_X, A2_MIN_Y, z], [A2_MAX_X, A2_MAX_Y, z + thickness])
+        add_box(
+            materials[material],
+            [cx - sx / 2, cy - sy / 2, z],
+            [cx + sx / 2, cy + sy / 2, z + thickness],
+            power,
+        )
+        z += thickness
+    add_box(air, [A2_MIN_X, A2_MIN_Y, z], [A2_MAX_X, A2_MAX_Y, z + DIE_THICKNESS_MM])
     for power, (xlo, xhi), (ylo, yhi) in DIES:
-        volume_m3 = (xhi - xlo) * (yhi - ylo) * DIE_THICKNESS_MM * 1.0e-9
-        block = model.add_block(
-            layer, DIE_MATERIAL, heat_source=f"{power / volume_m3:.17g}"
+        add_box(
+            materials[DIE_MATERIAL],
+            [xlo, ylo, z],
+            [xhi, yhi, z + DIE_THICKNESS_MM],
+            power,
         )
-        model.add_rect(
-            block,
-            GeometryOp.ADD,
-            f"{xlo:.17g}",
-            f"{ylo:.17g}",
-            f"{xhi - xlo:.17g}",
-            f"{yhi - ylo:.17g}",
-        )
-
-    for thickness, material, sx, sy, cx, cy, power in reversed(LAYERS):
-        layer = model.add_layer(str(thickness))
-        add_air_background(layer)
-        if power > 0.0:
-            volume_m3 = sx * sy * thickness * 1.0e-9
-            block = model.add_block(
-                layer, material, heat_source=f"{power / volume_m3:.17g}"
-            )
-        else:
-            block = model.add_block(layer, material)
-        half_x, half_y = sx / 2.0, sy / 2.0
-        model.add_rect(
-            block,
-            GeometryOp.ADD,
-            f"{cx - half_x:.17g}",
-            f"{cy - half_y:.17g}",
-            f"{sx:.17g}",
-            f"{sy:.17g}",
-        )
-
     model.set_default_neumann("0")
     return model
 

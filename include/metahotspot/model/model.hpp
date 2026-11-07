@@ -3,7 +3,6 @@
 #include "expression/expression.hpp"
 #include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
-#include "model/output_mesh.hpp"
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
@@ -62,7 +61,6 @@ namespace mhs::model {
 
     struct Model {
         DiscreteMesh discrete;
-        OutputMesh output;
 
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
