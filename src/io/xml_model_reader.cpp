@@ -1,10 +1,12 @@
 #include <tinyxml2.h>
 
 #include "core/vector.hpp"
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include "face_region_parser.hpp"
@@ -93,6 +95,83 @@ namespace mhs::io {
             start = end + 1;
         }
         return segs;
+    }
+
+    // PTA uses a generic formal variable named x for several unrelated
+    // physical laws. Normalize that front-end convention before the model
+    // reaches the compiler; ModelDefinition expressions are canonical.
+    static std::string rewrite_formal_argument(const std::string& expression, std::string_view replacement)
+    {
+        auto is_id_start = [](char c) {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+        };
+        auto is_id_char = [&](char c) { return is_id_start(c) || (c >= '0' && c <= '9'); };
+
+        std::string out;
+        out.reserve(expression.size());
+        for (std::size_t i = 0; i < expression.size();) {
+            if (!is_id_start(expression[i])) {
+                out += expression[i++];
+                continue;
+            }
+            const std::size_t begin = i++;
+            while (i < expression.size() && is_id_char(expression[i]))
+                ++i;
+            const std::string_view name(expression.data() + begin, i - begin);
+            if (name == "x")
+                out += replacement;
+            else
+                out.append(expression, begin, i - begin);
+        }
+        return out;
+    }
+
+    static void normalize_pta_expressions(mhs::model::ModelDefinition& def)
+    {
+        for (auto& named : def.materials) {
+            auto& material = named.value;
+            material.conductivity_x = rewrite_formal_argument(material.conductivity_x, "T");
+            material.conductivity_y = rewrite_formal_argument(material.conductivity_y, "T");
+            material.conductivity_z = rewrite_formal_argument(material.conductivity_z, "T");
+            material.density = rewrite_formal_argument(material.density, "T");
+            material.specific_heat = rewrite_formal_argument(material.specific_heat, "T");
+            if (material.dynamic_viscosity)
+                *material.dynamic_viscosity = rewrite_formal_argument(*material.dynamic_viscosity, "T");
+        }
+
+        auto normalize_boundary = [](mhs::model::ThermalBoundary& boundary) {
+            std::visit(
+                [](auto& value) {
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, mhs::model::DirichletBoundary>) {
+                        value.temperature = rewrite_formal_argument(value.temperature, "T");
+                    }
+                    else if constexpr (std::is_same_v<T, mhs::model::NeumannBoundary>) {
+                        value.heat_flux = rewrite_formal_argument(value.heat_flux, "T");
+                    }
+                    else {
+                        value.coefficient = rewrite_formal_argument(value.coefficient, "T");
+                        value.ambient_temperature = rewrite_formal_argument(value.ambient_temperature, "T");
+                    }
+                },
+                boundary);
+        };
+        normalize_boundary(def.default_boundary);
+        for (auto& boundary : def.boundaries)
+            normalize_boundary(boundary.condition);
+
+        for (auto& layer : def.layers)
+            for (auto& block : layer.blocks) {
+                const bool names_function = std::any_of(def.functions.begin(), def.functions.end(),
+                    [&](const mhs::model::NamedFunction& function) {
+                        return function.name == block.volumetric_heat_source;
+                    });
+                if (names_function)
+                    block.volumetric_heat_source += "(t)";
+                else
+                    block.volumetric_heat_source
+                        = rewrite_formal_argument(block.volumetric_heat_source, "t");
+            }
     }
 
     static mhs::model::StudyType parse_study_type(const std::string& val)
@@ -571,6 +650,7 @@ namespace mhs::io {
         }
 
         def.default_boundary = std::move(default_boundary);
+        normalize_pta_expressions(def);
         return def;
     }
 
