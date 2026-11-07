@@ -50,6 +50,7 @@ class FluidBC(enum.IntEnum):
     MASS_FLOW_INLET = 2
     OUTLET = 3
 
+
 class LogLevel(enum.IntEnum):
     TRACE = 0
     DEBUG = 1
