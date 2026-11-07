@@ -5,7 +5,8 @@
 #include "logging/logger.hpp"
 #include "postprocess.hpp"
 #include "solver/solver.hpp"
-#include <array>\n#include <iostream>
+#include <array>
+#include <iostream>
 #include <string>
 
 int main(int argc, char* argv[])
@@ -69,7 +70,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);
     }
     catch (const std::exception& e) {
-        printf("Simulation failed: %s", e.what());
+        std::cerr << "Simulation failed: " << e.what() << '\n';
         return 1;
     }
 

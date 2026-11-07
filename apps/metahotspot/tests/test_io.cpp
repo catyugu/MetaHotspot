@@ -1,6 +1,5 @@
 #include "core/vector.hpp"
 #include "pta/io.hpp"
-#include "output/vtu.hpp"
 #include "model/model_definition.hpp"
 #include "pta_test_utils.hpp"
 #include <filesystem>
