@@ -13,6 +13,10 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#pragma warning(disable : 4996) // getenv is read once at process setup.
+#endif
+
 namespace mhs::logger {
     namespace {
         class CallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
@@ -22,13 +26,13 @@ namespace mhs::logger {
                 std::shared_ptr<const LogCallback> next;
                 if (callback)
                     next = std::make_shared<const LogCallback>(std::move(callback));
-                std::atomic_store(&callback_, std::move(next));
+                callback_.store(std::move(next));
             }
 
         protected:
             void sink_it_(const spdlog::details::log_msg& msg) override
             {
-                auto callback = std::atomic_load(&callback_);
+                auto callback = callback_.load();
                 if (callback) {
                     const std::string message(msg.payload.data(), msg.payload.size());
                     try {
@@ -42,7 +46,7 @@ namespace mhs::logger {
             void flush_() override { }
 
         private:
-            std::shared_ptr<const LogCallback> callback_;
+            std::atomic<std::shared_ptr<const LogCallback>> callback_;
         };
 
         std::once_flag config_once;
