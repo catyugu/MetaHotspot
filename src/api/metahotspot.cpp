@@ -1028,10 +1028,7 @@ MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level)
     return MHS_OK;
 }
 
-MHS_API mhs_log_level_t mhs_log_get_level()
-{
-    return static_cast<mhs_log_level_t>(mhs::logger::log_level());
-}
+MHS_API mhs_log_level_t mhs_log_get_level() { return static_cast<mhs_log_level_t>(mhs::logger::log_level()); }
 
 MHS_API void mhs_log_set_callback(mhs_log_callback_t callback, void* user_data)
 {
