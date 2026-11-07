@@ -49,8 +49,6 @@ extern "C" {
 /* The single source of the library version: CMake reads project(VERSION)
  * from these macros, the Python package takes its metadata version from
  * them, and mhs_version_string() reports them at run time. */
-#define MHS_ABI_VERSION 1
-
 #define MHS_VERSION_MAJOR 0
 #define MHS_VERSION_MINOR 0
 #define MHS_VERSION_PATCH 0
@@ -209,8 +207,6 @@ MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level);
 MHS_API mhs_log_level_t mhs_log_get_level(void);
 /** Library version, e.g. "1.0.0". */
 MHS_API const char* mhs_version_string(void);
-/** ABI revision, independent of the package version. Rebuild consumers on changes. */
-MHS_API int32_t mhs_abi_version(void);
 
 /** Thread-local error; valid until the next status-returning call on this thread. */
 MHS_API const char* mhs_last_error(void);

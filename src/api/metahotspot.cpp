@@ -189,8 +189,6 @@ MHS_API const char* mhs_last_error(void) { return mhs_detail_last_error(); }
 
 MHS_API const char* mhs_version_string(void) { return MHS_VERSION_STRING; }
 
-MHS_API int32_t mhs_abi_version(void) { return MHS_ABI_VERSION; }
-
 /* ------------------------------------------------------------------ */
 /*  Model life-cycle                                                   */
 /* ------------------------------------------------------------------ */

@@ -58,10 +58,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 - `core::SparseIndex = int32_t` 用于 CSR 存储，`Triplet` 是聚合类型。第三方索引类型留在实现文件中。
 - C ABI 对应 `mhs_index_t`、`mhs_sparse_index_t` 和 `size_t`；Python 索引数组对应 `np.uint32` 和 `np.int32`。
 
-## C ABI revision 1
-
-`MHS_ABI_VERSION` 与 `mhs_abi_version()` 标识 C ABI 修订，独立于软件包版本。
-Python 加载动态库时先校验此修订，旧动态库会得到明确错误。C/C++ 调用者须同步更新头文件和动态库。
+## C API 契约
 
 - 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
 - `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。

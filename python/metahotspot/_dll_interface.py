@@ -35,7 +35,6 @@ _CORE_FUNC_SIGS = [
     ("mhs_solve_options_default", None, [P(_SolveOptionsCStruct)]),
     ("mhs_last_error", Text, []),
     ("mhs_version_string", Text, []),
-    ("mhs_abi_version", I32, []),
     (
         "mhs_compiled_eval_source_terms",
         I32,
@@ -144,12 +143,6 @@ _CORE_FUNC_SIGS = [
 
 def configure_dll(dll: ctypes.CDLL) -> None:
     """Set *argtypes* and *restype* on every core C API function in *dll*."""
-    version = getattr(dll, "mhs_abi_version", None)
-    if version is None:
-        raise RuntimeError("Incompatible MetaHotspot C ABI: rebuild the native library")
-    version.restype, version.argtypes = I32, []
-    if version() != 1:
-        raise RuntimeError("Incompatible MetaHotspot C ABI revision (expected 1)")
     for name, restype, argtypes in _CORE_FUNC_SIGS:
         fn = getattr(dll, name)
         fn.restype = restype
