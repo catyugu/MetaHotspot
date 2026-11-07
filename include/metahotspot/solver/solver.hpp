@@ -13,7 +13,6 @@ namespace mhs::solver {
     std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
 
-
     /// Flattened user-facing solver configuration.
     /// Defaults are defined here — C API and Python convert from this struct.
     struct SolveOptions {
