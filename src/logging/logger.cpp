@@ -13,10 +13,6 @@
 #include <string>
 #include <vector>
 
-#ifdef _MSC_VER
-#pragma warning(disable : 4996) // getenv is read once at process setup.
-#endif
-
 namespace mhs::logger {
     namespace {
         class CallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
@@ -61,8 +57,19 @@ namespace mhs::logger {
         {
             std::call_once(config_once, [fallback] {
                 auto level = fallback;
-                if (const char* raw = std::getenv("MHS_LOG_LEVEL")) {
-                    std::string value(raw);
+                std::string value;
+#ifdef _WIN32
+                char* raw = nullptr;
+                size_t length = 0;
+                if (_dupenv_s(&raw, &length, "MHS_LOG_LEVEL") == 0 && raw) {
+                    value = raw;
+                    std::free(raw);
+                }
+#else
+                if (const char* raw = std::getenv("MHS_LOG_LEVEL"))
+                    value = raw;
+#endif
+                if (!value.empty()) {
                     std::transform(value.begin(), value.end(), value.begin(),
                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                     if (value == "trace")
