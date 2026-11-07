@@ -92,8 +92,13 @@ enum {
 
 typedef int32_t mhs_log_level_t;
 enum {
-    MHS_LOG_TRACE = 0, MHS_LOG_DEBUG = 1, MHS_LOG_INFO = 2,
-    MHS_LOG_WARN = 3, MHS_LOG_ERROR = 4, MHS_LOG_CRITICAL = 5, MHS_LOG_OFF = 6
+    MHS_LOG_TRACE = 0,
+    MHS_LOG_DEBUG = 1,
+    MHS_LOG_INFO = 2,
+    MHS_LOG_WARN = 3,
+    MHS_LOG_ERROR = 4,
+    MHS_LOG_CRITICAL = 5,
+    MHS_LOG_OFF = 6
 };
 /** Callback receives a transient null-terminated UTF-8 message. */
 typedef void (*mhs_log_callback_t)(mhs_log_level_t level, const char* message, void* user_data);
