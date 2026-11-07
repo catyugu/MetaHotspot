@@ -1,13 +1,8 @@
-#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
-#include "model/model.hpp"
 #include "model/model_definition.hpp"
-#include "model_test_utils.hpp"
-#include "postprocessor.hpp"
 #include "pta_test_utils.hpp"
 #include <gtest/gtest.h>
 
-using namespace mhs::solver;
 using namespace mhs::compiler;
 
 // Helper: build a minimal mhs::app::pta::Definition with a uniform grid
@@ -129,7 +124,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // Dirichlet BC on bottom Z face (Z=0) at 500K
     mhs::model::BoundaryPatch boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
-    boundary_dirichlet.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.model.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
@@ -199,7 +194,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     io.model.boundaries.push_back(boundary);
 
     io.model.default_boundary = mhs::model::NeumannBoundary {};

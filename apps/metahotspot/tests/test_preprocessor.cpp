@@ -1,7 +1,5 @@
-#include "compiler/model_compiler.hpp"
 #include "expression/expression.hpp"
 #include "model/model_definition.hpp"
-#include "model_test_utils.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <gtest/gtest.h>
@@ -272,7 +270,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     // mhs::model::BoundaryPatch: Dirichlet 500K on Z bottom face
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    boundary.regions.push_back(mhs::test::face_region(
+    boundary.regions.push_back(test_pta::face_region(
         mhs::model::Axis::Z, 0.0, {{0.0, 50.0, 50.0, 100.0}, {50.0, 100.0, 0.0, 50.0}, {50.0, 100.0, 50.0, 100.0}}));
     io.model.boundaries.push_back(boundary);
 
@@ -473,12 +471,12 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     auto definition = make_simple_io();
 
     mhs::model::BoundaryPatch earlier;
-    earlier.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    earlier.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     earlier.condition = mhs::model::DirichletBoundary {"310"};
     definition.model.boundaries.push_back(earlier);
 
     mhs::model::BoundaryPatch later;
-    later.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    later.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
     later.condition = mhs::model::ConvectionBoundary {"42", "280"};
     definition.model.boundaries.push_back(later);
 
@@ -532,7 +530,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
     boundary.regions.push_back(
-        mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
+        test_pta::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
     io.model.boundaries.push_back(boundary);
 
     io.model.default_boundary = mhs::model::NeumannBoundary {};
@@ -601,11 +599,11 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
     mhs::model::BoundaryPatch boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
     boundary.regions.push_back(
-        mhs::test::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
+        test_pta::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
     boundary.regions.push_back(
-        mhs::test::face_region(mhs::model::Axis::X, 0.0, {{0.0, 10.0, 0.0, 10.0}})); // XM face, all cz
+        test_pta::face_region(mhs::model::Axis::X, 0.0, {{0.0, 10.0, 0.0, 10.0}})); // XM face, all cz
     boundary.regions.push_back(
-        mhs::test::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
+        test_pta::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
     io.model.boundaries.push_back(boundary);
 
     io.model.default_boundary = mhs::model::NeumannBoundary {};

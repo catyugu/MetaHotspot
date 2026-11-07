@@ -1,10 +1,14 @@
 #pragma once
 // Existing PTA fixtures exercise translation, compilation and presentation together.
 #include "compiler/model_compiler.hpp"
-#include "io/result_io.hpp"
+
 #include "postprocessor.hpp"
 #include "pta_definition.hpp"
 namespace test_pta {
+    inline mhs::model::FaceRegion face_region(
+        mhs::model::Axis axis, double coordinate, std::initializer_list<mhs::model::RegionRect> rectangles)
+    { return {axis, coordinate, rectangles}; }
+
     struct Model : mhs::model::Model {
         mhs::model::MeshSpec sampling_grid;
         struct {

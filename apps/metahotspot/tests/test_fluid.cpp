@@ -1,10 +1,8 @@
-#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "core/vector_ops.hpp"
 #include "io/model_io.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
-#include <numeric>
 
 #include <algorithm>
 #include <cmath>

@@ -149,8 +149,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 第三方依赖
 
-- **CPM**：用于引入其余依赖项。
-- **tinyxml2**：XML 解析和轻量级 DOM 操作。由 `io` 模块用于读取/写入 XML，作为静态库的私有链接依赖，安装包仍通过 `find_dependency` 查找。
+- **tinyxml2**：（仅 APP）XML 解析和轻量级 DOM 操作。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：仅供内部小规模 QR 与可选 MKL/Pardiso 实现使用，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。

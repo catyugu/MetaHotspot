@@ -1,7 +1,6 @@
 #include <tinyxml2.h>
 
 #include "core/vector.hpp"
-#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string>

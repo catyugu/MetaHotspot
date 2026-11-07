@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/model.hpp"
+#include "model/discrete_mesh.hpp"
 #include "solver/solution.hpp"
 
 #include "core/vector.hpp"
