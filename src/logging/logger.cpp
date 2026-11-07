@@ -1,6 +1,5 @@
 #include "logging/logger.hpp"
 
-#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -14,93 +13,59 @@
 
 namespace mhs::logger {
     namespace {
-        class CallbackSink final : public spdlog::sinks::base_sink<std::mutex> {
-        public:
-            void set_callback(LogCallback callback)
-            {
-                std::shared_ptr<const LogCallback> next;
-                if (callback)
-                    next = std::make_shared<const LogCallback>(std::move(callback));
-                std::lock_guard lock(callback_mutex_);
-                callback_ = std::move(next);
-            }
+        std::once_flag level_once;
 
-        protected:
-            void sink_it_(const spdlog::details::log_msg& msg) override
-            {
-                std::shared_ptr<const LogCallback> callback;
-                {
-                    std::lock_guard lock(callback_mutex_);
-                    callback = callback_;
-                }
-                if (callback) {
-                    const std::string message(msg.payload.data(), msg.payload.size());
-                    try {
-                        (*callback)(msg.level, message);
-                    }
-                    catch (...) {
-                        // Host callbacks must not interrupt a numerical solve.
-                    }
-                }
-            }
-            void flush_() override { }
-
-        private:
-            std::mutex callback_mutex_;
-            std::shared_ptr<const LogCallback> callback_;
-        };
-
-        std::once_flag config_once;
-
-        std::shared_ptr<CallbackSink> callback_sink()
+        Level configured_level(Level fallback)
         {
-            static auto sink = std::make_shared<CallbackSink>();
-            return sink;
-        }
-
-        void configure_level(Level fallback)
-        {
-            std::call_once(config_once, [fallback] {
-                auto level = fallback;
-                std::string value;
+            std::string value;
 #ifdef _WIN32
-                char* raw = nullptr;
-                size_t length = 0;
-                if (_dupenv_s(&raw, &length, "MHS_LOG_LEVEL") == 0 && raw) {
-                    value = raw;
-                    std::free(raw);
-                }
+            char* raw = nullptr;
+            size_t length = 0;
+            if (_dupenv_s(&raw, &length, "MHS_LOG_LEVEL") == 0 && raw) {
+                value = raw;
+                std::free(raw);
+            }
 #else
-                if (const char* raw = std::getenv("MHS_LOG_LEVEL"))
-                    value = raw;
+            if (const char* raw = std::getenv("MHS_LOG_LEVEL"))
+                value = raw;
 #endif
-                if (!value.empty()) {
-                    std::transform(value.begin(), value.end(), value.begin(),
-                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                    if (value == "trace")
-                        level = Level::trace;
-                    else if (value == "debug")
-                        level = Level::debug;
-                    else if (value == "info")
-                        level = Level::info;
-                    else if (value == "warn" || value == "warning")
-                        level = Level::warn;
-                    else if (value == "error")
-                        level = Level::err;
-                    else if (value == "critical")
-                        level = Level::critical;
-                    else if (value == "off")
-                        level = Level::off;
-                }
-                spdlog::set_level(level);
-            });
+            std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+            if (value == "trace")
+                return Level::trace;
+            if (value == "debug")
+                return Level::debug;
+            if (value == "info")
+                return Level::info;
+            if (value == "warn" || value == "warning")
+                return Level::warn;
+            if (value == "error")
+                return Level::err;
+            if (value == "critical")
+                return Level::critical;
+            if (value == "off")
+                return Level::off;
+            return fallback;
         }
     } // namespace
 
+    namespace detail {
+        spdlog::logger& instance(Level default_level)
+        {
+            static spdlog::logger log("mhs", std::make_shared<spdlog::sinks::stdout_color_sink_mt>());
+            std::call_once(level_once, [&] {
+                log.set_level(configured_level(default_level));
+                log.flush_on(Level::warn);
+            });
+            return log;
+        }
+    } // namespace detail
+
     void init(std::string_view log_file, bool console_output, Level default_level)
     {
-        configure_level(default_level);
-        const auto active_level = spdlog::get_level();
+        // Configure sinks at startup, before other threads emit logs.
+        auto& log = detail::instance(default_level);
         std::vector<spdlog::sink_ptr> sinks;
         if (console_output) {
             auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -112,47 +77,11 @@ namespace mhs::logger {
             file->set_pattern("%H:%M:%S:%e [%^%l%$] %v");
             sinks.push_back(file);
         }
-        sinks.push_back(callback_sink());
-
-        auto global_logger = std::make_shared<spdlog::logger>("mhs", sinks.begin(), sinks.end());
-        spdlog::set_default_logger(global_logger);
-        spdlog::set_level(active_level);
-        spdlog::flush_on(Level::warn);
+        log.sinks() = std::move(sinks);
     }
 
-    void set_log_level(Level level)
-    {
-        configure_level(Level::warn);
-        spdlog::set_level(level);
-    }
-
-    Level log_level()
-    {
-        configure_level(Level::warn);
-        return spdlog::get_level();
-    }
-
-    bool enabled(Level level)
-    {
-        configure_level(Level::warn);
-        return spdlog::default_logger_raw()->should_log(level);
-    }
-
-    void set_log_callback(LogCallback callback)
-    {
-        configure_level(Level::warn);
-        // Attach the callback sink even when the host never calls init().
-        // Keep any existing sink configuration otherwise.
-        auto logger = spdlog::default_logger();
-        const auto sink = callback_sink();
-        if (std::find(logger->sinks().begin(), logger->sinks().end(), sink) == logger->sinks().end())
-            logger->sinks().push_back(sink);
-        sink->set_callback(std::move(callback));
-    }
-
-    void flush()
-    {
-        if (auto logger = spdlog::default_logger())
-            logger->flush();
-    }
+    void set_log_level(Level level) { detail::instance().set_level(level); }
+    Level log_level() { return detail::instance().level(); }
+    bool enabled(Level level) { return detail::instance().should_log(level); }
+    void flush() { detail::instance().flush(); }
 } // namespace mhs::logger

@@ -92,17 +92,14 @@ enum {
 
 typedef int32_t mhs_log_level_t;
 enum {
-    MHS_LOG_TRACE = 0,
-    MHS_LOG_DEBUG = 1,
-    MHS_LOG_INFO = 2,
-    MHS_LOG_WARN = 3,
-    MHS_LOG_ERROR = 4,
-    MHS_LOG_CRITICAL = 5,
-    MHS_LOG_OFF = 6
+    MHS_LOG_LEVEL_TRACE = 0,
+    MHS_LOG_LEVEL_DEBUG = 1,
+    MHS_LOG_LEVEL_INFO = 2,
+    MHS_LOG_LEVEL_WARN = 3,
+    MHS_LOG_LEVEL_ERROR = 4,
+    MHS_LOG_LEVEL_CRITICAL = 5,
+    MHS_LOG_LEVEL_OFF = 6
 };
-/** Callback receives a transient null-terminated UTF-8 message. */
-typedef void (*mhs_log_callback_t)(mhs_log_level_t level, const char* message, void* user_data);
-
 /* ------------------------------------------------------------------ */
 /*  Composite types                                                    */
 /* ------------------------------------------------------------------ */
@@ -216,9 +213,6 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 /** Runtime logging control (global to the process). */
 MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level);
 MHS_API mhs_log_level_t mhs_log_get_level(void);
-/** The caller keeps user_data alive until the callback is removed. */
-MHS_API void mhs_log_set_callback(mhs_log_callback_t callback, void* user_data);
-
 /** Library version, e.g. "1.0.0". */
 MHS_API const char* mhs_version_string(void);
 

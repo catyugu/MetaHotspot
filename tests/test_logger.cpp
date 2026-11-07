@@ -8,14 +8,15 @@ namespace {
 
     TEST(LoggerInit, FileOutputCreated)
     {
+#if MHS_LOG_COMPILED_LEVEL >= 6
+        GTEST_SKIP() << "All log messages are compiled out";
+#else
         const std::string test_log = "test_output.log";
         std::remove(test_log.c_str());
 
-        mhs::logger::init(test_log, true);
-        mhs::logger::set_log_level(mhs::logger::Level::info);
-        MHS_LOG_INFO("Log message to file");
-
-        // 强制刷新以确保立即可读
+        mhs::logger::init(test_log, false);
+        mhs::logger::set_log_level(mhs::logger::Level::critical);
+        MHS_LOG_CRITICAL("Log message to file");
         mhs::logger::flush();
 
         std::ifstream file(test_log);
@@ -26,6 +27,7 @@ namespace {
 
         file.close();
         std::remove(test_log.c_str());
+#endif
     }
 
 } // namespace

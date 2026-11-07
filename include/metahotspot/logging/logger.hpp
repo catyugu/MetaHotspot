@@ -2,84 +2,70 @@
 
 #include <spdlog/spdlog.h>
 
-#include <functional>
 #include <string_view>
-#include <utility>
 
 namespace mhs::logger {
-
     using Level = spdlog::level::level_enum;
-    using LogCallback = std::function<void(Level, std::string_view)>;
 
-    // Reads MHS_LOG_LEVEL once, on first use. SDK default is WARN.
-    // The CLI passes INFO as its default; the environment overrides either.
+    // Call init only at startup, before concurrent logging.
+    // Reads MHS_LOG_LEVEL once; SDK defaults to WARN and CLI passes INFO.
     void init(std::string_view log_file = {}, bool console_output = true, Level default_level = Level::warn);
     void set_log_level(Level level);
     [[nodiscard]] Level log_level();
     [[nodiscard]] bool enabled(Level level);
-    // An empty callback removes the current callback. The callback must not throw.
-    void set_log_callback(LogCallback callback);
     void flush();
 
-    template <typename... Args> void trace(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::trace(fmt, std::forward<Args>(args)...); }
-
-    template <typename... Args> void debug(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::debug(fmt, std::forward<Args>(args)...); }
-
-    template <typename... Args> void info(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::info(fmt, std::forward<Args>(args)...); }
-
-    template <typename... Args> void warn(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::warn(fmt, std::forward<Args>(args)...); }
-
-    template <typename... Args> void error(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::error(fmt, std::forward<Args>(args)...); }
-
-    template <typename... Args> void critical(spdlog::format_string_t<Args...> fmt, Args&&... args)
-    { spdlog::critical(fmt, std::forward<Args>(args)...); }
-
+    namespace detail {
+        // A MetaHotspot-owned logger: never change the host's spdlog registry.
+        spdlog::logger& instance(Level default_level = Level::warn);
+    }
 } // namespace mhs::logger
 
-// Propagated by the mhs::logging CMake target to downstream translation units.
 #ifndef MHS_LOG_COMPILED_LEVEL
-#define MHS_LOG_COMPILED_LEVEL 1 // DEBUG for direct header users without CMake
+#define MHS_LOG_COMPILED_LEVEL 1 // DEBUG for consumers without the CMake target
 #endif
 
-// The level check precedes the evaluation of formatting arguments.
+// The runtime check prevents evaluation of disabled log arguments.
 // clang-format off
+#define MHS_LOG_IMPL(level, ...) \
+    do { \
+        auto& mhs_log_instance = ::mhs::logger::detail::instance(); \
+        if (mhs_log_instance.should_log(level)) \
+            mhs_log_instance.log(level, __VA_ARGS__); \
+    } while (false)
+
 #if MHS_LOG_COMPILED_LEVEL <= 0
-#define MHS_LOG_TRACE(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::trace)) ::mhs::logger::trace(__VA_ARGS__); } while (false)
+#define MHS_LOG_TRACE(...) MHS_LOG_IMPL(::mhs::logger::Level::trace, __VA_ARGS__)
 #else
 #define MHS_LOG_TRACE(...) ((void)0)
 #endif
 
 #if MHS_LOG_COMPILED_LEVEL <= 1
-#define MHS_LOG_DEBUG(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::debug)) ::mhs::logger::debug(__VA_ARGS__); } while (false)
+#define MHS_LOG_DEBUG(...) MHS_LOG_IMPL(::mhs::logger::Level::debug, __VA_ARGS__)
 #else
 #define MHS_LOG_DEBUG(...) ((void)0)
 #endif
 
 #if MHS_LOG_COMPILED_LEVEL <= 2
-#define MHS_LOG_INFO(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::info)) ::mhs::logger::info(__VA_ARGS__); } while (false)
+#define MHS_LOG_INFO(...) MHS_LOG_IMPL(::mhs::logger::Level::info, __VA_ARGS__)
 #else
 #define MHS_LOG_INFO(...) ((void)0)
 #endif
 
 #if MHS_LOG_COMPILED_LEVEL <= 3
-#define MHS_LOG_WARN(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::warn)) ::mhs::logger::warn(__VA_ARGS__); } while (false)
+#define MHS_LOG_WARN(...) MHS_LOG_IMPL(::mhs::logger::Level::warn, __VA_ARGS__)
 #else
 #define MHS_LOG_WARN(...) ((void)0)
 #endif
 
 #if MHS_LOG_COMPILED_LEVEL <= 4
-#define MHS_LOG_ERROR(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::err)) ::mhs::logger::error(__VA_ARGS__); } while (false)
+#define MHS_LOG_ERROR(...) MHS_LOG_IMPL(::mhs::logger::Level::err, __VA_ARGS__)
 #else
 #define MHS_LOG_ERROR(...) ((void)0)
 #endif
 
 #if MHS_LOG_COMPILED_LEVEL <= 5
-#define MHS_LOG_CRITICAL(...) do { if (::mhs::logger::enabled(::mhs::logger::Level::critical)) ::mhs::logger::critical(__VA_ARGS__); } while (false)
+#define MHS_LOG_CRITICAL(...) MHS_LOG_IMPL(::mhs::logger::Level::critical, __VA_ARGS__)
 #else
 #define MHS_LOG_CRITICAL(...) ((void)0)
 #endif

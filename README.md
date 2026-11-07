@@ -172,7 +172,6 @@ metahotspot --output-vtu /tmp/out.vtu \
 `MHS_LOG_COMPILED_LEVEL` 设定编译期下限（默认 `DEBUG`）；被裁剪的日志调用完全不计算参数。
 `MHS_LOG_LEVEL` 在首次使用日志时读取一次，接受 `trace/debug/info/warn/error/critical/off`（大小写不敏感），
 缺省时 C++ SDK 为 `WARN`，CLI 为 `INFO`。程序化的 `mhs::logger::set_log_level()`
-及 C/Python `set_log_level()` 可以运行时覆盖环境配置。日志级别修改是进程全局的，
-回调也在日志产生日志的线程中同步执行。C++ SDK 可通过 `mhs::logger::set_log_callback()`
-接管日志；C API 对应 `mhs_log_set_callback()`，Python 对应 `set_log_callback()`。
-`set_log_callback({})` 或 `set_log_callback(None)` 可撤销回调。
+及 C API `mhs_log_set_level()`、Python `set_log_level()` 可在运行时覆盖环境配置。
+日志设置仅影响 MetaHotspot 自身，初始化不会修改宿主程序的 spdlog 配置。
+`init()` 应在启动阶段、并发输出日志之前调用。

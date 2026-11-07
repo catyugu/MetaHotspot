@@ -1019,7 +1019,7 @@ MHS_API mhs_status_t mhs_solution_copy_probe(
 
 MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level)
 {
-    if (level < MHS_LOG_TRACE || level > MHS_LOG_OFF) {
+    if (level < MHS_LOG_LEVEL_TRACE || level > MHS_LOG_LEVEL_OFF) {
         SET_ERR("invalid logging level");
         return MHS_ERROR;
     }
@@ -1029,15 +1029,3 @@ MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level)
 }
 
 MHS_API mhs_log_level_t mhs_log_get_level() { return static_cast<mhs_log_level_t>(mhs::logger::log_level()); }
-
-MHS_API void mhs_log_set_callback(mhs_log_callback_t callback, void* user_data)
-{
-    if (!callback) {
-        mhs::logger::set_log_callback({});
-        return;
-    }
-    mhs::logger::set_log_callback([callback, user_data](mhs::logger::Level level, std::string_view message) {
-        const std::string text(message);
-        callback(static_cast<mhs_log_level_t>(level), text.c_str(), user_data);
-    });
-}
