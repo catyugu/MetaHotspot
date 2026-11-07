@@ -90,6 +90,16 @@ enum {
     MHS_ERROR = -1,
 };
 
+typedef int32_t mhs_log_level_t;
+enum {
+    MHS_LOG_LEVEL_TRACE = 0,
+    MHS_LOG_LEVEL_DEBUG = 1,
+    MHS_LOG_LEVEL_INFO = 2,
+    MHS_LOG_LEVEL_WARN = 3,
+    MHS_LOG_LEVEL_ERROR = 4,
+    MHS_LOG_LEVEL_CRITICAL = 5,
+    MHS_LOG_LEVEL_OFF = 6
+};
 /* ------------------------------------------------------------------ */
 /*  Composite types                                                    */
 /* ------------------------------------------------------------------ */
@@ -200,6 +210,9 @@ typedef struct {
 /** Fill opts with sensible defaults (AMG, 1e-8, 1e-6, …). */
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 
+/** Runtime logging control (global to the process). */
+MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level);
+MHS_API mhs_log_level_t mhs_log_get_level(void);
 /** Library version, e.g. "1.0.0". */
 MHS_API const char* mhs_version_string(void);
 

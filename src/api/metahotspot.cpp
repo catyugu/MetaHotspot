@@ -4,6 +4,7 @@
 #include "compiler/model_compiler.hpp"
 #include "io/model_io.hpp"
 #include "io/result_io.hpp"
+#include "logging/logger.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/solver.hpp"
@@ -1011,3 +1012,20 @@ MHS_API mhs_status_t mhs_solution_copy_probe(
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Logging                                                            */
+/* ------------------------------------------------------------------ */
+
+MHS_API mhs_status_t mhs_log_set_level(mhs_log_level_t level)
+{
+    if (level < MHS_LOG_LEVEL_TRACE || level > MHS_LOG_LEVEL_OFF) {
+        SET_ERR("invalid logging level");
+        return MHS_ERROR;
+    }
+    mhs::logger::set_log_level(static_cast<mhs::logger::Level>(level));
+    mhs_detail_clear_last_error();
+    return MHS_OK;
+}
+
+MHS_API mhs_log_level_t mhs_log_get_level() { return static_cast<mhs_log_level_t>(mhs::logger::log_level()); }
