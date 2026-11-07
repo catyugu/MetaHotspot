@@ -75,12 +75,12 @@ namespace mhs::compiler {
 
         mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions,
-            const std::function<std::string(const std::string&)>& rewriter, const mhs::expression::SymbolTable& symbols)
+            const mhs::expression::SymbolTable& symbols)
         {
             using namespace mhs::core;
             using namespace mhs::model;
             using namespace mhs::expression;
-            auto compile = [&](const auto& expression) { return parse(rewriter(expression), symbols); };
+            auto compile = [&](const auto& expression) { return parse(expression, symbols); };
             auto result = std::visit(
                 overloaded {
                     [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
@@ -107,11 +107,11 @@ namespace mhs::compiler {
         mhs::core::Vector<CompiledBoundaryRegion> compile_boundary_patches(
             const mhs::core::Vector<mhs::model::BoundaryPatch>& boundaries,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, double si_scale,
-            const std::function<std::string(const std::string&)>& rewriter, const mhs::expression::SymbolTable& symbols)
+            const mhs::expression::SymbolTable& symbols)
         {
             mhs::core::Vector<CompiledBoundaryRegion> compiled;
             for (const auto& boundary : boundaries) {
-                const auto condition = compile_thermal_boundary(boundary.condition, conditions, rewriter, symbols);
+                const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
                 for (const auto& region : boundary.regions) {
                     CompiledBoundaryRegion item;
                     item.axis = region.axis;
@@ -163,9 +163,8 @@ namespace mhs::compiler {
 
         for (size_t m = 0; m < definition.materials.size(); m++) {
             const auto& mat = definition.materials[m].value;
-            auto compile_mat = [&](const std::string& expr) {
-                return mhs::expression::parse(substitute_function_args(expr, "T"), symbols);
-            };
+            auto compile_mat
+                = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
             auto& props = model.material_table[m];
             props.kx = compile_mat(mat.conductivity_x);
             props.ky = compile_mat(mat.conductivity_y);
@@ -199,24 +198,16 @@ namespace mhs::compiler {
 
                 // heat_source_idx: compile the heat source expression, append to table
                 rb.heat_source_idx = static_cast<mhs::model::SourceId>(model.heat_source_table.size());
-                std::string heat_source = bs.volumetric_heat_source;
-                const bool names_function = std::any_of(definition.functions.begin(), definition.functions.end(),
-                    [&](const mhs::model::NamedFunction& function) { return function.name == heat_source; });
-                if (names_function)
-                    heat_source += "(x)";
-                model.heat_source_table.push_back(
-                    mhs::expression::parse(substitute_function_args(heat_source, "t"), symbols));
+                model.heat_source_table.push_back(mhs::expression::parse(bs.volumetric_heat_source, symbols));
             }
         }
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
-        auto bc_rewriter = [&](const std::string& s) { return substitute_function_args(s, "T"); };
         auto compiled_boundaries
-            = compile_boundary_patches(definition.boundaries, boundary_conditions, si_scale, bc_rewriter, symbols);
+            = compile_boundary_patches(definition.boundaries, boundary_conditions, si_scale, symbols);
 
-        auto default_boundary
-            = compile_thermal_boundary(definition.default_boundary, boundary_conditions, bc_rewriter, symbols);
+        auto default_boundary = compile_thermal_boundary(definition.default_boundary, boundary_conditions, symbols);
 
         if (external) {
             model.discrete = *external;
