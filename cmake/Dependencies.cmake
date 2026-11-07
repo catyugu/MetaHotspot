@@ -54,7 +54,7 @@ if(NOT TARGET spdlog::spdlog)
 endif()
 
 # ----------------------------------------------------------------------------
-# tinyxml2 - XML model reader/writer.
+# tinyxml2 - PTA XML compatibility layer used only by the CLI app.
 # ----------------------------------------------------------------------------
 if(MHS_BUILD_APPS AND NOT TARGET tinyxml2::tinyxml2)
     CPMFindPackage(

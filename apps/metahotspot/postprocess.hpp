@@ -5,7 +5,7 @@
 #include "model/model.hpp"
 #include <span>
 
-namespace mhs::app {
+namespace mhs::app::postprocess {
 
     // 从 cell 中心温度场与边界迹通过各向异性距离反比加权插值到节点温度场。
     // Result order is x-major, then y, then z on the supplied Cartesian sampling grid.
@@ -17,4 +17,4 @@ namespace mhs::app {
     double max_temperature(std::span<const double> T);
     double min_temperature(std::span<const double> T);
 
-} // namespace mhs::app
+} // namespace mhs::app::postprocess

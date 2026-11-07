@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace mhs::io::detail {
+namespace mhs::app::pta::detail {
 
     inline const tinyxml2::XMLElement* child_by_local_name(const tinyxml2::XMLElement* parent, std::string_view name)
     {
@@ -52,4 +52,4 @@ namespace mhs::io::detail {
         return result;
     }
 
-} // namespace mhs::io::detail
+} // namespace mhs::app::pta::detail

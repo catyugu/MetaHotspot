@@ -1,4 +1,4 @@
-#include "postprocessor.hpp"
+#include "postprocess.hpp"
 #include "core/vector.hpp"
 #include "solver/sampling.hpp"
 #include <algorithm>
@@ -9,7 +9,7 @@
 #include <ranges>
 #include <stdexcept>
 
-namespace mhs::app {
+namespace mhs::app::postprocess {
 
     using namespace mhs::solver;
     namespace {
@@ -82,4 +82,4 @@ namespace mhs::app {
         return std::ranges::min(filtered);
     }
 
-} // namespace mhs::app
+} // namespace mhs::app::postprocess

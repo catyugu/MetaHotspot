@@ -102,7 +102,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：`mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver`、`mhs::io` 和 `mhs::logger` 按模块组织。单文件私有实现使用匿名命名空间。
+- 命名空间：SDK 使用 `mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger`。CLI 兼容层统一位于 `mhs::app::{cli,pta,output,postprocess}`，不随 SDK 导出。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -122,7 +122,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 ## 运行
 
-`metahotspot` 的命令行参数解析统一由 `mhs::cli`（`apps/metahotspot/cli.hpp`）完成，
+`metahotspot` 的命令行参数解析统一由 `mhs::app::cli`（`apps/metahotspot/cli.hpp`）完成，
 所有标志都是命名、顺序无关的；不接受位置参数。
 
 | Flag                     | 默认值                       | 说明                                         |
@@ -149,7 +149,8 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 第三方依赖
 
-- **tinyxml2**：（仅 APP）XML 解析和轻量级 DOM 操作。
+- **CPM**：仅负责配置阶段的依赖获取与复用，不进入 SDK 运行时接口。
+- **tinyxml2**：（仅 APP）PTA XML 兼容层的解析和 DOM 操作。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：仅供内部小规模 QR 与可选 MKL/Pardiso 实现使用，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。

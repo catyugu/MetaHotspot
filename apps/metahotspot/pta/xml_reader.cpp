@@ -8,15 +8,13 @@
 #include <type_traits>
 #include <utility>
 
+#include "definition.hpp"
 #include "face_region_parser.hpp"
-#include "io/model_io.hpp"
+#include "io.hpp"
 #include "model/model_definition.hpp"
-#include "pta_definition.hpp"
 #include "xml_helpers.hpp"
 
-namespace mhs::io {
-    namespace pta = mhs::app::pta;
-
+namespace mhs::app::pta {
     using namespace tinyxml2;
     using detail::child_by_local_name;
     using detail::get_text;
@@ -107,20 +105,20 @@ namespace mhs::io {
         throw std::runtime_error("unknown StudyType: '" + val + "' (expected Steady or Transient)");
     }
 
-    static pta::LengthUnit parse_length_unit(const std::string& val)
+    static LengthUnit parse_length_unit(const std::string& val)
     {
         if (val == "M")
-            return pta::LengthUnit::Meter;
+            return LengthUnit::Meter;
         if (val == "Mm")
-            return pta::LengthUnit::Millimeter;
+            return LengthUnit::Millimeter;
         if (val == "Um")
-            return pta::LengthUnit::Micrometer;
+            return LengthUnit::Micrometer;
         if (val == "Nm")
-            return pta::LengthUnit::Nanometer;
+            return LengthUnit::Nanometer;
         if (val == "Inch")
-            return pta::LengthUnit::Inch;
+            return LengthUnit::Inch;
         if (val == "Mil")
-            return pta::LengthUnit::Mil;
+            return LengthUnit::Mil;
         throw std::runtime_error("unknown LengthUnit: '" + val + "'");
     }
 
@@ -132,7 +130,7 @@ namespace mhs::io {
             throw std::runtime_error("failed to load XML file: " + xml_path);
         }
 
-        pta::Definition def;
+        Definition def;
         mhs::model::ThermalBoundary default_boundary = mhs::model::NeumannBoundary {};
 
         const XMLElement* root = doc.FirstChildElement("Structure");
@@ -364,7 +362,7 @@ namespace mhs::io {
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
                 layer_elem = layer_elem->NextSiblingElement("Layer")) {
-                pta::LayerSpec layer;
+                LayerSpec layer;
 
                 if (const XMLElement* thickness = layer_elem->FirstChildElement("ThicknessExpression")) {
                     layer.thickness = get_text(thickness);
@@ -380,7 +378,7 @@ namespace mhs::io {
                 if (const XMLElement* blocks_elem = layer_elem->FirstChildElement("Blocks")) {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
                         block_elem = block_elem->NextSiblingElement("Block")) {
-                        pta::BlockSpec block;
+                        BlockSpec block;
 
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
                             block.material = get_text(mat);
@@ -403,7 +401,7 @@ namespace mhs::io {
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
-                                pta::RectOperation rect;
+                                RectOperation rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.operation = get_text(adds) == "true" ? mhs::model::GeometryOperation::Add
                                                                               : mhs::model::GeometryOperation::Subtract;
@@ -557,7 +555,7 @@ namespace mhs::io {
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
-                pta::ObservationPointSpec op;
+                ObservationPointSpec op;
                 if (const XMLElement* name = pt->FirstChildElement("Name")) {
                     op.name = get_text(name);
                 }
@@ -575,7 +573,7 @@ namespace mhs::io {
         }
 
         def.model.default_boundary = std::move(default_boundary);
-        return pta::normalize(std::move(def));
+        return normalize(std::move(def));
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::pta

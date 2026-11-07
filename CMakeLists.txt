@@ -65,7 +65,7 @@ if(MHS_BUILD_TESTS AND PROJECT_IS_TOP_LEVEL)
     enable_testing()
 endif()
 
-if(MHS_BUILD_APPS OR MHS_BUILD_TESTS)
+if(MHS_BUILD_APPS)
     add_subdirectory(apps/metahotspot)
 endif()
 
