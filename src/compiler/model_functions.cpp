@@ -6,7 +6,6 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <type_traits>
 
 namespace mhs::compiler {
@@ -114,50 +113,6 @@ namespace mhs::compiler {
                 idx += static_cast<std::int64_t>(n);
             return values[static_cast<std::size_t>(idx)];
         };
-    }
-
-    // ---- 字面替换 ---------------------------------------------------------
-
-    namespace {
-
-        // identifier-char 判定：[A-Za-z0-9_]
-        bool is_id_char(char c)
-        { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; }
-
-        // identifier-start 判定：[A-Za-z_]（与 is_id_char 的区别在数字）
-        bool is_id_start(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; }
-
-    } // namespace
-
-    std::string substitute_function_args(const std::string& expr_str, const std::string& argname)
-    {
-        // 单次扫描：找到每个 identifier-start → 读到 identifier 末尾 →
-        //   1) 若 identifier 是裸 x 且 argname 槽匹配 → 写入 argname
-        //   2) 其余原样拷贝
-        const size_t n = expr_str.size();
-        std::string out;
-        out.reserve(n);
-        size_t i = 0;
-        while (i < n) {
-            char c = expr_str[i];
-            if (is_id_start(c)) {
-                size_t start = i;
-                while (i < n && is_id_char(expr_str[i]))
-                    i++;
-                std::string_view name(expr_str.data() + start, i - start);
-                if (name == "x") {
-                    out += argname;
-                }
-                else {
-                    out.append(expr_str, start, i - start);
-                }
-            }
-            else {
-                out += c;
-                i++;
-            }
-        }
-        return out;
     }
 
     // ---- 写入 SymbolTable -------------------------------------------------
