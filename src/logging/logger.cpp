@@ -96,8 +96,7 @@ namespace mhs::logger {
             file->set_pattern("%H:%M:%S:%e [%^%l%$] %v");
             sinks.push_back(file);
         }
-        // A callback-only configuration is supported. Without any output
-        // selection, retain the historical console fallback.
+        // Without any output selection, retain the historical console fallback.
         if (sinks.empty()) {
             auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
             console->set_pattern("%H:%M:%S:%e [%^%l%$] %v");
