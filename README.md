@@ -40,7 +40,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `MHS_INSTALL` | 顶层 ON，子项目 OFF | 安装及导出 CMake 包 |
 | `MHS_WERROR` | 顶层 ON，子项目 OFF | 本项目编译警告视为错误 |
 | `MHS_SANITIZE` | OFF | 用 ASan/UBSan 编译并链接全部本项目目标（仅 GCC/Clang） |
-| `MHS_VERBOSE` | OFF | 日志级别改为 `DEBUG` |
+| `MHS_LOG_COMPILED_LEVEL` | `DEBUG` | 编译期保留的最低日志级别（TRACE/DEBUG/INFO/WARN/ERROR/CRITICAL/OFF） |
 | `MHS_USE_MKL` | OFF | 启用可选的 MKL/Pardiso 支持 |
 
 `mhs_metahotspot` 为 INTERFACE 目标，其余 C++ 组件为静态库，C API 为动态库。只构建 C++ 库时可关闭测试、应用和 C API。
@@ -70,6 +70,20 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 `include/metahotspot/` 下的头文件都是公开 API，安装时整棵树原样复制；`src/` 下的头文件是实现细节，
 不安装。`mhs::metahotspot` 是主要 C++ 组件的统一入口。
+
+## 日志配置
+
+日志级别依次为 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR`、`CRITICAL`、`OFF`。
+`MHS_LOG_COMPILED_LEVEL` 是 CMake 缓存选项，默认 `DEBUG`，决定编译到二进制中的最低级别；被裁剪的调用不会求值日志参数。编译期等级独立于 Debug/Release 构建配置。
+运行时 `MHS_LOG_LEVEL` 环境变量在第一次调用 `mhs::logger::init()` 时读取并缓存，可使用大小写不敏感的级别名（`WARNING` 也接受）；无效值回退到默认级别。
+SDK 初始化默认 `WARN`，CLI 默认为 `INFO`；显式调用 `mhs::logger::set_level(mhs::logger::LogLevel::debug)` 的优先级高于环境变量和默认值，即使设置发生在 `init()` 前也保持有效。
+`mhs::logger::get_level()` 返回运行时级别；`set_callback()` 可以注册一个接收级别与格式化消息的回调，传入空回调可清除。消息视图仅在回调执行期间有效；回调内部不应递归调用日志接口。回调与现有控制台/文件 sink 同时接收日志。
+运行时过滤发生在格式化与日志参数求值之前；热循环中禁用的日志仍存在轻量级别检查。
+
+```sh
+cmake -S . -B build -DMHS_LOG_COMPILED_LEVEL=DEBUG
+MHS_LOG_LEVEL=DEBUG metahotspot --input model.xml
+```
 
 ## Python 包
 
@@ -109,7 +123,7 @@ solution = compiled.solve(opts=SolveOptions(
 - 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
 - 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
-- 日志：`mhs_logging` 封装 spdlog，默认级别为 `INFO`；`MHS_VERBOSE=ON` 时使用 `DEBUG`。热循环诊断使用 `DEBUG`。
+- 日志：`mhs_logging` 封装 spdlog；CMake 的 `MHS_LOG_COMPILED_LEVEL` 裁剪日志调用；运行时使用 `MHS_LOG_LEVEL` 或 C++ API 控制输出。热循环诊断使用 `DEBUG`。
 - 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
 
 ## 架构
