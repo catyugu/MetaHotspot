@@ -95,7 +95,7 @@ No `substitute_function_args(...)`-style front-end compatibility rewrite is allo
 - [x] Create refactor branch and temporary work log.
 - [ ] Replace layer/block geometry in `ModelDefinition` with generic SI volume geometry.
 - [ ] Rewrite geometry compilation to consume generic volumes directly.
-- [ ] Remove compiler-side expression argument rewriting.
+- [x] Remove compiler-side expression argument rewriting.
 - [ ] Move PTA XML reader and compatibility transforms into `apps/metahotspot`.
 - [ ] Move PTA XML result writing, node sampling and VTU output into `apps/metahotspot`.
 - [ ] Remove `OutputMesh` and output-only runtime state.
