@@ -11,7 +11,8 @@ namespace {
         const std::string test_log = "test_output.log";
         std::remove(test_log.c_str());
 
-        mhs::logger::init(test_log, true);
+        mhs::logger::init(test_log, true, mhs::logger::LogLevel::info);
+        mhs::logger::set_level(mhs::logger::LogLevel::info);
         MHS_LOG_INFO("Log message to file");
 
         // 强制刷新以确保立即可读
@@ -24,6 +25,7 @@ namespace {
         EXPECT_TRUE(content.find("Log message to file") != std::string::npos);
 
         file.close();
+        mhs::logger::set_level(mhs::logger::LogLevel::warn);
         std::remove(test_log.c_str());
     }
 
