@@ -87,9 +87,9 @@ ENRICH_RTOL = 1.0e-4
 
 
 def _rs_preconditioner(A):
-    ml = pyamg.ruge_stuben_solver(
-        A, interpolation="direct", coarse_solver="gauss_seidel"
-    )
+    # CG requires a symmetric positive-definite preconditioner, including
+    # the coarse solve. A forward Gauss-Seidel coarse sweep is not symmetric.
+    ml = pyamg.ruge_stuben_solver(A, interpolation="direct", coarse_solver="cholesky")
     return ml.aspreconditioner(cycle="V")
 
 

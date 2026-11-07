@@ -9,7 +9,7 @@ import numpy as np
 
 
 class Operators(NamedTuple):
-    """K, C, f of the linearised system: C * dx/dt + K * x = f."""
+    """K, C (SciPy CSR), f of the linearised system: C * dx/dt + K * x = f."""
 
     K: object
     C: object

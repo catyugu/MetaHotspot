@@ -17,18 +17,6 @@ if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
 
 
-def _integer_array(value, dtype, name, *, exterior_sentinel=False):
-    array = np.asarray(value)
-    if array.size:
-        if array.dtype.kind not in "iu":
-            raise ValueError(f"{name} must contain integers")
-        limits = np.iinfo(dtype)
-        lower = -1 if exterior_sentinel else limits.min
-        if int(array.min()) < lower or int(array.max()) > limits.max:
-            raise ValueError(f"{name} contains an out-of-range integer")
-    return np.ascontiguousarray(array.astype(dtype))
-
-
 # ---- low-level ctypes marshalling helpers --------------------------------
 
 
@@ -44,18 +32,6 @@ def _create_model(dll):
     handle = ctypes.POINTER(MhsModel)()
     check(dll.mhs_model_create(ctypes.byref(handle)), "create")
     return handle
-
-
-def _set_mesh(dll, handle, x, y, z) -> None:
-    args = []
-    for array in (x, y, z):
-        args.extend(
-            (
-                0 if array is None else len(array),
-                None if array is None else _double_ptr(array),
-            )
-        )
-    check(dll.mhs_model_set_mesh(handle, *args), "set_mesh")
 
 
 def _face_regions(regions) -> tuple[object, int]:
@@ -87,10 +63,18 @@ def _add_periodic_constant(dll, handle, name, values, period) -> None:
 def _add_fluid_boundary(
     dll, handle, axis, coordinate, region, kind, value, inlet_temperature
 ) -> None:
-    rect = Rect2D(*region)
+    regions, count = _face_regions([(axis, coordinate, *region)])
+    temperature = (
+        None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+    )
     check(
         dll.mhs_model_add_fluid_boundary(
-            handle, int(axis), coordinate, rect, int(kind), value, inlet_temperature
+            handle,
+            regions,
+            count,
+            int(kind),
+            value,
+            None if temperature is None else ctypes.byref(temperature),
         ),
         "add_fluid_boundary",
     )
@@ -139,82 +123,6 @@ class Model(OwnedHandle):
             ctx="set_settings",
         )
 
-    def set_discrete_mesh(
-        self,
-        *,
-        cell_min,
-        cell_max,
-        face_minus,
-        face_plus,
-        face_axis,
-        face_bounds,
-    ):
-        """Copy a supplied box/face mesh in SI metres.
-
-        Flux is positive from face_minus to face_plus along face_axis.
-        An exterior face has exactly one missing cell, UINT32_MAX (or signed -1).
-        Face bounds have shape (face_count, 4), with [a_min, a_max, b_min, b_max]
-        along ascending tangential axes (YZ for X, XZ for Y, XY for Z).
-        Geometry and connectivity must be valid, complete and TPFA-orthogonal.
-        Cell references and face axes are checked.
-        """
-        from metahotspot.types import MhsMesh
-
-        inputs = {
-            "cell_min": cell_min,
-            "cell_max": cell_max,
-            "face_minus": face_minus,
-            "face_plus": face_plus,
-            "face_axis": face_axis,
-            "face_bounds": face_bounds,
-        }
-        arrays = {}
-        for name, value in inputs.items():
-            dtype = (
-                np.float64
-                if name in {"cell_min", "cell_max", "face_bounds"}
-                else (np.int32 if name == "face_axis" else np.uint32)
-            )
-            arrays[name] = (
-                np.ascontiguousarray(value, dtype=dtype)
-                if dtype == np.float64
-                else _integer_array(
-                    value,
-                    dtype,
-                    name,
-                    exterior_sentinel=name in {"face_minus", "face_plus"},
-                )
-            )
-        if arrays["cell_min"].ndim != 2:
-            raise ValueError("cell_min must have shape (cell_count, 3)")
-        n = arrays["cell_min"].shape[0]
-        m = arrays["face_minus"].size
-        for name, array in arrays.items():
-            count = n if name.startswith("cell_") else m
-            shape = (
-                (count, 3)
-                if name.startswith("cell_")
-                else ((count, 4) if name == "face_bounds" else (count,))
-            )
-            if array.shape != shape:
-                raise ValueError(f"{name} must have shape {shape}")
-        types = {
-            np.dtype(np.float64): ctypes.c_double,
-            np.dtype(np.uint32): ctypes.c_uint32,
-            np.dtype(np.int32): ctypes.c_int32,
-        }
-        native = MhsMesh(
-            cell_count=n,
-            face_count=m,
-            **{
-                name: a.ctypes.data_as(ctypes.POINTER(types[a.dtype]))
-                for name, a in arrays.items()
-            },
-        )
-        self._call(
-            "mhs_model_set_discrete_mesh", ctypes.byref(native), ctx="set_discrete_mesh"
-        )
-
     def set_mesh(
         self,
         x: np.ndarray | None = None,
@@ -222,7 +130,16 @@ class Model(OwnedHandle):
         z: np.ndarray | None = None,
     ) -> None:
         """Set mesh vertices."""
-        _set_mesh(self._dll, self._handle, x, y, z)
+        arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]
+        if any(a.ndim != 1 or a.size < 2 for a in arrays):
+            raise ValueError(
+                "each mesh axis needs a 1D array with at least two vertices"
+            )
+        self._call(
+            "mhs_model_set_mesh",
+            *[v for a in arrays for v in (a.size, _double_ptr(a))],
+            ctx="set_mesh",
+        )
 
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
@@ -454,7 +371,7 @@ class Model(OwnedHandle):
             (a_min, a_max, b_min, b_max),
             kind,
             value,
-            float("nan") if inlet_temperature is None else inlet_temperature,
+            inlet_temperature,
         )
 
     # ---- Compile ----

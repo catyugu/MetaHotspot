@@ -13,394 +13,143 @@ from metahotspot.types import (
     MhsCompiledInfo,
     MhsFaceRegion,
     MhsMaterialValues,
-    MhsMesh,
     MhsModel,
     MhsOperators,
     MhsOperatorsInfo,
     MhsSolution,
     MhsSolutionInfo,
     Point2D,
-    Rect2D,
     _SolveOptionsCStruct,
 )
 
-# ---- Core C API function signatures ----
-# (name, restype, argtypes) table — drives configure_dll().
-_CORE_FUNC_SIGS: list[tuple[str, type | None, list]] = [
-    # ---- Global helpers ----
-    ("mhs_log_set_level", ctypes.c_int32, [ctypes.c_int32]),
-    ("mhs_log_get_level", ctypes.c_int32, []),
-    ("mhs_solve_options_default", None, [ctypes.POINTER(_SolveOptionsCStruct)]),
-    ("mhs_last_error", ctypes.c_char_p, []),
-    ("mhs_version_string", ctypes.c_char_p, []),
-    (
-        "mhs_model_set_discrete_mesh",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.POINTER(MhsMesh)],
-    ),
+# Exact C ABI signatures; P is ctypes.POINTER, including opaque handle pointers.
+P = ctypes.POINTER
+I32 = ctypes.c_int32
+F64 = ctypes.c_double
+Size = ctypes.c_size_t
+Text = ctypes.c_char_p
+
+_CORE_FUNC_SIGS = [
+    ("mhs_log_set_level", I32, [I32]),
+    ("mhs_log_get_level", I32, []),
+    ("mhs_solve_options_default", None, [P(_SolveOptionsCStruct)]),
+    ("mhs_last_error", Text, []),
+    ("mhs_version_string", Text, []),
+    ("mhs_abi_version", I32, []),
     (
         "mhs_compiled_eval_source_terms",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.c_double,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
+        I32,
+        [P(MhsCompiled), P(F64), Size, F64, P(F64), Size],
     ),
-    # ---- Model life-cycle ----
-    ("mhs_model_create", ctypes.c_int32, [ctypes.POINTER(ctypes.POINTER(MhsModel))]),
-    ("mhs_model_destroy", None, [ctypes.POINTER(MhsModel)]),
-    # ---- Settings / mesh / variables ----
-    (
-        "mhs_model_set_settings",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_int32,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
-    ),
+    ("mhs_model_create", I32, [P(P(MhsModel))]),
+    ("mhs_model_destroy", None, [P(MhsModel)]),
+    ("mhs_model_set_settings", I32, [P(MhsModel), I32, F64, F64, F64]),
     (
         "mhs_model_set_mesh",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-        ],
+        I32,
+        [P(MhsModel), Size, P(F64), Size, P(F64), Size, P(F64)],
     ),
-    (
-        "mhs_model_add_variable",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p, ctypes.c_char_p],
-    ),
-    # ---- Materials / layers / blocks / rects ----
+    ("mhs_model_add_variable", I32, [P(MhsModel), Text, Text]),
     (
         "mhs_model_add_material",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-            ctypes.POINTER(ctypes.c_uint32),
-        ],
+        I32,
+        [P(MhsModel), Text, Text, Text, Text, Text, Text, Text, P(ctypes.c_uint32)],
     ),
-    # ---- Atomic boundary conditions ----
-    (
-        "mhs_model_add_source",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32)],
-    ),
+    ("mhs_model_add_source", I32, [P(MhsModel), Text, P(ctypes.c_uint32)]),
     (
         "mhs_model_add_volume",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_uint32,
-            ctypes.c_uint32,
-            ctypes.POINTER(ctypes.c_uint32),
-        ],
+        I32,
+        [P(MhsModel), ctypes.c_uint32, ctypes.c_uint32, P(ctypes.c_uint32)],
     ),
     (
         "mhs_model_volume_add_box",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_uint32,
-            ctypes.c_int32,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.POINTER(ctypes.c_double),
-        ],
+        I32,
+        [P(MhsModel), ctypes.c_uint32, I32, P(F64), P(F64)],
     ),
-    (
-        "mhs_model_add_dirichlet",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.POINTER(MhsFaceRegion),
-            ctypes.c_size_t,
-            ctypes.c_char_p,
-        ],
-    ),
-    (
-        "mhs_model_add_neumann",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.POINTER(MhsFaceRegion),
-            ctypes.c_size_t,
-            ctypes.c_char_p,
-        ],
-    ),
+    ("mhs_model_add_dirichlet", I32, [P(MhsModel), P(MhsFaceRegion), Size, Text]),
+    ("mhs_model_add_neumann", I32, [P(MhsModel), P(MhsFaceRegion), Size, Text]),
     (
         "mhs_model_add_convection",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.POINTER(MhsFaceRegion),
-            ctypes.c_size_t,
-            ctypes.c_char_p,
-            ctypes.c_char_p,
-        ],
+        I32,
+        [P(MhsModel), P(MhsFaceRegion), Size, Text, Text],
     ),
-    (
-        "mhs_model_set_default_dirichlet",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p],
-    ),
-    (
-        "mhs_model_set_default_neumann",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p],
-    ),
-    (
-        "mhs_model_set_default_convection",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p, ctypes.c_char_p],
-    ),
-    # ---- Functions ----
-    (
-        "mhs_model_add_function_expr",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.c_char_p, ctypes.c_char_p],
-    ),
-    (
-        "mhs_model_add_function_gauss",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
-    ),
-    (
-        "mhs_model_add_function_sine",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
-    ),
+    ("mhs_model_set_default_dirichlet", I32, [P(MhsModel), Text]),
+    ("mhs_model_set_default_neumann", I32, [P(MhsModel), Text]),
+    ("mhs_model_set_default_convection", I32, [P(MhsModel), Text, Text]),
+    ("mhs_model_add_function_expr", I32, [P(MhsModel), Text, Text]),
+    ("mhs_model_add_function_gauss", I32, [P(MhsModel), Text, F64, F64, F64]),
+    ("mhs_model_add_function_sine", I32, [P(MhsModel), Text, F64, F64, F64]),
     (
         "mhs_model_add_function_double_exponential",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
+        I32,
+        [P(MhsModel), Text, F64, F64, F64],
     ),
-    (
-        "mhs_model_add_function_piecewise",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.POINTER(Point2D),
-            ctypes.c_size_t,
-        ],
-    ),
+    ("mhs_model_add_function_piecewise", I32, [P(MhsModel), Text, P(Point2D), Size]),
     (
         "mhs_model_add_function_periodic_piecewise_constant",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.c_double,
-        ],
+        I32,
+        [P(MhsModel), Text, P(F64), Size, F64],
     ),
-    # ---- Probes & fluid boundaries ----
-    (
-        "mhs_model_add_probe",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_char_p,
-            ctypes.c_double,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
-    ),
+    ("mhs_model_add_probe", I32, [P(MhsModel), Text, F64, F64, F64]),
     (
         "mhs_model_add_fluid_boundary",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsModel),
-            ctypes.c_int32,
-            ctypes.c_double,
-            Rect2D,
-            ctypes.c_int32,
-            ctypes.c_double,
-            ctypes.c_double,
-        ],
+        I32,
+        [P(MhsModel), P(MhsFaceRegion), Size, I32, F64, P(F64)],
     ),
-    # ---- Compilation ----
-    (
-        "mhs_model_compile",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsModel), ctypes.POINTER(ctypes.POINTER(MhsCompiled))],
-    ),
-    ("mhs_compiled_destroy", None, [ctypes.POINTER(MhsCompiled)]),
-    # ---- Compiled metadata ----
-    (
-        "mhs_compiled_get_info",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCompiledInfo)],
-    ),
-    (
-        "mhs_compiled_copy_cell_fields",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsCompiled), ctypes.POINTER(MhsCellFields)],
-    ),
+    ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
+    ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
+    ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
+    ("mhs_compiled_copy_cell_fields", I32, [P(MhsCompiled), P(MhsCellFields)]),
     (
         "mhs_compiled_eval_materials",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.c_double,
-            ctypes.POINTER(MhsMaterialValues),
-        ],
+        I32,
+        [P(MhsCompiled), P(F64), Size, F64, P(MhsMaterialValues)],
     ),
-    # ---- Assembly ----
     (
         "mhs_compiled_assemble",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.c_double,
-            ctypes.POINTER(ctypes.POINTER(MhsOperators)),
-        ],
+        I32,
+        [P(MhsCompiled), P(F64), Size, F64, P(P(MhsOperators))],
     ),
-    ("mhs_operators_destroy", None, [ctypes.POINTER(MhsOperators)]),
-    (
-        "mhs_operators_get_info",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsOperators), ctypes.POINTER(MhsOperatorsInfo)],
-    ),
+    ("mhs_operators_destroy", None, [P(MhsOperators)]),
+    ("mhs_operators_get_info", I32, [P(MhsOperators), P(MhsOperatorsInfo)]),
     (
         "mhs_operators_copy_k",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsOperators),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
+        I32,
+        [P(MhsOperators), P(I32), Size, P(I32), Size, P(F64), Size],
     ),
     (
         "mhs_operators_copy_c",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsOperators),
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_int32),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
+        I32,
+        [P(MhsOperators), P(I32), Size, P(I32), Size, P(F64), Size],
     ),
-    (
-        "mhs_operators_copy_rhs",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsOperators),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
-    ),
-    # ---- Solve ----
+    ("mhs_operators_copy_rhs", I32, [P(MhsOperators), P(F64), Size]),
     (
         "mhs_compiled_solve",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsCompiled),
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-            ctypes.POINTER(_SolveOptionsCStruct),
-            ctypes.POINTER(ctypes.POINTER(MhsSolution)),
-        ],
+        I32,
+        [P(MhsCompiled), P(F64), Size, P(_SolveOptionsCStruct), P(P(MhsSolution))],
     ),
-    ("mhs_solution_destroy", None, [ctypes.POINTER(MhsSolution)]),
-    # ---- VTU ----
-    # ---- Solution copy-out accessors ----
-    (
-        "mhs_solution_get_info",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.POINTER(MhsSolutionInfo)],
-    ),
-    (
-        "mhs_solution_copy_state",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
-    ),
-    (
-        "mhs_solution_copy_history_times",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
-    ),
-    (
-        "mhs_solution_copy_history_states",
-        ctypes.c_int32,
-        [ctypes.POINTER(MhsSolution), ctypes.POINTER(ctypes.c_double), ctypes.c_size_t],
-    ),
-    (
-        "mhs_solution_probe_get_info",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_size_t),
-            ctypes.POINTER(ctypes.c_size_t),
-        ],
-    ),
+    ("mhs_solution_destroy", None, [P(MhsSolution)]),
+    ("mhs_solution_get_info", I32, [P(MhsSolution), P(MhsSolutionInfo)]),
+    ("mhs_solution_copy_state", I32, [P(MhsSolution), P(F64), Size]),
+    ("mhs_solution_copy_history_times", I32, [P(MhsSolution), P(F64), Size]),
+    ("mhs_solution_copy_history_states", I32, [P(MhsSolution), P(F64), Size]),
+    ("mhs_solution_probe_get_info", I32, [P(MhsSolution), Size, P(Size), P(Size)]),
     (
         "mhs_solution_copy_probe",
-        ctypes.c_int32,
-        [
-            ctypes.POINTER(MhsSolution),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_char),
-            ctypes.c_size_t,
-            ctypes.POINTER(ctypes.c_double),
-            ctypes.c_size_t,
-        ],
+        I32,
+        [P(MhsSolution), Size, P(ctypes.c_char), Size, P(F64), Size],
     ),
 ]
 
 
 def configure_dll(dll: ctypes.CDLL) -> None:
     """Set *argtypes* and *restype* on every core C API function in *dll*."""
+    version = getattr(dll, "mhs_abi_version", None)
+    if version is None:
+        raise RuntimeError("Incompatible MetaHotspot C ABI: rebuild the native library")
+    version.restype, version.argtypes = I32, []
+    if version() != 1:
+        raise RuntimeError("Incompatible MetaHotspot C ABI revision (expected 1)")
     for name, restype, argtypes in _CORE_FUNC_SIGS:
         fn = getattr(dll, name)
         fn.restype = restype

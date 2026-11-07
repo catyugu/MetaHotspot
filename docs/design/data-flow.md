@@ -16,8 +16,8 @@
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
 | 几何解析 | Layer / Block / Rect 和几何表达式 | SI 米下的区域；同层后出现的 Block 覆盖前者 |
-| 网格输入 | Cartesian 坐标轴或调用方提供的控制体、面片 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
-| 网格契约 | 控制体与面片几何、连接 | 构建时验证面片单元引用与轴编号，并建立 CSR 关联；其余几何与拓扑有效性由调用者保证 |
+| 网格输入 | Cartesian 坐标轴与物理区域 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
+| 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体、有向面片与 CSR 关联 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；调用者保证控制体与材料及物理域边界对齐，编译器不校验 |
 | 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成连续编号的 `boundary_faces`；每片引用原始 FaceId 和 `BoundaryCondition`，不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
@@ -36,13 +36,13 @@
 
 公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。`Model::output` 保存展示用顶点与单元连接，VTU 可输出外部箱形网格；XML 输出要求 Cartesian 采样形状。
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
 
 ## 输入与数组约定
 
-- C++ 的 `build_model(definition, discrete_mesh)`、C 的 `mhs_model_set_discrete_mesh` 和 Python 的 `Model.set_discrete_mesh` 接收完整的控制体与面片连接。外部网格坐标始终使用 SI 米，与物理定义的长度单位无关。
-- C/Python 输入和导出统一使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`，Python 输入也接受有符号 `-1`。
-- 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建；外部 C/Python 输入在 API 边界检查索引和 axis。
+- C++ 的 `ModelDefinition::mesh`、C 的 `mhs_model_set_mesh` 和 Python 的 `Model.set_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
+- C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
+- 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
@@ -57,3 +57,16 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 - `core::EntityIndex = uint32_t` 保存实体引用，model 的各类 `Id` 是其语义别名；无效引用显式使用 `core::invalid_id = UINT32_MAX`。
 - `core::SparseIndex = int32_t` 用于 CSR 存储，`Triplet` 是聚合类型。第三方索引类型留在实现文件中。
 - C ABI 对应 `mhs_index_t`、`mhs_sparse_index_t` 和 `size_t`；Python 索引数组对应 `np.uint32` 和 `np.int32`。
+
+## C ABI revision 1
+
+`MHS_ABI_VERSION` 与 `mhs_abi_version()` 标识 C ABI 修订，独立于软件包版本。
+Python 加载动态库时先校验此修订，旧动态库会得到明确错误。C/C++ 调用者须同步更新头文件和动态库。
+
+- 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
+- `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
+- `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
+- 流体边界与热边界使用相同的区域数组；入口温度用可空指针表示，NULL 取初始温度。Python 保留原有单区域调用和 `None`。删除无操作的流体边界类型；空区域条件报错。
+- 输入数组和字符串由库复制；输出数组由调用者分配。四类句柄独立拥有对象，析构允许 NULL。创建句柄的调用在验证参数前将有效的输出地址清零。
+- 成功的 status 调用清空当前线程错误；失败调用替换错误，查询和析构保留错误。初始状态仅允许 NULL/0 或完整的逐单元数组。
+- 网格规格原子替换，任何坐标轴校验失败均保留先前规格；Python 同时接受数组与可转换为 float64 的一维序列。

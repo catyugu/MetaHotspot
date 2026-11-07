@@ -53,19 +53,6 @@ class MhsFaceRegion(ctypes.Structure):
     ]
 
 
-class MhsMesh(ctypes.Structure):
-    _fields_ = [
-        ("cell_count", ctypes.c_size_t),
-        ("face_count", ctypes.c_size_t),
-        ("cell_min", ctypes.POINTER(ctypes.c_double)),
-        ("cell_max", ctypes.POINTER(ctypes.c_double)),
-        ("face_minus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_plus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_bounds", ctypes.POINTER(ctypes.c_double)),
-    ]
-
-
 class MhsCompiledInfo(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
@@ -121,6 +108,7 @@ class MhsSolutionInfo(ctypes.Structure):
         ("record_count", ctypes.c_size_t),
         ("probe_count", ctypes.c_size_t),
         ("time", ctypes.c_double),
+        ("converged", ctypes.c_int32),
     ]
 
 

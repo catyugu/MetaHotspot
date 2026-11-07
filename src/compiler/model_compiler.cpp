@@ -79,8 +79,7 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Model build_model_impl(
-        const mhs::model::ModelDefinition& definition, const mhs::model::DiscreteMesh* external)
+    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::Model model;
         copy_scalar_parameters(model, definition);
@@ -132,13 +131,11 @@ namespace mhs::compiler {
 
         auto default_boundary = compile_thermal_boundary(definition.default_boundary, boundary_conditions, symbols);
 
-        if (external) {
-            model.discrete = *external;
-            build_cell_face_incidence(model.discrete);
-        }
-        else
-            compile_cartesian_mesh(model, definition.mesh, definition.volumes);
+        compile_cartesian_mesh(model, definition.mesh, definition.volumes);
         project_cell_regions(model, definition.volumes);
+        for (const auto material : model.cell_material)
+            if (material >= model.material_table.size())
+                throw std::out_of_range("cell has no valid material assignment");
         model.boundary_faces = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
 
         // Fluid coupling.
@@ -151,8 +148,4 @@ namespace mhs::compiler {
         return model;
     }
 
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
-    { return build_model_impl(definition, nullptr); }
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::DiscreteMesh& mesh)
-    { return build_model_impl(definition, &mesh); }
 } // namespace mhs::compiler
