@@ -1,5 +1,5 @@
 #include "core/vector.hpp"
-#include "io/result_io.hpp"
+#include "pta/xml.hpp"
 
 #include "xml_helpers.hpp"
 #include <tinyxml2.h>
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io {
+namespace mhs::app::pta {
 
     namespace {
 
@@ -54,7 +54,7 @@ namespace mhs::io {
 
     } // namespace
 
-    void write_xml(const std::string& input_path, const std::string& output_path,
+    void write(const std::string& input_path, const std::string& output_path,
         const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
         const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces, std::span<const double> observation_times)
     {
@@ -172,4 +172,4 @@ namespace mhs::io {
             throw std::runtime_error("failed to write XML: " + output_path);
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::pta

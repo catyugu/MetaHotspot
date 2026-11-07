@@ -1,9 +1,9 @@
 #pragma once
 // Existing PTA fixtures exercise translation, compilation and presentation together.
 #include "compiler/model_compiler.hpp"
-#include "io/result_io.hpp"
+#include "pta/xml.hpp"
 #include "postprocessor.hpp"
-#include "pta_definition.hpp"
+#include "pta/definition.hpp"
 namespace test_pta {
     struct Model : mhs::model::Model {
         mhs::model::MeshSpec sampling_grid;

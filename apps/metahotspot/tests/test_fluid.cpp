@@ -1,7 +1,7 @@
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "core/vector_ops.hpp"
-#include "io/model_io.hpp"
+#include "pta/xml.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
 #include <numeric>
@@ -19,7 +19,7 @@ namespace {
         const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
-        return test_pta::build_model(mhs::io::read_xml(input));
+        return test_pta::build_model(mhs::app::pta::read(input));
     }
 
     mhs::app::pta::Definition single_fluid_cell()
@@ -50,7 +50,7 @@ namespace {
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
     const std::string input = std::string(MHS_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    auto model = test_pta::build_model(mhs::io::read_xml(input));
+    auto model = test_pta::build_model(mhs::app::pta::read(input));
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());

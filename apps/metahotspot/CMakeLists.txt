@@ -1,6 +1,6 @@
 add_library(mhs_app_support STATIC
-    pta_definition.cpp postprocessor.cpp
-    io/xml_model_reader.cpp io/xml_writer.cpp io/vtu_writer.cpp io/face_region_parser.cpp)
+    postprocessor.cpp vtu.cpp
+    pta/definition.cpp pta/reader.cpp pta/writer.cpp pta/face_region_parser.cpp)
 target_link_libraries(mhs_app_support PUBLIC mhs_metahotspot PRIVATE tinyxml2::tinyxml2 mhs_options)
 target_include_directories(mhs_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 if(MHS_BUILD_APPS)

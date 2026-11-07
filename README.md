@@ -102,7 +102,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：`mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver`、`mhs::io` 和 `mhs::logger` 按模块组织。单文件私有实现使用匿名命名空间。
+- 命名空间：`mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger` 按模块组织。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。

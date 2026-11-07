@@ -1,10 +1,10 @@
 #include "cli.hpp"
 #include "compiler/model_compiler.hpp"
-#include "io/model_io.hpp"
-#include "io/result_io.hpp"
 #include "logging/logger.hpp"
 #include "postprocessor.hpp"
+#include "pta/xml.hpp"
 #include "solver/solver.hpp"
+#include "vtu.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -36,7 +36,7 @@ int main(int argc, char* argv[])
 
     try {
         // Read input XML
-        auto definition = mhs::io::read_xml(input_path);
+        auto definition = mhs::app::pta::read(input_path);
 
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.volumes.size(),
             definition.materials.size(), definition.boundaries.size());
@@ -56,12 +56,13 @@ int main(int argc, char* argv[])
         const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
-        mhs::io::write_vtu(output_vtu, model.discrete, solution);
+        mhs::app::write_vtu(output_vtu, model.discrete, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature = mhs::app::interpolate_cell_to_node(model, grid, solution, result.time);
-        mhs::io::write_xml(input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
+        mhs::app::pta::write(
+            input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics
