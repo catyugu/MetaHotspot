@@ -15,7 +15,9 @@ namespace mhs::compiler {
         template <typename... Ts> struct overloaded : Ts... {
             using Ts::operator()...;
         };
-        template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
+        template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
             using namespace mhs::core;

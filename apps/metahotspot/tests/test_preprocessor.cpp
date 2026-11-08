@@ -42,9 +42,7 @@ static SourceId source_id(const Model& model, std::size_t cell)
 static mhs::app::pta::Definition make_simple_io()
 {
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     // Simple 10x10x10 mm cube, 2 cells each direction
     io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
@@ -149,9 +147,7 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
 {
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     // 100x100x30mm, with cells at x:0,50,100 y:0,50,100 z:0,2,4,6,8,10,15,20,25,30
     io.model.mesh.x_vertices = {0, 50, 100};
@@ -237,9 +233,7 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
 TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 {
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0, 50, 100};
     io.model.mesh.y_vertices = {0, 50, 100};
@@ -338,9 +332,7 @@ TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
 {
     // The caller supplies control volumes aligned with the physical domain.
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {25, 50, 75};
     io.model.mesh.y_vertices = {0, 50, 100};
@@ -386,9 +378,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // After the fix: last-match logic gives block2 (silicon) to overlap cells.
 
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0, 50, 100};
     io.model.mesh.y_vertices = {0, 50, 100};
@@ -498,9 +488,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     //
     // Mesh: 2x2 cells over [0, 10]x[0, 10]x[0, 10] mm; one block filling all.
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0, 5, 10};
     io.model.mesh.y_vertices = {0, 5, 10};
@@ -567,9 +555,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
     // of the top die. Without correct per-key iteration, some faces would
     // silently fall through to the default boundary.
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0, 5, 10};
     io.model.mesh.y_vertices = {0, 5, 10};
@@ -648,9 +634,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
 TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
 {
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     // 4 mm x 4 mm mesh, one cell per direction; the block covers 0..3 mm, so the
     // cell centre (2 mm) is inside a block and the cell is active, while the cut
