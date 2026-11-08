@@ -128,10 +128,8 @@ namespace mhs::solver {
                 },
                 boundaries[term.condition]);
         }
-        if (std::find(pressure_references.begin(), pressure_references.end(), false)
-            != pressure_references.end())
-            throw std::runtime_error(
-                "every connected fluid component needs a pressure inlet or outlet");
+        if (std::find(pressure_references.begin(), pressure_references.end(), false) != pressure_references.end())
+            throw std::runtime_error("every connected fluid component needs a pressure inlet or outlet");
         for (std::size_t i = 0; i < n; ++i)
             entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(i), diagonal[i]);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id)

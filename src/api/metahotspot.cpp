@@ -304,8 +304,8 @@ MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t d
 }
 
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
-    const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches,
-    size_t patch_count, mhs_index_t* out_id)
+    const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches, size_t patch_count,
+    mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
@@ -329,8 +329,8 @@ MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, 
             if (!source.trace)
                 throw std::invalid_argument("NULL ROM port patch trace");
             mhs::model::RomPortPatch patch;
-            patch.rectangle = {source.rectangle.a_min, source.rectangle.a_max, source.rectangle.b_min,
-                source.rectangle.b_max};
+            patch.rectangle
+                = {source.rectangle.a_min, source.rectangle.a_max, source.rectangle.b_min, source.rectangle.b_max};
             patch.half_resistance = source.half_resistance;
             patch.center = {source.center[0], source.center[1]};
             patch.offset = source.offset;
