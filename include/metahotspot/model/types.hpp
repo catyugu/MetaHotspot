@@ -20,7 +20,6 @@ namespace mhs::model {
         constexpr AttributeHandle() = default;
         constexpr AttributeHandle(core::EntityIndex value) : index(value) { }
         constexpr operator core::EntityIndex() const noexcept { return index; }
-        friend constexpr bool operator==(AttributeHandle, AttributeHandle) = default;
     };
     using ThermalBoundaryHandle = AttributeHandle<struct ThermalBoundaryTag>;
     using FluidBoundaryHandle = AttributeHandle<struct FluidBoundaryTag>;
