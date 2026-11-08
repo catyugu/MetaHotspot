@@ -27,16 +27,13 @@ namespace mhs::solver {
         // can supply the required temperature reference.
         void initialize_stokes_state(const model::CompiledModel& compiled, core::Vector<double>& state)
         {
-            for (std::size_t domain_id = 0; domain_id < compiled.domains.size(); ++domain_id) {
-                const auto* value = std::get_if<model::FomDomain>(&compiled.domains[domain_id]);
-                if (!value)
+            for (const auto& thermal : compiled.layout.fields) {
+                if (thermal.quantity != model::FieldQuantity::Temperature)
                     continue;
-                const auto& domain = *value;
+                const auto id = thermal.domain;
+                const auto& domain = compiled.fom(id);
                 if (domain.flow_mode != model::FlowMode::Stokes || domain.fluid.fluid_to_global.empty())
                     continue;
-                const auto id = static_cast<model::DomainId>(domain_id);
-                const auto& thermal
-                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
                 const auto temperatures = std::span<const double>(state).subspan(thermal.offset, thermal.count);
                 const auto& pressure = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Pressure));
                 const auto& velocity = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Velocity));
@@ -247,16 +244,14 @@ namespace mhs::solver {
         core::Vector<double> state;
         if (initial_state.empty()) {
             state.assign(state_count, 0.0);
-            for (const auto& field : compiled.layout.fields)
+            for (const auto& field : compiled.layout.fields) {
                 if (field.quantity == model::FieldQuantity::Temperature)
                     std::fill_n(state.begin() + field.offset, field.count, study.initial_temperature);
-            for (std::size_t d = 0; d < compiled.domains.size(); ++d)
-                if (const auto* rom = std::get_if<model::RomDomain>(&compiled.domains[d])) {
-                    const auto domain = static_cast<model::DomainId>(d);
-                    const auto& field
-                        = compiled.layout.field(compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
-                    std::copy(rom->initial_state.begin(), rom->initial_state.end(), state.begin() + field.offset);
+                else if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
+                    const auto& initial = compiled.rom(field.domain).initial_state;
+                    std::copy(initial.begin(), initial.end(), state.begin() + field.offset);
                 }
+            }
         }
         else {
             if (initial_state.size() != state_count)

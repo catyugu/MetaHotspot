@@ -81,9 +81,8 @@ namespace mhs::compiler {
         compiled.point_probes = definition.point_probes;
 
         for (std::size_t domain_id = 0; domain_id < definition.domains.size(); ++domain_id) {
-            const auto& value = definition.domains[domain_id];
-            if (std::holds_alternative<model::RomDomainDefinition>(value)) {
-                auto rom = std::get<model::RomDomainDefinition>(value);
+            if (const auto* value = std::get_if<model::RomDomainDefinition>(&definition.domains[domain_id])) {
+                auto rom = *value;
                 const auto n = rom.order;
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
                     || rom.C.size() != n * n || rom.f.size() != n
@@ -117,7 +116,7 @@ namespace mhs::compiler {
                 continue;
             }
 
-            const auto& domain = std::get<model::FomDomainDefinition>(value);
+            const auto& domain = std::get<model::FomDomainDefinition>(definition.domains[domain_id]);
             compiled.domains.emplace_back(model::FomDomain {});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;

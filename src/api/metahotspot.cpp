@@ -787,12 +787,13 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = out->face_count = out->projection_count = out->source_count = 0;
-    for (const auto& domain : c->model.domains)
-        if (const auto* fom = std::get_if<mhs::model::FomDomain>(&domain)) {
-            out->source_count = fom->heat_source_table.size();
-            out->cell_count += fom->discrete.cells.size();
-            out->face_count += fom->discrete.faces.size();
-            out->projection_count += fom->source_terms.size();
+    for (const auto& field : c->model.layout.fields)
+        if (field.quantity == mhs::model::FieldQuantity::Temperature) {
+            const auto& fom = c->model.fom(field.domain);
+            out->source_count = fom.heat_source_table.size();
+            out->cell_count += fom.discrete.cells.size();
+            out->face_count += fom.discrete.faces.size();
+            out->projection_count += fom.source_terms.size();
         }
     out->state_count = c->model.layout.state_count;
     out->domain_count = c->model.domains.size();
@@ -811,16 +812,14 @@ MHS_API mhs_status_t mhs_compiled_default_state(
         if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
             throw std::invalid_argument("initial state size or temperature is invalid");
         std::fill_n(state, state_count, 0.0);
-        for (const auto& field : c->model.layout.fields)
+        for (const auto& field : c->model.layout.fields) {
             if (field.quantity == mhs::model::FieldQuantity::Temperature)
                 std::fill_n(state + field.offset, field.count, initial_temperature);
-        for (std::size_t d = 0; d < c->model.domains.size(); ++d)
-            if (const auto* rom = std::get_if<mhs::model::RomDomain>(&c->model.domains[d])) {
-                const auto domain = static_cast<mhs::model::DomainId>(d);
-                const auto field_id = c->model.layout.find(domain, mhs::model::FieldQuantity::ReducedCoordinate);
-                const auto& field = c->model.layout.field(field_id);
-                std::copy(rom->initial_state.begin(), rom->initial_state.end(), state + field.offset);
+            else if (field.quantity == mhs::model::FieldQuantity::ReducedCoordinate) {
+                const auto& initial = c->model.rom(field.domain).initial_state;
+                std::copy(initial.begin(), initial.end(), state + field.offset);
             }
+        }
     });
 }
 
@@ -887,11 +886,10 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         return MHS_ERROR;
     }
     size_t cell_offset = 0, face_offset = 0, projection_offset = 0;
-    for (const auto& domain : c->model.domains) {
-        const auto* value = std::get_if<mhs::model::FomDomain>(&domain);
-        if (!value)
+    for (const auto& field : c->model.layout.fields) {
+        if (field.quantity != mhs::model::FieldQuantity::Temperature)
             continue;
-        const auto& model = *value;
+        const auto& model = c->model.fom(field.domain);
         const auto& mesh = model.discrete;
         for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
             for (size_t a = 0; a < 3; ++a) {
@@ -942,13 +940,10 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         if (state_count != c->model.layout.state_count || projection_count != info.projection_count)
             throw std::invalid_argument("source projection buffer size mismatch");
         size_t offset = 0;
-        for (size_t d = 0; d < c->model.domains.size(); ++d) {
-            const auto* value = std::get_if<mhs::model::FomDomain>(&c->model.domains[d]);
-            if (!value)
+        for (const auto& field : c->model.layout.fields) {
+            if (field.quantity != mhs::model::FieldQuantity::Temperature)
                 continue;
-            const auto& model = *value;
-            const auto& field = c->model.layout.field(
-                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
+            const auto& model = c->model.fom(field.domain);
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
                 const auto density
@@ -978,14 +973,11 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     }
     MHS_TRY({
         size_t offset = 0;
-        for (size_t d = 0; d < c->model.domains.size(); ++d) {
-            const auto* value = std::get_if<mhs::model::FomDomain>(&c->model.domains[d]);
-            if (!value)
+        for (const auto& field : c->model.layout.fields) {
+            if (field.quantity != mhs::model::FieldQuantity::Temperature)
                 continue;
-            const auto& model = *value;
+            const auto& model = c->model.fom(field.domain);
             const auto& mesh = model.discrete;
-            const auto& field = c->model.layout.field(
-                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
             for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
                 const auto p = mesh.cells[cell].center();
                 const auto& props = model.material_table[model.cell_material[cell]];

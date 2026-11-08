@@ -174,23 +174,19 @@ namespace mhs::solver {
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
         domains_.resize(model.domains.size());
         stokes_.resize(model.domains.size());
-        for (std::size_t d = 0; d < model.domains.size(); ++d) {
-            const auto* value = std::get_if<model::FomDomain>(&model.domains[d]);
-            if (!value)
+        for (const auto& field : model.layout.fields) {
+            if (field.quantity != model::FieldQuantity::Temperature)
                 continue;
-            const auto& domain = *value;
-            const auto& field = model.layout.field(
-                model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+            const auto d = field.domain;
+            const auto& domain = model.fom(d);
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_[d] = std::make_unique<StokesAssembler>(
-                    domain, model.layout, static_cast<model::DomainId>(d));
+                stokes_[d] = std::make_unique<StokesAssembler>(domain, model.layout, d);
                 domains_[d] = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
             }
-            else {
+            else
                 domains_[d]
                     = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
-            }
         }
         identity_ = model.domains.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
     }
@@ -200,21 +196,17 @@ namespace mhs::solver {
         if (state.size() != model_.layout.state_count)
             throw std::invalid_argument("thermal assembly state size mismatch");
 
-        const auto temperature_field = [&](std::size_t d) -> const model::FieldLayout& {
-            return model_.layout.field(
-                model_.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
-        };
         if (identity_) {
-            const auto& field = temperature_field(0);
+            const auto& field = model_.layout.fields.front();
             return domains_[0]->assemble(state.subspan(field.offset, field.count), time);
         }
 
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
-        for (std::size_t d = 0; d < domains_.size(); ++d) {
-            if (!domains_[d])
+        for (const auto& field : model_.layout.fields) {
+            if (field.quantity != model::FieldQuantity::Temperature)
                 continue;
-            const auto& field = temperature_field(d);
+            const auto d = field.domain;
             const auto temperature = state.subspan(field.offset, field.count);
             if (stokes_[d])
                 domains_[d]->set_flow(stokes_[d]->assemble(state, temperature, time, stiffness, capacity, load));
@@ -231,14 +223,10 @@ namespace mhs::solver {
                 load[field.dof(c)] += ops.f[c];
         }
 
-        for (std::size_t d = 0; d < model_.domains.size(); ++d) {
-            const auto* value = std::get_if<model::RomDomain>(&model_.domains[d]);
-            if (!value)
+        for (const auto& field : model_.layout.fields) {
+            if (field.quantity != model::FieldQuantity::ReducedCoordinate)
                 continue;
-            const auto& rom = *value;
-            const auto domain = static_cast<model::DomainId>(d);
-            const auto& field
-                = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+            const auto& rom = model_.rom(field.domain);
             for (std::size_t i = 0; i < rom.order; ++i) {
                 const auto row = static_cast<core::SparseIndex>(field.dof(i));
                 double rhs = rom.f[i];
