@@ -58,7 +58,7 @@ class SolveOptions:
     ``None`` fields fall back to the C++ defaults (via ``mhs_solve_options_default``).
     ``time_tolerance`` controls adaptive BDF1/2 error (default 1e-4).
     ``max_time_step=None`` selects an automatic limit; positive values are seconds.
-    Output sampling is configured on the model independently of solver steps.
+    Output sampling is configured by the solve-time Study, independently of solver steps.
     """
 
     linear_solver: SolverType | str | None = None

@@ -243,7 +243,9 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
-/** Domain 0 exists on creation. All domain-local IDs are scoped by domain. */
+/** Domain 0 is initially a FOM; ROM-only models discard the untouched default.
+ * Domain IDs remain stable in arbitrary FOM/ROM creation order.
+ * All domain-local IDs are scoped by domain. */
 MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id);
 // Meshless reduced thermal domain. K/C are dense row-major (order,order)
 // matrices of C dz/dt + K z = f. NULL initial coordinates select zero.
@@ -276,8 +278,6 @@ MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c
 MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
     const double* state, size_t state_count, double time, double* outward_a, size_t patch_count);
 
-/** Set the default study copied into subsequent compiled snapshots. */
-MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* study);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  reference state, mesh, variables         */
@@ -425,7 +425,7 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-/** study may be NULL to use the compiled study snapshot. state is NULL/0 to build a
+/** study may be NULL to run the default steady Study (300 K). state is NULL/0 to build a
  * FOM initial temperature and each ROM's modal initial state, otherwise it must have
  * exactly state_count entries. opts may be NULL to select defaults. */
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
