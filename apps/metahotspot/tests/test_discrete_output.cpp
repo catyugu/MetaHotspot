@@ -9,7 +9,7 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
-    d.components.emplace_back();
+    d.components.emplace_back().library = std::make_shared<mhs::model::LibraryDefinition>();
     d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
