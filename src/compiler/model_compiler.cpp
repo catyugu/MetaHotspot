@@ -154,27 +154,17 @@ namespace mhs::compiler {
                             throw std::invalid_argument("box bounds must be finite and increasing");
             }
 
-            // Compile boundary patches.
-            auto& boundary_conditions = model.boundary_conditions;
-            auto compiled_boundaries
-                = compile_thermal_boundaries(component.thermal_boundaries, boundary_conditions, symbols);
-
-            // Port regions mask the default exterior law; one projection only.
-            for (const auto& port : component.ports)
-                compiled_boundaries.push_back({port.region, core::invalid_id});
-            const auto default_thermal_boundary
-                = compile_thermal_boundary(domain.default_thermal_boundary, boundary_conditions, symbols);
+            // Exterior faces and ports are projected together after all
+            // component meshes have been compiled.
+            auto& conditions = model.boundary_conditions;
+            compile_thermal_boundaries(component.thermal_boundaries, conditions, symbols);
+            compile_thermal_boundary(domain.default_thermal_boundary, conditions, symbols);
 
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
             project_cell_regions(model, domain.volumes);
             for (const auto material : model.cell_material)
                 if (material >= model.material_table.size())
                     throw std::out_of_range("cell has no valid material assignment");
-            for (const auto& patch :
-                project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
-                if (patch.tag != core::invalid_id)
-                    model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                        static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;

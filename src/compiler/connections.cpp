@@ -42,7 +42,8 @@ namespace mhs::compiler {
         core::Vector<core::Vector<Facets>> ports(ndom);
         core::Vector<core::Vector<bool>> used(ndom);
 
-        // Full-order port projection and exterior-boundary exclusion.
+        // Project each Cartesian component exterior once: physical boundary
+        // laws and port facets are mutually exclusive labels on the same face cuts.
         for (const auto& field : compiled.layout.fields) {
             if (field.quantity != FieldQuantity::Temperature)
                 continue;
@@ -52,6 +53,11 @@ namespace mhs::compiler {
             used[d].resize(component.ports.size(), false);
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
+            core::Vector<TaggedSurfaceRegion> regions;
+            for (std::size_t id = 0; id < component.thermal_boundaries.size(); ++id)
+                for (const auto& region : component.thermal_boundaries[id].regions)
+                    regions.push_back({region, id});
+            const auto port_offset = fom.boundary_conditions.size();
             for (std::size_t p = 0; p < component.ports.size(); ++p) {
                 const auto& port = component.ports[p];
                 const auto& r = port.region;
@@ -69,19 +75,32 @@ namespace mhs::compiler {
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps a fluid boundary");
-                const auto projection = project_exterior_surface_regions(fom.discrete, {{r, 0}});
-                double covered = 0;
-                for (const auto& patch : projection) {
-                    covered += area(patch.bounds);
-                    const auto& fluid = fom.fluid;
-                    if (!fluid.global_to_fluid.empty() && fluid.global_to_fluid[patch.cell] != core::invalid_id)
-                        throw std::invalid_argument("thermal connections currently require solid interface cells");
-                    ports[d].at(p).push_back({patch.cell, patch.bounds, patch.sign});
+                regions.push_back({r, port_offset + p});
+            }
+            const auto projection = project_exterior_surface_regions(
+                fom.discrete, regions, port_offset - 1);
+            for (const auto& patch : projection) {
+                if (patch.tag < port_offset) {
+                    fom.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                        static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
+                    continue;
                 }
-                if (projection.empty() || std::abs(covered - area(bounds(r))) > 1e-10 * area(bounds(r)))
+                const auto p = patch.tag - port_offset;
+                if (!fom.fluid.global_to_fluid.empty()
+                    && fom.fluid.global_to_fluid[patch.cell] != core::invalid_id)
+                    throw std::invalid_argument("thermal connections currently require solid interface cells");
+                ports[d][p].push_back({patch.cell, patch.bounds, patch.sign});
+            }
+            for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                const auto& facets = ports[d][p];
+                double covered = 0;
+                for (const auto& facet : facets)
+                    covered += area(facet.bounds);
+                if (facets.empty() || std::abs(covered - area(bounds(component.ports[p].region)))
+                        > 1e-10 * area(bounds(component.ports[p].region)))
                     throw std::invalid_argument("port is not fully covered by exterior domain faces");
-                if (!std::all_of(projection.begin(), projection.end(),
-                        [&](const auto& x) { return x.sign == projection.front().sign; }))
+                if (!std::all_of(facets.begin(), facets.end(),
+                        [&](const auto& facet) { return facet.sign == facets.front().sign; }))
                     throw std::invalid_argument("port must have a single outward normal");
             }
         }
