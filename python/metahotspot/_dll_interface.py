@@ -52,6 +52,11 @@ _CORE_FUNC_SIGS = [
         [P(MhsModel), Size, P(F64), P(F64), P(F64), P(F64), P(ctypes.c_uint32)],
     ),
     (
+        "mhs_model_rom_add_affine_term",
+        I32,
+        [P(MhsModel), ctypes.c_uint32, Text, F64, P(F64), P(F64)],
+    ),
+    (
         "mhs_model_add_rom_port",
         I32,
         [
