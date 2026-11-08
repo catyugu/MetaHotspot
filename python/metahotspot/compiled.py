@@ -110,9 +110,12 @@ class FieldLayout:
     domain: int
     quantity: FieldQuantity
     support: EntitySupport
-    component: int
+    offset: int
     entities: np.ndarray
-    dofs: np.ndarray
+
+    @property
+    def dofs(self) -> np.ndarray:
+        return np.arange(self.offset, self.offset + self.entities.size, dtype=np.uint32)
 
 
 @dataclass(frozen=True)
@@ -321,25 +324,22 @@ class Compiled(OwnedHandle):
                 "field_info",
             )
             entities = np.empty(value.dof_count, dtype=np.uint32)
-            dofs = np.empty(value.dof_count, dtype=np.uint32)
             check(
-                self._dll.mhs_compiled_copy_field_mapping(
+                self._dll.mhs_compiled_copy_field_entities(
                     self._handle,
                     i,
                     entities.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
-                    dofs.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
                     value.dof_count,
                 ),
-                "field_mapping",
+                "field_entities",
             )
             result.append(
                 FieldLayout(
                     value.domain,
                     FieldQuantity(value.quantity),
                     EntitySupport(value.support),
-                    value.component,
+                    value.dof_offset,
                     entities,
-                    dofs,
                 )
             )
         return tuple(result)
@@ -358,9 +358,7 @@ class Compiled(OwnedHandle):
                 for f in self.field_layouts
                 if f.domain == domain and f.quantity == FieldQuantity.TEMPERATURE
             )
-            mapping = np.empty(info.cell_count, dtype=np.uint32)
-            mapping[field.entities] = field.dofs
-            maps.append(mapping)
+            maps.append(np.arange(field.offset, field.offset + info.cell_count, dtype=np.uint32))
         return np.concatenate(maps) if maps else np.empty(0, dtype=np.uint32)
 
     def connection_flux(

@@ -188,9 +188,9 @@ _CORE_FUNC_SIGS = [
         [P(MhsCompiled), ctypes.c_uint32, P(MhsFieldInfo)],
     ),
     (
-        "mhs_compiled_copy_field_mapping",
+        "mhs_compiled_copy_field_entities",
         I32,
-        [P(MhsCompiled), ctypes.c_uint32, P(ctypes.c_uint32), P(ctypes.c_uint32), Size],
+        [P(MhsCompiled), ctypes.c_uint32, P(ctypes.c_uint32), Size],
     ),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),

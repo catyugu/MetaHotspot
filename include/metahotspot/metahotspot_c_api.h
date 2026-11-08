@@ -168,7 +168,8 @@ typedef struct {
 
 /** Caller-owned geometry arrays, concatenated in DomainId order. XYZ bounds
  * are flattened (count,3). Cell IDs in this export include the domain cell offset;
- * FieldLayout entity IDs remain local to their domain and DOFs remain global.
+ * Field support-entity IDs remain local to their domain; each field owns a
+ * contiguous global DOF range reported by mhs_field_info_t.
  * Face bounds are (face_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
  * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
@@ -385,15 +386,16 @@ typedef struct {
     mhs_index_t domain;
     mhs_field_quantity_t quantity;
     mhs_entity_support_t support;
-    uint32_t component;
+    mhs_index_t dof_offset;
     size_t dof_count;
 } mhs_field_info_t;
 
 MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_index_t domain, mhs_domain_info_t* out);
 MHS_API mhs_status_t mhs_compiled_get_field_info(const mhs_compiled_t* c, mhs_index_t field, mhs_field_info_t* out);
-/** Exact-size independent arrays: local entry -> support entity and global DOF. */
-MHS_API mhs_status_t mhs_compiled_copy_field_mapping(
-    const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, mhs_index_t* dofs, size_t count);
+/** Exact-size map from local field entry to its domain-local support entity.
+ * Global DOF is dof_offset + local entry. */
+MHS_API mhs_status_t mhs_compiled_copy_field_entities(
+    const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, size_t count);
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
 /** FOM temperature coordinates use the requested initial temperature; ROM
