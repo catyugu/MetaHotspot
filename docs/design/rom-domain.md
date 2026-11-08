@@ -1,9 +1,10 @@
-# Thermal ROM domains and physical connection maps
+# Reduced components and physical connection maps
 
-A ROM domain is a meshless, linear reduced thermal subsystem assembled alongside
-full-order Cartesian domains. It owns modal coordinates and reduced matrices;
-its physical interface is represented explicitly by boundary-port maps. A ROM
-has no fake internal FOM cells, material IDs or cell-temperature field.
+A reduced component is a meshless, linear thermal subsystem assembled alongside
+Cartesian components. Its numerical formulation owns modal coordinates and reduced
+matrices; its enclosing Component owns physical ports and exterior boundary
+declarations. It has no fake internal Cartesian cells, material IDs or
+cell-temperature field.
 
 ## State and operators
 
@@ -70,10 +71,11 @@ and physical observation maps. ROM ports are submitted with all their patches
 in one C ABI call, so failures cannot leave a partially constructed port. Connections use existing Domain/Port IDs and
 the existing model/compiled/solution opaque handles.
 
-FOM and ROM domains share one creation-ordered domain table. A `DomainId`
-is the stable index in that table, so the two domain types may be interleaved.
-A ROM-only assembly is valid; adding the first ROM to an untouched model
-replaces the implicit empty FOM and therefore yields DomainId 0.
+Cartesian and reduced components share one creation-ordered component table.
+`DomainId` is the stable index in that table, and the two formulations may be
+interleaved. Models start empty; the first component, regardless of formulation,
+receives ID 0. A reduced-only assembly therefore needs no placeholder Cartesian
+component.
 
 ## Verification and limits
 
