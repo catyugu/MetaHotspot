@@ -31,7 +31,7 @@ namespace {
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
         mat.dynamic_viscosity = "1";
-        d.model.library().materials.push_back({"fluid", mat});
+        test_pta::library(d.model).materials.push_back({"fluid", mat});
         mhs::app::pta::LayerSpec layer;
         layer.thickness = "1";
         mhs::app::pta::BlockSpec block;
@@ -132,9 +132,9 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    const auto inlet_a = test_pta::append(d.model.library().fluid_boundaries, MassFlowInlet {2, 280});
-    const auto inlet_b = test_pta::append(d.model.library().fluid_boundaries, MassFlowInlet {3, 320});
-    const auto outlet = test_pta::append(d.model.library().fluid_boundaries, PressureOutlet {0});
+    const auto inlet_a = test_pta::append(test_pta::library(d.model).fluid_boundaries, MassFlowInlet {2, 280});
+    const auto inlet_b = test_pta::append(test_pta::library(d.model).fluid_boundaries, MassFlowInlet {3, 320});
+    const auto outlet = test_pta::append(test_pta::library(d.model).fluid_boundaries, PressureOutlet {0});
     d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, inlet_a},
         {{{Axis::X, 0, {0.8, 1, 0, 1}}}, inlet_b}, {{{Axis::X, 1, {0, 1, 0, 1}}}, outlet}};
     auto verify = [&](const test_pta::Model& model) {
@@ -146,7 +146,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     };
     verify(test_pta::build_model(d));
     ThermalBoundarySpec thermal;
-    thermal.condition = test_pta::append(d.model.library().thermal_boundaries, NeumannBoundary {"0"});
+    thermal.condition = test_pta::append(test_pta::library(d.model).thermal_boundaries, NeumannBoundary {"0"});
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
     d.model.component(0).thermal_boundaries.push_back(thermal);
     verify(test_pta::build_model(d));
@@ -158,8 +158,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    const auto inlet = test_pta::append(d.model.library().fluid_boundaries, PressureInlet {0, 280});
-    const auto outlet = test_pta::append(d.model.library().fluid_boundaries, PressureOutlet {1, 315});
+    const auto inlet = test_pta::append(test_pta::library(d.model).fluid_boundaries, PressureInlet {0, 280});
+    const auto outlet = test_pta::append(test_pta::library(d.model).fluid_boundaries, PressureOutlet {1, 315});
     d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 1, 0, 1}}}, inlet}, {{{Axis::X, 1, {0, 1, 0, 1}}}, outlet}};
     auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.flow.boundary_terms.size(), 2);
@@ -179,7 +179,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     };
     verify_reverse(reverse, 315);
 
-    std::get<PressureOutlet>(d.model.library().fluid_boundaries[d.model.fom(0).fluid_boundaries.back().condition])
+    std::get<PressureOutlet>(test_pta::library(d.model).fluid_boundaries[d.model.fom(0).fluid_boundaries.back().condition])
         .pressure = 0;
     const auto stagnant = test_pta::build_model(d);
     mhs::solver::ThermalAssembler stagnant_assembler(stagnant, stagnant.flow);
