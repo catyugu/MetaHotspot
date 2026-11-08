@@ -65,7 +65,7 @@ namespace mhs::compiler {
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps an explicit thermal boundary");
-                for (const auto& bc : domain.fluid_boundaries)
+                for (const auto& bc : definition.fom(d).fluid_boundaries)
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps a fluid boundary");

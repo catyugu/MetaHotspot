@@ -73,7 +73,7 @@ namespace mhs::solver {
         const auto axis = static_cast<std::size_t>(connection.axis);
         auto side = [&](model::PortReference ref, model::CellId index) -> Side {
             Side result;
-            const auto& value = compiled.domains.at(ref.domain);
+            const auto& value = compiled.components.at(ref.domain).physics;
             if (const auto* fom = std::get_if<model::FomDomain>(&value)) {
                 const auto& domain = *fom;
                 const auto cell = index;
@@ -102,7 +102,7 @@ namespace mhs::solver {
             }
             else {
                 const auto& rom = std::get<model::RomDomain>(value);
-                const auto& facet = rom.ports.at(ref.port).patches.at(index);
+                const auto& facet = compiled.components.at(ref.domain).ports.at(ref.port).patches.at(index);
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
                 result.resistance = facet.half_resistance;
