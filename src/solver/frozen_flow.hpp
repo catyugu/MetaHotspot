@@ -25,7 +25,5 @@ namespace mhs::solver {
     };
 
     FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model,
-        const mhs::core::Vector<mhs::model::MaterialProps>& materials,
-        const mhs::core::Vector<mhs::model::FluidBoundaryCondition>& conditions, std::span<const double> temperature,
-        double time = 0.0);
+        std::span<const double> temperature, double time = 0.0);
 }
