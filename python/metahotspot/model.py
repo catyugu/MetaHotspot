@@ -15,6 +15,7 @@ from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType, ThermalBoundaryKind
 from metahotspot.types import (
     MhsModel,
+    MhsLibrary,
     MhsRomPortPatch,
     MhsStudy,
     MhsSurfaceRegion,
@@ -38,9 +39,9 @@ def _double_ptr(array: np.ndarray):
     return array.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
 
 
-def _create_model(dll):
+def _create_model(dll, library):
     handle = ctypes.POINTER(MhsModel)()
-    check(dll.mhs_model_create(ctypes.byref(handle)), "create")
+    check(dll.mhs_model_create(library._handle, ctypes.byref(handle)), "create")
     return handle
 
 
@@ -142,7 +143,7 @@ def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
 def _add_piecewise(dll, handle, name, points) -> None:
     native = (Point2D * len(points))(*[Point2D(x, y) for x, y in points])
     check(
-        dll.mhs_model_add_function_piecewise(handle, _text(name), native, len(points)),
+        dll.mhs_library_add_function_piecewise(handle, _text(name), native, len(points)),
         "add_function_piecewise",
     )
 
@@ -150,7 +151,7 @@ def _add_piecewise(dll, handle, name, points) -> None:
 def _add_periodic_constant(dll, handle, name, values, period) -> None:
     native = (ctypes.c_double * len(values))(*values)
     check(
-        dll.mhs_model_add_function_periodic_piecewise_constant(
+        dll.mhs_library_add_function_periodic_piecewise_constant(
             handle, _text(name), native, len(values), period
         ),
         "add_function_periodic_piecewise_constant",
@@ -160,60 +161,19 @@ def _add_periodic_constant(dll, handle, name, values, period) -> None:
 # ---- public wrapper ------------------------------------------------------
 
 
-class Model(OwnedHandle):
-    """A mutable MetaHotspot model, wrapping an mhs_model_t handle.
-
-    Usage::
-
-        m = Model()
-        m.add_cartesian_component()  # Explicitly create the Cartesian component.
-        # Set SI mesh axes, materials and volumes before compiling.
-        c = m.compile()
-        sol = c.solve()
-
-    Use the context manager for automatic cleanup::
-
-        with Model() as m:
-            ...
-    """
+class Library(OwnedHandle):
+    """Reusable material, source, expression and boundary definitions."""
 
     def __init__(self) -> None:
         dll = get_dll()
-        handle = _create_model(dll)
-        super().__init__(dll, handle, dll.mhs_model_destroy)
-        self._reduced_orders: dict[int, int] = {}
-
-    # ---- Model construction helpers ----
-
-    def set_cartesian_mesh(
-        self,
-        x: Sequence[float] | np.ndarray,
-        y: Sequence[float] | np.ndarray,
-        z: Sequence[float] | np.ndarray,
-        *,
-        component: int = 0,
-    ) -> None:
-        """Set mesh vertices."""
-        arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]
-        if any(a.ndim != 1 or a.size < 2 for a in arrays):
-            raise ValueError(
-                "each mesh axis needs a 1D array with at least two vertices"
-            )
-        self._call(
-            "mhs_model_set_cartesian_mesh",
-            component,
-            *[v for a in arrays for v in (a.size, _double_ptr(a))],
-            ctx="set_cartesian_mesh",
-        )
-
-    def set_flow_mode(self, mode: int, *, component: int = 0) -> None:
-        """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
-        self._call("mhs_model_set_flow_mode", component, int(mode), ctx="set_flow_mode")
+        handle = ctypes.POINTER(MhsLibrary)()
+        check(dll.mhs_library_create(ctypes.byref(handle)), "create_library")
+        super().__init__(dll, handle, dll.mhs_library_destroy)
 
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
         self._call(
-            "mhs_model_add_variable", _text(name), _text(expression), ctx="add_variable"
+            "mhs_library_add_variable", _text(name), _text(expression), ctx="add_variable"
         )
 
     def add_material(
@@ -230,7 +190,7 @@ class Model(OwnedHandle):
         identifier = ctypes.c_uint32()
         text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
         self._call(
-            "mhs_model_add_material",
+            "mhs_library_add_material",
             *text_args,
             _text(dynamic_viscosity),
             ctypes.byref(identifier),
@@ -243,82 +203,12 @@ class Model(OwnedHandle):
         """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_source",
+            "mhs_library_add_source",
             _text(expression),
             ctypes.byref(identifier),
             ctx="add_source",
         )
         return identifier.value
-
-    def add_volume(
-        self, material: int, source: int = 0xFFFFFFFF, *, component: int = 0
-    ) -> int:
-        """Return a volume ID. Later volumes override earlier volumes."""
-        identifier = ctypes.c_uint32()
-        self._call(
-            "mhs_model_add_volume",
-            component,
-            material,
-            source,
-            ctypes.byref(identifier),
-            ctx="add_volume",
-        )
-        return identifier.value
-
-    def add_box(
-        self,
-        volume: int,
-        minimum,
-        maximum,
-        op: GeometryOp = GeometryOp.ADD,
-        *,
-        component: int = 0,
-    ) -> None:
-        """Append an axis-aligned box operation in SI metres."""
-        lo = np.ascontiguousarray(minimum, dtype=np.float64)
-        hi = np.ascontiguousarray(maximum, dtype=np.float64)
-        if lo.shape != (3,) or hi.shape != (3,):
-            raise ValueError("box bounds must each contain three coordinates")
-        self._call(
-            "mhs_model_volume_add_box",
-            component,
-            volume,
-            int(op),
-            _double_ptr(lo),
-            _double_ptr(hi),
-            ctx="add_box",
-        )
-
-    # ---- Thermal boundaries ----
-
-    def add_thermal_boundary(
-        self,
-        regions: Sequence[SurfaceRegion],
-        condition: ThermalBoundary,
-        *,
-        component: int = 0,
-    ) -> None:
-        native, count = _surface_regions(regions)
-        spec = _thermal_boundary(condition)
-        self._call(
-            "mhs_model_add_thermal_boundary",
-            component,
-            native,
-            count,
-            ctypes.byref(spec),
-            ctx="add_thermal_boundary",
-        )
-
-    def set_default_thermal_boundary(
-        self, condition: ThermalBoundary, *, component: int = 0
-    ) -> None:
-        spec = _thermal_boundary(condition)
-        self._call(
-            "mhs_model_set_default_thermal_boundary",
-            component,
-            ctypes.byref(spec),
-            ctx="set_default_thermal_boundary",
-        )
 
     # ---- Functions ----
 
@@ -381,32 +271,130 @@ class Model(OwnedHandle):
         """Register a periodic piecewise-constant function."""
         _add_periodic_constant(self._dll, self._handle, name, values, period)
 
-    # ---- Probes & fluid boundaries ----
+    def add_thermal_boundary(self, condition: ThermalBoundary) -> int:
+        native = _thermal_boundary(condition)
+        identifier = ctypes.c_uint32()
+        self._call("mhs_library_add_thermal_boundary", ctypes.byref(native),
+                   ctypes.byref(identifier))
+        return identifier.value
 
-    def add_fluid_boundary(
+    def add_fluid_boundary(self, kind: FluidBC, value: float, inlet_temperature: float | None = None) -> int:
+        temperature = None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        identifier = ctypes.c_uint32()
+        self._call("mhs_library_add_fluid_boundary", int(kind), value,
+                   None if temperature is None else ctypes.byref(temperature),
+                   ctypes.byref(identifier))
+        return identifier.value
+
+
+class Model(OwnedHandle):
+    """A mutable MetaHotspot model, wrapping an mhs_model_t handle.
+
+    Usage::
+
+        m = Model()
+        m.add_cartesian_component()  # Explicitly create the Cartesian component.
+        # Set SI mesh axes, materials and volumes before compiling.
+        c = m.compile()
+        sol = c.solve()
+
+    Use the context manager for automatic cleanup::
+
+        with Model() as m:
+            ...
+    """
+
+    def __init__(self, library: Library) -> None:
+        dll = get_dll()
+        handle = _create_model(dll, library)
+        super().__init__(dll, handle, dll.mhs_model_destroy)
+        self.library = library
+        self._reduced_orders: dict[int, int] = {}
+
+    # ---- Model construction helpers ----
+
+    def set_cartesian_mesh(
         self,
-        regions: Sequence[SurfaceRegion],
-        kind: FluidBC,
-        value: float,
-        inlet_temperature: float | None = None,
+        x: Sequence[float] | np.ndarray,
+        y: Sequence[float] | np.ndarray,
+        z: Sequence[float] | np.ndarray,
         *,
         component: int = 0,
     ) -> None:
-        """Apply a hydraulic condition on nonempty surface regions."""
-        native, count = _surface_regions(regions)
-        temperature = (
-            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
-        )
+        """Set mesh vertices."""
+        arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]
+        if any(a.ndim != 1 or a.size < 2 for a in arrays):
+            raise ValueError(
+                "each mesh axis needs a 1D array with at least two vertices"
+            )
         self._call(
-            "mhs_model_add_fluid_boundary",
+            "mhs_model_set_cartesian_mesh",
             component,
-            native,
-            count,
-            int(kind),
-            value,
-            None if temperature is None else ctypes.byref(temperature),
-            ctx="add_fluid_boundary",
+            *[v for a in arrays for v in (a.size, _double_ptr(a))],
+            ctx="set_cartesian_mesh",
         )
+
+    def set_flow_mode(self, mode: int, *, component: int = 0) -> None:
+        """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
+        self._call("mhs_model_set_flow_mode", component, int(mode), ctx="set_flow_mode")
+
+    def add_volume(
+        self, material: int, source: int = 0xFFFFFFFF, *, component: int = 0
+    ) -> int:
+        """Return a volume ID. Later volumes override earlier volumes."""
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_volume",
+            component,
+            material,
+            source,
+            ctypes.byref(identifier),
+            ctx="add_volume",
+        )
+        return identifier.value
+
+    def add_box(
+        self,
+        volume: int,
+        minimum,
+        maximum,
+        op: GeometryOp = GeometryOp.ADD,
+        *,
+        component: int = 0,
+    ) -> None:
+        """Append an axis-aligned box operation in SI metres."""
+        lo = np.ascontiguousarray(minimum, dtype=np.float64)
+        hi = np.ascontiguousarray(maximum, dtype=np.float64)
+        if lo.shape != (3,) or hi.shape != (3,):
+            raise ValueError("box bounds must each contain three coordinates")
+        self._call(
+            "mhs_model_volume_add_box",
+            component,
+            volume,
+            int(op),
+            _double_ptr(lo),
+            _double_ptr(hi),
+            ctx="add_box",
+        )
+
+    # ---- Thermal boundary assignments ----
+
+    def add_thermal_boundary(
+        self, regions: Sequence[SurfaceRegion], condition: int, *, component: int = 0
+    ) -> None:
+        native, count = _surface_regions(regions)
+        self._call("mhs_model_add_thermal_boundary", component, native, count, condition)
+
+    def set_default_thermal_boundary(self, condition: int, *, component: int = 0) -> None:
+        self._call("mhs_model_set_default_thermal_boundary", component, condition)
+
+    # ---- Probes & fluid boundaries ----
+
+    def add_fluid_boundary(
+        self, regions: Sequence[SurfaceRegion], condition: int, *, component: int = 0
+    ) -> None:
+        native, count = _surface_regions(regions)
+        self._call("mhs_model_add_fluid_boundary", component, native, count, condition)
 
     def add_cartesian_component(self) -> int:
         """Add a Cartesian finite-volume component; IDs start at zero."""
