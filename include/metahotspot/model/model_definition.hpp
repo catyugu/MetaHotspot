@@ -166,15 +166,13 @@ namespace mhs::model {
 
         ThermalBoundaryId add_thermal_boundary(ThermalBoundary value)
         {
-            const auto id = static_cast<BoundaryConditionId>(thermal_boundaries.size());
             thermal_boundaries.push_back(std::move(value));
-            return id;
+            return static_cast<ThermalBoundaryId>(thermal_boundaries.size() - 1);
         }
         FluidBoundaryId add_fluid_boundary(FluidBoundaryCondition value)
         {
-            const auto id = static_cast<BoundaryConditionId>(fluid_boundaries.size());
             fluid_boundaries.push_back(std::move(value));
-            return id;
+            return static_cast<FluidBoundaryId>(fluid_boundaries.size() - 1);
         }
     };
 
