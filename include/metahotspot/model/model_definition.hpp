@@ -164,16 +164,6 @@ namespace mhs::model {
         mhs::core::Vector<ThermalBoundary> thermal_boundaries;
         mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
 
-        ThermalBoundaryId add_thermal_boundary(ThermalBoundary value)
-        {
-            thermal_boundaries.push_back(std::move(value));
-            return static_cast<ThermalBoundaryId>(thermal_boundaries.size() - 1);
-        }
-        FluidBoundaryId add_fluid_boundary(FluidBoundaryCondition value)
-        {
-            fluid_boundaries.push_back(std::move(value));
-            return static_cast<FluidBoundaryId>(fluid_boundaries.size() - 1);
-        }
     };
 
     struct PortReference {
