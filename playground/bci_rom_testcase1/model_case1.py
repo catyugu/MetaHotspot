@@ -206,13 +206,13 @@ def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool)
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
     transient = study == Study.TRANSIENT
-    model.set_settings(
+    model.set_study(
         study=study,
         initial_temperature_K=cfg.ambient_K,
         duration=cfg.duration_s if transient else 0.0,
         output_interval=cfg.dt_s if transient else 0.0,
     )
-    model.set_mesh(
+    model.set_cartesian_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
     )
     materials = {

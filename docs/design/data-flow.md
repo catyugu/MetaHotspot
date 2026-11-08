@@ -19,7 +19,7 @@
 | 网格输入 | Cartesian 坐标轴与物理区域 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
 | 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体、有向面片与 CSR 关联 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；调用者保证控制体与材料及物理域边界对齐，编译器不校验 |
-| 边界投影 | 外露面片与有序 `BoundaryPatch` | 生成连续编号的 `boundary_faces`；每片引用原始 FaceId 和 `BoundaryCondition`，不改变拓扑，后出现的边界覆盖前者，未覆盖部分使用默认边界 |
+| 边界投影 | 外露面片与有序 `TaggedSurfaceRegion` | 纯几何投影生成 `ProjectedSurfacePatch`，只携带 caller tag；热编译器转换为 `boundary_faces`，引用 `BoundaryCondition`；后出现的区域覆盖前者，未覆盖部分使用默认边界 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
 | 流体预处理 | 流体材料、连接和流体边界 | 独立按面积投影流体边界；临时压力解转换为内部面体积流量、边界片质量通量与入口温度、流固换热因子 |
 | 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |
@@ -40,7 +40,7 @@
 
 ## 输入与数组约定
 
-- C++ 的 `ModelDefinition::mesh`、C 的 `mhs_model_set_mesh` 和 Python 的 `Model.set_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
+- C++ 的 `ModelDefinition::mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
 - 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。

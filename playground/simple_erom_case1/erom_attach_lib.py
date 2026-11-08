@@ -145,13 +145,13 @@ def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    model.set_settings(
+    model.set_study(
         study=study,
         initial_temperature_K=cfg.ambient_K,
         duration=cfg.duration_s if study == Study.TRANSIENT else 0.0,
         output_interval=cfg.dt_s if study == Study.TRANSIENT else 0.0,
     )
-    model.set_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
+    model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
     copper = model.add_material("Copper (Pure)", *COPPER)
     H = cfg.ext_thickness_mm
 
