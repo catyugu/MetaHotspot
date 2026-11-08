@@ -4,9 +4,9 @@
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <array>
-#include <stdexcept>
 #include <cmath>
 #include <gtest/gtest.h>
+#include <stdexcept>
 
 namespace {
     using namespace mhs::model;
@@ -28,8 +28,8 @@ namespace {
     // Tiny independent dense solver for a single implicit-Euler update;
     // it avoids adaptive-step controller differences between FOM and ROM
     // coordinates when checking strict Galerkin dynamical equivalence.
-    std::array<double, 3> implicit_euler_step(const mhs::solver::Operators& op,
-        std::span<const double> initial, double dt)
+    std::array<double, 3> implicit_euler_step(
+        const mhs::solver::Operators& op, std::span<const double> initial, double dt)
     {
         std::array<std::array<double, 4>, 3> a {};
         for (std::size_t i = 0; i < 3; ++i) {

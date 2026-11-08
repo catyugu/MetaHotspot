@@ -85,13 +85,9 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
 @pytest.mark.parametrize("htc, expected", [(100.0, 100.0), (200.0, 150.0)])
 def test_rom_affine_convection_reuses_modal_operator_family(htc, expected):
     model = Model()
-    domain = model.add_rom_domain(
-        np.array([[2.0]]), np.array([[1.0]]), np.array([0.0])
-    )
+    domain = model.add_rom_domain(np.array([[2.0]]), np.array([[1.0]]), np.array([0.0]))
     # A=0.01 m², T_inf=300 K; additive term is h*(A*T - A*T_inf).
-    model.add_rom_affine_term(
-        domain, "h", htc, np.array([[0.01]]), np.array([3.0])
-    )
+    model.add_rom_affine_term(domain, "h", htc, np.array([[0.01]]), np.array([3.0]))
     compiled = model.compile()
     np.testing.assert_allclose(compiled.assemble().K.toarray(), [[2 + 0.01 * htc]])
     result = compiled.solve()
