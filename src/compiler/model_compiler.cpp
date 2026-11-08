@@ -93,7 +93,9 @@ namespace mhs::compiler {
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
-                auto rom = *value;
+                model::CompiledRomDomain rom;
+                static_cast<model::RomDomain&>(rom) = *value;
+                rom.library = compiled.library;
                 const auto n = rom.order;
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
                     || rom.C.size() != n * n || rom.f.size() != n
