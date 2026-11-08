@@ -111,11 +111,14 @@ namespace mhs::model {
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         mhs::core::Vector<CompiledComponent> components;
-        std::shared_ptr<const CompiledLibrary> library; // owned immutable compiled property snapshot
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }
         const RomDomain& rom(DomainId id) const { return std::get<CompiledRomDomain>(components.at(id).physics); }
+        const CompiledLibrary& library() const
+        {
+            return *std::visit([](const auto& domain) { return domain.library; }, components.front().physics);
+        }
 
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
