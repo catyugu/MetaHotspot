@@ -36,13 +36,12 @@ namespace mhs::solver {
 
     /// Standard thermal solve entry point.
     ///
-    /// Study and probes are independent of the compiled physics model.
+    /// Study configuration is independent of the compiled physics model.
     /// Creates uniform initial state when initial_state is empty.
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
     mhs::solver::Solution solve(const mhs::model::Model& model, const StudyOptions& study,
-        std::span<const ProbeSpec> probes = {}, std::span<const double> initial_state = {},
-        const SolveOptions& options = {});
+        std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
 } // namespace mhs::solver

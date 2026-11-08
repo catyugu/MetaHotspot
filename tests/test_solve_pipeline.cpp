@@ -34,7 +34,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     const mhs::solver::StudyOptions study {
         io.settings.study_type, io.settings.transient_duration, io.settings.transient_output_interval};
-    auto result = mhs::solver::solve(model, study, io.observation_points);
+    auto result = mhs::solver::solve(model, study);
 
     EXPECT_EQ(result.state.size(), model.discrete.cells.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
@@ -71,13 +71,13 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::solver::ProbeSpec op1;
+    mhs::model::ObservationPointSpec op1;
     op1.name = "center";
     op1.x = 0.005;
     op1.y = 0.005;
     op1.z = 0.005;
     io.observation_points.push_back(op1);
-    mhs::solver::ProbeSpec op2;
+    mhs::model::ObservationPointSpec op2;
     op2.name = "z0";
     op2.x = 0.005;
     op2.y = 0.005;
@@ -93,7 +93,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     const mhs::solver::StudyOptions study {
         io.settings.study_type, io.settings.transient_duration, io.settings.transient_output_interval};
-    auto result = mhs::solver::solve(model, study, io.observation_points);
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -119,17 +119,16 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
         EXPECT_NEAR(v, 500.0, 1e-6) << "z0 probe on Dirichlet face must stay at 500K";
     }
 
-    // Reuse the compiled physics with a different duration and probe selection.
+    // Reuse the model and its probes with another duration and sampling interval.
     const mhs::solver::StudyOptions shorter_study {mhs::model::StudyType::Transient, 1.0, 0.5};
-    const auto repeated = mhs::solver::solve(
-        model, shorter_study, std::span<const mhs::solver::ProbeSpec>(io.observation_points).subspan(1));
+    const auto repeated = mhs::solver::solve(model, shorter_study);
     ASSERT_EQ(repeated.snapshot_times.size(), 3u);
     EXPECT_DOUBLE_EQ(repeated.snapshot_times[1], 0.5);
     EXPECT_DOUBLE_EQ(repeated.snapshot_times.back(), 1.0);
-    ASSERT_EQ(repeated.probe_traces.size(), 1u);
-    EXPECT_EQ(repeated.probe_traces[0].name, "z0");
-    EXPECT_EQ(repeated.probe_traces[0].values.size(), repeated.snapshot_times.size());
-    for (double value : repeated.probe_traces[0].values)
+    ASSERT_EQ(repeated.probe_traces.size(), 2u);
+    EXPECT_EQ(repeated.probe_traces[1].name, "z0");
+    EXPECT_EQ(repeated.probe_traces[1].values.size(), repeated.snapshot_times.size());
+    for (double value : repeated.probe_traces[1].values)
         EXPECT_NEAR(value, 500.0, 1e-6);
 }
 
@@ -155,7 +154,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     io.default_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::solver::ProbeSpec op;
+    mhs::model::ObservationPointSpec op;
     op.name = "z0_dirichlet";
     op.x = 0.005;
     op.y = 0.005;
@@ -171,7 +170,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     const mhs::solver::StudyOptions study {
         io.settings.study_type, io.settings.transient_duration, io.settings.transient_output_interval};
-    auto result = mhs::solver::solve(model, study, io.observation_points);
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

@@ -185,7 +185,7 @@ namespace mhs::solver {
     }
 
     mhs::solver::Solution solve(const mhs::model::Model& model, const StudyOptions& study,
-        std::span<const ProbeSpec> probes, std::span<const double> initial_state, const SolveOptions& options)
+        std::span<const double> initial_state, const SolveOptions& options)
     {
         const auto cell_count = model.discrete.cells.size();
         if (cell_count == 0) {
@@ -209,7 +209,7 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        ProbeRecorder probe_recorder(model, probes);
+        ProbeRecorder probe_recorder(model);
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 

@@ -125,6 +125,13 @@ typedef struct {
     mhs_rect2d_t rectangle;
 } mhs_face_region_t;
 
+/** Solve-time study. Populate with mhs_study_options_default(). */
+typedef struct {
+    mhs_study_t type;
+    double duration;
+    double output_interval; /**< Seconds; zero records accepted solver steps. */
+} mhs_study_options_t;
+
 /** Solver options.  Populate with mhs_solve_options_default(). */
 typedef struct {
     mhs_solver_type_t solver_type;
@@ -141,7 +148,6 @@ typedef struct {
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
     size_t cell_count, face_count, projection_count, source_count;
-    mhs_study_t study_type;
     double initial_temperature;
 } mhs_compiled_info_t;
 
@@ -222,8 +228,7 @@ MHS_API void mhs_model_destroy(mhs_model_t* m);
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(
-    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
+MHS_API mhs_status_t mhs_model_set_initial_temperature(mhs_model_t* m, double temperature_K);
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
@@ -239,7 +244,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
-/** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
+/** Geometry and mesh coordinates use SI metres. Expressions use canonical x/y/z/T/t.
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
 MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_volume(
@@ -282,10 +287,11 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
     mhs_model_t* m, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  probes and fluid boundaries                */
+/*  Model construction  —  probes and fluid boundaries                 */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
+
 /* Same region layout as thermal boundaries. NULL inlet_temperature selects the
  * initial temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
@@ -328,10 +334,14 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-/** state is NULL/0 for model defaults, otherwise exactly cell_count entries.
- * opts may be NULL to select defaults. Check solution.converged separately. */
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out);
+MHS_API void mhs_study_options_default(mhs_study_options_t* out);
+
+/** Study is a solve-time request; probes belong to the compiled model.
+ * study/opts may be NULL for defaults (steady study, default solver options).
+ * state is NULL/0 for model defaults, otherwise exactly cell_count entries.
+ * All inputs are borrowed until return. Check solution.converged separately. */
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_options_t* study, const double* state,
+    size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 

@@ -19,6 +19,7 @@ from metahotspot.compiled import Compiled, SolveOptions
 from metahotspot.logging import get_log_level, set_log_level
 from metahotspot.model import Model
 from metahotspot.solution import Solution
+from metahotspot.study import StudyOptions
 
 # Reported by the library this module binds, so it can never drift from it.
 __version__ = library_version()
@@ -30,6 +31,7 @@ __all__ = [
     "Operators",
     "Solution",
     "SolveOptions",
+    "StudyOptions",
     "enums",
     "get_log_level",
     "set_log_level",

@@ -18,6 +18,7 @@ from metahotspot.types import (
     MhsOperatorsInfo,
     MhsSolution,
     MhsSolutionInfo,
+    MhsStudyOptions,
     Point2D,
     _SolveOptionsCStruct,
 )
@@ -33,6 +34,7 @@ _CORE_FUNC_SIGS = [
     ("mhs_log_set_level", I32, [I32]),
     ("mhs_log_get_level", I32, []),
     ("mhs_solve_options_default", None, [P(_SolveOptionsCStruct)]),
+    ("mhs_study_options_default", None, [P(MhsStudyOptions)]),
     ("mhs_last_error", Text, []),
     ("mhs_version_string", Text, []),
     (
@@ -42,7 +44,7 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_create", I32, [P(P(MhsModel))]),
     ("mhs_model_destroy", None, [P(MhsModel)]),
-    ("mhs_model_set_settings", I32, [P(MhsModel), I32, F64, F64, F64]),
+    ("mhs_model_set_initial_temperature", I32, [P(MhsModel), F64]),
     (
         "mhs_model_set_mesh",
         I32,
@@ -89,12 +91,12 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), Text, P(F64), Size, F64],
     ),
-    ("mhs_model_add_probe", I32, [P(MhsModel), Text, F64, F64, F64]),
     (
         "mhs_model_add_fluid_boundary",
         I32,
         [P(MhsModel), P(MhsFaceRegion), Size, I32, F64, P(F64)],
     ),
+    ("mhs_model_add_probe", I32, [P(MhsModel), Text, F64, F64, F64]),
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
@@ -125,7 +127,14 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_compiled_solve",
         I32,
-        [P(MhsCompiled), P(F64), Size, P(_SolveOptionsCStruct), P(P(MhsSolution))],
+        [
+            P(MhsCompiled),
+            P(MhsStudyOptions),
+            P(F64),
+            Size,
+            P(_SolveOptionsCStruct),
+            P(P(MhsSolution)),
+        ],
     ),
     ("mhs_solution_destroy", None, [P(MhsSolution)]),
     ("mhs_solution_get_info", I32, [P(MhsSolution), P(MhsSolutionInfo)]),

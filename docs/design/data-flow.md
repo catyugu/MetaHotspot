@@ -34,7 +34,7 @@
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(model, study, probes, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
+公开 C++ 入口 `mhs::solver::solve(model, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
 探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
 
@@ -69,6 +69,6 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 - 成功的 status 调用清空当前线程错误；失败调用替换错误，查询和析构保留错误。初始状态仅允许 NULL/0 或完整的逐单元数组。
 - 网格规格原子替换，任何坐标轴校验失败均保留先前规格；Python 同时接受数组与可转换为 float64 的一维序列。
 
-`StudyOptions { type, duration, output_interval }` 和 `ProbeSpec` 由调用者在求解时传入。`Model` 不保存工况或观测请求；同一个编译模型可以复用于不同的稳态/瞬态工况和探针集合。`initial_temperature` 仍属于 `Model`，也用于流体预处理。
+`StudyOptions { type, duration, output_interval }` 由调用者在求解时传入，`Model` 不保存工况。探针属于模型，`ModelDefinition::observation_points` 编译到 `Model::observation_points`，`ProbeRecorder` 在每次求解中记录它们。同一编译模型可以复用于不同的稳态/瞬态工况和采样间隔，保留既定探针。`initial_temperature` 仍属于 `Model`，也用于流体预处理。
 
-C ABI 的编译句柄分别持有 `Model`、`StudyOptions` 和探针副本，编译后修改或销毁 authoring model 不影响已有句柄。C ABI 和 Python 调用签名保持不变。
+C ABI 的编译句柄持有包含探针的 `Model`。`mhs_compiled_solve` 接收独立的 `mhs_study_options_t`，在调用返回前借用输入；`mhs_compiled_info_t` 不再包含 study_type。Python 对应 `compiled.solve(study=StudyOptions(...))`，默认稳态；探针仍通过 `Model.add_probe` 定义。建模初温由 `set_initial_temperature` 设置。

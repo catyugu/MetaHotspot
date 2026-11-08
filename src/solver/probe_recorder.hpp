@@ -2,7 +2,6 @@
 
 #include "model/model.hpp"
 #include "solver/solution.hpp"
-#include "solver/study.hpp"
 
 #include "core/vector.hpp"
 #include <span>
@@ -13,7 +12,7 @@ namespace mhs::solver {
     // Cache probe locations once; reconstruct local temperatures at each output time.
     class ProbeRecorder {
     public:
-        ProbeRecorder(const mhs::model::Model& model, std::span<const ProbeSpec> probes);
+        explicit ProbeRecorder(const mhs::model::Model& model);
 
         // 记录一个时间点。稳态/瞬态通用：稳态求解场景下调用一次即可。
         void record(double time, std::span<const double> cell_T);

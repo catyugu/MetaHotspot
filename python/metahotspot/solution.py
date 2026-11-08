@@ -10,7 +10,12 @@ import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.types import MhsSolution, MhsSolutionInfo, _SolveOptionsCStruct
+from metahotspot.types import (
+    MhsSolution,
+    MhsSolutionInfo,
+    MhsStudyOptions,
+    _SolveOptionsCStruct,
+)
 
 # ---- read-only result snapshots -----------------------------------------
 
@@ -51,16 +56,22 @@ def _solve_options(dll, overrides: dict):
     return opts
 
 
-def _solve(dll, compiled_handle, state, opts_overrides: dict):
+def _solve(dll, compiled_handle, state, opts_overrides: dict, study):
     if state is not None:
         state = np.ascontiguousarray(state, dtype=np.float64)
     opts = _solve_options(dll, opts_overrides)
     state_ptr = _double_ptr(state) if state is not None else None
     state_count = state.size if state is not None else 0
+    native_study = (
+        None
+        if study is None
+        else MhsStudyOptions(int(study.type), study.duration, study.output_interval)
+    )
     out = ctypes.POINTER(MhsSolution)()
     check(
         dll.mhs_compiled_solve(
             compiled_handle,
+            None if native_study is None else ctypes.byref(native_study),
             state_ptr,
             state_count,
             ctypes.byref(opts),
@@ -155,9 +166,10 @@ class Solution(OwnedHandle):
         compiled,
         state: np.ndarray | None = None,
         opts=None,
+        study=None,
     ) -> Solution:
         overrides = opts._overrides() if opts is not None else {}
-        handle = _solve(compiled._dll, compiled._handle, state, overrides)
+        handle = _solve(compiled._dll, compiled._handle, state, overrides, study)
         return cls(compiled._dll, handle)
 
     @cached_property

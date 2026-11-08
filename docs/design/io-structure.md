@@ -28,6 +28,23 @@ PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转�
 
 ## 编译和求解边界
 
-`ModelDefinition::settings` 和 `observation_points` 保留建模输入；`build_model` 仅编译物理模型。C++ 调用方将 settings 中的 study_type、transient_duration、transient_output_interval 组成 `solver::StudyOptions`，并将 `observation_points`（`solver::ProbeSpec` 数组）传给 `solve`。这些请求不进入 `model::Model`。
+`ModelDefinition::settings` 保留建模输入。C++ 调用方将 settings 中的 study_type、transient_duration、transient_output_interval 组成 `solver::StudyOptions` 传给 `solve`；这些工况字段不进入 `model::Model`。探针保持原设计：`ModelDefinition::observation_points` 编译到 `Model::observation_points`，由求解器记录。
 
 compiler 内部的 `SurfaceRegion` 引用原始 `FaceRegion` 并携带调用方 tag；`project_surface_regions` 返回纯几何 `SurfacePatch`。后添加区域覆盖前面的区域，未命中部分使用 fallback，invalid fallback 省略未覆盖部分。热边界在投影后转换为 `BoundaryFace`；流体直接使用 tag 查找自己的边界表。输入引用只在编译期间有效，不保存在运行期模型中。
+
+C/Python 调用方迁移：移除 `mhs_model_set_settings` / `Model.set_settings`，模型初温使用 `mhs_model_set_initial_temperature` / `Model.set_initial_temperature`。工况在每次 solve 时提供；探针继续通过 `mhs_model_add_probe` / `Model.add_probe` 定义，随模型编译并独立于原始 builder 存活。C ABI 的 solve 签名和 `mhs_compiled_info_t` 布局随此调整，调用方需重新编译并同步 Python 包。磁盘数据格式保持不变。
+
+```python
+from metahotspot import StudyOptions
+from metahotspot.enums import Study
+
+model.add_probe("junction", 0.001, 0.002, 0.003)
+compiled = model.compile()
+steady = compiled.solve()
+transient = compiled.solve(
+    state=steady.state,
+    study=StudyOptions(Study.TRANSIENT, duration=5.0, output_interval=0.1),
+)
+```
+
+C 调用方使用 `mhs_study_options_default` 初始化工况；study/opts 传 NULL 选择默认稳态/求解设置。工况仅需存活到 solve 返回；探针由编译模型持有。

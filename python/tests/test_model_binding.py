@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
+import ctypes
+
 import numpy as np
 import pytest
 
 import metahotspot
 from metahotspot._error import MetaHotspotError
 from metahotspot.enums import Axis, Study
+from metahotspot.types import MhsStudyOptions
 
 
-def _model(*, transient: bool = False) -> metahotspot.Model:
+def _model() -> metahotspot.Model:
     model = metahotspot.Model()
-    model.set_settings(
-        study=Study.TRANSIENT if transient else Study.STEADY,
-        initial_temperature_K=300.0,
-        duration=1.0 if transient else 0.0,
-        output_interval=0.5 if transient else 0.0,
-    )
+    model.set_initial_temperature(300.0)
     model.set_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -68,27 +66,38 @@ def test_model_native_boundary_and_function_calls():
     model.add_function_periodic_piecewise_constant(
         "periodic", np.array([0.0, 0.001]), 1.0
     )
-    model.add_probe("center", 0.0005, 0.0005, 0.0005)
     with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
         model.add_fluid_boundary(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0, 0, 0.0)
 
+    model.add_probe("center", 0.0005, 0.0005, 0.0005)
     compiled = model.compile()
     assert compiled.cell_count == 1
+    assert [p.name for p in compiled.solve().probes] == ["center"]
 
 
 def test_solution_views_derive_from_one_native_snapshot():
-    model = _model(transient=True)
+    model = _model()
     model.set_default_neumann("0")
-    model.add_probe("center", 0.0005, 0.0005, 0.0005)
+    model.add_probe("中心", 0.0005, 0.0005, 0.0005)
 
     compiled = model.compile()
-    # The compiled handle owns its study and probes independently of the builder.
-    model.set_settings(study=Study.STEADY, initial_temperature_K=350.0)
+    # Compiled probes and default state outlive builder mutation and destruction.
+    model.set_initial_temperature(350.0)
     model.add_probe("later", 0.0005, 0.0005, 0.0005)
     del model
-    assert compiled.info.study_type == Study.TRANSIENT
+    assert not hasattr(compiled.info, "study_type")
     assert compiled.info.initial_temperature == pytest.approx(300.0)
-    solution = compiled.solve(state=np.array([300, -1], dtype=np.float32)[::2])
+    defaults = MhsStudyOptions()
+    compiled._dll.mhs_study_options_default(ctypes.byref(defaults))
+    assert (defaults.type, defaults.duration, defaults.output_interval) == (
+        metahotspot.StudyOptions().type,
+        metahotspot.StudyOptions().duration,
+        metahotspot.StudyOptions().output_interval,
+    )
+    study = metahotspot.StudyOptions(Study.TRANSIENT, 1.0, 0.5)
+    solution = compiled.solve(
+        state=np.array([300, -1], dtype=np.float32)[::2], study=study
+    )
 
     assert solution.converged
     assert solution.state.size == 1
@@ -96,5 +105,18 @@ def test_solution_views_derive_from_one_native_snapshot():
     assert solution.state_history[0][0] == pytest.approx(300.0)
     assert solution.history_times[0] == pytest.approx(0.0)
     assert solution.history_times[-1] == pytest.approx(1.0)
-    assert [trace.name for trace in solution.probes] == ["center"]
+    assert [trace.name for trace in solution.probes] == ["中心"]
     assert solution.probes[0].values.size == solution.history_times.size
+
+    # Change study and output interval while retaining model-owned probes.
+    repeated = compiled.solve(
+        study=metahotspot.StudyOptions(Study.TRANSIENT, 0.5, 0.25),
+    )
+    np.testing.assert_allclose(repeated.history_times, [0.0, 0.25, 0.5])
+    assert [p.name for p in repeated.probes] == ["中心"]
+    assert repeated.state[0] == pytest.approx(301.0)
+    assert solution.state[0] == pytest.approx(302.0)
+    with pytest.raises(MetaHotspotError, match="invalid study type"):
+        compiled.solve(study=metahotspot.StudyOptions(99, 1.0, 0.5))
+    with pytest.raises(MetaHotspotError, match="duration"):
+        compiled.solve(study=metahotspot.StudyOptions(Study.TRANSIENT, 0.0))

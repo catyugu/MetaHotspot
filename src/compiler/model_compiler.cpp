@@ -69,6 +69,8 @@ namespace mhs::compiler {
         model.initial_temperature = definition.settings.initial_temperature;
 
         auto symbols = build_symbol_table(definition);
+        for (const auto& p : definition.observation_points)
+            model.observation_points.push_back({p.name, p.x, p.y, p.z});
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());

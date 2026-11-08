@@ -10,7 +10,7 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, Study
+from metahotspot.enums import Axis, FluidBC, GeometryOp
 from metahotspot.types import MhsFaceRegion, MhsModel, Point2D, Rect2D
 
 if TYPE_CHECKING:
@@ -106,21 +106,12 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def set_settings(
-        self,
-        study: Study = Study.STEADY,
-        initial_temperature_K: float = 300.0,
-        duration: float = 0.0,
-        output_interval: float = 0.0,
-    ) -> None:
-        """Set global study parameters."""
+    def set_initial_temperature(self, temperature_K: float) -> None:
+        """Set the default state and fluid reference temperature in kelvin."""
         self._call(
-            "mhs_model_set_settings",
-            int(study),
-            initial_temperature_K,
-            duration,
-            output_interval,
-            ctx="set_settings",
+            "mhs_model_set_initial_temperature",
+            temperature_K,
+            ctx="set_initial_temperature",
         )
 
     def set_mesh(

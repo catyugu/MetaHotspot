@@ -14,13 +14,12 @@ import scipy.sparse as sp
 
 import metahotspot
 from metahotspot import macromodel as mm
-from metahotspot.enums import Face, Study
+from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
 
 
 def _build_operators(nx=2, ny=2, nz=3):
     model = metahotspot.Model()
-    model.set_settings(study=Study.STEADY)
     model.set_mesh(
         np.linspace(0.0, float(nx) * 1e-3, nx + 1),
         np.linspace(0.0, float(ny) * 1e-3, ny + 1),

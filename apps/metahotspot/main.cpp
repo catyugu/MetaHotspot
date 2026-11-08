@@ -49,7 +49,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Running simulation...");
         const mhs::solver::StudyOptions study {definition.settings.study_type, definition.settings.transient_duration,
             definition.settings.transient_output_interval};
-        auto result = mhs::solver::solve(model, study, definition.observation_points);
+        auto result = mhs::solver::solve(model, study);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;

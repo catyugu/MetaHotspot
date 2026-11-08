@@ -12,6 +12,7 @@ from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import SolverType
+from metahotspot.study import StudyOptions
 from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
@@ -48,7 +49,7 @@ class SolveOptions:
     ``None`` fields fall back to the C++ defaults (via ``mhs_solve_options_default``).
     ``time_tolerance`` controls adaptive BDF1/2 error (default 1e-4).
     ``max_time_step=None`` selects an automatic limit; positive values are seconds.
-    Output sampling is configured on the model independently of solver steps.
+    StudyOptions controls output sampling independently of solver steps.
     """
 
     linear_solver: SolverType | str | None = None
@@ -94,7 +95,6 @@ class CompiledInfo:
     face_count: int
     projection_count: int
     source_count: int
-    study_type: int
     initial_temperature: float
 
 
@@ -137,7 +137,6 @@ def _compiled_info(dll, handle) -> CompiledInfo:
         face_count=int(info.face_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
-        study_type=int(info.study_type),
         initial_temperature=float(info.initial_temperature),
     )
 
@@ -321,7 +320,10 @@ class Compiled(OwnedHandle):
         self,
         state: np.ndarray | None = None,
         opts: SolveOptions | None = None,
+        *,
+        study: StudyOptions | None = None,
     ):
+        """Solve with an independent study; records the model's probes."""
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self, state, opts)
+        return Solution._solve_compiled(self, state, opts, study)

@@ -6,6 +6,7 @@
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
+#include <string>
 #include <variant>
 
 namespace mhs::model {
@@ -51,6 +52,13 @@ namespace mhs::model {
         Vec3 point;
     };
 
+    struct ProbePoint {
+        std::string name;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
+    };
+
     struct Model {
         DiscreteMesh discrete;
 
@@ -63,6 +71,8 @@ namespace mhs::model {
         FluidModel fluid;
 
         double initial_temperature = 300.0;
+
+        mhs::core::Vector<ProbePoint> observation_points;
     };
 
 } // namespace mhs::model

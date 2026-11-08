@@ -73,8 +73,6 @@ struct mhs_model_t {
 
 struct mhs_compiled_t {
     mhs::model::Model model;
-    mhs::solver::StudyOptions study;
-    mhs::core::Vector<mhs::solver::ProbeSpec> probes;
 };
 
 struct mhs_operators_t {
@@ -120,18 +118,6 @@ static mhs::model::StudyType _to_model_study(mhs_study_t s)
         return mhs::model::StudyType::Transient;
     default:
         throw std::invalid_argument("invalid study type: " + std::to_string(s));
-    }
-}
-
-static mhs_study_t _from_core_study(mhs::model::StudyType s)
-{
-    switch (s) {
-    case mhs::model::StudyType::Steady:
-        return MHS_STUDY_STEADY;
-    case mhs::model::StudyType::Transient:
-        return MHS_STUDY_TRANSIENT;
-    default:
-        throw std::logic_error("invalid core study type");
     }
 }
 
@@ -217,15 +203,13 @@ MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(
-    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval)
+MHS_API mhs_status_t mhs_model_set_initial_temperature(mhs_model_t* m, double temperature_K)
 {
     CHECK_NULL(m);
     MHS_TRY({
-        m->def.settings.study_type = _to_model_study(study);
-        m->def.settings.initial_temperature = initial_temperature_K;
-        m->def.settings.transient_duration = duration;
-        m->def.settings.transient_output_interval = output_interval;
+        if (!std::isfinite(temperature_K))
+            throw std::invalid_argument("initial temperature must be finite");
+        m->def.settings.initial_temperature = temperature_K;
     });
 }
 
@@ -468,7 +452,7 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  probes and fluid boundaries                */
+/*  Model construction  —  probes and fluid boundaries                 */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
@@ -519,9 +503,6 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
         c->model = mhs::compiler::build_model(m->def);
-        c->study = {
-            m->def.settings.study_type, m->def.settings.transient_duration, m->def.settings.transient_output_interval};
-        c->probes = m->def.observation_points;
         *out = c.release();
     });
 }
@@ -540,7 +521,6 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     out->face_count = c->model.discrete.faces.size();
     out->projection_count = c->model.source_terms.size();
     out->source_count = c->model.heat_source_table.size();
-    out->study_type = _from_core_study(c->study.type);
     out->initial_temperature = c->model.initial_temperature;
 
     mhs_detail_clear_last_error();
@@ -787,8 +767,16 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts)
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out)
+MHS_API void mhs_study_options_default(mhs_study_options_t* out)
+{
+    if (!out)
+        return;
+    const mhs::solver::StudyOptions defaults;
+    *out = {MHS_STUDY_STEADY, defaults.duration, defaults.output_interval};
+}
+
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_options_t* study, const double* state,
+    size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(out);
     *out = nullptr;
@@ -800,7 +788,10 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, c->study, c->probes, init_span, so);
+        mhs::solver::StudyOptions request;
+        if (study)
+            request = {_to_model_study(study->type), study->duration, study->output_interval};
+        auto sol = mhs::solver::solve(c->model, request, init_span, so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {
