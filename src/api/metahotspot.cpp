@@ -125,19 +125,22 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
     return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
-static void _add_thermal_boundary(
-    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition)
+static mhs::core::Vector<mhs::model::SurfaceRegion> _surface_regions(
+    const mhs_surface_region_t* regions, size_t count)
 {
-    if (!n_regions)
+    if (!count)
         throw std::invalid_argument("surface regions must not be empty");
-    mhs::model::ThermalBoundarySpec bp;
-    if (condition >= m->library->thermal_boundaries.size())
-        throw std::out_of_range("thermal boundary ID out of range");
-    bp.condition = condition;
-    bp.regions.reserve(n_regions);
-    for (size_t i = 0; i < n_regions; ++i)
-        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.component(component).thermal_boundaries.push_back(std::move(bp));
+    mhs::core::Vector<mhs::model::SurfaceRegion> out;
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        out.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    return out;
+}
+
+template <class T, class U> static mhs_index_t _append(mhs::core::Vector<T>& values, U&& value)
+{
+    values.emplace_back(std::forward<U>(value));
+    return static_cast<mhs_index_t>(values.size() - 1);
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -482,10 +485,7 @@ MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* library, const char* 
     CHECK_NULL(library);
     CHECK_NULL(expression);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(library->def->sources.size());
-        library->def->sources.push_back(expression);
-    });
+    MHS_TRY({ *out_id = _append(library->def->sources, expression); });
 }
 MHS_API mhs_status_t mhs_model_add_volume(
     mhs_model_t* m, mhs_index_t component, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
@@ -553,17 +553,18 @@ MHS_API mhs_status_t mhs_library_add_thermal_boundary(
     CHECK_NULL(library);
     CHECK_NULL(condition);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(library->def->thermal_boundaries.size());
-        library->def->thermal_boundaries.push_back(to_thermal_boundary(*condition));
-    });
+    MHS_TRY({ *out_id = _append(library->def->thermal_boundaries, to_thermal_boundary(*condition)); });
 }
 MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
     const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
-    MHS_TRY({ _add_thermal_boundary(m, component, regions, count, condition); });
+    MHS_TRY({
+        if (condition >= m->library->thermal_boundaries.size())
+            throw std::out_of_range("thermal boundary ID out of range");
+        m->def.component(component).thermal_boundaries.push_back({_surface_regions(regions, count), condition});
+    });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
@@ -662,8 +663,7 @@ MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_
         default:
             throw std::invalid_argument("invalid fluid boundary kind");
         }
-        *out_id = static_cast<mhs_index_t>(library->def->fluid_boundaries.size());
-        library->def->fluid_boundaries.push_back(std::move(condition));
+        *out_id = _append(library->def->fluid_boundaries, std::move(condition));
     });
 }
 
@@ -675,11 +675,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t co
     MHS_TRY({
         if (condition >= m->library->fluid_boundaries.size() || !n_regions)
             throw std::invalid_argument("invalid fluid boundary assignment");
-        mhs::model::FluidBoundarySpec assignment;
-        assignment.condition = condition;
-        for (size_t i = 0; i < n_regions; ++i)
-            assignment.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-        m->def.fom(component).fluid_boundaries.push_back(std::move(assignment));
+        m->def.fom(component).fluid_boundaries.push_back({_surface_regions(regions, n_regions), condition});
     });
 }
 
