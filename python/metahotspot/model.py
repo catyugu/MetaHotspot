@@ -12,7 +12,7 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, Study
+from metahotspot.enums import Axis, FluidBC, GeometryOp
 from metahotspot.types import MhsModel, MhsSurfaceRegion, Point2D, Rect2D
 
 if TYPE_CHECKING:
@@ -104,21 +104,12 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def set_study(
-        self,
-        study: Study = Study.STEADY,
-        initial_temperature_K: float = 300.0,
-        duration: float = 0.0,
-        output_interval: float = 0.0,
-    ) -> None:
-        """Set global study parameters."""
+    def set_reference_temperature(self, temperature_K: float) -> None:
+        """Set compile-time reference temperature for frozen-flow preprocessing."""
         self._call(
-            "mhs_model_set_study",
-            int(study),
-            initial_temperature_K,
-            duration,
-            output_interval,
-            ctx="set_study",
+            "mhs_model_set_reference_temperature",
+            temperature_K,
+            ctx="set_reference_temperature",
         )
 
     def set_cartesian_mesh(

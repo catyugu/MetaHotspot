@@ -179,22 +179,25 @@ namespace mhs::solver {
             throw std::invalid_argument("solve_system: initial_state is empty");
         auto solver = linear::create_solver(build_solver_spec(opts));
         const auto nl_config = build_nonlinear_config(opts);
-        if (study.type == model::StudyType::Steady)
+        if (study.type == StudyType::Steady)
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
-    mhs::solver::Solution solve(
-        const mhs::model::Model& model, std::span<const double> initial_state, const SolveOptions& options)
+    mhs::solver::Solution solve(const mhs::model::Model& model, const Study& study,
+        std::span<const double> initial_state, const SolveOptions& options)
     {
         const auto cell_count = model.discrete.cells.size();
         if (cell_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }
 
+        if (!std::isfinite(study.initial_temperature))
+            throw std::invalid_argument("solve: initial temperature must be finite");
+
         mhs::core::Vector<double> state;
         if (initial_state.empty()) {
-            state.assign(cell_count, model.initial_temperature);
+            state.assign(cell_count, study.initial_temperature);
         }
         else {
             if (initial_state.size() != cell_count) {
@@ -204,7 +207,6 @@ namespace mhs::solver {
             state.assign(initial_state.begin(), initial_state.end());
         }
 
-        Study study {model.study_type, model.transient_duration, model.transient_output_interval};
         ThermalAssembler assembler(model);
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
             return assembler.assemble(current, time);

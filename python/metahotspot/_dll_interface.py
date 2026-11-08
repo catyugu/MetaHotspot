@@ -17,6 +17,7 @@ from metahotspot.types import (
     MhsOperatorsInfo,
     MhsSolution,
     MhsSolutionInfo,
+    MhsStudy,
     MhsSurfaceRegion,
     Point2D,
     _SolveOptionsCStruct,
@@ -32,6 +33,7 @@ Text = ctypes.c_char_p
 _CORE_FUNC_SIGS = [
     ("mhs_log_set_level", I32, [I32]),
     ("mhs_log_get_level", I32, []),
+    ("mhs_study_default", None, [P(MhsStudy)]),
     ("mhs_solve_options_default", None, [P(_SolveOptionsCStruct)]),
     ("mhs_last_error", Text, []),
     ("mhs_version_string", Text, []),
@@ -42,7 +44,7 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_create", I32, [P(P(MhsModel))]),
     ("mhs_model_destroy", None, [P(MhsModel)]),
-    ("mhs_model_set_study", I32, [P(MhsModel), I32, F64, F64, F64]),
+    ("mhs_model_set_reference_temperature", I32, [P(MhsModel), F64]),
     (
         "mhs_model_set_cartesian_mesh",
         I32,
@@ -125,7 +127,7 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_compiled_solve",
         I32,
-        [P(MhsCompiled), P(F64), Size, P(_SolveOptionsCStruct), P(P(MhsSolution))],
+        [P(MhsCompiled), P(MhsStudy), P(F64), Size, P(_SolveOptionsCStruct), P(P(MhsSolution))],
     ),
     ("mhs_solution_destroy", None, [P(MhsSolution)]),
     ("mhs_solution_get_info", I32, [P(MhsSolution), P(MhsSolutionInfo)]),

@@ -76,7 +76,7 @@ namespace mhs::compiler::fluid {
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
             rho[i] = model.material_table[model.cell_material[c]].rho.eval(
-                {p[0], p[1], p[2], model.initial_temperature, 0});
+                {p[0], p[1], p[2], model.reference_temperature, 0});
         }
         // Use the same rectangle intersection algorithm as thermal projection,
         // against the original mesh and an independent set of regions.
@@ -170,9 +170,9 @@ namespace mhs::compiler::fluid {
                     [&](const auto& bc) {
                         using T = std::decay_t<decltype(bc)>;
                         if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
-                            return model.initial_temperature;
+                            return model.reference_temperature;
                         else
-                            return bc.temperature.value_or(model.initial_temperature);
+                            return bc.temperature.value_or(model.reference_temperature);
                     },
                     condition);
                 fluid.boundary_terms.push_back({term.cell, FluidInflow {-mass, temperature}});

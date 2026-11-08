@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::solver::solve(model);
+        auto result = mhs::solver::solve(model, definition.study);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;

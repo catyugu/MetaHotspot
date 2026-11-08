@@ -3,6 +3,7 @@
 #include "core/vector.hpp"
 #include "model/model_definition.hpp"
 #include "solver/solution.hpp"
+#include "solver/solver.hpp"
 
 #include <array>
 #include <span>
@@ -10,7 +11,11 @@
 
 namespace mhs::app::pta {
 
-    mhs::model::ModelDefinition read_xml(const std::string& xml_path);
+    struct Input : mhs::model::ModelDefinition {
+        mhs::solver::Study study;
+    };
+
+    Input read_xml(const std::string& xml_path);
 
     // Every trace follows observation_times. With no traces, omit Result0DTransient.
     void write_xml(const std::string& input_path, const std::string& output_path,

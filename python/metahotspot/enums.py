@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 
 
-class Study(enum.IntEnum):
+class StudyType(enum.IntEnum):
     STEADY = 0
     TRANSIENT = 1
 

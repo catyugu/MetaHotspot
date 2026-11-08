@@ -15,17 +15,7 @@ namespace mhs::compiler {
         template <typename... Ts> struct overloaded : Ts... {
             using Ts::operator()...;
         };
-        template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
-        inline void copy_scalar_parameters(mhs::model::Model& model, const mhs::model::ModelDefinition& definition)
-        {
-            model.study_type = definition.settings.study_type;
-            model.initial_temperature = definition.settings.initial_temperature;
-            model.transient_duration = definition.settings.transient_duration;
-            model.transient_output_interval = definition.settings.transient_output_interval;
-        }
-
-        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
+        template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
             using namespace mhs::core;
@@ -72,21 +62,11 @@ namespace mhs::compiler {
 
     mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
-        const auto& settings = definition.settings;
-        if (settings.study_type != mhs::model::StudyType::Steady
-            && settings.study_type != mhs::model::StudyType::Transient)
-            throw std::invalid_argument("invalid study type");
-        if (!std::isfinite(settings.initial_temperature))
-            throw std::invalid_argument("initial temperature must be finite");
-        if (!std::isfinite(settings.transient_duration))
-            throw std::invalid_argument("duration must be finite");
-        if (settings.study_type == mhs::model::StudyType::Transient && settings.transient_duration <= 0)
-            throw std::invalid_argument("transient duration must be positive");
-        if (!std::isfinite(settings.transient_output_interval) || settings.transient_output_interval < 0)
-            throw std::invalid_argument("output interval must be finite and nonnegative");
+        if (!std::isfinite(definition.reference_temperature))
+            throw std::invalid_argument("reference temperature must be finite");
 
         mhs::model::Model model;
-        copy_scalar_parameters(model, definition);
+        model.reference_temperature = definition.reference_temperature;
 
         auto symbols = build_symbol_table(definition);
         for (const auto& p : definition.point_probes)
@@ -112,7 +92,7 @@ namespace mhs::compiler {
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
                 }
                 fluid_materials.initial_viscosity[m]
-                    = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.initial_temperature, 0});
+                    = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.reference_temperature, 0});
             }
         }
 

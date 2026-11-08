@@ -97,12 +97,12 @@ namespace mhs::app::pta {
         return segs;
     }
 
-    static mhs::model::StudyType parse_study_type(const std::string& val)
+    static mhs::solver::StudyType parse_study_type(const std::string& val)
     {
         if (val == "Steady")
-            return mhs::model::StudyType::Steady;
+            return mhs::solver::StudyType::Steady;
         if (val == "Transient")
-            return mhs::model::StudyType::Transient;
+            return mhs::solver::StudyType::Transient;
         throw std::runtime_error("unknown StudyType: '" + val + "' (expected Steady or Transient)");
     }
 
@@ -123,7 +123,7 @@ namespace mhs::app::pta {
         throw std::runtime_error("unknown LengthUnit: '" + val + "'");
     }
 
-    mhs::model::ModelDefinition read_xml(const std::string& xml_path)
+    Input read_xml(const std::string& xml_path)
     {
         XMLDocument doc;
         XMLError err = doc.LoadFile(xml_path.c_str());
@@ -132,6 +132,7 @@ namespace mhs::app::pta {
         }
 
         Definition def;
+        mhs::solver::Study study;
         mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
 
         const XMLElement* root = doc.FirstChildElement("Structure");
@@ -141,7 +142,7 @@ namespace mhs::app::pta {
 
         // StudyType (child element only)
         if (const XMLElement* study_elem = root->FirstChildElement("StudyType")) {
-            def.model.settings.study_type = parse_study_type(get_text(study_elem));
+            study.type = parse_study_type(get_text(study_elem));
         }
 
         // LengthUnit (child element only)
@@ -151,7 +152,8 @@ namespace mhs::app::pta {
 
         // Temperature settings
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
-            def.model.settings.initial_temperature = parse_double(get_text(init));
+            study.initial_temperature = parse_double(get_text(init));
+            def.model.reference_temperature = study.initial_temperature;
         }
         else {
             throw std::runtime_error("missing required element <InitialTemperature>");
@@ -159,15 +161,15 @@ namespace mhs::app::pta {
 
         // Transient settings
         if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
-            def.model.settings.transient_duration = parse_double(get_text(trans));
+            study.duration = parse_double(get_text(trans));
         }
-        else if (def.model.settings.study_type == mhs::model::StudyType::Transient) {
+        else if (study.type == mhs::solver::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyDuration>");
         }
         if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
-            def.model.settings.transient_output_interval = parse_double(get_text(step));
+            study.output_interval = parse_double(get_text(step));
         }
-        else if (def.model.settings.study_type == mhs::model::StudyType::Transient) {
+        else if (study.type == mhs::solver::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyTimeStep>");
         }
 
@@ -577,7 +579,10 @@ namespace mhs::app::pta {
         }
 
         def.model.default_thermal_boundary = std::move(default_thermal_boundary);
-        return normalize(std::move(def));
+        Input input;
+        static_cast<mhs::model::ModelDefinition&>(input) = normalize(std::move(def));
+        input.study = study;
+        return input;
     }
 
 } // namespace mhs::app::pta

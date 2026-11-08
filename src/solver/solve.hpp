@@ -19,12 +19,6 @@ namespace mhs::solver {
 
     using StateObserver = std::function<void(double time, std::span<const double> state)>;
 
-    struct Study {
-        mhs::model::StudyType type = mhs::model::StudyType::Steady;
-        double duration = 0.0;
-        double output_interval = 1.0;
-    };
-
     /// Generalized callback-driven solver. Standard solve() calls this
     /// internally, transferring ownership of its state buffer.
     mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,

@@ -70,10 +70,7 @@ namespace mhs::model {
         mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
         FluidModel fluid;
 
-        double initial_temperature = 300.0;
-        StudyType study_type = StudyType::Steady;
-        double transient_duration = 0.0;
-        double transient_output_interval = 1.0;
+        double reference_temperature = 300.0;
 
         mhs::core::Vector<PointProbe> point_probes;
     };
