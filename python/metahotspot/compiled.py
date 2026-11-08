@@ -347,6 +347,8 @@ class Compiled(OwnedHandle):
     def _cell_dofs(self) -> np.ndarray:
         maps = []
         for domain, info in enumerate(self.domains):
+            if info.cell_count == 0:
+                continue
             field = next(
                 f
                 for f in self.field_layouts
@@ -355,7 +357,7 @@ class Compiled(OwnedHandle):
             mapping = np.empty(info.cell_count, dtype=np.uint32)
             mapping[field.entities] = field.dofs
             maps.append(mapping)
-        return np.concatenate(maps)
+        return np.concatenate(maps) if maps else np.empty(0, dtype=np.uint32)
 
     def connection_flux(
         self, connection: int, state=None, time: float = 0.0
@@ -429,7 +431,16 @@ class Compiled(OwnedHandle):
         return _eval_materials(self._dll, self._handle, state, time, self.cell_count)
 
     def default_state(self, temperature: float = 300.0) -> np.ndarray:
-        return np.full(self.info.state_count, temperature, dtype=np.float64)
+        """Initialize FOM temperatures and ROM coordinates independently."""
+        state = np.empty(self.info.state_count, dtype=np.float64)
+        self._call(
+            "mhs_compiled_default_state",
+            temperature,
+            _double_ptr(state),
+            state.size,
+            ctx="default_state",
+        )
+        return state
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""
