@@ -358,9 +358,9 @@ class Compiled(OwnedHandle):
                 for f in self.field_layouts
                 if f.domain == domain and f.quantity == FieldQuantity.TEMPERATURE
             )
-            maps.append(
-                np.arange(field.offset, field.offset + info.cell_count, dtype=np.uint32)
-            )
+            start = field.offset
+            stop = start + info.cell_count
+            maps.append(np.arange(start, stop, dtype=np.uint32))
         return np.concatenate(maps) if maps else np.empty(0, dtype=np.uint32)
 
     def connection_flux(
