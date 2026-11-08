@@ -166,10 +166,7 @@ def build_model(
         model = metahotspot.Model()
     m = model
 
-    m.set_study(
-        study=enums.Study.STEADY,
-        initial_temperature_K=T_AMB,
-    )
+    m.set_reference_temperature(T_AMB)
 
     # -- Mesh: full sink XY extent, 4 Z layers --
     z_chip = np.linspace(0, T_CHIP, NZ_CHIP + 1, endpoint=True)
@@ -397,17 +394,13 @@ def main():
     transient_heat_sources = {name: f"power_{name}(t)" for name in EV6_NAMES}
     transient_model = build_model(transient_heat_sources, model=transient_model)
 
-    # Override to TRANSIENT study
-    transient_model.set_study(
-        study=enums.Study.TRANSIENT,
-        initial_temperature_K=T_AMB,
-        duration=DURATION,
-        output_interval=OUTPUT_INTERVAL,
+    transient_study = metahotspot.Study(
+        enums.StudyType.TRANSIENT, T_AMB, DURATION, OUTPUT_INTERVAL
     )
 
     # Chain steady-state as initial condition — pass directly to solve()
     c_transient = transient_model.compile()
-    sol_transient = c_transient.solve(state=steady_temp)
+    sol_transient = c_transient.solve(study=transient_study, state=steady_temp)
     t_transient = _time.perf_counter() - t0
 
     final_temp = sol_transient.state
