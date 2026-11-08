@@ -235,7 +235,7 @@ MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_i
     CHECK_NULL(out_id);
     MHS_TRY({
         const auto id = static_cast<mhs_index_t>(m->def.components.size());
-        m->def.components.emplace_back(mhs::model::ComponentDefinition {});
+        m->def.components.emplace_back();
         *out_id = id;
     });
 }
