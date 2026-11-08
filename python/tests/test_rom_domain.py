@@ -45,9 +45,7 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     volume = model.add_volume(solid)
     model.add_box(volume, (0, 0, 0), (1, 1, 1))
     model.set_default_thermal_boundary(Neumann("0"))
-    model.add_thermal_boundary(
-        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)], Dirichlet("300")
-    )
+    model.add_thermal_boundary([SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)], Dirichlet("300"))
     a = model.add_port(0, "fom-join", SurfaceRegion(Axis.X, 1, 0, 1, 0, 1))
     rom = model.add_reduced_component(
         np.array([[2.0]]),

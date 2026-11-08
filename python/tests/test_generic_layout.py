@@ -169,7 +169,8 @@ def test_gl04_matched_foms_equal_monolith_operators_states_and_probes():
             )
             definition.add_observation(
                 1 if definition is split else 0,
-                "near_upper_interface", [0.00625, 0.00425, 0.0041]
+                "near_upper_interface",
+                [0.00625, 0.00425, 0.0041],
             )
         a, b = m.compile(), split.compile()
     assert [d.cell_count for d in b.components] == [768, 192]

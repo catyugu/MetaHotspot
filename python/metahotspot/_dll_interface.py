@@ -60,8 +60,16 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_model_add_port",
         I32,
-        [P(MhsModel), ctypes.c_uint32, Text, P(MhsSurfaceRegion),
-         I32, P(MhsRomPortPatch), Size, P(ctypes.c_uint32)],
+        [
+            P(MhsModel),
+            ctypes.c_uint32,
+            Text,
+            P(MhsSurfaceRegion),
+            I32,
+            P(MhsRomPortPatch),
+            Size,
+            P(ctypes.c_uint32),
+        ],
     ),
     (
         "mhs_model_add_observation",

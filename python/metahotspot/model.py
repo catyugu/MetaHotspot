@@ -301,8 +301,12 @@ class Model(OwnedHandle):
         native, count = _surface_regions(regions)
         spec = _thermal_boundary(condition)
         self._call(
-            "mhs_model_add_thermal_boundary", component, native, count,
-            ctypes.byref(spec), ctx="add_thermal_boundary",
+            "mhs_model_add_thermal_boundary",
+            component,
+            native,
+            count,
+            ctypes.byref(spec),
+            ctx="add_thermal_boundary",
         )
 
     def set_default_thermal_boundary(
@@ -310,8 +314,10 @@ class Model(OwnedHandle):
     ) -> None:
         spec = _thermal_boundary(condition)
         self._call(
-            "mhs_model_set_default_thermal_boundary", component,
-            ctypes.byref(spec), ctx="set_default_thermal_boundary",
+            "mhs_model_set_default_thermal_boundary",
+            component,
+            ctypes.byref(spec),
+            ctx="set_default_thermal_boundary",
         )
 
     # ---- Functions ----
