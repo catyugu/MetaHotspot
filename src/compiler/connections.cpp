@@ -47,7 +47,7 @@ namespace mhs::compiler {
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
-            const std::size_t port_offset = compiled.library().boundary_conditions.size();
+            const auto port_offset = static_cast<core::EntityIndex>(compiled.library().boundary_conditions.size());
             if (fom)
                 for (const auto& boundary : component.thermal_boundaries)
                     for (const auto& region : boundary.regions)
@@ -70,7 +70,7 @@ namespace mhs::compiler {
                         for (const auto& region : bc.regions)
                             if (intersects(r, region))
                                 throw std::invalid_argument("port overlaps a fluid boundary");
-                    regions.push_back({r, port_offset + p});
+                    regions.push_back({r, port_offset + static_cast<core::EntityIndex>(p)});
                     continue;
                 }
                 if (port.outward_sign != 1 && port.outward_sign != -1)
