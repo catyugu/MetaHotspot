@@ -26,11 +26,11 @@ namespace mhs::app::pta {
         const XMLElement* pressure = child_by_local_name(source, "Pressure");
         const XMLElement* mass_flow = child_by_local_name(source, "MassFlowRate");
         if (inlet && pressure && !mass_flow) {
-            boundary.condition
+            boundary
                 = mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
         }
         else if (inlet && mass_flow && !pressure) {
-            boundary.condition
+            boundary
                 = mhs::model::MassFlowInlet {parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
         }
         else if (!inlet && pressure && !mass_flow) {
@@ -181,14 +181,14 @@ namespace mhs::app::pta {
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
                     bc.temperature = get_text(temp);
                 }
-                default_thermal_boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("SecondType") != std::string::npos) {
                 mhs::model::NeumannBoundary bc;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
                     bc.heat_flux = get_text(flux);
                 }
-                default_thermal_boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
                 mhs::model::ConvectionBoundary bc;
@@ -198,7 +198,7 @@ namespace mhs::app::pta {
                 if (const XMLElement* t = other->FirstChildElement("a:EnvironmentTemperature")) {
                     bc.ambient_temperature = get_text(t);
                 }
-                default_thermal_boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                default_thermal_boundary = std::move(bc);
             }
         }
 
