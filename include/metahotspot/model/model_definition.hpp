@@ -226,10 +226,15 @@ namespace mhs::model {
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
+    using RomDomain = RomDomainDefinition;
+
     struct ModelDefinition {
-        mhs::core::Vector<FomDomainDefinition> domains {1};
-        // Global DomainId order: all FOM domains followed by ROM domains.
-        mhs::core::Vector<RomDomainDefinition> rom_domains;
+        mhs::core::Vector<std::variant<FomDomainDefinition, RomDomainDefinition>> domains {FomDomainDefinition {}};
+
+        FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(domains.at(id)); }
+        const FomDomainDefinition& fom(DomainId id) const { return std::get<FomDomainDefinition>(domains.at(id)); }
+        RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(domains.at(id)); }
+
         mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;

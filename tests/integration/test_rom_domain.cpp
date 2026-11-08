@@ -95,7 +95,7 @@ namespace {
             port.patches.push_back(facet);
             rom.ports.push_back(port);
             rom.observations.push_back({{"top", 2.5, 0.5, 0.5}, {q, q}, 0});
-            model.rom_domains.push_back(rom);
+            model.domains.push_back(rom);
         }
         model.point_probes.push_back({"top", 2.5, 0.5, 0.5});
         model.connections.push_back({{0, 0}, {1, 0}});
@@ -110,8 +110,8 @@ TEST(RomDomain, FullBasisGalerkinsOperatorsAndTransientMatchFom)
     const auto rom = mhs::compiler::build_model(blocks(true));
     EXPECT_EQ(fom.layout.state_count, 3u);
     EXPECT_EQ(rom.layout.state_count, 3u);
-    ASSERT_EQ(rom.rom_domains.size(), 1u);
-    EXPECT_EQ(rom.rom_domains[0].order, 2u);
+    ASSERT_EQ(rom.domains.size(), 2u);
+    EXPECT_EQ(rom.rom(1).order, 2u);
     const auto init_fom = mhs::core::Vector<double> {300, 300, 300};
     const auto init_rom = mhs::core::Vector<double> {300, 300 / q, 0};
     const auto a = mhs::solver::assemble_thermal(fom, init_fom, 0);
@@ -206,11 +206,13 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
         patch.trace = {1};
         port.patches.push_back(patch);
         rom.ports.push_back(port);
-        def.rom_domains.push_back(rom);
+        def.domains.push_back(rom);
     }
     def.connections.push_back({{0, 0}, {1, 0}});
     const auto model = mhs::compiler::build_model(def);
-    EXPECT_TRUE(model.domains.empty());
+    ASSERT_EQ(model.domains.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.domains[0]));
+    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.domains[1]));
     EXPECT_EQ(model.layout.state_count, 2u);
     EXPECT_EQ(model.layout.fields[0].quantity, mhs::model::FieldQuantity::ReducedCoordinate);
     const mhs::core::Vector<double> initial {300, 300};
@@ -256,7 +258,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
     boundary.condition = ConvectionBoundary {"100", "300"};
     rom.thermal_boundaries.push_back(std::move(boundary));
-    d.rom_domains.push_back(rom);
+    d.domains.push_back(rom);
     const mhs::core::Vector<double> initial {300};
 
     const auto first = mhs::compiler::build_model(d);
@@ -270,7 +272,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     // Reuse the same intrinsic ROM and physical port; only the ordinary
     // exterior boundary condition changes with the surrounding environment.
-    d.rom_domains[0].thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
+    d.rom(0).thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
     const auto second = mhs::compiler::build_model(d);
     const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
     const double second_g = 0.01 / (0.005 + 1.0 / 200.0);
@@ -284,7 +286,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     RomDomainDefinition other = rom;
     other.thermal_boundaries.clear();
     other.ports[0].outward_sign = -1;
-    invalid.rom_domains.push_back(other);
+    invalid.domains.push_back(other);
     invalid.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(invalid), std::invalid_argument);
 }
@@ -297,7 +299,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
     solid.density = solid.specific_heat = "1";
     d.materials.push_back({"solid", solid});
-    auto& fom = d.domains[0];
+    auto& fom = d.fom(0);
     fom.mesh.x_vertices = {0, 1};
     fom.mesh.y_vertices = {0, 0.5, 1};
     fom.mesh.z_vertices = {0, 1};
@@ -326,7 +328,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     patch.tangential_gradient[1] = {0};
     port.patches.push_back(patch);
     rom.ports.push_back(port);
-    d.rom_domains.push_back(rom);
+    d.domains.push_back(rom);
     d.connections = {{{0, 0}, {1, 0}}};
 
     const auto compiled = mhs::compiler::build_model(d);
@@ -339,7 +341,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
         EXPECT_NEAR(part.outward_a, 0, 1e-12);
 
     auto uncorrected = d;
-    uncorrected.rom_domains[0].ports[0].patches[0].tangential_gradient[0] = {0};
+    uncorrected.rom(1).ports[0].patches[0].tangential_gradient[0] = {0};
     const auto model_tpfa = mhs::compiler::build_model(uncorrected);
     const auto tpfa = mhs::solver::evaluate_connection_flux(model_tpfa, model_tpfa.connections.front(), state, 0);
     ASSERT_EQ(tpfa.size(), 2u);
@@ -383,8 +385,8 @@ TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
     right.ports[0].patches.push_back(patch);
     right.ports[0].patches[1].rectangle = {0.5, 1, 0, 1};
 
-    d.rom_domains.push_back(std::move(left));
-    d.rom_domains.push_back(std::move(right));
+    d.domains.push_back(std::move(left));
+    d.domains.push_back(std::move(right));
     d.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }

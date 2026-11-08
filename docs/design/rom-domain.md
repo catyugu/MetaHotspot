@@ -70,9 +70,10 @@ and physical observation maps. ROM ports are submitted with all their patches
 in one C ABI call, so failures cannot leave a partially constructed port. Connections use existing Domain/Port IDs and
 the existing model/compiled/solution opaque handles.
 
-Current ID ordering is all FOM domains followed by ROM domains. To keep
-Domain IDs stable, add all FOM domains before the first ROM. A ROM-only
-assembly is valid; it does not instantiate a default empty FOM.
+FOM and ROM domains share one creation-ordered domain table. A `DomainId`
+is the stable index in that table, so the two domain types may be interleaved.
+A ROM-only assembly is valid; adding the first ROM to an untouched model
+replaces the implicit empty FOM and therefore yields DomainId 0.
 
 ## Verification and limits
 

@@ -25,8 +25,8 @@ namespace {
         using namespace mhs::model;
         mhs::app::pta::Definition d;
         d.length_unit = mhs::app::pta::LengthUnit::Meter;
-        d.model.domains[0].mesh.x_vertices = d.model.domains[0].mesh.y_vertices = d.model.domains[0].mesh.z_vertices
-            = {0, 1};
+        auto& mesh = d.model.fom(0).mesh;
+        mesh.x_vertices = mesh.y_vertices = mesh.z_vertices = {0, 1};
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
@@ -129,7 +129,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.domains[0].fluid_boundaries = {
+    d.model.fom(0).fluid_boundaries = {
         {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, MassFlowInlet {2, 280}},
         {{{Axis::X, 0, {0.8, 1, 0, 1}}}, MassFlowInlet {3, 320}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
     auto verify = [&](const test_pta::Model& model) {
@@ -142,7 +142,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     ThermalBoundarySpec thermal;
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
-    d.model.domains[0].thermal_boundaries.push_back(thermal);
+    d.model.fom(0).thermal_boundaries.push_back(thermal);
     verify(test_pta::build_model(d));
 }
 
@@ -152,7 +152,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.model.domains[0].fluid_boundaries = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}},
+    d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}},
         {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {1, 315}}};
     auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.flow.boundary_terms.size(), 2);
@@ -171,7 +171,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     };
     verify_reverse(reverse, 315);
 
-    std::get<PressureOutlet>(d.model.domains[0].fluid_boundaries.back().condition).pressure = 0;
+    std::get<PressureOutlet>(d.model.fom(0).fluid_boundaries.back().condition).pressure = 0;
     const auto stagnant = test_pta::build_model(d);
     const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);

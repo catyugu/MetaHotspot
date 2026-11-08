@@ -244,7 +244,7 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
-/** Domain 0 exists on creation. All domain-local IDs are scoped by domain. */
+/** Domain 0 starts as an implicit FOM; FOM/ROM DomainIds follow creation order and remain stable. */
 MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id);
 // Meshless reduced thermal domain. K/C are dense row-major (order,order)
 // matrices of C dz/dt + K z = f. NULL initial coordinates select zero.

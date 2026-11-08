@@ -4,7 +4,6 @@
 #include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
 #include "model/model_definition.hpp"
-#include "model/rom_domain.hpp"
 #include "model/state_layout.hpp"
 #include "model/types.hpp"
 
@@ -96,8 +95,12 @@ namespace mhs::model {
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
-        mhs::core::Vector<FomDomain> domains;
-        mhs::core::Vector<RomDomain> rom_domains;
+        mhs::core::Vector<std::variant<FomDomain, RomDomain>> domains;
+
+        FomDomain& fom(DomainId id) { return std::get<FomDomain>(domains.at(id)); }
+        const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(domains.at(id)); }
+        const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(domains.at(id)); }
+
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
         core::Vector<BoundaryCondition> rom_boundary_conditions;
