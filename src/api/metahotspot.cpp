@@ -959,9 +959,9 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
                 c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
-                powers[offset++] = term.weight
-                    * model.heat_source_table[term.source].eval(
-                        {p[0], p[1], p[2], state[field.dof(term.cell)], time});
+                powers[offset++]
+                    = term.weight
+                    * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
             }
         }
     });

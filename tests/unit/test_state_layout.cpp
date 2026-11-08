@@ -5,10 +5,8 @@ TEST(StateLayout, UsesCanonicalContiguousFieldRanges)
 {
     using namespace mhs::model;
     StateLayout layout {8,
-        {{0, FieldQuantity::Temperature, 0, 2},
-            {0, FieldQuantity::Pressure, 2, 2},
-            {0, FieldQuantity::Velocity, 4, 3},
-            {1, FieldQuantity::ReducedCoordinate, 7, 1}}};
+        {{0, FieldQuantity::Temperature, 0, 2}, {0, FieldQuantity::Pressure, 2, 2},
+            {0, FieldQuantity::Velocity, 4, 3}, {1, FieldQuantity::ReducedCoordinate, 7, 1}}};
     EXPECT_EQ(layout.find(0, FieldQuantity::Pressure), 1u);
     EXPECT_EQ(layout.find(0, FieldQuantity::Velocity), 2u);
     EXPECT_EQ(layout.field(0).dof(1), 1u);

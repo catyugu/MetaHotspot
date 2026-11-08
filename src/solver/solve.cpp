@@ -35,10 +35,8 @@ namespace mhs::solver {
                 const auto& thermal
                     = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
                 const auto temperatures = std::span<const double>(state).subspan(thermal.offset, thermal.count);
-                const auto& pressure
-                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Pressure));
-                const auto& velocity
-                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Velocity));
+                const auto& pressure = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Pressure));
+                const auto& velocity = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Velocity));
                 const auto first = static_cast<core::SparseIndex>(pressure.offset);
                 const auto count = pressure.count + velocity.count;
                 const auto last = first + static_cast<core::SparseIndex>(count);
