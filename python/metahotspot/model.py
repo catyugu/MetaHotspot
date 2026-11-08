@@ -214,7 +214,7 @@ class Library(OwnedHandle):
 
     def add_function_expr(self, name: str, expression: str) -> None:
         self._call(
-            "mhs_model_add_function_expr",
+            "mhs_library_add_function_expr",
             _text(name),
             _text(expression),
             ctx="add_function_expr",
@@ -224,7 +224,7 @@ class Library(OwnedHandle):
         self, name: str, amplitude: float, tau: float, center: float
     ) -> None:
         self._call(
-            "mhs_model_add_function_gauss",
+            "mhs_library_add_function_gauss",
             _text(name),
             amplitude,
             tau,
@@ -236,7 +236,7 @@ class Library(OwnedHandle):
         self, name: str, amplitude: float, angular_frequency: float, phase: float
     ) -> None:
         self._call(
-            "mhs_model_add_function_sine",
+            "mhs_library_add_function_sine",
             _text(name),
             amplitude,
             angular_frequency,
@@ -248,7 +248,7 @@ class Library(OwnedHandle):
         self, name: str, amplitude: float, alpha: float, beta: float
     ) -> None:
         self._call(
-            "mhs_model_add_function_double_exponential",
+            "mhs_library_add_function_double_exponential",
             _text(name),
             amplitude,
             alpha,
@@ -292,7 +292,8 @@ class Model(OwnedHandle):
 
     Usage::
 
-        m = Model()
+        library = Library()
+        m = Model(library)
         m.add_cartesian_component()  # Explicitly create the Cartesian component.
         # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
@@ -300,7 +301,7 @@ class Model(OwnedHandle):
 
     Use the context manager for automatic cleanup::
 
-        with Model() as m:
+        with Library() as library, Model(library) as m:
             ...
     """
 
