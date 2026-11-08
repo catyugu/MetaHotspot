@@ -133,23 +133,25 @@ static mhs_study_t _from_core_study(mhs::model::StudyType s)
     }
 }
 
-static mhs::model::FaceRegion _make_face_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
+static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
 {
     if (!std::isfinite(coord) || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
         || !std::isfinite(r.b_max) || r.a_min >= r.a_max || r.b_min >= r.b_max)
-        throw std::invalid_argument("face region bounds must be finite and increasing");
-    return {_to_axis(axis), coord, {{r.a_min, r.a_max, r.b_min, r.b_max}}};
+        throw std::invalid_argument("surface region bounds must be finite and increasing");
+    return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
-template <typename Boundary>
-static void _add_boundary_patch(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, Boundary condition)
+template <typename Boundary> static void _add_thermal_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
 {
-    mhs::model::BoundaryPatch bp;
+    if (!n_regions)
+        throw std::invalid_argument("surface regions must not be empty");
+    mhs::model::ThermalBoundarySpec bp;
     bp.condition = std::move(condition);
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
-        bp.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.boundaries.push_back(std::move(bp));
+        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    m->def.thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -215,19 +217,26 @@ MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(
+MHS_API mhs_status_t mhs_model_set_study(
     mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval)
 {
     CHECK_NULL(m);
     MHS_TRY({
-        m->def.settings.study_type = _to_model_study(study);
-        m->def.settings.initial_temperature = initial_temperature_K;
-        m->def.settings.transient_duration = duration;
-        m->def.settings.transient_output_interval = output_interval;
+        const mhs::model::ModelSettings settings {
+            _to_model_study(study), initial_temperature_K, duration, output_interval};
+        if (!std::isfinite(settings.initial_temperature))
+            throw std::invalid_argument("initial temperature must be finite");
+        if (!std::isfinite(settings.transient_duration))
+            throw std::invalid_argument("duration must be finite");
+        if (settings.study_type == mhs::model::StudyType::Transient && settings.transient_duration <= 0)
+            throw std::invalid_argument("transient duration must be positive");
+        if (!std::isfinite(settings.transient_output_interval) || settings.transient_output_interval < 0)
+            throw std::invalid_argument("output interval must be finite and nonnegative");
+        m->def.settings = settings;
     });
 }
 
-MHS_API mhs_status_t mhs_model_set_mesh(
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z)
 {
     CHECK_NULL(m);
@@ -276,9 +285,10 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
         spec.conductivity_z = kz;
         spec.density = rho;
         spec.specific_heat = c;
-        if (dynamic_viscosity && dynamic_viscosity[0] != '\0') {
+        if (dynamic_viscosity) {
+            if (!dynamic_viscosity[0])
+                throw std::invalid_argument("dynamic viscosity expression must not be empty");
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
-            spec.is_fluid = true;
         }
         *out_id = static_cast<mhs_index_t>(m->def.materials.size());
         m->def.materials.push_back({name, std::move(spec)});
@@ -335,44 +345,32 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature)
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature)
 {
     CHECK_NULL(m);
-    if (n_regions == 0) {
-        SET_ERR("boundary requires at least one face region");
-        return MHS_ERROR;
-    }
     CHECK_NULL(regions);
     CHECK_NULL(temperature);
-    MHS_TRY({ _add_boundary_patch(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
+    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux)
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux)
 {
     CHECK_NULL(m);
-    if (n_regions == 0) {
-        SET_ERR("boundary requires at least one face region");
-        return MHS_ERROR;
-    }
     CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
-    MHS_TRY({ _add_boundary_patch(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
+    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
 }
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     const char* coefficient, const char* ambient_temperature)
 {
     CHECK_NULL(m);
-    if (n_regions == 0) {
-        SET_ERR("boundary requires at least one face region");
-        return MHS_ERROR;
-    }
     CHECK_NULL(regions);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        _add_boundary_patch(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
+        _add_thermal_boundary(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     });
 }
 
@@ -380,14 +378,14 @@ MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char*
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    MHS_TRY({ m->def.default_boundary = mhs::model::DirichletBoundary {temperature}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    MHS_TRY({ m->def.default_boundary = mhs::model::NeumannBoundary {heat_flux}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_convection(
@@ -396,7 +394,7 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    MHS_TRY({ m->def.default_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
 }
 
 /* ------------------------------------------------------------------ */
@@ -469,14 +467,19 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z)
+MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3])
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY({ m->def.observation_points.push_back({name, x, y, z}); });
+    CHECK_NULL(xyz);
+    MHS_TRY({
+        if (!std::isfinite(xyz[0]) || !std::isfinite(xyz[1]) || !std::isfinite(xyz[2]))
+            throw std::invalid_argument("probe coordinates must be finite");
+        m->def.point_probes.push_back({name, xyz[0], xyz[1], xyz[2]});
+    });
 }
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     mhs_fluid_bc_t kind, double value, const double* inlet_temperature)
 {
     CHECK_NULL(m);
@@ -486,7 +489,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_face
             throw std::invalid_argument("fluid boundary requires regions and finite values");
         mhs::model::FluidBoundarySpec fb;
         for (size_t i = 0; i < n_regions; ++i)
-            fb.regions.push_back(_make_face_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+            fb.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
         const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
         switch (kind) {
         case MHS_FLUID_PRESSURE_INLET:

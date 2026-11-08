@@ -75,14 +75,14 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    ASSERT_EQ(io_structure.observation_points.size(), 2u);
-    EXPECT_EQ(io_structure.observation_points[0].name, "p1");
+    ASSERT_EQ(io_structure.point_probes.size(), 2u);
+    EXPECT_EQ(io_structure.point_probes[0].name, "p1");
     // PTA adapter resolves observation coordinates to SI metres.
-    EXPECT_EQ(io_structure.observation_points[0].x, 0.0015);
-    EXPECT_EQ(io_structure.observation_points[0].y, 0.0025);
-    EXPECT_EQ(io_structure.observation_points[0].z, 0.0035);
-    EXPECT_EQ(io_structure.observation_points[1].name, "p2");
-    EXPECT_EQ(io_structure.observation_points[1].x, 0.0001);
+    EXPECT_EQ(io_structure.point_probes[0].x, 0.0015);
+    EXPECT_EQ(io_structure.point_probes[0].y, 0.0025);
+    EXPECT_EQ(io_structure.point_probes[0].z, 0.0035);
+    EXPECT_EQ(io_structure.point_probes[1].name, "p2");
+    EXPECT_EQ(io_structure.point_probes[1].x, 0.0001);
     std::filesystem::remove(path);
 }
 
@@ -90,7 +90,7 @@ TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    EXPECT_TRUE(io_structure.observation_points.empty()) << "No <ObservePoints3D> → empty vector";
+    EXPECT_TRUE(io_structure.point_probes.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
 
@@ -149,9 +149,9 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     ASSERT_EQ(definition.volumes[0].geometry.size(), 2u);
     EXPECT_EQ(definition.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
     EXPECT_EQ(definition.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
-    ASSERT_EQ(definition.boundaries.size(), 2u);
-    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.boundaries[0].condition));
-    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.boundaries[1].condition));
+    ASSERT_EQ(definition.thermal_boundaries.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.thermal_boundaries[0].condition));
+    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.thermal_boundaries[1].condition));
 }
 
 TEST(IoTest, WriteXmlEmitsResult0DTransient)

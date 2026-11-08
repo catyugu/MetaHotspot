@@ -78,7 +78,7 @@ static mhs::app::pta::Definition make_simple_io()
     io.model.materials.push_back({"test_material", mat});
 
     // No explicit boundaries: the default boundary applies.
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -222,7 +222,7 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     silicon.conductivity_x = silicon.conductivity_y = silicon.conductivity_z = "130";
     io.model.materials.push_back({"silicon", silicon});
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -267,14 +267,15 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
     io.model.materials.push_back({"copper", copper});
 
-    // mhs::model::BoundaryPatch: Dirichlet 500K on Z bottom face
-    mhs::model::BoundaryPatch boundary;
+    // mhs::model::ThermalBoundarySpec: Dirichlet 500K on Z bottom face
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    boundary.regions.push_back(test_pta::face_region(
-        mhs::model::Axis::Z, 0.0, {{0.0, 50.0, 50.0, 100.0}, {50.0, 100.0, 0.0, 50.0}, {50.0, 100.0, 50.0, 100.0}}));
-    io.model.boundaries.push_back(boundary);
+    for (const auto& rectangle : {mhs::model::RegionRect {0.0, 50.0, 50.0, 100.0},
+             mhs::model::RegionRect {50.0, 100.0, 0.0, 50.0}, mhs::model::RegionRect {50.0, 100.0, 50.0, 100.0}})
+        boundary.regions.push_back({mhs::model::Axis::Z, 0.0, rectangle});
+    io.model.thermal_boundaries.push_back(boundary);
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -367,7 +368,7 @@ TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
     copper.conductivity_x = copper.conductivity_y = copper.conductivity_z = "400";
     io.model.materials.push_back({"copper", copper});
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     const auto model = test_pta::build_model(io);
     ASSERT_EQ(model.discrete.cells.size(), 12u);
@@ -434,7 +435,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     silicon.conductivity_x = silicon.conductivity_y = silicon.conductivity_z = "130";
     io.model.materials.push_back({"silicon", silicon});
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -470,15 +471,15 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
 {
     auto definition = make_simple_io();
 
-    mhs::model::BoundaryPatch earlier;
-    earlier.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    mhs::model::ThermalBoundarySpec earlier;
+    earlier.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     earlier.condition = mhs::model::DirichletBoundary {"310"};
-    definition.model.boundaries.push_back(earlier);
+    definition.model.thermal_boundaries.push_back(earlier);
 
-    mhs::model::BoundaryPatch later;
-    later.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    mhs::model::ThermalBoundarySpec later;
+    later.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     later.condition = mhs::model::ConvectionBoundary {"42", "280"};
-    definition.model.boundaries.push_back(later);
+    definition.model.thermal_boundaries.push_back(later);
 
     const auto model = test_pta::build_model(definition);
     const auto cell = input_cell(model, definition.model.mesh, 0);
@@ -527,13 +528,13 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     io.model.materials.push_back({"copper", copper});
 
     // Convection on the upper half of the y=10mm Y+ face
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
     boundary.regions.push_back(
-        test_pta::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 5.0}})); // cx: 0-10, cz: 0-5
-    io.model.boundaries.push_back(boundary);
+        test_pta::face_region(mhs::model::Axis::Y, 10.0, {0.0, 10.0, 0.0, 5.0})); // cx: 0-10, cz: 0-5
+    io.model.thermal_boundaries.push_back(boundary);
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -559,10 +560,10 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
         << "Cell outside rect must not get the Convection BC";
 }
 
-TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
+TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
 {
     // A single boundary carrying many regions must apply each one.
-    // Mirrors case1 mhs::model::BoundaryPatch 5: 4 X-keys + 2 Y-keys covering the side faces
+    // Mirrors case1 mhs::model::ThermalBoundarySpec 5: 4 X-keys + 2 Y-keys covering the side faces
     // of the top die. Without correct per-key iteration, some faces would
     // silently fall through to the default boundary.
     mhs::app::pta::Definition io;
@@ -596,17 +597,17 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneBoundaryPatch)
     io.model.materials.push_back({"copper", copper});
 
     // One boundary, three regions targeting three different exposed faces
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
     boundary.regions.push_back(
-        test_pta::face_region(mhs::model::Axis::X, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // XP face, all cz
+        test_pta::face_region(mhs::model::Axis::X, 10.0, {0.0, 10.0, 0.0, 10.0})); // XP face, all cz
     boundary.regions.push_back(
-        test_pta::face_region(mhs::model::Axis::X, 0.0, {{0.0, 10.0, 0.0, 10.0}})); // XM face, all cz
+        test_pta::face_region(mhs::model::Axis::X, 0.0, {0.0, 10.0, 0.0, 10.0})); // XM face, all cz
     boundary.regions.push_back(
-        test_pta::face_region(mhs::model::Axis::Y, 10.0, {{0.0, 10.0, 0.0, 10.0}})); // YP face, all cz
-    io.model.boundaries.push_back(boundary);
+        test_pta::face_region(mhs::model::Axis::Y, 10.0, {0.0, 10.0, 0.0, 10.0})); // YP face, all cz
+    io.model.thermal_boundaries.push_back(boundary);
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -681,7 +682,7 @@ TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
     silicon.specific_heat = "700";
     io.model.materials.push_back({"silicon", silicon});
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     const auto model = test_pta::build_model(io);
     ASSERT_EQ(model.discrete.cells.size(), 1u);

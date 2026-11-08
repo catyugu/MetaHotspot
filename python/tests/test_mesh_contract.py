@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 from test_model_binding import _model
 
+from metahotspot import SurfaceRegion
+
 
 def test_subcell_sources_keep_independent_power_columns():
     from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
@@ -45,12 +47,12 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
         )
         volume = model.add_volume(material, 0)
         model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
-        model.set_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
+        model.set_cartesian_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
         model.set_default_convection("10", "300")
         model.add_fluid_boundary(
-            0, 0, 0, 0.001, 0, 0.001, 1, 100 if case == 1 else 200, 300
+            [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)], 1, 100 if case == 1 else 200, 300
         )
-        model.add_fluid_boundary(0, 0.001, 0, 0.001, 0, 0.001, 3, 0)
+        model.add_fluid_boundary([SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 3, 0)
         return model
 
     original = fluid_model().compile()
@@ -80,7 +82,7 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
     from metahotspot.macromodel.geometry import CellGeometry
 
     model = _model()
-    model.set_mesh(
+    model.set_cartesian_mesh(
         np.array([0.0, 0.00025, 0.001]), np.array([0.0, 0.001]), np.array([0.0, 0.001])
     )
     compiled = model.compile()
@@ -108,5 +110,5 @@ def test_native_mesh_input_rejects_invalid_vertices(axis):
     model = _model()
     reference = model.compile().fields.cell_min.copy()
     with pytest.raises((ValueError, MetaHotspotError)):
-        model.set_mesh(axis, [0.0, 0.001], [0.0, 0.001])
+        model.set_cartesian_mesh(axis, [0.0, 0.001], [0.0, 0.001])
     np.testing.assert_array_equal(model.compile().fields.cell_min, reference)

@@ -4,7 +4,7 @@
 namespace mhs::solver {
     ProbeRecorder::ProbeRecorder(const mhs::model::Model& model) : model_(model)
     {
-        for (const auto& p : model.observation_points) {
+        for (const auto& p : model.point_probes) {
             traces_.push_back({p.name, {}});
             ProbeSlot slot;
             slot.point = {p.x, p.y, p.z};

@@ -15,6 +15,7 @@ Reproduces the HotSpot grid-model transient from examples/example2:
 
 from __future__ import annotations
 
+from metahotspot import SurfaceRegion
 import sys
 import time as _time
 from pathlib import Path
@@ -165,7 +166,7 @@ def build_model(
         model = metahotspot.Model()
     m = model
 
-    m.set_settings(
+    m.set_study(
         study=enums.Study.STEADY,
         initial_temperature_K=T_AMB,
     )
@@ -185,7 +186,7 @@ def build_model(
         T_CHIP + T_INTERFACE + T_SPREADER, TOTAL_Z, NZ_SINK + 1, endpoint=True
     )[1:]
     z_verts = np.concatenate([z_chip, z_interface, z_spreader, z_sink])
-    m.set_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
+    m.set_cartesian_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
 
     # Material IDs and explicit SI volumes.
     silicon = m.add_material(
@@ -227,7 +228,7 @@ def build_model(
 
     # -- Convection at sink top (z = TOTAL_Z) --
     _regions = [
-        (
+        SurfaceRegion(
             enums.Axis.Z,
             TOTAL_Z,
             -(S_SINK - CHIP_L) / 2,
@@ -244,8 +245,8 @@ def build_model(
     probe_z = T_CHIP / 2.0  # mid-chip
     for name in EV6_NAMES:
         cx, cy = EV6_CENTER[name]
-        m.add_probe(f"chip_{name}", cx, cy, probe_z)
-    m.add_probe("tim_center", CHIP_L / 2, CHIP_L / 2, T_CHIP + T_INTERFACE / 2)
+        m.add_point_probe(f"chip_{name}", (cx, cy, probe_z))
+    m.add_point_probe("tim_center", (CHIP_L / 2, CHIP_L / 2, T_CHIP + T_INTERFACE / 2))
 
     return m
 
@@ -397,7 +398,7 @@ def main():
     transient_model = build_model(transient_heat_sources, model=transient_model)
 
     # Override to TRANSIENT study
-    transient_model.set_settings(
+    transient_model.set_study(
         study=enums.Study.TRANSIENT,
         initial_temperature_K=T_AMB,
         duration=DURATION,

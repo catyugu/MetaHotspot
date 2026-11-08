@@ -42,9 +42,9 @@ namespace mhs::app::pta {
         }
     }
 
-    static mhs::core::Vector<mhs::model::FaceRegion> read_face_key_regions(const XMLElement* source)
+    static mhs::core::Vector<mhs::model::SurfaceRegion> read_face_key_regions(const XMLElement* source)
     {
-        mhs::core::Vector<mhs::model::FaceRegion> regions;
+        mhs::core::Vector<mhs::model::SurfaceRegion> regions;
         const XMLElement* face_keys = child_by_local_name(source, "FaceKeys");
         if (!face_keys)
             return regions;
@@ -58,7 +58,8 @@ namespace mhs::app::pta {
                 continue;
             const std::string key = get_text(face_key);
             if (!key.empty())
-                regions.push_back(detail::parse_face_region(key));
+                for (const auto& region : detail::parse_face_region(key))
+                    regions.push_back(region);
         }
         return regions;
     }
@@ -131,7 +132,7 @@ namespace mhs::app::pta {
         }
 
         Definition def;
-        mhs::model::ThermalBoundary default_boundary = mhs::model::NeumannBoundary {};
+        mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
 
         const XMLElement* root = doc.FirstChildElement("Structure");
         if (!root) {
@@ -179,14 +180,14 @@ namespace mhs::app::pta {
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
                     bc.temperature = get_text(temp);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("SecondType") != std::string::npos) {
                 mhs::model::NeumannBoundary bc;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
                     bc.heat_flux = get_text(flux);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
                 mhs::model::ConvectionBoundary bc;
@@ -196,7 +197,7 @@ namespace mhs::app::pta {
                 if (const XMLElement* t = other->FirstChildElement("a:EnvironmentTemperature")) {
                     bc.ambient_temperature = get_text(t);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
         }
 
@@ -272,7 +273,10 @@ namespace mhs::app::pta {
                         const std::string value = get_text(fluid);
                         if (value != "true" && value != "false")
                             throw std::runtime_error("FluidMaterial must be true or false");
-                        mat.is_fluid = value == "true";
+                        if (value == "true" && !mat.dynamic_viscosity)
+                            throw std::runtime_error("fluid material '" + name + "' is missing DynamicViscosity");
+                        if (value == "false")
+                            mat.dynamic_viscosity.reset();
                     }
                     else {
                         throw std::runtime_error("material '" + name + "' is missing required <FluidMaterial>");
@@ -434,7 +438,7 @@ namespace mhs::app::pta {
         if (const XMLElement* bounds_elem = root->FirstChildElement("Boundaries")) {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
-                mhs::model::BoundaryPatch boundary;
+                mhs::model::ThermalBoundarySpec boundary;
 
                 auto regions = read_face_key_regions(bound_elem);
 
@@ -499,7 +503,7 @@ namespace mhs::app::pta {
                     }
                 }
 
-                def.model.boundaries.push_back(std::move(boundary));
+                def.model.thermal_boundaries.push_back(std::move(boundary));
             }
         }
 
@@ -555,7 +559,7 @@ namespace mhs::app::pta {
         if (const XMLElement* obs3d = root->FirstChildElement("ObservePoints3D")) {
             for (const XMLElement* pt = obs3d->FirstChildElement("ObservePoint3D"); pt;
                 pt = pt->NextSiblingElement("ObservePoint3D")) {
-                ObservationPointSpec op;
+                PointProbeSpec op;
                 if (const XMLElement* name = pt->FirstChildElement("Name")) {
                     op.name = get_text(name);
                 }
@@ -568,11 +572,11 @@ namespace mhs::app::pta {
                 if (const XMLElement* z = pt->FirstChildElement("Z")) {
                     op.z = get_text(z);
                 }
-                def.observation_points.push_back(std::move(op));
+                def.point_probes.push_back(std::move(op));
             }
         }
 
-        def.model.default_boundary = std::move(default_boundary);
+        def.model.default_thermal_boundary = std::move(default_thermal_boundary);
         return normalize(std::move(def));
     }
 

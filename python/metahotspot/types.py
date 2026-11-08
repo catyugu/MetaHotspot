@@ -45,7 +45,7 @@ class Point2D(ctypes.Structure):
     ]
 
 
-class MhsFaceRegion(ctypes.Structure):
+class MhsSurfaceRegion(ctypes.Structure):
     _fields_ = [
         ("axis", ctypes.c_int32),
         ("coordinate", ctypes.c_double),

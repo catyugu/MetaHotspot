@@ -6,19 +6,20 @@ import numpy as np
 import pytest
 
 import metahotspot
+from metahotspot import SurfaceRegion
 from metahotspot._error import MetaHotspotError
 from metahotspot.enums import Axis, Study
 
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
     model = metahotspot.Model()
-    model.set_settings(
+    model.set_study(
         study=Study.TRANSIENT if transient else Study.STEADY,
         initial_temperature_K=300.0,
         duration=1.0 if transient else 0.0,
         output_interval=0.5 if transient else 0.0,
     )
-    model.set_mesh(
+    model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -52,10 +53,10 @@ def test_model_native_calls_compile_and_assemble():
 
 def test_model_native_boundary_and_function_calls():
     model = _model()
-    region = [(Axis.Z, 0.0, 0.0, 0.001, 0.0, 0.001)]
-    model.add_dirichlet("300", region)
-    model.add_neumann("0", region)
-    model.add_convection("10", "300", region)
+    region = [SurfaceRegion(Axis.Z, 0.0, 0.0, 0.001, 0.0, 0.001)]
+    model.add_dirichlet(region, "300")
+    model.add_neumann(region, "0")
+    model.add_convection(region, "10", "300")
     model.set_default_dirichlet("300")
     model.set_default_neumann("0")
     model.set_default_convection("10", "300")
@@ -68,9 +69,11 @@ def test_model_native_boundary_and_function_calls():
     model.add_function_periodic_piecewise_constant(
         "periodic", np.array([0.0, 0.001]), 1.0
     )
-    model.add_probe("center", 0.0005, 0.0005, 0.0005)
+    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
     with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
-        model.add_fluid_boundary(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0, 0, 0.0)
+        model.add_fluid_boundary(
+            [SurfaceRegion(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0)], 0, 0.0
+        )
 
     compiled = model.compile()
     assert compiled.cell_count == 1
@@ -79,7 +82,7 @@ def test_model_native_boundary_and_function_calls():
 def test_solution_views_derive_from_one_native_snapshot():
     model = _model(transient=True)
     model.set_default_neumann("0")
-    model.add_probe("center", 0.0005, 0.0005, 0.0005)
+    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
 
     solution = model.compile().solve(state=np.array([300, -1], dtype=np.float32)[::2])
 

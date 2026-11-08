@@ -39,7 +39,7 @@ static mhs::app::pta::Definition make_simple_uniform_grid_io()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     io.model.materials.push_back({"copper", mat});
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -122,13 +122,13 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     io.model.materials.push_back({"copper", copper});
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
-    mhs::model::BoundaryPatch boundary_dirichlet;
+    mhs::model::ThermalBoundarySpec boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
-    boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.model.boundaries.push_back(boundary_dirichlet);
+    boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
+    io.model.thermal_boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -192,12 +192,12 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     io.model.materials.push_back({"copper", copper});
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
-    boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.model.boundaries.push_back(boundary);
+    boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
+    io.model.thermal_boundaries.push_back(boundary);
 
-    io.model.default_boundary = mhs::model::NeumannBoundary {};
+    io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 

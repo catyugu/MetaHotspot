@@ -17,7 +17,7 @@
 | `logging` / `mhs_logging` | `mhs::logger`：日志服务 | spdlog | 项目编译选项 |
 | `api` / `mhs_c_api` | C ABI 与 opaque handle | 无 | compiler、solver、logging |
 
-每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。内部 `compiler::fluid` 不再单独建库；AdaptiveTimeStepper 是 solver 的私有头文件依赖。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖新增组件。
+每个组件都有 `mhs::<组件>` 别名和同名 SDK 导出目标。流体编译代码属于 compiler 组件；AdaptiveTimeStepper 是 solver 的私有头文件依赖。依赖由各目标的 `CMakeLists.txt` 声明，安装与消费者验证覆盖各组件。
 
 ## 公共内核
 

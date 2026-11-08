@@ -23,12 +23,12 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.materials.push_back({"copper", mat});
 
     // Dirichlet 300K on bottom face (Z=0)
-    mhs::model::BoundaryPatch boundary1;
+    mhs::model::ThermalBoundarySpec boundary1;
     boundary1.condition = mhs::model::DirichletBoundary {"300"};
-    boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {{0.0, 0.01, 0.0, 0.01}}});
-    io.boundaries.push_back(boundary1);
+    boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary1);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = mhs::compiler::build_model(io);
 
@@ -67,25 +67,25 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.settings.transient_duration = 5.0;
     io.settings.transient_output_interval = 1.0;
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::model::ObservationPointSpec op1;
+    mhs::model::PointProbeSpec op1;
     op1.name = "center";
     op1.x = 0.005;
     op1.y = 0.005;
     op1.z = 0.005;
-    io.observation_points.push_back(op1);
-    mhs::model::ObservationPointSpec op2;
+    io.point_probes.push_back(op1);
+    mhs::model::PointProbeSpec op2;
     op2.name = "z0";
     op2.x = 0.005;
     op2.y = 0.005;
     op2.z = 0;
-    io.observation_points.push_back(op2);
+    io.point_probes.push_back(op2);
 
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {{0.0, 0.01, 0.0, 0.01}}});
-    io.boundaries.push_back(boundary);
+    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
@@ -136,19 +136,19 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.settings.transient_duration = 5.0;
     io.settings.transient_output_interval = 1.0;
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    mhs::model::ObservationPointSpec op;
+    mhs::model::PointProbeSpec op;
     op.name = "z0_dirichlet";
     op.x = 0.005;
     op.y = 0.005;
     op.z = 0;
-    io.observation_points.push_back(op);
+    io.point_probes.push_back(op);
 
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
-    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {{0.0, 0.01, 0.0, 0.01}}});
-    io.boundaries.push_back(boundary);
+    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
