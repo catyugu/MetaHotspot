@@ -96,7 +96,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             }
             // Sampling and assembly read the same surface trace.
             EXPECT_DOUBLE_EQ(
-                mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), center), trace.temperature);
+                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), center), trace.temperature);
         }
     }
 }
@@ -168,11 +168,11 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
     // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
     // so an interior probe moves at exactly that rate along x.
-    const auto left = mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
-    const auto right = mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
+    const auto left = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
+    const auto right = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
     EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, MissingReferencesRemainInvalid)
