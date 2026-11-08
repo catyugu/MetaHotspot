@@ -103,7 +103,7 @@ namespace mhs::solver {
             diagonal[ii] += g;
             diagonal[jj] += g;
         }
-        bool reference = false;
+        core::Vector<bool> pressure_references(fluid.component_count, false);
         mhs::core::Vector<double> boundary_conductance(projected.size(), 0);
         mhs::core::Vector<mhs::core::Triplet<double>> entries;
         mhs::core::Vector<double> rhs(n, 0.0);
@@ -118,7 +118,7 @@ namespace mhs::solver {
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
                             / total_area[term.condition];
                     else {
-                        reference = true;
+                        pressure_references[fluid.component_by_fluid_cell[i]] = true;
                         const double g = ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
                             * mobility[i] / (mesh.cells[term.cell].size()[static_cast<std::size_t>(term.axis)] / 2);
                         boundary_conductance[t] = g;
@@ -128,9 +128,8 @@ namespace mhs::solver {
                 },
                 boundaries[term.condition]);
         }
-        if (!reference)
-            throw std::runtime_error(
-                "fluid domain has no pressure reference; a pressure inlet or an outlet is required");
+        if (std::find(pressure_references.begin(), pressure_references.end(), false) != pressure_references.end())
+            throw std::runtime_error("every connected fluid component needs a pressure inlet or outlet");
         for (std::size_t i = 0; i < n; ++i)
             entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(i), diagonal[i]);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id)

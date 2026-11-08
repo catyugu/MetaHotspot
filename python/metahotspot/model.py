@@ -13,7 +13,14 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
-from metahotspot.types import MhsModel, MhsStudy, MhsSurfaceRegion, Point2D, Rect2D
+from metahotspot.types import (
+    MhsModel,
+    MhsRomPortPatch,
+    MhsStudy,
+    MhsSurfaceRegion,
+    Point2D,
+    Rect2D,
+)
 
 if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
@@ -513,27 +520,22 @@ class Model(OwnedHandle):
         outward_sign: int,
         patches: Sequence[RomPortPatch],
     ) -> int:
-        """Declare a meshless physical ROM port and its modal facet maps."""
-        surface, _ = _surface_regions([region])
-        identifier = ctypes.c_uint32()
-        self._call(
-            "mhs_model_add_rom_port",
-            domain,
-            _text(name),
-            surface,
-            outward_sign,
-            ctypes.byref(identifier),
-            ctx="add_rom_port",
-        )
-        if domain not in self._rom_orders:
+        """Declare a complete meshless ROM port in a single native transaction."""
+        order = self._rom_orders.get(domain)
+        if order is None:
             raise ValueError("ROM port requires a ROM domain created by add_rom_domain")
-        for patch in patches:
+        if not patches:
+            raise ValueError("ROM port requires at least one patch")
+
+        # Marshal and validate every patch before mutating the native model.
+        native_patches = (MhsRomPortPatch * len(patches))()
+        keepalive = []
+        for i, patch in enumerate(patches):
             if len(patch.rectangle) != 4:
                 raise ValueError("ROM patch rectangle needs four bounds")
-            rect = Rect2D(*patch.rectangle)
             center = np.ascontiguousarray(patch.center, dtype=np.float64)
             trace = np.ascontiguousarray(patch.trace, dtype=np.float64)
-            if center.shape != (2,) or trace.shape != (self._rom_orders[domain],):
+            if center.shape != (2,) or trace.shape != (order,):
                 raise ValueError("ROM patch center or trace has invalid dimensions")
             ga = (
                 None
@@ -549,19 +551,30 @@ class Model(OwnedHandle):
                 gb is not None and gb.shape != trace.shape
             ):
                 raise ValueError("ROM patch tangent-gradient shape must match trace")
-            self._call(
-                "mhs_model_rom_port_add_patch",
-                domain,
-                identifier.value,
-                ctypes.byref(rect),
+            keepalive.extend((center, trace, ga, gb))
+            native_patches[i] = MhsRomPortPatch(
+                Rect2D(*patch.rectangle),
                 patch.half_resistance,
-                _double_ptr(center),
+                (ctypes.c_double * 2)(*center),
                 _double_ptr(trace),
                 patch.offset,
                 None if ga is None else _double_ptr(ga),
                 None if gb is None else _double_ptr(gb),
-                ctx="add_rom_port_patch",
             )
+
+        surface, _ = _surface_regions([region])
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_rom_port",
+            domain,
+            _text(name),
+            surface,
+            outward_sign,
+            native_patches,
+            len(patches),
+            ctypes.byref(identifier),
+            ctx="add_rom_port",
+        )
         return identifier.value
 
     def add_rom_observation(

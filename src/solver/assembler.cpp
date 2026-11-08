@@ -323,6 +323,7 @@ namespace mhs::solver {
             const auto& condition = model_.rom_boundary_conditions.at(term.condition);
             const auto normal_resistance = facet.half_resistance;
             const auto trace = evaluate_boundary(condition, center, area, normal_resistance, temperature, 1.0, time);
+            // Retain structural zeros when a transient boundary conductance vanishes.
             // q_out = g*(V*z + offset) - load; ROM contribution V^T*q_out.
             const double rhs = trace.load - trace.conductance * facet.offset;
             for (std::size_t i = 0; i < rom.order; ++i) {
@@ -331,7 +332,7 @@ namespace mhs::solver {
                 const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
                 load[row] += facet.trace[i] * rhs;
                 for (std::size_t j = 0; j < rom.order; ++j)
-                    if (facet.trace[j] != 0.0 && trace.conductance != 0.0)
+                    if (facet.trace[j] != 0.0)
                         stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dofs[j]),
                             facet.trace[i] * trace.conductance * facet.trace[j]);
             }

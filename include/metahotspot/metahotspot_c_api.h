@@ -128,6 +128,17 @@ typedef struct {
     mhs_rect2d_t rectangle;
 } mhs_surface_region_t;
 
+/** Physical ROM port patch; all non-NULL map arrays have ROM order entries. */
+typedef struct {
+    mhs_rect2d_t rectangle;
+    double half_resistance;
+    double center[2];
+    const double* trace;
+    double offset;
+    const double* gradient_a;
+    const double* gradient_b;
+} mhs_rom_port_patch_t;
+
 /** Study/run configuration. Populate with mhs_study_default(). */
 typedef struct {
     mhs_study_type_t type;
@@ -248,11 +259,10 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
  * K_i is dense row-major (order,order); f_i has order entries. */
 MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
     double coefficient, const double* stiffness, const double* rhs);
+/** Create a complete ROM port atomically; invalid patches leave the model unchanged. */
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
-    const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
-    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
-    double offset, const double* gradient_a, const double* gradient_b);
+    const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches, size_t patch_count,
+    mhs_index_t* out_id);
 // A ROM output map can satisfy an existing named point probe without a FOM mesh.
 MHS_API mhs_status_t mhs_model_add_rom_observation(
     mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset);

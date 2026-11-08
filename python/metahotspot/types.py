@@ -53,6 +53,18 @@ class MhsSurfaceRegion(ctypes.Structure):
     ]
 
 
+class MhsRomPortPatch(ctypes.Structure):
+    _fields_ = [
+        ("rectangle", Rect2D),
+        ("half_resistance", ctypes.c_double),
+        ("center", ctypes.c_double * 2),
+        ("trace", ctypes.POINTER(ctypes.c_double)),
+        ("offset", ctypes.c_double),
+        ("gradient_a", ctypes.POINTER(ctypes.c_double)),
+        ("gradient_b", ctypes.POINTER(ctypes.c_double)),
+    ]
+
+
 class MhsStudy(ctypes.Structure):
     _fields_ = [
         ("type", ctypes.c_int32),
