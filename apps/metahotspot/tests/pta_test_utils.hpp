@@ -13,7 +13,7 @@ namespace test_pta {
 
     struct Model : mhs::model::FomDomain {
         mhs::solver::FrozenFlow flow;
-        mhs::model::CompiledLibrary library;
+        std::shared_ptr<const mhs::model::CompiledLibrary> library;
         mhs::model::MeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
@@ -26,7 +26,7 @@ namespace test_pta {
         auto compiled = mhs::compiler::build_model(d);
         static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
         m.library = std::move(compiled.library);
-        m.flow = mhs::solver::initialize_frozen_flow(m, m.library->material_table, m.library->fluid_conditions,
+        m.flow = mhs::solver::initialize_frozen_flow(m,
             mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
         m.sampling_grid = mesh;
@@ -40,5 +40,5 @@ namespace test_pta {
     inline Model build_model(const mhs::app::pta::Definition& d) { return build_model(mhs::app::pta::normalize(d)); }
     inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
-    { return mhs::app::postprocess::interpolate_cell_to_node(m, m.library, m.sampling_grid, t, time); }
+    { return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time); }
 }
