@@ -50,19 +50,6 @@ namespace mhs::compiler {
             return index;
         }
 
-        mhs::core::Vector<TaggedSurfaceRegion> compile_thermal_boundaries(
-            const mhs::core::Vector<mhs::model::ThermalBoundarySpec>& boundaries,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
-        {
-            mhs::core::Vector<TaggedSurfaceRegion> compiled;
-            for (const auto& boundary : boundaries) {
-                const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
-                for (const auto& region : boundary.regions)
-                    compiled.push_back({region, condition});
-            }
-            return compiled;
-        }
-
     } // namespace
 
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
@@ -157,7 +144,8 @@ namespace mhs::compiler {
             // Exterior faces and ports are projected together after all
             // component meshes have been compiled.
             auto& conditions = model.boundary_conditions;
-            compile_thermal_boundaries(component.thermal_boundaries, conditions, symbols);
+            for (const auto& boundary : component.thermal_boundaries)
+                compile_thermal_boundary(boundary.condition, conditions, symbols);
             compile_thermal_boundary(domain.default_thermal_boundary, conditions, symbols);
 
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
