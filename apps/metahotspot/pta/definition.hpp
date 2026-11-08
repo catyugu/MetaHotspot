@@ -59,7 +59,7 @@ namespace mhs::app::pta {
         Definition()
         {
             auto& component = model.components.emplace_back();
-            component.library = model.library;
+            component.library = std::make_shared<mhs::model::LibraryDefinition>();
         }
         LengthUnit length_unit = LengthUnit::Meter;
         mhs::core::Vector<LayerSpec> layers;
