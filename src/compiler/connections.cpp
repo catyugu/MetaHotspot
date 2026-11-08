@@ -56,6 +56,7 @@ namespace mhs::compiler {
         for (std::size_t d = 0; d < nfom; ++d) {
             const auto& domain = definition.domains[d];
             used[d].resize(domain.ports.size(), false);
+            ports[d].resize(domain.ports.size());
             std::set<std::string> names;
             for (std::size_t p = 0; p < domain.ports.size(); ++p) {
                 const auto& port = domain.ports[p];
@@ -113,6 +114,7 @@ namespace mhs::compiler {
             const auto d = nfom + r;
             const auto& rom = compiled.rom_domains[r];
             used[d].resize(rom.ports.size(), false);
+            ports[d].resize(rom.ports.size());
             std::set<std::string> names;
             for (std::size_t p = 0; p < rom.ports.size(); ++p) {
                 const auto& port = rom.ports[p];
