@@ -20,8 +20,8 @@ namespace mhs::compiler {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
+        mhs::model::BoundaryCondition compile_thermal_boundary(
+            const mhs::model::ThermalBoundary& condition, const mhs::expression::SymbolTable& symbols)
         {
             using namespace mhs::core;
             using namespace mhs::model;
@@ -45,9 +45,7 @@ namespace mhs::compiler {
                     },
                 },
                 condition);
-            const auto index = static_cast<BoundaryConditionId>(conditions.size());
-            conditions.push_back(std::move(result));
-            return index;
+            return result;
         }
 
     } // namespace
@@ -93,7 +91,7 @@ namespace mhs::compiler {
         for (const auto& source : library.sources)
             compiled_library->heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (const auto& boundary : library.thermal_boundaries)
-            compile_thermal_boundary(boundary, compiled_library->boundary_conditions, symbols);
+            compiled_library->boundary_conditions.push_back(compile_thermal_boundary(boundary, symbols));
         compiled_library->fluid_conditions = library.fluid_boundaries;
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
