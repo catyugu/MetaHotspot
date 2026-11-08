@@ -209,10 +209,8 @@ namespace mhs::compiler {
                 for (const auto& boundary : domain.fluid_boundaries) {
                     if (boundary.condition >= library.fluid_boundaries.size())
                         throw std::out_of_range("fluid boundary ID out of range");
-                    const auto id = model.fluid_assignments.size();
-                    model.fluid_assignments.push_back(boundary.condition);
                     for (const auto& region : boundary.regions)
-                        regions.push_back({region, id});
+                        regions.push_back({region, boundary.condition});
                 }
                 for (const auto& patch : project_exterior_surface_regions(model.discrete, regions))
                     if (fluid.global_to_fluid[patch.cell] != mhs::core::invalid_id)
@@ -238,7 +236,7 @@ namespace mhs::compiler {
                     if (matched == core::invalid_id || fluid.face_conditions[matched] != core::invalid_id)
                         throw std::invalid_argument(
                             "staggered Stokes requires each fluid boundary to cover exactly one whole face");
-                    fluid.face_conditions[matched] = static_cast<core::EntityIndex>(patch.condition);
+                    fluid.face_conditions[matched] = patch.condition;
                 }
                 core::Vector<bool> pressure_references(fluid.component_count, false);
                 for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
@@ -251,7 +249,7 @@ namespace mhs::compiler {
                     }
                     else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
                         && fluid.face_conditions[id] != core::invalid_id) {
-                        const auto& bc = compiled_library->fluid_conditions[model.fluid_assignments[fluid.face_conditions[id]]];
+                        const auto& bc = compiled_library->fluid_conditions[fluid.face_conditions[id]];
                         if (std::holds_alternative<model::PressureInlet>(bc)
                             || std::holds_alternative<model::PressureOutlet>(bc)) {
                             fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
