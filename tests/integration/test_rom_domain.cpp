@@ -354,29 +354,37 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
 
 TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
 {
-    mhs::model::ModelDefinition d;
+    using namespace mhs::model;
+    ModelDefinition d;
     d.domains.clear();
-    for (int side = 0; side < 2; ++side) {
-        mhs::model::RomDomainDefinition rom;
-        rom.order = 1;
-        rom.K = {1};
-        rom.C = {1};
-        rom.f = {300};
-        mhs::model::RomPort port;
-        port.name = "join";
-        port.region = {mhs::model::Axis::X, 1, {0, 1, 0, 1}};
-        port.outward_sign = side ? -1 : 1;
-        for (int i = 0; i < (side ? 2 : 1); ++i) {
-            mhs::model::RomPortPatch patch;
-            patch.rectangle = {side ? 0.5 * i : 0, side ? 0.5 * (i + 1) : 1, 0, 1};
-            patch.half_resistance = 0.5;
-            patch.center = {0.5, 0.5};
-            patch.trace = {1};
-            port.patches.push_back(patch);
-        }
-        rom.ports.push_back(port);
-        d.rom_domains.push_back(rom);
-    }
+
+    RomDomainDefinition left;
+    left.order = 1;
+    left.K = {1};
+    left.C = {1};
+    left.f = {300};
+    RomPort port;
+    port.name = "join";
+    port.region = {Axis::X, 1, {0, 1, 0, 1}};
+    port.outward_sign = 1;
+    RomPortPatch patch;
+    patch.rectangle = {0, 1, 0, 1};
+    patch.half_resistance = 0.5;
+    patch.center = {0.5, 0.5};
+    patch.trace = {1};
+    port.patches.push_back(patch);
+    left.ports.push_back(port);
+
+    RomDomainDefinition right = left;
+    right.ports[0].outward_sign = -1;
+    right.ports[0].patches.clear();
+    right.ports[0].patches.push_back(patch);
+    right.ports[0].patches[0].rectangle = {0, 0.5, 0, 1};
+    right.ports[0].patches.push_back(patch);
+    right.ports[0].patches[1].rectangle = {0.5, 1, 0, 1};
+
+    d.rom_domains.push_back(std::move(left));
+    d.rom_domains.push_back(std::move(right));
     d.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
