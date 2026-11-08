@@ -19,6 +19,8 @@ namespace mhs::solver {
 
     using StateObserver = std::function<void(double time, std::span<const double> state)>;
 
+    void fill_default_state(const mhs::model::CompiledModel& model, double temperature, std::span<double> state);
+
     /// Generalized callback-driven solver. Standard solve() calls this
     /// internally, transferring ownership of its state buffer.
     mhs::solver::Solution solve_system(const mhs::model::Study& study, const SystemAssembler& assemble,
