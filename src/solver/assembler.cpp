@@ -229,7 +229,7 @@ namespace mhs::solver {
             else
                 workspace.thermal
                     = std::make_unique<ThermalAssembler>(
-                        domain, model, initialize_frozen_flow(domain, model.library.material_table, temperature, time));
+                        domain, model, initialize_frozen_flow(domain, model.library.material_table, model.library.fluid_conditions, temperature, time));
         }
     }
 
