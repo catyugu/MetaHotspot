@@ -280,3 +280,60 @@ TEST(GenericLayout, PartialPortsPreserveExternalBoundarySubdivisions)
         EXPECT_NEAR(remaining, 0.72, 1e-14);
     }
 }
+
+
+TEST(GenericLayout, StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity)
+{
+    using namespace mhs::model;
+    auto d = channel();
+    d.domains[0].flow_mode = FlowMode::Stokes;
+    d.domains[0].fluid_boundaries[0].condition = PressureInlet {1.0, 300};
+    d.domains[0].fluid_boundaries[1].condition = PressureOutlet {0.0, 300};
+    const auto compiled = mhs::compiler::build_model(d);
+    ASSERT_EQ(compiled.layout.fields.size(), 5u);
+    ASSERT_EQ(compiled.layout.fields[1].quantity, FieldQuantity::Pressure);
+    ASSERT_EQ(compiled.layout.fields[2].support, EntitySupport::Face);
+    ASSERT_EQ(compiled.layout.fields[1].dofs.size(), 2u);
+    const auto solution = mhs::solver::solve(compiled);
+    ASSERT_TRUE(solution.converged);
+    const auto& velocity = compiled.layout.fields[2];
+    ASSERT_EQ(velocity.dofs.size(), 3u);
+    for (const auto dof : velocity.dofs)
+        EXPECT_GT(solution.state[dof], 0);
+    const auto ops = mhs::solver::assemble_thermal(compiled, solution.state, 0.0);
+    for (const auto dof : compiled.layout.fields[1].dofs) {
+        double residual = -ops.f[dof];
+        for (auto p = ops.K.row_ptr()[dof]; p < ops.K.row_ptr()[dof + 1]; ++p)
+            residual += ops.K.values()[p] * solution.state[ops.K.col_idx()[p]];
+        EXPECT_NEAR(residual, 0.0, 1e-9);
+        EXPECT_DOUBLE_EQ(ops.C.coeff(dof, dof), 0);
+    }
+}
+
+TEST(GenericLayout, StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux)
+{
+    using namespace mhs::model;
+    auto d = channel();
+    d.domains[0].flow_mode = FlowMode::Stokes;
+    d.domains[0].fluid_boundaries[0].condition = PressureInlet {1, 300};
+    d.domains[0].fluid_boundaries[1].condition = PressureOutlet {0, 300};
+    const auto cold = mhs::compiler::build_model(d);
+    const auto first = mhs::solver::solve(cold);
+    ASSERT_TRUE(first.converged);
+    d.sources = {"5"};
+    d.domains[0].volumes[0].source = 0;
+    const auto heated = mhs::compiler::build_model(d);
+    const auto second = mhs::solver::solve(heated);
+    ASSERT_TRUE(second.converged);
+    const auto& face = heated.layout.fields[2];
+    ASSERT_EQ(face.dofs.size(), 3u);
+    const double cold_flow = first.state[face.dofs[1]];
+    const double hot_flow = second.state[face.dofs[1]];
+    EXPECT_GT(second.state[heated.layout.fields[0].dofs[0]], first.state[cold.layout.fields[0].dofs[0]]);
+    EXPECT_LT(hot_flow, cold_flow);
+    // Neither nonlinear solve may write its changing material properties
+    // or velocity/pressure state into the immutable compiled model.
+    const auto repeated = mhs::solver::solve(cold);
+    ASSERT_TRUE(repeated.converged);
+    EXPECT_NEAR(repeated.state[face.dofs[1]], cold_flow, 1e-9);
+}
