@@ -13,7 +13,8 @@ namespace {
     using namespace mhs::model;
     constexpr double q = 0.7071067811865475244;
 
-    ComponentDefinition block(std::initializer_list<double> x, bool first, const std::shared_ptr<LibraryDefinition>& library)
+    ComponentDefinition block(
+        std::initializer_list<double> x, bool first, const std::shared_ptr<LibraryDefinition>& library)
     {
         ComponentDefinition component;
         component.library = library;
@@ -21,10 +22,9 @@ namespace {
         d.mesh.x_vertices = x;
         d.mesh.y_vertices = d.mesh.z_vertices = {0.0, 1.0};
         d.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {3, 1, 1}}}}};
-        d.default_thermal_boundary = test_model::append(library->thermal_boundaries,NeumannBoundary {});
-        component.thermal_boundaries.push_back(
-            {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}},
-                test_model::append(library->thermal_boundaries,DirichletBoundary {first ? "300" : "280"})});
+        d.default_thermal_boundary = test_model::append(library->thermal_boundaries, NeumannBoundary {});
+        component.thermal_boundaries.push_back({{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}},
+            test_model::append(library->thermal_boundaries, DirichletBoundary {first ? "300" : "280"})});
         component.ports.push_back({"interface", {Axis::X, 1.0, {0, 1, 0, 1}}});
         return component;
     }
@@ -260,7 +260,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     ThermalBoundarySpec boundary;
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
-    boundary.condition = test_model::append(library->thermal_boundaries,ConvectionBoundary {"100", "300"});
+    boundary.condition = test_model::append(library->thermal_boundaries, ConvectionBoundary {"100", "300"});
 
     d.components.push_back({rom, {port}, {std::move(boundary)}, {}, library});
     const mhs::core::Vector<double> initial {300};
@@ -276,8 +276,8 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     // Reuse the same intrinsic ROM and physical port; only the ordinary
     // exterior boundary condition changes with the surrounding environment.
-    d.component(0).thermal_boundaries[0].condition =
-        test_model::append(library->thermal_boundaries,ConvectionBoundary {"200", "300"});
+    d.component(0).thermal_boundaries[0].condition
+        = test_model::append(library->thermal_boundaries, ConvectionBoundary {"200", "300"});
     const auto second = mhs::compiler::build_model(d);
     const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
     const double second_g = 0.01 / (0.005 + 1.0 / 200.0);

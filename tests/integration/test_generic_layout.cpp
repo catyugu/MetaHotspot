@@ -22,9 +22,9 @@ namespace {
         liquid.dynamic_viscosity = "T/300";
         d.library().materials.push_back({"liquid", liquid});
         d.fom(0).volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {2, 1, 1}}}}};
-        d.fom(0).fluid_boundaries = {
-            {{{Axis::X, 0, {0, 1, 0, 1}}}, test_model::append(d.library().fluid_boundaries,PressureInlet {1, 280})},
-            {{{Axis::X, 2, {0, 1, 0, 1}}}, test_model::append(d.library().fluid_boundaries,PressureOutlet {0})}};
+        d.fom(0).fluid_boundaries
+            = {{{{Axis::X, 0, {0, 1, 0, 1}}}, test_model::append(d.library().fluid_boundaries, PressureInlet {1, 280})},
+                {{{Axis::X, 2, {0, 1, 0, 1}}}, test_model::append(d.library().fluid_boundaries, PressureOutlet {0})}};
         return d;
     }
 }
@@ -55,11 +55,14 @@ TEST(GenericLayout, RuntimeViscosityUsesInitialFieldAndCompiledSnapshotIsReusabl
 TEST(GenericLayout, MissingActualInflowTemperatureFailsAtRuntime)
 {
     auto d = channel();
-    std::get<mhs::model::PressureInlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.front().condition]).temperature.reset();
+    std::get<mhs::model::PressureInlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.front().condition])
+        .temperature.reset();
     const auto compiled = mhs::compiler::build_model(d);
     EXPECT_THROW(mhs::solver::solve(compiled), std::invalid_argument);
-    std::get<mhs::model::PressureInlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.front().condition]).temperature = 280;
-    std::get<mhs::model::PressureOutlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.back().condition]).pressure = 2;
+    std::get<mhs::model::PressureInlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.front().condition])
+        .temperature = 280;
+    std::get<mhs::model::PressureOutlet>(d.library().fluid_boundaries[d.fom(0).fluid_boundaries.back().condition])
+        .pressure = 2;
     const auto reversed = mhs::compiler::build_model(d);
     EXPECT_THROW(mhs::solver::solve(reversed), std::invalid_argument);
 }
@@ -115,7 +118,8 @@ namespace {
                 domain.mesh.z_vertices.push_back(
                     static_cast<double>(side) / 2 + static_cast<double>(i) / static_cast<double>(n));
             domain.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}};
-            domain.default_thermal_boundary = test_model::append(d.library().thermal_boundaries,DirichletBoundary {"300+x+2*y+3*z"});
+            domain.default_thermal_boundary
+                = test_model::append(d.library().thermal_boundaries, DirichletBoundary {"300+x+2*y+3*z"});
             d.component(static_cast<DomainId>(side)).ports = {{"join", {Axis::Z, 0.5, {0, 1, 0, 1}}}};
         }
         d.connections = {{{0, 0}, {1, 0}}};
@@ -188,7 +192,8 @@ TEST(GenericLayout, ConnectionRejectsMissingDuplicateOverlappingAndInvalidPorts)
     d.component(1).ports[0].region.coordinate = 0.6;
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
     d = joined_blocks(4, false);
-    d.component(0).thermal_boundaries = {{{d.component(0).ports[0].region}, test_model::append(d.library().thermal_boundaries,NeumannBoundary {"0"})}};
+    d.component(0).thermal_boundaries = {
+        {{d.component(0).ports[0].region}, test_model::append(d.library().thermal_boundaries, NeumannBoundary {"0"})}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
 
@@ -200,7 +205,8 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
         definition.library().sources = {"-6"};
         for (auto& value : definition.components) {
             auto& domain = std::get<mhs::model::FomDomainDefinition>(value.physics);
-            domain.default_thermal_boundary = test_model::append(definition.library().thermal_boundaries,mhs::model::DirichletBoundary {"300+x*x+y*y+z*z"});
+            domain.default_thermal_boundary = test_model::append(
+                definition.library().thermal_boundaries, mhs::model::DirichletBoundary {"300+x*x+y*y+z*z"});
             domain.volumes.front().source = 0;
         }
         auto compiled = mhs::compiler::build_model(definition);
@@ -259,8 +265,9 @@ TEST(GenericLayout, StaggeredStokesPressureAndVelocitySatisfyConservativeContinu
     using namespace mhs::model;
     auto d = channel();
     d.fom(0).flow_mode = FlowMode::Stokes;
-    d.fom(0).fluid_boundaries[0].condition = test_model::append(d.library().fluid_boundaries,PressureInlet {1.0, 300});
-    d.fom(0).fluid_boundaries[1].condition = test_model::append(d.library().fluid_boundaries,PressureOutlet {0.0, 300});
+    d.fom(0).fluid_boundaries[0].condition = test_model::append(d.library().fluid_boundaries, PressureInlet {1.0, 300});
+    d.fom(0).fluid_boundaries[1].condition
+        = test_model::append(d.library().fluid_boundaries, PressureOutlet {0.0, 300});
     const auto compiled = mhs::compiler::build_model(d);
     ASSERT_EQ(compiled.layout.fields.size(), 3u);
     ASSERT_EQ(compiled.layout.fields[1].quantity, FieldQuantity::Pressure);
@@ -289,8 +296,8 @@ TEST(GenericLayout, StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux)
     using namespace mhs::model;
     auto d = channel();
     d.fom(0).flow_mode = FlowMode::Stokes;
-    d.fom(0).fluid_boundaries[0].condition = test_model::append(d.library().fluid_boundaries,PressureInlet {1, 300});
-    d.fom(0).fluid_boundaries[1].condition = test_model::append(d.library().fluid_boundaries,PressureOutlet {0, 300});
+    d.fom(0).fluid_boundaries[0].condition = test_model::append(d.library().fluid_boundaries, PressureInlet {1, 300});
+    d.fom(0).fluid_boundaries[1].condition = test_model::append(d.library().fluid_boundaries, PressureOutlet {0, 300});
     const auto cold = mhs::compiler::build_model(d);
     const auto first = mhs::solver::solve(cold);
     ASSERT_TRUE(first.converged);
@@ -317,8 +324,10 @@ TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
     using namespace mhs::model;
     auto definition = channel();
     definition.fom(0).flow_mode = FlowMode::Stokes;
-    definition.fom(0).fluid_boundaries[0].condition = test_model::append(definition.library().fluid_boundaries,PressureInlet {1, 300});
-    definition.fom(0).fluid_boundaries[1].condition = test_model::append(definition.library().fluid_boundaries,PressureOutlet {0, 300});
+    definition.fom(0).fluid_boundaries[0].condition
+        = test_model::append(definition.library().fluid_boundaries, PressureInlet {1, 300});
+    definition.fom(0).fluid_boundaries[1].condition
+        = test_model::append(definition.library().fluid_boundaries, PressureOutlet {0, 300});
     auto compiled = mhs::compiler::build_model(definition);
     Study study;
     study.type = StudyType::Transient;
@@ -362,8 +371,10 @@ TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctF
             domain.mesh.z_vertices.push_back(coordinate);
         }
         definition.library().materials[0].value.dynamic_viscosity = "1";
-        domain.fluid_boundaries[0].condition = test_model::append(definition.library().fluid_boundaries,PressureInlet {2, 300});
-        domain.fluid_boundaries[1].condition = test_model::append(definition.library().fluid_boundaries,PressureOutlet {0, 300});
+        domain.fluid_boundaries[0].condition
+            = test_model::append(definition.library().fluid_boundaries, PressureInlet {2, 300});
+        domain.fluid_boundaries[1].condition
+            = test_model::append(definition.library().fluid_boundaries, PressureOutlet {0, 300});
         const auto compiled = mhs::compiler::build_model(definition);
         const auto solved = mhs::solver::solve(compiled);
         ASSERT_TRUE(solved.converged);

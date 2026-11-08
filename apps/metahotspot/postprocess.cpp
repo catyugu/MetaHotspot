@@ -28,8 +28,7 @@ namespace mhs::app::postprocess {
     } // namespace
 
     mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::FomDomain& model,
-        const mhs::model::MeshSpec& grid,
-        std::span<const double> cell_temperature, double time)
+        const mhs::model::MeshSpec& grid, std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");

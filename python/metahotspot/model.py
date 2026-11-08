@@ -143,7 +143,9 @@ def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
 def _add_piecewise(dll, handle, name, points) -> None:
     native = (Point2D * len(points))(*[Point2D(x, y) for x, y in points])
     check(
-        dll.mhs_library_add_function_piecewise(handle, _text(name), native, len(points)),
+        dll.mhs_library_add_function_piecewise(
+            handle, _text(name), native, len(points)
+        ),
         "add_function_piecewise",
     )
 
@@ -178,7 +180,10 @@ class Library(OwnedHandle):
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
         self._call(
-            "mhs_library_add_variable", _text(name), _text(expression), ctx="add_variable"
+            "mhs_library_add_variable",
+            _text(name),
+            _text(expression),
+            ctx="add_variable",
         )
 
     def add_material(
@@ -194,12 +199,17 @@ class Library(OwnedHandle):
         """Register a material and return its ID. Laws use canonical T."""
         text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
         return self._add_id(
-            "mhs_library_add_material", *text_args, _text(dynamic_viscosity), ctx="add_material"
+            "mhs_library_add_material",
+            *text_args,
+            _text(dynamic_viscosity),
+            ctx="add_material",
         )
 
     def add_source(self, expression: str) -> int:
         """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
-        return self._add_id("mhs_library_add_source", _text(expression), ctx="add_source")
+        return self._add_id(
+            "mhs_library_add_source", _text(expression), ctx="add_source"
+        )
 
     # ---- Functions ----
 
@@ -266,8 +276,12 @@ class Library(OwnedHandle):
         native = _thermal_boundary(condition)
         return self._add_id("mhs_library_add_thermal_boundary", ctypes.byref(native))
 
-    def add_fluid_boundary(self, kind: FluidBC, value: float, inlet_temperature: float | None = None) -> int:
-        temperature = None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+    def add_fluid_boundary(
+        self, kind: FluidBC, value: float, inlet_temperature: float | None = None
+    ) -> int:
+        temperature = (
+            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        )
         return self._add_id(
             "mhs_library_add_fluid_boundary",
             int(kind),
@@ -373,9 +387,13 @@ class Model(OwnedHandle):
         self, regions: Sequence[SurfaceRegion], condition: int, *, component: int = 0
     ) -> None:
         native, count = _surface_regions(regions)
-        self._call("mhs_model_add_thermal_boundary", component, native, count, condition)
+        self._call(
+            "mhs_model_add_thermal_boundary", component, native, count, condition
+        )
 
-    def set_default_thermal_boundary(self, condition: int, *, component: int = 0) -> None:
+    def set_default_thermal_boundary(
+        self, condition: int, *, component: int = 0
+    ) -> None:
         self._call("mhs_model_set_default_thermal_boundary", component, condition)
 
     # ---- Probes & fluid boundaries ----

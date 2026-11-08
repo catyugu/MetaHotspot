@@ -50,5 +50,6 @@ namespace mhs::compiler {
 
     // With no fallback tag, uncovered exterior patches are omitted.
     mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<mhs::core::EntityIndex> fallback = std::nullopt);
+        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries,
+        std::optional<mhs::core::EntityIndex> fallback = std::nullopt);
 } // namespace mhs::compiler

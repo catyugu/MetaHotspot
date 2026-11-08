@@ -1,7 +1,7 @@
 #include "compiler/geometry_compiler.hpp"
-#include "library_test_utils.hpp"
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
+#include "library_test_utils.hpp"
 #include "model/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -63,7 +63,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
              mhs::model::ThermalBoundary {mhs::model::NeumannBoundary {"1+0.001*T"}}}) {
         auto d = cube_definition();
         d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
-        d.fom(0).default_thermal_boundary = test_model::append(d.library().thermal_boundaries,condition);
+        d.fom(0).default_thermal_boundary = test_model::append(d.library().thermal_boundaries, condition);
         const auto compiled = mhs::compiler::build_model(d);
         const auto& model = compiled.fom(0);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
@@ -74,13 +74,15 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
             const auto center = mhs::solver::boundary_center(model.discrete.cells[patch.cell], patch);
-            const auto trace = mhs::solver::evaluate_boundary(compiled.library().boundary_conditions[patch.condition], center,
-                ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
+            const auto trace = mhs::solver::evaluate_boundary(compiled.library().boundary_conditions[patch.condition],
+                center, ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
                 (model.discrete.cells[patch.cell].size()[static_cast<std::size_t>(patch.axis)] / 2), state[0], 1.0, 0);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
-            if (std::holds_alternative<mhs::model::Convection>(compiled.library().boundary_conditions[patch.condition])) {
-                const auto& law = std::get<mhs::model::Convection>(compiled.library().boundary_conditions[patch.condition]);
+            if (std::holds_alternative<mhs::model::Convection>(
+                    compiled.library().boundary_conditions[patch.condition])) {
+                const auto& law
+                    = std::get<mhs::model::Convection>(compiled.library().boundary_conditions[patch.condition]);
                 const double h = law.coefficient.eval(ctx);
                 const double ambient = law.ambient_temperature.eval(ctx);
                 EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);
@@ -89,7 +91,8 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
                 EXPECT_NEAR(trace.load, condensed * ambient, 1e-9);
             }
             else {
-                const auto& law = std::get<mhs::model::Neumann>(compiled.library().boundary_conditions[patch.condition]);
+                const auto& law
+                    = std::get<mhs::model::Neumann>(compiled.library().boundary_conditions[patch.condition]);
                 // Positive q is inward: the trace conducts q out of the cell.
                 EXPECT_NEAR(conductive_flux, -law.heat_flux.eval(ctx), 1e-4);
                 EXPECT_DOUBLE_EQ(trace.conductance, 0.0);
@@ -114,12 +117,12 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
 {
     auto d = cube_definition();
     mhs::model::ThermalBoundarySpec bc;
-    bc.condition = test_model::append(d.library().thermal_boundaries,mhs::model::NeumannBoundary {"10"});
+    bc.condition = test_model::append(d.library().thermal_boundaries, mhs::model::NeumannBoundary {"10"});
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).fom(0).discrete;
     const auto compiled = mhs::compiler::build_model(d);
-        const auto& model = compiled.fom(0);
+    const auto& model = compiled.fom(0);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
     EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
     EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
@@ -145,7 +148,7 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     second.source = 1;
     d.fom(0).volumes.push_back(second);
     const auto compiled = mhs::compiler::build_model(d);
-        const auto& model = compiled.fom(0);
+    const auto& model = compiled.fom(0);
     const auto ops = mhs::solver::assemble_thermal(compiled, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
@@ -158,11 +161,11 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     auto d = cube_definition();
     d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
     mhs::model::ThermalBoundarySpec bc;
-    bc.condition = test_model::append(d.library().thermal_boundaries,mhs::model::DirichletBoundary {"400"});
+    bc.condition = test_model::append(d.library().thermal_boundaries, mhs::model::DirichletBoundary {"400"});
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
     const auto compiled = mhs::compiler::build_model(d);
-        const auto& model = compiled.fom(0);
+    const auto& model = compiled.fom(0);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(compiled, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);

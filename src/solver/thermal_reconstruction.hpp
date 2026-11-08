@@ -40,8 +40,7 @@ namespace mhs::solver {
 
     // Temperature at an arbitrary point: the boundary trace on an external
     // patch, otherwise a Green-Gauss gradient extrapolation from the center.
-    double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature,
-        double time, mhs::model::CellId cell, const mhs::model::Vec3& point,
-        std::span<const SurfaceTrace> interfaces = {});
+    double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature, double time,
+        mhs::model::CellId cell, const mhs::model::Vec3& point, std::span<const SurfaceTrace> interfaces = {});
 
 } // namespace mhs::solver

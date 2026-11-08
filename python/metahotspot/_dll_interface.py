@@ -156,14 +156,26 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsLibrary), Text, F64, F64, F64],
     ),
-    ("mhs_library_add_function_piecewise", I32, [P(MhsLibrary), Text, P(Point2D), Size]),
+    (
+        "mhs_library_add_function_piecewise",
+        I32,
+        [P(MhsLibrary), Text, P(Point2D), Size],
+    ),
     (
         "mhs_library_add_function_periodic_piecewise_constant",
         I32,
         [P(MhsLibrary), Text, P(F64), Size, F64],
     ),
-    ("mhs_library_add_thermal_boundary", I32, [P(MhsLibrary), P(MhsThermalBoundary), P(ctypes.c_uint32)]),
-    ("mhs_library_add_fluid_boundary", I32, [P(MhsLibrary), I32, F64, P(F64), P(ctypes.c_uint32)]),
+    (
+        "mhs_library_add_thermal_boundary",
+        I32,
+        [P(MhsLibrary), P(MhsThermalBoundary), P(ctypes.c_uint32)],
+    ),
+    (
+        "mhs_library_add_fluid_boundary",
+        I32,
+        [P(MhsLibrary), I32, F64, P(F64), P(ctypes.c_uint32)],
+    ),
     (
         "mhs_model_add_fluid_boundary",
         I32,

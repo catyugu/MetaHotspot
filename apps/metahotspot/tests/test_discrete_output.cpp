@@ -90,8 +90,8 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
-        d.component(0).thermal_boundaries = {
-            {{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, test_pta::append(d.library().thermal_boundaries,conditions[kind])}};
+        d.component(0).thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}},
+            test_pta::append(d.library().thermal_boundaries, conditions[kind])}};
         const auto model = test_pta::build_model(d);
         // All other faces use the implicit adiabatic fallback.
         ASSERT_EQ(model.library->boundary_conditions.size(), 1u);
@@ -108,7 +108,8 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const auto& ops = assembler.assemble(state, time);
                 // The cell is a unit cube with unit conductivity, so the
                 // condensed patch coefficients follow from the trace alone.
-                const auto condensed = mhs::solver::evaluate_boundary(model.library->boundary_conditions[term.condition],
+                const auto condensed = mhs::solver::evaluate_boundary(
+                    model.library->boundary_conditions[term.condition],
                     mhs::solver::boundary_center(model.discrete.cells[term.cell], term),
                     ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2])),
                     (model.discrete.cells[term.cell].size()[static_cast<std::size_t>(term.axis)] / 2), T, 1.0, time);

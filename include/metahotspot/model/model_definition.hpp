@@ -4,8 +4,8 @@
 #include "model/types.hpp"
 #include <array>
 #include <cstdint>
-#include <optional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -163,7 +163,6 @@ namespace mhs::model {
         mhs::core::Vector<Expression> sources;
         mhs::core::Vector<ThermalBoundary> thermal_boundaries;
         mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
-
     };
 
     struct PortReference {

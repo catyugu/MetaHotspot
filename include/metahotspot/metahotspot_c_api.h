@@ -335,8 +335,8 @@ typedef struct {
 
 MHS_API mhs_status_t mhs_library_add_thermal_boundary(
     mhs_library_t* library, const mhs_thermal_bc_t* condition, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
 MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
     mhs_model_t* m, mhs_index_t component, mhs_index_t condition);
 
@@ -363,8 +363,8 @@ MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
 /* Same region layout as thermal boundaries. inlet_temperature also supplies
  * pressure-outlet backflow temperature. NULL is allowed only when the boundary
  * does not admit fluid during the solve. value is Pa or kg/s. */
-MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_fluid_bc_t kind,
-    double value, const double* inlet_temperature, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(
+    mhs_library_t* library, mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
     const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition);
 

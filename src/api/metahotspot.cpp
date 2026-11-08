@@ -133,8 +133,7 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
     return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
-static mhs::core::Vector<mhs::model::SurfaceRegion> _surface_regions(
-    const mhs_surface_region_t* regions, size_t count)
+static mhs::core::Vector<mhs::model::SurfaceRegion> _surface_regions(const mhs_surface_region_t* regions, size_t count)
 {
     if (!count)
         throw std::invalid_argument("surface regions must not be empty");
@@ -543,8 +542,8 @@ MHS_API mhs_status_t mhs_library_add_thermal_boundary(
     CHECK_NULL(out_id);
     MHS_TRY({ *out_id = _append(library->def->thermal_boundaries, to_thermal_boundary(*condition)); });
 }
-MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
@@ -571,8 +570,7 @@ MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
 /* ------------------------------------------------------------------ */
 
 namespace {
-    template <class Spec>
-    mhs_status_t add_function(mhs_library_t* library, const char* name, Spec spec)
+    template <class Spec> mhs_status_t add_function(mhs_library_t* library, const char* name, Spec spec)
     {
         CHECK_NULL(library);
         CHECK_NULL(name);
@@ -588,21 +586,15 @@ MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* library, const
 
 MHS_API mhs_status_t mhs_library_add_function_gauss(
     mhs_library_t* library, const char* name, double amplitude, double tau, double center)
-{
-    return add_function(library, name, mhs::model::GaussFunctionSpec {amplitude, tau, center});
-}
+{ return add_function(library, name, mhs::model::GaussFunctionSpec {amplitude, tau, center}); }
 
 MHS_API mhs_status_t mhs_library_add_function_sine(
     mhs_library_t* library, const char* name, double amplitude, double angular_frequency, double phase)
-{
-    return add_function(library, name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase});
-}
+{ return add_function(library, name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}); }
 
 MHS_API mhs_status_t mhs_library_add_function_double_exponential(
     mhs_library_t* library, const char* name, double amplitude, double alpha, double beta)
-{
-    return add_function(library, name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta});
-}
+{ return add_function(library, name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}); }
 
 MHS_API mhs_status_t mhs_library_add_function_piecewise(
     mhs_library_t* library, const char* name, const mhs_point2d_t* points, size_t count)
@@ -628,8 +620,8 @@ MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_fluid_bc_t kind, double value,
-    const double* inlet_temperature, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(
+    mhs_library_t* library, mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id)
 {
     CHECK_NULL(library);
     CHECK_NULL(out_id);
@@ -655,8 +647,8 @@ MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
@@ -774,9 +766,7 @@ MHS_API mhs_status_t mhs_compiled_default_state(
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
-    MHS_TRY({
-        mhs::solver::fill_default_state(c->model, initial_temperature, {state, state_count});
-    });
+    MHS_TRY({ mhs::solver::fill_default_state(c->model, initial_temperature, {state, state_count}); });
 }
 
 namespace {
@@ -902,8 +892,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             const auto& model = c->model.fom(field.domain);
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
-                const auto density
-                    = c->model.library().heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
+                const auto density = c->model.library().heat_source_table[term.source].eval(
+                    {p[0], p[1], p[2], state[field.dof(term.cell)], time});
                 powers[offset++] = term.weight * density;
             }
         }

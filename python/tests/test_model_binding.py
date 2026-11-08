@@ -49,18 +49,28 @@ def test_model_native_calls_compile_and_assemble():
 def test_model_native_boundary_and_function_calls():
     model = _model()
     region = [SurfaceRegion(Axis.Z, 0.0, 0.0, 0.001, 0.0, 0.001)]
-    model.add_thermal_boundary(region, model.library.add_thermal_boundary(Dirichlet("300")))
+    model.add_thermal_boundary(
+        region, model.library.add_thermal_boundary(Dirichlet("300"))
+    )
     model.add_thermal_boundary(region, model.library.add_thermal_boundary(Neumann("0")))
-    model.add_thermal_boundary(region, model.library.add_thermal_boundary(Convection("10", "300")))
-    model.set_default_thermal_boundary(model.library.add_thermal_boundary(Dirichlet("300")))
+    model.add_thermal_boundary(
+        region, model.library.add_thermal_boundary(Convection("10", "300"))
+    )
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(Dirichlet("300"))
+    )
     model.set_default_thermal_boundary(model.library.add_thermal_boundary(Neumann("0")))
-    model.set_default_thermal_boundary(model.library.add_thermal_boundary(Convection("10", "300")))
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(Convection("10", "300"))
+    )
     model.library.add_variable("x0", "0")
     model.library.add_function_expr("constant", "1")
     model.library.add_function_gauss("gauss", 1.0, 1.0, 0.0)
     model.library.add_function_sine("sine", 1.0, 1.0, 0.0)
     model.library.add_function_double_exponential("double_exp", 1.0, 1.0, 2.0)
-    model.library.add_function_piecewise("piecewise", np.array([[0.0, 0.0], [1.0, 1.0]]))
+    model.library.add_function_piecewise(
+        "piecewise", np.array([[0.0, 0.0], [1.0, 1.0]])
+    )
     model.library.add_function_periodic_piecewise_constant(
         "periodic", np.array([0.0, 0.001]), 1.0
     )

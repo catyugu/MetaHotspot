@@ -10,8 +10,8 @@
 #include <type_traits>
 
 namespace mhs::solver {
-    mhs::solver::FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model,
-        std::span<const double> temperature, double time)
+    mhs::solver::FrozenFlow initialize_frozen_flow(
+        const mhs::model::FomDomain& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;

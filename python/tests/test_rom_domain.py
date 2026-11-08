@@ -46,7 +46,10 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     volume = model.add_volume(solid)
     model.add_box(volume, (0, 0, 0), (1, 1, 1))
     model.set_default_thermal_boundary(model.library.add_thermal_boundary(Neumann("0")))
-    model.add_thermal_boundary([SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)], model.library.add_thermal_boundary(Dirichlet("300")))
+    model.add_thermal_boundary(
+        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)],
+        model.library.add_thermal_boundary(Dirichlet("300")),
+    )
     a = model.add_port(0, "fom-join", SurfaceRegion(Axis.X, 1, 0, 1, 0, 1))
     rom = model.add_reduced_component(
         np.array([[2.0]]),
@@ -69,7 +72,9 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model.set_cartesian_mesh([3, 4], [0, 1], [0, 1], component=extra)
     extra_volume = model.add_volume(solid, component=extra)
     model.add_box(extra_volume, (3, 0, 0), (4, 1, 1), component=extra)
-    model.set_default_thermal_boundary(model.library.add_thermal_boundary(Dirichlet("300")), component=extra)
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(Dirichlet("300")), component=extra
+    )
 
     compiled = model.compile()
     assert compiled.info.component_count == 3

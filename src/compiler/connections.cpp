@@ -103,12 +103,10 @@ namespace mhs::compiler {
             if (!fom)
                 continue;
             const auto fallback = definition.fom(static_cast<DomainId>(d)).default_thermal_boundary;
-            const auto projection = project_exterior_surface_regions(fom->discrete, regions,
-                fallback);
+            const auto projection = project_exterior_surface_regions(fom->discrete, regions, fallback);
             for (const auto& patch : projection) {
                 if (patch.tag == core::invalid_id || patch.tag < port_offset) {
-                    fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                        patch.tag, patch.bounds});
+                    fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign, patch.tag, patch.bounds});
                     continue;
                 }
                 const auto p = patch.tag - port_offset;

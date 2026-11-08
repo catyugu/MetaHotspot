@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
-#include "library_test_utils.hpp"
 #include "core/vector.hpp"
+#include "library_test_utils.hpp"
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -28,7 +28,8 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     mat.specific_heat = "385";
     io.library().materials.push_back({"copper", mat});
 
-    io.fom(0).default_thermal_boundary = test_model::append(io.library().thermal_boundaries,mhs::model::NeumannBoundary {});
+    io.fom(0).default_thermal_boundary
+        = test_model::append(io.library().thermal_boundaries, mhs::model::NeumannBoundary {});
 
     return io;
 }
@@ -72,7 +73,8 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
     io.library().materials.push_back({"mat", mat});
 
-    io.fom(0).default_thermal_boundary = test_model::append(io.library().thermal_boundaries,mhs::model::NeumannBoundary {});
+    io.fom(0).default_thermal_boundary
+        = test_model::append(io.library().thermal_boundaries, mhs::model::NeumannBoundary {});
 
     auto model = mhs::compiler::build_model(io);
 

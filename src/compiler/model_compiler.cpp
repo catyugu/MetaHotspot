@@ -127,7 +127,8 @@ namespace mhs::compiler {
                         throw std::invalid_argument("reduced observation has invalid dimension or values");
                 }
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.components.push_back({std::move(rom), component.ports, component.observations, compiled_library});
+                compiled.components.push_back(
+                    {std::move(rom), component.ports, component.observations, compiled_library});
                 continue;
             }
 
@@ -136,7 +137,8 @@ namespace mhs::compiler {
                 if (!obs.weights.empty() || obs.offset != 0.0 || obs.point.name.empty() || !std::isfinite(obs.point.x)
                     || !std::isfinite(obs.point.y) || !std::isfinite(obs.point.z))
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
-            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations, compiled_library});
+            compiled.components.push_back(
+                {model::FomDomain {}, component.ports, component.observations, compiled_library});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.library = compiled_library;
             model.flow_mode = domain.flow_mode;
@@ -317,8 +319,8 @@ namespace mhs::compiler {
                 for (std::size_t j = 0; j < ports[p].patches.size(); ++j) {
                     const auto original = surface_bounds(ports[p].patches[j].rectangle);
                     for (const auto& tagged : partition_surface_bounds(original, per_port[p]))
-                        compiled.rom_boundary_terms.push_back({domain_id, static_cast<model::PortId>(p), j,
-                            tagged.tag, tagged.bounds});
+                        compiled.rom_boundary_terms.push_back(
+                            {domain_id, static_cast<model::PortId>(p), j, tagged.tag, tagged.bounds});
                 }
         }
         return compiled;

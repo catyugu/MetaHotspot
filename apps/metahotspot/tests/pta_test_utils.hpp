@@ -30,8 +30,7 @@ namespace test_pta {
         Model m;
         auto compiled = mhs::compiler::build_model(d);
         static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
-        m.flow = mhs::solver::initialize_frozen_flow(m,
-            mhs::core::Vector<double>(m.discrete.cells.size(), 300));
+        m.flow = mhs::solver::initialize_frozen_flow(m, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
         m.sampling_grid = mesh;
         m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};

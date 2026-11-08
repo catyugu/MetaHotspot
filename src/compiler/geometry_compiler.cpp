@@ -13,14 +13,12 @@ namespace mhs::compiler {
     SurfaceBounds surface_bounds(const mhs::model::RegionRect& r) { return {r.a_min, r.a_max, r.b_min, r.b_max}; }
     SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& r) { return surface_bounds(r.rectangle); }
     SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b)
-    {
-        return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])};
-    }
+    { return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])}; }
     bool positive_bounds(const SurfaceBounds& r) { return r[1] > r[0] && r[3] > r[2]; }
     double surface_area(const SurfaceBounds& r) { return (r[1] - r[0]) * (r[3] - r[2]); }
 
-    mhs::core::Vector<TaggedBounds> partition_surface_bounds(
-        const SurfaceBounds& outer, std::span<const TaggedBounds> regions, std::optional<mhs::core::EntityIndex> fallback)
+    mhs::core::Vector<TaggedBounds> partition_surface_bounds(const SurfaceBounds& outer,
+        std::span<const TaggedBounds> regions, std::optional<mhs::core::EntityIndex> fallback)
     {
         mhs::core::Vector<double> a {outer[0], outer[1]}, b {outer[2], outer[3]};
         for (const auto& tagged : regions) {
