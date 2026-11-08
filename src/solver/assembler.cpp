@@ -300,7 +300,7 @@ namespace mhs::solver {
                     center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
                     ++tangent;
                 }
-            const auto& condition = model_.library().boundary_conditions.at(term.condition);
+            const auto& condition = model_.components[term.domain].library->boundary_conditions.at(term.condition);
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
             core::Vector<WeightedDof> weights;
