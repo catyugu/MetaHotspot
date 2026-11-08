@@ -82,7 +82,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     auto model = mhs::compiler::build_model(io);
 
-    mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
@@ -141,7 +141,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     auto model = mhs::compiler::build_model(io);
 
-    mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
