@@ -18,16 +18,16 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"0"};
+    io.library->sources = {"0"};
     io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     mat.density = "8920";
     mat.specific_heat = "385";
-    io.materials.push_back({"copper", mat});
+    io.library->materials.push_back({"copper", mat});
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library->add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     return io;
 }
@@ -64,14 +64,14 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"0"};
+    io.library->sources = {"0"};
     io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
-    io.materials.push_back({"mat", mat});
+    io.library->materials.push_back({"mat", mat});
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library->add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     auto model = mhs::compiler::build_model(io);
 
