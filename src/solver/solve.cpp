@@ -337,10 +337,11 @@ namespace mhs::solver {
                     for (std::size_t j = 0; j < slot.reduced->weights.size(); ++j)
                         temperature += slot.reduced->weights[j] * accepted_state[field.dof(j)];
                 }
-                else
-                    temperature = sample_point(compiled.fom(slot.domain),
-                        accepted_state.subspan(field.offset, field.count), t, slot.cell, slot.point,
-                        traces[slot.domain]);
+                else {
+                    const auto cells = accepted_state.subspan(field.offset, field.count);
+                    const auto& interfaces = traces[slot.domain];
+                    temperature = sample_point(compiled.fom(slot.domain), cells, t, slot.cell, slot.point, interfaces);
+                }
                 slot.trace.values.push_back(temperature);
             }
         };

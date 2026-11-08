@@ -49,21 +49,21 @@ namespace mhs::solver {
             core::Vector<core::Triplet<double>> stiffness, capacity;
             core::Vector<double> load(rom.order);
             for (std::size_t i = 0; i < rom.order; ++i) {
+                const auto row = static_cast<core::SparseIndex>(i);
                 double rhs = rom.f[i];
                 for (const auto& term : rom.affine_terms)
                     rhs += term.value * term.f[i];
                 load[i] = rhs;
                 for (std::size_t j = 0; j < rom.order; ++j) {
+                    const auto col = static_cast<core::SparseIndex>(j);
                     const auto index = i * rom.order + j;
                     double k = rom.K[index];
                     for (const auto& term : rom.affine_terms)
                         k += term.value * term.K[index];
                     if (k != 0.0)
-                        stiffness.emplace_back(static_cast<core::SparseIndex>(i),
-                            static_cast<core::SparseIndex>(j), k);
+                        stiffness.emplace_back(row, col, k);
                     if (rom.C[index] != 0.0)
-                        capacity.emplace_back(static_cast<core::SparseIndex>(i),
-                            static_cast<core::SparseIndex>(j), rom.C[index]);
+                        capacity.emplace_back(row, col, rom.C[index]);
                 }
             }
             return {core::build_csr(rom.order, rom.order, std::move(stiffness)),
