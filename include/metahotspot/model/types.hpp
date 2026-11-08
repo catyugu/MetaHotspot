@@ -11,8 +11,6 @@ namespace mhs::model {
     using FaceId = core::EntityIndex;
     using MaterialId = core::EntityIndex;
     using SourceId = core::EntityIndex;
-    using BoundaryConditionId = core::EntityIndex; // numeric index into a compiled law table
-
     using ThermalBoundaryId = core::EntityIndex;
     using FluidBoundaryId = core::EntityIndex;
     using FluidCellId = core::EntityIndex;
