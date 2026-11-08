@@ -17,14 +17,6 @@ namespace mhs::compiler {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        inline void copy_scalar_parameters(mhs::model::Model& model, const mhs::model::ModelDefinition& definition)
-        {
-            model.study_type = definition.settings.study_type;
-            model.initial_temperature = definition.settings.initial_temperature;
-            model.transient_duration = definition.settings.transient_duration;
-            model.transient_output_interval = definition.settings.transient_output_interval;
-        }
-
         mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
@@ -55,23 +47,15 @@ namespace mhs::compiler {
             return index;
         }
 
-        mhs::core::Vector<CompiledBoundaryRegion> compile_boundary_patches(
+        mhs::core::Vector<SurfaceRegion> compile_boundary_patches(
             const mhs::core::Vector<mhs::model::BoundaryPatch>& boundaries,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
-            mhs::core::Vector<CompiledBoundaryRegion> compiled;
+            mhs::core::Vector<SurfaceRegion> compiled;
             for (const auto& boundary : boundaries) {
                 const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
                 for (const auto& region : boundary.regions) {
-                    CompiledBoundaryRegion item;
-                    item.axis = region.axis;
-                    item.coordinate = region.coordinate;
-                    item.condition_index = condition;
-                    item.rectangles.reserve(region.rectangles.size());
-                    for (const auto& rectangle : region.rectangles) {
-                        item.rectangles.push_back({rectangle.a_min, rectangle.a_max, rectangle.b_min, rectangle.b_max});
-                    }
-                    compiled.push_back(std::move(item));
+                    compiled.push_back({region, condition});
                 }
             }
             return compiled;
@@ -82,11 +66,9 @@ namespace mhs::compiler {
     mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::Model model;
-        copy_scalar_parameters(model, definition);
+        model.initial_temperature = definition.settings.initial_temperature;
 
         auto symbols = build_symbol_table(definition);
-        for (const auto& p : definition.observation_points)
-            model.observation_points.push_back({p.name, p.x, p.y, p.z});
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());
@@ -136,7 +118,9 @@ namespace mhs::compiler {
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
-        model.boundary_faces = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
+        for (const auto& patch : project_surface_regions(model.discrete, compiled_boundaries, default_boundary))
+            model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
         // Fluid coupling.
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),

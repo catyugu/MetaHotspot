@@ -11,7 +11,7 @@ namespace mhs::compiler {
 
     namespace {
 
-        bool point_in_region(const CompiledBoundaryRegion& region, double a, double b)
+        bool point_in_region(const mhs::model::FaceRegion& region, double a, double b)
         {
             return std::any_of(region.rectangles.begin(), region.rectangles.end(), [&](const auto& rectangle) {
                 return a >= rectangle.a_min - EPS && a <= rectangle.a_max + EPS && b >= rectangle.b_min - EPS
@@ -91,12 +91,12 @@ namespace mhs::compiler {
         }
     }
 
-    mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries, mhs::model::BoundaryConditionId fallback)
+    mhs::core::Vector<SurfacePatch> project_surface_regions(
+        const mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<SurfaceRegion>& boundaries, std::size_t fallback)
     {
         using namespace mhs::core;
         using namespace mhs::model;
-        mhs::core::Vector<BoundaryFace> faces;
+        mhs::core::Vector<SurfacePatch> faces;
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
             if (!face.exterior())
@@ -106,7 +106,8 @@ namespace mhs::compiler {
             const std::int8_t sign = face.minus != invalid_id ? 1 : -1;
             const double coordinate = sign > 0 ? mesh.cells[cell].max[axis] : mesh.cells[cell].min[axis];
             mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
-            for (const auto& region : boundaries) {
+            for (const auto& input : boundaries) {
+                const auto& region = input.geometry;
                 if (region.axis != face.axis || std::abs(region.coordinate - coordinate) >= EPS)
                     continue;
                 for (const auto& r : region.rectangles) {
@@ -130,16 +131,16 @@ namespace mhs::compiler {
                     const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
                     const double center_a = (bounds[0] + bounds[1]) / 2;
                     const double center_b = (bounds[2] + bounds[3]) / 2;
-                    BoundaryConditionId condition = fallback;
+                    std::size_t tag = fallback;
                     for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (it->axis == face.axis && std::abs(it->coordinate - coordinate) < EPS
-                            && point_in_region(*it, center_a, center_b)) {
-                            condition = it->condition_index;
+                        if (it->geometry.axis == face.axis && std::abs(it->geometry.coordinate - coordinate) < EPS
+                            && point_in_region(it->geometry, center_a, center_b)) {
+                            tag = it->tag;
                             break;
                         }
                     }
-                    if (condition != mhs::core::invalid_id)
-                        faces.push_back({cell, face.axis, sign, condition, bounds});
+                    if (tag != mhs::core::invalid_id)
+                        faces.push_back({cell, face.axis, sign, tag, bounds});
                 }
         }
         std::stable_sort(faces.begin(), faces.end(), [](const auto& a, const auto& b) { return a.cell < b.cell; });

@@ -81,7 +81,14 @@ def test_solution_views_derive_from_one_native_snapshot():
     model.set_default_neumann("0")
     model.add_probe("center", 0.0005, 0.0005, 0.0005)
 
-    solution = model.compile().solve(state=np.array([300, -1], dtype=np.float32)[::2])
+    compiled = model.compile()
+    # The compiled handle owns its study and probes independently of the builder.
+    model.set_settings(study=Study.STEADY, initial_temperature_K=350.0)
+    model.add_probe("later", 0.0005, 0.0005, 0.0005)
+    del model
+    assert compiled.info.study_type == Study.TRANSIENT
+    assert compiled.info.initial_temperature == pytest.approx(300.0)
+    solution = compiled.solve(state=np.array([300, -1], dtype=np.float32)[::2])
 
     assert solution.converged
     assert solution.state.size == 1

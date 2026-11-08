@@ -10,12 +10,18 @@ namespace mhs::compiler {
 
     void build_cell_face_incidence(mhs::model::DiscreteMesh& mesh);
 
-    /// Compiled boundary region referencing a condition in the caller's table
-    struct CompiledBoundaryRegion {
-        mhs::model::Axis axis = mhs::model::Axis::Z;
-        double coordinate = 0.0;
-        mhs::core::Vector<mhs::model::RegionRect> rectangles;
-        mhs::model::BoundaryConditionId condition_index = mhs::core::invalid_id;
+    // Non-owning geometry input; tag is interpreted only by the caller.
+    struct SurfaceRegion {
+        const mhs::model::FaceRegion& geometry;
+        std::size_t tag;
+    };
+
+    struct SurfacePatch {
+        mhs::model::CellId cell;
+        mhs::model::Axis axis;
+        std::int8_t sign;
+        std::size_t tag;
+        std::array<double, 4> bounds;
     };
 
     // ──────────────────────────────────────────────────────────────
@@ -29,7 +35,6 @@ namespace mhs::compiler {
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
     // An invalid fallback omits uncovered surface patches.
-    mhs::core::Vector<mhs::model::BoundaryFace> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<CompiledBoundaryRegion>& boundaries,
-        mhs::model::BoundaryConditionId fallback = mhs::core::invalid_id);
+    mhs::core::Vector<SurfacePatch> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
+        const mhs::core::Vector<SurfaceRegion>& boundaries, std::size_t fallback = mhs::core::invalid_id);
 } // namespace mhs::compiler

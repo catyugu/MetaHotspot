@@ -70,7 +70,7 @@ namespace mhs::solver {
             return result;
         }
 
-        mhs::solver::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
+        mhs::solver::Solution solve_transient(const StudyOptions& study, const SystemAssembler& assemble,
             mhs::core::Vector<double> state, mhs::linear::SolverPtr& solver, const SolveOptions& opts,
             const NonLinearConfig& nl_config, const StateObserver& observe)
         {
@@ -170,7 +170,7 @@ namespace mhs::solver {
 
     } // namespace
 
-    Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
+    Solution solve_system(const StudyOptions& study, const SystemAssembler& assemble, core::Vector<double> state,
         const SolveOptions& opts, const StateObserver& observe)
     {
         if (!assemble)
@@ -184,8 +184,8 @@ namespace mhs::solver {
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
-    mhs::solver::Solution solve(
-        const mhs::model::Model& model, std::span<const double> initial_state, const SolveOptions& options)
+    mhs::solver::Solution solve(const mhs::model::Model& model, const StudyOptions& study,
+        std::span<const ProbeSpec> probes, std::span<const double> initial_state, const SolveOptions& options)
     {
         const auto cell_count = model.discrete.cells.size();
         if (cell_count == 0) {
@@ -204,13 +204,12 @@ namespace mhs::solver {
             state.assign(initial_state.begin(), initial_state.end());
         }
 
-        Study study {model.study_type, model.transient_duration, model.transient_output_interval};
         ThermalAssembler assembler(model);
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
             return assembler.assemble(current, time);
         };
 
-        ProbeRecorder probe_recorder(model);
+        ProbeRecorder probe_recorder(model, probes);
         StateObserver observe
             = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
 

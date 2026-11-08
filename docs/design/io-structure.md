@@ -25,3 +25,9 @@ PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转�
 ## C ABI / Python
 
 使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。XML 读写、层/块/矩形和 VTU 导出接口已删除；调用方通过编译网格与 raw Solution 接口取得几何和场数据。
+
+## 编译和求解边界
+
+`ModelDefinition::settings` 和 `observation_points` 保留建模输入；`build_model` 仅编译物理模型。C++ 调用方将 settings 中的 study_type、transient_duration、transient_output_interval 组成 `solver::StudyOptions`，并将 `observation_points`（`solver::ProbeSpec` 数组）传给 `solve`。这些请求不进入 `model::Model`。
+
+compiler 内部的 `SurfaceRegion` 引用原始 `FaceRegion` 并携带调用方 tag；`project_surface_regions` 返回纯几何 `SurfacePatch`。后添加区域覆盖前面的区域，未命中部分使用 fallback，invalid fallback 省略未覆盖部分。热边界在投影后转换为 `BoundaryFace`；流体直接使用 tag 查找自己的边界表。输入引用只在编译期间有效，不保存在运行期模型中。

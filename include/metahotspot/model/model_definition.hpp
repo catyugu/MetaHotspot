@@ -2,6 +2,7 @@
 
 #include "core/vector.hpp"
 #include "model/types.hpp"
+#include "solver/study.hpp"
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -135,13 +136,6 @@ namespace mhs::model {
         FunctionSpec value;
     };
 
-    struct ObservationPointSpec {
-        std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-    };
-
     // Omitted incoming temperature uses the model's initial temperature.
     struct PressureInlet {
         double pressure = 0.0;
@@ -170,7 +164,7 @@ namespace mhs::model {
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<BoundaryPatch> boundaries;
         ThermalBoundary default_boundary = NeumannBoundary {};
-        mhs::core::Vector<ObservationPointSpec> observation_points;
+        mhs::core::Vector<mhs::solver::ProbeSpec> observation_points;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 

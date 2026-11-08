@@ -8,7 +8,7 @@
 
 TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 {
-    mhs::solver::Study study {mhs::model::StudyType::Transient, 0.5, 0.25};
+    mhs::solver::StudyOptions study {mhs::model::StudyType::Transient, 0.5, 0.25};
     mhs::solver::SolveOptions options;
     options.linear_solver = mhs::solver::SolveOptions::LinearSolverType::Amg;
     options.time_tolerance = 1e-7;
@@ -36,7 +36,7 @@ TEST(SolutionHistoryTest, RecordsEveryOutputStateInRowMajorOrder)
 
 TEST(SolutionHistoryTest, SteadySolveProducesOneSnapshot)
 {
-    mhs::solver::Study study {mhs::model::StudyType::Steady, 0.0, 1.0};
+    mhs::solver::StudyOptions study {mhs::model::StudyType::Steady, 0.0, 1.0};
     mhs::solver::SolveOptions options;
     options.linear_solver = mhs::solver::SolveOptions::LinearSolverType::Amg;
 

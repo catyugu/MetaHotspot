@@ -6,7 +6,6 @@
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
-#include <string>
 #include <variant>
 
 namespace mhs::model {
@@ -16,7 +15,7 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
         Axis axis = Axis::X;
         std::int8_t sign = 1;
-        BoundaryConditionId condition = mhs::core::invalid_id; // index in the condition table used for this projection
+        BoundaryConditionId condition = mhs::core::invalid_id; // index in boundary_conditions
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
@@ -52,13 +51,6 @@ namespace mhs::model {
         Vec3 point;
     };
 
-    struct ProbePoint {
-        std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-    };
-
     struct Model {
         DiscreteMesh discrete;
 
@@ -71,11 +63,6 @@ namespace mhs::model {
         FluidModel fluid;
 
         double initial_temperature = 300.0;
-        StudyType study_type = StudyType::Steady;
-        double transient_duration = 0.0;
-        double transient_output_interval = 1.0;
-
-        mhs::core::Vector<ProbePoint> observation_points;
     };
 
 } // namespace mhs::model

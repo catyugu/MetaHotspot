@@ -2,6 +2,7 @@
 
 #include "model/model.hpp"
 #include "solver/solution.hpp"
+#include "solver/study.hpp"
 #include <optional>
 #include <span>
 
@@ -28,18 +29,20 @@ namespace mhs::solver {
         double nonlinear_relative_tolerance = 1e-6;
         double nonlinear_absolute_tolerance = 1e-12;
 
-        // Adaptive BDF1/2 time integration. Output sampling is set by the model.
+        // Adaptive BDF1/2 time integration. StudyOptions controls output sampling.
         double time_tolerance = 1e-4;
         std::optional<double> max_time_step; // seconds; unset selects automatic
     };
 
     /// Standard thermal solve entry point.
     ///
+    /// Study and probes are independent of the compiled physics model.
     /// Creates uniform initial state when initial_state is empty.
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(
-        const mhs::model::Model& model, std::span<const double> initial_state = {}, const SolveOptions& options = {});
+    mhs::solver::Solution solve(const mhs::model::Model& model, const StudyOptions& study,
+        std::span<const ProbeSpec> probes = {}, std::span<const double> initial_state = {},
+        const SolveOptions& options = {});
 
 } // namespace mhs::solver

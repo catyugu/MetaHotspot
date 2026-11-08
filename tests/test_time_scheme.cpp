@@ -15,7 +15,7 @@ namespace {
 
     TEST(TimeScheme, AdaptiveDecayAndInterpolatedOutput)
     {
-        const mhs::solver::Study study {mhs::model::StudyType::Transient, 1.05, 0.2};
+        const mhs::solver::StudyOptions study {mhs::model::StudyType::Transient, 1.05, 0.2};
         const mhs::core::Vector<double> initial {1.0};
         mhs::solver::SolveOptions options;
         options.time_tolerance = 1e-7;
@@ -37,7 +37,7 @@ namespace {
 
     TEST(TimeScheme, MaximumStepAndNoOutputGrid)
     {
-        const mhs::solver::Study study {mhs::model::StudyType::Transient, 0.5, 0.0};
+        const mhs::solver::StudyOptions study {mhs::model::StudyType::Transient, 0.5, 0.0};
         const mhs::core::Vector<double> initial {1.0};
         mhs::solver::SolveOptions options;
         options.max_time_step = 0.02;
@@ -49,7 +49,7 @@ namespace {
 
     TEST(TimeScheme, RejectsInvalidTimeControls)
     {
-        const mhs::solver::Study study {mhs::model::StudyType::Transient, 1.0, 0.1};
+        const mhs::solver::StudyOptions study {mhs::model::StudyType::Transient, 1.0, 0.1};
         const mhs::core::Vector<double> initial {1.0};
         mhs::solver::SolveOptions options;
         options.time_tolerance = 0.0;

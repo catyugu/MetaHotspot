@@ -73,6 +73,8 @@ struct mhs_model_t {
 
 struct mhs_compiled_t {
     mhs::model::Model model;
+    mhs::solver::StudyOptions study;
+    mhs::core::Vector<mhs::solver::ProbeSpec> probes;
 };
 
 struct mhs_operators_t {
@@ -517,6 +519,9 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
         c->model = mhs::compiler::build_model(m->def);
+        c->study = {
+            m->def.settings.study_type, m->def.settings.transient_duration, m->def.settings.transient_output_interval};
+        c->probes = m->def.observation_points;
         *out = c.release();
     });
 }
@@ -535,7 +540,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     out->face_count = c->model.discrete.faces.size();
     out->projection_count = c->model.source_terms.size();
     out->source_count = c->model.heat_source_table.size();
-    out->study_type = _from_core_study(c->model.study_type);
+    out->study_type = _from_core_study(c->study.type);
     out->initial_temperature = c->model.initial_temperature;
 
     mhs_detail_clear_last_error();
@@ -795,7 +800,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* s
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, init_span, so);
+        auto sol = mhs::solver::solve(c->model, c->study, c->probes, init_span, so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {

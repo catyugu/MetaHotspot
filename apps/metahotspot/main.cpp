@@ -47,7 +47,9 @@ int main(int argc, char* argv[])
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::solver::solve(model);
+        const mhs::solver::StudyOptions study {definition.settings.study_type, definition.settings.transient_duration,
+            definition.settings.transient_output_interval};
+        auto result = mhs::solver::solve(model, study, definition.observation_points);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;
