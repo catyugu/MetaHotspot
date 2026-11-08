@@ -38,9 +38,9 @@ TEST(GenericLayout, RuntimeViscosityUsesInitialFieldAndCompiledSnapshotIsReusabl
     EXPECT_EQ(domain.fluid.fluid_to_global.size(), 2u);
     // Source definition mutation cannot affect compiled viscosity expressions.
     d.library->materials[0].value.dynamic_viscosity = "0";
-    const auto cold = mhs::solver::initialize_frozen_flow(domain, compiled.library.material_table, compiled.library.fluid_conditions, mhs::core::Vector<double> {300, 300});
-    const auto hot = mhs::solver::initialize_frozen_flow(domain, compiled.library.material_table, compiled.library.fluid_conditions, mhs::core::Vector<double> {600, 600});
-    const auto again = mhs::solver::initialize_frozen_flow(domain, compiled.library.material_table, compiled.library.fluid_conditions, mhs::core::Vector<double> {300, 300});
+    const auto cold = mhs::solver::initialize_frozen_flow(domain, compiled.library->material_table, compiled.library->fluid_conditions, mhs::core::Vector<double> {300, 300});
+    const auto hot = mhs::solver::initialize_frozen_flow(domain, compiled.library->material_table, compiled.library->fluid_conditions, mhs::core::Vector<double> {600, 600});
+    const auto again = mhs::solver::initialize_frozen_flow(domain, compiled.library->material_table, compiled.library->fluid_conditions, mhs::core::Vector<double> {300, 300});
     for (std::size_t i = 0; i < cold.face_mass_flow.size(); ++i) {
         EXPECT_NEAR(hot.face_mass_flow[i] * 2, cold.face_mass_flow[i], 1e-12);
         EXPECT_DOUBLE_EQ(again.face_mass_flow[i], cold.face_mass_flow[i]);
@@ -69,7 +69,7 @@ TEST(GenericLayout, NonuniformInitialDensityPreservesFrozenMassBalance)
     d.library->materials[0].value.density = "T/300";
     const auto compiled = mhs::compiler::build_model(d);
     const auto& domain = compiled.fom(0);
-    const auto flow = mhs::solver::initialize_frozen_flow(domain, compiled.library.material_table, compiled.library.fluid_conditions, mhs::core::Vector<double> {300, 600});
+    const auto flow = mhs::solver::initialize_frozen_flow(domain, compiled.library->material_table, compiled.library->fluid_conditions, mhs::core::Vector<double> {300, 600});
     mhs::core::Vector<double> balance(2, 0);
     for (std::size_t i = 0; i < domain.discrete.faces.size(); ++i) {
         const auto& face = domain.discrete.faces[i];
