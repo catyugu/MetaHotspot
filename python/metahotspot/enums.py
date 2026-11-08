@@ -36,6 +36,17 @@ class SolverType(enum.IntEnum):
     SPARSE_LU = 2
 
 
+class ComponentKind(enum.IntEnum):
+    CARTESIAN = 0
+    REDUCED = 1
+
+
+class ThermalBoundaryKind(enum.IntEnum):
+    DIRICHLET = 0
+    NEUMANN = 1
+    CONVECTION = 2
+
+
 class FlowMode(enum.IntEnum):
     FROZEN = 0
     STOKES = 1

@@ -65,6 +65,14 @@ class MhsRomPortPatch(ctypes.Structure):
     ]
 
 
+class MhsThermalBoundary(ctypes.Structure):
+    _fields_ = [
+        ("kind", ctypes.c_int32),
+        ("expression", ctypes.c_char_p),
+        ("ambient_temperature", ctypes.c_char_p),
+    ]
+
+
 class MhsStudy(ctypes.Structure):
     _fields_ = [
         ("type", ctypes.c_int32),
@@ -81,7 +89,7 @@ class MhsCompiledInfo(ctypes.Structure):
         ("projection_count", ctypes.c_size_t),
         ("source_count", ctypes.c_size_t),
         ("state_count", ctypes.c_size_t),
-        ("domain_count", ctypes.c_size_t),
+        ("component_count", ctypes.c_size_t),
         ("field_count", ctypes.c_size_t),
     ]
 
@@ -151,8 +159,9 @@ class _SolveOptionsCStruct(ctypes.Structure):
     ]
 
 
-class MhsDomainInfo(ctypes.Structure):
+class MhsComponentInfo(ctypes.Structure):
     _fields_ = [
+        ("kind", ctypes.c_int32),
         ("cell_count", ctypes.c_size_t),
         ("face_count", ctypes.c_size_t),
         ("field_count", ctypes.c_size_t),
@@ -161,7 +170,7 @@ class MhsDomainInfo(ctypes.Structure):
 
 class MhsFieldInfo(ctypes.Structure):
     _fields_ = [
-        ("domain", ctypes.c_uint32),
+        ("component", ctypes.c_uint32),
         ("quantity", ctypes.c_int32),
         ("support", ctypes.c_int32),
         ("dof_offset", ctypes.c_uint32),
