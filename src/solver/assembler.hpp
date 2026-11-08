@@ -5,6 +5,8 @@
 #include "solver/stokes_flow.hpp"
 
 #include "model/model.hpp"
+#include <memory>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -36,10 +38,13 @@ namespace mhs::solver {
 
     private:
         const model::CompiledModel& model_;
-        core::Vector<std::unique_ptr<ThermalAssembler>> domains_;
-        core::Vector<std::unique_ptr<StokesAssembler>> stokes_;
+        struct ComponentAssembly {
+            std::unique_ptr<ThermalAssembler> thermal;
+            std::unique_ptr<StokesAssembler> stokes;
+            std::optional<Operators> reduced;
+        };
+        core::Vector<ComponentAssembly> components_;
         Operators operators_;
-        bool identity_ = false;
     };
 
     Operators assemble_thermal(const mhs::model::CompiledModel& compiled, std::span<const double> state, double time);

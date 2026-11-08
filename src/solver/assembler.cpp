@@ -43,6 +43,32 @@ namespace mhs::solver {
                         static_cast<core::SparseIndex>(col.dof), conductance * row.weight * col.weight);
             }
         }
+        // Reduced local operators are constant for the compiled component.
+        Operators build_reduced_operators(const model::RomDomain& rom)
+        {
+            core::Vector<core::Triplet<double>> stiffness, capacity;
+            core::Vector<double> load(rom.order);
+            for (std::size_t i = 0; i < rom.order; ++i) {
+                double rhs = rom.f[i];
+                for (const auto& term : rom.affine_terms)
+                    rhs += term.value * term.f[i];
+                load[i] = rhs;
+                for (std::size_t j = 0; j < rom.order; ++j) {
+                    const auto index = i * rom.order + j;
+                    double k = rom.K[index];
+                    for (const auto& term : rom.affine_terms)
+                        k += term.value * term.K[index];
+                    if (k != 0.0)
+                        stiffness.emplace_back(static_cast<core::SparseIndex>(i),
+                            static_cast<core::SparseIndex>(j), k);
+                    if (rom.C[index] != 0.0)
+                        capacity.emplace_back(static_cast<core::SparseIndex>(i),
+                            static_cast<core::SparseIndex>(j), rom.C[index]);
+                }
+            }
+            return {core::build_csr(rom.order, rom.order, std::move(stiffness)),
+                core::build_csr(rom.order, rom.order, std::move(capacity)), std::move(load)};
+        }
         core::CSRMatrix<double> build_capacity(std::size_t n)
         {
             core::Vector<core::SparseIndex> ptr(n + 1), columns(n);
@@ -184,23 +210,25 @@ namespace mhs::solver {
     {
         if (initial.size() != model.layout.state_count || model.components.empty())
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
-        domains_.resize(model.components.size());
-        stokes_.resize(model.components.size());
+        components_.resize(model.components.size());
         for (const auto& field : model.layout.fields) {
+            auto& workspace = components_[field.domain];
+            if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
+                workspace.reduced = build_reduced_operators(model.rom(field.domain));
+                continue;
+            }
             if (field.quantity != model::FieldQuantity::Temperature)
                 continue;
-            const auto d = field.domain;
-            const auto& domain = model.fom(d);
+            const auto& domain = model.fom(field.domain);
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_[d] = std::make_unique<StokesAssembler>(domain, model.layout, d);
-                domains_[d] = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
+                workspace.stokes = std::make_unique<StokesAssembler>(domain, model.layout, field.domain);
+                workspace.thermal = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
             }
             else
-                domains_[d]
+                workspace.thermal
                     = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
         }
-        identity_ = model.components.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
     }
 
     const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
@@ -208,54 +236,44 @@ namespace mhs::solver {
         if (state.size() != model_.layout.state_count)
             throw std::invalid_argument("thermal assembly state size mismatch");
 
-        if (identity_) {
-            const auto& field = model_.layout.fields.front();
-            return domains_[0]->assemble(state.subspan(field.offset, field.count), time);
+        // When the global layout is exactly one uncoupled local block, reuse
+        // its CSR directly. This applies to Cartesian and reduced components
+        // alike, avoiding a triplet rebuild on every nonlinear iteration.
+        if (model_.components.size() == 1 && model_.connections.empty() && model_.rom_boundary_terms.empty()
+            && model_.layout.fields.size() == 1) {
+            auto& block = components_.front();
+            if (block.reduced)
+                return *block.reduced;
+            if (block.thermal && !block.stokes)
+                return block.thermal->assemble(state, time);
         }
 
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
         for (const auto& field : model_.layout.fields) {
-            if (field.quantity != model::FieldQuantity::Temperature)
+            auto& block = components_[field.domain];
+            const Operators* ops = nullptr;
+            if (field.quantity == model::FieldQuantity::Temperature) {
+                const auto temperature = state.subspan(field.offset, field.count);
+                if (block.stokes)
+                    block.thermal->set_flow(
+                        block.stokes->assemble(state, temperature, time, stiffness, capacity, load));
+                ops = &block.thermal->assemble(temperature, time);
+            }
+            else if (field.quantity == model::FieldQuantity::ReducedCoordinate)
+                ops = &*block.reduced;
+            else
                 continue;
-            const auto d = field.domain;
-            const auto temperature = state.subspan(field.offset, field.count);
-            if (stokes_[d])
-                domains_[d]->set_flow(stokes_[d]->assemble(state, temperature, time, stiffness, capacity, load));
-            const auto& ops = domains_[d]->assemble(temperature, time);
             auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
                 for (std::size_t row = 0; row < matrix.rows(); ++row)
                     for (auto j = matrix.row_ptr()[row]; j < matrix.row_ptr()[row + 1]; ++j)
                         entries.emplace_back(static_cast<core::SparseIndex>(field.dof(row)),
                             static_cast<core::SparseIndex>(field.dof(matrix.col_idx()[j])), matrix.values()[j]);
             };
-            append(ops.K, stiffness);
-            append(ops.C, capacity);
-            for (std::size_t c = 0; c < ops.f.size(); ++c)
-                load[field.dof(c)] += ops.f[c];
-        }
-
-        for (const auto& field : model_.layout.fields) {
-            if (field.quantity != model::FieldQuantity::ReducedCoordinate)
-                continue;
-            const auto& rom = model_.rom(field.domain);
-            for (std::size_t i = 0; i < rom.order; ++i) {
-                const auto row = static_cast<core::SparseIndex>(field.dof(i));
-                double rhs = rom.f[i];
-                for (const auto& term : rom.affine_terms)
-                    rhs += term.value * term.f[i];
-                load[row] += rhs;
-                for (std::size_t j = 0; j < rom.order; ++j) {
-                    const auto col = static_cast<core::SparseIndex>(field.dof(j));
-                    double stiffness_value = rom.K[i * rom.order + j];
-                    for (const auto& term : rom.affine_terms)
-                        stiffness_value += term.value * term.K[i * rom.order + j];
-                    if (stiffness_value != 0.0)
-                        stiffness.emplace_back(row, col, stiffness_value);
-                    if (rom.C[i * rom.order + j] != 0.0)
-                        capacity.emplace_back(row, col, rom.C[i * rom.order + j]);
-                }
-            }
+            append(ops->K, stiffness);
+            append(ops->C, capacity);
+            for (std::size_t c = 0; c < ops->f.size(); ++c)
+                load[field.dof(c)] += ops->f[c];
         }
 
         // An exposed ROM patch is a one-sided thermal connection. Reuse the
