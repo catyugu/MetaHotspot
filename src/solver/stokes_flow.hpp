@@ -35,8 +35,6 @@ namespace mhs::solver {
         };
 
         const model::FomDomain& domain_;
-        const core::Vector<model::MaterialProps>& materials_;
-        const model::CompiledLibrary& compiled_library_;
         core::Vector<model::DofId> pressure_dof_, face_dof_;
         core::Vector<Node> nodes_;
         core::Vector<Link> links_;
