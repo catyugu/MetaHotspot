@@ -4,8 +4,9 @@
 /*
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
- * Four independently owned opaque handles:
- *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
+ * Five independently owned opaque handles:
+ *   mhs_library_t   — shared attribute definitions (materials, sources, BCs, functions)
+ *   mhs_model_t     — mutable geometry and component construction
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
  *   mhs_operators_t — owned K/C/f snapshot
@@ -65,6 +66,7 @@ typedef uint32_t mhs_index_t;
 typedef int32_t mhs_sparse_index_t;
 #define MHS_INVALID_INDEX UINT32_MAX
 
+typedef struct mhs_library_t mhs_library_t;
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
@@ -245,7 +247,10 @@ MHS_API const char* mhs_last_error(void);
 /*  Component construction                                             */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
+/** Models share library definitions; compiled snapshots are independent. */
+MHS_API mhs_status_t mhs_library_create(mhs_library_t** out);
+MHS_API void mhs_library_destroy(mhs_library_t* library);
+MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 /** Model starts empty; component IDs follow creation order. */
 MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index_t* out_id);
@@ -294,19 +299,19 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t co
 /** Select frozen-flux transport or coupled staggered Stokes/energy physics. */
 MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t component, mhs_flow_mode_t mode);
 
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
+MHS_API mhs_status_t mhs_library_add_variable(mhs_library_t* library, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
 /** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
-MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* library, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
 /** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
-MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* library, const char* expression, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_volume(
     mhs_model_t* m, mhs_index_t component, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t component, mhs_index_t volume,
@@ -328,26 +333,28 @@ typedef struct {
     const char* ambient_temperature;
 } mhs_thermal_bc_t;
 
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(
+    mhs_library_t* library, const mhs_thermal_bc_t* condition, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t count, const mhs_thermal_bc_t* condition);
+    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
 MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
-    mhs_model_t* m, mhs_index_t component, const mhs_thermal_bc_t* condition);
+    mhs_model_t* m, mhs_index_t component, mhs_index_t condition);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression);
-MHS_API mhs_status_t mhs_model_add_function_gauss(
-    mhs_model_t* m, const char* name, double amplitude, double tau, double center);
-MHS_API mhs_status_t mhs_model_add_function_sine(
-    mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase);
-MHS_API mhs_status_t mhs_model_add_function_double_exponential(
-    mhs_model_t* m, const char* name, double amplitude, double alpha, double beta);
-MHS_API mhs_status_t mhs_model_add_function_piecewise(
-    mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count);
-MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
-    mhs_model_t* m, const char* name, const double* values, size_t count, double period);
+MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* library, const char* name, const char* expression);
+MHS_API mhs_status_t mhs_library_add_function_gauss(
+    mhs_library_t* library, const char* name, double amplitude, double tau, double center);
+MHS_API mhs_status_t mhs_library_add_function_sine(
+    mhs_library_t* library, const char* name, double amplitude, double angular_frequency, double phase);
+MHS_API mhs_status_t mhs_library_add_function_double_exponential(
+    mhs_library_t* library, const char* name, double amplitude, double alpha, double beta);
+MHS_API mhs_status_t mhs_library_add_function_piecewise(
+    mhs_library_t* library, const char* name, const mhs_point2d_t* points, size_t count);
+MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
+    mhs_library_t* library, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
@@ -356,9 +363,10 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /* Same region layout as thermal boundaries. inlet_temperature also supplies
  * pressure-outlet backflow temperature. NULL is allowed only when the boundary
  * does not admit fluid during the solve. value is Pa or kg/s. */
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_fluid_bc_t kind,
+    double value, const double* inlet_temperature, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
-    const double* inlet_temperature);
+    const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
