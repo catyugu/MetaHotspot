@@ -3,6 +3,8 @@
 #include "expression/expression.hpp"
 #include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
+#include "model/model_definition.hpp"
+#include "model/state_layout.hpp"
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
@@ -26,6 +28,7 @@ namespace mhs::model {
         mhs::expression::CompiledExpression kz;
         mhs::expression::CompiledExpression rho;
         mhs::expression::CompiledExpression c;
+        std::optional<mhs::expression::CompiledExpression> dynamic_viscosity;
     };
 
     struct Dirichlet {
@@ -52,14 +55,7 @@ namespace mhs::model {
         Vec3 point;
     };
 
-    struct PointProbe {
-        std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
-    };
-
-    struct Model {
+    struct FomDomain {
         DiscreteMesh discrete;
 
         mhs::core::Vector<MaterialId> cell_material;
@@ -68,10 +64,16 @@ namespace mhs::model {
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
-        FluidModel fluid;
+        FluidTopology fluid;
+        mhs::core::Vector<FluidBoundaryCondition> fluid_conditions;
+        mhs::core::Vector<FluidBoundaryPatch> fluid_boundaries;
+    };
 
-        double reference_temperature = 300.0;
-
+    // Published as a const snapshot by the API; solve workspaces own all flow state.
+    struct CompiledModel {
+        Study study;
+        mhs::core::Vector<FomDomain> domains;
+        StateLayout layout;
         mhs::core::Vector<PointProbe> point_probes;
     };
 

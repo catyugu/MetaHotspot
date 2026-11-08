@@ -2,9 +2,9 @@ name: Build and package
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, refactor/generic_layout]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, refactor/generic_layout]
   workflow_dispatch:
 
 permissions:

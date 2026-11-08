@@ -15,11 +15,13 @@ if TYPE_CHECKING:
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.enums import SolverType
+from metahotspot.enums import EntitySupport, FieldQuantity, SolverType
 from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
     MhsCompiledInfo,
+    MhsDomainInfo,
+    MhsFieldInfo,
     MhsMaterialValues,
     MhsOperators,
     MhsOperatorsInfo,
@@ -93,12 +95,31 @@ class MaterialValues:
 
 
 @dataclass(frozen=True)
+class DomainInfo:
+    cell_count: int
+    face_count: int
+    field_count: int
+
+
+@dataclass(frozen=True)
+class FieldLayout:
+    domain: int
+    quantity: FieldQuantity
+    support: EntitySupport
+    component: int
+    entities: np.ndarray
+    dofs: np.ndarray
+
+
+@dataclass(frozen=True)
 class CompiledInfo:
     cell_count: int
     face_count: int
     projection_count: int
     source_count: int
-    reference_temperature: float
+    state_count: int
+    domain_count: int
+    field_count: int
 
 
 def _double_ptr(array: np.ndarray):
@@ -140,7 +161,9 @@ def _compiled_info(dll, handle) -> CompiledInfo:
         face_count=int(info.face_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
-        reference_temperature=float(info.reference_temperature),
+        state_count=int(info.state_count),
+        domain_count=int(info.domain_count),
+        field_count=int(info.field_count),
     )
 
 
@@ -167,9 +190,11 @@ def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
     return CompiledFields(**arrays)
 
 
-def _eval_materials(dll, handle, state: np.ndarray, time: float) -> MaterialValues:
+def _eval_materials(
+    dll, handle, state: np.ndarray, time: float, cell_count: int
+) -> MaterialValues:
     values = {
-        name: np.empty(state.size, dtype=np.float64)
+        name: np.empty(cell_count, dtype=np.float64)
         for name in (
             "conductivity_x",
             "conductivity_y",
@@ -183,7 +208,7 @@ def _eval_materials(dll, handle, state: np.ndarray, time: float) -> MaterialValu
             name: values[name].ctypes.data_as(ctypes.POINTER(ctypes.c_double))
             for name in values
         },
-        count=state.size,
+        count=cell_count,
     )
     check(
         dll.mhs_compiled_eval_materials(
@@ -265,6 +290,57 @@ class Compiled(OwnedHandle):
         return self.info.cell_count
 
     @cached_property
+    def domains(self) -> tuple[DomainInfo, ...]:
+        result = []
+        for i in range(self.info.domain_count):
+            value = MhsDomainInfo()
+            check(
+                self._dll.mhs_compiled_get_domain_info(
+                    self._handle, i, ctypes.byref(value)
+                ),
+                "domain_info",
+            )
+            result.append(
+                DomainInfo(value.cell_count, value.face_count, value.field_count)
+            )
+        return tuple(result)
+
+    @cached_property
+    def field_layouts(self) -> tuple[FieldLayout, ...]:
+        result = []
+        for i in range(self.info.field_count):
+            value = MhsFieldInfo()
+            check(
+                self._dll.mhs_compiled_get_field_info(
+                    self._handle, i, ctypes.byref(value)
+                ),
+                "field_info",
+            )
+            entities = np.empty(value.dof_count, dtype=np.uint32)
+            dofs = np.empty(value.dof_count, dtype=np.uint32)
+            check(
+                self._dll.mhs_compiled_copy_field_mapping(
+                    self._handle,
+                    i,
+                    entities.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+                    dofs.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+                    value.dof_count,
+                ),
+                "field_mapping",
+            )
+            result.append(
+                FieldLayout(
+                    value.domain,
+                    FieldQuantity(value.quantity),
+                    EntitySupport(value.support),
+                    value.component,
+                    entities,
+                    dofs,
+                )
+            )
+        return tuple(result)
+
+    @cached_property
     def fields(self) -> CompiledFields:
         return _compiled_fields(self._dll, self._handle, self.info)
 
@@ -294,9 +370,12 @@ class Compiled(OwnedHandle):
         result = sp.csc_matrix(
             (
                 values,
-                (fields.projection_cell, fields.projection_source),
+                (
+                    self.field_layouts[0].dofs[fields.projection_cell],
+                    fields.projection_source,
+                ),
             ),
-            shape=(self.info.cell_count, self.info.source_count),
+            shape=(self.info.state_count, self.info.source_count),
         )
 
         result.eliminate_zeros()
@@ -307,10 +386,10 @@ class Compiled(OwnedHandle):
         if state is None:
             state = self.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
-        return _eval_materials(self._dll, self._handle, state, time)
+        return _eval_materials(self._dll, self._handle, state, time, self.cell_count)
 
     def default_state(self, temperature: float = 300.0) -> np.ndarray:
-        return np.full(self.cell_count, temperature, dtype=np.float64)
+        return np.full(self.info.state_count, temperature, dtype=np.float64)
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""

@@ -153,7 +153,6 @@ namespace mhs::app::pta {
         // Temperature settings
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
             study.initial_temperature = parse_double(get_text(init));
-            def.model.reference_temperature = study.initial_temperature;
         }
         else {
             throw std::runtime_error("missing required element <InitialTemperature>");
@@ -469,7 +468,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
-                    def.model.fluid_boundaries.push_back(std::move(fluid_boundary));
+                    def.model.domain.fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
                 boundary.regions = std::move(regions);
@@ -505,7 +504,7 @@ namespace mhs::app::pta {
                     }
                 }
 
-                def.model.thermal_boundaries.push_back(std::move(boundary));
+                def.model.domain.thermal_boundaries.push_back(std::move(boundary));
             }
         }
 
@@ -516,26 +515,26 @@ namespace mhs::app::pta {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.x_vertices.push_back(parse_double(get_text(val)));
+                            def.model.domain.mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.y_vertices.push_back(parse_double(get_text(val)));
+                            def.model.domain.mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.z_vertices.push_back(parse_double(get_text(val)));
+                            def.model.domain.mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                 }
             }
         }
-        if (def.model.mesh.x_vertices.empty() || def.model.mesh.y_vertices.empty()
-            || def.model.mesh.z_vertices.empty()) {
+        if (def.model.domain.mesh.x_vertices.empty() || def.model.domain.mesh.y_vertices.empty()
+            || def.model.domain.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
@@ -551,9 +550,9 @@ namespace mhs::app::pta {
                             vertices.push_back(parse_double(get_text(value)));
                     }
                 };
-                read_vertices("XArray", def.model.mesh.x_vertices);
-                read_vertices("YArray", def.model.mesh.y_vertices);
-                read_vertices("ZArray", def.model.mesh.z_vertices);
+                read_vertices("XArray", def.model.domain.mesh.x_vertices);
+                read_vertices("YArray", def.model.domain.mesh.y_vertices);
+                read_vertices("ZArray", def.model.domain.mesh.z_vertices);
             }
         }
 
@@ -578,7 +577,8 @@ namespace mhs::app::pta {
             }
         }
 
-        def.model.default_thermal_boundary = std::move(default_thermal_boundary);
+        def.model.domain.default_thermal_boundary = std::move(default_thermal_boundary);
+        def.model.study = study;
         return {study, normalize(std::move(def))};
     }
 

@@ -1,5 +1,7 @@
 #include "solver/assembler.hpp"
+#include "core/csr_ops.hpp"
 #include "core/vector.hpp"
+#include "solver/frozen_flow.hpp"
 #include "thermal_reconstruction.hpp"
 #include <numeric>
 #include <stdexcept>
@@ -37,14 +39,14 @@ namespace mhs::solver {
         }
     }
 
-    ThermalAssembler::ThermalAssembler(const model::Model& model)
+    ThermalAssembler::ThermalAssembler(const model::FomDomain& model, FrozenFlow flow)
         : model_(model)
+        , flow_(std::move(flow))
         , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
               build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
         , diagonal_positions_(operators_.K.rows())
         , conductivity_(operators_.K.rows())
-        , density_(model.fluid.fluid_to_global.size())
-        , specific_heat_(density_.size())
+        , specific_heat_(model.fluid.fluid_to_global.size())
     {
         const auto& A = operators_.K;
         const auto columns = A.col_idx();
@@ -81,10 +83,9 @@ namespace mhs::solver {
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
             operators_.C.values()[c] = rho * cp * volume;
-            if (!density_.empty()) {
+            if (!specific_heat_.empty()) {
                 const auto fi = model.fluid.global_to_fluid[c];
                 if (fi != mhs::core::invalid_id) {
-                    density_[fi] = rho;
                     specific_heat_[fi] = cp;
                 }
             }
@@ -118,7 +119,7 @@ namespace mhs::solver {
                 const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
                 const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
                 const double distance = (fi != mhs::core::invalid_id) ? d_plus : d_minus;
-                const double h = model.fluid.interface_heat_transfer_factor[fluid] * kfluid;
+                const double h = flow_.interface_heat_transfer_factor[fluid] * kfluid;
                 resistance = distance / ksolid + 1.0 / h;
             }
             const double g = f.area() / resistance;
@@ -128,7 +129,7 @@ namespace mhs::solver {
             values[diagonal_positions_[j]] += g;
             values[ji] -= g;
             if ((fi != mhs::core::invalid_id) && (fj != mhs::core::invalid_id)) {
-                const double mass = model.fluid.face_volume_flux[id] * 0.5 * (density_[fi] + density_[fj]);
+                const double mass = flow_.face_mass_flow[id];
                 if (mass != 0.0) {
                     const double enthalpy = mass * specific_heat_[(mass > 0 ? fi : fj)];
                     values[mass > 0 ? diagonal_positions_[i] : ij] += enthalpy;
@@ -147,7 +148,7 @@ namespace mhs::solver {
             rhs[row] += trace.load;
             values[diagonal_positions_[row]] += trace.conductance;
         }
-        for (const auto& term : model.fluid.boundary_terms) {
+        for (const auto& term : flow_.boundary_terms) {
             const auto cell = term.cell;
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
@@ -164,9 +165,55 @@ namespace mhs::solver {
         return operators_;
     }
 
-    Operators assemble_thermal(const model::Model& model, std::span<const double> temperature, double time)
+    Operators map_thermal_operators(const Operators& local, const model::FieldLayout& field, std::size_t state_count)
     {
-        ThermalAssembler workspace(model);
+        core::Vector<model::DofId> map(local.f.size(), core::invalid_id);
+        core::Vector<bool> seen(state_count, false);
+        if (field.entities.size() != field.dofs.size())
+            throw std::invalid_argument("invalid temperature field mapping");
+        for (std::size_t i = 0; i < field.dofs.size(); ++i) {
+            if (field.entities[i] >= map.size() || field.dofs[i] >= state_count
+                || map[field.entities[i]] != core::invalid_id || seen[field.dofs[i]])
+                throw std::invalid_argument("invalid temperature field mapping");
+            map[field.entities[i]] = field.dofs[i];
+            seen[field.dofs[i]] = true;
+        }
+        if (std::find(map.begin(), map.end(), core::invalid_id) != map.end())
+            throw std::invalid_argument("temperature field does not cover domain cells");
+        auto transform = [&](const core::CSRMatrix<double>& matrix) {
+            core::Vector<core::Triplet<double>> entries;
+            entries.reserve(matrix.nnz());
+            for (std::size_t i = 0; i < matrix.rows(); ++i)
+                for (auto j = matrix.row_ptr()[i]; j < matrix.row_ptr()[i + 1]; ++j)
+                    entries.emplace_back(static_cast<core::SparseIndex>(map[i]),
+                        static_cast<core::SparseIndex>(map[matrix.col_idx()[j]]), matrix.values()[j]);
+            return core::build_csr(state_count, state_count, std::move(entries));
+        };
+        Operators result {transform(local.K), transform(local.C), core::Vector<double>(state_count, 0.0)};
+        for (std::size_t i = 0; i < local.f.size(); ++i)
+            result.f[map[i]] = local.f[i];
+        return result;
+    }
+
+    Operators assemble_thermal(const model::CompiledModel& compiled, std::span<const double> state, double time)
+    {
+        if (compiled.domains.size() != 1 || state.size() != compiled.layout.state_count)
+            throw std::invalid_argument("thermal assembly requires one FOM and a complete state");
+        const auto& field = compiled.layout.field(compiled.layout.find(0, model::FieldQuantity::Temperature));
+        core::Vector<double> local(compiled.domains.front().discrete.cells.size());
+        if (field.entities.size() != field.dofs.size())
+            throw std::invalid_argument("invalid temperature field mapping");
+        for (std::size_t i = 0; i < field.dofs.size(); ++i) {
+            if (field.dofs[i] >= state.size())
+                throw std::invalid_argument("temperature DOF outside state");
+            local.at(field.entities[i]) = state[field.dofs[i]];
+        }
+        return map_thermal_operators(assemble_thermal(compiled.domains.front(), local, time), field, state.size());
+    }
+
+    Operators assemble_thermal(const model::FomDomain& model, std::span<const double> temperature, double time)
+    {
+        ThermalAssembler workspace(model, initialize_frozen_flow(model, temperature, time));
         workspace.assemble(temperature, time);
         return std::move(workspace).take_operators();
     }

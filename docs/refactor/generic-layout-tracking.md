@@ -65,7 +65,7 @@
 ### 2.6 模型级 `reference_temperature` 的删除与迁移
 
 - **最终数据模型：** `ModelDefinition`、编译后 `Model` / `FomDomain` 均不再拥有 `reference_temperature`。`Study.initial_temperature` 和显式初始 Field 状态负责运行初始化；不借此恢复编译时统一物性评价温度。
-- **现有依赖：** `src/compiler/model_compiler.cpp` 当前以参考温度求取一次 `dynamic_viscosity`；`src/compiler/fluid_preprocessor.cpp` 又使用该值评价密度以及填充缺省入口温度。改造后，编译过程保留流体物性表达式与边界定义。冻结流场模式在求解初始化时，按实际初始温度场求取物性并形成一次流场；完全耦合模式按当前温度与流动状态更新。
+- **现有依赖：** 重构前 `src/compiler/model_compiler.cpp` 以参考温度求取一次 `dynamic_viscosity`；旧 `src/compiler/fluid_preprocessor.cpp` 又使用该值评价密度以及填充缺省入口温度。改造后，编译过程保留流体物性表达式与边界定义。冻结流场模式在求解初始化时，按实际初始温度场求取物性并形成一次流场；完全耦合模式按当前温度与流动状态更新。
 - **边界条件：** 流体进入计算域所需的入口温度、压力边界逆流时的回流温度必须具有明确物理来源；如果实际出现逆流但缺少温度条件，应给出清晰诊断，不使用未声明的 `300 K` 默认值。`Study.initial_temperature` 也不应偷偷作为边界回流温度。外部 Robin 环境温度属于独立边界数据，不受此次删除影响。
 - **公开接口：** 删除 `mhs_model_set_reference_temperature()`、`mhs_compiled_info_t.reference_temperature`、`Model.set_reference_temperature()` 和 `CompiledInfo.reference_temperature`；不保留兼容别名。迁移应覆盖 C ABI、Python 和依赖这些字段的调用方。
 - **实施顺序：** 首先在 FOM 所有权收敛时清理静态数据依赖；字段和公开接口的最终删除必须与流体预处理改为运行初始化相协调，保持现有冻结流场回归可用。最迟在流动求解/公开契约收尾阶段完成。
@@ -172,7 +172,7 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 
 ### 7.1 `tests/` 必须区分单元测试与集成测试
 
-本轮重构应将目前 `tests/*.cpp` 与单个 `mhs_tests` 目标的混合组织方式迁移为**目录独立、CMake 目标独立、CTest 可筛选**的两类测试，避免通过文件名或测试名约定代替真实的构建隔离。
+PR1 将原 `tests/*.cpp` 与单个 `mhs_tests` 目标的混合组织方式迁移为**目录独立、CMake 目标独立、CTest 可筛选**的两类测试，避免通过文件名或测试名约定代替真实的构建隔离。
 
 预期布局：
 
@@ -207,15 +207,15 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 - [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过。
 - [ ] 交错流体与双向热流耦合支持落地，GL-03 / GL-08 验收通过。
 - [ ] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
-- [ ] `tests/` 已迁移为 `unit/` 和 `integration/` 两个目录、独立 CMake 测试目标及 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 开关；CTest 标签和按类运行可用，关闭任一类不会编译/注册该类测试。
+- [x] `tests/` 已迁移为 `unit/` 和 `integration/` 两个目录、独立 CMake 测试目标及 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 开关；CTest 标签和按类运行可用，关闭任一类不会编译/注册该类测试。
 - [ ] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
 - [ ] 关键设计约束和必要的长期文档已迁入正式架构文档；剩余风险/不支持功能有明确记录。
 - [ ] **在最终收尾提交中将本文件状态改为 `CLOSED`，并归档或删除它。**
 
 ## 9. 可复用的现有基线位置
 
-- `tests/test_discrete_mesh.cpp`：当前位于平铺目录，包含网格拓扑与边界投影等验证；迁移时按实际测试行为拆分到 `tests/unit/` 或 `tests/integration/`。
-- `tests/test_assembler.cpp`、`tests/test_solve_pipeline.cpp`、`tests/test_solution_history.cpp`：当前热装配、求解和瞬态历史测试；将局部算法性质归入单元测试，将编译到求解/观测的完整链路归入集成测试。
+- `tests/integration/test_discrete_mesh.cpp`：包含编译、网格拓扑与边界投影等跨模块验证，PR1 已迁至集成测试。
+- `tests/integration/test_assembler.cpp`、`tests/integration/test_solve_pipeline.cpp`、`tests/integration/test_solution_history.cpp`：热装配、求解和瞬态历史测试；PR1 已迁至集成测试。
 - `apps/metahotspot/tests/test_fluid.cpp`：冻结流量的质量守恒、部分入口累加和压力反向后的入口温度。
 - `python/tests/test_mesh_contract.py`、`python/tests/test_model_binding.py`：当前 C ABI/Python 网格与求解契约。
 - `playground/interface_nc_correction/`：跨 Domain 非匹配界面的 NCC 延迟校正/非正交 corrector 原型及独立收敛参考；它不作为同一 FOM 内部粗细网格的必选算法。
@@ -223,3 +223,32 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 - `playground/hotspot_example2_reproduction/`：来自上游 HotSpot 示例的稳态、瞬态系统级复现。
 
 以上为可借鉴的现有覆盖范围；不得把这些 Python 原型的运行成功直接视为新 C++ Core / C ABI 多域契约已通过。
+
+## 10. PR1 实施记录
+
+PR1 分支：`refactor/generic-model-layout`，目标 `refactor/generic_layout`。
+
+- `ModelDefinition` 保存全局符号、材料、源、Study 和命名 Probe；默认
+  `FomDomainDefinition` 保存网格、几何和热／流体边界。尚不提供多域构造或连接。
+- `CompiledModel` 拥有 FOM 域表、Study 快照、Probe 和 `StateLayout`；
+  `FomDomain` 拥有静态网格、物性表达式、积分／边界投影和流体成员映射。
+  声明式与编译后 Probe 统一为同一种 SI 值类型。
+- `FieldLayout` 的实体 ID 和全局 DOF 映射独立。单域热装配、源／物性评价、
+  求解和 Probe 经过布局映射；测试用温度 DOF 置换验证算子与物理解保持一致。
+- C ABI 提供 Domain/Field 元信息与映射复制，Python 公开同样的信息；
+  保持四类独立拥有型 handle。冻结流场模式只分配温度未知量，不虚构尚未求解的
+  压力／交错速度状态块。流体子集保持在同一 FOM 中。
+- 模型级 `reference_temperature` 及 C/Python 关联接口已删除。物性按每次
+  求解的实际初温场评价，冻结流场由 solver workspace 持有；压力方程使用质量
+  传导率，内部与边界的冻结质量流率保持一致。入口／实际回流必须有明确温度。
+  单独 `assemble(state,time)` 使用本次传入的状态／时刻初始化流场。
+- `tests/unit/` 与 `tests/integration/` 已按目录、目标、选项和标签分离。
+  纯 C 的 GL-01 A / GL-09、Python 的 GL-01 A / GL-02 / GL-09 和运行态
+  物性／重复求解／DOF 置换检查归入相应入口。
+- 常规 CI 已加入重构分支的 push / pull_request 触发；SDK jobs 分别运行
+  unit、integration 和 frontend 测试，Python wheel 验收保持原有入口。
+
+本阶段已本地验证核心与 app 的 CTest、Python 测试、PTA 案例对照、SDK 安装与
+独立消费工程，以及关闭任一测试类别后的目标／注册隔离。跨平台验收由 PR CI
+执行。Connection、NCC、ROM 域和交错／双向流动求解仍按后续阶段实施；本跟踪
+文档保持 OPEN。长期契约见 `docs/design/state-layout.md`。

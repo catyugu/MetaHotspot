@@ -107,3 +107,13 @@ per workflow and never rewrite sources or the Git index.
 All CI-specific scripts and acceptance policy live under `.github/` and are
 excluded from the sdist. GitHub Actions runs artifact acceptance; contributors
 are not required to reproduce it locally or install a commit hook.
+
+## Generic Layout refactor
+
+`ci.yml` runs on pushes to and pull requests targeting `refactor/generic_layout`,
+in addition to `main` and `dev`. SDK jobs execute core `unit` and `integration`
+CTest labels separately, then frontend tests. Both core categories must contain
+registered tests. Wheel jobs continue to exercise the public Python contract.
+
+Local category isolation is available with `MHS_BUILD_UNIT_TESTS=OFF` or
+`MHS_BUILD_INTEGRATION_TESTS=OFF`; `MHS_BUILD_TESTS=OFF` disables all tests.

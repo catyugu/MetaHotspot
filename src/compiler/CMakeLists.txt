@@ -1,13 +1,11 @@
 add_library(mhs_compiler STATIC
     discrete_mesh.cpp
     cartesian_mesh.cpp
-    fluid_preprocessor.cpp
     geometry_compiler.cpp
     model_compiler.cpp
     model_functions.cpp
 )
 target_link_libraries(mhs_compiler
     PUBLIC mhs_model
-    PRIVATE mhs_linear
     PRIVATE $<BUILD_INTERFACE:mhs_options>
 )

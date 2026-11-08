@@ -38,7 +38,7 @@ namespace mhs::compiler {
         return std::nullopt;
     }
 
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+    void project_cell_regions(mhs::model::FomDomain& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
     {
         using namespace mhs::core;
         using namespace mhs::model;

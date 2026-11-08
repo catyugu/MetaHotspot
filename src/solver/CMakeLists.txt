@@ -1,5 +1,6 @@
 add_library(mhs_solver STATIC
     assembler.cpp
+    frozen_flow.cpp
     nonlinear_solver.cpp
     probe_recorder.cpp
     solve.cpp

@@ -8,6 +8,6 @@ namespace mhs::compiler {
     mhs::expression::SymbolTable build_symbol_table(const mhs::model::ModelDefinition& definition);
 
     /// Convert a model definition into the compiled runtime model.
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition);
+    mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition);
 
 } // namespace mhs::compiler

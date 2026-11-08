@@ -1,41 +1,41 @@
-#include "compiler/fluid_preprocessor.hpp"
-#include "compiler/fluid_physics.hpp"
-#include "compiler/geometry_compiler.hpp"
+#include "solver/frozen_flow.hpp"
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "linear/solver.hpp"
+#include "solver/fluid_physics.hpp"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <numeric>
 #include <type_traits>
 
-namespace mhs::compiler::fluid {
-    void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        const FluidMaterialData& materials)
+namespace mhs::solver {
+    mhs::solver::FrozenFlow initialize_frozen_flow(
+        const mhs::model::FomDomain& model, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
-        auto& fluid = model.fluid;
+        const auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
-        fluid = {};
-        fluid.global_to_fluid.assign(mesh.cells.size(), mhs::core::invalid_id);
-        mhs::core::Vector<double> viscosity;
-        for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
-            const auto mat = model.cell_material[c];
-            if (mat >= materials.initial_viscosity.size() || !materials.initial_viscosity[mat])
-                continue;
-            fluid.global_to_fluid[c] = static_cast<FluidCellId>(fluid.fluid_to_global.size());
-            fluid.fluid_to_global.push_back(static_cast<CellId>(c));
-            viscosity.push_back(*materials.initial_viscosity[mat]);
+        if (temperature.size() != mesh.cells.size())
+            throw std::invalid_argument("flow initialization: temperature count differs from cell count");
+        FrozenFlow flow;
+        core::Vector<double> viscosity;
+        for (auto c : fluid.fluid_to_global) {
+            const auto p = mesh.cells[c].center();
+            const auto& material = model.material_table[model.cell_material[c]];
+            const double mu = material.dynamic_viscosity->eval({p[0], p[1], p[2], temperature[c], time});
+            if (!std::isfinite(mu) || mu <= 0)
+                throw std::invalid_argument("fluid dynamic viscosity must be finite and positive");
+            viscosity.push_back(mu);
         }
         const auto n = fluid.fluid_to_global.size();
         mhs::core::detail::checked_sparse_size(n);
         if (n == 0) {
-            fluid.global_to_fluid.clear();
-            return;
+            return flow;
         }
-        fluid.face_volume_flux.assign(mesh.faces.size(), 0);
-        fluid.interface_heat_transfer_factor.resize(n);
+        flow.face_mass_flow.assign(mesh.faces.size(), 0);
+        flow.interface_heat_transfer_factor.resize(n);
         mhs::core::Vector<Vec3> extents(n);
         // Rectangular-channel extents from connected fluid runs along each axis.
         for (int axis = 0; axis < 3; ++axis) {
@@ -71,25 +71,22 @@ namespace mhs::compiler::fluid {
             auto lengths = extents[i];
             std::sort(lengths.begin(), lengths.end());
             double w = lengths[0], h = lengths[1], diameter = 2 * w * h / (w + h);
-            fluid.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
+            flow.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cell_material[c]].rho.eval(
-                {p[0], p[1], p[2], model.reference_temperature, 0});
+            rho[i] = model.material_table[model.cell_material[c]].rho.eval({p[0], p[1], p[2], temperature[c], time});
+            if (!std::isfinite(rho[i]) || rho[i] <= 0)
+                throw std::invalid_argument("fluid density must be finite and positive");
+            // Pressure equation is assembled in mass units, so frozen transport
+            // remains conservative for spatially varying initial density.
+            mobility[i] *= rho[i];
         }
-        // Use the same rectangle intersection algorithm as thermal projection,
-        // against the original mesh and an independent set of regions.
-        mhs::core::Vector<TaggedSurfaceRegion> regions;
-        for (std::size_t id = 0; id < boundaries.size(); ++id)
-            for (const auto& region : boundaries[id].regions)
-                regions.push_back({region, id});
-        auto projected = project_exterior_surface_regions(mesh, regions);
-        std::erase_if(
-            projected, [&](const auto& term) { return fluid.global_to_fluid[term.cell] == mhs::core::invalid_id; });
+        const auto& projected = model.fluid_boundaries;
+        const auto& boundaries = model.fluid_conditions;
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.tag] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
+            total_area[term.condition] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -119,7 +116,7 @@ namespace mhs::compiler::fluid {
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         rhs[i] += bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.tag] / rho[i];
+                            / total_area[term.condition];
                     else {
                         reference = true;
                         const double g = ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
@@ -129,7 +126,7 @@ namespace mhs::compiler::fluid {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                boundaries[term.tag].condition);
+                boundaries[term.condition]);
         }
         if (!reference)
             throw std::runtime_error(
@@ -153,39 +150,39 @@ namespace mhs::compiler::fluid {
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto i = fluid.global_to_fluid[term.cell];
-            const auto& condition = boundaries[term.tag].condition;
+            const auto& condition = boundaries[term.condition];
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         return -bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.tag];
+                            / total_area[term.condition];
                     else
-                        return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
+                        return boundary_conductance[t] * (pressure[i] - bc.pressure);
                 },
                 condition);
             if (mass < 0) {
                 const double temperature = std::visit(
                     [&](const auto& bc) {
-                        using T = std::decay_t<decltype(bc)>;
-                        if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
-                            return model.reference_temperature;
-                        else
-                            return bc.temperature.value_or(model.reference_temperature);
+                        if (!bc.temperature)
+                            throw std::invalid_argument(
+                                "incoming fluid requires an explicit inlet/backflow temperature");
+                        return *bc.temperature;
                     },
                     condition);
-                fluid.boundary_terms.push_back({term.cell, FluidInflow {-mass, temperature}});
+                flow.boundary_terms.push_back({term.cell, FluidInflow {-mass, temperature}});
             }
             else {
-                fluid.boundary_terms.push_back({term.cell, FluidOutflow {mass}});
+                flow.boundary_terms.push_back({term.cell, FluidOutflow {mass}});
             }
         }
         for (std::size_t id = 0; id < mesh.faces.size(); ++id)
             if (conductance[id] != 0) {
                 const auto& f = mesh.faces[id];
                 auto i = fluid.global_to_fluid[f.minus], j = fluid.global_to_fluid[f.plus];
-                fluid.face_volume_flux[id] = (pressure[i] - pressure[j]) * conductance[id];
+                flow.face_mass_flow[id] = (pressure[i] - pressure[j]) * conductance[id];
             }
+        return flow;
     }
 }

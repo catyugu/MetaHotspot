@@ -120,13 +120,10 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def set_reference_temperature(self, temperature_K: float) -> None:
-        """Set compile-time reference temperature for frozen-flow preprocessing."""
-        self._call(
-            "mhs_model_set_reference_temperature",
-            temperature_K,
-            ctx="set_reference_temperature",
-        )
+    def set_study(self, study: Study) -> None:
+        """Set the default study for subsequent compiled snapshots."""
+        native = study._native()
+        self._call("mhs_model_set_study", ctypes.byref(native), ctx="set_study")
 
     def set_cartesian_mesh(
         self,

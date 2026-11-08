@@ -146,10 +146,10 @@ typedef struct {
     double max_time_step; /**< Seconds; zero selects automatic. */
 } mhs_solve_options_t;
 
-/** Explicit compiled geometry sizes. State order is CellId order. */
+/** Geometry sizes are independent of the algebraic state layout. */
 typedef struct {
     size_t cell_count, face_count, projection_count, source_count;
-    double reference_temperature;
+    size_t state_count, domain_count, field_count;
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
@@ -227,14 +227,12 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
+/** Set the default study copied into subsequent compiled snapshots. */
+MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* study);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  reference state, mesh, variables         */
 /* ------------------------------------------------------------------ */
-
-/** Reference temperature used only by compile-time frozen-flow preprocessing
- * and by fluid inlets whose temperature is omitted. */
-MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K);
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
@@ -301,8 +299,9 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
-/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
- * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
+/* Same region layout as thermal boundaries. inlet_temperature also supplies
+ * pressure-outlet backflow temperature. NULL is allowed only when the boundary
+ * does not admit fluid during the solve. value is Pa or kg/s. */
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
 
@@ -317,6 +316,30 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
+/** Domain and field IDs are zero-based indices in this compiled snapshot.
+ * Frozen flow has only a temperature state field. Pressure/velocity are not
+ * unknowns until a flow-equation solver is enabled. No additional handles. */
+typedef int32_t mhs_field_quantity_t;
+enum { MHS_FIELD_TEMPERATURE = 0, MHS_FIELD_PRESSURE = 1, MHS_FIELD_VELOCITY = 2, MHS_FIELD_REDUCED_COORDINATE = 3 };
+typedef int32_t mhs_entity_support_t;
+enum { MHS_SUPPORT_CELL = 0, MHS_SUPPORT_FACE = 1, MHS_SUPPORT_REDUCED = 2 };
+typedef struct {
+    size_t cell_count, face_count, field_count;
+} mhs_domain_info_t;
+typedef struct {
+    mhs_index_t domain;
+    mhs_field_quantity_t quantity;
+    mhs_entity_support_t support;
+    uint32_t component;
+    size_t dof_count;
+} mhs_field_info_t;
+
+MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_index_t domain, mhs_domain_info_t* out);
+MHS_API mhs_status_t mhs_compiled_get_field_info(const mhs_compiled_t* c, mhs_index_t field, mhs_field_info_t* out);
+/** Exact-size independent arrays: local entry -> support entity and global DOF. */
+MHS_API mhs_status_t mhs_compiled_copy_field_mapping(
+    const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, mhs_index_t* dofs, size_t count);
+
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
 MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
 MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
@@ -326,7 +349,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Evaluate K, C, f at *temperature* (cell_count values) and return an owned snapshot. */
+/** Evaluate K, C, f at *temperature* (state_count values) and return an owned snapshot. */
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
 
@@ -343,9 +366,9 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-/** study may be NULL for a steady 300 K default. state is NULL/0 to build a
+/** study may be NULL to use the compiled study snapshot. state is NULL/0 to build a
  * uniform initial state from study->initial_temperature, otherwise it must have
- * exactly cell_count entries. opts may be NULL to select defaults. */
+ * exactly state_count entries. opts may be NULL to select defaults. */
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
     size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
