@@ -193,8 +193,8 @@ namespace mhs::compiler {
                 for (std::size_t start = 0; start < fluid.fluid_to_global.size(); ++start) {
                     if (fluid.component_by_fluid_cell[start] != core::invalid_id)
                         continue;
-                    const auto component = static_cast<core::EntityIndex>(fluid.component_count++);
-                    fluid.component_by_fluid_cell[start] = component;
+                    const auto fluid_component = static_cast<core::EntityIndex>(fluid.component_count++);
+                    fluid.component_by_fluid_cell[start] = fluid_component;
                     core::Vector<model::FluidCellId> pending {static_cast<model::FluidCellId>(start)};
                     while (!pending.empty()) {
                         const auto current = pending.back();
@@ -208,7 +208,7 @@ namespace mhs::compiler {
                             const auto adjacent = fluid.global_to_fluid[neighbor];
                             if (adjacent != core::invalid_id
                                 && fluid.component_by_fluid_cell[adjacent] == core::invalid_id) {
-                                fluid.component_by_fluid_cell[adjacent] = component;
+                                fluid.component_by_fluid_cell[adjacent] = fluid_component;
                                 pending.push_back(adjacent);
                             }
                         }
