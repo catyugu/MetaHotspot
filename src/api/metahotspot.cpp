@@ -91,6 +91,14 @@ struct mhs_solution_t {
     mhs::solver::Solution sol;
 };
 
+static mhs::model::ComponentDefinition& _add_component(mhs_model_t* m, mhs_index_t* id)
+{
+    *id = static_cast<mhs_index_t>(m->def.components.size());
+    auto& component = m->def.components.emplace_back();
+    component.library = m->library;
+    return component;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Thread-local error buffer                                          */
 /* ------------------------------------------------------------------ */
@@ -232,11 +240,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out)
     CHECK_NULL(out);
     *out = nullptr;
     CHECK_NULL(library);
-    MHS_TRY({
-        auto m = std::make_unique<mhs_model_t>();
-        m->library = library->def;
-        *out = m.release();
-    });
+    MHS_TRY({ *out = new mhs_model_t {library->def, {}}; });
 }
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
@@ -245,12 +249,7 @@ MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        const auto id = static_cast<mhs_index_t>(m->def.components.size());
-        auto& component = m->def.components.emplace_back();
-        component.library = m->library;
-        *out_id = id;
-    });
+    MHS_TRY({ _add_component(m, out_id); });
 }
 MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t order, const double* stiffness,
     const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id)
@@ -264,7 +263,6 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         if (!order || order > static_cast<size_t>(std::numeric_limits<mhs_index_t>::max())
             || order > static_cast<size_t>(std::numeric_limits<mhs::core::SparseIndex>::max()) / order)
             throw std::invalid_argument("invalid ROM order");
-        const auto id = static_cast<mhs_index_t>(m->def.components.size());
         mhs::model::RomDomainDefinition rom;
         rom.order = order;
         rom.K.assign(stiffness, stiffness + order * order);
@@ -272,10 +270,7 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         rom.f.assign(rhs, rhs + order);
         if (initial)
             rom.initial_state.assign(initial, initial + order);
-        auto& component = m->def.components.emplace_back();
-        component.library = m->library;
-        component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
-        *out_id = id;
+        _add_component(m, out_id).physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
     });
 }
 
