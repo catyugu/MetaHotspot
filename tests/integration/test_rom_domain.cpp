@@ -200,8 +200,9 @@ TEST(RomDomain, AffineHtcTermsReuseOneReducedSystemForDifferentBoundaryValues)
     // with physical area A=0.01 m² and ambient temperature 300 K.
     rom.affine_terms.push_back({"h", 100, {0.01}, {3}});
     d.rom_domains.push_back(rom);
+    const mhs::core::Vector<double> initial {300};
     const auto first = mhs::compiler::build_model(d);
-    const auto first_ops = mhs::solver::assemble_thermal(first, {300}, 0);
+    const auto first_ops = mhs::solver::assemble_thermal(first, initial, 0);
     EXPECT_NEAR(first_ops.K.coeff(0, 0), 3, 1e-12);
     EXPECT_NEAR(first_ops.f[0], 300, 1e-12);
     const auto first_solution = mhs::solver::solve(first);
@@ -212,7 +213,7 @@ TEST(RomDomain, AffineHtcTermsReuseOneReducedSystemForDifferentBoundaryValues)
     // and construct another immutable compiled snapshot.
     d.rom_domains[0].affine_terms[0].value = 200;
     const auto second = mhs::compiler::build_model(d);
-    const auto second_ops = mhs::solver::assemble_thermal(second, {300}, 0);
+    const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
     EXPECT_NEAR(second_ops.K.coeff(0, 0), 4, 1e-12);
     EXPECT_NEAR(second_ops.f[0], 600, 1e-12);
     const auto second_solution = mhs::solver::solve(second);
