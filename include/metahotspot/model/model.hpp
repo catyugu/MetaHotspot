@@ -60,8 +60,6 @@ namespace mhs::model {
         FlowMode flow_mode = FlowMode::Frozen;
 
         mhs::core::Vector<MaterialId> cell_material;
-        mhs::core::Vector<MaterialProps> material_table;
-        mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
@@ -102,6 +100,9 @@ namespace mhs::model {
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         mhs::core::Vector<CompiledComponent> components;
+        // Shared laws for all Cartesian components; domains store only IDs.
+        mhs::core::Vector<MaterialProps> material_table;
+        mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }

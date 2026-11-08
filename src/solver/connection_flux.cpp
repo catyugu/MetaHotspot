@@ -7,7 +7,8 @@ namespace mhs::solver {
     namespace {
         // Directional least squares over internal neighbours and physical
         // boundary traces. One-sided stencils reproduce linear fields.
-        model::Vec3 gradient(const model::FomDomain& domain, std::span<const double> t, model::CellId cell,
+        model::Vec3 gradient(const model::CompiledModel& compiled, const model::FomDomain& domain,
+            std::span<const double> t, model::CellId cell,
             model::Axis normal, double time)
         {
             model::Vec3 sum {}, weights {};
@@ -26,7 +27,7 @@ namespace mhs::solver {
                 const auto axis = static_cast<std::size_t>(face.axis);
                 add(axis, domain.discrete.cells[other].center()[axis] - center[axis], t[other] - t[cell], face.area());
             }
-            const auto& props = domain.material_table[domain.cell_material[cell]];
+            const auto& props = compiled.material_table[domain.cell_material[cell]];
             const expression::FieldContext ctx {center[0], center[1], center[2], t[cell], time};
             const model::Vec3 k {props.kx.eval(ctx), props.ky.eval(ctx), props.kz.eval(ctx)};
             for (const auto& boundary : boundary_faces_on_cell(domain, cell)) {
@@ -79,7 +80,7 @@ namespace mhs::solver {
                 const auto cell = index;
                 const auto& box = domain.discrete.cells.at(cell);
                 const auto center = box.center();
-                const auto& mat = domain.material_table.at(domain.cell_material.at(cell));
+                const auto& mat = compiled.material_table.at(domain.cell_material.at(cell));
                 const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
@@ -91,7 +92,7 @@ namespace mhs::solver {
                 result.resistance = box.size()[axis] / (2 * k);
                 result.temperature = temperature;
                 result.weights.push_back({field.dof(cell), 1.0});
-                const auto grad = gradient(domain, temperatures, cell, connection.axis, time);
+                const auto grad = gradient(compiled, domain, temperatures, cell, connection.axis, time);
                 std::size_t t = 0;
                 for (std::size_t a = 0; a < 3; ++a)
                     if (a != axis) {

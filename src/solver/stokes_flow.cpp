@@ -19,11 +19,13 @@ namespace mhs::solver {
         }
     }
 
-    StokesAssembler::StokesAssembler(
-        const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id)
-        : domain_(domain)
+    StokesAssembler::StokesAssembler(const model::CompiledModel& compiled, model::DomainId id)
+        : domain_(compiled.fom(id))
+        , materials_(compiled.material_table)
     {
         using namespace mhs::model;
+        const auto& domain = domain_;
+        const auto& layout = compiled.layout;
         const auto& mesh = domain.discrete;
         const auto& fluid = domain.fluid;
         if (domain.flow_mode != FlowMode::Stokes || fluid.fluid_to_global.empty())
@@ -160,7 +162,7 @@ namespace mhs::solver {
         core::Vector<double> density(mesh.cells.size(), 0.0), viscosity(mesh.cells.size(), 0.0);
         for (const auto cell : fluid.fluid_to_global) {
             const auto p = mesh.cells[cell].center();
-            const auto& props = domain_.material_table[domain_.cell_material[cell]];
+            const auto& props = materials_[domain_.cell_material[cell]];
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[cell], time};
             density[cell] = props.rho.eval(context);
             viscosity[cell] = props.dynamic_viscosity->eval(context);

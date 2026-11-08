@@ -40,7 +40,7 @@ namespace mhs::solver {
                 const auto count = pressure.count + velocity.count;
                 const auto last = first + static_cast<core::SparseIndex>(count);
 
-                StokesAssembler stokes(domain, compiled.layout, id);
+                StokesAssembler stokes(compiled, id);
                 core::Vector<core::Triplet<double>> entries, capacity;
                 core::Vector<double> load(state.size(), 0.0);
                 stokes.assemble(state, temperatures, 0.0, entries, capacity, load);
@@ -217,6 +217,21 @@ namespace mhs::solver {
 
     } // namespace
 
+    void fill_default_state(const model::CompiledModel& compiled, double temperature, std::span<double> state)
+    {
+        if (!std::isfinite(temperature) || state.size() != compiled.layout.state_count)
+            throw std::invalid_argument("initial state size or temperature is invalid");
+        std::fill(state.begin(), state.end(), 0.0);
+        for (const auto& field : compiled.layout.fields) {
+            if (field.quantity == model::FieldQuantity::Temperature)
+                std::fill_n(state.begin() + field.offset, field.count, temperature);
+            else if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
+                const auto& initial = compiled.rom(field.domain).initial_state;
+                std::copy(initial.begin(), initial.end(), state.begin() + field.offset);
+            }
+        }
+    }
+
     Solution solve_system(const mhs::model::Study& study, const SystemAssembler& assemble, core::Vector<double> state,
         const SolveOptions& opts, const StateObserver& observe)
     {
@@ -242,15 +257,8 @@ namespace mhs::solver {
 
         core::Vector<double> state;
         if (initial_state.empty()) {
-            state.assign(state_count, 0.0);
-            for (const auto& field : compiled.layout.fields) {
-                if (field.quantity == model::FieldQuantity::Temperature)
-                    std::fill_n(state.begin() + field.offset, field.count, study.initial_temperature);
-                else if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
-                    const auto& initial = compiled.rom(field.domain).initial_state;
-                    std::copy(initial.begin(), initial.end(), state.begin() + field.offset);
-                }
-            }
+            state.resize(state_count);
+            fill_default_state(compiled, study.initial_temperature, state);
         }
         else {
             if (initial_state.size() != state_count)
@@ -327,7 +335,7 @@ namespace mhs::solver {
                 else {
                     const auto cells = accepted_state.subspan(field.offset, field.count);
                     const auto& interfaces = traces[slot.domain];
-                    temperature = sample_point(compiled.fom(slot.domain), cells, t, slot.cell, slot.point, interfaces);
+                    temperature = sample_point(compiled.fom(slot.domain), compiled.material_table, cells, t, slot.cell, slot.point, interfaces);
                 }
                 slot.trace.values.push_back(temperature);
             }

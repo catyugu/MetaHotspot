@@ -35,9 +35,9 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
@@ -73,9 +73,9 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
 
     mhs::core::Vector<double> T300(static_cast<std::size_t>(N), 300.0);
     mhs::core::Vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -90,9 +90,9 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);

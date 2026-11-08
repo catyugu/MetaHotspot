@@ -10,8 +10,8 @@
 #include <type_traits>
 
 namespace mhs::solver {
-    mhs::solver::FrozenFlow initialize_frozen_flow(
-        const mhs::model::FomDomain& model, std::span<const double> temperature, double time)
+    mhs::solver::FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model,
+        const mhs::core::Vector<mhs::model::MaterialProps>& materials, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -23,7 +23,7 @@ namespace mhs::solver {
         core::Vector<double> viscosity;
         for (auto c : fluid.fluid_to_global) {
             const auto p = mesh.cells[c].center();
-            const auto& material = model.material_table[model.cell_material[c]];
+            const auto& material = materials[model.cell_material[c]];
             const double mu = material.dynamic_viscosity->eval({p[0], p[1], p[2], temperature[c], time});
             if (!std::isfinite(mu) || mu <= 0)
                 throw std::invalid_argument("fluid dynamic viscosity must be finite and positive");
@@ -75,7 +75,7 @@ namespace mhs::solver {
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cell_material[c]].rho.eval({p[0], p[1], p[2], temperature[c], time});
+            rho[i] = materials[model.cell_material[c]].rho.eval({p[0], p[1], p[2], temperature[c], time});
             if (!std::isfinite(rho[i]) || rho[i] <= 0)
                 throw std::invalid_argument("fluid density must be finite and positive");
             // Pressure equation is assembled in mass units, so frozen transport

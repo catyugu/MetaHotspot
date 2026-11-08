@@ -65,6 +65,25 @@ namespace mhs::compiler {
             throw std::invalid_argument("model must contain at least one component");
 
         auto symbols = build_symbol_table(definition);
+        compiled.material_table.resize(definition.materials.size());
+        for (std::size_t m = 0; m < definition.materials.size(); ++m) {
+            const auto& mat = definition.materials[m].value;
+            auto compile = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
+            auto& props = compiled.material_table[m];
+            props.kx = compile(mat.conductivity_x);
+            props.ky = compile(mat.conductivity_y);
+            props.kz = compile(mat.conductivity_z);
+            props.rho = compile(mat.density);
+            props.c = compile(mat.specific_heat);
+            if (mat.dynamic_viscosity) {
+                if (mat.dynamic_viscosity->empty())
+                    throw std::runtime_error(
+                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
+                props.dynamic_viscosity = compile(*mat.dynamic_viscosity);
+            }
+        }
+        for (const auto& source : definition.sources)
+            compiled.heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
@@ -111,29 +130,6 @@ namespace mhs::compiler {
             compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
-            // Compile material properties in ModelDefinition::materials order.
-            model.material_table.resize(definition.materials.size());
-
-            for (size_t m = 0; m < definition.materials.size(); m++) {
-                const auto& mat = definition.materials[m].value;
-                auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
-                auto& props = model.material_table[m];
-                props.kx = compile_mat(mat.conductivity_x);
-                props.ky = compile_mat(mat.conductivity_y);
-                props.kz = compile_mat(mat.conductivity_z);
-                props.rho = compile_mat(mat.density);
-                props.c = compile_mat(mat.specific_heat);
-                if (mat.dynamic_viscosity.has_value()) {
-                    if (mat.dynamic_viscosity->empty()) {
-                        throw std::runtime_error(
-                            "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
-                    }
-                    props.dynamic_viscosity = compile_mat(*mat.dynamic_viscosity);
-                }
-            }
-
-            for (const auto& source : definition.sources)
-                model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
             for (const auto& volume : domain.volumes) {
                 if (volume.material >= definition.materials.size())
                     throw std::out_of_range("volume material ID out of range");
@@ -155,14 +151,14 @@ namespace mhs::compiler {
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
             project_cell_regions(model, domain.volumes);
             for (const auto material : model.cell_material)
-                if (material >= model.material_table.size())
+                if (material >= compiled.material_table.size())
                     throw std::out_of_range("cell has no valid material assignment");
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;
             fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
             for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-                if (!model.material_table[model.cell_material[c]].dynamic_viscosity)
+                if (!compiled.material_table[model.cell_material[c]].dynamic_viscosity)
                     continue;
                 fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
                 fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));

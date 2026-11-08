@@ -746,7 +746,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     for (const auto& field : c->model.layout.fields)
         if (field.quantity == mhs::model::FieldQuantity::Temperature) {
             const auto& fom = c->model.fom(field.domain);
-            out->source_count = fom.heat_source_table.size();
+            out->source_count = c->model.heat_source_table.size();
             out->cell_count += fom.discrete.cells.size();
             out->face_count += fom.discrete.faces.size();
             out->projection_count += fom.source_terms.size();
@@ -765,17 +765,7 @@ MHS_API mhs_status_t mhs_compiled_default_state(
     CHECK_NULL(c);
     CHECK_NULL(state);
     MHS_TRY({
-        if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
-            throw std::invalid_argument("initial state size or temperature is invalid");
-        std::fill_n(state, state_count, 0.0);
-        for (const auto& field : c->model.layout.fields) {
-            if (field.quantity == mhs::model::FieldQuantity::Temperature)
-                std::fill_n(state + field.offset, field.count, initial_temperature);
-            else if (field.quantity == mhs::model::FieldQuantity::ReducedCoordinate) {
-                const auto& initial = c->model.rom(field.domain).initial_state;
-                std::copy(initial.begin(), initial.end(), state + field.offset);
-            }
-        }
+        mhs::solver::fill_default_state(c->model, initial_temperature, {state, state_count});
     });
 }
 
@@ -903,7 +893,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
                 const auto density
-                    = model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
+                    = c->model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
                 powers[offset++] = term.weight * density;
             }
         }
@@ -936,7 +926,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(
             const auto& mesh = model.discrete;
             for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
                 const auto p = mesh.cells[cell].center();
-                const auto& props = model.material_table[model.cell_material[cell]];
+                const auto& props = c->model.material_table[model.cell_material[cell]];
                 const auto dof = field.dof(cell);
                 const mhs::expression::FieldContext context {p[0], p[1], p[2], state[dof], time};
                 values->conductivity_x[offset + cell] = props.kx.eval(context);

@@ -10,7 +10,7 @@ namespace mhs::solver {
     // for each nonlinear iterate. Pressure rows are algebraic (zero capacity).
     class StokesAssembler {
     public:
-        StokesAssembler(const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id);
+        StokesAssembler(const model::CompiledModel& compiled, model::DomainId id);
         FrozenFlow assemble(std::span<const double> state, std::span<const double> temperature, double time,
             core::Vector<core::Triplet<double>>& stiffness, core::Vector<core::Triplet<double>>& capacity,
             core::Vector<double>& load) const;
@@ -35,6 +35,7 @@ namespace mhs::solver {
         };
 
         const model::FomDomain& domain_;
+        const core::Vector<model::MaterialProps>& materials_;
         core::Vector<model::DofId> pressure_dof_, face_dof_;
         core::Vector<Node> nodes_;
         core::Vector<Link> links_;

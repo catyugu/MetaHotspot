@@ -63,7 +63,8 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         auto d = cube_definition();
         d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
         d.fom(0).default_thermal_boundary = condition;
-        const auto model = mhs::compiler::build_model(d).fom(0);
+        const auto compiled = mhs::compiler::build_model(d);
+        const auto& model = compiled.fom(0);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // Boundary sampling looks up terms by cell.
         EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.cell; }));
@@ -95,7 +96,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             }
             // Sampling and assembly read the same surface trace.
             EXPECT_DOUBLE_EQ(
-                mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), center), trace.temperature);
+                mhs::solver::sample_point(model, compiled.material_table, state, 0, static_cast<CellId>(0), center), trace.temperature);
         }
     }
 }
@@ -116,7 +117,8 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).fom(0).discrete;
-    const auto model = mhs::compiler::build_model(d).fom(0);
+    const auto compiled = mhs::compiler::build_model(d);
+        const auto& model = compiled.fom(0);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
     EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
     EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
@@ -125,7 +127,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         EXPECT_EQ(model.discrete.faces[i].plus, base.faces[i].plus);
         EXPECT_EQ(model.discrete.faces[i].bounds, base.faces[i].bounds);
     }
-    const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double>(8, 300), 0);
+    const auto ops = mhs::solver::assemble_thermal(compiled, mhs::core::Vector<double>(8, 300), 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 0.1, 1e-14);
 }
 
@@ -141,8 +143,9 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     d.sources.push_back("8*z");
     second.source = 1;
     d.fom(0).volumes.push_back(second);
-    const auto model = mhs::compiler::build_model(d).fom(0);
-    const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+    const auto compiled = mhs::compiler::build_model(d);
+        const auto& model = compiled.fom(0);
+    const auto ops = mhs::solver::assemble_thermal(compiled, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
     EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
@@ -157,18 +160,19 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
-    const auto model = mhs::compiler::build_model(d).fom(0);
+    const auto compiled = mhs::compiler::build_model(d);
+        const auto& model = compiled.fom(0);
     const mhs::core::Vector<double> state {300};
-    const auto ops = mhs::solver::assemble_thermal(model, state, 0);
+    const auto ops = mhs::solver::assemble_thermal(compiled, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
     // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
     // so an interior probe moves at exactly that rate along x.
-    const auto left = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
-    const auto right = mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
+    const auto left = mhs::solver::sample_point(model, compiled.material_table, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
+    const auto right = mhs::solver::sample_point(model, compiled.material_table, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
     EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.material_table, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.material_table, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, MissingReferencesRemainInvalid)
