@@ -64,10 +64,6 @@ namespace {
         return model;
     }
 
-    double modal_component(const std::array<double, 3>& x, std::size_t row)
-    {
-        return row == 1 ? q * (x[1] - x[2]) : q * (x[1] + x[2]);
-    }
 }
 
 TEST(RomDomain, FullBasisGalerkinsOperatorsAndTransientMatchFom)
