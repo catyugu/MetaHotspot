@@ -102,7 +102,7 @@ namespace mhs::solver {
                     }
             }
             else {
-                const auto& rom = std::get<model::RomDomain>(value);
+                const auto& rom = std::get<model::CompiledRomDomain>(value);
                 const auto& facet = compiled.components.at(ref.domain).ports.at(ref.port).patches.at(index);
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
