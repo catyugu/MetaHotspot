@@ -64,7 +64,6 @@ namespace mhs::model {
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
         FluidTopology fluid;
-        mhs::core::Vector<BoundaryConditionId> fluid_assignments; // patch assignment -> shared law
         mhs::core::Vector<FluidBoundaryPatch> fluid_boundaries;
     };
 
