@@ -7,6 +7,11 @@
 #include "pta/definition.hpp"
 #include "pta/io.hpp"
 namespace test_pta {
+    inline mhs::model::LibraryDefinition& library(mhs::model::ModelDefinition& model)
+    { return *model.components.front().library; }
+    inline const mhs::model::LibraryDefinition& library(const mhs::model::ModelDefinition& model)
+    { return *model.components.front().library; }
+
     template <class T, class U> inline mhs::core::EntityIndex append(mhs::core::Vector<T>& values, U&& value)
     {
         values.emplace_back(std::forward<U>(value));
