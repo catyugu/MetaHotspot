@@ -459,19 +459,12 @@ MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* library, const char
     CHECK_NULL(rho);
     CHECK_NULL(c);
     MHS_TRY({
-        mhs::model::MaterialSpec spec;
-        spec.conductivity_x = kx;
-        spec.conductivity_y = ky;
-        spec.conductivity_z = kz;
-        spec.density = rho;
-        spec.specific_heat = c;
-        if (dynamic_viscosity) {
-            if (!dynamic_viscosity[0])
-                throw std::invalid_argument("dynamic viscosity expression must not be empty");
-            spec.dynamic_viscosity = std::string(dynamic_viscosity);
-        }
-        *out_id = static_cast<mhs_index_t>(library->def->materials.size());
-        library->def->materials.push_back({name, std::move(spec)});
+        if (dynamic_viscosity && !dynamic_viscosity[0])
+            throw std::invalid_argument("dynamic viscosity expression must not be empty");
+        mhs::model::MaterialSpec spec {kx, ky, kz, rho, c};
+        if (dynamic_viscosity)
+            spec.dynamic_viscosity = dynamic_viscosity;
+        *out_id = _append(library->def->materials, mhs::model::NamedMaterial {name, std::move(spec)});
     });
 }
 
