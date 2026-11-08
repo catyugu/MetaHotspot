@@ -75,6 +75,7 @@ struct mhs_library_t {
     std::shared_ptr<mhs::model::LibraryDefinition> def = std::make_shared<mhs::model::LibraryDefinition>();
 };
 struct mhs_model_t {
+    std::shared_ptr<mhs::model::LibraryDefinition> library;
     mhs::model::ModelDefinition def;
 };
 
@@ -130,7 +131,7 @@ static void _add_thermal_boundary(
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
     mhs::model::ThermalBoundarySpec bp;
-    if (condition >= m->def.library->thermal_boundaries.size())
+    if (condition >= m->library->thermal_boundaries.size())
         throw std::out_of_range("thermal boundary ID out of range");
     bp.condition = condition;
     bp.regions.reserve(n_regions);
@@ -230,7 +231,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out)
     CHECK_NULL(library);
     MHS_TRY({
         auto m = std::make_unique<mhs_model_t>();
-        m->def.library = library->def;
+        m->library = library->def;
         *out = m.release();
     });
 }
@@ -244,7 +245,7 @@ MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index
     MHS_TRY({
         const auto id = static_cast<mhs_index_t>(m->def.components.size());
         auto& component = m->def.components.emplace_back();
-        component.library = m->def.library;
+        component.library = m->library;
         *out_id = id;
     });
 }
@@ -269,7 +270,7 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         if (initial)
             rom.initial_state.assign(initial, initial + order);
         auto& component = m->def.components.emplace_back();
-        component.library = m->def.library;
+        component.library = m->library;
         component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
         *out_id = id;
     });
@@ -492,9 +493,9 @@ MHS_API mhs_status_t mhs_model_add_volume(
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (material >= m->def.library->materials.size())
+        if (material >= m->library->materials.size())
             throw std::out_of_range("material ID out of range");
-        if (source != MHS_INVALID_INDEX && source >= m->def.library->sources.size())
+        if (source != MHS_INVALID_INDEX && source >= m->library->sources.size())
             throw std::out_of_range("source ID out of range");
         *out_id = static_cast<mhs_index_t>(m->def.fom(component).volumes.size());
         m->def.fom(component).volumes.push_back({material, source, {}});
@@ -567,7 +568,7 @@ MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
 {
     CHECK_NULL(m);
     MHS_TRY({
-        if (condition >= m->def.library->thermal_boundaries.size())
+        if (condition >= m->library->thermal_boundaries.size())
             throw std::out_of_range("thermal boundary ID out of range");
         m->def.fom(component).default_thermal_boundary = condition;
     });
@@ -668,7 +669,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t co
     CHECK_NULL(m);
     CHECK_NULL(regions);
     MHS_TRY({
-        if (condition >= m->def.library->fluid_boundaries.size() || !n_regions)
+        if (condition >= m->library->fluid_boundaries.size() || !n_regions)
             throw std::invalid_argument("invalid fluid boundary assignment");
         mhs::model::FluidBoundarySpec assignment;
         assignment.condition = condition;
