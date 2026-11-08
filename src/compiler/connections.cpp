@@ -176,9 +176,11 @@ namespace mhs::compiler {
             used[spec.a.domain][spec.a.port] = used[spec.b.domain][spec.b.port] = true;
             compiled.connections.push_back(std::move(conn));
         }
-        for (const auto& domain : used)
-            if (std::find(domain.begin(), domain.end(), false) != domain.end())
-                throw std::invalid_argument("every declared port must be connected");
+        // Only FOM ports require Connection. A ROM port can instead carry an
+        // exterior boundary law; an otherwise unused ROM port is adiabatic.
+        for (std::size_t d = 0; d < nfom; ++d)
+            if (std::find(used[d].begin(), used[d].end(), false) != used[d].end())
+                throw std::invalid_argument("every declared FOM port must be connected");
 
         // A nonmatching ROM connection needs a projected tangential gradient
         // on every participating ROM facet: zeroing NCC is not permissible.

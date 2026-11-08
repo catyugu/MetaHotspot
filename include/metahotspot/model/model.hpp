@@ -84,6 +84,16 @@ namespace mhs::model {
         std::int8_t sign_a = 1; // Geometric outward normal on side A.
     };
 
+    // Exterior ROM subface after intersecting port facets and thermal BCs.
+    // Its physical trace and half-resistance come from the owning port patch.
+    struct RomBoundaryTerm {
+        DomainId domain = core::invalid_id;
+        PortId port = core::invalid_id;
+        std::size_t patch = 0;
+        BoundaryConditionId condition = core::invalid_id;
+        std::array<double, 4> bounds {};
+    };
+
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         Study study;
@@ -91,6 +101,8 @@ namespace mhs::model {
         mhs::core::Vector<RomDomain> rom_domains;
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
+        core::Vector<BoundaryCondition> rom_boundary_conditions;
+        core::Vector<RomBoundaryTerm> rom_boundary_terms;
         mhs::core::Vector<PointProbe> point_probes;
     };
 

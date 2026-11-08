@@ -242,9 +242,10 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
 // A facet's trace maps modal coordinates to its adjacent physical temperature;
 // half_resistance is distance/k (m^2 K/W). Tangential gradient rows are
 // optional for matching ports and required for nonmatching NCC.
-/** Add an affine parameter term mu*(K_i z - f_i) to a ROM.
- * A new compiled snapshot fixes mu; the reduced basis/port maps are unchanged.
- * K_i is a dense row-major (order,order) array; f_i has order entries. */
+/** Add an intrinsic affine operator parameter mu*(K_i z - f_i) to a ROM.
+ * Exposed-surface HTC instead uses mhs_model_add_convection() on the ROM
+ * domain, sharing the same physical ports as inter-domain connections.
+ * K_i is dense row-major (order,order); f_i has order entries. */
 MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
     double coefficient, const double* stiffness, const double* rhs);
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
@@ -302,8 +303,10 @@ MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-/** Surface conditions require a nonempty array of SI rectangles. Later regions
- * override earlier ones; uncovered exterior faces use the default thermal BC. */
+/** Surface conditions require nonempty SI rectangles; later regions win.
+ * For FOM, uncovered exterior faces use the default thermal BC. For ROM,
+ * regions must lie on declared, unconnected ROM ports; uncovered port areas
+ * are adiabatic. Connected ROM ports exchange heat via Connection only. */
 MHS_API mhs_status_t mhs_model_add_dirichlet(
     mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
 

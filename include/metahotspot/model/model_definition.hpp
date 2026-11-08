@@ -204,10 +204,9 @@ namespace mhs::model {
         double offset = 0.0;
     };
 
-    // Affine HTC-like parameter contribution: K(mu) = K0 + sum mu_i * K_i,
-    // f(mu) = f0 + sum mu_i * f_i. C is parameter-independent in this form.
-    // One compiled snapshot fixes parameter values; the same extracted matrices
-    // and port maps can be reused when constructing another snapshot.
+    // Optional intrinsic affine operator parameters: K(mu) = K0 + sum mu_i * K_i,
+    // f(mu) = f0 + sum mu_i * f_i. Physical exterior HTC belongs to the
+    // ordinary boundary/port coupling, not to this parameter family.
     struct RomAffineTerm {
         std::string name;
         double value = 0.0;
@@ -220,6 +219,9 @@ namespace mhs::model {
         std::size_t order = 0;
         mhs::core::Vector<double> K, C, f, initial_state;
         mhs::core::Vector<RomPort> ports;
+        // Ordinary thermal BCs on exposed port regions; connected ports
+        // receive their thermal exchange from Connection instead.
+        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         mhs::core::Vector<RomObservation> observations;
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };

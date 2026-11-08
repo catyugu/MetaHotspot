@@ -130,7 +130,11 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.domains.at(domain).thermal_boundaries.push_back(std::move(bp));
+    if (domain < m->def.domains.size())
+        m->def.domains.at(domain).thermal_boundaries.push_back(std::move(bp));
+    else
+        m->def.rom_domains.at(static_cast<std::size_t>(domain) - m->def.domains.size())
+            .thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)

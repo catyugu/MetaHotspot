@@ -253,7 +253,7 @@ class Model(OwnedHandle):
     def add_dirichlet(
         self, regions: Sequence[SurfaceRegion], temperature: str, *, domain: int = 0
     ) -> None:
-        """Prescribe temperature on nonempty surface regions (later calls win)."""
+        """Prescribe temperature on FOM exterior or exposed ROM port regions."""
         native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_dirichlet",
@@ -267,7 +267,7 @@ class Model(OwnedHandle):
     def add_neumann(
         self, regions: Sequence[SurfaceRegion], heat_flux: str, *, domain: int = 0
     ) -> None:
-        """Prescribe heat flux on nonempty surface regions."""
+        """Prescribe heat flux on FOM exterior or exposed ROM port regions."""
         native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_neumann",
@@ -286,7 +286,7 @@ class Model(OwnedHandle):
         *,
         domain: int = 0,
     ) -> None:
-        """Apply convection on nonempty surface regions."""
+        """Apply convection on FOM exterior or exposed ROM port regions."""
         native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_convection",
@@ -483,10 +483,10 @@ class Model(OwnedHandle):
         stiffness: np.ndarray,
         rhs: np.ndarray,
     ) -> None:
-        """Supply mu*K_i and mu*f_i from a reusable affine HTC ROM.
+        """Supply an intrinsic affine K/f parameter to a ROM.
 
-        The parameter value is frozen into each compiled snapshot. Different
-        snapshots can reuse the same ROM matrices and physical port mappings.
+        Exterior HTC is specified with add_convection(domain=rom_domain),
+        reusing the same physical port maps as inter-domain connections.
         """
         order = self._rom_orders.get(domain)
         if order is None:
