@@ -105,7 +105,7 @@ namespace mhs::solver {
             for (const auto& term : boundary_faces_on_cell(model, cell)) {
                 const auto axis = static_cast<std::size_t>(term.axis);
                 const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-                const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
+                const auto trace = evaluate_boundary(conditions[term.condition],
                     boundary_center(model.discrete.cells[cell], term), area,
                     model.discrete.cells[cell].size()[axis] / 2, temperature[cell], k[axis], time);
                 gradient[axis] += term.sign * area * trace.temperature;
@@ -227,7 +227,7 @@ namespace mhs::solver {
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             if (!boundary_contains(model.discrete.cells[term.cell], term, p))
                 continue;
-            const auto& condition = model.boundary_conditions[term.condition];
+            const auto& condition = conditions[term.condition];
             const double trace = evaluate_boundary(condition, boundary_center(model.discrete.cells[term.cell], term),
                 area, (model.discrete.cells[cell].size()[axis] / 2), cell_temperature,
                 conductivity(model, materials, temperature, cell, time, static_cast<int>(term.axis)), time)
