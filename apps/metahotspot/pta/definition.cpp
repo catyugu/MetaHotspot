@@ -83,7 +83,7 @@ namespace mhs::app::pta {
                 boundary);
         };
         normalize_boundary(def.model.fom(0).default_thermal_boundary);
-        for (auto& boundary : def.model.fom(0).thermal_boundaries)
+        for (auto& boundary : def.model.component(0).thermal_boundaries)
             normalize_boundary(boundary.condition);
 
         for (auto& layer : def.layers)
@@ -160,7 +160,7 @@ namespace mhs::app::pta {
                 r.rectangle.b_max *= scale;
             }
         };
-        for (auto& b : out.fom(0).thermal_boundaries)
+        for (auto& b : out.component(0).thermal_boundaries)
             scale_regions(b.regions);
         for (auto& b : out.fom(0).fluid_boundaries)
             scale_regions(b.regions);

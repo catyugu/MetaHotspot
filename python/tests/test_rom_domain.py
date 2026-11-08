@@ -31,6 +31,7 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model = Model()
+    assert model.add_fom_domain() == 0
     model.set_cartesian_mesh([0, 1], [0, 1], [0, 1])
     solid = model.add_material("solid", "1", "1", "1", "1", "1")
     volume = model.add_volume(solid)

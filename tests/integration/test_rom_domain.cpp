@@ -12,17 +12,18 @@ namespace {
     using namespace mhs::model;
     constexpr double q = 0.7071067811865475244;
 
-    FomDomainDefinition block(std::initializer_list<double> x, bool first)
+    ComponentDefinition block(std::initializer_list<double> x, bool first)
     {
-        FomDomainDefinition d;
+        ComponentDefinition component;
+        auto& d = std::get<FomDomainDefinition>(component.physics);
         d.mesh.x_vertices = x;
         d.mesh.y_vertices = d.mesh.z_vertices = {0.0, 1.0};
         d.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {3, 1, 1}}}}};
         d.default_thermal_boundary = NeumannBoundary {};
-        d.thermal_boundaries.push_back(
+        component.thermal_boundaries.push_back(
             {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}}, DirichletBoundary {first ? "300" : "280"}});
-        d.ports.push_back({"interface", {Axis::X, 1.0, {0, 1, 0, 1}}});
-        return d;
+        component.ports.push_back({"interface", {Axis::X, 1.0, {0, 1, 0, 1}}});
+        return component;
     }
 
     // Tiny independent dense solver for a single implicit-Euler update;
@@ -66,13 +67,14 @@ namespace {
     ModelDefinition blocks(bool reduced)
     {
         ModelDefinition model;
+        model.components.emplace_back();
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
         model.materials.push_back({"solid", mat});
-        model.domains[0] = block({0.0, 1.0}, true);
+        model.components[0] = block({0.0, 1.0}, true);
         if (!reduced) {
-            model.domains.push_back(block({1.0, 2.0, 3.0}, false));
+            model.components.push_back(block({1.0, 2.0, 3.0}, false));
         }
         else {
             RomDomainDefinition rom;
@@ -83,7 +85,7 @@ namespace {
             rom.C = {1, 0, 0, 1};
             rom.f = {560 * q, 560 * q};
             rom.initial_state = {300 / q, 0};
-            RomPort port;
+            PortDefinition port;
             port.name = "interface";
             port.region = {Axis::X, 1.0, {0, 1, 0, 1}};
             port.outward_sign = -1;
@@ -93,9 +95,9 @@ namespace {
             facet.center = {0.5, 0.5};
             facet.trace = {q, -q};
             port.patches.push_back(facet);
-            rom.ports.push_back(port);
+
             rom.observations.push_back({{"top", 2.5, 0.5, 0.5}, {q, q}, 0});
-            model.domains.push_back(rom);
+            model.components.push_back({rom, {port}, {}});
         }
         model.point_probes.push_back({"top", 2.5, 0.5, 0.5});
         model.connections.push_back({{0, 0}, {1, 0}});
@@ -110,7 +112,7 @@ TEST(RomDomain, FullBasisGalerkinsOperatorsAndTransientMatchFom)
     const auto rom = mhs::compiler::build_model(blocks(true));
     EXPECT_EQ(fom.layout.state_count, 3u);
     EXPECT_EQ(rom.layout.state_count, 3u);
-    ASSERT_EQ(rom.domains.size(), 2u);
+    ASSERT_EQ(rom.components.size(), 2u);
     EXPECT_EQ(rom.rom(1).order, 2u);
     const auto init_fom = mhs::core::Vector<double> {300, 300, 300};
     const auto init_rom = mhs::core::Vector<double> {300, 300 / q, 0};
@@ -187,7 +189,8 @@ TEST(RomDomain, FullBasisGalerkinsOperatorsAndTransientMatchFom)
 TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
 {
     mhs::model::ModelDefinition def;
-    def.domains.clear();
+    def.components.emplace_back();
+    def.components.clear();
     for (std::size_t i = 0; i < 2; ++i) {
         mhs::model::RomDomainDefinition rom;
         rom.order = 1;
@@ -195,7 +198,7 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
         rom.C = {1};
         rom.f = {i == 0 ? 600.0 : 560.0};
         rom.initial_state = {300};
-        mhs::model::RomPort port;
+        mhs::model::PortDefinition port;
         port.name = "join";
         port.region = {mhs::model::Axis::X, 1, {0, 1, 0, 1}};
         port.outward_sign = i == 0 ? 1 : -1;
@@ -205,14 +208,14 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
         patch.center = {0.5, 0.5};
         patch.trace = {1};
         port.patches.push_back(patch);
-        rom.ports.push_back(port);
-        def.domains.push_back(rom);
+
+        def.components.push_back({rom, {port}, {}});
     }
     def.connections.push_back({{0, 0}, {1, 0}});
     const auto model = mhs::compiler::build_model(def);
-    ASSERT_EQ(model.domains.size(), 2u);
-    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.domains[0]));
-    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.domains[1]));
+    ASSERT_EQ(model.components.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.components[0].physics));
+    EXPECT_TRUE(std::holds_alternative<mhs::model::RomDomain>(model.components[1].physics));
     EXPECT_EQ(model.layout.state_count, 2u);
     EXPECT_EQ(model.layout.fields[0].quantity, mhs::model::FieldQuantity::ReducedCoordinate);
     const mhs::core::Vector<double> initial {300, 300};
@@ -236,14 +239,15 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 {
     using namespace mhs::model;
     ModelDefinition d;
-    d.domains.clear();
+    d.components.emplace_back();
+    d.components.clear();
     RomDomainDefinition rom;
     rom.order = 1;
     rom.K = {2};
     rom.C = {1};
     rom.f = {0};
     rom.initial_state = {300};
-    RomPort port;
+    PortDefinition port;
     port.name = "exposed-htc-face";
     port.region = {Axis::Z, 1, {0, 0.1, 0, 0.1}};
     port.outward_sign = 1;
@@ -253,12 +257,12 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     patch.center = {0.05, 0.05};
     patch.trace = {1};
     port.patches.push_back(patch);
-    rom.ports.push_back(port);
+
     ThermalBoundarySpec boundary;
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
     boundary.condition = ConvectionBoundary {"100", "300"};
-    rom.thermal_boundaries.push_back(std::move(boundary));
-    d.domains.push_back(rom);
+
+    d.components.push_back({rom, {port}, {std::move(boundary)}});
     const mhs::core::Vector<double> initial {300};
 
     const auto first = mhs::compiler::build_model(d);
@@ -272,7 +276,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     // Reuse the same intrinsic ROM and physical port; only the ordinary
     // exterior boundary condition changes with the surrounding environment.
-    d.rom(0).thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
+    d.component(0).thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
     const auto second = mhs::compiler::build_model(d);
     const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
     const double second_g = 0.01 / (0.005 + 1.0 / 200.0);
@@ -284,9 +288,10 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     // A connected face must never receive an additional external HTC law.
     auto invalid = d;
     RomDomainDefinition other = rom;
-    other.thermal_boundaries.clear();
-    other.ports[0].outward_sign = -1;
-    invalid.domains.push_back(other);
+    auto other_port = port;
+
+    other_port.outward_sign = -1;
+    invalid.components.push_back({other, {other_port}, {}});
     invalid.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(invalid), std::invalid_argument);
 }
@@ -295,6 +300,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
 {
     using namespace mhs::model;
     ModelDefinition d;
+    d.components.emplace_back();
     MaterialSpec solid;
     solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
     solid.density = solid.specific_heat = "1";
@@ -304,7 +310,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     fom.mesh.y_vertices = {0, 0.5, 1};
     fom.mesh.z_vertices = {0, 1};
     fom.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}};
-    fom.ports.push_back({"join", {Axis::X, 1, {0, 1, 0, 1}}});
+    d.component(0).ports.push_back({"join", {Axis::X, 1, {0, 1, 0, 1}}});
 
     RomDomainDefinition rom;
     rom.order = 1;
@@ -312,7 +318,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     rom.C = {1};
     rom.f = {0};
     rom.initial_state = {1};
-    RomPort port;
+    PortDefinition port;
     port.name = "join";
     port.region = {Axis::X, 1, {0, 1, 0, 1}};
     port.outward_sign = -1;
@@ -327,8 +333,8 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     patch.tangential_gradient[0] = {20};
     patch.tangential_gradient[1] = {0};
     port.patches.push_back(patch);
-    rom.ports.push_back(port);
-    d.domains.push_back(rom);
+
+    d.components.push_back({rom, {port}, {}});
     d.connections = {{{0, 0}, {1, 0}}};
 
     const auto compiled = mhs::compiler::build_model(d);
@@ -341,7 +347,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
         EXPECT_NEAR(part.outward_a, 0, 1e-12);
 
     auto uncorrected = d;
-    uncorrected.rom(1).ports[0].patches[0].tangential_gradient[0] = {0};
+    uncorrected.component(1).ports[0].patches[0].tangential_gradient[0] = {0};
     const auto model_tpfa = mhs::compiler::build_model(uncorrected);
     const auto tpfa = mhs::solver::evaluate_connection_flux(model_tpfa, model_tpfa.connections.front(), state, 0);
     ASSERT_EQ(tpfa.size(), 2u);
@@ -358,14 +364,15 @@ TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
 {
     using namespace mhs::model;
     ModelDefinition d;
-    d.domains.clear();
+    d.components.emplace_back();
+    d.components.clear();
 
     RomDomainDefinition left;
     left.order = 1;
     left.K = {1};
     left.C = {1};
     left.f = {300};
-    RomPort port;
+    PortDefinition port;
     port.name = "join";
     port.region = {Axis::X, 1, {0, 1, 0, 1}};
     port.outward_sign = 1;
@@ -375,18 +382,18 @@ TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
     patch.center = {0.5, 0.5};
     patch.trace = {1};
     port.patches.push_back(patch);
-    left.ports.push_back(port);
 
     RomDomainDefinition right = left;
-    right.ports[0].outward_sign = -1;
-    right.ports[0].patches.clear();
-    right.ports[0].patches.push_back(patch);
-    right.ports[0].patches[0].rectangle = {0, 0.5, 0, 1};
-    right.ports[0].patches.push_back(patch);
-    right.ports[0].patches[1].rectangle = {0.5, 1, 0, 1};
+    auto right_port = port;
+    right_port.outward_sign = -1;
+    right_port.patches.clear();
+    right_port.patches.push_back(patch);
+    right_port.patches[0].rectangle = {0, 0.5, 0, 1};
+    right_port.patches.push_back(patch);
+    right_port.patches[1].rectangle = {0.5, 1, 0, 1};
 
-    d.domains.push_back(std::move(left));
-    d.domains.push_back(std::move(right));
+    d.components.push_back({std::move(left), {port}, {}});
+    d.components.push_back({std::move(right), {right_port}, {}});
     d.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }

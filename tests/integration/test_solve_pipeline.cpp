@@ -8,6 +8,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
     mhs::model::ModelDefinition io;
+    io.components.emplace_back();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -24,7 +25,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     mhs::model::ThermalBoundarySpec boundary1;
     boundary1.condition = mhs::model::DirichletBoundary {"300"};
     boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.fom(0).thermal_boundaries.push_back(boundary1);
+    io.component(0).thermal_boundaries.push_back(boundary1);
 
     io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -46,6 +47,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     mhs::model::ModelDefinition io;
+    io.components.emplace_back();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -78,7 +80,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.fom(0).thermal_boundaries.push_back(boundary);
+    io.component(0).thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
@@ -113,6 +115,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
     mhs::model::ModelDefinition io;
+    io.components.emplace_back();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -137,7 +140,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.fom(0).thermal_boundaries.push_back(boundary);
+    io.component(0).thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 

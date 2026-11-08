@@ -56,6 +56,7 @@ namespace mhs::app::pta {
     // Parsing scratch state. PTA syntax never enters the library definition.
     struct Definition {
         mhs::model::ModelDefinition model;
+        Definition() { model.components.emplace_back(); }
         LengthUnit length_unit = LengthUnit::Meter;
         mhs::core::Vector<LayerSpec> layers;
         mhs::core::Vector<PointProbeSpec> point_probes;

@@ -504,7 +504,7 @@ namespace mhs::app::pta {
                     }
                 }
 
-                def.model.fom(0).thermal_boundaries.push_back(std::move(boundary));
+                def.model.component(0).thermal_boundaries.push_back(std::move(boundary));
             }
         }
 

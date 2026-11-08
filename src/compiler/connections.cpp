@@ -38,121 +38,104 @@ namespace mhs::compiler {
     void compile_connections(const model::ModelDefinition& definition, model::CompiledModel& compiled)
     {
         using namespace model;
-        const auto ndom = definition.domains.size();
+        const auto ndom = definition.components.size();
         core::Vector<core::Vector<Facets>> ports(ndom);
         core::Vector<core::Vector<bool>> used(ndom);
 
-        // Full-order port projection and exterior-boundary exclusion.
-        for (const auto& field : compiled.layout.fields) {
-            if (field.quantity != FieldQuantity::Temperature)
-                continue;
-            const auto d = field.domain;
-            const auto& domain = definition.fom(d);
-            auto& fom = compiled.fom(d);
-            used[d].resize(domain.ports.size(), false);
-            ports[d].resize(domain.ports.size());
+        // Every component validates the same named physical-port contract.
+        // Cartesian faces are projected once for both boundary laws and ports;
+        // reduced ports instead carry explicit trace facets.
+        for (std::size_t d = 0; d < ndom; ++d) {
+            const auto& component = definition.component(static_cast<DomainId>(d));
+            const auto* rom = std::get_if<RomDomain>(&compiled.components[d].physics);
+            auto* fom = rom ? nullptr : &compiled.fom(static_cast<DomainId>(d));
+            used[d].resize(component.ports.size(), false);
+            ports[d].resize(component.ports.size());
             std::set<std::string> names;
-            for (std::size_t p = 0; p < domain.ports.size(); ++p) {
-                const auto& port = domain.ports[p];
+            core::Vector<TaggedSurfaceRegion> regions;
+            std::size_t port_offset = 0;
+            if (fom) {
+                for (std::size_t id = 0; id < component.thermal_boundaries.size(); ++id)
+                    for (const auto& region : component.thermal_boundaries[id].regions)
+                        regions.push_back({region, id});
+                port_offset = fom->boundary_conditions.size();
+            }
+            for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                const auto& port = component.ports[p];
                 const auto& r = port.region;
                 validate_region(r);
                 if (port.name.empty() || !names.insert(port.name).second)
-                    throw std::invalid_argument("port names must be nonempty and unique within a domain");
+                    throw std::invalid_argument("port names must be nonempty and unique within a component");
                 for (std::size_t previous = 0; previous < p; ++previous)
-                    if (intersects(r, domain.ports[previous].region))
-                        throw std::invalid_argument("domain ports overlap");
-                for (const auto& bc : domain.thermal_boundaries)
-                    for (const auto& region : bc.regions)
-                        if (intersects(r, region))
-                            throw std::invalid_argument("port overlaps an explicit thermal boundary");
-                for (const auto& bc : domain.fluid_boundaries)
-                    for (const auto& region : bc.regions)
-                        if (intersects(r, region))
-                            throw std::invalid_argument("port overlaps a fluid boundary");
-                const auto projection = project_exterior_surface_regions(fom.discrete, {{r, 0}});
-                double covered = 0;
-                for (const auto& patch : projection) {
-                    covered += area(patch.bounds);
-                    const auto& fluid = fom.fluid;
-                    if (!fluid.global_to_fluid.empty() && fluid.global_to_fluid[patch.cell] != core::invalid_id)
-                        throw std::invalid_argument("thermal connections currently require solid interface cells");
-                    ports[d].at(p).push_back({patch.cell, patch.bounds, patch.sign});
+                    if (intersects(r, component.ports[previous].region))
+                        throw std::invalid_argument("component ports overlap");
+                if (fom) {
+                    for (const auto& bc : component.thermal_boundaries)
+                        for (const auto& region : bc.regions)
+                            if (intersects(r, region))
+                                throw std::invalid_argument("port overlaps an explicit thermal boundary");
+                    for (const auto& bc : definition.fom(static_cast<DomainId>(d)).fluid_boundaries)
+                        for (const auto& region : bc.regions)
+                            if (intersects(r, region))
+                                throw std::invalid_argument("port overlaps a fluid boundary");
+                    regions.push_back({r, port_offset + p});
+                    continue;
                 }
-                if (projection.empty() || std::abs(covered - area(bounds(r))) > 1e-10 * area(bounds(r)))
-                    throw std::invalid_argument("port is not fully covered by exterior domain faces");
-                if (!std::all_of(projection.begin(), projection.end(),
-                        [&](const auto& x) { return x.sign == projection.front().sign; }))
-                    throw std::invalid_argument("port must have a single outward normal");
-            }
-            if (!domain.ports.empty()) {
-                core::Vector<TaggedSurfaceRegion> regions;
-                for (std::size_t bc = 0; bc < domain.thermal_boundaries.size(); ++bc)
-                    for (const auto& region : domain.thermal_boundaries[bc].regions)
-                        regions.push_back({region, bc});
-                for (const auto& port : domain.ports)
-                    regions.push_back({port.region, core::invalid_id});
-                fom.boundary_faces.clear();
-                for (const auto& patch :
-                    project_exterior_surface_regions(fom.discrete, regions, fom.boundary_conditions.size() - 1))
-                    if (patch.tag != core::invalid_id)
-                        fom.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                            static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
-            }
-        }
-
-        // ROM ports describe only their physical boundary; their interior is
-        // represented exclusively by the reduced operators.
-        for (const auto& field : compiled.layout.fields) {
-            if (field.quantity != FieldQuantity::ReducedCoordinate)
-                continue;
-            const auto d = field.domain;
-            const auto& rom = compiled.rom(d);
-            used[d].resize(rom.ports.size(), false);
-            ports[d].resize(rom.ports.size());
-            std::set<std::string> names;
-            for (std::size_t p = 0; p < rom.ports.size(); ++p) {
-                const auto& port = rom.ports[p];
-                validate_region(port.region);
-                if (port.name.empty() || !names.insert(port.name).second)
-                    throw std::invalid_argument("ROM port names must be nonempty and unique");
                 if (port.outward_sign != 1 && port.outward_sign != -1)
                     throw std::invalid_argument("ROM outward port sign must be +1 or -1");
-                for (std::size_t prev = 0; prev < p; ++prev)
-                    if (intersects(port.region, rom.ports[prev].region))
-                        throw std::invalid_argument("ROM ports overlap");
                 double total = 0;
+                const auto order = rom->order;
+                const auto finite = [](double x) { return std::isfinite(x); };
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
                     const auto& patch = port.patches[j];
                     const auto rect = bounds(patch.rectangle);
-                    const auto common = overlap(rect, bounds(port.region));
+                    const auto common = overlap(rect, bounds(r));
                     if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
-                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != rom.order
-                        || !std::all_of(
-                            patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
-                        || !std::all_of(
-                            patch.center.begin(), patch.center.end(), [](double x) { return std::isfinite(x); }))
+                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != order
+                        || !std::all_of(patch.trace.begin(), patch.trace.end(), finite)
+                        || !std::all_of(patch.center.begin(), patch.center.end(), finite))
                         throw std::invalid_argument("invalid ROM port patch geometry or trace");
                     for (const auto& row : patch.tangential_gradient)
-                        if (!row.empty()
-                            && (row.size() != rom.order
-                                || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
+                        if (!row.empty() && (row.size() != order || !std::all_of(row.begin(), row.end(), finite)))
                             throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
                     for (std::size_t prev = 0; prev < j; ++prev)
                         if (positive(overlap(rect, bounds(port.patches[prev].rectangle))))
                             throw std::invalid_argument("ROM port patches overlap");
                     total += area(rect);
-                    ports[d].at(p).push_back({static_cast<CellId>(j), rect, port.outward_sign});
+                    ports[d][p].push_back({static_cast<CellId>(j), rect, port.outward_sign});
                 }
-                if (port.patches.empty()
-                    || std::abs(total - area(bounds(port.region))) > 1e-10 * area(bounds(port.region)))
+                if (port.patches.empty() || std::abs(total - area(bounds(r))) > 1e-10 * area(bounds(r)))
                     throw std::invalid_argument("ROM port patches must exactly cover the port");
+            }
+            if (!fom)
+                continue;
+            const auto projection = project_exterior_surface_regions(fom->discrete, regions, port_offset - 1);
+            for (const auto& patch : projection) {
+                if (patch.tag < port_offset) {
+                    fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                        static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
+                    continue;
+                }
+                const auto p = patch.tag - port_offset;
+                if (!fom->fluid.global_to_fluid.empty() && fom->fluid.global_to_fluid[patch.cell] != core::invalid_id)
+                    throw std::invalid_argument("thermal connections currently require solid interface cells");
+                ports[d][p].push_back({patch.cell, patch.bounds, patch.sign});
+            }
+            for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                const auto& facets = ports[d][p];
+                double covered = 0;
+                for (const auto& facet : facets)
+                    covered += area(facet.bounds);
+                const double required = area(bounds(component.ports[p].region));
+                if (facets.empty() || std::abs(covered - required) > 1e-10 * required)
+                    throw std::invalid_argument("port is not fully covered by exterior domain faces");
+                if (!std::all_of(facets.begin(), facets.end(),
+                        [&](const auto& facet) { return facet.sign == facets.front().sign; }))
+                    throw std::invalid_argument("port must have a single outward normal");
             }
         }
 
-        auto region = [&](PortReference x) -> SurfaceRegion {
-            return std::visit(
-                [&](const auto& domain) { return domain.ports.at(x.port).region; }, definition.domains.at(x.domain));
-        };
+        auto region = [&](PortReference x) { return definition.component(x.domain).ports.at(x.port).region; };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
                 throw std::invalid_argument("connection must join two different domains");
@@ -193,10 +176,10 @@ namespace mhs::compiler {
                 continue;
             for (std::size_t side = 0; side < 2; ++side) {
                 const auto ref = side == 0 ? conn.a : conn.b;
-                const auto* rom = std::get_if<RomDomain>(&compiled.domains.at(ref.domain));
+                const auto* rom = std::get_if<RomDomain>(&compiled.components.at(ref.domain).physics);
                 if (!rom)
                     continue;
-                const auto& port = rom->ports.at(ref.port);
+                const auto& port = compiled.components[ref.domain].ports.at(ref.port);
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
                     for (const auto& row : port.patches.at(index).tangential_gradient)

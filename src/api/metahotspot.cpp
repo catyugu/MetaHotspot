@@ -131,7 +131,7 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    std::visit([&](auto& value) { value.thermal_boundaries.push_back(std::move(bp)); }, m->def.domains.at(domain));
+    m->def.component(domain).thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -234,8 +234,8 @@ MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_i
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto id = static_cast<mhs_index_t>(m->def.domains.size());
-        m->def.domains.emplace_back(mhs::model::FomDomainDefinition {});
+        const auto id = static_cast<mhs_index_t>(m->def.components.size());
+        m->def.components.emplace_back();
         *out_id = id;
     });
 }
@@ -251,16 +251,7 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
         if (!order || order > static_cast<size_t>(std::numeric_limits<mhs_index_t>::max())
             || order > static_cast<size_t>(std::numeric_limits<mhs::core::SparseIndex>::max()) / order)
             throw std::invalid_argument("invalid ROM order");
-        // The default, untouched FOM is a convenience for ordinary models;
-        // a ROM-only assembly does not need an artificial empty FOM.
-        if (m->def.domains.size() == 1) {
-            const auto* fom = std::get_if<mhs::model::FomDomainDefinition>(&m->def.domains[0]);
-            if (fom && fom->mesh.x_vertices.empty() && fom->mesh.y_vertices.empty() && fom->mesh.z_vertices.empty()
-                && fom->volumes.empty() && fom->ports.empty() && fom->thermal_boundaries.empty()
-                && fom->fluid_boundaries.empty())
-                m->def.domains.clear();
-        }
-        const auto id = static_cast<mhs_index_t>(m->def.domains.size());
+        const auto id = static_cast<mhs_index_t>(m->def.components.size());
         mhs::model::RomDomainDefinition rom;
         rom.order = order;
         rom.K.assign(stiffness, stiffness + order * order);
@@ -268,7 +259,8 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
         rom.f.assign(rhs, rhs + order);
         if (initial)
             rom.initial_state.assign(initial, initial + order);
-        m->def.domains.emplace_back(std::move(rom));
+        auto& component = m->def.components.emplace_back();
+        component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
         *out_id = id;
     });
 }
@@ -307,7 +299,7 @@ MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, 
         if (outward_sign != 1 && outward_sign != -1)
             throw std::invalid_argument("ROM port normal must be +/-1");
         auto& rom = m->def.rom(domain);
-        mhs::model::RomPort value;
+        mhs::model::PortDefinition value;
         value.name = name;
         value.region = _make_surface_region(region->axis, region->coordinate, region->rectangle);
         value.outward_sign = static_cast<std::int8_t>(outward_sign);
@@ -329,7 +321,7 @@ MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, 
                 patch.tangential_gradient[1].assign(source.gradient_b, source.gradient_b + rom.order);
             value.patches.push_back(std::move(patch));
         }
-        auto& ports = rom.ports;
+        auto& ports = m->def.component(domain).ports;
         if (ports.size() >= std::numeric_limits<mhs_index_t>::max())
             throw std::length_error("too many ROM ports");
         const auto id = static_cast<mhs_index_t>(ports.size());
@@ -363,7 +355,7 @@ MHS_API mhs_status_t mhs_model_add_port(
     CHECK_NULL(region);
     CHECK_NULL(out_id);
     MHS_TRY({
-        auto& ports = m->def.fom(domain).ports;
+        auto& ports = m->def.component(domain).ports;
         auto surface = _make_surface_region(region->axis, region->coordinate, region->rectangle);
         const auto id = static_cast<mhs_index_t>(ports.size());
         ports.push_back({name, surface});
@@ -376,9 +368,7 @@ MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto check_port = [&](mhs_index_t d, mhs_index_t p) {
-            std::visit([&](const auto& domain) { (void)domain.ports.at(p); }, m->def.domains.at(d));
-        };
+        const auto check_port = [&](mhs_index_t d, mhs_index_t p) { (void)m->def.component(d).ports.at(p); };
         check_port(domain_a, port_a);
         check_port(domain_b, port_b);
         const auto id = static_cast<mhs_index_t>(m->def.connections.size());
@@ -727,8 +717,8 @@ MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_i
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY({
-        const auto& domain_value = c->model.domains.at(domain);
-        if (const auto* value = std::get_if<mhs::model::FomDomain>(&domain_value)) {
+        const auto& domain_value = c->model.components.at(domain);
+        if (const auto* value = std::get_if<mhs::model::FomDomain>(&domain_value.physics)) {
             out->cell_count = value->discrete.cells.size();
             out->face_count = value->discrete.faces.size();
         }
@@ -796,7 +786,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
             out->projection_count += fom.source_terms.size();
         }
     out->state_count = c->model.layout.state_count;
-    out->domain_count = c->model.domains.size();
+    out->domain_count = c->model.components.size();
     out->field_count = c->model.layout.fields.size();
 
     mhs_detail_clear_last_error();

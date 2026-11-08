@@ -267,7 +267,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     for (const auto& rectangle : {mhs::model::RegionRect {0.0, 50.0, 50.0, 100.0},
              mhs::model::RegionRect {50.0, 100.0, 0.0, 50.0}, mhs::model::RegionRect {50.0, 100.0, 50.0, 100.0}})
         boundary.regions.push_back({mhs::model::Axis::Z, 0.0, rectangle});
-    io.model.fom(0).thermal_boundaries.push_back(boundary);
+    io.model.component(0).thermal_boundaries.push_back(boundary);
 
     io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -464,12 +464,12 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     mhs::model::ThermalBoundarySpec earlier;
     earlier.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     earlier.condition = mhs::model::DirichletBoundary {"310"};
-    definition.model.fom(0).thermal_boundaries.push_back(earlier);
+    definition.model.component(0).thermal_boundaries.push_back(earlier);
 
     mhs::model::ThermalBoundarySpec later;
     later.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     later.condition = mhs::model::ConvectionBoundary {"42", "280"};
-    definition.model.fom(0).thermal_boundaries.push_back(later);
+    definition.model.component(0).thermal_boundaries.push_back(later);
 
     const auto model = test_pta::build_model(definition);
     const auto cell = input_cell(model, definition.model.fom(0).mesh, 0);
@@ -520,7 +520,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     boundary.condition = mhs::model::ConvectionBoundary {"10", "200"};
     boundary.regions.push_back(
         test_pta::face_region(mhs::model::Axis::Y, 10.0, {0.0, 10.0, 0.0, 5.0})); // cx: 0-10, cz: 0-5
-    io.model.fom(0).thermal_boundaries.push_back(boundary);
+    io.model.component(0).thermal_boundaries.push_back(boundary);
 
     io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -591,7 +591,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
         test_pta::face_region(mhs::model::Axis::X, 0.0, {0.0, 10.0, 0.0, 10.0})); // XM face, all cz
     boundary.regions.push_back(
         test_pta::face_region(mhs::model::Axis::Y, 10.0, {0.0, 10.0, 0.0, 10.0})); // YP face, all cz
-    io.model.fom(0).thermal_boundaries.push_back(boundary);
+    io.model.component(0).thermal_boundaries.push_back(boundary);
 
     io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 

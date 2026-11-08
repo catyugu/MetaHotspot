@@ -9,6 +9,7 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
+    d.components.emplace_back();
     d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
@@ -85,7 +86,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
-        d.fom(0).thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
+        d.component(0).thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
         const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);

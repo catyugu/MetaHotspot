@@ -1,10 +1,11 @@
 # Compiled model, state layout and domain connections
 
 `ModelDefinition` owns global symbols, materials, sources and named probes. Study is solve-time configuration.
-Its `domains` table is the canonical creation-ordered sequence of
-`FomDomainDefinition` and `RomDomainDefinition`. DomainId is the index in that
-sequence, independent of domain type. Domain 0 is an implicit FOM on creation;
-adding the first ROM to an untouched model replaces that empty convenience domain.
+Its `components` table contains `ComponentDefinition` objects in creation order.
+Each component owns its physical ports and thermal boundary declarations and
+holds a Cartesian or reduced numerical formulation in a variant. The model
+starts empty: creating a Cartesian or reduced component explicitly assigns its
+stable, creation-ordered `DomainId`.
 A fluid region remains part of its FOM, selected by the material's
 `dynamic_viscosity` expression.
 
@@ -74,6 +75,8 @@ domains is ambiguous and reports an error; select a point inside one component.
 Python construction uses integer IDs, without additional owning handles:
 
 ```python
+model = Model()
+lower = model.add_fom_domain()
 upper = model.add_fom_domain()
 model.set_cartesian_mesh(x, y, upper_z, domain=upper)
 volume = model.add_volume(copper, domain=upper)
@@ -86,13 +89,16 @@ heat_rates = compiled.connection_flux(connection, compiled.solve().state)
 ```
 
 C domain-local construction functions take `domain` immediately after the model
-pointer. Python supplies `domain=0` by default. C++ callers use `fom(0)` for
-the default FOM. These are breaking C/C++ changes, with no compatibility aliases.
+pointer. Python supplies `domain=0` by default for Cartesian-specific
+operations, after a Cartesian component has explicitly been added. C++ callers
+use `fom(0)` to access that component's numerical formulation.
+These are breaking C/C++ changes, with no compatibility aliases.
 
 Within a FOM, internal faces continue to use TPFA without NCC. The current public
 Cartesian mesh specification does not yet express local octree refinement;
 GL-06 remains pending that capability. Connections currently implement perfect
-solid thermal contact; ROM ports and coupled flow connections remain later work.
+solid thermal contact, including reduced-port trace maps; coupled flow
+connections remain later work.
 
 ## Frozen flow and ownership
 

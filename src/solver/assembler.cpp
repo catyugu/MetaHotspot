@@ -170,10 +170,10 @@ namespace mhs::solver {
     ModelAssembler::ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time)
         : model_(model)
     {
-        if (initial.size() != model.layout.state_count || model.domains.empty())
+        if (initial.size() != model.layout.state_count || model.components.empty())
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
-        domains_.resize(model.domains.size());
-        stokes_.resize(model.domains.size());
+        domains_.resize(model.components.size());
+        stokes_.resize(model.components.size());
         for (const auto& field : model.layout.fields) {
             if (field.quantity != model::FieldQuantity::Temperature)
                 continue;
@@ -188,7 +188,7 @@ namespace mhs::solver {
                 domains_[d]
                     = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
         }
-        identity_ = model.domains.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
+        identity_ = model.components.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
     }
 
     const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
@@ -251,7 +251,7 @@ namespace mhs::solver {
         // physical conductance and heat load by the Galerkin transpose map.
         for (const auto& term : model_.rom_boundary_terms) {
             const auto& rom = model_.rom(term.domain);
-            const auto& port = rom.ports.at(term.port);
+            const auto& port = model_.components.at(term.domain).ports.at(term.port);
             const auto& facet = port.patches.at(term.patch);
             const auto& field
                 = model_.layout.field(model_.layout.find(term.domain, model::FieldQuantity::ReducedCoordinate));

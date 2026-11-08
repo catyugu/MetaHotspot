@@ -277,8 +277,8 @@ namespace mhs::solver {
         for (const auto& probe : compiled.point_probes) {
             model::DomainId owner = core::invalid_id;
             const model::RomObservation* observation = nullptr;
-            for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
-                if (const auto* fom = std::get_if<model::FomDomain>(&compiled.domains[d])) {
+            for (std::size_t d = 0; d < compiled.components.size(); ++d) {
+                if (const auto* fom = std::get_if<model::FomDomain>(&compiled.components[d].physics)) {
                     const auto cell = locate_cell(fom->discrete, {probe.x, probe.y, probe.z});
                     if (cell == core::invalid_id)
                         continue;
@@ -287,7 +287,7 @@ namespace mhs::solver {
                     owner = static_cast<model::DomainId>(d);
                     continue;
                 }
-                const auto& rom = std::get<model::RomDomain>(compiled.domains[d]);
+                const auto& rom = std::get<model::RomDomain>(compiled.components[d].physics);
                 for (const auto& value : rom.observations) {
                     if (probe.name != value.point.name || probe.x != value.point.x || probe.y != value.point.y
                         || probe.z != value.point.z)
@@ -310,16 +310,16 @@ namespace mhs::solver {
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
-            core::Vector<core::Vector<SurfaceTrace>> traces(compiled.domains.size());
+            core::Vector<core::Vector<SurfaceTrace>> traces(compiled.components.size());
             for (const auto& connection : compiled.connections) {
                 const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
                 for (std::size_t p = 0; p < connection.patches.size(); ++p) {
                     const auto& patch = connection.patches[p];
-                    if (std::holds_alternative<model::FomDomain>(compiled.domains.at(connection.a.domain)))
+                    if (std::holds_alternative<model::FomDomain>(compiled.components.at(connection.a.domain).physics))
                         traces[connection.a.domain].push_back(
                             {{patch.a, connection.axis, connection.sign_a, core::invalid_id, patch.bounds},
                                 flux[p].interface_temperature});
-                    if (std::holds_alternative<model::FomDomain>(compiled.domains.at(connection.b.domain)))
+                    if (std::holds_alternative<model::FomDomain>(compiled.components.at(connection.b.domain).physics))
                         traces[connection.b.domain].push_back(
                             {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a), core::invalid_id,
                                  patch.bounds},
@@ -349,8 +349,8 @@ namespace mhs::solver {
         // preconditioner; use SparseLU unless a direct solver was requested.
         auto effective_options = options;
         if (effective_options.linear_solver == SolveOptions::LinearSolverType::Amg)
-            for (const auto& domain : compiled.domains)
-                if (const auto* fom = std::get_if<model::FomDomain>(&domain);
+            for (const auto& component : compiled.components)
+                if (const auto* fom = std::get_if<model::FomDomain>(&component.physics);
                     fom && fom->flow_mode == model::FlowMode::Stokes && !fom->fluid.fluid_to_global.empty()) {
                     effective_options.linear_solver = SolveOptions::LinearSolverType::SparseLu;
                     break;
