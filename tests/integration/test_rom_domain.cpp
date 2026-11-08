@@ -12,16 +12,17 @@ namespace {
     using namespace mhs::model;
     constexpr double q = 0.7071067811865475244;
 
-    ComponentDefinition block(std::initializer_list<double> x, bool first)
+    ComponentDefinition block(std::initializer_list<double> x, bool first, LibraryDefinition& library)
     {
         ComponentDefinition component;
         auto& d = std::get<FomDomainDefinition>(component.physics);
         d.mesh.x_vertices = x;
         d.mesh.y_vertices = d.mesh.z_vertices = {0.0, 1.0};
         d.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {3, 1, 1}}}}};
-        d.default_thermal_boundary = NeumannBoundary {};
+        d.default_thermal_boundary = library.add_thermal_boundary(NeumannBoundary {});
         component.thermal_boundaries.push_back(
-            {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}}, DirichletBoundary {first ? "300" : "280"}});
+            {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}},
+                library.add_thermal_boundary(DirichletBoundary {first ? "300" : "280"})});
         component.ports.push_back({"interface", {Axis::X, 1.0, {0, 1, 0, 1}}});
         return component;
     }
@@ -71,10 +72,10 @@ namespace {
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
-        model.materials.push_back({"solid", mat});
-        model.components[0] = block({0.0, 1.0}, true);
+        model.library->materials.push_back({"solid", mat});
+        model.components[0] = block({0.0, 1.0}, true, *model.library);
         if (!reduced) {
-            model.components.push_back(block({1.0, 2.0, 3.0}, false));
+            model.components.push_back(block({1.0, 2.0, 3.0}, false, *model.library));
         }
         else {
             RomDomainDefinition rom;
@@ -259,7 +260,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     ThermalBoundarySpec boundary;
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
-    boundary.condition = ConvectionBoundary {"100", "300"};
+    boundary.condition = d.library->add_thermal_boundary(ConvectionBoundary {"100", "300"});
 
     d.components.push_back({rom, {port}, {std::move(boundary)}});
     const mhs::core::Vector<double> initial {300};
@@ -275,7 +276,8 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 
     // Reuse the same intrinsic ROM and physical port; only the ordinary
     // exterior boundary condition changes with the surrounding environment.
-    d.component(0).thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
+    d.component(0).thermal_boundaries[0].condition =
+        d.library->add_thermal_boundary(ConvectionBoundary {"200", "300"});
     const auto second = mhs::compiler::build_model(d);
     const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
     const double second_g = 0.01 / (0.005 + 1.0 / 200.0);
@@ -303,7 +305,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     MaterialSpec solid;
     solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
     solid.density = solid.specific_heat = "1";
-    d.materials.push_back({"solid", solid});
+    d.library->materials.push_back({"solid", solid});
     auto& fom = d.fom(0);
     fom.mesh.x_vertices = {0, 1};
     fom.mesh.y_vertices = {0, 0.5, 1};
