@@ -62,7 +62,7 @@ int main(int argc, char* argv[])
 
         // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature
-            = mhs::app::postprocess::interpolate_cell_to_node(model.fom(0), model.library, grid, solution, result.time);
+            = mhs::app::postprocess::interpolate_cell_to_node(model.fom(0), grid, solution, result.time);
         mhs::app::pta::write_xml(
             input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
