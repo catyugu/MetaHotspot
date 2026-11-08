@@ -190,38 +190,46 @@ namespace mhs::solver {
     mhs::solver::Solution solve(const mhs::model::CompiledModel& compiled, const mhs::model::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
-        const auto cell_count = compiled.layout.state_count;
-        if (cell_count == 0) {
-            throw std::invalid_argument("solve: model has zero cells");
-        }
-
+        const auto state_count = compiled.layout.state_count;
+        if (state_count == 0)
+            throw std::invalid_argument("solve: model has no states");
         if (!std::isfinite(study.initial_temperature))
             throw std::invalid_argument("solve: initial temperature must be finite");
 
-        mhs::core::Vector<double> state;
+        core::Vector<double> state;
         if (initial_state.empty()) {
-            state.assign(cell_count, study.initial_temperature);
+            state.assign(state_count, study.initial_temperature);
+            for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
+                const auto domain = static_cast<model::DomainId>(compiled.domains.size() + r);
+                const auto& field = compiled.layout.field(
+                    compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+                const auto& initial = compiled.rom_domains[r].initial_state;
+                for (std::size_t j = 0; j < initial.size(); ++j)
+                    state[field.dofs[j]] = initial[j];
+            }
         }
         else {
-            if (initial_state.size() != cell_count) {
-                throw std::invalid_argument("solve: initial_state size (" + std::to_string(initial_state.size())
-                    + ") must equal cell_count (" + std::to_string(cell_count) + ")");
-            }
+            if (initial_state.size() != state_count)
+                throw std::invalid_argument("solve: initial_state size must equal state_count");
             state.assign(initial_state.begin(), initial_state.end());
         }
-
         if (!std::all_of(state.begin(), state.end(), [](double v) { return std::isfinite(v); }))
             throw std::invalid_argument("initial state must be finite");
+
         ModelAssembler assembler(compiled, state);
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
             return assembler.assemble(current, time);
         };
 
-        // Resolve physical probes once. A point shared by domains is ambiguous.
+        // Resolve physical probes against either FOM geometry or explicitly
+        // declared ROM observations. A point cannot belong to both.
         core::Vector<model::DomainId> probe_domains;
         core::Vector<std::unique_ptr<ProbeRecorder>> recorders;
+        core::Vector<const model::RomObservation*> rom_observations;
+        core::Vector<ProbeTrace> rom_traces;
         for (const auto& probe : compiled.point_probes) {
             model::DomainId owner = core::invalid_id;
+            const model::RomObservation* observation = nullptr;
             for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
                 const auto cell = locate_cell(compiled.domains[d].discrete, {probe.x, probe.y, probe.z});
                 if (cell == core::invalid_id)
@@ -230,39 +238,72 @@ namespace mhs::solver {
                     throw std::invalid_argument("probe belongs to multiple domains");
                 owner = static_cast<model::DomainId>(d);
             }
+            for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
+                for (const auto& value : compiled.rom_domains[r].observations) {
+                    if (probe.name != value.point.name || probe.x != value.point.x || probe.y != value.point.y
+                        || probe.z != value.point.z)
+                        continue;
+                    if (owner != core::invalid_id)
+                        throw std::invalid_argument("probe belongs to multiple domains");
+                    owner = static_cast<model::DomainId>(compiled.domains.size() + r);
+                    observation = &value;
+                }
+            }
             if (owner == core::invalid_id)
                 throw std::invalid_argument("probe is outside all domains");
             probe_domains.push_back(owner);
-            recorders.push_back(std::make_unique<ProbeRecorder>(compiled.domains[owner], std::span(&probe, 1)));
+            rom_observations.push_back(observation);
+            rom_traces.push_back({probe.name, {}});
+            if (observation)
+                recorders.push_back(nullptr);
+            else
+                recorders.push_back(
+                    std::make_unique<ProbeRecorder>(compiled.domains[owner], std::span(&probe, 1)));
         }
+
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
             assembler.gather(accepted_state);
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.domains.size());
             for (const auto& connection : compiled.connections) {
-                const auto flux = evaluate_connection_flux(compiled, connection, assembler.temperatures(), t);
-                const auto a = connection.a.domain, b = connection.b.domain;
-                const auto axis = static_cast<std::size_t>(connection.axis);
+                if (connection.a.domain >= compiled.domains.size()
+                    && connection.b.domain >= compiled.domains.size())
+                    continue;
+                const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
                 for (std::size_t p = 0; p < connection.patches.size(); ++p) {
                     const auto& patch = connection.patches[p];
-                    const auto sign
-                        = static_cast<std::int8_t>(compiled.domains[a].discrete.cells[patch.a].center()[axis]
-                                    < compiled.domains[b].discrete.cells[patch.b].center()[axis]
-                                ? 1
-                                : -1);
-                    traces[a].push_back({{patch.a, connection.axis, sign, core::invalid_id, patch.bounds},
-                        flux[p].interface_temperature});
-                    traces[b].push_back(
-                        {{patch.b, connection.axis, static_cast<std::int8_t>(-sign), core::invalid_id, patch.bounds},
-                            flux[p].interface_temperature});
+                    if (connection.a.domain < compiled.domains.size())
+                        traces[connection.a.domain].push_back(
+                            {{patch.a, connection.axis, connection.sign_a, core::invalid_id, patch.bounds},
+                                flux[p].interface_temperature});
+                    if (connection.b.domain < compiled.domains.size())
+                        traces[connection.b.domain].push_back(
+                            {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a),
+                                 core::invalid_id, patch.bounds},
+                                flux[p].interface_temperature});
                 }
             }
-            for (std::size_t p = 0; p < recorders.size(); ++p)
-                recorders[p]->record(t, assembler.temperatures()[probe_domains[p]], traces[probe_domains[p]]);
+            for (std::size_t p = 0; p < recorders.size(); ++p) {
+                if (recorders[p]) {
+                    recorders[p]->record(t, assembler.temperatures()[probe_domains[p]], traces[probe_domains[p]]);
+                    continue;
+                }
+                const auto* observation = rom_observations[p];
+                const auto& field = compiled.layout.field(
+                    compiled.layout.find(probe_domains[p], model::FieldQuantity::ReducedCoordinate));
+                double temperature = observation->offset;
+                for (std::size_t j = 0; j < observation->weights.size(); ++j)
+                    temperature += observation->weights[j] * accepted_state[field.dofs[j]];
+                rom_traces[p].values.push_back(temperature);
+            }
         };
 
         auto sol = solve_system(study, assemble, std::move(state), options, observe);
-        for (auto& recorder : recorders)
-            sol.probe_traces.push_back(std::move(*recorder).take_traces().front());
+        for (std::size_t p = 0; p < recorders.size(); ++p) {
+            if (recorders[p])
+                sol.probe_traces.push_back(std::move(*recorders[p]).take_traces().front());
+            else
+                sol.probe_traces.push_back(std::move(rom_traces[p]));
+        }
         return sol;
     }
 
