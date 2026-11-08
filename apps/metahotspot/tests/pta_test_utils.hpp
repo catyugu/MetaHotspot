@@ -26,7 +26,7 @@ namespace test_pta {
         auto compiled = mhs::compiler::build_model(d);
         static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
         m.library = std::move(compiled.library);
-        m.flow = mhs::solver::initialize_frozen_flow(m, m.library.material_table, m.library.fluid_conditions,
+        m.flow = mhs::solver::initialize_frozen_flow(m, m.library->material_table, m.library->fluid_conditions,
             mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
         m.sampling_grid = mesh;
