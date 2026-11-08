@@ -21,7 +21,7 @@ namespace mhs::solver {
 
     StokesAssembler::StokesAssembler(const model::CompiledModel& compiled, model::DomainId id)
         : domain_(compiled.fom(id))
-        , materials_(compiled.library.material_table)
+        , materials_(compiled.library->material_table)
         , compiled_library_(compiled.library)
     {
         using namespace mhs::model;
