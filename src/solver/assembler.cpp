@@ -31,6 +31,18 @@ namespace mhs::solver {
             }
             return std::make_shared<const core::CSRPattern>(n, n, std::move(ptr), std::move(columns));
         }
+        // Galerkin scatter for a physical trace q = g * (B*x) - rhs,
+        // where B is a signed map from global states to interface temperature.
+        void scatter_trace(core::Vector<core::Triplet<double>>& stiffness, core::Vector<double>& load,
+            std::span<const WeightedDof> weights, double conductance, double rhs)
+        {
+            for (const auto& row : weights) {
+                load[row.dof] += row.weight * rhs;
+                for (const auto& col : weights)
+                    stiffness.emplace_back(static_cast<core::SparseIndex>(row.dof),
+                        static_cast<core::SparseIndex>(col.dof), conductance * row.weight * col.weight);
+            }
+        }
         core::CSRMatrix<double> build_capacity(std::size_t n)
         {
             core::Vector<core::SparseIndex> ptr(n + 1), columns(n);
@@ -271,40 +283,18 @@ namespace mhs::solver {
             const auto& condition = model_.rom_boundary_conditions.at(term.condition);
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
-            const double rhs = trace.load - trace.conductance * facet.offset;
-            for (std::size_t i = 0; i < rom.order; ++i) {
-                if (facet.trace[i] == 0.0)
-                    continue;
-                const auto row = static_cast<core::SparseIndex>(field.dof(i));
-                load[row] += facet.trace[i] * rhs;
-                for (std::size_t j = 0; j < rom.order; ++j)
-                    if (facet.trace[j] != 0.0)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dof(j)),
-                            facet.trace[i] * trace.conductance * facet.trace[j]);
-            }
+            core::Vector<WeightedDof> weights;
+            for (std::size_t i = 0; i < rom.order; ++i)
+                if (facet.trace[i] != 0.0)
+                    weights.push_back({field.dof(i), facet.trace[i]});
+            scatter_trace(stiffness, load, weights, trace.conductance, trace.load - trace.conductance * facet.offset);
         }
 
         for (const auto& connection : model_.connections) {
             const auto flux = evaluate_connection_flux(model_, connection, state, time);
             for (const auto& patch_flux : flux) {
-                const auto g = patch_flux.conductance;
-                const auto forcing = patch_flux.correction + patch_flux.bias_flux;
-                for (const auto& wa : patch_flux.a) {
-                    const auto row = static_cast<core::SparseIndex>(wa.dof);
-                    load[row] -= wa.weight * forcing;
-                    for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), g * wa.weight * xa.weight);
-                    for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), -g * wa.weight * xb.weight);
-                }
-                for (const auto& wb : patch_flux.b) {
-                    const auto row = static_cast<core::SparseIndex>(wb.dof);
-                    load[row] += wb.weight * forcing;
-                    for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), -g * wb.weight * xa.weight);
-                    for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), g * wb.weight * xb.weight);
-                }
+                scatter_trace(stiffness, load, patch_flux.weights, patch_flux.conductance,
+                    -patch_flux.correction - patch_flux.bias_flux);
             }
         }
         operators_ = {core::build_csr(state.size(), state.size(), std::move(stiffness)),
