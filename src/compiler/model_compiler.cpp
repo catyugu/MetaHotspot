@@ -185,6 +185,16 @@ namespace mhs::compiler {
                 throw std::invalid_argument("ROM operators and initial state must be finite");
             if (rom.initial_state.empty())
                 rom.initial_state.assign(n, 0.0);
+            for (std::size_t j = 0; j < rom.affine_terms.size(); ++j) {
+                const auto& term = rom.affine_terms[j];
+                if (term.name.empty() || !finite(term.value) || term.K.size() != n * n || term.f.size() != n
+                    || !std::all_of(term.K.begin(), term.K.end(), finite)
+                    || !std::all_of(term.f.begin(), term.f.end(), finite))
+                    throw std::invalid_argument("ROM affine term has invalid dimension or values");
+                for (std::size_t previous = 0; previous < j; ++previous)
+                    if (rom.affine_terms[previous].name == term.name)
+                        throw std::invalid_argument("ROM parameter names must be unique within a domain");
+            }
             for (const auto& obs : rom.observations) {
                 if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
                     || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
