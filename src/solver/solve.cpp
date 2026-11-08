@@ -267,45 +267,32 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        // Bind each probe once to a component and its local physical
-        // observation. All probes share the same output timeline.
+        // The model directly owns the physical observation mapping.
         struct ObservationSlot {
             model::DomainId domain = core::invalid_id;
             model::CellId cell = core::invalid_id;
-            const model::RomObservation* reduced = nullptr;
+            const model::ObservationDefinition* reduced = nullptr;
             model::Vec3 point {};
             ProbeTrace trace;
         };
         core::Vector<ObservationSlot> observations;
-        for (const auto& probe : compiled.point_probes) {
-            ObservationSlot slot;
-            slot.point = {probe.x, probe.y, probe.z};
-            slot.trace.name = probe.name;
-            for (std::size_t d = 0; d < compiled.components.size(); ++d) {
-                const auto& physics = compiled.components[d].physics;
-                if (const auto* fom = std::get_if<model::FomDomain>(&physics)) {
-                    const auto cell = locate_cell(fom->discrete, slot.point);
-                    if (cell == core::invalid_id)
-                        continue;
-                    if (slot.domain != core::invalid_id)
-                        throw std::invalid_argument("probe belongs to multiple domains");
-                    slot.domain = static_cast<model::DomainId>(d);
-                    slot.cell = cell;
+        for (std::size_t d = 0; d < compiled.components.size(); ++d) {
+            const auto& component = compiled.components[d];
+            const auto* fom = std::get_if<model::FomDomain>(&component.physics);
+            for (const auto& obs : component.observations) {
+                ObservationSlot slot;
+                slot.domain = static_cast<model::DomainId>(d);
+                slot.point = {obs.point.x, obs.point.y, obs.point.z};
+                slot.trace.name = obs.point.name;
+                if (fom) {
+                    slot.cell = locate_cell(fom->discrete, slot.point);
+                    if (slot.cell == core::invalid_id)
+                        throw std::invalid_argument("observation lies outside its Cartesian component");
                 }
                 else
-                    for (const auto& value : std::get<model::RomDomain>(physics).observations) {
-                        if (probe.name != value.point.name || probe.x != value.point.x || probe.y != value.point.y
-                            || probe.z != value.point.z)
-                            continue;
-                        if (slot.domain != core::invalid_id)
-                            throw std::invalid_argument("probe belongs to multiple domains");
-                        slot.domain = static_cast<model::DomainId>(d);
-                        slot.reduced = &value;
-                    }
+                    slot.reduced = &obs;
+                observations.push_back(std::move(slot));
             }
-            if (slot.domain == core::invalid_id)
-                throw std::invalid_argument("probe is outside all domains");
-            observations.push_back(std::move(slot));
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {

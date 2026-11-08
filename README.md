@@ -73,8 +73,8 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 ## Python 包
 
-建模接口与示例见[建模契约](docs/design/io-structure.md#c-abi--python)。
-Python 使用 `SurfaceRegion` 统一指定热与流体边界；探针属于 `Model`，`Study` 在每次 `Compiled.solve()` 时传入。
+C/Python 建模、组件连接、数据布局及所有权契约见[公开接口说明](docs/api.md)。
+Python 使用 `SurfaceRegion` 指定热与流体边界，Component 负责物理端口和观测；`Study` 在每次 `Compiled.solve()` 时传入。
 
 Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
 `pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，
@@ -119,9 +119,9 @@ solution = compiled.solve(opts=SolveOptions(
 
 构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，每个外边界积分片具有局部温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约；也可通过 C++ / C / Python 直接输入外部网格。网格构建时校验面片单元引用范围和轴编号；坐标、拓扑、覆盖、材料对齐与 TPFA 正交性由调用者保证。
+运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）和独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，每个外边界积分片具有局部温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 仅将已有坐标轴转换为这个契约。外部网格导入仅属于 PTA 兼容应用，不属于公开内核 API。网格构建时校验面片单元引用范围和轴编号；坐标、拓扑、覆盖、材料对齐与 TPFA 正交性由调用者保证。
 
-当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
+当前通量方法适用于正交、轴对齐控制体与对角导热张量；内核由笛卡尔顶点规格生成离散网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
 ## 运行
 

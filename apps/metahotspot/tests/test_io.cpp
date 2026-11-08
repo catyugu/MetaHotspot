@@ -75,14 +75,14 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    ASSERT_EQ(io_structure.model.point_probes.size(), 2u);
-    EXPECT_EQ(io_structure.model.point_probes[0].name, "p1");
+    ASSERT_EQ(io_structure.model.component(0).observations.size(), 2u);
+    EXPECT_EQ(io_structure.model.component(0).observations[0].point.name, "p1");
     // PTA adapter resolves observation coordinates to SI metres.
-    EXPECT_EQ(io_structure.model.point_probes[0].x, 0.0015);
-    EXPECT_EQ(io_structure.model.point_probes[0].y, 0.0025);
-    EXPECT_EQ(io_structure.model.point_probes[0].z, 0.0035);
-    EXPECT_EQ(io_structure.model.point_probes[1].name, "p2");
-    EXPECT_EQ(io_structure.model.point_probes[1].x, 0.0001);
+    EXPECT_EQ(io_structure.model.component(0).observations[0].point.x, 0.0015);
+    EXPECT_EQ(io_structure.model.component(0).observations[0].point.y, 0.0025);
+    EXPECT_EQ(io_structure.model.component(0).observations[0].point.z, 0.0035);
+    EXPECT_EQ(io_structure.model.component(0).observations[1].point.name, "p2");
+    EXPECT_EQ(io_structure.model.component(0).observations[1].point.x, 0.0001);
     std::filesystem::remove(path);
 }
 
@@ -90,7 +90,7 @@ TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    EXPECT_TRUE(io_structure.model.point_probes.empty()) << "No <ObservePoints3D> → empty vector";
+    EXPECT_TRUE(io_structure.model.component(0).observations.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
 

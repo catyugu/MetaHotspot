@@ -12,12 +12,13 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
+from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType, ThermalBoundaryKind
 from metahotspot.types import (
     MhsModel,
     MhsRomPortPatch,
     MhsStudy,
     MhsSurfaceRegion,
+    MhsThermalBoundary,
     Point2D,
     Rect2D,
 )
@@ -69,6 +70,43 @@ class SurfaceRegion:
     a_max: float
     b_min: float
     b_max: float
+
+
+@dataclass(frozen=True)
+class Dirichlet:
+    temperature: str
+
+
+@dataclass(frozen=True)
+class Neumann:
+    heat_flux: str
+
+
+@dataclass(frozen=True)
+class Convection:
+    coefficient: str
+    ambient_temperature: str
+
+
+ThermalBoundary = Dirichlet | Neumann | Convection
+
+
+def _thermal_boundary(condition: ThermalBoundary) -> MhsThermalBoundary:
+    if isinstance(condition, Dirichlet):
+        return MhsThermalBoundary(
+            int(ThermalBoundaryKind.DIRICHLET), _text(condition.temperature), None
+        )
+    if isinstance(condition, Neumann):
+        return MhsThermalBoundary(
+            int(ThermalBoundaryKind.NEUMANN), _text(condition.heat_flux), None
+        )
+    if isinstance(condition, Convection):
+        return MhsThermalBoundary(
+            int(ThermalBoundaryKind.CONVECTION),
+            _text(condition.coefficient),
+            _text(condition.ambient_temperature),
+        )
+    raise TypeError("expected Dirichlet, Neumann or Convection")
 
 
 @dataclass(frozen=True)
@@ -128,7 +166,7 @@ class Model(OwnedHandle):
     Usage::
 
         m = Model()
-        m.add_fom_domain()  # Explicitly create the Cartesian component.
+        m.add_cartesian_component()  # Explicitly create the Cartesian component.
         # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
         sol = c.solve()
@@ -143,7 +181,7 @@ class Model(OwnedHandle):
         dll = get_dll()
         handle = _create_model(dll)
         super().__init__(dll, handle, dll.mhs_model_destroy)
-        self._rom_orders: dict[int, int] = {}
+        self._reduced_orders: dict[int, int] = {}
 
     # ---- Model construction helpers ----
 
@@ -153,7 +191,7 @@ class Model(OwnedHandle):
         y: Sequence[float] | np.ndarray,
         z: Sequence[float] | np.ndarray,
         *,
-        domain: int = 0,
+        component: int = 0,
     ) -> None:
         """Set mesh vertices."""
         arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]
@@ -163,14 +201,14 @@ class Model(OwnedHandle):
             )
         self._call(
             "mhs_model_set_cartesian_mesh",
-            domain,
+            component,
             *[v for a in arrays for v in (a.size, _double_ptr(a))],
             ctx="set_cartesian_mesh",
         )
 
-    def set_flow_mode(self, mode: int, *, domain: int = 0) -> None:
+    def set_flow_mode(self, mode: int, *, component: int = 0) -> None:
         """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
-        self._call("mhs_model_set_flow_mode", domain, int(mode), ctx="set_flow_mode")
+        self._call("mhs_model_set_flow_mode", component, int(mode), ctx="set_flow_mode")
 
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
@@ -213,13 +251,13 @@ class Model(OwnedHandle):
         return identifier.value
 
     def add_volume(
-        self, material: int, source: int = 0xFFFFFFFF, *, domain: int = 0
+        self, material: int, source: int = 0xFFFFFFFF, *, component: int = 0
     ) -> int:
         """Return a volume ID. Later volumes override earlier volumes."""
         identifier = ctypes.c_uint32()
         self._call(
             "mhs_model_add_volume",
-            domain,
+            component,
             material,
             source,
             ctypes.byref(identifier),
@@ -234,7 +272,7 @@ class Model(OwnedHandle):
         maximum,
         op: GeometryOp = GeometryOp.ADD,
         *,
-        domain: int = 0,
+        component: int = 0,
     ) -> None:
         """Append an axis-aligned box operation in SI metres."""
         lo = np.ascontiguousarray(minimum, dtype=np.float64)
@@ -243,7 +281,7 @@ class Model(OwnedHandle):
             raise ValueError("box bounds must each contain three coordinates")
         self._call(
             "mhs_model_volume_add_box",
-            domain,
+            component,
             volume,
             int(op),
             _double_ptr(lo),
@@ -251,81 +289,35 @@ class Model(OwnedHandle):
             ctx="add_box",
         )
 
-    # ---- Atomic boundary conditions ----
+    # ---- Thermal boundaries ----
 
-    def add_dirichlet(
-        self, regions: Sequence[SurfaceRegion], temperature: str, *, domain: int = 0
-    ) -> None:
-        """Prescribe temperature on FOM exterior or exposed ROM port regions."""
-        native, count = _surface_regions(regions)
-        self._call(
-            "mhs_model_add_dirichlet",
-            domain,
-            native,
-            count,
-            _text(temperature),
-            ctx="add_dirichlet",
-        )
-
-    def add_neumann(
-        self, regions: Sequence[SurfaceRegion], heat_flux: str, *, domain: int = 0
-    ) -> None:
-        """Prescribe heat flux on FOM exterior or exposed ROM port regions."""
-        native, count = _surface_regions(regions)
-        self._call(
-            "mhs_model_add_neumann",
-            domain,
-            native,
-            count,
-            _text(heat_flux),
-            ctx="add_neumann",
-        )
-
-    def add_convection(
+    def add_thermal_boundary(
         self,
         regions: Sequence[SurfaceRegion],
-        coefficient: str,
-        ambient_temperature: str,
+        condition: ThermalBoundary,
         *,
-        domain: int = 0,
+        component: int = 0,
     ) -> None:
-        """Apply convection on FOM exterior or exposed ROM port regions."""
         native, count = _surface_regions(regions)
+        spec = _thermal_boundary(condition)
         self._call(
-            "mhs_model_add_convection",
-            domain,
+            "mhs_model_add_thermal_boundary",
+            component,
             native,
             count,
-            _text(coefficient),
-            _text(ambient_temperature),
-            ctx="add_convection",
+            ctypes.byref(spec),
+            ctx="add_thermal_boundary",
         )
 
-    def set_default_dirichlet(self, temperature: str, *, domain: int = 0) -> None:
-        self._call(
-            "mhs_model_set_default_dirichlet",
-            domain,
-            _text(temperature),
-            ctx="set_default_dirichlet",
-        )
-
-    def set_default_neumann(self, heat_flux: str, *, domain: int = 0) -> None:
-        self._call(
-            "mhs_model_set_default_neumann",
-            domain,
-            _text(heat_flux),
-            ctx="set_default_neumann",
-        )
-
-    def set_default_convection(
-        self, coefficient: str, ambient_temperature: str, *, domain: int = 0
+    def set_default_thermal_boundary(
+        self, condition: ThermalBoundary, *, component: int = 0
     ) -> None:
+        spec = _thermal_boundary(condition)
         self._call(
-            "mhs_model_set_default_convection",
-            domain,
-            _text(coefficient),
-            _text(ambient_temperature),
-            ctx="set_default_convection",
+            "mhs_model_set_default_thermal_boundary",
+            component,
+            ctypes.byref(spec),
+            ctx="set_default_thermal_boundary",
         )
 
     # ---- Functions ----
@@ -391,18 +383,6 @@ class Model(OwnedHandle):
 
     # ---- Probes & fluid boundaries ----
 
-    def add_point_probe(self, name: str, position: Sequence[float]) -> None:
-        """Add a named point probe in SI metres."""
-        point = np.ascontiguousarray(position, dtype=np.float64)
-        if point.shape != (3,):
-            raise ValueError("probe position must contain three coordinates")
-        self._call(
-            "mhs_model_add_point_probe",
-            _text(name),
-            _double_ptr(point),
-            ctx="add_point_probe",
-        )
-
     def add_fluid_boundary(
         self,
         regions: Sequence[SurfaceRegion],
@@ -410,7 +390,7 @@ class Model(OwnedHandle):
         value: float,
         inlet_temperature: float | None = None,
         *,
-        domain: int = 0,
+        component: int = 0,
     ) -> None:
         """Apply a hydraulic condition on nonempty surface regions."""
         native, count = _surface_regions(regions)
@@ -419,7 +399,7 @@ class Model(OwnedHandle):
         )
         self._call(
             "mhs_model_add_fluid_boundary",
-            domain,
+            component,
             native,
             count,
             int(kind),
@@ -428,15 +408,17 @@ class Model(OwnedHandle):
             ctx="add_fluid_boundary",
         )
 
-    def add_fom_domain(self) -> int:
+    def add_cartesian_component(self) -> int:
         """Add a Cartesian finite-volume component; IDs start at zero."""
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_fom_domain", ctypes.byref(identifier), ctx="add_fom_domain"
+            "mhs_model_add_cartesian_component",
+            ctypes.byref(identifier),
+            ctx="add_cartesian_component",
         )
         return identifier.value
 
-    def add_rom_domain(
+    def add_reduced_component(
         self,
         stiffness: np.ndarray,
         capacity: np.ndarray,
@@ -466,21 +448,21 @@ class Model(OwnedHandle):
             raise ValueError("ROM modal initial state must have shape (order,)")
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_rom_domain",
+            "mhs_model_add_reduced_component",
             k.shape[0],
             _double_ptr(k),
             _double_ptr(c),
             _double_ptr(f),
             None if initial is None else _double_ptr(initial),
             ctypes.byref(identifier),
-            ctx="add_rom_domain",
+            ctx="add_reduced_component",
         )
-        self._rom_orders[identifier.value] = k.shape[0]
+        self._reduced_orders[identifier.value] = k.shape[0]
         return identifier.value
 
-    def add_rom_affine_term(
+    def add_reduced_affine_term(
         self,
-        domain: int,
+        component: int,
         name: str,
         value: float,
         stiffness: np.ndarray,
@@ -488,140 +470,129 @@ class Model(OwnedHandle):
     ) -> None:
         """Supply an intrinsic affine K/f parameter to a ROM.
 
-        Exterior HTC is specified with add_convection(domain=rom_domain),
-        reusing the same physical port maps as inter-domain connections.
+        Exterior HTC uses add_thermal_boundary(component=...), sharing
+        the physical port maps used for inter-component connections.
         """
-        order = self._rom_orders.get(domain)
+        order = self._reduced_orders.get(component)
         if order is None:
-            raise ValueError("affine parameter requires a ROM domain")
+            raise ValueError("affine parameter requires a ROM component")
         k = np.ascontiguousarray(stiffness, dtype=np.float64)
         f = np.ascontiguousarray(rhs, dtype=np.float64)
         if k.shape != (order, order) or f.shape != (order,):
             raise ValueError("invalid affine ROM operator dimensions")
         self._call(
-            "mhs_model_rom_add_affine_term",
-            domain,
+            "mhs_model_add_reduced_affine_term",
+            component,
             _text(name),
             value,
             _double_ptr(k),
             _double_ptr(f),
-            ctx="add_rom_affine_term",
+            ctx="add_reduced_affine_term",
         )
 
-    def add_rom_port(
+    def add_port(
         self,
-        domain: int,
+        component: int,
         name: str,
         region: SurfaceRegion,
-        outward_sign: int,
-        patches: Sequence[RomPortPatch],
+        *,
+        patches: Sequence[RomPortPatch] = (),
+        outward_sign: int = 0,
     ) -> int:
-        """Declare a complete meshless ROM port in a single native transaction."""
-        order = self._rom_orders.get(domain)
+        """Declare an exterior port with optional reduced trace patches."""
+        order = self._reduced_orders.get(component)
         if order is None:
-            raise ValueError("ROM port requires a ROM domain created by add_rom_domain")
-        if not patches:
-            raise ValueError("ROM port requires at least one patch")
+            if patches or outward_sign:
+                raise ValueError("Cartesian ports derive their traces from geometry")
+        elif not patches or outward_sign not in (-1, 1):
+            raise ValueError("reduced ports require patches and outward_sign +/-1")
 
-        # Marshal and validate every patch before mutating the native model.
         native_patches = (MhsRomPortPatch * len(patches))()
         keepalive = []
         for i, patch in enumerate(patches):
             if len(patch.rectangle) != 4:
-                raise ValueError("ROM patch rectangle needs four bounds")
+                raise ValueError("port patch rectangle needs four bounds")
             center = np.ascontiguousarray(patch.center, dtype=np.float64)
             trace = np.ascontiguousarray(patch.trace, dtype=np.float64)
             if center.shape != (2,) or trace.shape != (order,):
-                raise ValueError("ROM patch center or trace has invalid dimensions")
-            ga = (
-                None
-                if patch.gradient_a is None
-                else np.ascontiguousarray(patch.gradient_a, dtype=np.float64)
-            )
-            gb = (
-                None
-                if patch.gradient_b is None
-                else np.ascontiguousarray(patch.gradient_b, dtype=np.float64)
-            )
-            if (ga is not None and ga.shape != trace.shape) or (
-                gb is not None and gb.shape != trace.shape
+                raise ValueError("patch center or trace dimensions are invalid")
+            gradients = [
+                None if grad is None else np.ascontiguousarray(grad, dtype=np.float64)
+                for grad in (patch.gradient_a, patch.gradient_b)
+            ]
+            if any(
+                grad is not None and grad.shape != trace.shape for grad in gradients
             ):
-                raise ValueError("ROM patch tangent-gradient shape must match trace")
-            keepalive.extend((center, trace, ga, gb))
+                raise ValueError("tangential gradient shape must match trace")
+            keepalive.extend((center, trace, *gradients))
             native_patches[i] = MhsRomPortPatch(
                 Rect2D(*patch.rectangle),
                 patch.half_resistance,
                 (ctypes.c_double * 2)(*center),
                 _double_ptr(trace),
                 patch.offset,
-                None if ga is None else _double_ptr(ga),
-                None if gb is None else _double_ptr(gb),
+                *(None if grad is None else _double_ptr(grad) for grad in gradients),
             )
 
-        surface, _ = _surface_regions([region])
-        identifier = ctypes.c_uint32()
-        self._call(
-            "mhs_model_add_rom_port",
-            domain,
-            _text(name),
-            surface,
-            outward_sign,
-            native_patches,
-            len(patches),
-            ctypes.byref(identifier),
-            ctx="add_rom_port",
-        )
-        return identifier.value
-
-    def add_rom_observation(
-        self,
-        domain: int,
-        name: str,
-        position: Sequence[float],
-        weights: Sequence[float],
-        offset: float = 0.0,
-    ) -> None:
-        """Map ROM coordinates to a named physical point-probe temperature."""
-        xyz = np.ascontiguousarray(position, dtype=np.float64)
-        coefficients = np.ascontiguousarray(weights, dtype=np.float64)
-        if xyz.shape != (3,) or coefficients.shape != (
-            self._rom_orders.get(domain, -1),
-        ):
-            raise ValueError(
-                "ROM observation requires xyz=(3,) and modal weights=(order,)"
-            )
-        self._call(
-            "mhs_model_add_rom_observation",
-            domain,
-            _text(name),
-            _double_ptr(xyz),
-            _double_ptr(coefficients),
-            offset,
-            ctx="add_rom_observation",
-        )
-
-    def add_port(self, domain: int, name: str, region: SurfaceRegion) -> int:
-        """Declare a named exterior thermal interface, connected exactly once."""
-        identifier = ctypes.c_uint32()
         native, _ = _surface_regions([region])
+        identifier = ctypes.c_uint32()
         self._call(
             "mhs_model_add_port",
-            domain,
+            component,
             _text(name),
             native,
+            outward_sign,
+            native_patches if patches else None,
+            len(patches),
             ctypes.byref(identifier),
             ctx="add_port",
         )
         return identifier.value
 
-    def connect(self, domain_a: int, port_a: int, domain_b: int, port_b: int) -> int:
-        """Join coincident ports with perfect thermal contact and automatic NCC."""
+    def add_observation(
+        self,
+        component: int,
+        name: str,
+        position: Sequence[float],
+        *,
+        weights: Sequence[float] | None = None,
+        offset: float = 0.0,
+    ) -> None:
+        """Observe physical temperature in a Cartesian or reduced component."""
+        xyz = np.ascontiguousarray(position, dtype=np.float64)
+        if xyz.shape != (3,):
+            raise ValueError("observation position must have three coordinates")
+        order = self._reduced_orders.get(component)
+        if order is None:
+            if weights is not None or offset != 0.0:
+                raise ValueError("Cartesian observations use only a physical point")
+            coefficients = None
+        else:
+            if weights is None:
+                raise ValueError("reduced observation requires modal weights")
+            coefficients = np.ascontiguousarray(weights, dtype=np.float64)
+            if coefficients.shape != (order,):
+                raise ValueError("reduced observation weights must have shape (order,)")
+        self._call(
+            "mhs_model_add_observation",
+            component,
+            _text(name),
+            _double_ptr(xyz),
+            None if coefficients is None else _double_ptr(coefficients),
+            offset,
+            ctx="add_observation",
+        )
+
+    def connect(
+        self, component_a: int, port_a: int, component_b: int, port_b: int
+    ) -> int:
+        """Connect coincident thermal ports with nonmatching-interface correction."""
         identifier = ctypes.c_uint32()
         self._call(
             "mhs_model_connect",
-            domain_a,
+            component_a,
             port_a,
-            domain_b,
+            component_b,
             port_b,
             ctypes.byref(identifier),
             ctx="connect",

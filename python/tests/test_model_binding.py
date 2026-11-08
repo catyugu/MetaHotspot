@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 
 import metahotspot
-from metahotspot import SurfaceRegion
+from metahotspot import Convection, Dirichlet, Neumann, SurfaceRegion
 from metahotspot._error import MetaHotspotError
 from metahotspot.enums import Axis, StudyType
 
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -28,7 +28,7 @@ def _model(*, transient: bool = False) -> metahotspot.Model:
 
 def test_model_native_calls_compile_and_assemble():
     model = _model()
-    model.set_default_neumann("0")
+    model.set_default_thermal_boundary(Neumann("0"))
 
     compiled = model.compile()
     assert compiled.cell_count == 1
@@ -49,12 +49,12 @@ def test_model_native_calls_compile_and_assemble():
 def test_model_native_boundary_and_function_calls():
     model = _model()
     region = [SurfaceRegion(Axis.Z, 0.0, 0.0, 0.001, 0.0, 0.001)]
-    model.add_dirichlet(region, "300")
-    model.add_neumann(region, "0")
-    model.add_convection(region, "10", "300")
-    model.set_default_dirichlet("300")
-    model.set_default_neumann("0")
-    model.set_default_convection("10", "300")
+    model.add_thermal_boundary(region, Dirichlet("300"))
+    model.add_thermal_boundary(region, Neumann("0"))
+    model.add_thermal_boundary(region, Convection("10", "300"))
+    model.set_default_thermal_boundary(Dirichlet("300"))
+    model.set_default_thermal_boundary(Neumann("0"))
+    model.set_default_thermal_boundary(Convection("10", "300"))
     model.add_variable("x0", "0")
     model.add_function_expr("constant", "1")
     model.add_function_gauss("gauss", 1.0, 1.0, 0.0)
@@ -64,7 +64,7 @@ def test_model_native_boundary_and_function_calls():
     model.add_function_periodic_piecewise_constant(
         "periodic", np.array([0.0, 0.001]), 1.0
     )
-    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
+    model.add_observation(0, "center", (0.0005, 0.0005, 0.0005))
     with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
         model.add_fluid_boundary(
             [SurfaceRegion(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0)], 0, 0.0
@@ -76,8 +76,8 @@ def test_model_native_boundary_and_function_calls():
 
 def test_solution_views_derive_from_one_native_snapshot():
     model = _model(transient=True)
-    model.set_default_neumann("0")
-    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
+    model.set_default_thermal_boundary(Neumann("0"))
+    model.add_observation(0, "center", (0.0005, 0.0005, 0.0005))
 
     study = metahotspot.Study(StudyType.TRANSIENT, 300.0, 1.0, 0.5)
     solution = model.compile().solve(
@@ -98,7 +98,7 @@ def test_stokes_public_multifield_layout_and_solve():
     from metahotspot.enums import EntitySupport, FieldQuantity, FlowMode, FluidBC
 
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     model.set_cartesian_mesh([0.0, 1.0, 2.0], [0.0, 1.0], [0.0, 1.0])
     material = model.add_material("fluid", "1", "1", "1", "1", "1", "T/300")
     volume = model.add_volume(material)

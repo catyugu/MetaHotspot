@@ -15,12 +15,12 @@ if TYPE_CHECKING:
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.enums import EntitySupport, FieldQuantity, SolverType
+from metahotspot.enums import ComponentKind, EntitySupport, FieldQuantity, SolverType
 from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
     MhsCompiledInfo,
-    MhsDomainInfo,
+    MhsComponentInfo,
     MhsFieldInfo,
     MhsMaterialValues,
     MhsOperators,
@@ -99,7 +99,8 @@ class MaterialValues:
 
 
 @dataclass(frozen=True)
-class DomainInfo:
+class ComponentInfo:
+    kind: ComponentKind
     cell_count: int
     face_count: int
     field_count: int
@@ -107,7 +108,7 @@ class DomainInfo:
 
 @dataclass(frozen=True)
 class FieldLayout:
-    domain: int
+    component: int
     quantity: FieldQuantity
     support: EntitySupport
     offset: int
@@ -125,7 +126,7 @@ class CompiledInfo:
     projection_count: int
     source_count: int
     state_count: int
-    domain_count: int
+    component_count: int
     field_count: int
 
 
@@ -169,7 +170,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
         state_count=int(info.state_count),
-        domain_count=int(info.domain_count),
+        component_count=int(info.component_count),
         field_count=int(info.field_count),
     )
 
@@ -297,18 +298,23 @@ class Compiled(OwnedHandle):
         return self.info.cell_count
 
     @cached_property
-    def domains(self) -> tuple[DomainInfo, ...]:
+    def components(self) -> tuple[ComponentInfo, ...]:
         result = []
-        for i in range(self.info.domain_count):
-            value = MhsDomainInfo()
+        for i in range(self.info.component_count):
+            value = MhsComponentInfo()
             check(
-                self._dll.mhs_compiled_get_domain_info(
+                self._dll.mhs_compiled_get_component_info(
                     self._handle, i, ctypes.byref(value)
                 ),
-                "domain_info",
+                "component_info",
             )
             result.append(
-                DomainInfo(value.cell_count, value.face_count, value.field_count)
+                ComponentInfo(
+                    ComponentKind(value.kind),
+                    value.cell_count,
+                    value.face_count,
+                    value.field_count,
+                )
             )
         return tuple(result)
 
@@ -335,7 +341,7 @@ class Compiled(OwnedHandle):
             )
             result.append(
                 FieldLayout(
-                    value.domain,
+                    value.component,
                     FieldQuantity(value.quantity),
                     EntitySupport(value.support),
                     value.dof_offset,
@@ -350,13 +356,13 @@ class Compiled(OwnedHandle):
 
     def _cell_dofs(self) -> np.ndarray:
         maps = []
-        for domain, info in enumerate(self.domains):
+        for component, info in enumerate(self.components):
             if info.cell_count == 0:
                 continue
             field = next(
                 f
                 for f in self.field_layouts
-                if f.domain == domain and f.quantity == FieldQuantity.TEMPERATURE
+                if f.component == component and f.quantity == FieldQuantity.TEMPERATURE
             )
             start = field.offset
             stop = start + info.cell_count

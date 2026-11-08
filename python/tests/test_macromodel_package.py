@@ -13,6 +13,7 @@ import pytest
 import scipy.sparse as sp
 
 import metahotspot
+from metahotspot import Neumann
 from metahotspot import macromodel as mm
 from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
@@ -20,7 +21,7 @@ from metahotspot.macromodel.geometry import CellGeometry
 
 def _build_operators(nx=2, ny=2, nz=3):
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     model.set_cartesian_mesh(
         np.linspace(0.0, float(nx) * 1e-3, nx + 1),
         np.linspace(0.0, float(ny) * 1e-3, ny + 1),
@@ -30,7 +31,7 @@ def _build_operators(nx=2, ny=2, nz=3):
     source = model.add_source("1e6")
     volume = model.add_volume(material, source)
     model.add_box(volume, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
-    model.set_default_neumann("0")
+    model.set_default_thermal_boundary(Neumann("0"))
     compiled = model.compile()
     ops = compiled.assemble()
     return model, compiled, ops

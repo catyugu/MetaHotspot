@@ -11,7 +11,7 @@ from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
     MhsCompiledInfo,
-    MhsDomainInfo,
+    MhsComponentInfo,
     MhsFieldInfo,
     MhsMaterialValues,
     MhsModel,
@@ -22,6 +22,7 @@ from metahotspot.types import (
     MhsSolutionInfo,
     MhsStudy,
     MhsSurfaceRegion,
+    MhsThermalBoundary,
     Point2D,
     _SolveOptionsCStruct,
 )
@@ -45,19 +46,19 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsCompiled), P(F64), Size, F64, P(F64), Size],
     ),
-    ("mhs_model_add_fom_domain", I32, [P(MhsModel), P(ctypes.c_uint32)]),
+    ("mhs_model_add_cartesian_component", I32, [P(MhsModel), P(ctypes.c_uint32)]),
     (
-        "mhs_model_add_rom_domain",
+        "mhs_model_add_reduced_component",
         I32,
         [P(MhsModel), Size, P(F64), P(F64), P(F64), P(F64), P(ctypes.c_uint32)],
     ),
     (
-        "mhs_model_rom_add_affine_term",
+        "mhs_model_add_reduced_affine_term",
         I32,
         [P(MhsModel), ctypes.c_uint32, Text, F64, P(F64), P(F64)],
     ),
     (
-        "mhs_model_add_rom_port",
+        "mhs_model_add_port",
         I32,
         [
             P(MhsModel),
@@ -71,14 +72,9 @@ _CORE_FUNC_SIGS = [
         ],
     ),
     (
-        "mhs_model_add_rom_observation",
+        "mhs_model_add_observation",
         I32,
         [P(MhsModel), ctypes.c_uint32, Text, P(F64), P(F64), F64],
-    ),
-    (
-        "mhs_model_add_port",
-        I32,
-        [P(MhsModel), ctypes.c_uint32, Text, P(MhsSurfaceRegion), P(ctypes.c_uint32)],
     ),
     (
         "mhs_model_connect",
@@ -134,26 +130,20 @@ _CORE_FUNC_SIGS = [
         [P(MhsModel), ctypes.c_uint32, ctypes.c_uint32, I32, P(F64), P(F64)],
     ),
     (
-        "mhs_model_add_dirichlet",
+        "mhs_model_add_thermal_boundary",
         I32,
-        [P(MhsModel), ctypes.c_uint32, P(MhsSurfaceRegion), Size, Text],
+        [
+            P(MhsModel),
+            ctypes.c_uint32,
+            P(MhsSurfaceRegion),
+            Size,
+            P(MhsThermalBoundary),
+        ],
     ),
     (
-        "mhs_model_add_neumann",
+        "mhs_model_set_default_thermal_boundary",
         I32,
-        [P(MhsModel), ctypes.c_uint32, P(MhsSurfaceRegion), Size, Text],
-    ),
-    (
-        "mhs_model_add_convection",
-        I32,
-        [P(MhsModel), ctypes.c_uint32, P(MhsSurfaceRegion), Size, Text, Text],
-    ),
-    ("mhs_model_set_default_dirichlet", I32, [P(MhsModel), ctypes.c_uint32, Text]),
-    ("mhs_model_set_default_neumann", I32, [P(MhsModel), ctypes.c_uint32, Text]),
-    (
-        "mhs_model_set_default_convection",
-        I32,
-        [P(MhsModel), ctypes.c_uint32, Text, Text],
+        [P(MhsModel), ctypes.c_uint32, P(MhsThermalBoundary)],
     ),
     ("mhs_model_add_function_expr", I32, [P(MhsModel), Text, Text]),
     ("mhs_model_add_function_gauss", I32, [P(MhsModel), Text, F64, F64, F64]),
@@ -169,7 +159,6 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), Text, P(F64), Size, F64],
     ),
-    ("mhs_model_add_point_probe", I32, [P(MhsModel), Text, P(F64)]),
     (
         "mhs_model_add_fluid_boundary",
         I32,
@@ -177,9 +166,9 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     (
-        "mhs_compiled_get_domain_info",
+        "mhs_compiled_get_component_info",
         I32,
-        [P(MhsCompiled), ctypes.c_uint32, P(MhsDomainInfo)],
+        [P(MhsCompiled), ctypes.c_uint32, P(MhsComponentInfo)],
     ),
     (
         "mhs_compiled_get_field_info",

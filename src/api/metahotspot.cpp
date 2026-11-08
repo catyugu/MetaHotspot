@@ -122,7 +122,7 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
 }
 
 template <typename Boundary> static void _add_thermal_boundary(
-    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
 {
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
@@ -131,7 +131,7 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.component(domain).thermal_boundaries.push_back(std::move(bp));
+    m->def.component(component).thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -229,7 +229,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 
-MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
@@ -239,7 +239,7 @@ MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_i
         *out_id = id;
     });
 }
-MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, const double* stiffness,
+MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t order, const double* stiffness,
     const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
@@ -265,7 +265,7 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
     });
 }
 
-MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+MHS_API mhs_status_t mhs_model_add_reduced_affine_term(mhs_model_t* m, mhs_index_t component, const char* name,
     double coefficient, const double* stiffness, const double* rhs)
 {
     CHECK_NULL(m);
@@ -273,7 +273,7 @@ MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t d
     CHECK_NULL(stiffness);
     CHECK_NULL(rhs);
     MHS_TRY({
-        auto& rom = m->def.rom(domain);
+        auto& rom = m->def.rom(component);
         if (!std::isfinite(coefficient))
             throw std::invalid_argument("ROM parameter must have a finite value");
         mhs::model::RomAffineTerm term;
@@ -285,7 +285,7 @@ MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t d
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
+MHS_API mhs_status_t mhs_model_add_port(mhs_model_t* m, mhs_index_t component, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches, size_t patch_count,
     mhs_index_t* out_id)
 {
@@ -294,85 +294,80 @@ MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, 
     CHECK_NULL(region);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (!patch_count || !patches)
-            throw std::invalid_argument("ROM port must have at least one patch");
-        if (outward_sign != 1 && outward_sign != -1)
-            throw std::invalid_argument("ROM port normal must be +/-1");
-        auto& rom = m->def.rom(domain);
+        auto& owner = m->def.component(component);
+        auto& ports = owner.ports;
         mhs::model::PortDefinition value;
         value.name = name;
         value.region = _make_surface_region(region->axis, region->coordinate, region->rectangle);
-        value.outward_sign = static_cast<std::int8_t>(outward_sign);
-        value.patches.reserve(patch_count);
-        for (std::size_t i = 0; i < patch_count; ++i) {
-            const auto& source = patches[i];
-            if (!source.trace)
-                throw std::invalid_argument("NULL ROM port patch trace");
-            mhs::model::RomPortPatch patch;
-            patch.rectangle
-                = {source.rectangle.a_min, source.rectangle.a_max, source.rectangle.b_min, source.rectangle.b_max};
-            patch.half_resistance = source.half_resistance;
-            patch.center = {source.center[0], source.center[1]};
-            patch.offset = source.offset;
-            patch.trace.assign(source.trace, source.trace + rom.order);
-            if (source.gradient_a)
-                patch.tangential_gradient[0].assign(source.gradient_a, source.gradient_a + rom.order);
-            if (source.gradient_b)
-                patch.tangential_gradient[1].assign(source.gradient_b, source.gradient_b + rom.order);
-            value.patches.push_back(std::move(patch));
+        if (const auto* rom = std::get_if<mhs::model::RomDomainDefinition>(&owner.physics)) {
+            if (!patch_count || !patches || (outward_sign != 1 && outward_sign != -1))
+                throw std::invalid_argument("reduced port requires patches and outward sign +/-1");
+            value.outward_sign = static_cast<std::int8_t>(outward_sign);
+            value.patches.reserve(patch_count);
+            for (std::size_t i = 0; i < patch_count; ++i) {
+                const auto& source = patches[i];
+                if (!source.trace)
+                    throw std::invalid_argument("NULL reduced port patch trace");
+                mhs::model::RomPortPatch patch;
+                patch.rectangle
+                    = {source.rectangle.a_min, source.rectangle.a_max, source.rectangle.b_min, source.rectangle.b_max};
+                patch.half_resistance = source.half_resistance;
+                patch.center = {source.center[0], source.center[1]};
+                patch.offset = source.offset;
+                patch.trace.assign(source.trace, source.trace + rom->order);
+                if (source.gradient_a)
+                    patch.tangential_gradient[0].assign(source.gradient_a, source.gradient_a + rom->order);
+                if (source.gradient_b)
+                    patch.tangential_gradient[1].assign(source.gradient_b, source.gradient_b + rom->order);
+                value.patches.push_back(std::move(patch));
+            }
         }
-        auto& ports = m->def.component(domain).ports;
+        else if (outward_sign != 0 || patches || patch_count)
+            throw std::invalid_argument("Cartesian ports derive their physical traces from geometry");
         if (ports.size() >= std::numeric_limits<mhs_index_t>::max())
-            throw std::length_error("too many ROM ports");
+            throw std::length_error("too many component ports");
         const auto id = static_cast<mhs_index_t>(ports.size());
         ports.push_back(std::move(value));
         *out_id = id;
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_rom_observation(
-    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset)
+MHS_API mhs_status_t mhs_model_add_observation(
+    mhs_model_t* m, mhs_index_t component, const char* name, const double xyz[3], const double* weights, double offset)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(xyz);
-    CHECK_NULL(weights);
     MHS_TRY({
-        auto& rom = m->def.rom(domain);
-        mhs::model::RomObservation observation;
+        auto& owner = m->def.component(component);
+        if (!std::isfinite(offset) || !std::isfinite(xyz[0]) || !std::isfinite(xyz[1]) || !std::isfinite(xyz[2])
+            || !*name)
+            throw std::invalid_argument("observation must have finite values and a nonempty name");
+        mhs::model::ObservationDefinition observation;
         observation.point = {name, xyz[0], xyz[1], xyz[2]};
-        observation.weights.assign(weights, weights + rom.order);
         observation.offset = offset;
-        rom.observations.push_back(std::move(observation));
+        if (const auto* rom = std::get_if<mhs::model::RomDomainDefinition>(&owner.physics)) {
+            if (!weights)
+                throw std::invalid_argument("reduced observation requires modal weights");
+            observation.weights.assign(weights, weights + rom->order);
+        }
+        else if (weights || offset != 0.0)
+            throw std::invalid_argument("Cartesian observation accepts only a physical point");
+        owner.observations.push_back(std::move(observation));
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_port(
-    mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    CHECK_NULL(region);
-    CHECK_NULL(out_id);
-    MHS_TRY({
-        auto& ports = m->def.component(domain).ports;
-        auto surface = _make_surface_region(region->axis, region->coordinate, region->rectangle);
-        const auto id = static_cast<mhs_index_t>(ports.size());
-        ports.push_back({name, surface});
-        *out_id = id;
-    });
-}
-MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs_index_t port_a, mhs_index_t domain_b,
-    mhs_index_t port_b, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a,
+    mhs_index_t component_b, mhs_index_t port_b, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
         const auto check_port = [&](mhs_index_t d, mhs_index_t p) { (void)m->def.component(d).ports.at(p); };
-        check_port(domain_a, port_a);
-        check_port(domain_b, port_b);
+        check_port(component_a, port_a);
+        check_port(component_b, port_b);
         const auto id = static_cast<mhs_index_t>(m->def.connections.size());
-        m->def.connections.push_back({{domain_a, port_a}, {domain_b, port_b}});
+        m->def.connections.push_back({{component_a, port_a}, {component_b, port_b}});
         *out_id = id;
     });
 }
@@ -402,7 +397,7 @@ MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, 
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t domain, size_t nx, const double* x,
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t component, size_t nx, const double* x,
     size_t ny, const double* y, size_t nz, const double* z)
 {
     CHECK_NULL(m);
@@ -417,17 +412,17 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t do
             return result;
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
-        m->def.fom(domain).mesh = std::move(mesh);
+        m->def.fom(component).mesh = std::move(mesh);
     });
 }
 
-MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode)
+MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t component, mhs_flow_mode_t mode)
 {
     CHECK_NULL(m);
     MHS_TRY({
         if (mode != MHS_FLOW_FROZEN && mode != MHS_FLOW_STOKES)
             throw std::invalid_argument("unknown flow mode");
-        m->def.fom(domain).flow_mode = static_cast<mhs::model::FlowMode>(mode);
+        m->def.fom(component).flow_mode = static_cast<mhs::model::FlowMode>(mode);
     });
 }
 
@@ -482,7 +477,7 @@ MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression
     });
 }
 MHS_API mhs_status_t mhs_model_add_volume(
-    mhs_model_t* m, mhs_index_t domain, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
+    mhs_model_t* m, mhs_index_t component, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
@@ -491,18 +486,18 @@ MHS_API mhs_status_t mhs_model_add_volume(
             throw std::out_of_range("material ID out of range");
         if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
             throw std::out_of_range("source ID out of range");
-        *out_id = static_cast<mhs_index_t>(m->def.fom(domain).volumes.size());
-        m->def.fom(domain).volumes.push_back({material, source, {}});
+        *out_id = static_cast<mhs_index_t>(m->def.fom(component).volumes.size());
+        m->def.fom(component).volumes.push_back({material, source, {}});
     });
 }
-MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain, mhs_index_t volume,
+MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t component, mhs_index_t volume,
     mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
 {
     CHECK_NULL(m);
     CHECK_NULL(min_xyz);
     CHECK_NULL(max_xyz);
     MHS_TRY({
-        if (volume >= m->def.fom(domain).volumes.size())
+        if (volume >= m->def.fom(component).volumes.size())
             throw std::out_of_range("volume ID out of range");
         if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
             throw std::invalid_argument("invalid geometry operation");
@@ -513,7 +508,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain
             box.min[a] = min_xyz[a];
             box.max[a] = max_xyz[a];
         }
-        m->def.fom(domain).volumes[volume].geometry.push_back(box);
+        m->def.fom(component).volumes[volume].geometry.push_back(box);
     });
 }
 
@@ -521,61 +516,41 @@ MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature)
+namespace {
+    mhs::model::ThermalBoundary to_thermal_boundary(const mhs_thermal_bc_t& condition)
+    {
+        if (!condition.expression)
+            throw std::invalid_argument("thermal boundary expression is required");
+        switch (condition.kind) {
+        case MHS_THERMAL_DIRICHLET:
+            return mhs::model::DirichletBoundary {condition.expression};
+        case MHS_THERMAL_NEUMANN:
+            return mhs::model::NeumannBoundary {condition.expression};
+        case MHS_THERMAL_CONVECTION:
+            if (!condition.ambient_temperature)
+                throw std::invalid_argument("convection requires an ambient temperature");
+            return mhs::model::ConvectionBoundary {condition.expression, condition.ambient_temperature};
+        default:
+            throw std::invalid_argument("unknown thermal boundary kind");
+        }
+    }
+}
+
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
+    const mhs_surface_region_t* regions, size_t count, const mhs_thermal_bc_t* condition)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
-    CHECK_NULL(temperature);
-    MHS_TRY({ _add_thermal_boundary(m, domain, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
+    CHECK_NULL(condition);
+    MHS_TRY({ _add_thermal_boundary(m, component, regions, count, to_thermal_boundary(*condition)); });
 }
 
-MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux)
+MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_thermal_bc_t* condition)
 {
     CHECK_NULL(m);
-    CHECK_NULL(regions);
-    CHECK_NULL(heat_flux);
-    MHS_TRY({ _add_thermal_boundary(m, domain, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
-}
-
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions,
-    size_t n_regions, const char* coefficient, const char* ambient_temperature)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(regions);
-    CHECK_NULL(coefficient);
-    CHECK_NULL(ambient_temperature);
-    MHS_TRY({
-        _add_thermal_boundary(
-            m, domain, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
-    });
-}
-
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, mhs_index_t domain, const char* temperature)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(temperature);
-    MHS_TRY({ m->def.fom(domain).default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
-}
-
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, mhs_index_t domain, const char* heat_flux)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(heat_flux);
-    MHS_TRY({ m->def.fom(domain).default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
-}
-
-MHS_API mhs_status_t mhs_model_set_default_convection(
-    mhs_model_t* m, mhs_index_t domain, const char* coefficient, const char* ambient_temperature)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(coefficient);
-    CHECK_NULL(ambient_temperature);
-    MHS_TRY({
-        auto& fom = m->def.fom(domain);
-        fom.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
-    });
+    CHECK_NULL(condition);
+    MHS_TRY({ m->def.fom(component).default_thermal_boundary = to_thermal_boundary(*condition); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -648,19 +623,7 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3])
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    CHECK_NULL(xyz);
-    MHS_TRY({
-        if (!std::isfinite(xyz[0]) || !std::isfinite(xyz[1]) || !std::isfinite(xyz[2]))
-            throw std::invalid_argument("probe coordinates must be finite");
-        m->def.point_probes.push_back({name, xyz[0], xyz[1], xyz[2]});
-    });
-}
-
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t domain,
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
     const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
     const double* inlet_temperature)
 {
@@ -686,7 +649,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t do
         default:
             throw std::invalid_argument("invalid fluid boundary kind");
         }
-        m->def.fom(domain).fluid_boundaries.push_back(std::move(fb));
+        m->def.fom(component).fluid_boundaries.push_back(std::move(fb));
     });
 }
 
@@ -712,22 +675,25 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c) { delete c; }
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_index_t domain, mhs_domain_info_t* out)
+MHS_API mhs_status_t mhs_compiled_get_component_info(
+    const mhs_compiled_t* c, mhs_index_t component, mhs_component_info_t* out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY({
-        const auto& domain_value = c->model.components.at(domain);
-        if (const auto* value = std::get_if<mhs::model::FomDomain>(&domain_value.physics)) {
+        const auto& component_value = c->model.components.at(component);
+        if (const auto* value = std::get_if<mhs::model::FomDomain>(&component_value.physics)) {
+            out->kind = MHS_COMPONENT_CARTESIAN;
             out->cell_count = value->discrete.cells.size();
             out->face_count = value->discrete.faces.size();
         }
         else {
+            out->kind = MHS_COMPONENT_REDUCED;
             out->cell_count = 0;
             out->face_count = 0;
         }
         out->field_count = static_cast<size_t>(std::count_if(c->model.layout.fields.begin(),
-            c->model.layout.fields.end(), [&](const auto& f) { return f.domain == domain; }));
+            c->model.layout.fields.end(), [&](const auto& f) { return f.domain == component; }));
     });
 }
 
@@ -786,7 +752,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
             out->projection_count += fom.source_terms.size();
         }
     out->state_count = c->model.layout.state_count;
-    out->domain_count = c->model.components.size();
+    out->component_count = c->model.components.size();
     out->field_count = c->model.layout.fields.size();
 
     mhs_detail_clear_last_error();
@@ -944,15 +910,15 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
     });
 }
 
-MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
-    size_t temperature_count, double time, mhs_material_values_t* values)
+MHS_API mhs_status_t mhs_compiled_eval_materials(
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_material_values_t* values)
 {
     CHECK_NULL(c);
-    CHECK_NULL(temperature);
+    CHECK_NULL(state);
     CHECK_NULL(values);
     mhs_compiled_info_t info;
     mhs_compiled_get_info(c, &info);
-    if (temperature_count != info.state_count || values->count != info.cell_count) {
+    if (state_count != info.state_count || values->count != info.cell_count) {
         SET_ERR("material evaluation buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -972,7 +938,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
                 const auto p = mesh.cells[cell].center();
                 const auto& props = model.material_table[model.cell_material[cell]];
                 const auto dof = field.dof(cell);
-                const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
+                const mhs::expression::FieldContext context {p[0], p[1], p[2], state[dof], time};
                 values->conductivity_x[offset + cell] = props.kx.eval(context);
                 values->conductivity_y[offset + cell] = props.ky.eval(context);
                 values->conductivity_z[offset + cell] = props.kz.eval(context);
@@ -989,22 +955,20 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out)
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_operators_t** out)
 {
     CHECK_NULL(out);
     *out = nullptr;
     CHECK_NULL(c);
-    CHECK_NULL(temperature);
+    CHECK_NULL(state);
     MHS_TRY({
-        const auto state_count = c->model.layout.state_count;
-        if (temperature_count != state_count) {
-            SET_ERR("temperature_count must equal state_count");
+        if (state_count != c->model.layout.state_count) {
+            SET_ERR("state_count must equal compiled state_count");
             return MHS_ERROR;
         }
 
         auto result = std::make_unique<mhs_operators_t>();
-        result->operators
-            = mhs::solver::assemble_thermal(c->model, std::span<const double>(temperature, temperature_count), time);
+        result->operators = mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time);
         *out = result.release();
     });
 }

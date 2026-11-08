@@ -196,7 +196,10 @@ namespace mhs::model {
         mhs::core::Vector<RomPortPatch> patches;
     };
 
-    struct RomObservation {
+    // A physical temperature observation belongs to a component.
+    // Cartesian observations use the point only; reduced observations carry
+    // a modal trace map and an affine offset.
+    struct ObservationDefinition {
         PointProbe point;
         mhs::core::Vector<double> weights;
         double offset = 0.0;
@@ -216,7 +219,6 @@ namespace mhs::model {
     struct RomDomainDefinition {
         std::size_t order = 0;
         mhs::core::Vector<double> K, C, f, initial_state;
-        mhs::core::Vector<RomObservation> observations;
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
@@ -227,6 +229,7 @@ namespace mhs::model {
         std::variant<FomDomainDefinition, RomDomainDefinition> physics;
         mhs::core::Vector<PortDefinition> ports;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+        mhs::core::Vector<ObservationDefinition> observations;
     };
 
     struct ModelDefinition {
@@ -243,7 +246,6 @@ namespace mhs::model {
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
-        mhs::core::Vector<PointProbe> point_probes;
     };
 
 } // namespace mhs::model

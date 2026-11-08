@@ -165,7 +165,7 @@ namespace mhs::app::pta {
         for (auto& b : out.fom(0).fluid_boundaries)
             scale_regions(b.regions);
         for (const auto& p : pta.point_probes)
-            out.point_probes.push_back({p.name, eval(p.x), eval(p.y), eval(p.z)});
+            out.component(0).observations.push_back({{p.name, eval(p.x), eval(p.y), eval(p.z)}, {}, 0.0});
         return out;
     }
 } // namespace mhs::app::pta

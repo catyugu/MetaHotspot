@@ -32,26 +32,27 @@ static int connection_client(void)
     const mhs_surface_region_t region = {MHS_AXIS_Z, 0.5, {0, 1, 0, 1}};
     OK(mhs_model_create(&m));
     mhs_index_t base_component;
-    OK(mhs_model_add_fom_domain(m, &base_component));
+    OK(mhs_model_add_cartesian_component(m, &base_component));
     CHECK(base_component == 0);
-    OK(mhs_model_add_fom_domain(m, &upper));
+    OK(mhs_model_add_cartesian_component(m, &upper));
     CHECK(upper == 1);
     OK(mhs_model_add_material(m, "solid", "1", "1", "1", "1", "1", NULL, &material));
     for (mhs_index_t d = 0; d < 2; ++d) {
         OK(mhs_model_set_cartesian_mesh(m, d, 2, xy, 2, xy, 2, d ? upper_z : lower_z));
         OK(mhs_model_add_volume(m, d, material, MHS_INVALID_INDEX, &volume_id));
         OK(mhs_model_volume_add_box(m, d, volume_id, MHS_GEOM_ADD, lo, hi));
-        OK(mhs_model_set_default_dirichlet(m, d, "300+10*z"));
+        const mhs_thermal_bc_t fixed = {MHS_THERMAL_DIRICHLET, "300+10*z", NULL};
+        OK(mhs_model_set_default_thermal_boundary(m, d, &fixed));
     }
-    OK(mhs_model_add_port(m, 0, "top", &region, &a));
-    OK(mhs_model_add_port(m, upper, "bottom", &region, &b));
+    OK(mhs_model_add_port(m, 0, "top", &region, 0, NULL, 0, &a));
+    OK(mhs_model_add_port(m, upper, "bottom", &region, 0, NULL, 0, &b));
     CHECK(mhs_model_compile(m, &c) == MHS_ERROR && c == NULL);
     OK(mhs_model_connect(m, 0, a, upper, b, &connection));
     OK(mhs_model_compile(m, &c));
     mhs_model_destroy(m);
     mhs_compiled_info_t info;
     OK(mhs_compiled_get_info(c, &info));
-    CHECK(info.domain_count == 2 && info.field_count == 2 && info.state_count == 2 && info.cell_count == 2);
+    CHECK(info.component_count == 2 && info.field_count == 2 && info.state_count == 2 && info.cell_count == 2);
     OK(mhs_compiled_solve(c, NULL, NULL, 0, NULL, &solution));
     double state[2], flux[1];
     OK(mhs_solution_copy_state(solution, state, 2));
@@ -82,7 +83,7 @@ static int stokes_client(void)
     const mhs_surface_region_t outlet = {MHS_AXIS_X, 2, {0, 1, 0, 1}};
     OK(mhs_model_create(&m));
     mhs_index_t base_component;
-    OK(mhs_model_add_fom_domain(m, &base_component));
+    OK(mhs_model_add_cartesian_component(m, &base_component));
     CHECK(base_component == 0);
     OK(mhs_model_set_cartesian_mesh(m, 0, 3, x, 2, yz, 2, yz));
     OK(mhs_model_add_material(m, "fluid", "1", "1", "1", "1", "1", "T/300", &material));
@@ -133,7 +134,7 @@ int main(void)
         z[i] = (double)i * 0.0005;
     OK(mhs_model_create(&m));
     mhs_index_t base_component;
-    OK(mhs_model_add_fom_domain(m, &base_component));
+    OK(mhs_model_add_cartesian_component(m, &base_component));
     CHECK(base_component == 0);
     OK(mhs_model_set_cartesian_mesh(m, 0, 13, x, 9, y, 11, z));
     OK(mhs_model_add_material(m, "silicon", "130", "130", "130", "2330", "700", NULL, &silicon));
@@ -150,24 +151,25 @@ int main(void)
     const mhs_surface_region_t inlet = {MHS_AXIS_X, 0, {0.003, 0.005, 0.0025, 0.0035}};
     const mhs_surface_region_t outlet = {MHS_AXIS_X, 0.012, {0.003, 0.005, 0.0025, 0.0035}};
     const double temperature = 300;
-    OK(mhs_model_add_convection(m, 0, &top, 1, "400", "300"));
+    const mhs_thermal_bc_t convection = {MHS_THERMAL_CONVECTION, "400", "300"};
+    OK(mhs_model_add_thermal_boundary(m, 0, &top, 1, &convection));
     OK(mhs_model_add_fluid_boundary(m, 0, &inlet, 1, MHS_FLUID_MASS_FLOW_INLET, 2e-4, &temperature));
     OK(mhs_model_add_fluid_boundary(m, 0, &outlet, 1, MHS_FLUID_OUTLET, 0, NULL));
-    OK(mhs_model_add_point_probe(m, "hotspot", (double[]) {0.006, 0.004, 0.00025}));
-    OK(mhs_model_add_point_probe(m, "upstream", (double[]) {0.0015, 0.0035, 0.00275}));
-    OK(mhs_model_add_point_probe(m, "downstream", (double[]) {0.0105, 0.0035, 0.00275}));
-    OK(mhs_model_add_point_probe(m, "copper", (double[]) {0.006, 0.004, 0.00475}));
+    OK(mhs_model_add_observation(m, 0, "hotspot", (double[]) {0.006, 0.004, 0.00025}, NULL, 0));
+    OK(mhs_model_add_observation(m, 0, "upstream", (double[]) {0.0015, 0.0035, 0.00275}, NULL, 0));
+    OK(mhs_model_add_observation(m, 0, "downstream", (double[]) {0.0105, 0.0035, 0.00275}, NULL, 0));
+    OK(mhs_model_add_observation(m, 0, "copper", (double[]) {0.006, 0.004, 0.00475}, NULL, 0));
     OK(mhs_model_compile(m, &c));
     mhs_model_destroy(m);
     mhs_compiled_info_t info;
     mhs_field_info_t field;
-    mhs_domain_info_t domain;
+    mhs_component_info_t component;
     OK(mhs_compiled_get_info(c, &info));
-    CHECK(info.cell_count == 960 && info.state_count == 960 && info.domain_count == 1 && info.field_count == 1);
-    OK(mhs_compiled_get_domain_info(c, 0, &domain));
-    CHECK(domain.cell_count == 960 && domain.field_count == 1);
+    CHECK(info.cell_count == 960 && info.state_count == 960 && info.component_count == 1 && info.field_count == 1);
+    OK(mhs_compiled_get_component_info(c, 0, &component));
+    CHECK(component.cell_count == 960 && component.field_count == 1);
     OK(mhs_compiled_get_field_info(c, 0, &field));
-    CHECK(field.domain == 0 && field.quantity == MHS_FIELD_TEMPERATURE && field.support == MHS_SUPPORT_CELL
+    CHECK(field.component == 0 && field.quantity == MHS_FIELD_TEMPERATURE && field.support == MHS_SUPPORT_CELL
         && field.dof_count == 960);
     CHECK(field.dof_offset == 0);
     mhs_index_t entities[960];

@@ -26,9 +26,10 @@ DOF arrays or support arbitrary post-compilation DOF permutations. A Stokes FOM
 has one temperature field, one pressure field and one normal-face velocity
 field; face orientation comes from the mesh face itself.
 
-C clients query `state_count`, `domain_count`, `field_count`, domain/field
-metadata, contiguous DOF ranges and support entities on the compiled handle. Python exposes copied snapshots
-as `Compiled.info`, `Compiled.domains`, `Compiled.field_layouts`.
+C clients query `state_count`, `component_count`, `field_count`, Component/Field
+metadata, contiguous DOF ranges and support entities. Python exposes
+`Compiled.info`, `Compiled.components` and `Compiled.field_layouts`.
+Component metadata includes its numerical representation kind.
 Geometry, evaluated materials and source projections concatenate domains in
 DomainId order. Exported geometry cell references include that domain's cell
 offset; field support-entity IDs remain domain-local. State and operators use
@@ -72,15 +73,15 @@ reconstructing cell gradients. This preserves near-interface observations under
 matching decomposition, as well as cell-centered states. A probe shared by two
 domains is ambiguous and reports an error; select a point inside one component.
 
-Python construction uses integer IDs, without additional owning handles:
+Python construction uses integer component/port IDs, without additional owning handles:
 
 ```python
 model = Model()
-lower = model.add_fom_domain()
-upper = model.add_fom_domain()
-model.set_cartesian_mesh(x, y, upper_z, domain=upper)
-volume = model.add_volume(copper, domain=upper)
-model.add_box(volume, upper_min, upper_max, domain=upper)
+lower = model.add_cartesian_component()
+upper = model.add_cartesian_component()
+model.set_cartesian_mesh(x, y, upper_z, component=upper)
+volume = model.add_volume(copper, component=upper)
+model.add_box(volume, upper_min, upper_max, component=upper)
 a = model.add_port(0, "top", interface)
 b = model.add_port(upper, "bottom", interface)
 connection = model.connect(0, a, upper, b)
@@ -88,11 +89,10 @@ compiled = model.compile()
 heat_rates = compiled.connection_flux(connection, compiled.solve().state)
 ```
 
-C domain-local construction functions take `domain` immediately after the model
-pointer. Python supplies `domain=0` by default for Cartesian-specific
-operations, after a Cartesian component has explicitly been added. C++ callers
-use `fom(0)` to access that component's numerical formulation.
-These are breaking C/C++ changes, with no compatibility aliases.
+C construction functions take a Component ID after the model pointer.
+Python uses `component=` for Component-local operations; the default 0 is
+valid only after explicitly creating a Cartesian Component. C++ internal
+`DomainId` remains an index into the Component table.
 
 Within a FOM, internal faces continue to use TPFA without NCC. The current public
 Cartesian mesh specification does not yet express local octree refinement;

@@ -96,6 +96,7 @@ namespace mhs::model {
     struct CompiledComponent {
         std::variant<FomDomain, RomDomain> physics;
         core::Vector<PortDefinition> ports;
+        core::Vector<ObservationDefinition> observations;
     };
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
@@ -110,7 +111,6 @@ namespace mhs::model {
         core::Vector<ThermalConnection> connections;
         core::Vector<BoundaryCondition> rom_boundary_conditions;
         core::Vector<RomBoundaryTerm> rom_boundary_terms;
-        mhs::core::Vector<PointProbe> point_probes;
     };
 
 } // namespace mhs::model
