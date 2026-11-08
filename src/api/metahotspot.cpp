@@ -243,7 +243,8 @@ MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index
     CHECK_NULL(out_id);
     MHS_TRY({
         const auto id = static_cast<mhs_index_t>(m->def.components.size());
-        m->def.components.emplace_back();
+        auto& component = m->def.components.emplace_back();
+        component.library = m->def.library;
         *out_id = id;
     });
 }
@@ -268,6 +269,7 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         if (initial)
             rom.initial_state.assign(initial, initial + order);
         auto& component = m->def.components.emplace_back();
+        component.library = m->def.library;
         component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
         *out_id = id;
     });
