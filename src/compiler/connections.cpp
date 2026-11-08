@@ -43,12 +43,12 @@ namespace mhs::compiler {
         core::Vector<core::Vector<bool>> used(ndom);
 
         // Full-order port projection and exterior-boundary exclusion.
-        for (std::size_t d = 0; d < ndom; ++d) {
-            const auto* value = std::get_if<FomDomainDefinition>(&definition.domains[d]);
-            if (!value)
+        for (const auto& field : compiled.layout.fields) {
+            if (field.quantity != FieldQuantity::Temperature)
                 continue;
-            const auto& domain = *value;
-            auto& fom = compiled.fom(static_cast<DomainId>(d));
+            const auto d = field.domain;
+            const auto& domain = definition.fom(d);
+            auto& fom = compiled.fom(d);
             used[d].resize(domain.ports.size(), false);
             ports[d].resize(domain.ports.size());
             std::set<std::string> names;
@@ -102,11 +102,11 @@ namespace mhs::compiler {
 
         // ROM ports describe only their physical boundary; their interior is
         // represented exclusively by the reduced operators.
-        for (std::size_t d = 0; d < ndom; ++d) {
-            const auto* value = std::get_if<RomDomain>(&compiled.domains[d]);
-            if (!value)
+        for (const auto& field : compiled.layout.fields) {
+            if (field.quantity != FieldQuantity::ReducedCoordinate)
                 continue;
-            const auto& rom = *value;
+            const auto d = field.domain;
+            const auto& rom = compiled.rom(d);
             used[d].resize(rom.ports.size(), false);
             ports[d].resize(rom.ports.size());
             std::set<std::string> names;
@@ -181,9 +181,9 @@ namespace mhs::compiler {
         }
         // Only FOM ports require Connection. A ROM port can instead carry an
         // exterior boundary law; an otherwise unused ROM port is adiabatic.
-        for (std::size_t d = 0; d < ndom; ++d)
-            if (std::holds_alternative<FomDomainDefinition>(definition.domains[d])
-                && std::find(used[d].begin(), used[d].end(), false) != used[d].end())
+        for (const auto& field : compiled.layout.fields)
+            if (field.quantity == FieldQuantity::Temperature
+                && std::find(used[field.domain].begin(), used[field.domain].end(), false) != used[field.domain].end())
                 throw std::invalid_argument("every declared FOM port must be connected");
 
         // A nonmatching ROM connection needs a projected tangential gradient
