@@ -135,6 +135,7 @@ class Model(OwnedHandle):
         dll = get_dll()
         handle = _create_model(dll)
         super().__init__(dll, handle, dll.mhs_model_destroy)
+        self._rom_orders: dict[int, int] = {}
 
     # ---- Model construction helpers ----
 
@@ -462,6 +463,7 @@ class Model(OwnedHandle):
             ctypes.byref(identifier),
             ctx="add_rom_domain",
         )
+        self._rom_orders[identifier.value] = k.shape[0]
         return identifier.value
 
     def add_rom_port(
@@ -484,10 +486,16 @@ class Model(OwnedHandle):
             ctypes.byref(identifier),
             ctx="add_rom_port",
         )
+        if domain not in self._rom_orders:
+            raise ValueError("ROM port requires a ROM domain created by add_rom_domain")
         for patch in patches:
+            if len(patch.rectangle) != 4:
+                raise ValueError("ROM patch rectangle needs four bounds")
             rect = Rect2D(*patch.rectangle)
             center = np.ascontiguousarray(patch.center, dtype=np.float64)
             trace = np.ascontiguousarray(patch.trace, dtype=np.float64)
+            if center.shape != (2,) or trace.shape != (self._rom_orders[domain],):
+                raise ValueError("ROM patch center or trace has invalid dimensions")
             ga = (
                 None
                 if patch.gradient_a is None
@@ -498,6 +506,10 @@ class Model(OwnedHandle):
                 if patch.gradient_b is None
                 else np.ascontiguousarray(patch.gradient_b, dtype=np.float64)
             )
+            if (ga is not None and ga.shape != trace.shape) or (
+                gb is not None and gb.shape != trace.shape
+            ):
+                raise ValueError("ROM patch tangent-gradient shape must match trace")
             self._call(
                 "mhs_model_rom_port_add_patch",
                 domain,
@@ -524,8 +536,10 @@ class Model(OwnedHandle):
         """Map ROM coordinates to a named physical point-probe temperature."""
         xyz = np.ascontiguousarray(position, dtype=np.float64)
         coefficients = np.ascontiguousarray(weights, dtype=np.float64)
-        if xyz.shape != (3,) or coefficients.ndim != 1:
-            raise ValueError("ROM observation requires xyz=(3,) and 1D modal weights")
+        if xyz.shape != (3,) or coefficients.shape != (
+            self._rom_orders.get(domain, -1),
+        ):
+            raise ValueError("ROM observation requires xyz=(3,) and modal weights=(order,)")
         self._call(
             "mhs_model_add_rom_observation",
             domain,
