@@ -31,7 +31,6 @@ namespace mhs::compiler {
     };
 
     SurfaceBounds surface_bounds(const mhs::model::RegionRect& rectangle);
-    SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& region);
     SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b);
     bool positive_bounds(const SurfaceBounds& bounds);
     double surface_area(const SurfaceBounds& bounds);
