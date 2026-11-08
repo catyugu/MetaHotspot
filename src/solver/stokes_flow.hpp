@@ -1,4 +1,5 @@
 #pragma once
+#include "core/csr_matrix.hpp"
 #include "model/model.hpp"
 #include "solver/frozen_flow.hpp"
 #include <span>
