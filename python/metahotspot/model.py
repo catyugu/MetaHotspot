@@ -64,6 +64,24 @@ class SurfaceRegion:
     b_max: float
 
 
+@dataclass(frozen=True)
+class RomPortPatch:
+    """A physical facet of a meshless ROM port.
+
+    trace maps reduced coordinates to the adjacent physical temperature;
+    half_resistance is distance/conductivity in m² K/W. NCC on nonmatching
+    interfaces requires both tangential-gradient maps.
+    """
+
+    rectangle: tuple[float, float, float, float]
+    half_resistance: float
+    center: tuple[float, float]
+    trace: Sequence[float]
+    offset: float = 0.0
+    gradient_a: Sequence[float] | None = None
+    gradient_b: Sequence[float] | None = None
+
+
 def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
     if not regions:
         raise ValueError("surface regions must not be empty")
@@ -117,6 +135,7 @@ class Model(OwnedHandle):
         dll = get_dll()
         handle = _create_model(dll)
         super().__init__(dll, handle, dll.mhs_model_destroy)
+        self._rom_orders: dict[int, int] = {}
 
     # ---- Model construction helpers ----
 
@@ -409,6 +428,164 @@ class Model(OwnedHandle):
             "mhs_model_add_fom_domain", ctypes.byref(identifier), ctx="add_fom_domain"
         )
         return identifier.value
+
+    def add_rom_domain(
+        self,
+        stiffness: np.ndarray,
+        capacity: np.ndarray,
+        rhs: np.ndarray,
+        *,
+        initial_state: np.ndarray | None = None,
+    ) -> int:
+        """Add a meshless ROM using projected K/C/f and optional modal initial state."""
+        k = np.ascontiguousarray(stiffness, dtype=np.float64)
+        c = np.ascontiguousarray(capacity, dtype=np.float64)
+        f = np.ascontiguousarray(rhs, dtype=np.float64)
+        if (
+            k.ndim != 2
+            or k.shape[0] == 0
+            or k.shape[0] != k.shape[1]
+            or c.shape != k.shape
+        ):
+            raise ValueError("ROM K/C must be nonempty square matrices")
+        if f.shape != (k.shape[0],):
+            raise ValueError("ROM rhs must have shape (order,)")
+        initial = (
+            None
+            if initial_state is None
+            else np.ascontiguousarray(initial_state, dtype=np.float64)
+        )
+        if initial is not None and initial.shape != f.shape:
+            raise ValueError("ROM modal initial state must have shape (order,)")
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_rom_domain",
+            k.shape[0],
+            _double_ptr(k),
+            _double_ptr(c),
+            _double_ptr(f),
+            None if initial is None else _double_ptr(initial),
+            ctypes.byref(identifier),
+            ctx="add_rom_domain",
+        )
+        self._rom_orders[identifier.value] = k.shape[0]
+        return identifier.value
+
+    def add_rom_affine_term(
+        self,
+        domain: int,
+        name: str,
+        value: float,
+        stiffness: np.ndarray,
+        rhs: np.ndarray,
+    ) -> None:
+        """Supply mu*K_i and mu*f_i from a reusable affine HTC ROM.
+
+        The parameter value is frozen into each compiled snapshot. Different
+        snapshots can reuse the same ROM matrices and physical port mappings.
+        """
+        order = self._rom_orders.get(domain)
+        if order is None:
+            raise ValueError("affine parameter requires a ROM domain")
+        k = np.ascontiguousarray(stiffness, dtype=np.float64)
+        f = np.ascontiguousarray(rhs, dtype=np.float64)
+        if k.shape != (order, order) or f.shape != (order,):
+            raise ValueError("invalid affine ROM operator dimensions")
+        self._call(
+            "mhs_model_rom_add_affine_term",
+            domain,
+            _text(name),
+            value,
+            _double_ptr(k),
+            _double_ptr(f),
+            ctx="add_rom_affine_term",
+        )
+
+    def add_rom_port(
+        self,
+        domain: int,
+        name: str,
+        region: SurfaceRegion,
+        outward_sign: int,
+        patches: Sequence[RomPortPatch],
+    ) -> int:
+        """Declare a meshless physical ROM port and its modal facet maps."""
+        surface, _ = _surface_regions([region])
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_rom_port",
+            domain,
+            _text(name),
+            surface,
+            outward_sign,
+            ctypes.byref(identifier),
+            ctx="add_rom_port",
+        )
+        if domain not in self._rom_orders:
+            raise ValueError("ROM port requires a ROM domain created by add_rom_domain")
+        for patch in patches:
+            if len(patch.rectangle) != 4:
+                raise ValueError("ROM patch rectangle needs four bounds")
+            rect = Rect2D(*patch.rectangle)
+            center = np.ascontiguousarray(patch.center, dtype=np.float64)
+            trace = np.ascontiguousarray(patch.trace, dtype=np.float64)
+            if center.shape != (2,) or trace.shape != (self._rom_orders[domain],):
+                raise ValueError("ROM patch center or trace has invalid dimensions")
+            ga = (
+                None
+                if patch.gradient_a is None
+                else np.ascontiguousarray(patch.gradient_a, dtype=np.float64)
+            )
+            gb = (
+                None
+                if patch.gradient_b is None
+                else np.ascontiguousarray(patch.gradient_b, dtype=np.float64)
+            )
+            if (ga is not None and ga.shape != trace.shape) or (
+                gb is not None and gb.shape != trace.shape
+            ):
+                raise ValueError("ROM patch tangent-gradient shape must match trace")
+            self._call(
+                "mhs_model_rom_port_add_patch",
+                domain,
+                identifier.value,
+                ctypes.byref(rect),
+                patch.half_resistance,
+                _double_ptr(center),
+                _double_ptr(trace),
+                patch.offset,
+                None if ga is None else _double_ptr(ga),
+                None if gb is None else _double_ptr(gb),
+                ctx="add_rom_port_patch",
+            )
+        return identifier.value
+
+    def add_rom_observation(
+        self,
+        domain: int,
+        name: str,
+        position: Sequence[float],
+        weights: Sequence[float],
+        offset: float = 0.0,
+    ) -> None:
+        """Map ROM coordinates to a named physical point-probe temperature."""
+        xyz = np.ascontiguousarray(position, dtype=np.float64)
+        coefficients = np.ascontiguousarray(weights, dtype=np.float64)
+        if xyz.shape != (3,) or coefficients.shape != (
+            self._rom_orders.get(domain, -1),
+        ):
+            raise ValueError(
+                "ROM observation requires xyz=(3,) and modal weights=(order,)"
+            )
+        self._call(
+            "mhs_model_add_rom_observation",
+            domain,
+            _text(name),
+            _double_ptr(xyz),
+            _double_ptr(coefficients),
+            offset,
+            ctx="add_rom_observation",
+        )
 
     def add_port(self, domain: int, name: str, region: SurfaceRegion) -> int:
         """Declare a named exterior thermal interface, connected exactly once."""

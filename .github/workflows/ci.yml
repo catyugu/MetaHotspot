@@ -238,7 +238,8 @@ jobs:
   # Test the same wheel on Python 3.10 and 3.14 without a compiler environment.
   python:
     needs: wheel
-    runs-on: ${{ matrix.os }}
+    # Ubuntu 26.04 lacks a cached Python 3.10, forcing a fragile Releases download.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.10' && 'ubuntu-24.04' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:

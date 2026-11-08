@@ -231,6 +231,28 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 /** Domain 0 exists on creation. All domain-local IDs are scoped by domain. */
 MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id);
+// Meshless reduced thermal domain. K/C are dense row-major (order,order)
+// matrices of C dz/dt + K z = f. NULL initial coordinates select zero.
+MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, const double* stiffness,
+    const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id);
+// A ROM port is made of nonoverlapping facets covering its full rectangle.
+// A facet's trace maps modal coordinates to its adjacent physical temperature;
+// half_resistance is distance/k (m^2 K/W). Tangential gradient rows are
+// optional for matching ports and required for nonmatching NCC.
+/** Add an affine parameter term mu*(K_i z - f_i) to a ROM.
+ * A new compiled snapshot fixes mu; the reduced basis/port maps are unchanged.
+ * K_i is a dense row-major (order,order) array; f_i has order entries. */
+MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+    double coefficient, const double* stiffness, const double* rhs);
+MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
+    const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
+    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
+    double offset, const double* gradient_a, const double* gradient_b);
+// A ROM output map can satisfy an existing named point probe without a FOM mesh.
+MHS_API mhs_status_t mhs_model_add_rom_observation(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset);
+
 MHS_API mhs_status_t mhs_model_add_port(
     mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs_index_t port_a, mhs_index_t domain_b,
@@ -355,6 +377,10 @@ MHS_API mhs_status_t mhs_compiled_copy_field_mapping(
     const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, mhs_index_t* dofs, size_t count);
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
+/** FOM temperature coordinates use the requested initial temperature; ROM
+ * coordinates use their declared modal initial state (or zero). */
+MHS_API mhs_status_t mhs_compiled_default_state(
+    const mhs_compiled_t* c, double initial_temperature, double* state, size_t state_count);
 MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
 MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
     size_t temperature_count, double time, mhs_material_values_t* values);
@@ -381,7 +407,7 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /* ------------------------------------------------------------------ */
 
 /** study may be NULL to use the compiled study snapshot. state is NULL/0 to build a
- * uniform initial state from study->initial_temperature, otherwise it must have
+ * FOM initial temperature and each ROM's modal initial state, otherwise it must have
  * exactly state_count entries. opts may be NULL to select defaults. */
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
     size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);

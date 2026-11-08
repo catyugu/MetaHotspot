@@ -4,6 +4,7 @@
 #include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
 #include "model/model_definition.hpp"
+#include "model/rom_domain.hpp"
 #include "model/state_layout.hpp"
 #include "model/types.hpp"
 
@@ -79,12 +80,14 @@ namespace mhs::model {
         Axis axis = Axis::X;
         bool nonmatching = false;
         core::Vector<ConnectionPatch> patches;
+        std::int8_t sign_a = 1; // Geometric outward normal on side A.
     };
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         Study study;
         mhs::core::Vector<FomDomain> domains;
+        mhs::core::Vector<RomDomain> rom_domains;
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
         mhs::core::Vector<PointProbe> point_probes;

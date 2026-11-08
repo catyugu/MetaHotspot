@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -236,11 +237,126 @@ MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_i
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
+        if (!m->def.rom_domains.empty())
+            throw std::invalid_argument("add all FOM domains before ROM domains to keep DomainId stable");
         const auto id = static_cast<mhs_index_t>(m->def.domains.size());
         m->def.domains.emplace_back();
         *out_id = id;
     });
 }
+MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, const double* stiffness,
+    const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(out_id);
+    CHECK_NULL(stiffness);
+    CHECK_NULL(capacity);
+    CHECK_NULL(rhs);
+    MHS_TRY({
+        if (!order || order > static_cast<size_t>(std::numeric_limits<mhs_index_t>::max())
+            || order > static_cast<size_t>(std::numeric_limits<mhs::core::SparseIndex>::max()) / order)
+            throw std::invalid_argument("invalid ROM order");
+        // The default, untouched FOM is a convenience for ordinary models;
+        // a ROM-only assembly does not need an artificial empty FOM.
+        if (m->def.domains.size() == 1 && m->def.domains[0].mesh.x_vertices.empty()
+            && m->def.domains[0].mesh.y_vertices.empty() && m->def.domains[0].mesh.z_vertices.empty()
+            && m->def.domains[0].volumes.empty() && m->def.domains[0].ports.empty()
+            && m->def.domains[0].thermal_boundaries.empty() && m->def.domains[0].fluid_boundaries.empty())
+            m->def.domains.clear();
+        const auto id = static_cast<mhs_index_t>(m->def.domains.size() + m->def.rom_domains.size());
+        mhs::model::RomDomainDefinition rom;
+        rom.order = order;
+        rom.K.assign(stiffness, stiffness + order * order);
+        rom.C.assign(capacity, capacity + order * order);
+        rom.f.assign(rhs, rhs + order);
+        if (initial)
+            rom.initial_state.assign(initial, initial + order);
+        m->def.rom_domains.push_back(std::move(rom));
+        *out_id = id;
+    });
+}
+
+MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+    double coefficient, const double* stiffness, const double* rhs)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(stiffness);
+    CHECK_NULL(rhs);
+    MHS_TRY({
+        auto& rom = m->def.rom_domains.at(static_cast<std::size_t>(domain) - m->def.domains.size());
+        if (!std::isfinite(coefficient))
+            throw std::invalid_argument("ROM parameter must have a finite value");
+        mhs::model::RomAffineTerm term;
+        term.name = name;
+        term.value = coefficient;
+        term.K.assign(stiffness, stiffness + rom.order * rom.order);
+        term.f.assign(rhs, rhs + rom.order);
+        rom.affine_terms.push_back(std::move(term));
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
+    const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(region);
+    CHECK_NULL(out_id);
+    MHS_TRY({
+        if (outward_sign != 1 && outward_sign != -1)
+            throw std::invalid_argument("ROM port normal must be +/-1");
+        const auto i = static_cast<size_t>(domain) - m->def.domains.size();
+        auto& ports = m->def.rom_domains.at(i).ports;
+        const auto id = static_cast<mhs_index_t>(ports.size());
+        ports.push_back({name, _make_surface_region(region->axis, region->coordinate, region->rectangle),
+            static_cast<std::int8_t>(outward_sign), {}});
+        *out_id = id;
+    });
+}
+
+MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
+    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
+    double offset, const double* gradient_a, const double* gradient_b)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(rectangle);
+    CHECK_NULL(tangent_center);
+    CHECK_NULL(trace);
+    MHS_TRY({
+        auto& rom = m->def.rom_domains.at(static_cast<size_t>(domain) - m->def.domains.size());
+        auto& facets = rom.ports.at(port).patches;
+        mhs::model::RomPortPatch facet;
+        facet.rectangle = {rectangle->a_min, rectangle->a_max, rectangle->b_min, rectangle->b_max};
+        facet.half_resistance = half_resistance;
+        facet.center = {tangent_center[0], tangent_center[1]};
+        facet.offset = offset;
+        facet.trace.assign(trace, trace + rom.order);
+        if (gradient_a)
+            facet.tangential_gradient[0].assign(gradient_a, gradient_a + rom.order);
+        if (gradient_b)
+            facet.tangential_gradient[1].assign(gradient_b, gradient_b + rom.order);
+        facets.push_back(std::move(facet));
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_rom_observation(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(xyz);
+    CHECK_NULL(weights);
+    MHS_TRY({
+        auto& rom = m->def.rom_domains.at(static_cast<size_t>(domain) - m->def.domains.size());
+        mhs::model::RomObservation observation;
+        observation.point = {name, xyz[0], xyz[1], xyz[2]};
+        observation.weights.assign(weights, weights + rom.order);
+        observation.offset = offset;
+        rom.observations.push_back(std::move(observation));
+    });
+}
+
 MHS_API mhs_status_t mhs_model_add_port(
     mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id)
 {
@@ -262,8 +378,14 @@ MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        (void)m->def.domains.at(domain_a).ports.at(port_a);
-        (void)m->def.domains.at(domain_b).ports.at(port_b);
+        const auto check_port = [&](mhs_index_t d, mhs_index_t p) {
+            if (d < m->def.domains.size())
+                (void)m->def.domains.at(d).ports.at(p);
+            else
+                (void)m->def.rom_domains.at(d - m->def.domains.size()).ports.at(p);
+        };
+        check_port(domain_a, port_a);
+        check_port(domain_b, port_b);
         const auto id = static_cast<mhs_index_t>(m->def.connections.size());
         m->def.connections.push_back({{domain_a, port_a}, {domain_b, port_b}});
         *out_id = id;
@@ -600,9 +722,16 @@ MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_i
     CHECK_NULL(c);
     CHECK_NULL(out);
     MHS_TRY({
-        const auto& value = c->model.domains.at(domain);
-        out->cell_count = value.discrete.cells.size();
-        out->face_count = value.discrete.faces.size();
+        if (domain < c->model.domains.size()) {
+            const auto& value = c->model.domains[domain];
+            out->cell_count = value.discrete.cells.size();
+            out->face_count = value.discrete.faces.size();
+        }
+        else {
+            (void)c->model.rom_domains.at(domain - c->model.domains.size());
+            out->cell_count = 0;
+            out->face_count = 0;
+        }
         out->field_count = static_cast<size_t>(std::count_if(c->model.layout.fields.begin(),
             c->model.layout.fields.end(), [&](const auto& f) { return f.domain == domain; }));
     });
@@ -639,18 +768,37 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = out->face_count = out->projection_count = 0;
-    out->source_count = c->model.domains.front().heat_source_table.size();
+    out->source_count = c->model.domains.empty() ? 0 : c->model.domains.front().heat_source_table.size();
     for (const auto& domain : c->model.domains) {
         out->cell_count += domain.discrete.cells.size();
         out->face_count += domain.discrete.faces.size();
         out->projection_count += domain.source_terms.size();
     }
     out->state_count = c->model.layout.state_count;
-    out->domain_count = c->model.domains.size();
+    out->domain_count = c->model.domains.size() + c->model.rom_domains.size();
     out->field_count = c->model.layout.fields.size();
 
     mhs_detail_clear_last_error();
     return MHS_OK;
+}
+
+MHS_API mhs_status_t mhs_compiled_default_state(
+    const mhs_compiled_t* c, double initial_temperature, double* state, size_t state_count)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(state);
+    MHS_TRY({
+        if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
+            throw std::invalid_argument("initial state size or temperature is invalid");
+        std::fill_n(state, state_count, initial_temperature);
+        for (std::size_t r = 0; r < c->model.rom_domains.size(); ++r) {
+            const auto d = static_cast<mhs::model::DomainId>(c->model.domains.size() + r);
+            const auto& field
+                = c->model.layout.field(c->model.layout.find(d, mhs::model::FieldQuantity::ReducedCoordinate));
+            for (std::size_t j = 0; j < field.dofs.size(); ++j)
+                state[field.dofs[j]] = c->model.rom_domains[r].initial_state[j];
+        }
+    });
 }
 
 namespace {

@@ -22,6 +22,7 @@ from metahotspot.types import (
     MhsStudy,
     MhsSurfaceRegion,
     Point2D,
+    Rect2D,
     _SolveOptionsCStruct,
 )
 
@@ -45,6 +46,49 @@ _CORE_FUNC_SIGS = [
         [P(MhsCompiled), P(F64), Size, F64, P(F64), Size],
     ),
     ("mhs_model_add_fom_domain", I32, [P(MhsModel), P(ctypes.c_uint32)]),
+    (
+        "mhs_model_add_rom_domain",
+        I32,
+        [P(MhsModel), Size, P(F64), P(F64), P(F64), P(F64), P(ctypes.c_uint32)],
+    ),
+    (
+        "mhs_model_rom_add_affine_term",
+        I32,
+        [P(MhsModel), ctypes.c_uint32, Text, F64, P(F64), P(F64)],
+    ),
+    (
+        "mhs_model_add_rom_port",
+        I32,
+        [
+            P(MhsModel),
+            ctypes.c_uint32,
+            Text,
+            P(MhsSurfaceRegion),
+            I32,
+            P(ctypes.c_uint32),
+        ],
+    ),
+    (
+        "mhs_model_rom_port_add_patch",
+        I32,
+        [
+            P(MhsModel),
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            P(Rect2D),
+            F64,
+            P(F64),
+            P(F64),
+            F64,
+            P(F64),
+            P(F64),
+        ],
+    ),
+    (
+        "mhs_model_add_rom_observation",
+        I32,
+        [P(MhsModel), ctypes.c_uint32, Text, P(F64), P(F64), F64],
+    ),
     (
         "mhs_model_add_port",
         I32,
@@ -163,6 +207,7 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
+    ("mhs_compiled_default_state", I32, [P(MhsCompiled), F64, P(F64), Size]),
     ("mhs_compiled_copy_cell_fields", I32, [P(MhsCompiled), P(MhsCellFields)]),
     (
         "mhs_compiled_eval_materials",
