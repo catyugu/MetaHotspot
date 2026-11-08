@@ -253,12 +253,13 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
             throw std::invalid_argument("invalid ROM order");
         // The default, untouched FOM is a convenience for ordinary models;
         // a ROM-only assembly does not need an artificial empty FOM.
-        if (m->def.domains.size() == 1)
-            if (const auto* fom = std::get_if<mhs::model::FomDomainDefinition>(&m->def.domains[0]);
-                fom && fom->mesh.x_vertices.empty() && fom->mesh.y_vertices.empty() && fom->mesh.z_vertices.empty()
+        if (m->def.domains.size() == 1) {
+            const auto* fom = std::get_if<mhs::model::FomDomainDefinition>(&m->def.domains[0]);
+            if (fom && fom->mesh.x_vertices.empty() && fom->mesh.y_vertices.empty() && fom->mesh.z_vertices.empty()
                 && fom->volumes.empty() && fom->ports.empty() && fom->thermal_boundaries.empty()
                 && fom->fluid_boundaries.empty())
                 m->def.domains.clear();
+        }
         const auto id = static_cast<mhs_index_t>(m->def.domains.size());
         mhs::model::RomDomainDefinition rom;
         rom.order = order;
@@ -582,8 +583,8 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        m->def.fom(domain).default_thermal_boundary
-            = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
+        auto& fom = m->def.fom(domain);
+        fom.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
     });
 }
 
@@ -816,8 +817,8 @@ MHS_API mhs_status_t mhs_compiled_default_state(
         for (std::size_t d = 0; d < c->model.domains.size(); ++d)
             if (const auto* rom = std::get_if<mhs::model::RomDomain>(&c->model.domains[d])) {
                 const auto domain = static_cast<mhs::model::DomainId>(d);
-                const auto& field = c->model.layout.field(
-                    c->model.layout.find(domain, mhs::model::FieldQuantity::ReducedCoordinate));
+                const auto field_id = c->model.layout.find(domain, mhs::model::FieldQuantity::ReducedCoordinate);
+                const auto& field = c->model.layout.field(field_id);
                 std::copy(rom->initial_state.begin(), rom->initial_state.end(), state + field.offset);
             }
     });

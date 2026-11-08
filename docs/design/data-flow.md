@@ -5,7 +5,7 @@
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
 | `ModelDefinition` | 几何、材料、热源、边界和探针 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::CompiledModel` | FOM 域表、Connection、Field/StateLayout、Probe；域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
+| `mhs::model::CompiledModel` | 按创建顺序保存 FOM/ROM 的 Domain 表、Connection、Field/StateLayout、Probe；FOM 域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；域内重复装配刷新数值，多域路径汇总 CSR，单次导出独立拥有 |
 | `Solution` | 最终全局状态、状态历史和探针记录 | 独立拥有求解结果 |
 
@@ -40,7 +40,7 @@
 
 ## 输入与数组约定
 
-- C++ 的 `ModelDefinition::domains[id].mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
+- C++ 的 `ModelDefinition::fom(id).mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
 - 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
 - 几何与材料按 DomainId 拼接，各域内部按 CellId 排列，导出的几何 Cell 引用包含域偏移；FieldLayout 只保存连续全局 DOF 区间，物理实体顺序由 Domain 拓扑定义。`K/C/f`、`state` 和 `state_history` 按该 canonical DofId 顺序排列。Python `Solution.state` 和 `state_history` 返回对应数组。
@@ -61,7 +61,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 ## C API 契约
 
 - 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
-- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::domains[id].mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
+- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::fom(id).mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
 - `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
 - 流体边界与热边界使用相同的区域数组；入口／回流温度用可空指针表示，实际入流时 NULL 报错。Python 使用区域数组和显式温度值。删除无操作的流体边界类型；空区域条件报错。

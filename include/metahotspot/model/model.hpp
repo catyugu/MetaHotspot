@@ -102,7 +102,6 @@ namespace mhs::model {
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(domains.at(id)); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(domains.at(id)); }
-        RomDomain& rom(DomainId id) { return std::get<RomDomain>(domains.at(id)); }
         const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(domains.at(id)); }
 
         StateLayout layout;

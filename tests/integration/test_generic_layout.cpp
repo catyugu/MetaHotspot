@@ -209,14 +209,16 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
         ASSERT_TRUE(uncorrected.converged);
         auto error = [&](const auto& solution) {
             double sum = 0;
-            for (std::size_t d = 0; d < compiled.domains.size(); ++d)
-                for (std::size_t c = 0; c < compiled.fom(static_cast<mhs::model::DomainId>(d)).discrete.cells.size(); ++c) {
-                    const auto& cell = compiled.fom(static_cast<mhs::model::DomainId>(d)).discrete.cells[c];
+            for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+                const auto& domain = compiled.fom(static_cast<mhs::model::DomainId>(d));
+                for (std::size_t c = 0; c < domain.discrete.cells.size(); ++c) {
+                    const auto& cell = domain.discrete.cells[c];
                     const auto x = cell.center();
                     const double exact = 300 + x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
                     const double difference = solution.state[compiled.layout.fields[d].dof(c)] - exact;
                     sum += cell.volume() * difference * difference;
                 }
+            }
             return std::sqrt(sum);
         };
         const double ncc = error(corrected), tpfa = error(uncorrected);

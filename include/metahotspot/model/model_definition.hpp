@@ -234,7 +234,6 @@ namespace mhs::model {
         FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(domains.at(id)); }
         const FomDomainDefinition& fom(DomainId id) const { return std::get<FomDomainDefinition>(domains.at(id)); }
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(domains.at(id)); }
-        const RomDomainDefinition& rom(DomainId id) const { return std::get<RomDomainDefinition>(domains.at(id)); }
 
         mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;

@@ -147,8 +147,8 @@ namespace mhs::app::pta {
         for (auto it = layers.rbegin(); it != layers.rend(); ++it)
             for (auto& v : *it)
                 out.fom(0).volumes.push_back(std::move(v));
-        for (auto* axis :
-            {&out.fom(0).mesh.x_vertices, &out.fom(0).mesh.y_vertices, &out.fom(0).mesh.z_vertices})
+        auto& mesh = out.fom(0).mesh;
+        for (auto* axis : {&mesh.x_vertices, &mesh.y_vertices, &mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;
         auto scale_regions = [&](auto& regions) {

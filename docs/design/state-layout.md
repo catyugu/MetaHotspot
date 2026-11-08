@@ -1,14 +1,15 @@
 # Compiled model, state layout and domain connections
 
 `ModelDefinition` owns global symbols, materials, sources and named probes. Study is solve-time configuration.
-Its `domains` table contains `FomDomainDefinition` objects, each owning Cartesian
-mesh specifications, volume geometry, thermal/fluid boundaries and named ports.
-Domain 0 exists on creation. Additional FOMs are independent computational
-components. A fluid region remains part of its FOM, selected by the material's
+Its `domains` table is the canonical creation-ordered sequence of
+`FomDomainDefinition` and `RomDomainDefinition`. DomainId is the index in that
+sequence, independent of domain type. Domain 0 is an implicit FOM on creation;
+adding the first ROM to an untouched model replaces that empty convenience domain.
+A fluid region remains part of its FOM, selected by the material's
 `dynamic_viscosity` expression.
 
-`build_model()` returns an independent `CompiledModel` containing FOM domains,
-`StateLayout`, probes and compiled thermal connections.
+`build_model()` returns an independent `CompiledModel` with the same DomainId
+ordering, plus `StateLayout`, probes and compiled thermal connections.
 `FomDomain` owns immutable geometry, material expressions, source quadrature,
 thermal boundary patches, fluid membership and fluid boundary projections.
 Projection records retain subdivisions rather than collapsing them into mesh faces.
@@ -85,7 +86,7 @@ heat_rates = compiled.connection_flux(connection, compiled.solve().state)
 ```
 
 C domain-local construction functions take `domain` immediately after the model
-pointer. Python supplies `domain=0` by default. C++ callers use `domains[0]` for
+pointer. Python supplies `domain=0` by default. C++ callers use `fom(0)` for
 the default FOM. These are breaking C/C++ changes, with no compatibility aliases.
 
 Within a FOM, internal faces continue to use TPFA without NCC. The current public

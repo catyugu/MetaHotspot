@@ -150,8 +150,8 @@ namespace mhs::compiler {
         }
 
         auto region = [&](PortReference x) -> SurfaceRegion {
-            return std::visit([&](const auto& domain) { return domain.ports.at(x.port).region; },
-                definition.domains.at(x.domain));
+            return std::visit(
+                [&](const auto& domain) { return domain.ports.at(x.port).region; }, definition.domains.at(x.domain));
         };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)

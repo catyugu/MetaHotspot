@@ -183,8 +183,8 @@ namespace mhs::solver {
                 model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_[d]
-                    = std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d));
+                stokes_[d] = std::make_unique<StokesAssembler>(
+                    domain, model.layout, static_cast<model::DomainId>(d));
                 domains_[d] = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
             }
             else {

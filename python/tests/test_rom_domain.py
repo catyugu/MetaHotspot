@@ -27,6 +27,7 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
     solution = compiled.solve()
     assert solution.converged
     np.testing.assert_allclose(solution.state, [300.0], atol=1e-8)
+    assert model.add_fom_domain() == 1
 
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
