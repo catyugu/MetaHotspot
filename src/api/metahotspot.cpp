@@ -553,7 +553,10 @@ MHS_API mhs_status_t mhs_library_add_thermal_boundary(
     CHECK_NULL(library);
     CHECK_NULL(condition);
     CHECK_NULL(out_id);
-    MHS_TRY({ *out_id = library->def->add_thermal_boundary(to_thermal_boundary(*condition)); });
+    MHS_TRY({
+        *out_id = static_cast<mhs_index_t>(library->def->thermal_boundaries.size());
+        library->def->thermal_boundaries.push_back(to_thermal_boundary(*condition));
+    });
 }
 MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
     const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
@@ -659,7 +662,8 @@ MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* library, mhs_
         default:
             throw std::invalid_argument("invalid fluid boundary kind");
         }
-        *out_id = library->def->add_fluid_boundary(std::move(condition));
+        *out_id = static_cast<mhs_index_t>(library->def->fluid_boundaries.size());
+        library->def->fluid_boundaries.push_back(std::move(condition));
     });
 }
 
