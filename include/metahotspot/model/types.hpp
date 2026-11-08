@@ -13,16 +13,8 @@ namespace mhs::model {
     using SourceId = core::EntityIndex;
     using BoundaryConditionId = core::EntityIndex; // numeric index into a compiled law table
 
-    // Typed registry handles cannot be accidentally interchanged.
-    // Conversion to the compact compiled index preserves zero-overhead storage.
-    template <class Kind> struct AttributeHandle {
-        core::EntityIndex index = core::invalid_id;
-        constexpr AttributeHandle() = default;
-        constexpr AttributeHandle(core::EntityIndex value) : index(value) { }
-        constexpr operator core::EntityIndex() const noexcept { return index; }
-    };
-    using ThermalBoundaryHandle = AttributeHandle<struct ThermalBoundaryTag>;
-    using FluidBoundaryHandle = AttributeHandle<struct FluidBoundaryTag>;
+    using ThermalBoundaryId = core::EntityIndex;
+    using FluidBoundaryId = core::EntityIndex;
     using FluidCellId = core::EntityIndex;
     using PointId = core::EntityIndex;
 
