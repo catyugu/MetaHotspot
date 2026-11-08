@@ -365,7 +365,7 @@ TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctF
         std::size_t samples = 0;
         for (std::size_t k = 0; k < velocity.count; ++k) {
             const auto& face = mesh.faces[compiled.domains[0].fluid.velocity_faces[k]];
-            if (face.exterior())
+            if (face.exterior() || face.axis != Axis::X)
                 continue;
             const double y = (face.bounds[0] + face.bounds[1]) / 2;
             const double z = (face.bounds[2] + face.bounds[3]) / 2;
