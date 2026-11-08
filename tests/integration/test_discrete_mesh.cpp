@@ -1,4 +1,5 @@
 #include "compiler/geometry_compiler.hpp"
+#include "library_test_utils.hpp"
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "model/discrete_mesh.hpp"
@@ -62,7 +63,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
              mhs::model::ThermalBoundary {mhs::model::NeumannBoundary {"1+0.001*T"}}}) {
         auto d = cube_definition();
         d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
-        d.fom(0).default_thermal_boundary = d.library().add_thermal_boundary(condition);
+        d.fom(0).default_thermal_boundary = test_model::append(d.library().thermal_boundaries,condition);
         const auto compiled = mhs::compiler::build_model(d);
         const auto& model = compiled.fom(0);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
@@ -113,7 +114,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
 {
     auto d = cube_definition();
     mhs::model::ThermalBoundarySpec bc;
-    bc.condition = d.library().add_thermal_boundary(mhs::model::NeumannBoundary {"10"});
+    bc.condition = test_model::append(d.library().thermal_boundaries,mhs::model::NeumannBoundary {"10"});
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).fom(0).discrete;
@@ -157,7 +158,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     auto d = cube_definition();
     d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
     mhs::model::ThermalBoundarySpec bc;
-    bc.condition = d.library().add_thermal_boundary(mhs::model::DirichletBoundary {"400"});
+    bc.condition = test_model::append(d.library().thermal_boundaries,mhs::model::DirichletBoundary {"400"});
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
     d.component(0).thermal_boundaries.push_back(bc);
     const auto compiled = mhs::compiler::build_model(d);
