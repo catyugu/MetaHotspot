@@ -398,7 +398,9 @@ class Model(OwnedHandle):
         """Add a Cartesian finite-volume component; IDs start at zero."""
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_cartesian_component", ctypes.byref(identifier), ctx="add_cartesian_component"
+            "mhs_model_add_cartesian_component",
+            ctypes.byref(identifier),
+            ctx="add_cartesian_component",
         )
         return identifier.value
 
@@ -454,8 +456,8 @@ class Model(OwnedHandle):
     ) -> None:
         """Supply an intrinsic affine K/f parameter to a ROM.
 
-        Exterior HTC is specified with add_convection(component=rom_domain),
-        reusing the same physical port maps as inter-component connections.
+        Exterior HTC uses add_thermal_boundary(component=...), sharing
+        the physical port maps used for inter-component connections.
         """
         order = self._reduced_orders.get(component)
         if order is None:

@@ -303,13 +303,18 @@ class Compiled(OwnedHandle):
         for i in range(self.info.component_count):
             value = MhsComponentInfo()
             check(
-                self._dll.mhs_compiled_get_domain_info(
+                self._dll.mhs_compiled_get_component_info(
                     self._handle, i, ctypes.byref(value)
                 ),
-                "domain_info",
+                "component_info",
             )
             result.append(
-                ComponentInfo(ComponentKind(value.kind), value.cell_count, value.face_count, value.field_count)
+                ComponentInfo(
+                    ComponentKind(value.kind),
+                    value.cell_count,
+                    value.face_count,
+                    value.field_count,
+                )
             )
         return tuple(result)
 
