@@ -144,6 +144,32 @@ namespace mhs::compiler {
             if (fluid.fluid_to_global.empty())
                 fluid.global_to_fluid.clear();
             else {
+                // Determine hydraulic components once from the compiled face adjacency.
+                fluid.component_by_fluid_cell.assign(fluid.fluid_to_global.size(), core::invalid_id);
+                for (std::size_t start = 0; start < fluid.fluid_to_global.size(); ++start) {
+                    if (fluid.component_by_fluid_cell[start] != core::invalid_id)
+                        continue;
+                    const auto component = static_cast<core::EntityIndex>(fluid.component_count++);
+                    fluid.component_by_fluid_cell[start] = component;
+                    core::Vector<model::FluidCellId> pending {static_cast<model::FluidCellId>(start)};
+                    while (!pending.empty()) {
+                        const auto current = pending.back();
+                        pending.pop_back();
+                        const auto cell = fluid.fluid_to_global[current];
+                        for (const auto face_id : model.discrete.incident_faces(cell)) {
+                            const auto& face = model.discrete.faces[face_id];
+                            if (face.exterior())
+                                continue;
+                            const auto neighbor = face.minus == cell ? face.plus : face.minus;
+                            const auto adjacent = fluid.global_to_fluid[neighbor];
+                            if (adjacent != core::invalid_id
+                                && fluid.component_by_fluid_cell[adjacent] == core::invalid_id) {
+                                fluid.component_by_fluid_cell[adjacent] = component;
+                                pending.push_back(adjacent);
+                            }
+                        }
+                    }
+                }
                 mhs::core::Vector<TaggedSurfaceRegion> regions;
                 for (const auto& boundary : domain.fluid_boundaries) {
                     const auto id = model.fluid_conditions.size();
@@ -187,7 +213,7 @@ namespace mhs::compiler {
                             "staggered Stokes requires each fluid boundary to cover exactly one whole face");
                     fluid.face_conditions[matched] = static_cast<core::EntityIndex>(patch.condition);
                 }
-                bool has_pressure_boundary = false;
+                core::Vector<bool> pressure_references(fluid.component_count, false);
                 for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
                     const auto& face = model.discrete.faces[id];
                     const auto minus = face.minus;
@@ -202,13 +228,15 @@ namespace mhs::compiler {
                         if (std::holds_alternative<model::PressureInlet>(bc)
                             || std::holds_alternative<model::PressureOutlet>(bc)) {
                             fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
-                            has_pressure_boundary = true;
+                            const auto fluid_cell = i != core::invalid_id ? i : j;
+                            pressure_references[fluid.component_by_fluid_cell[fluid_cell]] = true;
                         }
                     }
                 }
-                if (!has_pressure_boundary)
+                if (std::find(pressure_references.begin(), pressure_references.end(), false)
+                    != pressure_references.end())
                     throw std::invalid_argument(
-                        "staggered Stokes requires at least one pressure boundary to fix the pressure gauge");
+                        "staggered Stokes requires a pressure boundary for every connected fluid component");
 
                 model::FieldLayout pressure;
                 pressure.domain = static_cast<model::DomainId>(domain_id);
