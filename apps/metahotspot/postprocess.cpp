@@ -55,7 +55,7 @@ namespace mhs::app::postprocess {
                             continue;
                         const auto v = it->second;
                         const double sample = boundary_value_at(
-                            model, library.material_table, library.boundary_conditions, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
+                            model, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
                                                   .value_or(temperature);
                         const double w = anisotropic_weight(center, point, conductivity);
                         node_T[v] += w * sample;
