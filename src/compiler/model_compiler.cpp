@@ -309,25 +309,31 @@ namespace mhs::compiler {
                         || !std::all_of(rectangle.begin(), rectangle.end(), [](double v) { return std::isfinite(v); })
                         || rectangle[0] >= rectangle[1] || rectangle[2] >= rectangle[3])
                         throw std::invalid_argument("invalid ROM thermal boundary region");
-                    std::size_t owner = rom.ports.size();
+                    // One declared boundary rectangle may cover multiple
+                    // adjacent ROM ports on the same physical plane.
+                    double covered = 0.0;
                     for (std::size_t p = 0; p < rom.ports.size(); ++p) {
                         const auto& port = rom.ports[p];
-                        const auto outer = bounds_of(port.region.rectangle);
-                        if (region.axis != port.region.axis || region.coordinate != port.region.coordinate
-                            || rectangle[0] < outer[0] || rectangle[1] > outer[1] || rectangle[2] < outer[2]
-                            || rectangle[3] > outer[3])
+                        if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
                             continue;
-                        if (owner != rom.ports.size())
-                            throw std::invalid_argument("ROM thermal boundary has ambiguous owning port");
-                        owner = p;
+                        const auto outer = bounds_of(port.region.rectangle);
+                        const Bounds intersection {
+                            std::max(rectangle[0], outer[0]), std::min(rectangle[1], outer[1]),
+                            std::max(rectangle[2], outer[2]), std::min(rectangle[3], outer[3])};
+                        if (!overlaps(intersection, outer))
+                            continue;
+                        for (const auto& connection : definition.connections)
+                            if ((connection.a.domain == domain_id && connection.a.port == p)
+                                || (connection.b.domain == domain_id && connection.b.port == p))
+                                throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
+                        per_port[p].push_back({intersection, condition});
+                        covered += (intersection[1] - intersection[0])
+                            * (intersection[3] - intersection[2]);
                     }
-                    if (owner == rom.ports.size())
-                        throw std::invalid_argument("ROM thermal boundary must lie inside a declared ROM port");
-                    for (const auto& connection : definition.connections)
-                        if ((connection.a.domain == domain_id && connection.a.port == owner)
-                            || (connection.b.domain == domain_id && connection.b.port == owner))
-                            throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
-                    per_port[owner].push_back({rectangle, condition});
+                    const double requested
+                        = (rectangle[1] - rectangle[0]) * (rectangle[3] - rectangle[2]);
+                    if (std::abs(covered - requested) > 1e-10 * requested)
+                        throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
                 }
             }
 
