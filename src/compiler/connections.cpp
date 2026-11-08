@@ -108,7 +108,7 @@ namespace mhs::compiler {
             for (const auto& patch : projection) {
                 if (patch.tag == core::invalid_id || patch.tag < port_offset) {
                     fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                        static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
+                        patch.tag, patch.bounds});
                     continue;
                 }
                 const auto p = patch.tag - port_offset;
