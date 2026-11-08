@@ -55,6 +55,7 @@ namespace mhs::compiler {
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::CompiledModel compiled;
+        const auto& library = *definition.library;
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
             const auto offset = static_cast<model::DofId>(compiled.layout.state_count);
@@ -65,11 +66,11 @@ namespace mhs::compiler {
             throw std::invalid_argument("model must contain at least one component");
 
         auto symbols = build_symbol_table(definition);
-        compiled.material_table.resize(definition.materials.size());
-        for (std::size_t m = 0; m < definition.materials.size(); ++m) {
-            const auto& mat = definition.materials[m].value;
+        compiled.library.material_table.resize(library.materials.size());
+        for (std::size_t m = 0; m < library.materials.size(); ++m) {
+            const auto& mat = library.materials[m].value;
             auto compile = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
-            auto& props = compiled.material_table[m];
+            auto& props = compiled.library.material_table[m];
             props.kx = compile(mat.conductivity_x);
             props.ky = compile(mat.conductivity_y);
             props.kz = compile(mat.conductivity_z);
@@ -78,12 +79,17 @@ namespace mhs::compiler {
             if (mat.dynamic_viscosity) {
                 if (mat.dynamic_viscosity->empty())
                     throw std::runtime_error(
-                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
+                        "fluid material '" + library.materials[m].name + "' is missing DynamicViscosity");
                 props.dynamic_viscosity = compile(*mat.dynamic_viscosity);
             }
         }
-        for (const auto& source : definition.sources)
-            compiled.heat_source_table.push_back(mhs::expression::parse(source, symbols));
+        for (const auto& source : library.sources)
+            compiled.library.heat_source_table.push_back(mhs::expression::parse(source, symbols));
+        for (const auto& boundary : library.thermal_boundaries)
+            compile_thermal_boundary(boundary, compiled.library.boundary_conditions, symbols);
+        compiled.library.adiabatic_condition = compile_thermal_boundary(
+            mhs::model::NeumannBoundary {}, compiled.library.boundary_conditions, symbols);
+        compiled.library.fluid_conditions = library.fluid_boundaries;
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
@@ -131,9 +137,9 @@ namespace mhs::compiler {
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             for (const auto& volume : domain.volumes) {
-                if (volume.material >= definition.materials.size())
+                if (volume.material >= library.materials.size())
                     throw std::out_of_range("volume material ID out of range");
-                if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
+                if (volume.source != mhs::core::invalid_id && volume.source >= library.sources.size())
                     throw std::out_of_range("volume source ID out of range");
                 for (const auto& box : volume.geometry)
                     for (int a = 0; a < 3; ++a)
@@ -141,24 +147,24 @@ namespace mhs::compiler {
                             throw std::invalid_argument("box bounds must be finite and increasing");
             }
 
-            // Exterior faces and ports are projected together after all
-            // component meshes have been compiled.
-            auto& conditions = model.boundary_conditions;
             for (const auto& boundary : component.thermal_boundaries)
-                compile_thermal_boundary(boundary.condition, conditions, symbols);
-            compile_thermal_boundary(domain.default_thermal_boundary, conditions, symbols);
+                if (boundary.condition >= library.thermal_boundaries.size())
+                    throw std::out_of_range("thermal boundary ID out of range");
+            if (domain.default_thermal_boundary != core::invalid_id
+                && domain.default_thermal_boundary >= library.thermal_boundaries.size())
+                throw std::out_of_range("default thermal boundary ID out of range");
 
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
             project_cell_regions(model, domain.volumes);
             for (const auto material : model.cell_material)
-                if (material >= compiled.material_table.size())
+                if (material >= compiled.library.material_table.size())
                     throw std::out_of_range("cell has no valid material assignment");
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;
             fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
             for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-                if (!compiled.material_table[model.cell_material[c]].dynamic_viscosity)
+                if (!compiled.library.material_table[model.cell_material[c]].dynamic_viscosity)
                     continue;
                 fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
                 fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));
@@ -194,8 +200,10 @@ namespace mhs::compiler {
                 }
                 mhs::core::Vector<TaggedSurfaceRegion> regions;
                 for (const auto& boundary : domain.fluid_boundaries) {
-                    const auto id = model.fluid_conditions.size();
-                    model.fluid_conditions.push_back(boundary.condition);
+                    if (boundary.condition >= library.fluid_boundaries.size())
+                        throw std::out_of_range("fluid boundary ID out of range");
+                    const auto id = model.fluid_assignments.size();
+                    model.fluid_assignments.push_back(boundary.condition);
                     for (const auto& region : boundary.regions)
                         regions.push_back({region, id});
                 }
@@ -236,7 +244,7 @@ namespace mhs::compiler {
                     }
                     else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
                         && fluid.face_conditions[id] != core::invalid_id) {
-                        const auto& bc = model.fluid_conditions[fluid.face_conditions[id]];
+                        const auto& bc = compiled.library.fluid_conditions[model.fluid_assignments[fluid.face_conditions[id]]];
                         if (std::holds_alternative<model::PressureInlet>(bc)
                             || std::holds_alternative<model::PressureOutlet>(bc)) {
                             fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
@@ -276,8 +284,9 @@ namespace mhs::compiler {
                 return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
             };
             for (const auto& boundary : boundaries) {
-                const auto condition
-                    = compile_thermal_boundary(boundary.condition, compiled.rom_boundary_conditions, symbols);
+                if (boundary.condition >= library.thermal_boundaries.size())
+                    throw std::out_of_range("thermal boundary ID out of range");
+                const auto condition = boundary.condition;
                 for (const auto& region : boundary.regions) {
                     const auto rectangle = bounds_of(region.rectangle);
                     if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
