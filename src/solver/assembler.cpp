@@ -169,8 +169,8 @@ namespace mhs::solver {
     ModelAssembler::ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time)
         : model_(model)
     {
-        if (initial.size() != model.layout.state_count || model.domains.empty())
-            throw std::invalid_argument("thermal assembly requires complete state and FOM domains");
+        if (initial.size() != model.layout.state_count || (model.domains.empty() && model.rom_domains.empty()))
+            throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
         core::Vector<bool> seen(initial.size(), false);
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
             const auto& domain = model.domains[d];
@@ -189,13 +189,29 @@ namespace mhs::solver {
             }
             temperatures_.emplace_back(n);
         }
+        for (std::size_t r = 0; r < model.rom_domains.size(); ++r) {
+            const auto domain = static_cast<model::DomainId>(model.domains.size() + r);
+            const auto& field = model.layout.field(
+                model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+            const auto n = model.rom_domains[r].order;
+            if (field.entities.size() != n || field.dofs.size() != n)
+                throw std::invalid_argument("ROM field does not cover modal coordinates");
+            core::Vector<bool> local_seen(n, false);
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto entity = field.entities[i], dof = field.dofs[i];
+                if (entity >= n || dof >= seen.size() || seen[dof] || local_seen[entity])
+                    throw std::invalid_argument("invalid ROM state mapping");
+                seen[dof] = true;
+                local_seen[entity] = true;
+            }
+        }
         if (std::find(seen.begin(), seen.end(), false) != seen.end())
-            throw std::invalid_argument("thermal fields do not cover state");
+            throw std::invalid_argument("fields do not cover entire system state");
         gather(initial);
         for (std::size_t d = 0; d < model.domains.size(); ++d)
             domains_.push_back(std::make_unique<ThermalAssembler>(
                 model.domains[d], initialize_frozen_flow(model.domains[d], temperatures_[d], time)));
-        identity_ = model.domains.size() == 1 && model.connections.empty();
+        identity_ = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty();
         for (std::size_t c = 0; identity_ && c < dofs_[0].size(); ++c)
             identity_ = dofs_[0][c] == c;
     }
@@ -230,21 +246,50 @@ namespace mhs::solver {
             for (std::size_t c = 0; c < ops.f.size(); ++c)
                 load[map[c]] += ops.f[c];
         }
+        for (std::size_t r = 0; r < model_.rom_domains.size(); ++r) {
+            const auto& rom = model_.rom_domains[r];
+            const auto domain = static_cast<model::DomainId>(model_.domains.size() + r);
+            const auto& field = model_.layout.field(
+                model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+            for (std::size_t i = 0; i < rom.order; ++i) {
+                const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
+                load[row] += rom.f[i];
+                for (std::size_t j = 0; j < rom.order; ++j) {
+                    const auto col = static_cast<core::SparseIndex>(field.dofs[j]);
+                    if (rom.K[i * rom.order + j] != 0.0)
+                        stiffness.emplace_back(row, col, rom.K[i * rom.order + j]);
+                    if (rom.C[i * rom.order + j] != 0.0)
+                        capacity.emplace_back(row, col, rom.C[i * rom.order + j]);
+                }
+            }
+        }
         for (const auto& connection : model_.connections) {
-            const auto flux = evaluate_connection_flux(model_, connection, temperatures_, time);
-            for (std::size_t p = 0; p < connection.patches.size(); ++p) {
-                const auto& patch = connection.patches[p];
-                const auto a = static_cast<core::SparseIndex>(dofs_[connection.a.domain][patch.a]);
-                const auto b = static_cast<core::SparseIndex>(dofs_[connection.b.domain][patch.b]);
-                const auto g = flux[p].conductance;
-                stiffness.emplace_back(a, a, g);
-                stiffness.emplace_back(a, b, -g);
-                stiffness.emplace_back(b, a, -g);
-                stiffness.emplace_back(b, b, g);
-                // Deferred NCC correction is recomputed at every Picard iterate,
-                // including every transient stage. One flux, opposite residuals.
-                load[a] -= flux[p].correction;
-                load[b] += flux[p].correction;
+            const auto flux = evaluate_connection_flux(model_, connection, state, time);
+            for (const auto& patch_flux : flux) {
+                const auto g = patch_flux.conductance;
+                const auto forcing = patch_flux.correction + patch_flux.bias_flux;
+                // Galerkin transpose scattering: q = g*(P_a*x-P_b*x)+forcing.
+                // Inject P_a^T*q and -P_b^T*q so both sides use one flux.
+                for (const auto& wa : patch_flux.a) {
+                    const auto row = static_cast<core::SparseIndex>(wa.dof);
+                    load[row] -= wa.weight * forcing;
+                    for (const auto& xa : patch_flux.a)
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof),
+                            g * wa.weight * xa.weight);
+                    for (const auto& xb : patch_flux.b)
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof),
+                            -g * wa.weight * xb.weight);
+                }
+                for (const auto& wb : patch_flux.b) {
+                    const auto row = static_cast<core::SparseIndex>(wb.dof);
+                    load[row] += wb.weight * forcing;
+                    for (const auto& xa : patch_flux.a)
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof),
+                            -g * wb.weight * xa.weight);
+                    for (const auto& xb : patch_flux.b)
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof),
+                            g * wb.weight * xb.weight);
+                }
             }
         }
         operators_ = {core::build_csr(state.size(), state.size(), std::move(stiffness)),
