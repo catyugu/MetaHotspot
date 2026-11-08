@@ -89,8 +89,7 @@ namespace mhs::compiler {
                     || (!rom.initial_state.empty() && rom.initial_state.size() != n))
                     throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
                 auto finite = [](double value) { return std::isfinite(value); };
-                if (!std::all_of(rom.K.begin(), rom.K.end(), finite)
-                    || !std::all_of(rom.C.begin(), rom.C.end(), finite)
+                if (!std::all_of(rom.K.begin(), rom.K.end(), finite) || !std::all_of(rom.C.begin(), rom.C.end(), finite)
                     || !std::all_of(rom.f.begin(), rom.f.end(), finite)
                     || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
                     throw std::invalid_argument("ROM operators and initial state must be finite");

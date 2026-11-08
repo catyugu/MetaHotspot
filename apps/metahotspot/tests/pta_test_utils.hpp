@@ -26,8 +26,7 @@ namespace test_pta {
         m.flow = mhs::solver::initialize_frozen_flow(m, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
         m.sampling_grid = mesh;
-        m.output.cartesian_shape
-            = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
+        m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
         for (double x : mesh.x_vertices)
             for (double y : mesh.y_vertices)
                 for (double z : mesh.z_vertices)
