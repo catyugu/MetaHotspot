@@ -68,7 +68,9 @@ class MhsCompiledInfo(ctypes.Structure):
         ("face_count", ctypes.c_size_t),
         ("projection_count", ctypes.c_size_t),
         ("source_count", ctypes.c_size_t),
-        ("reference_temperature", ctypes.c_double),
+        ("state_count", ctypes.c_size_t),
+        ("domain_count", ctypes.c_size_t),
+        ("field_count", ctypes.c_size_t),
     ]
 
 
@@ -134,4 +136,22 @@ class _SolveOptionsCStruct(ctypes.Structure):
         ("nonlinear_absolute_tolerance", ctypes.c_double),
         ("time_tolerance", ctypes.c_double),
         ("max_time_step", ctypes.c_double),
+    ]
+
+
+class MhsDomainInfo(ctypes.Structure):
+    _fields_ = [
+        ("cell_count", ctypes.c_size_t),
+        ("face_count", ctypes.c_size_t),
+        ("field_count", ctypes.c_size_t),
+    ]
+
+
+class MhsFieldInfo(ctypes.Structure):
+    _fields_ = [
+        ("domain", ctypes.c_uint32),
+        ("quantity", ctypes.c_int32),
+        ("support", ctypes.c_int32),
+        ("component", ctypes.c_uint32),
+        ("dof_count", ctypes.c_size_t),
     ]

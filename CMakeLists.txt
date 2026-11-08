@@ -22,7 +22,9 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 # Standalone builds default to everything on; as a subproject only the library.
-option(MHS_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_BUILD_TESTS "Build tests" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_BUILD_UNIT_TESTS "Build core unit tests" ON)
+option(MHS_BUILD_INTEGRATION_TESTS "Build core integration tests" ON)
 option(MHS_BUILD_APPS "Build the command-line applications" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_BUILD_C_API "Build the shared C/Python API" ON)
 option(MHS_INSTALL "Install libraries, headers and CMake package" ${PROJECT_IS_TOP_LEVEL})

@@ -13,7 +13,6 @@ from metahotspot._handle import OwnedHandle
 from metahotspot.types import (
     MhsSolution,
     MhsSolutionInfo,
-    MhsStudy,
     _SolveOptionsCStruct,
 )
 
@@ -60,17 +59,14 @@ def _solve(dll, compiled_handle, study, state, opts_overrides: dict):
     if state is not None:
         state = np.ascontiguousarray(state, dtype=np.float64)
     opts = _solve_options(dll, opts_overrides)
-    native_study = MhsStudy()
-    dll.mhs_study_default(ctypes.byref(native_study))
-    if study is not None:
-        native_study = study._native()
+    native_study = study._native() if study is not None else None
     state_ptr = _double_ptr(state) if state is not None else None
     state_count = state.size if state is not None else 0
     out = ctypes.POINTER(MhsSolution)()
     check(
         dll.mhs_compiled_solve(
             compiled_handle,
-            ctypes.byref(native_study),
+            ctypes.byref(native_study) if native_study is not None else None,
             state_ptr,
             state_count,
             ctypes.byref(opts),

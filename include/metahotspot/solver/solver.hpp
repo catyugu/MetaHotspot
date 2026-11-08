@@ -10,7 +10,7 @@ namespace mhs::solver {
     // Reconstruct the local boundary temperature at a point on the specified
     // cell. Coincident patches use Dirichlet precedence. Interior points have
     // no boundary value. State size and cell ID must match the compiled model.
-    std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
+    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
 
     /// Flattened user-facing solver configuration.
@@ -39,7 +39,9 @@ namespace mhs::solver {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study = {},
+    mhs::solver::Solution solve(const mhs::model::CompiledModel& model, const mhs::model::Study& study,
         std::span<const double> initial_state = {}, const SolveOptions& options = {});
+
+    inline Solution solve(const mhs::model::CompiledModel& model) { return solve(model, model.study); }
 
 } // namespace mhs::solver

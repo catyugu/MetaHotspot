@@ -3,6 +3,7 @@
 #include "core/vector.hpp"
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
+#include "solver/frozen_flow.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
@@ -184,10 +185,14 @@ namespace mhs::solver {
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
-    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study,
+    mhs::solver::Solution solve(const mhs::model::CompiledModel& compiled, const mhs::model::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
-        const auto cell_count = model.discrete.cells.size();
+        if (compiled.domains.size() != 1)
+            throw std::invalid_argument("thermal solve currently requires one FOM domain");
+        const auto& model = compiled.domains.front();
+        const auto& field = compiled.layout.field(compiled.layout.find(0, mhs::model::FieldQuantity::Temperature));
+        const auto cell_count = compiled.layout.state_count;
         if (cell_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }
@@ -207,14 +212,44 @@ namespace mhs::solver {
             state.assign(initial_state.begin(), initial_state.end());
         }
 
-        ThermalAssembler assembler(model);
+        if (!std::all_of(state.begin(), state.end(), [](double v) { return std::isfinite(v); }))
+            throw std::invalid_argument("initial state must be finite");
+        if (field.dofs.size() != model.discrete.cells.size() || field.entities.size() != field.dofs.size()
+            || field.dofs.size() != cell_count)
+            throw std::invalid_argument("invalid thermal state layout");
+        bool identity = true;
+        core::Vector<bool> seen_cells(cell_count, false), seen_dofs(cell_count, false);
+        for (std::size_t i = 0; i < field.dofs.size(); ++i) {
+            const auto c = field.entities[i], d = field.dofs[i];
+            if (c >= cell_count || d >= cell_count || seen_cells[c] || seen_dofs[d])
+                throw std::invalid_argument("invalid thermal state mapping");
+            seen_cells[c] = seen_dofs[d] = true;
+            identity = identity && c == d;
+        }
+
+        // Field mapping is applied at the global/local assembly boundary.
+        mhs::core::Vector<double> local(model.discrete.cells.size());
+        for (std::size_t i = 0; i < field.dofs.size(); ++i)
+            local[field.entities[i]] = state[field.dofs[i]];
+        ThermalAssembler assembler(model, initialize_frozen_flow(model, local));
+        Operators global;
+
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
-            return assembler.assemble(current, time);
+            for (std::size_t i = 0; i < field.dofs.size(); ++i)
+                local[field.entities[i]] = current[field.dofs[i]];
+            const auto& ops = assembler.assemble(local, time);
+            if (identity)
+                return ops;
+            global = map_thermal_operators(ops, field, compiled.layout.state_count);
+            return global;
         };
 
-        ProbeRecorder probe_recorder(model);
-        StateObserver observe
-            = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
+        ProbeRecorder probe_recorder(model, compiled.point_probes);
+        StateObserver observe = [&](double t, std::span<const double> accepted_state) {
+            for (std::size_t i = 0; i < field.dofs.size(); ++i)
+                local[field.entities[i]] = accepted_state[field.dofs[i]];
+            probe_recorder.record(t, local);
+        };
 
         auto sol = solve_system(study, assemble, std::move(state), options, observe);
         sol.probe_traces = std::move(probe_recorder).take_traces();

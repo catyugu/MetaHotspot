@@ -29,10 +29,10 @@
 
 ## 数据模型与计算流程
 
-`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`FluidModel`、材料、边界和编译后表达式。PTA 语法、XML 兼容、节点采样和 VTU 输出全部位于 `apps/metahotspot`，使用 `mhs::app::*` 命名空间，不进入 SDK。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；实体索引表示与稀疏索引归 core。
+`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::CompiledModel`。编译快照保存 FOM 域表、`StateLayout` 和 Probe；每个 `FomDomain` 保存 `DiscreteMesh`、流体成员映射、材料、边界和编译后表达式。冻结流场由求解 workspace 根据初始温度场生成。PTA 语法、XML 兼容、节点采样和 VTU 输出全部位于 `apps/metahotspot`，使用 `mhs::app::*` 命名空间，不进入 SDK。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FaceId 归 model；实体索引表示与稀疏索引归 core。
 
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、物理场重建、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 
 `linear/solver.hpp` 只公开 Solver、配置、结果与工厂。`compute(CSRMatrixView)` 后允许调用方释放输入；`solve(b, x)` 以 x 为初始猜测并原地写回，直接后端忽略初值。b 和 x 不得重叠。AMGCL 直接读取 CSR；Eigen 只用于内部 QR 和可选 PARDISO，不属于 SDK 公开头或查找依赖。
 
-`apps/metahotspot` 只在 `MHS_BUILD_APPS=ON` 时进入构建；内部静态目标 `metahotspot_frontend` 仅通过公开聚合目标 `mhs::metahotspot` 消费主库。PTA 兼容、XML/VTU 输出、节点采样及真实 XML 流体案例测试位于 `apps/metahotspot/tests`，使用私有 `metahotspot_frontend_tests`；这些测试仅在 APP 与测试同时启用时构建。`tests` 下的 `mhs_tests` 直接构造 SI 通用模型，因此 `MHS_BUILD_APPS=OFF, MHS_BUILD_TESTS=ON` 不会拉入 tinyxml2 或任何 APP 代码。
+`apps/metahotspot` 只在 `MHS_BUILD_APPS=ON` 时进入构建；内部静态目标 `metahotspot_frontend` 仅通过公开聚合目标 `mhs::metahotspot` 消费主库。PTA 兼容、XML/VTU 输出、节点采样及真实 XML 流体案例测试位于 `apps/metahotspot/tests`，使用私有 `metahotspot_frontend_tests`；这些测试仅在 APP 与测试同时启用时构建。`tests/unit` 的 `mhs_unit_tests` 和 `tests/integration` 的 `mhs_integration_tests` 直接构造 SI 通用模型，因此 `MHS_BUILD_APPS=OFF, MHS_BUILD_TESTS=ON` 不会拉入 tinyxml2 或任何 APP 代码。

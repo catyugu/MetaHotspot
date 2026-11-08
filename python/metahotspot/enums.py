@@ -49,3 +49,16 @@ class LogLevel(enum.IntEnum):
     ERROR = 4
     CRITICAL = 5
     OFF = 6
+
+
+class FieldQuantity(enum.IntEnum):
+    TEMPERATURE = 0
+    PRESSURE = 1
+    VELOCITY = 2
+    REDUCED_COORDINATE = 3
+
+
+class EntitySupport(enum.IntEnum):
+    CELL = 0
+    FACE = 1
+    REDUCED = 2

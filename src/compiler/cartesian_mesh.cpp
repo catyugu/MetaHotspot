@@ -6,7 +6,7 @@
 namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
-    void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
+    void compile_cartesian_mesh(mhs::model::FomDomain& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
     {
         using namespace mhs::core;

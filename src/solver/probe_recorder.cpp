@@ -2,9 +2,10 @@
 #include "thermal_reconstruction.hpp"
 
 namespace mhs::solver {
-    ProbeRecorder::ProbeRecorder(const mhs::model::Model& model) : model_(model)
+    ProbeRecorder::ProbeRecorder(const mhs::model::FomDomain& model, std::span<const mhs::model::PointProbe> probes)
+        : model_(model)
     {
-        for (const auto& p : model.point_probes) {
+        for (const auto& p : probes) {
             traces_.push_back({p.name, {}});
             ProbeSlot slot;
             slot.point = {p.x, p.y, p.z};

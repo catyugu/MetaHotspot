@@ -15,7 +15,7 @@ namespace mhs::solver {
 
     // Boundary terms sorted by cell in the compiled model.
     std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
-        const mhs::model::Model& model, mhs::model::CellId cell);
+        const mhs::model::FomDomain& model, mhs::model::CellId cell);
 
     mhs::model::Vec3 boundary_center(const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term);
     bool boundary_contains(
@@ -35,7 +35,7 @@ namespace mhs::solver {
 
     // Temperature at an arbitrary point: the boundary trace on an external
     // patch, otherwise a Green-Gauss gradient extrapolation from the center.
-    double sample_point(const mhs::model::Model& model, std::span<const double> temperature, double time,
+    double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& point);
 
 } // namespace mhs::solver

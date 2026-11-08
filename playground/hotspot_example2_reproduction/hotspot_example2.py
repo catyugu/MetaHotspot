@@ -166,7 +166,6 @@ def build_model(
         model = metahotspot.Model()
     m = model
 
-    m.set_reference_temperature(T_AMB)
 
     # -- Mesh: full sink XY extent, 4 Z layers --
     z_chip = np.linspace(0, T_CHIP, NZ_CHIP + 1, endpoint=True)

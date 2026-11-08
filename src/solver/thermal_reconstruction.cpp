@@ -30,7 +30,7 @@ namespace mhs::solver {
     }
 
     namespace {
-        double conductivity(const mhs::model::Model& model, std::span<const double> temperature,
+        double conductivity(const mhs::model::FomDomain& model, std::span<const double> temperature,
             mhs::model::CellId cell, double time, int axis)
         {
             const auto p = model.discrete.cells[cell].center();
@@ -81,8 +81,8 @@ namespace mhs::solver {
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
-        mhs::model::Vec3 reconstruct_cell_gradient(
-            const mhs::model::Model& model, std::span<const double> temperature, double time, mhs::model::CellId cell)
+        mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::FomDomain& model,
+            std::span<const double> temperature, double time, mhs::model::CellId cell)
         {
             using namespace mhs::core;
             using namespace mhs::model;
@@ -115,7 +115,7 @@ namespace mhs::solver {
     } // namespace
 
     std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
-        const mhs::model::Model& model, mhs::model::CellId cell)
+        const mhs::model::FomDomain& model, mhs::model::CellId cell)
     {
         const auto& patches = model.boundary_faces;
         auto first = std::lower_bound(patches.begin(), patches.end(), cell,
@@ -206,7 +206,7 @@ namespace mhs::solver {
             condition);
     }
 
-    std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
+    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (cell == mhs::core::invalid_id)
@@ -238,7 +238,7 @@ namespace mhs::solver {
         return std::nullopt;
     }
 
-    double sample_point(const mhs::model::Model& model, std::span<const double> temperature, double time,
+    double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (cell == mhs::core::invalid_id)

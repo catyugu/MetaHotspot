@@ -109,7 +109,7 @@ solution = compiled.solve(opts=SolveOptions(
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
-- 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
+- 核心测试：`tests/unit/` 与 `tests/integration/` 分别构建 `mhs_unit_tests` / `mhs_integration_tests`，由 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 独立控制，受 `MHS_BUILD_TESTS` 总开关约束。使用 `ctest --test-dir build -L unit` 或 `-L integration` 分类运行。
 - 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
 - 日志：`mhs_logging` 封装 spdlog，SDK 默认 `WARN`，CLI 默认 `INFO`；`MHS_LOG_LEVEL` 环境变量或 `mhs::logger::set_log_level()` 可覆盖运行时级别。编译期由 `MHS_LOG_COMPILED_LEVEL` 裁剪低级别调用及其参数计算。热循环诊断使用 `DEBUG`。

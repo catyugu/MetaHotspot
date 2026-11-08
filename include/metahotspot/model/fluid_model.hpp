@@ -1,46 +1,21 @@
 #pragma once
 
-#include "model/discrete_mesh.hpp"
-
 #include "core/vector.hpp"
-#include <variant>
+#include "model/discrete_mesh.hpp"
+#include "model/model_definition.hpp"
 
 namespace mhs::model {
-
-    // Nonnegative frozen mass flow rates (kg/s), classified by actual flow
-    // direction after the pressure solve, including reversed pressure boundaries.
-    struct FluidInflow {
-        double mass_flow_rate;
-        double temperature;
+    // Immutable fluid membership inside a FOM; independent of a particular solve.
+    struct FluidTopology {
+        core::Vector<CellId> fluid_to_global;
+        core::Vector<FluidCellId> global_to_fluid;
     };
 
-    struct FluidOutflow {
-        double mass_flow_rate;
-    };
-
-    using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
-
-    struct FluidBoundaryTerm {
-        CellId cell = mhs::core::invalid_id;
-        FluidTransportCondition condition;
-    };
-
-    struct FluidModel {
-        // Runtime topology. fluid_to_global enables fluid-only assembly;
-        // global_to_fluid also acts as the fluid membership map.
-        mhs::core::Vector<CellId> fluid_to_global;
-        mhs::core::Vector<FluidCellId> global_to_fluid;
-
-        // Frozen hydraulic volume flux by FaceId, positive from minus to plus along the face axis.
-        // Non-fluid and exterior faces carry zero.
-        mhs::core::Vector<double> face_volume_flux;
-
-        // Nu / hydraulic_diameter for each fluid cell. The thermal assembly
-        // evaluates h = factor * k_fluid at the current temperature.
-        mhs::core::Vector<double> interface_heat_transfer_factor;
-
-        // Frozen transport per projected boundary piece; only inflow carries temperature.
-        mhs::core::Vector<FluidBoundaryTerm> boundary_terms;
+    struct FluidBoundaryPatch {
+        CellId cell = core::invalid_id;
+        Axis axis = Axis::X;
+        std::array<double, 4> bounds {};
+        std::size_t condition = 0;
     };
 
 } // namespace mhs::model

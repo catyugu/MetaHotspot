@@ -79,7 +79,29 @@ def main():
     flags = ["-G", args.generator, f"-DCMAKE_BUILD_TYPE={args.config}", *args.cmake_arg]
     run("cmake", "-S", root, "-B", build, *flags)
     run("cmake", "--build", build, "--config", args.config, "--parallel", "4")
-    run("ctest", "--test-dir", build, "-C", args.config, "--output-on-failure")
+    for label in ("unit", "integration"):
+        run(
+            "ctest",
+            "--test-dir",
+            build,
+            "-C",
+            args.config,
+            "-L",
+            label,
+            "--no-tests=error",
+            "--output-on-failure",
+        )
+    # Frontend tests retain their independent registration and target.
+    run(
+        "ctest",
+        "--test-dir",
+        build,
+        "-C",
+        args.config,
+        "-LE",
+        "unit|integration",
+        "--output-on-failure",
+    )
     if args.config == "Release":
         executable = build / "apps/metahotspot/metahotspot"
         if sys.platform == "win32":

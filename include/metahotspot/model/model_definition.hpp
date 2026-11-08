@@ -129,40 +129,45 @@ namespace mhs::model {
         FunctionSpec value;
     };
 
-    struct PointProbeSpec {
+    struct PointProbe {
         std::string name;
         double x = 0.0;
         double y = 0.0;
         double z = 0.0;
     };
 
-    // Omitted incoming temperature uses the model reference temperature.
+    // Incoming flow requires an explicit temperature, including pressure-boundary backflow.
     struct PressureInlet {
         double pressure = 0.0;
-        std::optional<double> temperature;
+        std::optional<double> temperature = std::nullopt;
     };
     struct MassFlowInlet {
         double mass_flow_rate = 0.0;
-        std::optional<double> temperature;
+        std::optional<double> temperature = std::nullopt;
     };
     struct PressureOutlet {
         double pressure = 0.0;
+        std::optional<double> temperature = std::nullopt;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
-    struct ModelDefinition {
-        double reference_temperature = 300.0;
+    struct FomDomainDefinition {
         MeshSpec mesh;
+        mhs::core::Vector<VolumeSpec> volumes;
+        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
+        mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+    };
+
+    struct ModelDefinition {
+        Study study;
+        FomDomainDefinition domain;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
-        mhs::core::Vector<VolumeSpec> volumes;
-        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
-        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
-        mhs::core::Vector<PointProbeSpec> point_probes;
-        mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+        mhs::core::Vector<PointProbe> point_probes;
     };
 
 } // namespace mhs::model
