@@ -23,8 +23,8 @@ namespace mhs::linear {
                 A_ = mapped;
                 A_.makeCompressed();
                 lu_.analyzePattern(A_);
-                if (lu_.info() != Eigen::Success)
-                    throw std::runtime_error("SparseLU symbolic analysis failed");
+                // Eigen's info() is valid only after factorize()/compute();
+                // querying it after symbolic analysis aborts in Debug builds.
                 lu_.factorize(A_);
                 ready_ = lu_.info() == Eigen::Success;
                 if (!ready_)
