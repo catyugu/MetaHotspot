@@ -27,8 +27,22 @@ namespace mhs::solver {
         mhs::core::Vector<double> specific_heat_;
     };
 
-    Operators map_thermal_operators(
-        const Operators& local, const mhs::model::FieldLayout& field, std::size_t state_count);
+    class ModelAssembler {
+    public:
+        ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time = 0.0);
+        const Operators& assemble(std::span<const double> state, double time);
+        const core::Vector<core::Vector<double>>& temperatures() const { return temperatures_; }
+        void gather(std::span<const double> state);
+
+    private:
+        const model::CompiledModel& model_;
+        core::Vector<core::Vector<double>> temperatures_;
+        core::Vector<core::Vector<model::DofId>> dofs_;
+        core::Vector<std::unique_ptr<ThermalAssembler>> domains_;
+        Operators operators_;
+        bool identity_ = false;
+    };
+
     Operators assemble_thermal(const mhs::model::CompiledModel& compiled, std::span<const double> state, double time);
 
     // Owning export for the C API and standalone operator inspection.

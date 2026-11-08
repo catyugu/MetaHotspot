@@ -38,8 +38,8 @@ int main(int argc, char* argv[])
         // Read input XML
         auto definition = mhs::app::pta::read_xml(input_path);
 
-        MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.domain.volumes.size(),
-            definition.model.materials.size(), definition.model.domain.thermal_boundaries.size());
+        MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.domains[0].volumes.size(),
+            definition.model.materials.size(), definition.model.domains[0].thermal_boundaries.size());
 
         auto model = mhs::compiler::build_model(definition.model);
 
@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;
 
-        const auto& grid = definition.model.domain.mesh;
+        const auto& grid = definition.model.domains[0].mesh;
         const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)

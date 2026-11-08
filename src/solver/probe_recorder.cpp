@@ -13,11 +13,12 @@ namespace mhs::solver {
             slots_.push_back(slot);
         }
     }
-    void ProbeRecorder::record(double time, std::span<const double> temperature)
+    void ProbeRecorder::record(
+        double time, std::span<const double> temperature, std::span<const SurfaceTrace> interfaces)
     {
         for (size_t i = 0; i < slots_.size(); ++i) {
             const auto& slot = slots_[i];
-            traces_[i].values.push_back(sample_point(model_, temperature, time, slot.cell, slot.point));
+            traces_[i].values.push_back(sample_point(model_, temperature, time, slot.cell, slot.point, interfaces));
         }
     }
 } // namespace mhs::solver

@@ -152,8 +152,24 @@ namespace mhs::model {
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
+    struct PortDefinition {
+        std::string name;
+        SurfaceRegion region;
+    };
+
+    struct PortReference {
+        DomainId domain = mhs::core::invalid_id;
+        PortId port = mhs::core::invalid_id;
+    };
+
+    // Perfect thermal contact between two independent domains.
+    struct ConnectionDefinition {
+        PortReference a, b;
+    };
+
     struct FomDomainDefinition {
         MeshSpec mesh;
+        mhs::core::Vector<PortDefinition> ports;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
@@ -162,7 +178,8 @@ namespace mhs::model {
 
     struct ModelDefinition {
         Study study;
-        FomDomainDefinition domain;
+        mhs::core::Vector<FomDomainDefinition> domains {1};
+        mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;

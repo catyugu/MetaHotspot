@@ -5,6 +5,7 @@
 #include "logging/logger.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
+#include "solver/connection_flux.hpp"
 #include "solver/solver.hpp"
 
 #include "core/vector.hpp"
@@ -119,7 +120,7 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
 }
 
 template <typename Boundary> static void _add_thermal_boundary(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
+    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
 {
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
@@ -128,7 +129,7 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.domain.thermal_boundaries.push_back(std::move(bp));
+    m->def.domains.at(domain).thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -230,12 +231,72 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 
+MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(out_id);
+    MHS_TRY({
+        const auto id = static_cast<mhs_index_t>(m->def.domains.size());
+        m->def.domains.emplace_back();
+        *out_id = id;
+    });
+}
+MHS_API mhs_status_t mhs_model_add_port(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(region);
+    CHECK_NULL(out_id);
+    MHS_TRY({
+        auto& ports = m->def.domains.at(domain).ports;
+        auto surface = _make_surface_region(region->axis, region->coordinate, region->rectangle);
+        const auto id = static_cast<mhs_index_t>(ports.size());
+        ports.push_back({name, surface});
+        *out_id = id;
+    });
+}
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs_index_t port_a, mhs_index_t domain_b,
+    mhs_index_t port_b, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(out_id);
+    MHS_TRY({
+        (void)m->def.domains.at(domain_a).ports.at(port_a);
+        (void)m->def.domains.at(domain_b).ports.at(port_b);
+        const auto id = static_cast<mhs_index_t>(m->def.connections.size());
+        m->def.connections.push_back({{domain_a, port_a}, {domain_b, port_b}});
+        *out_id = id;
+    });
+}
+MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c, mhs_index_t connection, size_t* out)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(out);
+    MHS_TRY({ *out = c->model.connections.at(connection).patches.size(); });
+}
+MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
+    const double* state, size_t state_count, double time, double* outward_a, size_t patch_count)
+{
+    CHECK_NULL(c);
+    CHECK_NULL(state);
+    CHECK_NULL(outward_a);
+    MHS_TRY({
+        const auto& value = c->model.connections.at(connection);
+        if (patch_count != value.patches.size())
+            throw std::invalid_argument("connection flux buffer size mismatch");
+        const auto flux = mhs::solver::evaluate_connection_flux(c->model, value, std::span(state, state_count), time);
+        for (size_t p = 0; p < patch_count; ++p)
+            outward_a[p] = flux[p].outward_a;
+    });
+}
+
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
-    mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z)
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t domain, size_t nx, const double* x,
+    size_t ny, const double* y, size_t nz, const double* z)
 {
     CHECK_NULL(m);
     MHS_TRY({
@@ -249,7 +310,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
             return result;
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
-        m->def.domain.mesh = std::move(mesh);
+        m->def.domains.at(domain).mesh = std::move(mesh);
     });
 }
 
@@ -303,7 +364,8 @@ MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression
         m->def.sources.push_back(expression);
     });
 }
-MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_volume(
+    mhs_model_t* m, mhs_index_t domain, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
@@ -312,18 +374,18 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
             throw std::out_of_range("material ID out of range");
         if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
             throw std::out_of_range("source ID out of range");
-        *out_id = static_cast<mhs_index_t>(m->def.domain.volumes.size());
-        m->def.domain.volumes.push_back({material, source, {}});
+        *out_id = static_cast<mhs_index_t>(m->def.domains.at(domain).volumes.size());
+        m->def.domains.at(domain).volumes.push_back({material, source, {}});
     });
 }
-MHS_API mhs_status_t mhs_model_volume_add_box(
-    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
+MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain, mhs_index_t volume,
+    mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
 {
     CHECK_NULL(m);
     CHECK_NULL(min_xyz);
     CHECK_NULL(max_xyz);
     MHS_TRY({
-        if (volume >= m->def.domain.volumes.size())
+        if (volume >= m->def.domains.at(domain).volumes.size())
             throw std::out_of_range("volume ID out of range");
         if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
             throw std::invalid_argument("invalid geometry operation");
@@ -334,7 +396,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
             box.min[a] = min_xyz[a];
             box.max[a] = max_xyz[a];
         }
-        m->def.domain.volumes[volume].geometry.push_back(box);
+        m->def.domains.at(domain).volumes[volume].geometry.push_back(box);
     });
 }
 
@@ -343,57 +405,59 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature)
+    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     CHECK_NULL(temperature);
-    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
+    MHS_TRY({ _add_thermal_boundary(m, domain, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
 }
 
 MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux)
+    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     CHECK_NULL(heat_flux);
-    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
+    MHS_TRY({ _add_thermal_boundary(m, domain, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
 }
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    const char* coefficient, const char* ambient_temperature)
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions,
+    size_t n_regions, const char* coefficient, const char* ambient_temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        _add_thermal_boundary(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
+        _add_thermal_boundary(
+            m, domain, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     });
 }
 
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature)
+MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, mhs_index_t domain, const char* temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    MHS_TRY({ m->def.domain.default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
+    MHS_TRY({ m->def.domains.at(domain).default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
 }
 
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
+MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, mhs_index_t domain, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    MHS_TRY({ m->def.domain.default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
+    MHS_TRY({ m->def.domains.at(domain).default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_convection(
-    mhs_model_t* m, const char* coefficient, const char* ambient_temperature)
+    mhs_model_t* m, mhs_index_t domain, const char* coefficient, const char* ambient_temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        m->def.domain.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
+        m->def.domains.at(domain).default_thermal_boundary
+            = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
     });
 }
 
@@ -479,8 +543,9 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature)
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t domain,
+    const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
+    const double* inlet_temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
@@ -504,7 +569,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surf
         default:
             throw std::invalid_argument("invalid fluid boundary kind");
         }
-        m->def.domain.fluid_boundaries.push_back(std::move(fb));
+        m->def.domains.at(domain).fluid_boundaries.push_back(std::move(fb));
     });
 }
 
@@ -573,10 +638,13 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    out->cell_count = c->model.domains.front().discrete.cells.size();
-    out->face_count = c->model.domains.front().discrete.faces.size();
-    out->projection_count = c->model.domains.front().source_terms.size();
+    out->cell_count = out->face_count = out->projection_count = 0;
     out->source_count = c->model.domains.front().heat_source_table.size();
+    for (const auto& domain : c->model.domains) {
+        out->cell_count += domain.discrete.cells.size();
+        out->face_count += domain.discrete.faces.size();
+        out->projection_count += domain.source_terms.size();
+    }
     out->state_count = c->model.layout.state_count;
     out->domain_count = c->model.domains.size();
     out->field_count = c->model.layout.fields.size();
@@ -625,10 +693,10 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
 {
     CHECK_NULL(c);
     CHECK_NULL(fields);
-    const auto& model = c->model.domains.front();
-    const auto& mesh = model.discrete;
-    if (fields->cell_count != mesh.cells.size() || fields->face_count != mesh.faces.size()
-        || fields->projection_count != model.source_terms.size()) {
+    mhs_compiled_info_t info;
+    mhs_compiled_get_info(c, &info);
+    if (fields->cell_count != info.cell_count || fields->face_count != info.face_count
+        || fields->projection_count != info.projection_count) {
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -647,28 +715,39 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("NULL projection field buffer");
         return MHS_ERROR;
     }
-    for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
-        for (size_t a = 0; a < 3; ++a) {
-            fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
-            fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
+    size_t cell_offset = 0, face_offset = 0, projection_offset = 0;
+    for (const auto& model : c->model.domains) {
+        const auto& mesh = model.discrete;
+        for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
+            for (size_t a = 0; a < 3; ++a) {
+                fields->cell_min[3 * (cell_offset + cidx) + a] = mesh.cells[cidx].min[a];
+                fields->cell_max[3 * (cell_offset + cidx) + a] = mesh.cells[cidx].max[a];
+            }
+            fields->material_id[cell_offset + cidx] = model.cell_material[cidx];
         }
-        fields->material_id[cidx] = model.cell_material[cidx];
-    }
-    for (size_t id = 0; id < mesh.faces.size(); ++id) {
-        const auto& face = mesh.faces[id];
-        fields->face_minus[id] = face.minus;
-        fields->face_plus[id] = face.plus;
-        fields->face_axis[id] = static_cast<mhs_axis_t>(face.axis);
-        for (size_t a = 0; a < 4; ++a)
-            fields->face_bounds[4 * id + a] = face.bounds[a];
-    }
-    for (size_t id = 0; id < model.source_terms.size(); ++id) {
-        const auto& term = model.source_terms[id];
-        fields->projection_cell[id] = term.cell;
-        fields->projection_source[id] = term.source;
-        fields->projection_volume[id] = term.weight;
-        for (size_t a = 0; a < 3; ++a)
-            fields->projection_center[3 * id + a] = term.point[a];
+        for (size_t id = 0; id < mesh.faces.size(); ++id) {
+            const auto& face = mesh.faces[id];
+            fields->face_minus[face_offset + id] = face.minus == MHS_INVALID_INDEX
+                ? MHS_INVALID_INDEX
+                : static_cast<mhs_index_t>(cell_offset + face.minus);
+            fields->face_plus[face_offset + id] = face.plus == MHS_INVALID_INDEX
+                ? MHS_INVALID_INDEX
+                : static_cast<mhs_index_t>(cell_offset + face.plus);
+            fields->face_axis[face_offset + id] = static_cast<mhs_axis_t>(face.axis);
+            for (size_t a = 0; a < 4; ++a)
+                fields->face_bounds[4 * (face_offset + id) + a] = face.bounds[a];
+        }
+        for (size_t id = 0; id < model.source_terms.size(); ++id) {
+            const auto& term = model.source_terms[id];
+            fields->projection_cell[projection_offset + id] = static_cast<mhs_index_t>(cell_offset + term.cell);
+            fields->projection_source[projection_offset + id] = term.source;
+            fields->projection_volume[projection_offset + id] = term.weight;
+            for (size_t a = 0; a < 3; ++a)
+                fields->projection_center[3 * (projection_offset + id) + a] = term.point[a];
+        }
+        cell_offset += mesh.cells.size();
+        face_offset += mesh.faces.size();
+        projection_offset += model.source_terms.size();
     }
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -683,18 +762,23 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         CHECK_NULL(powers);
     }
     MHS_TRY({
-        const auto& model = c->model.domains.front();
-        if (state_count != c->model.layout.state_count || projection_count != model.source_terms.size())
+        mhs_compiled_info_t info;
+        mhs_compiled_get_info(c, &info);
+        if (state_count != c->model.layout.state_count || projection_count != info.projection_count)
             throw std::invalid_argument("source projection buffer size mismatch");
-        const auto& field = c->model.layout.field(c->model.layout.find(0, mhs::model::FieldQuantity::Temperature));
-        mhs::core::Vector<mhs::model::DofId> dofs(model.discrete.cells.size());
-        for (size_t i = 0; i < field.dofs.size(); ++i)
-            dofs[field.entities[i]] = field.dofs[i];
-        for (size_t i = 0; i < projection_count; ++i) {
-            const auto& term = model.source_terms[i];
-            const auto& p = term.point;
-            powers[i] = term.weight
-                * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[dofs[term.cell]], time});
+        size_t offset = 0;
+        for (size_t d = 0; d < c->model.domains.size(); ++d) {
+            const auto& model = c->model.domains[d];
+            const auto& field = c->model.layout.field(
+                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
+            mhs::core::Vector<mhs::model::DofId> dofs(model.discrete.cells.size());
+            for (size_t i = 0; i < field.dofs.size(); ++i)
+                dofs[field.entities[i]] = field.dofs[i];
+            for (const auto& term : model.source_terms) {
+                const auto& p = term.point;
+                powers[offset++] = term.weight
+                    * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[dofs[term.cell]], time});
+            }
         }
     });
 }
@@ -705,10 +789,9 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     CHECK_NULL(values);
-    const auto& model = c->model.domains.front();
-
-    const auto& mesh = model.discrete;
-    if (temperature_count != c->model.layout.state_count || values->count != model.discrete.cells.size()) {
+    mhs_compiled_info_t info;
+    mhs_compiled_get_info(c, &info);
+    if (temperature_count != info.state_count || values->count != info.cell_count) {
         SET_ERR("material evaluation buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -718,20 +801,27 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         return MHS_ERROR;
     }
     MHS_TRY({
-        const auto& field = c->model.layout.field(c->model.layout.find(0, mhs::model::FieldQuantity::Temperature));
-        mhs::core::Vector<mhs::model::DofId> dofs(mesh.cells.size());
-        for (size_t i = 0; i < field.dofs.size(); ++i)
-            dofs[field.entities[i]] = field.dofs[i];
-        for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
-            const auto p = mesh.cells[cell].center();
-            const auto& props = model.material_table[model.cell_material[cell]];
-            const auto dof = dofs[cell];
-            const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
-            values->conductivity_x[cell] = props.kx.eval(context);
-            values->conductivity_y[cell] = props.ky.eval(context);
-            values->conductivity_z[cell] = props.kz.eval(context);
-            values->density[cell] = props.rho.eval(context);
-            values->specific_heat[cell] = props.c.eval(context);
+        size_t offset = 0;
+        for (size_t d = 0; d < c->model.domains.size(); ++d) {
+            const auto& model = c->model.domains[d];
+            const auto& mesh = model.discrete;
+            const auto& field = c->model.layout.field(
+                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
+            mhs::core::Vector<mhs::model::DofId> dofs(mesh.cells.size());
+            for (size_t i = 0; i < field.dofs.size(); ++i)
+                dofs[field.entities[i]] = field.dofs[i];
+            for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
+                const auto p = mesh.cells[cell].center();
+                const auto& props = model.material_table[model.cell_material[cell]];
+                const auto dof = dofs[cell];
+                const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
+                values->conductivity_x[offset + cell] = props.kx.eval(context);
+                values->conductivity_y[offset + cell] = props.ky.eval(context);
+                values->conductivity_z[offset + cell] = props.kz.eval(context);
+                values->density[offset + cell] = props.rho.eval(context);
+                values->specific_heat[offset + cell] = props.c.eval(context);
+            }
+            offset += mesh.cells.size();
         }
     });
 }

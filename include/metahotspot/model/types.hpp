@@ -3,6 +3,8 @@
 
 namespace mhs::model {
     using DomainId = core::EntityIndex;
+    using PortId = core::EntityIndex;
+    using ConnectionId = core::EntityIndex;
     using FieldId = core::EntityIndex;
     using DofId = core::EntityIndex;
     using CellId = core::EntityIndex;

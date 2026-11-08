@@ -130,6 +130,8 @@ class Model(OwnedHandle):
         x: Sequence[float] | np.ndarray,
         y: Sequence[float] | np.ndarray,
         z: Sequence[float] | np.ndarray,
+        *,
+        domain: int = 0,
     ) -> None:
         """Set mesh vertices."""
         arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]
@@ -139,6 +141,7 @@ class Model(OwnedHandle):
             )
         self._call(
             "mhs_model_set_cartesian_mesh",
+            domain,
             *[v for a in arrays for v in (a.size, _double_ptr(a))],
             ctx="set_cartesian_mesh",
         )
@@ -183,11 +186,14 @@ class Model(OwnedHandle):
         )
         return identifier.value
 
-    def add_volume(self, material: int, source: int = 0xFFFFFFFF) -> int:
+    def add_volume(
+        self, material: int, source: int = 0xFFFFFFFF, *, domain: int = 0
+    ) -> int:
         """Return a volume ID. Later volumes override earlier volumes."""
         identifier = ctypes.c_uint32()
         self._call(
             "mhs_model_add_volume",
+            domain,
             material,
             source,
             ctypes.byref(identifier),
@@ -196,7 +202,13 @@ class Model(OwnedHandle):
         return identifier.value
 
     def add_box(
-        self, volume: int, minimum, maximum, op: GeometryOp = GeometryOp.ADD
+        self,
+        volume: int,
+        minimum,
+        maximum,
+        op: GeometryOp = GeometryOp.ADD,
+        *,
+        domain: int = 0,
     ) -> None:
         """Append an axis-aligned box operation in SI metres."""
         lo = np.ascontiguousarray(minimum, dtype=np.float64)
@@ -205,6 +217,7 @@ class Model(OwnedHandle):
             raise ValueError("box bounds must each contain three coordinates")
         self._call(
             "mhs_model_volume_add_box",
+            domain,
             volume,
             int(op),
             _double_ptr(lo),
@@ -214,22 +227,32 @@ class Model(OwnedHandle):
 
     # ---- Atomic boundary conditions ----
 
-    def add_dirichlet(self, regions: Sequence[SurfaceRegion], temperature: str) -> None:
+    def add_dirichlet(
+        self, regions: Sequence[SurfaceRegion], temperature: str, *, domain: int = 0
+    ) -> None:
         """Prescribe temperature on nonempty surface regions (later calls win)."""
         native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_dirichlet",
+            domain,
             native,
             count,
             _text(temperature),
             ctx="add_dirichlet",
         )
 
-    def add_neumann(self, regions: Sequence[SurfaceRegion], heat_flux: str) -> None:
+    def add_neumann(
+        self, regions: Sequence[SurfaceRegion], heat_flux: str, *, domain: int = 0
+    ) -> None:
         """Prescribe heat flux on nonempty surface regions."""
         native, count = _surface_regions(regions)
         self._call(
-            "mhs_model_add_neumann", native, count, _text(heat_flux), ctx="add_neumann"
+            "mhs_model_add_neumann",
+            domain,
+            native,
+            count,
+            _text(heat_flux),
+            ctx="add_neumann",
         )
 
     def add_convection(
@@ -237,11 +260,14 @@ class Model(OwnedHandle):
         regions: Sequence[SurfaceRegion],
         coefficient: str,
         ambient_temperature: str,
+        *,
+        domain: int = 0,
     ) -> None:
         """Apply convection on nonempty surface regions."""
         native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_convection",
+            domain,
             native,
             count,
             _text(coefficient),
@@ -249,23 +275,28 @@ class Model(OwnedHandle):
             ctx="add_convection",
         )
 
-    def set_default_dirichlet(self, temperature: str) -> None:
+    def set_default_dirichlet(self, temperature: str, *, domain: int = 0) -> None:
         self._call(
             "mhs_model_set_default_dirichlet",
+            domain,
             _text(temperature),
             ctx="set_default_dirichlet",
         )
 
-    def set_default_neumann(self, heat_flux: str) -> None:
+    def set_default_neumann(self, heat_flux: str, *, domain: int = 0) -> None:
         self._call(
-            "mhs_model_set_default_neumann", _text(heat_flux), ctx="set_default_neumann"
+            "mhs_model_set_default_neumann",
+            domain,
+            _text(heat_flux),
+            ctx="set_default_neumann",
         )
 
     def set_default_convection(
-        self, coefficient: str, ambient_temperature: str
+        self, coefficient: str, ambient_temperature: str, *, domain: int = 0
     ) -> None:
         self._call(
             "mhs_model_set_default_convection",
+            domain,
             _text(coefficient),
             _text(ambient_temperature),
             ctx="set_default_convection",
@@ -352,6 +383,8 @@ class Model(OwnedHandle):
         kind: FluidBC,
         value: float,
         inlet_temperature: float | None = None,
+        *,
+        domain: int = 0,
     ) -> None:
         """Apply a hydraulic condition on nonempty surface regions."""
         native, count = _surface_regions(regions)
@@ -360,6 +393,7 @@ class Model(OwnedHandle):
         )
         self._call(
             "mhs_model_add_fluid_boundary",
+            domain,
             native,
             count,
             int(kind),
@@ -367,6 +401,42 @@ class Model(OwnedHandle):
             None if temperature is None else ctypes.byref(temperature),
             ctx="add_fluid_boundary",
         )
+
+    def add_fom_domain(self) -> int:
+        """Add an independent FOM; domain 0 exists from creation."""
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_add_fom_domain", ctypes.byref(identifier), ctx="add_fom_domain"
+        )
+        return identifier.value
+
+    def add_port(self, domain: int, name: str, region: SurfaceRegion) -> int:
+        """Declare a named exterior thermal interface, connected exactly once."""
+        identifier = ctypes.c_uint32()
+        native, _ = _surface_regions([region])
+        self._call(
+            "mhs_model_add_port",
+            domain,
+            _text(name),
+            native,
+            ctypes.byref(identifier),
+            ctx="add_port",
+        )
+        return identifier.value
+
+    def connect(self, domain_a: int, port_a: int, domain_b: int, port_b: int) -> int:
+        """Join coincident ports with perfect thermal contact and automatic NCC."""
+        identifier = ctypes.c_uint32()
+        self._call(
+            "mhs_model_connect",
+            domain_a,
+            port_a,
+            domain_b,
+            port_b,
+            ctypes.byref(identifier),
+            ctx="connect",
+        )
+        return identifier.value
 
     # ---- Compile ----
 
