@@ -578,7 +578,6 @@ namespace mhs::app::pta {
         }
 
         def.model.domains[0].default_thermal_boundary = std::move(default_thermal_boundary);
-        def.model.study = study;
         return {study, normalize(std::move(def))};
     }
 

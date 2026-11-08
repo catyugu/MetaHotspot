@@ -1,14 +1,17 @@
 # Compiled model, state layout and domain connections
 
-`ModelDefinition` owns global symbols, materials, sources, a default Study and named probes.
-Its `domains` table contains `FomDomainDefinition` objects, each owning Cartesian
-mesh specifications, volume geometry, thermal/fluid boundaries and named ports.
-Domain 0 exists on creation. Additional FOMs are independent computational
-components. A fluid region remains part of its FOM, selected by the material's
+`ModelDefinition` owns global symbols, materials, sources and named probes.
+FOM definitions and meshless ROM definitions remain in separate homogeneous
+storage arrays. A typed domain registry assigns stable public Domain IDs
+in creation order and maps each ID to its FOM/ROM local index. Domain 0 is
+initially a FOM; a ROM-only model drops this untouched default domain.
+Fluid cells belong to their FOM, selected by the material's
 `dynamic_viscosity` expression.
 
-`build_model()` returns an independent `CompiledModel` containing FOM domains,
-`StateLayout`, a Study snapshot, probes and compiled thermal connections.
+`build_model()` returns an independent `CompiledModel` containing compiled
+FOM/ROM domains, the copied domain registry, `StateLayout`, probes and
+compiled thermal connections. The `Study` belongs to a solve invocation,
+never to a model definition or compiled snapshot.
 `FomDomain` owns immutable geometry, material expressions, source quadrature,
 thermal boundary patches, fluid membership and fluid boundary projections.
 Projection records retain subdivisions rather than collapsing them into mesh faces.
@@ -20,8 +23,8 @@ support entities and global state entries. Cell, face and state indices are
 separate contracts. Assembly and observation translate between local cell
 fields and global DOFs; permutations can cross domain blocks without changing
 physical results. The frozen-flow solver allocates temperature unknowns only,
-including solid and fluid cells. Pressure/velocity unknowns and ROM domains
-belong to subsequent stages.
+including solid and fluid cells. Stokes pressure/velocity fields and ROM reduced-coordinate fields use the
+same Domain ID mapping and global DOF space.
 
 C clients query `state_count`, `domain_count`, `field_count`, domain/field
 metadata and mappings on the compiled handle. Python exposes copied snapshots

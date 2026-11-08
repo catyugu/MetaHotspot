@@ -114,7 +114,7 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
-        d.domains.resize(2);
+        d.add_fom_domain();
         MaterialSpec solid;
         solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
         solid.density = solid.specific_heat = "1";
@@ -236,10 +236,10 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
         mhs::solver::SolveOptions options;
         options.linear_tolerance = 1e-12;
         options.nonlinear_relative_tolerance = 1e-12;
-        const auto corrected = mhs::solver::solve(compiled, compiled.study, {}, options);
+        const auto corrected = mhs::solver::solve(compiled, mhs::model::Study {}, {}, options);
         ASSERT_TRUE(corrected.converged);
         compiled.connections[0].nonmatching = false; // explicit zero-corrector control, tests only
-        const auto uncorrected = mhs::solver::solve(compiled, compiled.study, {}, options);
+        const auto uncorrected = mhs::solver::solve(compiled, mhs::model::Study {}, {}, options);
         ASSERT_TRUE(uncorrected.converged);
         auto error = [&](const auto& solution) {
             double sum = 0;
@@ -345,7 +345,7 @@ TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
     definition.domains[0].fluid_boundaries[0].condition = PressureInlet {1, 300};
     definition.domains[0].fluid_boundaries[1].condition = PressureOutlet {0, 300};
     auto compiled = mhs::compiler::build_model(definition);
-    auto study = compiled.study;
+    Study study;
     study.type = StudyType::Transient;
     study.duration = 0.2;
     study.output_interval = 0.1;
