@@ -152,11 +152,6 @@ namespace mhs::model {
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
-    struct PortDefinition {
-        std::string name;
-        SurfaceRegion region;
-    };
-
     struct PortReference {
         DomainId domain = mhs::core::invalid_id;
         PortId port = mhs::core::invalid_id;
@@ -172,9 +167,7 @@ namespace mhs::model {
     struct FomDomainDefinition {
         MeshSpec mesh;
         FlowMode flow_mode = FlowMode::Frozen;
-        mhs::core::Vector<PortDefinition> ports;
         mhs::core::Vector<VolumeSpec> volumes;
-        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
@@ -191,9 +184,11 @@ namespace mhs::model {
         std::array<mhs::core::Vector<double>, 2> tangential_gradient;
     };
 
-    struct RomPort {
+    struct PortDefinition {
         std::string name;
         SurfaceRegion region;
+        // FVM derives the normal from geometry; reduced ports provide
+        // their normal and physical trace patches.
         std::int8_t outward_sign = 1;
         mhs::core::Vector<RomPortPatch> patches;
     };
@@ -218,22 +213,27 @@ namespace mhs::model {
     struct RomDomainDefinition {
         std::size_t order = 0;
         mhs::core::Vector<double> K, C, f, initial_state;
-        mhs::core::Vector<RomPort> ports;
-        // Ordinary thermal BCs on exposed port regions; connected ports
-        // receive their thermal exchange from Connection instead.
-        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         mhs::core::Vector<RomObservation> observations;
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
     using RomDomain = RomDomainDefinition;
 
-    struct ModelDefinition {
-        mhs::core::Vector<std::variant<FomDomainDefinition, RomDomainDefinition>> domains {FomDomainDefinition {}};
+    // Numerical formulation and physical exterior are independent concepts.
+    struct ComponentDefinition {
+        std::variant<FomDomainDefinition, RomDomainDefinition> physics;
+        mhs::core::Vector<PortDefinition> ports;
+        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+    };
 
-        FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(domains.at(id)); }
-        const FomDomainDefinition& fom(DomainId id) const { return std::get<FomDomainDefinition>(domains.at(id)); }
-        RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(domains.at(id)); }
+    struct ModelDefinition {
+        mhs::core::Vector<ComponentDefinition> components;
+
+        ComponentDefinition& component(DomainId id) { return components.at(id); }
+        const ComponentDefinition& component(DomainId id) const { return components.at(id); }
+        FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(component(id).physics); }
+        const FomDomainDefinition& fom(DomainId id) const { return std::get<FomDomainDefinition>(component(id).physics); }
+        RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
 
         mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;
