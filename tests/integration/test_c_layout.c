@@ -92,8 +92,9 @@ static int stokes_client(void)
     CHECK(info.state_count == 7 && info.field_count == 5 && info.cell_count == 2);
     mhs_field_info_t velocity;
     OK(mhs_compiled_get_field_info(c, 2, &velocity));
-    CHECK(velocity.quantity == MHS_FIELD_VELOCITY && velocity.support == MHS_SUPPORT_FACE
-        && velocity.dof_count == 3);
+    CHECK(velocity.quantity == MHS_FIELD_VELOCITY);
+    CHECK(velocity.support == MHS_SUPPORT_FACE);
+    CHECK(velocity.dof_count == 3);
     OK(mhs_compiled_solve(c, NULL, NULL, 0, NULL, &solution));
     mhs_solution_info_t result;
     OK(mhs_solution_get_info(solution, &result));
