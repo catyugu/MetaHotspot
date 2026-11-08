@@ -31,6 +31,9 @@ static int connection_client(void)
     const double lo[] = {0, 0, 0}, hi[] = {1, 1, 1};
     const mhs_surface_region_t region = {MHS_AXIS_Z, 0.5, {0, 1, 0, 1}};
     OK(mhs_model_create(&m));
+    mhs_index_t base_component;
+    OK(mhs_model_add_fom_domain(m, &base_component));
+    CHECK(base_component == 0);
     OK(mhs_model_add_fom_domain(m, &upper));
     CHECK(upper == 1);
     OK(mhs_model_add_material(m, "solid", "1", "1", "1", "1", "1", NULL, &material));
@@ -78,6 +81,9 @@ static int stokes_client(void)
     const mhs_surface_region_t inlet = {MHS_AXIS_X, 0, {0, 1, 0, 1}};
     const mhs_surface_region_t outlet = {MHS_AXIS_X, 2, {0, 1, 0, 1}};
     OK(mhs_model_create(&m));
+    mhs_index_t base_component;
+    OK(mhs_model_add_fom_domain(m, &base_component));
+    CHECK(base_component == 0);
     OK(mhs_model_set_cartesian_mesh(m, 0, 3, x, 2, yz, 2, yz));
     OK(mhs_model_add_material(m, "fluid", "1", "1", "1", "1", "1", "T/300", &material));
     OK(mhs_model_add_volume(m, 0, material, MHS_INVALID_INDEX, &volume_id));
@@ -126,6 +132,9 @@ int main(void)
     for (size_t i = 0; i < 11; ++i)
         z[i] = (double)i * 0.0005;
     OK(mhs_model_create(&m));
+    mhs_index_t base_component;
+    OK(mhs_model_add_fom_domain(m, &base_component));
+    CHECK(base_component == 0);
     OK(mhs_model_set_cartesian_mesh(m, 0, 13, x, 9, y, 11, z));
     OK(mhs_model_add_material(m, "silicon", "130", "130", "130", "2330", "700", NULL, &silicon));
     OK(mhs_model_add_material(m, "TIM", "4", "4", "4", "2500", "1000", NULL, &tim));

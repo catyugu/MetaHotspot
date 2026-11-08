@@ -719,7 +719,7 @@ MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_i
     CHECK_NULL(out);
     MHS_TRY({
         const auto& domain_value = c->model.components.at(domain);
-        if (const auto* value = std::get_if<mhs::model::FomDomain>(&domain_value)) {
+        if (const auto* value = std::get_if<mhs::model::FomDomain>(&domain_value.physics)) {
             out->cell_count = value->discrete.cells.size();
             out->face_count = value->discrete.faces.size();
         }

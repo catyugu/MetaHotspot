@@ -128,6 +128,7 @@ class Model(OwnedHandle):
     Usage::
 
         m = Model()
+        m.add_fom_domain()  # Explicitly create the Cartesian component.
         # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
         sol = c.solve()
@@ -428,7 +429,7 @@ class Model(OwnedHandle):
         )
 
     def add_fom_domain(self) -> int:
-        """Add an independent FOM; domain 0 exists from creation."""
+        """Add a Cartesian finite-volume component; IDs start at zero."""
         identifier = ctypes.c_uint32()
         self._call(
             "mhs_model_add_fom_domain", ctypes.byref(identifier), ctx="add_fom_domain"
