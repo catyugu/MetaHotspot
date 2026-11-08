@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <variant>
@@ -71,7 +72,7 @@ namespace mhs::model {
         Condition condition;
     };
 
-    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
+    using ThermalBoundarySpec = SurfaceConditionSpec<BoundaryConditionId>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -151,7 +152,30 @@ namespace mhs::model {
         std::optional<double> temperature = std::nullopt;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
+    using FluidBoundarySpec = SurfaceConditionSpec<BoundaryConditionId>;
+
+    // Reusable attributes shared by any number of models.
+    struct LibraryDefinition {
+        mhs::core::Vector<VariableSpec> variables;
+        mhs::core::Vector<NamedFunction> functions;
+        mhs::core::Vector<NamedMaterial> materials;
+        mhs::core::Vector<Expression> sources;
+        mhs::core::Vector<ThermalBoundary> thermal_boundaries;
+        mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
+
+        BoundaryConditionId add_thermal_boundary(ThermalBoundary value)
+        {
+            const auto id = static_cast<BoundaryConditionId>(thermal_boundaries.size());
+            thermal_boundaries.push_back(std::move(value));
+            return id;
+        }
+        BoundaryConditionId add_fluid_boundary(FluidBoundaryCondition value)
+        {
+            const auto id = static_cast<BoundaryConditionId>(fluid_boundaries.size());
+            fluid_boundaries.push_back(std::move(value));
+            return id;
+        }
+    };
 
     struct PortReference {
         DomainId domain = mhs::core::invalid_id;
@@ -169,7 +193,7 @@ namespace mhs::model {
         MeshSpec mesh;
         FlowMode flow_mode = FlowMode::Frozen;
         mhs::core::Vector<VolumeSpec> volumes;
-        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
+        BoundaryConditionId default_thermal_boundary = mhs::core::invalid_id;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 
@@ -233,6 +257,7 @@ namespace mhs::model {
     };
 
     struct ModelDefinition {
+        std::shared_ptr<LibraryDefinition> library = std::make_shared<LibraryDefinition>();
         mhs::core::Vector<ComponentDefinition> components;
 
         ComponentDefinition& component(DomainId id) { return components.at(id); }
@@ -242,10 +267,6 @@ namespace mhs::model {
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
 
         mhs::core::Vector<ConnectionDefinition> connections;
-        mhs::core::Vector<VariableSpec> variables;
-        mhs::core::Vector<NamedFunction> functions;
-        mhs::core::Vector<NamedMaterial> materials;
-        mhs::core::Vector<Expression> sources;
     };
 
 } // namespace mhs::model
