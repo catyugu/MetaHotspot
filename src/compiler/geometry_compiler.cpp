@@ -20,7 +20,7 @@ namespace mhs::compiler {
     double surface_area(const SurfaceBounds& r) { return (r[1] - r[0]) * (r[3] - r[2]); }
 
     mhs::core::Vector<TaggedBounds> partition_surface_bounds(
-        const SurfaceBounds& outer, std::span<const TaggedBounds> regions, std::optional<std::size_t> fallback)
+        const SurfaceBounds& outer, std::span<const TaggedBounds> regions, std::optional<mhs::core::EntityIndex> fallback)
     {
         mhs::core::Vector<double> a {outer[0], outer[1]}, b {outer[2], outer[3]};
         for (const auto& tagged : regions) {
@@ -123,7 +123,7 @@ namespace mhs::compiler {
     }
 
     mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<std::size_t> fallback)
+        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<mhs::core::EntityIndex> fallback)
     {
         using namespace mhs::core;
         using namespace mhs::model;
