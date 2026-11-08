@@ -47,25 +47,11 @@ namespace mhs::solver {
             return sum;
         }
 
-        core::Vector<core::Vector<double>> gather_fom(
-            const model::CompiledModel& compiled, std::span<const double> state)
-        {
-            core::Vector<core::Vector<double>> values;
-            for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
-                auto& t = values.emplace_back(compiled.domains[d].discrete.cells.size());
-                const auto& field = compiled.layout.field(
-                    compiled.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
-                for (std::size_t i = 0; i < field.dofs.size(); ++i)
-                    t.at(field.entities[i]) = state[field.dof(i)];
-            }
-            return values;
-        }
-
         double dot(std::span<const double> weights, std::span<const double> state, const model::FieldLayout& field)
         {
             double value = 0.0;
             for (std::size_t i = 0; i < weights.size(); ++i)
-                value += weights[i] * state[field.dofs[i]];
+                value += weights[i] * state[field.dof(i)];
             return value;
         }
 
@@ -95,22 +81,17 @@ namespace mhs::solver {
                 const auto center = box.center();
                 const auto& mat = domain.material_table.at(domain.cell_material.at(cell));
                 const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
-                const double temperature = temperatures[ref.domain][cell];
+                const auto& field
+                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
+                const auto temperatures = state.subspan(field.offset, field.count);
+                const double temperature = temperatures[cell];
                 const double k = law.eval({center[0], center[1], center[2], temperature, time});
                 if (!std::isfinite(k) || k <= 0)
                     throw std::invalid_argument("connection requires finite positive normal conductivity");
                 result.resistance = box.size()[axis] / (2 * k);
                 result.temperature = temperature;
-                const auto& field
-                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
-                for (std::size_t j = 0; j < field.entities.size(); ++j)
-                    if (field.entities[j] == cell) {
-                        result.weights.push_back({field.dof(j), 1.0});
-                        break;
-                    }
-                if (result.weights.empty())
-                    throw std::invalid_argument("connection cell is missing its temperature DOF");
-                const auto grad = gradient(domain, temperatures[ref.domain], cell, connection.axis, time);
+                result.weights.push_back({field.dof(cell), 1.0});
+                const auto grad = gradient(domain, temperatures, cell, connection.axis, time);
                 std::size_t t = 0;
                 for (std::size_t a = 0; a < 3; ++a)
                     if (a != axis) {

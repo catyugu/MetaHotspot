@@ -34,19 +34,14 @@ namespace mhs::solver {
                 const auto id = static_cast<model::DomainId>(domain_id);
                 const auto& thermal
                     = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
-                core::Vector<double> temperatures(domain.discrete.cells.size());
-                for (std::size_t j = 0; j < thermal.entities.size(); ++j)
-                    temperatures[thermal.entities[j]] = state[thermal.dofs[j]];
-
-                core::Vector<model::DofId> degrees;
-                for (const auto& field : compiled.layout.fields)
-                    if (field.domain == id
-                        && (field.quantity == model::FieldQuantity::Pressure
-                            || field.quantity == model::FieldQuantity::Velocity))
-                        degrees.insert(degrees.end(), field.dofs.begin(), field.dofs.end());
-                core::Vector<core::EntityIndex> local(state.size(), core::invalid_id);
-                for (std::size_t j = 0; j < degrees.size(); ++j)
-                    local[degrees[j]] = static_cast<core::EntityIndex>(j);
+                const auto temperatures = std::span<const double>(state).subspan(thermal.offset, thermal.count);
+                const auto& pressure
+                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Pressure));
+                const auto& velocity
+                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Velocity));
+                const auto first = static_cast<core::SparseIndex>(pressure.offset);
+                const auto count = pressure.count + velocity.count;
+                const auto last = first + static_cast<core::SparseIndex>(count);
 
                 StokesAssembler stokes(domain, compiled.layout, id);
                 core::Vector<core::Triplet<double>> entries, capacity;
@@ -54,18 +49,18 @@ namespace mhs::solver {
                 stokes.assemble(state, temperatures, 0.0, entries, capacity, load);
                 core::Vector<core::Triplet<double>> block;
                 for (const auto& e : entries)
-                    if (local[e.row] != core::invalid_id && local[e.col] != core::invalid_id)
-                        block.emplace_back(local[e.row], local[e.col], e.value);
-                const auto matrix = core::build_csr(degrees.size(), degrees.size(), std::move(block));
+                    if (e.row >= first && e.row < last && e.col >= first && e.col < last)
+                        block.emplace_back(e.row - first, e.col - first, e.value);
+                const auto matrix = core::build_csr(count, count, std::move(block));
                 auto solver = linear::create_solver({linear::SolverType::SparseLu, {}});
                 solver->compute(matrix.view());
-                core::Vector<double> rhs(degrees.size()), solution(degrees.size(), 0.0);
-                for (std::size_t j = 0; j < degrees.size(); ++j)
-                    rhs[j] = load[degrees[j]];
+                core::Vector<double> rhs(count), solution(count, 0.0);
+                for (std::size_t j = 0; j < count; ++j)
+                    rhs[j] = load[first + static_cast<core::SparseIndex>(j)];
                 if (!solver->solve(rhs, solution).success)
                     throw std::runtime_error("initial Stokes hydraulic solve failed");
-                for (std::size_t j = 0; j < degrees.size(); ++j)
-                    state[degrees[j]] = solution[j];
+                for (std::size_t j = 0; j < count; ++j)
+                    state[first + static_cast<core::SparseIndex>(j)] = solution[j];
             }
         }
 
@@ -253,8 +248,7 @@ namespace mhs::solver {
             state.assign(state_count, 0.0);
             for (const auto& field : compiled.layout.fields)
                 if (field.quantity == model::FieldQuantity::Temperature)
-                    for (const auto dof : field.dofs)
-                        state[dof] = study.initial_temperature;
+                    std::fill_n(state.begin() + field.offset, field.count, study.initial_temperature);
             for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
                 const auto domain = static_cast<model::DomainId>(compiled.domains.size() + r);
                 const auto& field

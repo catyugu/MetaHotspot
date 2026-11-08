@@ -190,18 +190,8 @@ namespace mhs::compiler {
 
             // Only temperature is an unknown in frozen-flow mode. Hydraulic diagnostics
             // are solve workspace data, not fictitious pressure/velocity state blocks.
-            mhs::model::FieldLayout temperature;
-            temperature.domain = static_cast<mhs::model::DomainId>(domain_id);
             const auto n = model.discrete.cells.size();
-            mhs::core::detail::checked_sparse_size(compiled.layout.state_count + n);
-            temperature.entities.resize(n);
-            temperature.dofs.resize(n);
-            for (std::size_t c = 0; c < n; ++c) {
-                temperature.entities[c] = static_cast<mhs::model::CellId>(c);
-                temperature.dofs[c] = static_cast<mhs::model::DofId>(compiled.layout.state_count + c);
-            }
-            compiled.layout.state_count += n;
-            compiled.layout.fields.push_back(std::move(temperature));
+            append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::Temperature, n);
 
             if (model.flow_mode == model::FlowMode::Stokes && !fluid.fluid_to_global.empty()) {
                 fluid.face_conditions.assign(model.discrete.faces.size(), core::invalid_id);
@@ -244,30 +234,10 @@ namespace mhs::compiler {
                     throw std::invalid_argument(
                         "staggered Stokes requires a pressure boundary for every connected fluid component");
 
-                model::FieldLayout pressure;
-                pressure.domain = static_cast<model::DomainId>(domain_id);
-                pressure.quantity = model::FieldQuantity::Pressure;
-                pressure.support = model::EntitySupport::Cell;
-                for (auto cell : fluid.fluid_to_global) {
-                    pressure.entities.push_back(cell);
-                    pressure.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
-                }
-                core::detail::checked_sparse_size(compiled.layout.state_count);
-                compiled.layout.fields.push_back(std::move(pressure));
-                for (std::uint32_t axis = 0; axis < 3; ++axis) {
-                    model::FieldLayout velocity;
-                    velocity.domain = static_cast<model::DomainId>(domain_id);
-                    velocity.quantity = model::FieldQuantity::Velocity;
-                    velocity.support = model::EntitySupport::Face;
-                    velocity.component = axis;
-                    for (auto face_id : fluid.velocity_faces)
-                        if (static_cast<std::uint32_t>(model.discrete.faces[face_id].axis) == axis) {
-                            velocity.entities.push_back(face_id);
-                            velocity.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
-                        }
-                    core::detail::checked_sparse_size(compiled.layout.state_count);
-                    compiled.layout.fields.push_back(std::move(velocity));
-                }
+                append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::Pressure,
+                    fluid.fluid_to_global.size());
+                append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::Velocity,
+                    fluid.velocity_faces.size());
             }
         }
         // A ROM has algebraic coordinates and physical boundary maps but no
@@ -302,19 +272,7 @@ namespace mhs::compiler {
                     throw std::invalid_argument("ROM observation has invalid dimension or values");
             }
             const auto global_id = static_cast<model::DomainId>(compiled.domains.size() + r);
-            model::FieldLayout field;
-            field.domain = global_id;
-            field.quantity = model::FieldQuantity::ReducedCoordinate;
-            field.support = model::EntitySupport::Reduced;
-            core::detail::checked_sparse_size(compiled.layout.state_count + n);
-            field.entities.resize(n);
-            field.dofs.resize(n);
-            for (std::size_t j = 0; j < n; ++j) {
-                field.entities[j] = static_cast<core::EntityIndex>(j);
-                field.dofs[j] = static_cast<model::DofId>(compiled.layout.state_count + j);
-            }
-            compiled.layout.state_count += n;
-            compiled.layout.fields.push_back(std::move(field));
+            append_field(global_id, model::FieldQuantity::ReducedCoordinate, n);
             compiled.rom_domains.push_back(std::move(rom));
         }
         compile_connections(definition, compiled);

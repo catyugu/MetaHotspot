@@ -30,37 +30,14 @@ namespace mhs::solver {
             throw std::invalid_argument("StokesAssembler requires a nonempty staggered flow field");
 
         pressure_dof_.assign(mesh.cells.size(), core::invalid_id);
-        face_dof_.assign(mesh.faces.size(), core::invalid_id);
         const auto& pressure = layout.field(layout.find(id, FieldQuantity::Pressure));
-        if (pressure.support != EntitySupport::Cell || pressure.entities.size() != fluid.fluid_to_global.size()
-            || pressure.dofs.size() != pressure.entities.size())
-            throw std::invalid_argument("Stokes pressure field has an invalid cell layout");
-        for (std::size_t i = 0; i < pressure.dofs.size(); ++i) {
-            const auto cell = pressure.entities[i];
-            if (cell >= pressure_dof_.size() || fluid.global_to_fluid[cell] == core::invalid_id
-                || pressure_dof_[cell] != core::invalid_id)
-                throw std::invalid_argument("Stokes pressure field contains invalid or repeated cells");
-            pressure_dof_[cell] = pressure.dofs[i];
-        }
-        for (const auto cell : fluid.fluid_to_global)
-            if (pressure_dof_[cell] == core::invalid_id)
-                throw std::invalid_argument("Stokes pressure field does not cover every fluid cell");
+        for (std::size_t i = 0; i < fluid.fluid_to_global.size(); ++i)
+            pressure_dof_[fluid.fluid_to_global[i]] = pressure.dof(i);
 
-        for (std::uint32_t axis = 0; axis < 3; ++axis) {
-            const auto& velocity = layout.field(layout.find(id, FieldQuantity::Velocity, axis));
-            if (velocity.support != EntitySupport::Face || velocity.dofs.size() != velocity.entities.size())
-                throw std::invalid_argument("Stokes velocity field has an invalid face layout");
-            for (std::size_t i = 0; i < velocity.dofs.size(); ++i) {
-                const auto face = velocity.entities[i];
-                if (face >= mesh.faces.size() || static_cast<std::uint32_t>(mesh.faces[face].axis) != axis
-                    || face_dof_[face] != core::invalid_id)
-                    throw std::invalid_argument("Stokes velocity field contains invalid or repeated faces");
-                face_dof_[face] = velocity.dofs[i];
-            }
-        }
-        for (const auto face : fluid.velocity_faces)
-            if (face >= face_dof_.size() || face_dof_[face] == core::invalid_id)
-                throw std::invalid_argument("Stokes velocity field is missing an active face");
+        face_dof_.assign(mesh.faces.size(), core::invalid_id);
+        const auto& velocity = layout.field(layout.find(id, FieldQuantity::Velocity));
+        for (std::size_t i = 0; i < fluid.velocity_faces.size(); ++i)
+            face_dof_[fluid.velocity_faces[i]] = velocity.dof(i);
 
         boundary_area_.assign(domain.fluid_conditions.size(), 0.0);
         for (const auto& boundary : domain.fluid_boundaries)

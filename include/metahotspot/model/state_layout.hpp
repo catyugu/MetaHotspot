@@ -7,8 +7,8 @@ namespace mhs::model {
     enum class FieldQuantity : std::uint8_t { Temperature, Pressure, Velocity, ReducedCoordinate };
     enum class EntitySupport : std::uint8_t { Cell, Face, Reduced };
 
-    // Canonical algebraic layout: every field owns one contiguous global DOF range.
-    // Physical support entities belong to the compiled domain topology, not this table.
+    // Canonical algebraic layout: each physical field owns one contiguous
+    // global DOF range. Support-entity identity belongs to domain topology.
     struct FieldLayout {
         DomainId domain = core::invalid_id;
         FieldQuantity quantity = FieldQuantity::Temperature;
