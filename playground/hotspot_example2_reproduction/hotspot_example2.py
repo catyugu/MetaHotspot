@@ -165,6 +165,7 @@ def build_model(
     if model is None:
         model = metahotspot.Model()
     m = model
+    m.add_fom_domain()
 
 
     # -- Mesh: full sink XY extent, 4 Z layers --
