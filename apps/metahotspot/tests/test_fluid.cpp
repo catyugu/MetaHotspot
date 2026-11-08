@@ -64,7 +64,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell].center();
         return model.material_table[model.cell_material[cell]].rho.eval(
-            {p[0], p[1], p[2], model.initial_temperature, 0});
+            {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
     for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {

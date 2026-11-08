@@ -127,7 +127,14 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_compiled_solve",
         I32,
-        [P(MhsCompiled), P(MhsStudy), P(F64), Size, P(_SolveOptionsCStruct), P(P(MhsSolution))],
+        [
+            P(MhsCompiled),
+            P(MhsStudy),
+            P(F64),
+            Size,
+            P(_SolveOptionsCStruct),
+            P(P(MhsSolution)),
+        ],
     ),
     ("mhs_solution_destroy", None, [P(MhsSolution)]),
     ("mhs_solution_get_info", I32, [P(MhsSolution), P(MhsSolutionInfo)]),

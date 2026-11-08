@@ -10,7 +10,12 @@ import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.types import MhsSolution, MhsSolutionInfo, MhsStudy, _SolveOptionsCStruct
+from metahotspot.types import (
+    MhsSolution,
+    MhsSolutionInfo,
+    MhsStudy,
+    _SolveOptionsCStruct,
+)
 
 # ---- read-only result snapshots -----------------------------------------
 

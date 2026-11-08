@@ -79,7 +79,9 @@ def test_solution_views_derive_from_one_native_snapshot():
     model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
 
     study = metahotspot.Study(StudyType.TRANSIENT, 300.0, 1.0, 0.5)
-    solution = model.compile().solve(study=study, state=np.array([300, -1], dtype=np.float32)[::2])
+    solution = model.compile().solve(
+        study=study, state=np.array([300, -1], dtype=np.float32)[::2]
+    )
 
     assert solution.converged
     assert solution.state.size == 1
