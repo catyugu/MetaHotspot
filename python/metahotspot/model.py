@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ctypes
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,7 +13,7 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, Study
-from metahotspot.types import MhsFaceRegion, MhsModel, Point2D, Rect2D
+from metahotspot.types import MhsModel, MhsSurfaceRegion, Point2D, Rect2D
 
 if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
@@ -34,12 +36,28 @@ def _create_model(dll):
     return handle
 
 
-def _face_regions(regions) -> tuple[object, int]:
+@dataclass(frozen=True)
+class SurfaceRegion:
+    """Axis-aligned SI rectangle. Tangential axes: X→(y,z), Y→(x,z), Z→(x,y)."""
+
+    axis: Axis
+    coordinate: float
+    a_min: float
+    a_max: float
+    b_min: float
+    b_max: float
+
+
+def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
+    if not regions:
+        raise ValueError("surface regions must not be empty")
     values = [
-        MhsFaceRegion(int(axis), coordinate, Rect2D(a_min, a_max, b_min, b_max))
-        for axis, coordinate, a_min, a_max, b_min, b_max in regions or ()
+        MhsSurfaceRegion(
+            int(r.axis), r.coordinate, Rect2D(r.a_min, r.a_max, r.b_min, r.b_max)
+        )
+        for r in regions
     ]
-    return ((MhsFaceRegion * len(values))(*values) if values else None), len(values)
+    return (MhsSurfaceRegion * len(values))(*values), len(values)
 
 
 def _add_piecewise(dll, handle, name, points) -> None:
@@ -57,26 +75,6 @@ def _add_periodic_constant(dll, handle, name, values, period) -> None:
             handle, _text(name), native, len(values), period
         ),
         "add_function_periodic_piecewise_constant",
-    )
-
-
-def _add_fluid_boundary(
-    dll, handle, axis, coordinate, region, kind, value, inlet_temperature
-) -> None:
-    regions, count = _face_regions([(axis, coordinate, *region)])
-    temperature = (
-        None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
-    )
-    check(
-        dll.mhs_model_add_fluid_boundary(
-            handle,
-            regions,
-            count,
-            int(kind),
-            value,
-            None if temperature is None else ctypes.byref(temperature),
-        ),
-        "add_fluid_boundary",
     )
 
 
@@ -106,7 +104,7 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def set_settings(
+    def set_study(
         self,
         study: Study = Study.STEADY,
         initial_temperature_K: float = 300.0,
@@ -115,15 +113,15 @@ class Model(OwnedHandle):
     ) -> None:
         """Set global study parameters."""
         self._call(
-            "mhs_model_set_settings",
+            "mhs_model_set_study",
             int(study),
             initial_temperature_K,
             duration,
             output_interval,
-            ctx="set_settings",
+            ctx="set_study",
         )
 
-    def set_mesh(
+    def set_cartesian_mesh(
         self,
         x: np.ndarray | None = None,
         y: np.ndarray | None = None,
@@ -136,9 +134,9 @@ class Model(OwnedHandle):
                 "each mesh axis needs a 1D array with at least two vertices"
             )
         self._call(
-            "mhs_model_set_mesh",
+            "mhs_model_set_cartesian_mesh",
             *[v for a in arrays for v in (a.size, _double_ptr(a))],
-            ctx="set_mesh",
+            ctx="set_cartesian_mesh",
         )
 
     def add_variable(self, name: str, expression: str) -> None:
@@ -212,51 +210,35 @@ class Model(OwnedHandle):
 
     # ---- Atomic boundary conditions ----
 
-    def add_dirichlet(
-        self,
-        temperature: str,
-        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
-    ) -> None:
-        """Add a Dirichlet boundary condition.
-
-        Each region is (axis, coordinate, a_min, a_max, b_min, b_max).
-        Pass ``None`` or an empty list to ignore the call.
-        """
-        native_regions, count = _face_regions(regions)
+    def add_dirichlet(self, regions: Sequence[SurfaceRegion], temperature: str) -> None:
+        """Prescribe temperature on nonempty surface regions (later calls win)."""
+        native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_dirichlet",
-            native_regions,
+            native,
             count,
             _text(temperature),
             ctx="add_dirichlet",
         )
 
-    def add_neumann(
-        self,
-        heat_flux: str,
-        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
-    ) -> None:
-        """Add a Neumann (heat flux) boundary condition."""
-        native_regions, count = _face_regions(regions)
+    def add_neumann(self, regions: Sequence[SurfaceRegion], heat_flux: str) -> None:
+        """Prescribe heat flux on nonempty surface regions."""
+        native, count = _surface_regions(regions)
         self._call(
-            "mhs_model_add_neumann",
-            native_regions,
-            count,
-            _text(heat_flux),
-            ctx="add_neumann",
+            "mhs_model_add_neumann", native, count, _text(heat_flux), ctx="add_neumann"
         )
 
     def add_convection(
         self,
+        regions: Sequence[SurfaceRegion],
         coefficient: str,
         ambient_temperature: str,
-        regions: (list[tuple[int, float, float, float, float, float]] | None) = None,
     ) -> None:
-        """Add a convection (Robin) boundary condition."""
-        native_regions, count = _face_regions(regions)
+        """Apply convection on nonempty surface regions."""
+        native, count = _surface_regions(regions)
         self._call(
             "mhs_model_add_convection",
-            native_regions,
+            native,
             count,
             _text(coefficient),
             _text(ambient_temperature),
@@ -348,30 +330,38 @@ class Model(OwnedHandle):
 
     # ---- Probes & fluid boundaries ----
 
-    def add_probe(self, name: str, x: float, y: float, z: float) -> None:
-        self._call("mhs_model_add_probe", _text(name), x, y, z, ctx="add_probe")
+    def add_point_probe(self, name: str, position: Sequence[float]) -> None:
+        """Add a named point probe in SI metres."""
+        point = np.ascontiguousarray(position, dtype=np.float64)
+        if point.shape != (3,):
+            raise ValueError("probe position must contain three coordinates")
+        self._call(
+            "mhs_model_add_point_probe",
+            _text(name),
+            _double_ptr(point),
+            ctx="add_point_probe",
+        )
 
     def add_fluid_boundary(
         self,
-        axis: Axis,
-        coordinate: float,
-        a_min: float,
-        a_max: float,
-        b_min: float,
-        b_max: float,
+        regions: Sequence[SurfaceRegion],
         kind: FluidBC,
         value: float,
         inlet_temperature: float | None = None,
     ) -> None:
-        _add_fluid_boundary(
-            self._dll,
-            self._handle,
-            axis,
-            coordinate,
-            (a_min, a_max, b_min, b_max),
-            kind,
+        """Apply a hydraulic condition on nonempty surface regions."""
+        native, count = _surface_regions(regions)
+        temperature = (
+            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        )
+        self._call(
+            "mhs_model_add_fluid_boundary",
+            native,
+            count,
+            int(kind),
             value,
-            inlet_temperature,
+            None if temperature is None else ctypes.byref(temperature),
+            ctx="add_fluid_boundary",
         )
 
     # ---- Compile ----
