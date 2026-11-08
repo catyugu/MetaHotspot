@@ -7,6 +7,7 @@
 #include "solver/assembler.hpp"
 #include "solver/connection_flux.hpp"
 #include "solver/solver.hpp"
+#include "solver/solve.hpp"
 
 #include "core/vector.hpp"
 #include <algorithm>
