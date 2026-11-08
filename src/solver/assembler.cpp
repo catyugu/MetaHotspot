@@ -252,11 +252,17 @@ namespace mhs::solver {
                 = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             for (std::size_t i = 0; i < rom.order; ++i) {
                 const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
-                load[row] += rom.f[i];
+                double rhs = rom.f[i];
+                for (const auto& term : rom.affine_terms)
+                    rhs += term.value * term.f[i];
+                load[row] += rhs;
                 for (std::size_t j = 0; j < rom.order; ++j) {
                     const auto col = static_cast<core::SparseIndex>(field.dofs[j]);
-                    if (rom.K[i * rom.order + j] != 0.0)
-                        stiffness.emplace_back(row, col, rom.K[i * rom.order + j]);
+                    double stiffness_value = rom.K[i * rom.order + j];
+                    for (const auto& term : rom.affine_terms)
+                        stiffness_value += term.value * term.K[i * rom.order + j];
+                    if (stiffness_value != 0.0)
+                        stiffness.emplace_back(row, col, stiffness_value);
                     if (rom.C[i * rom.order + j] != 0.0)
                         capacity.emplace_back(row, col, rom.C[i * rom.order + j]);
                 }
