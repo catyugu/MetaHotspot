@@ -115,7 +115,8 @@ namespace mhs::solver {
             const double d_plus = model.discrete.cells[f.plus].size()[axis] / 2;
             auto resistance = d_minus / ki + d_plus / kj;
             const auto fi = fluid_index(f.minus), fj = fluid_index(f.plus);
-            if ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id)) {
+            if (model.flow_mode == FlowMode::Frozen
+                && ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id))) {
                 const auto fluid = (fi != mhs::core::invalid_id) ? fi : fj;
                 const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
                 const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
@@ -189,6 +190,21 @@ namespace mhs::solver {
             }
             temperatures_.emplace_back(n);
         }
+        // Nonthermal fields are independent state entries, not cell temperatures.
+        // Validate the full injective map before constructing workspaces.
+        for (const auto& field : model.layout.fields)
+            if (field.quantity == model::FieldQuantity::Pressure
+                || field.quantity == model::FieldQuantity::Velocity) {
+                if (field.domain >= model.domains.size() || field.entities.size() != field.dofs.size())
+                    throw std::invalid_argument("invalid fluid state layout");
+                if (model.domains[field.domain].flow_mode != model::FlowMode::Stokes)
+                    throw std::invalid_argument("fluid state field on a frozen-flow domain");
+                for (const auto dof : field.dofs) {
+                    if (dof >= seen.size() || seen[dof])
+                        throw std::invalid_argument("invalid or repeated fluid DOF");
+                    seen[dof] = true;
+                }
+            }
         for (std::size_t r = 0; r < model.rom_domains.size(); ++r) {
             const auto domain = static_cast<model::DomainId>(model.domains.size() + r);
             const auto& field = model.layout.field(model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
@@ -207,10 +223,21 @@ namespace mhs::solver {
         if (std::find(seen.begin(), seen.end(), false) != seen.end())
             throw std::invalid_argument("fields do not cover entire system state");
         gather(initial);
-        for (std::size_t d = 0; d < model.domains.size(); ++d)
-            domains_.push_back(std::make_unique<ThermalAssembler>(
-                model.domains[d], initialize_frozen_flow(model.domains[d], temperatures_[d], time)));
-        identity_ = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty();
+        for (std::size_t d = 0; d < model.domains.size(); ++d) {
+            const auto& domain = model.domains[d];
+            if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
+                stokes_.push_back(std::make_unique<StokesAssembler>(
+                    domain, model.layout, static_cast<model::DomainId>(d)));
+                domains_.push_back(std::make_unique<ThermalAssembler>(domain, FrozenFlow {}));
+            }
+            else {
+                stokes_.push_back(nullptr);
+                domains_.push_back(std::make_unique<ThermalAssembler>(
+                    domain, initialize_frozen_flow(domain, temperatures_[d], time)));
+            }
+        }
+        identity_ = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty()
+            && !stokes_.front();
         for (std::size_t c = 0; identity_ && c < dofs_[0].size(); ++c)
             identity_ = dofs_[0][c] == c;
     }
@@ -232,6 +259,9 @@ namespace mhs::solver {
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
         for (std::size_t d = 0; d < domains_.size(); ++d) {
+            if (stokes_[d])
+                domains_[d]->set_flow(stokes_[d]->assemble(state, temperatures_[d], time,
+                    stiffness, capacity, load));
             const auto& ops = domains_[d]->assemble(temperatures_[d], time);
             const auto& map = dofs_[d];
             auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
@@ -346,6 +376,8 @@ namespace mhs::solver {
 
     Operators assemble_thermal(const model::FomDomain& model, std::span<const double> temperature, double time)
     {
+        if (model.flow_mode == model::FlowMode::Stokes)
+            throw std::invalid_argument("standalone FOM thermal assembly requires frozen flow; use a state layout for Stokes");
         ThermalAssembler workspace(model, initialize_frozen_flow(model, temperature, time));
         workspace.assemble(temperature, time);
         return std::move(workspace).take_operators();

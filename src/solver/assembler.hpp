@@ -1,6 +1,7 @@
 #pragma once
 
 #include "solver/frozen_flow.hpp"
+#include "solver/stokes_flow.hpp"
 #include "solver/linear_system.hpp"
 
 #include "model/model.hpp"
@@ -17,6 +18,7 @@ namespace mhs::solver {
         const Operators& assemble(std::span<const double> temperature, double time);
 
         Operators take_operators() && { return std::move(operators_); }
+        void set_flow(FrozenFlow flow) { flow_ = std::move(flow); }
 
     private:
         const mhs::model::FomDomain& model_;
@@ -39,6 +41,7 @@ namespace mhs::solver {
         core::Vector<core::Vector<double>> temperatures_;
         core::Vector<core::Vector<model::DofId>> dofs_;
         core::Vector<std::unique_ptr<ThermalAssembler>> domains_;
+        core::Vector<std::unique_ptr<StokesAssembler>> stokes_;
         Operators operators_;
         bool identity_ = false;
     };

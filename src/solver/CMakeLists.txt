@@ -2,6 +2,7 @@ add_library(mhs_solver STATIC
     assembler.cpp
     connection_flux.cpp
     frozen_flow.cpp
+    stokes_flow.cpp
     nonlinear_solver.cpp
     probe_recorder.cpp
     solve.cpp

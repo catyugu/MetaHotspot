@@ -302,7 +302,17 @@ namespace mhs::solver {
             }
         };
 
-        auto sol = solve_system(study, assemble, std::move(state), options, observe);
+        // The assembled mixed velocity-pressure block is indefinite and has
+        // algebraic pressure rows. The thermal AMG default is not a Stokes
+        // preconditioner; use SparseLU unless a direct solver was requested.
+        auto effective_options = options;
+        if (effective_options.linear_solver == SolveOptions::LinearSolverType::Amg)
+            for (const auto& domain : compiled.domains)
+                if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
+                    effective_options.linear_solver = SolveOptions::LinearSolverType::SparseLu;
+                    break;
+                }
+        auto sol = solve_system(study, assemble, std::move(state), effective_options, observe);
         for (std::size_t p = 0; p < recorders.size(); ++p) {
             if (recorders[p])
                 sol.probe_traces.push_back(std::move(*recorders[p]).take_traces().front());
