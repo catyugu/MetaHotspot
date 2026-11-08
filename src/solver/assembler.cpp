@@ -268,6 +268,45 @@ namespace mhs::solver {
                 }
             }
         }
+
+        // An exposed ROM patch is a one-sided thermal connection. Reuse the
+        // FOM boundary law's local trace elimination, then distribute its
+        // physical conductance and heat load by the Galerkin transpose map.
+        for (const auto& term : model_.rom_boundary_terms) {
+            const auto& rom = model_.rom_domains.at(term.domain - model_.domains.size());
+            const auto& port = rom.ports.at(term.port);
+            const auto& facet = port.patches.at(term.patch);
+            const auto& field = model_.layout.field(
+                model_.layout.find(term.domain, model::FieldQuantity::ReducedCoordinate));
+            double temperature = facet.offset;
+            for (std::size_t i = 0; i < rom.order; ++i)
+                temperature += facet.trace[i] * state[field.dofs[i]];
+            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
+            model::Vec3 center {};
+            const auto axis = static_cast<std::size_t>(port.region.axis);
+            center[axis] = port.region.coordinate;
+            std::size_t tangent = 0;
+            for (std::size_t d = 0; d < 3; ++d)
+                if (d != axis) {
+                    center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
+                    ++tangent;
+                }
+            // The equivalent normal conductance is area/half_resistance.
+            const auto trace = evaluate_boundary(model_.rom_boundary_conditions.at(term.condition),
+                center, area, facet.half_resistance, temperature, 1.0, time);
+            // q_out = g*(V*z + offset) - load; ROM contribution V^T*q_out.
+            const double rhs = trace.load - trace.conductance * facet.offset;
+            for (std::size_t i = 0; i < rom.order; ++i) {
+                if (facet.trace[i] == 0.0)
+                    continue;
+                const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
+                load[row] += facet.trace[i] * rhs;
+                for (std::size_t j = 0; j < rom.order; ++j)
+                    if (facet.trace[j] != 0.0 && trace.conductance != 0.0)
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dofs[j]),
+                            facet.trace[i] * trace.conductance * facet.trace[j]);
+            }
+        }
         for (const auto& connection : model_.connections) {
             const auto flux = evaluate_connection_flux(model_, connection, state, time);
             for (const auto& patch_flux : flux) {
