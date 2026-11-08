@@ -53,7 +53,7 @@ namespace mhs::compiler {
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
-            const std::size_t port_offset = compiled.library->boundary_conditions.size();
+            const std::size_t port_offset = compiled.library().boundary_conditions.size();
             if (fom)
                 for (const auto& boundary : component.thermal_boundaries)
                     for (const auto& region : boundary.regions)
