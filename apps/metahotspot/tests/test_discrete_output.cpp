@@ -14,8 +14,8 @@ static mhs::model::ModelDefinition cube_definition()
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
-    d.materials.push_back({"solid", mat});
-    d.sources = {"0"};
+    d.library->materials.push_back({"solid", mat});
+    d.library->sources = {"0"};
     d.fom(0).volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
@@ -49,15 +49,19 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     std::stable_sort(imported.boundary_faces.begin(), imported.boundary_faces.end(),
         [](const auto& a, const auto& b) { return a.cell < b.cell; });
     for (auto* m : {&model, &imported}) {
-        m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
-        m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});
+        auto library = std::make_shared<mhs::model::CompiledLibrary>(*m->library);
+        library->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
+        library->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});
+        m->library = std::move(library);
     }
     mhs::core::Vector<double> original {300, 310, 320, 330, 340, 350, 360, 370};
     mhs::core::Vector<double> reordered(8);
     for (std::size_t i = 0; i < order.size(); ++i)
         reordered[i] = original[order[i]];
-    const auto baseline = mhs::solver::assemble_thermal(model, original, 0);
-    const auto result = mhs::solver::assemble_thermal(imported, reordered, 0);
+    mhs::solver::ThermalAssembler baseline_assembler(model, model.flow);
+    mhs::solver::ThermalAssembler reordered_assembler(imported, imported.flow);
+    const auto& baseline = baseline_assembler.assemble(original, 0);
+    const auto& result = reordered_assembler.assemble(reordered, 0);
     for (std::size_t i = 0; i < 8; ++i) {
         EXPECT_NEAR(result.f[i], baseline.f[order[i]], 1e-14);
         for (std::size_t j = 0; j < 8; ++j) {
@@ -86,29 +90,31 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
-        d.component(0).thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
+        d.component(0).thermal_boundaries = {
+            {{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, d.library->add_thermal_boundary(conditions[kind])}};
         const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
-        ASSERT_EQ(model.boundary_conditions.size(), 2u);
+        ASSERT_EQ(model.library->boundary_conditions.size(), 1u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
             if (term.axis != Axis::X || term.sign != 1) {
-                EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
+                EXPECT_EQ(term.condition, invalid_id);
                 continue;
             }
             for (double time : {2.0, 3.0}) {
                 const double T = 280 + 10 * time;
                 const mhs::core::Vector<double> state {T};
-                const auto ops = mhs::solver::assemble_thermal(model, state, time);
+                mhs::solver::ThermalAssembler assembler(model, model.flow);
+                const auto& ops = assembler.assemble(state, time);
                 // The cell is a unit cube with unit conductivity, so the
                 // condensed patch coefficients follow from the trace alone.
-                const auto condensed = mhs::solver::evaluate_boundary(model.boundary_conditions[term.condition],
+                const auto condensed = mhs::solver::evaluate_boundary(model.library->boundary_conditions[term.condition],
                     mhs::solver::boundary_center(model.discrete.cells[term.cell], term),
                     ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2])),
                     (model.discrete.cells[term.cell].size()[static_cast<std::size_t>(term.axis)] / 2), T, 1.0, time);
                 double g, load;
                 if (kind == 0) {
-                    const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Dirichlet>(model.library->boundary_conditions[term.condition]);
                     const double prescribed = 280 + 10 * time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.temperature.eval({1, 0.5, 0.5, T, time}), prescribed);
                     EXPECT_NEAR(condensed.temperature, prescribed, 1e-12);
@@ -125,7 +131,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                         prescribed);
                 }
                 else if (kind == 1) {
-                    const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Neumann>(model.library->boundary_conditions[term.condition]);
                     const double q = (T / 100 + time + 0.5) / (1 - 0.5 / 100);
                     const double trace = T + q * 0.5;
                     EXPECT_NEAR(bc.heat_flux.eval({1, 0.5, 0.5, trace, time}), q, 1e-12);
@@ -136,7 +142,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     load = q;
                 }
                 else {
-                    const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Convection>(model.library->boundary_conditions[term.condition]);
                     const double trace = condensed.temperature;
                     const double h = trace / 100 + time + 0.5, ambient = 280 + time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, trace, time}), h);
