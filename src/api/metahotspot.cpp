@@ -2,7 +2,6 @@
 #include "metahotspot_c_api.h"
 
 #include "compiler/model_compiler.hpp"
-#include "compiler/study_validation.hpp"
 #include "logging/logger.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -225,7 +224,14 @@ MHS_API mhs_status_t mhs_model_set_study(
     MHS_TRY({
         const mhs::model::ModelSettings settings {
             _to_model_study(study), initial_temperature_K, duration, output_interval};
-        mhs::compiler::validate_study_settings(settings);
+        if (!std::isfinite(settings.initial_temperature))
+            throw std::invalid_argument("initial temperature must be finite");
+        if (!std::isfinite(settings.transient_duration))
+            throw std::invalid_argument("duration must be finite");
+        if (settings.study_type == mhs::model::StudyType::Transient && settings.transient_duration <= 0)
+            throw std::invalid_argument("transient duration must be positive");
+        if (!std::isfinite(settings.transient_output_interval) || settings.transient_output_interval < 0)
+            throw std::invalid_argument("output interval must be finite and nonnegative");
         m->def.settings = settings;
     });
 }

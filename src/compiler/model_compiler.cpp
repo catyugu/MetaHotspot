@@ -2,7 +2,6 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
-#include "compiler/study_validation.hpp"
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
@@ -73,7 +72,18 @@ namespace mhs::compiler {
 
     mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
-        validate_study_settings(definition.settings);
+        const auto& settings = definition.settings;
+        if (settings.study_type != mhs::model::StudyType::Steady
+            && settings.study_type != mhs::model::StudyType::Transient)
+            throw std::invalid_argument("invalid study type");
+        if (!std::isfinite(settings.initial_temperature))
+            throw std::invalid_argument("initial temperature must be finite");
+        if (!std::isfinite(settings.transient_duration))
+            throw std::invalid_argument("duration must be finite");
+        if (settings.study_type == mhs::model::StudyType::Transient && settings.transient_duration <= 0)
+            throw std::invalid_argument("transient duration must be positive");
+        if (!std::isfinite(settings.transient_output_interval) || settings.transient_output_interval < 0)
+            throw std::invalid_argument("output interval must be finite and nonnegative");
 
         mhs::model::Model model;
         copy_scalar_parameters(model, definition);
